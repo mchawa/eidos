@@ -17,6 +17,5 @@ mutations:
     target: CAP-PROD-002
   - operation: add
     target: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
-    parent: CAP-PROD-002
 ---
 = SpecDelta: Require Modification Evidence in SpecDelta Verification

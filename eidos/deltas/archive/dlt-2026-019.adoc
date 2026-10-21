@@ -25,6 +25,5 @@ mutations:
     target: SCR-PORTAL-DELTAS
   - operation: add
     target: INV-PORTAL-READING-ERGONOMICS
-    parent: CAP-EXP-001
 ---
 = SpecDelta: Living Web Portal Reading-Friendly Design Revamp

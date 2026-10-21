@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-DOCS-USER-GUIDES
+title: UserGuides
+container: CNT-EIDOS-DOCS
+status: active
+source_path: docs/guides/cli.md
+---
+= Component: UserGuides
+:toc: left
+
+== Responsibility
+Operational reference manuals: live-command-validated CLI command reference (`docs/guides/cli.md` covering disjoint `eidos spec` vs `eidos delta` lifecycles, `eidos spec schema`, 4-parameter `eidos spec create`, `--include-archived`, `--json` context/repo-map flags, stateless `eidos hook`, and declarative `eidos delta verify/apply/audit/archive/changelog` workflows), Agent Plugin integration with 4 Discovery-First workflow skills (`v0.16.0`) and positional `[TARGET]` installation, and scalable Static-First Living Portal deployment (URL hash deep-linking, Blast Radius Simulator, `CTR-*` Contract Explorer, and recursive W3C Token Studio).
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

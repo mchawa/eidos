@@ -300,11 +300,9 @@ def test_cli_error_exit_codes_and_negative_json_contracts(tmp_path):
     assert res_dlt_app_err.exit_code == 1
     assert orjson.loads(res_dlt_app_err.stdout)["success"] is False
 
-    # 5. spec show / delete / promote / inline on missing entity return exit_code 1
+    # 5. spec show / delete on missing entity return exit_code 1
     assert runner.invoke(app, ["spec", "show", "CNT-MISSING", "--path", str(eidos_dir)]).exit_code == 1
     assert runner.invoke(app, ["spec", "delete", "CNT-MISSING", "--force", "--path", str(eidos_dir)]).exit_code == 1
-    assert runner.invoke(app, ["spec", "component", "promote", "CMP-MISSING", "--path", str(eidos_dir)]).exit_code == 1
-    assert runner.invoke(app, ["spec", "component", "inline", "CMP-MISSING", "--path", str(eidos_dir)]).exit_code == 1
 
     # 6. doctor on broken workspace returns exit_code 1
     empty_ws = tmp_path / "empty_ws"

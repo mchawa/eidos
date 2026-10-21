@@ -963,7 +963,6 @@ id: CMP-BILLING
 title: Billing
 container: CNT-APP
 source_path: src/billing
-responsibility: Billing
 invariants:
   - id: INV-CMP-BILLING-OK
     rule: Covered component invariant
@@ -982,16 +981,24 @@ type: tech/container
 id: CNT-APP
 title: App
 source_path: src
-components:
-  - id: CMP-INLINE
-    title: Inline
-    source_path: src/inline.py
-    invariants:
-      - id: INV-CMP-INLINE-OK
-        rule: Inline component invariant
-        test_binding: tests/test_billing.py::test_inline_ok
 ---
 = App
+""",
+        encoding="utf-8",
+    )
+    (comps_dir / "inline.adoc").write_text(
+        """---
+type: tech/component
+id: CMP-INLINE
+title: Inline
+container: CNT-APP
+source_path: src/inline.py
+invariants:
+  - id: INV-CMP-INLINE-OK
+    rule: Component invariant
+    test_binding: tests/test_billing.py::test_inline_ok
+---
+= Inline
 """,
         encoding="utf-8",
     )
@@ -2061,17 +2068,26 @@ invariants:
   - id: INV-CNT-TOP-LEVEL
     rule: Container-level invariant
     test_binding: tests/test_pkg.py::test_cnt_top
-components:
-  - id: CMP-C4-INTERNAL
-    title: C4 Internal
-    responsibility: Internal module
-    source_path: src/pkg/internal.py
-    invariants:
-      - id: INV-CMP-C4-INTERNAL
-        rule: C4 internal component invariant
-        test_binding: tests/test_pkg.py::test_c4_internal
 ---
 = Pkg Container
+""",
+        encoding="utf-8",
+    )
+    cmps_dir = eidos_dir / "architecture" / "components"
+    cmps_dir.mkdir(parents=True, exist_ok=True)
+    (cmps_dir / "c4-internal.adoc").write_text(
+        """---
+type: tech/component
+id: CMP-C4-INTERNAL
+title: C4 Internal
+container: CNT-PKG
+source_path: src/pkg/internal.py
+invariants:
+  - id: INV-CMP-C4-INTERNAL
+    rule: C4 internal component invariant
+    test_binding: tests/test_pkg.py::test_c4_internal
+---
+= C4 Internal
 """,
         encoding="utf-8",
     )
@@ -2986,21 +3002,38 @@ def test_class_qualified_test_binding_rejects_wrong_class_fallback(tmp_path: Pat
 
 
 def test_group_c1_inline_component_1hop_and_promoted_component_parent_container(tmp_path: Path, monkeypatch) -> None:
-    """Verify C1: 1-hop neighborhood includes capabilities/contracts bound to matching inline CMP-* and parent CNT-* of promoted CMP-*."""  # eidos:fixture
+    """Verify C1: 1-hop neighborhood includes capabilities/contracts bound to matching CMP-* and parent CNT-* of CMP-*."""  # eidos:fixture
     cnt_rel = "eidos/architecture/containers/api.adoc"
     cnt_spec = """---
 type: tech/container
 id: CNT-API
 title: API Container
+container_type: service
+runtime: Python 3.12
 source_path: src/api
-components:
-  - id: CMP-INLINE-PAY
-    title: Inline Payments
-    source_path: src/api/pay.py
 ---
 = API Container
 
 Original container prose.
+"""
+    cmp_pay_rel = "eidos/architecture/components/pay.adoc"
+    cmp_pay_spec = """---
+type: tech/component
+id: CMP-INLINE-PAY
+title: Inline Payments
+container: CNT-API
+source_path: src/api/pay.py
+---
+= Inline Payments
+"""
+    dom_rel = "eidos/domains/core/domain.adoc"
+    dom_spec = """---
+type: product/domain
+id: DOM-CORE
+title: Core Domain
+status: active
+---
+= Core Domain
 """
     cap_inline_rel = "eidos/domains/core/capabilities/cap-pay.adoc"
     cap_inline_old = """---
@@ -3010,6 +3043,7 @@ title: Payment Capability
 domain: DOM-CORE
 status: active
 business:
+  personas: []
   jtbd: Process payments
 technical:
   components:
@@ -3021,7 +3055,7 @@ Original payment prose.
 """
     cap_inline_new = cap_inline_old + "\nUpdated payment retry handling in pay.py.\n"
 
-    # 1. File owned by inline CMP-INLINE-PAY covered by 1-hop CAP-PAY bound to CMP-INLINE-PAY -> clean!
+    # 1. File owned by CMP-INLINE-PAY covered by 1-hop CAP-PAY bound to CMP-INLINE-PAY -> clean!
     ws1 = tmp_path / "c1_inline"
     env1 = _diff_aware_env(
         ws1,
@@ -3037,6 +3071,8 @@ Original payment prose.
         spec_text=cnt_spec,
         extra_files={
             cnt_rel: cnt_spec,
+            cmp_pay_rel: cmp_pay_spec,
+            dom_rel: dom_spec,
             cap_inline_rel: cap_inline_new,
             "src/api/pay.py": "def pay(a: int, b: int) -> int:\n    return a + b\n",
         },
@@ -3044,7 +3080,7 @@ Original payment prose.
     res1 = detect_drift(repo_root=ws1, eidos_dir=env1)
     assert res1.drift_detected is False
 
-    # 2. File owned by promoted CMP-PROMOTED-AUTH (source_path: src/api/auth/**) covered by parent CNT-API or CAP bound to CNT-API -> clean!
+    # 2. File owned by CMP-PROMOTED-AUTH (source_path: src/api/auth/**) covered by parent CNT-API or CAP bound to CNT-API -> clean!
     cmp_auth_rel = "eidos/architecture/components/auth.adoc"
     cmp_auth_spec = """---
 type: tech/component
@@ -3052,7 +3088,6 @@ id: CMP-PROMOTED-AUTH
 title: Promoted Auth
 container: CNT-API
 source_path: src/api/auth/**
-responsibility: Authentication
 ---
 = Promoted Auth
 """
@@ -3064,6 +3099,7 @@ title: API Capability
 domain: DOM-CORE
 status: active
 business:
+  personas: []
   jtbd: Serve API
 technical:
   containers:
@@ -3090,8 +3126,11 @@ Original API capability prose.
         spec_text=cnt_spec,
         extra_files={
             cnt_rel: cnt_spec,
+            cmp_pay_rel: cmp_pay_spec,
             cmp_auth_rel: cmp_auth_spec,
+            dom_rel: dom_spec,
             cap_cnt_rel: cap_cnt_new,
+            "src/api/pay.py": "def pay(a: int) -> int:\n    return a\n",
             "src/api/auth/login.py": "def login(u: str, mfa: str) -> bool:\n    return True\n",
         },
     )
@@ -3315,13 +3354,21 @@ type: tech/container
 id: CNT-WEB
 title: Web Container
 source_path: src/old_pkg
-components:
-  - id: CMP-OLD
-    title: Old Module
-    responsibility: Legacy module.
-    source_path: src/old_pkg/old_mod.py
 ---
 = Web Container
+""",
+        encoding="utf-8",
+    )
+    cmp_old_file = cmp_dir / "old.adoc"
+    cmp_old_file.write_text(
+        """---
+type: tech/component
+id: CMP-OLD
+title: Old Module
+container: CNT-WEB
+source_path: src/old_pkg/old_mod.py
+---
+= Old Module
 """,
         encoding="utf-8",
     )
@@ -3398,7 +3445,8 @@ design_system: DS-BRAND
         }
         assert styles_cnt == {"DS-BRAND", "DS-BASE"}
 
-        # 3. Incrementally update DS-BRAND (drop extends: DS-BASE) and CNT-WEB (change source_path to src/new_pkg)
+        # 3. Incrementally update DS-BRAND (drop extends: DS-BASE), delete CMP-OLD, and update CNT-WEB (change source_path to src/new_pkg)
+        cmp_old_file.unlink()
         ds_brand.write_text(
             """---
 type: design/system

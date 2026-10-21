@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-CLI-PLUGIN-COMMANDS
+title: PluginCommands
+container: CNT-EIDOS-CLI
+status: active
+source_path: src/eidos/cli/plugin_commands.py
+---
+= Component: PluginCommands
+:toc: left
+
+== Responsibility
+Agent plugin lifecycle commands (`eidos plugin`) with `orjson` `--json` output: `install [TARGET]`, `uninstall [TARGET]`, and `update [TARGET]` with a single optional positional `TARGET` argument defaulting to `PluginInstallTarget.PROJECT` (`force=False` default and `FileExistsError` symlink/overwrite safety), plus `version`, `validate`, and `info`.
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

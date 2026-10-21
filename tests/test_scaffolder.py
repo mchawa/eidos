@@ -632,10 +632,10 @@ def test_cli_command_groups_help_and_subapps():
     assert "portal" in res.stdout
     assert "plugin" in res.stdout
 
-    # Verify component subgroup is nested under eidos spec
+    # Verify component subgroup is unmounted from eidos spec
     res_spec_help = runner.invoke(app, ["spec", "--help"])
     assert res_spec_help.exit_code == 0
-    assert "component" in res_spec_help.stdout
+    assert "create" in res_spec_help.stdout
 
     # Verify eidos spec list --type container and --type component replace spec containers / spec components
     res_containers = runner.invoke(app, ["spec", "list", "--type", "container"])
@@ -997,13 +997,13 @@ def test_foreign_repo_end_to_end_workflow(tmp_path):
 
 
 def test_frontmatter_mutations_preserve_yaml_comments_and_formatting(tmp_path):
-    """Verify apply_delta, promote_component, and inline_component preserve YAML comments."""
-    from eidos.core.lifecycle.scaffolder import inline_component, promote_component
-
+    """Verify apply_delta preserves YAML comments."""
     eidos_dir = tmp_path / "eidos"
     cnts_dir = eidos_dir / "architecture" / "containers"
+    comps_dir = eidos_dir / "architecture" / "components"
     deltas_dir = eidos_dir / "deltas"
     cnts_dir.mkdir(parents=True)
+    comps_dir.mkdir(parents=True)
     deltas_dir.mkdir(parents=True)
 
     cnt_file = cnts_dir / "core.adoc"
@@ -1013,40 +1013,35 @@ def test_frontmatter_mutations_preserve_yaml_comments_and_formatting(tmp_path):
 type: tech/container
 id: CNT-CORE # inline id comment
 title: "Core Container"
+status: active
 container_type: library
 runtime: Python 3.12
 source_path: src/core
-
-# Internal C4 components list
-components:
-  # Parser component comment
-  - id: CMP-PARSER
-    title: "Parser"
-    responsibility: "Parses specs."
-    source_path: "src/core/parser.py"
 ---
 = Core Container
 """,
         encoding="utf-8",
     )
 
-    # 1. Promote CMP-PARSER and verify container-level comments remain intact
-    promoted_path, _ = promote_component("CMP-PARSER", eidos_dir=eidos_dir, repo_root=tmp_path)
-    assert promoted_path.exists()
-    cnt_after_promote = cnt_file.read_text(encoding="utf-8")
-    assert "# Top-level container comment" in cnt_after_promote
-    assert "# inline id comment" in cnt_after_promote
-    assert "# Internal C4 components list" in cnt_after_promote
+    cmp_file = comps_dir / "parser.adoc"
+    cmp_file.write_text(
+        """---
+type: tech/component
+id: CMP-PARSER
+title: "Parser"
+container: CNT-CORE
+status: active
+source_path: "src/core/parser.py"
+---
+= Component: Parser
 
-    # 2. Inline CMP-PARSER back and verify comments still remain intact
-    inline_component("CMP-PARSER", eidos_dir=eidos_dir, repo_root=tmp_path)
-    cnt_after_inline = cnt_file.read_text(encoding="utf-8")
-    assert "# Top-level container comment" in cnt_after_inline
-    assert "# inline id comment" in cnt_after_inline
-    assert "# Internal C4 components list" in cnt_after_inline
-    assert "CMP-PARSER" in cnt_after_inline
+== Responsibility
+Parses specs.
+""",
+        encoding="utf-8",
+    )
 
-    # 3. Create a delta with comments and apply it
+    # Create a delta with comments and apply it
     dlt_file = deltas_dir / "dlt-2026-777.adoc"
     dlt_file.write_text(
         """---
@@ -1061,7 +1056,6 @@ intent:
 mutations:
   - operation: add
     target: CMP-PARSER
-    parent: CNT-CORE
     details: "Parses specs."
 ---
 = Delta
@@ -1104,7 +1098,6 @@ def test_core_and_cli_modules_import_without_cycles():
         "eidos.cli.init_command",
         "eidos.cli.context_command",
         "eidos.cli.index_commands",
-        "eidos.cli.component_commands",
         "eidos.cli.portal_commands",
         "eidos.cli.doctor_hook_commands",
     ):
@@ -1158,14 +1151,16 @@ def test_core_and_cli_modules_import_without_cycles():
 
 
 def test_lossless_component_promote_inline_and_word_bounded_references(tmp_path):
-    """DLT-2026-065: lossless promote_component / inline_component and word-bounded find_references_to_spec # eidos:fixture."""
+    """DLT-2026-065: standalone component parsing and word-bounded find_references_to_spec # eidos:fixture."""
     from eidos.core.lifecycle.catalog import _set_frontmatter_scalar, find_references_to_spec
-    from eidos.core.lifecycle.scaffolder import create_spec, delete_spec, inline_component, promote_component
+    from eidos.core.lifecycle.scaffolder import create_spec, delete_spec
     from eidos.core.spec.parser import parse_spec_file
 
     eidos_dir = tmp_path / "eidos"
     cnts_dir = eidos_dir / "architecture" / "containers"
+    comps_dir = eidos_dir / "architecture" / "components"
     cnts_dir.mkdir(parents=True)
+    comps_dir.mkdir(parents=True)
     (tmp_path / "src" / "a.py").parent.mkdir(parents=True, exist_ok=True)
     (tmp_path / "src" / "a.py").write_text("x = 1\n", encoding="utf-8")
     (tmp_path / "src" / "b.py").write_text("y = 2\n", encoding="utf-8")
@@ -1176,35 +1171,45 @@ def test_lossless_component_promote_inline_and_word_bounded_references(tmp_path)
 type: tech/container
 id: CNT-CORE
 title: "Core Container"
+status: active
 container_type: library
 runtime: Python 3.12
 source_path: src
-
-components:
-  - id: CMP-MULTI-SRC
-    title: 'Parser: "Core" Engine'
-    responsibility: "Handles parsing: YAML & AsciiDoc."
-    source_path:
-      - "src/a.py"
-      - "src/b.py"
-    decisions:
-      - id: DEC-COMP-001
-        title: "Use safe YAML dump"
-        status: accepted
-        context: "Raw f-strings corrupt list source_path."
-        decision: "Serialize via yaml.safe_dump."
-    invariants:
-      - id: INV-COMP-ROUNDTRIP
-        rule: "Preserve component invariants across promote/inline."
-        test_binding: "tests/test_scaffolder.py::test_lossless_component_promote_inline_and_word_bounded_references"
 ---
 = Core Container
 """,
         encoding="utf-8",
     )
 
-    # 1. Promote CMP-MULTI-SRC and verify list[str] source_path, decisions, and invariants are preserved
-    promoted_path, _ = promote_component("CMP-MULTI-SRC", eidos_dir=eidos_dir, repo_root=tmp_path)
+    promoted_path = comps_dir / "multi-src.adoc"
+    promoted_path.write_text(
+        """---
+type: tech/component
+id: CMP-MULTI-SRC
+title: 'Parser: "Core" Engine'
+container: CNT-CORE
+status: active
+source_path:
+  - "src/a.py"
+  - "src/b.py"
+decisions:
+  - id: DEC-COMP-001
+    title: "Use safe YAML dump"
+    decision: "Serialize via yaml.safe_dump."
+    rationale: "Raw f-strings corrupt list source_path."
+invariants:
+  - id: INV-COMP-ROUNDTRIP
+    rule: "Preserve component invariants."
+    test_binding: "tests/test_scaffolder.py::test_lossless_component_promote_inline_and_word_bounded_references"
+---
+= Component: Parser
+
+== Responsibility
+Handles parsing: YAML & AsciiDoc.
+""",
+        encoding="utf-8",
+    )
+
     promoted_doc = parse_spec_file(promoted_path)
     assert not promoted_doc.errors
     assert promoted_doc.frontmatter["source_path"] == ["src/a.py", "src/b.py"]
@@ -1213,15 +1218,6 @@ components:
     assert promoted_doc.frontmatter["decisions"][0]["id"] == "DEC-COMP-001"
     assert len(promoted_doc.frontmatter.get("invariants", [])) == 1
     assert promoted_doc.frontmatter["invariants"][0]["id"] == "INV-COMP-ROUNDTRIP"
-
-    # 2. Inline CMP-MULTI-SRC back into CNT-CORE and verify round-trip preservation
-    inline_component("CMP-MULTI-SRC", eidos_dir=eidos_dir, repo_root=tmp_path)
-    cnt_doc = parse_spec_file(cnt_file)
-    assert not cnt_doc.errors
-    inlined_comp = cnt_doc.frontmatter["components"][0]
-    assert inlined_comp["source_path"] == ["src/a.py", "src/b.py"]
-    assert inlined_comp["decisions"][0]["id"] == "DEC-COMP-001"
-    assert inlined_comp["invariants"][0]["id"] == "INV-COMP-ROUNDTRIP"
 
     # 3. Word-bounded find_references_to_spec: CNT-CORE-API must NOT count as a reference to CNT-CORE
     api_cnt = create_spec(eidos_dir, "container", "CNT-CORE-API", title="Core API Container")
@@ -1288,10 +1284,9 @@ def test_design_scaffolder_hygiene_and_dynamic_system_fallback(tmp_path):
 
 def test_multiline_scalar_update_and_delete_spec_applied_delta_and_promote_accepted(tmp_path):
     """Verify Bug 11 & status alignment: _set_frontmatter_scalar replaces multiline block scalars cleanly,
-    delete_spec succeeds when entity is only referenced by an applied SpecDelta, and promote_component preserves status: accepted."""
+    delete_spec succeeds when entity is only referenced by an applied SpecDelta, and standalone component validates status: planned."""
     from eidos.core.lifecycle.catalog import _set_frontmatter_scalar, find_references_to_spec
-    from eidos.core.lifecycle.scaffolder import inline_component, promote_component
-    from eidos.core.spec.parser import extract_frontmatter
+    from eidos.core.spec.parser import dump_spec_document, extract_frontmatter
     from eidos.core.spec.validator import SpecValidator
 
     eidos_dir = tmp_path / "eidos"
@@ -1353,40 +1348,28 @@ def test_multiline_scalar_update_and_delete_spec_applied_delta_and_promote_accep
     assert ok_del is True
     assert not pol_path.exists()
 
-    # 3. Promote an inline component with status: planned and verify schema validation passes
+    # 3. Create a standalone component with status: planned and verify schema validation passes
     cnt_path = create_spec(eidos_dir, "container", "CNT-ACC", title="Accepted Container")
     cnt_doc = parse_spec_file(cnt_path)
     cnt_doc.frontmatter["source_path"] = "src/acc"
-    cnt_doc.frontmatter["components"] = [
-        {
-            "id": "CMP-ACC-WORKER",
-            "title": "Accepted Worker",
-            "status": "planned",
-            "source_path": "src/acc/worker.py",
-            "responsibility": "Executes accepted background jobs.",
-        }
-    ]
-    from eidos.core.spec.parser import dump_spec_document
-
     cnt_path.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_doc.body), encoding="utf-8")
-    promoted_path, _ = promote_component("CMP-ACC-WORKER", eidos_dir=eidos_dir, repo_root=tmp_path)
+
+    promoted_path = create_spec(eidos_dir, "component", "CMP-ACC-WORKER", title="Accepted Worker")
+    promoted_doc = parse_spec_file(promoted_path)
+    promoted_doc.frontmatter["status"] = "planned"
+    promoted_doc.frontmatter["source_path"] = "src/acc/worker.py"
+    promoted_path.write_text(dump_spec_document(promoted_doc.frontmatter, promoted_doc.body), encoding="utf-8")
+
     val = SpecValidator()
     promoted_doc = parse_spec_file(promoted_path)
     val.validate_document(promoted_doc)
     assert not promoted_doc.errors, promoted_doc.errors
     assert promoted_doc.frontmatter["status"] == "planned"
 
-    # 4. Inline CMP-ACC-WORKER back into CNT-ACC and verify status: planned is preserved
-    inline_component("CMP-ACC-WORKER", eidos_dir=eidos_dir, repo_root=tmp_path)
-    cnt_inlined_doc = parse_spec_file(cnt_path)
-    val.validate_document(cnt_inlined_doc)
-    assert not cnt_inlined_doc.errors, cnt_inlined_doc.errors
-    assert cnt_inlined_doc.frontmatter["components"][0]["status"] == "planned"
-
 
 def test_a5_a6_frontmatter_scalar_and_components_surgical_edge_cases() -> None:
-    """A5 & A6: _set_frontmatter_scalar block-scalar/list-item/special-string handling and _mutate_frontmatter_components flow/comment handling."""
-    from eidos.core.lifecycle.catalog import _mutate_frontmatter_components, _set_frontmatter_scalar
+    """A5: _set_frontmatter_scalar block-scalar/list-item/special-string handling."""
+    from eidos.core.lifecycle.catalog import _set_frontmatter_scalar
     from eidos.core.spec.parser import extract_frontmatter
 
     # A5a: Block scalar containing indented bullet lines `- item` must consume all lines of the block scalar
@@ -1432,47 +1415,6 @@ def test_a5_a6_frontmatter_scalar_and_components_surgical_edge_cases() -> None:
     fm_nl, _, err_nl = extract_frontmatter(replaced_nl)
     assert err_nl is None, err_nl
     assert fm_nl["title"] == "Line 1\nLine 2"
-
-    # A6a: Removing the last block component with interior comments produces valid `components: []`
-    raw_cnt_comments = (
-        "---\n"
-        "type: tech/container\n"
-        "id: CNT-TEST\n"
-        "components: # inline header comment\n"
-        "  # interior comment before item\n"
-        "  - id: CMP-ONLY\n"
-        "    title: Only Component\n"
-        "status: active\n"
-        "---\n"
-        "= Container\n"
-    )
-    after_remove = _mutate_frontmatter_components(raw_cnt_comments, "remove", "CMP-ONLY")
-    assert after_remove is not None
-    fm_rem, _, err_rem = extract_frontmatter(after_remove)
-    assert err_rem is None, f"Invalid YAML after removing last component: {err_rem}\n{after_remove}"
-    assert fm_rem["components"] == []
-    assert "# inline header comment" in after_remove
-
-    # A6b: Flow-style non-empty components list `components: [{id: CMP-FLOW, title: Flow}]`
-    raw_flow = (
-        "---\n"
-        "type: tech/container\n"
-        "id: CNT-FLOW\n"
-        "components: [{id: CMP-FLOW, title: Flow}]\n"
-        "status: active\n"
-        "---\n"
-        "= Flow Container\n"
-    )
-    after_flow_replace = _mutate_frontmatter_components(
-        raw_flow,
-        "replace",
-        "CMP-FLOW",
-        {"id": "CMP-NEW", "title": "New Comp"},
-    )
-    assert after_flow_replace is not None
-    fm_flow, _, err_flow = extract_frontmatter(after_flow_replace)
-    assert err_flow is None, err_flow
-    assert [c["id"] for c in fm_flow["components"]] == ["CMP-NEW"]
 
 
 def test_a7_a8_a11_catalog_scaffolder_and_design_edge_cases(tmp_path: Path) -> None:
@@ -1542,19 +1484,17 @@ def test_a7_a8_a11_catalog_scaffolder_and_design_edge_cases(tmp_path: Path) -> N
     refs_after = find_references_to_spec(eidos_dir, "POL-TARGET", pol_target)
     assert custom_delta.resolve() not in refs_after
 
-    # A8: list_specs supports --type system, --status active (including default-status containers and inline components on draft containers)
+    # A8: list_specs supports --type system, --status active (including default-status containers and standalone components)
     cnt_path = create_spec(eidos_dir, "container", "CNT-API", "API Container")
     cnt_doc = parse_spec_file(cnt_path)
     cnt_doc.frontmatter["status"] = "draft"
-    cnt_doc.frontmatter["components"] = [
-        {
-            "id": "CMP-INLINE-ACT",
-            "title": "Active Inline",
-            "status": "active",
-            "responsibility": "Inline work",
-        }
-    ]
     cnt_path.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_doc.body), encoding="utf-8")
+
+    cmp_act_path = create_spec(eidos_dir, "component", "CMP-INLINE-ACT", "Active Component")
+    cmp_act_doc = parse_spec_file(cmp_act_path)
+    cmp_act_doc.frontmatter["status"] = "active"
+    cmp_act_path.write_text(dump_spec_document(cmp_act_doc.frontmatter, cmp_act_doc.body), encoding="utf-8")
+
     cnt_default_path = create_spec(eidos_dir, "container", "CNT-DEFAULT-ACT", "Default Active Container")
     cnt_default_path.write_text(
         cnt_default_path.read_text(encoding="utf-8").replace("status: draft\n", ""),
@@ -1594,12 +1534,8 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
     from eidos.core.lifecycle.audit import AuditEngine
     from eidos.core.lifecycle.catalog import _set_frontmatter_scalar, find_spec_by_id_or_path
     from eidos.core.lifecycle.changelog import ChangelogGenerator
-    from eidos.core.lifecycle.delta_engine import (
-        _check_structural_subtarget_precondition,
-        _find_inline_component_dict,
-    )
     from eidos.core.lifecycle.initializer import init_repository
-    from eidos.core.lifecycle.scaffolder import create_spec, inline_component, promote_component
+    from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec.parser import parse_spec_file
 
     # --- A8: init_repository strips whitespace-only name and title ---
@@ -1680,116 +1616,13 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
     )
     assert flow_path.parent == eidos_dir / "design" / "flows"
 
-    # --- A1: _find_inline_component_dict and _check_structural_subtarget_precondition ---
     cmp_promoted = create_spec(
         eidos_dir,
         "component",
         "CMP-PROMOTED",
         "Promoted Auth",
     )
-    cnt_path.write_text(
-        "---\n"
-        "type: tech/container\n"
-        "id: CNT-API-GATEWAY\n"
-        "title: API Gateway\n"
-        "container_type: service\n"
-        "runtime: Python\n"
-        "invariants:\n"
-        "  - id: INV-TOP-001\n"
-        "    rule: Top rule\n"
-        "technical:\n"
-        "  invariants:\n"
-        "    - id: INV-TECH-001\n"
-        "      rule: Tech rule\n"
-        "components:\n"
-        "  - id: CMP-INLINE-C4\n"
-        "    title: Inline C4\n"
-        "    responsibility: Handle C4\n"
-        "    invariants:\n"
-        "      - id: INV-INLINE-001\n"
-        "        rule: Inline rule\n"
-        "    decisions:\n"
-        "      - id: DEC-INLINE-001\n"
-        "        title: Inline Dec\n"
-        "    contracts:\n"
-        "      provides:\n"
-        "        - CTR-INLINE-001\n"
-        "---\n= API Gateway\n",
-        encoding="utf-8",
-    )
-    cnt_doc = parse_spec_file(cnt_path)
-    cmp_doc = parse_spec_file(cmp_promoted)
-    assert _find_inline_component_dict("CMP-PROMOTED", cnt_doc.frontmatter) is None
-    assert _find_inline_component_dict("CMP-INLINE-C4", cnt_doc.frontmatter) is not None
-
-    specs_by_id = {
-        "CNT-API-GATEWAY": (cnt_path, cnt_doc.doc_type, cnt_doc.frontmatter),
-        "CMP-PROMOTED": (cmp_promoted, cmp_doc.doc_type, cmp_doc.frontmatter),
-    }
-    container_components = {"CMP-PROMOTED": "CNT-API-GATEWAY", "CMP-INLINE-C4": "CNT-API-GATEWAY"}
-
-    # Subtarget precondition checks for INV-*, DEC-*, CTR-* on container and inline CMP-*
-    assert (
-        _check_structural_subtarget_precondition(
-            {"target": "INV-TOP-001", "parent": "CNT-API-GATEWAY"}, specs_by_id, container_components
-        )
-        is True
-    )
-    assert (
-        _check_structural_subtarget_precondition(
-            {"target": "INV-TECH-001", "parent": "CNT-API-GATEWAY"}, specs_by_id, container_components
-        )
-        is True
-    )
-    assert (
-        _check_structural_subtarget_precondition(
-            {"target": "INV-INLINE-001", "parent": "CMP-INLINE-C4"}, specs_by_id, container_components
-        )
-        is True
-    )
-    assert (
-        _check_structural_subtarget_precondition(
-            {"target": "INV-TOP-001", "parent": "CMP-INLINE-C4"}, specs_by_id, container_components
-        )
-        is False
-    )
-    assert (
-        _check_structural_subtarget_precondition(
-            {"target": "DEC-INLINE-001", "parent": "CMP-INLINE-C4"}, specs_by_id, container_components
-        )
-        is True
-    )
-    assert (
-        _check_structural_subtarget_precondition(
-            {"target": "CTR-INLINE-001", "parent": "CMP-INLINE-C4"}, specs_by_id, container_components
-        )
-        is True
-    )
-
-    # --- A4: promote_component and inline_component when eidos_dir.name != 'eidos' ---
-    custom_specs = tmp_path / "custom_specs"
-    custom_cnt = custom_specs / "architecture" / "containers" / "core.adoc"
-    custom_cnt.parent.mkdir(parents=True)
-    custom_cnt.write_text(
-        "---\n"
-        "type: tech/container\n"
-        "id: CNT-CORE\n"
-        "title: Core\n"
-        "components:\n"
-        "  - id: CMP-SUB\n"
-        "    title: null\n"
-        "    responsibility: null\n"
-        "---\n= Core\n",
-        encoding="utf-8",
-    )
-    promoted_sub, _ = promote_component("CMP-SUB", eidos_dir=custom_specs)
-    assert promoted_sub.exists()
-    inlined_cnt, _ = inline_component("CMP-SUB", eidos_dir=custom_specs)
-    assert inlined_cnt == custom_cnt
-    assert not promoted_sub.exists()
-    inlined_doc = parse_spec_file(custom_cnt)
-    all_inlined = list(inlined_doc.frontmatter.get("components") or [])
-    assert any(isinstance(c, dict) and c.get("id") == "CMP-SUB" for c in all_inlined)
+    assert cmp_promoted.exists()
 
     # --- A6: ChangelogGenerator with eidos_dir only and null frontmatter values ---
     null_dlt = eidos_dir / "deltas" / "dlt-2026-901-nulls.adoc"

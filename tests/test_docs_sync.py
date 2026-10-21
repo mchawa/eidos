@@ -52,7 +52,6 @@ def test_documentation_and_schemas_in_sync():
         "context",
         "index",
         "spec",
-        "spec component",
         "delta",
         "portal",
         "portal serve",

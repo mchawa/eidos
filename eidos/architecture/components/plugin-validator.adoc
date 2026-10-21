@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-PLUGIN-VALIDATOR
+title: PluginValidator
+container: CNT-EIDOS-PLUGIN
+status: active
+source_path: src/eidos/plugin/validator.py
+---
+= Component: PluginValidator
+:toc: left
+
+== Responsibility
+Validates plugin packages (`plugin.json` parsed via `orjson`) against agent-plugins.org v1.0.0 with line-anchored SKILL.md YAML frontmatter extraction and enforces SemVer 2.0.0 versioning across host agent environments.
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

@@ -9,49 +9,42 @@ intent:
 mutations:
   - operation: modify
     target: CMP-DELTA-ENGINE
-    parent: CNT-EIDOS-CORE
     details: "Remove all Git subprocesses (git for-each-ref, git ls-tree, git log) from generate_collision_free_delta_id in src/eidos/core/lifecycle/delta_engine.py, always deriving a mandatory title <SLUG> and engine-computed <4HEX> hash suffix (DLT-YYYY-NNN-<SLUG>-<4HEX>)."
     expect:
       frontmatter:
         responsibility: "Git-free <SLUG>-<4HEX> ID generation in generate_collision_free_delta_id"
   - operation: modify
     target: CMP-LIFECYCLE-SCAFFOLDER
-    parent: CNT-EIDOS-CORE
     details: "Support unambiguous DLT-YYYY-NNN and DLT-YYYY-NNN-<SLUG> prefix resolution in find_spec_by_id_or_path in src/eidos/core/lifecycle/catalog.py."
     expect:
       frontmatter:
         responsibility: "unambiguous SpecDelta prefix resolution"
   - operation: modify
     target: CMP-GRAPH-STORAGE
-    parent: CNT-EIDOS-INDEX
     details: "Bump SCHEMA_VERSION in src/eidos/core/index/storage.py from '2.15.0' to '2.16.0' so existing eidos/.cache/index.db instances automatically rebuild and populate test_binding_cache during sync_index."
     expect:
       frontmatter:
         responsibility: "2.16.0"
   - operation: modify
     target: CMP-AST-SYMBOL-INDEXER
-    parent: CNT-EIDOS-INDEX
     details: "Host shared fixture-aware test cache extractor (_has_function_level_fixture and extract_test_file_cache_payload) in src/eidos/core/index/ast_indexer.py so sync.py and invariants.py share a single AST test-parsing implementation without upward container imports."
     expect:
       frontmatter:
         responsibility: "extract_test_file_cache_payload"
   - operation: modify
     target: CMP-INCREMENTAL-SYNC-ENGINE
-    parent: CNT-EIDOS-INDEX
     details: "Persist functions_json and file_tokens_json into test_binding_cache during index_test_bindings and query test_binding_cache in _reconcile_invariant_coverage in src/eidos/core/index/sync.py so sync_index and invariants.py share a single AST test-parsing pass."
     expect:
       frontmatter:
         responsibility: "test_binding_cache"
   - operation: modify
     target: CMP-DRIFT-DETECTOR
-    parent: CNT-EIDOS-VCS
     details: "Batch historical blob extraction in batch_read_git_blobs, _get_file_versions, and detect_drift (_fetch_versions / _SpecDiffInspector) via a single git cat-file --batch pipe in src/eidos/vcs/diff.py and src/eidos/vcs/drift.py instead of spawning 2N per-file git show subprocesses, and reuse test_binding_cache rows populated by sync_index in src/eidos/vcs/invariants.py without redundant AST re-parsing."
     expect:
       frontmatter:
         responsibility: "git cat-file --batch"
   - operation: modify
     target: CMP-PLUGIN-INSTALLER
-    parent: CNT-EIDOS-PLUGIN
     details: "Synchronize bundled eidos and eidos-plan skills in assets/plugin_reference/skills/ with the SpecDelta Implementation Plan prose section scaffolded by delta/delta.template.adoc."
     expect:
       frontmatter:
@@ -78,7 +71,6 @@ mutations:
           - "git cat-file --batch"
   - operation: modify
     target: INV-DRIFT-DETECTION-ACCURACY
-    parent: CAP-VCS-001
     details: "Update INV-DRIFT-DETECTION-ACCURACY rule to enforce batched git cat-file --batch file version retrieval during drift detection."
     expect:
       frontmatter:

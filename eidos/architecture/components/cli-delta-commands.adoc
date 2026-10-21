@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-CLI-DELTA-COMMANDS
+title: DeltaCommands
+container: CNT-EIDOS-CLI
+status: active
+source_path: src/eidos/cli/delta_commands.py
+---
+= Component: DeltaCommands
+:toc: left
+
+== Responsibility
+SpecDelta lifecycle commands (`eidos delta`) exclusively owning `DLT-*` documents with `orjson`-serialized `--json` outputs: 5-state status dashboard and status transition (`eidos delta status [ID] [STATUS] --json` across `proposed`, `in_review`, `approved`, `applied`, `rejected`), listing (`eidos delta list [--include-archived] --json`), standalone blueprint authoring (`eidos delta create [ID] --title <title> [--kind <kind>] [--slug] [--path <path>]` via `create_delta` defaulting `ID` to `'auto'` and auto-detecting `vcs.branch` and `vcs.base_commit` from Git `HEAD`), verification (rendering per-mutation `failure_reason` diagnostics), deletion auditing, SpecDelta-only deletion (`eidos delta delete` via `delete_delta`), historical archive partitioning and `.adoc` slimming (`eidos delta archive [--keep-recent <N>] [--explorations/--no-explorations] [--dry-run] [--json]` via `archive_deltas`), changelog generation, and default-verified in-place application (`eidos delta apply` with `--verify/--no-verify` defaulting to True).
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

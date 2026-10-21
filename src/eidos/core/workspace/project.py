@@ -522,11 +522,6 @@ def extract_entity_paths(entity_data: dict[str, Any]) -> list[str]:
     for key in ("source_path", "specification_file"):
         _append_path_values(patterns, entity_data.get(key))
 
-    # Also inspect inline C4 Level 3 component source_paths
-    for comp in entity_data.get("components") or []:
-        if isinstance(comp, dict):
-            _append_path_values(patterns, comp.get("source_path"))
-
     return patterns
 
 

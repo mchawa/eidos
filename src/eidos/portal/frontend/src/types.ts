@@ -59,7 +59,6 @@ export interface SpecComponent {
     source_path?: string | string[];
     spec_path?: string;
     file_path?: string;
-    is_promoted?: boolean;
     status?: string;
     description?: string;
     consumes_components?: string[];
@@ -185,7 +184,6 @@ export interface SpecInvariant {
 export interface SpecMutation {
   operation: string;
   target: string;
-  parent?: string;
   title?: string;
   details?: string;
   expect?: Record<string, any>;

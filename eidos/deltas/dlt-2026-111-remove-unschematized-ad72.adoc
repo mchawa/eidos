@@ -9,105 +9,90 @@ intent:
 mutations:
   - operation: modify
     target: CMP-SPEC-VALIDATOR
-    parent: CNT-EIDOS-CORE
     details: Require top-level status and allow optional #/$defs/semver version across all 16 v1 schemas and common/defs.yaml.
     expect:
       frontmatter:
         responsibility: "requiring top-level status and allowing optional semver version across all 16 schemas"
   - operation: modify
     target: CMP-LIFECYCLE-SCAFFOLDER
-    parent: CNT-EIDOS-CORE
     details: Preserve optional version during component promotion and inlining in src/eidos/core/lifecycle/scaffolder.py.
     expect:
       frontmatter:
         responsibility: "preserving non-default status (`draft`, `planned`, `active`, `deprecated`, `retired`), `version`, `domain`"
   - operation: modify
     target: CMP-DELTA-ENGINE
-    parent: CNT-EIDOS-CORE
     details: Remove unschematized ref check in _find_inline_component_dict and unschematized hypothesis/findings frontmatter lookups in archive_explorations in src/eidos/core/lifecycle/delta_engine.py.
     expect:
       frontmatter:
         responsibility: "extracting exploration hypothesis and findings strictly from AsciiDoc prose sections"
   - operation: modify
     target: CMP-FTS-QUERY-ENGINE
-    parent: CNT-EIDOS-INDEX
     details: Remove unschematized package_path fallback in execute_fts_query in src/eidos/core/index/query.py.
     expect:
       frontmatter:
         responsibility: "execute_fts_query deriving source_path strictly from data_json['source_path']"
   - operation: modify
     target: CMP-DOMAIN-MODELS
-    parent: CNT-EIDOS-CORE
     details: Add optional version field to InlineComponentModel in src/eidos/core/spec/models.py.
     expect:
       frontmatter:
         responsibility: "`InlineComponentModel` with `title`, optional `responsibility`, `status`, `version`, and `domain`"
   - operation: modify
     target: CAP-PROD-001
-    parent: DOM-SPEC-ENGINE
     details: Update INV-SPEC-VALIDATION rule in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc to reflect required top-level status and #/$defs/semver validation across all 16 schemas.
     expect:
       frontmatter:
         technical.invariants.rule: "requiring top-level status and validating optional version against #/$defs/semver"
   - operation: modify
     target: CMP-PROJECT-RESOLVER
-    parent: CNT-EIDOS-CORE
     details: Remove unschematized owned_path frontmatter lookups from extract_entity_paths and name frontmatter fallback from load_project in src/eidos/core/workspace/project.py.
     expect:
       frontmatter:
         responsibility: "extracting declared source_path and specification_file via extract_entity_paths"
   - operation: modify
     target: CMP-CHANGELOG-GENERATOR
-    parent: CNT-EIDOS-CORE
     details: Remove legacy feature_addition, architectural_refactor, and performance_optimization intent.kind branches from _add_delta_to_section in src/eidos/core/lifecycle/changelog.py.
     expect:
       frontmatter:
         responsibility: "without legacy feature_addition or architectural_refactor aliases"
   - operation: modify
     target: CMP-GRAPH-STORAGE
-    parent: CNT-EIDOS-INDEX
     details: Remove unschematized raw_blast_radius parameter from ArchitecturalIndex.compute_delta_impact in src/eidos/core/index/graph_index.py.
     expect:
       frontmatter:
         responsibility: "pure graph-derived 'compute_delta_impact(mutations, sync=True)' facade methods"
   - operation: modify
     target: CMP-INCREMENTAL-SYNC-ENGINE
-    parent: CNT-EIDOS-INDEX
     details: Update CMP-INCREMENTAL-SYNC-ENGINE responsibility in eidos/architecture/containers/index.adoc to reflect source_path/specification_file/test_binding path extraction via extract_entity_paths.
     expect:
       frontmatter:
         responsibility: "declared source_path/specification_file/test_binding paths on both warm and cold syncs"
   - operation: modify
     target: CMP-GRAPH-TRAVERSAL-ENGINE
-    parent: CNT-EIDOS-INDEX
     details: Remove unschematized raw_blast_radius override logic from compute_delta_impact_in_db in src/eidos/core/index/query.py.
     expect:
       frontmatter:
         responsibility: "compute_delta_impact_in_db(conn, mutations) deriving SpecDelta affects and blast_radius purely from indexed entities and edges without unschematized raw_blast_radius overrides"
   - operation: modify
     target: CMP-TIERED-CONTEXT-COMPRESSOR
-    parent: CNT-EIDOS-INDEX
     details: Remove dead unschematized description, details, and rationale top-level field loops from TieredContextSlice._compress_verbose_fields_in_place in src/eidos/core/index/context.py.
     expect:
       frontmatter:
         responsibility: "applying progressive prose field compression (_compress_verbose_fields_in_place on schematized component responsibility fields across both Markdown and JSON projections without unschematized description/details/rationale loops)"
   - operation: modify
     target: CMP-DRIFT-DETECTOR
-    parent: CNT-EIDOS-VCS
     details: Remove unschematized owned_path and tokens_path frontmatter lookups from src/eidos/vcs/structural.py and update remediation message in src/eidos/vcs/report.py.
     expect:
       frontmatter:
         responsibility: "without unschematized owned_path or tokens_path lookups"
   - operation: modify
     target: CAP-VCS-001
-    parent: DOM-VCS-LIFECYCLE
     details: Update INV-DRIFT-DIFF-AWARE-COVERAGE rule in eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc to reference declared source_path without unschematized owned_path.
     expect:
       frontmatter:
         technical.invariants.rule: "outside the owner's declared source_path and new public boundary symbols"
   - operation: modify
     target: CMP-PORTAL-GENERATOR
-    parent: CNT-EIDOS-PORTAL
     details: Remove unschematized frontmatter fallbacks (arch/system, container responsibility/summary, domain mission/capabilities, capability summary and technical.decisions, persona role/archetype, design system brand_name, delta blast_radius and feature_addition default, exploration hypothesis/findings/recommendation/outcome/resulting_deltas/exit_criteria, and system c4_context) from get_portal_data in src/eidos/portal/generator.py while preserving derived portal output dictionary keys.
     expect:
       frontmatter:

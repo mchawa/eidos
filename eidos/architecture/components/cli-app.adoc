@@ -1,0 +1,18 @@
+---
+type: tech/component
+id: CMP-CLI-APP
+title: CliApp
+container: CNT-EIDOS-CLI
+status: active
+source_path:
+  - src/eidos/cli/main.py
+  - src/eidos/cli/_shared.py
+---
+= Component: CliApp
+:toc: left
+
+== Responsibility
+Root command dispatcher (`--version` / `-V` callback and `eidos info` reporting across all 16 bundled v1 schemas), error code translation, shared CLI `eidos/` directory resolution (`resolve_cli_eidos_dir` and `has_eidos_markers` in `src/eidos/cli/_shared.py`), and formatted diagnostic table rendering without legacy command re-exports.
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

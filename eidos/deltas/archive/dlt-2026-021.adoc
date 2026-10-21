@@ -11,7 +11,6 @@ vcs:
 mutations:
   - operation: add
     target: CAP-AGENT-002
-    parent: DOM-AGENT-INTELLIGENCE
   - operation: modify
     target: CNT-EIDOS-INDEX
   - operation: modify
@@ -20,12 +19,9 @@ mutations:
     target: CNT-EIDOS-CORE
   - operation: add
     target: INV-INDEX-OPTIONAL-AST-FALLBACK
-    parent: CAP-AGENT-002
   - operation: add
     target: INV-INDEX-POLYGLOT-SYMBOL-PRECISION
-    parent: CAP-AGENT-002
   - operation: add
     target: INV-INDEX-AI-REPO-MAP-BUDGET
-    parent: CAP-AGENT-002
 ---
 = SpecDelta: Polyglot AST Symbol Indexing, AI Code Graph, and Granular Invariant Traceability via ast-grep

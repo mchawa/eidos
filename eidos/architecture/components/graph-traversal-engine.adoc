@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-GRAPH-TRAVERSAL-ENGINE
+title: GraphTraversalEngine
+container: CNT-EIDOS-INDEX
+status: active
+source_path: src/eidos/core/index/query.py
+---
+= Component: GraphTraversalEngine
+:toc: left
+
+== Responsibility
+Recursive Common Table Expression (CTE) traversal and indexed catalog/blast-radius evaluation (execute_k_hop_traversal with delimiter-bounded cycle prevention, MIN(depth) node deduplication, and hop >= 2 organizational hub fan-out suppression across 'product/domain', 'design/system', 'product/persona', 'delta/mutation', 'tech/architecture', 'product/system', and 'product/exploration' nodes, execute_incoming_references matching normalized bare and eidos/-prefixed rel_paths and excluding code/source and code/test rows, resolve_symbol_or_path_in_db querying unified all_mappings CTE over symbol_mappings and code_symbols with _FILE_QUERY_EXTS derived from AstGrepIndexer.LANGUAGE_MAP, longest-prefix source_path filtering, file-query-gated glob fallback, deferred orjson deserialization, and escaped SQL LIKE wildcards, query_spec_catalog_in_db reconstructing `(specs_by_id, invariant_map)` from persisted entities without re-scanning disk, and compute_delta_impact_in_db(conn, mutations) deriving SpecDelta affects and blast_radius purely from indexed entities and edges without unschematized raw_blast_radius overrides) evaluating k-hop blast radius, incoming dependencies, and impact subgraphs in sub-2ms.
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

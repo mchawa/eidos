@@ -577,19 +577,42 @@ def _write_container(
     source_path: str | list[str],
     components: list[tuple[str, str]] | None = None,
 ) -> Path:
-    """Write a minimal CNT-* spec; ``components`` is a list of (CMP id, source_path)."""
+    """Write a minimal CNT-* spec; ``components`` is a list of (CMP id, source_path) written as standalone component files."""
     containers = repo / "eidos" / "architecture" / "containers"
     containers.mkdir(parents=True, exist_ok=True)
+    comp_dir = repo / "eidos" / "architecture" / "components"
     if isinstance(source_path, list):
         pkg_yaml = "source_path:\n" + "".join(f'  - "{p}"\n' for p in source_path)
     else:
         pkg_yaml = f'source_path: "{source_path}"\n'
-    comp_yaml = ""
+    wanted_cids = {cid for cid, _ in (components or [])}
+    if comp_dir.is_dir():
+        for existing_comp in list(comp_dir.glob("*.adoc")):
+            txt = existing_comp.read_text(encoding="utf-8")
+            if f"container: {cnt_id}\n" in txt:
+                cid_line = next((ln.split(":", 1)[1].strip() for ln in txt.splitlines() if ln.startswith("id: ")), "")
+                if cid_line not in wanted_cids:
+                    existing_comp.unlink()
     if components:
-        comp_yaml = "components:\n" + "".join(
-            f'  - id: {cid}\n    title: "{cid.title()}"\n    responsibility: "r"\n    source_path: "{sp}"\n'
-            for cid, sp in components
-        )
+        comp_dir.mkdir(parents=True, exist_ok=True)
+        for cid, sp in components:
+            slug = cid.lower().replace("cmp-", "", 1)
+            (comp_dir / f"{slug}.adoc").write_text(
+                f"""---
+type: tech/component
+id: {cid}
+title: "{cid.title()}"
+container: {cnt_id}
+status: active
+source_path: "{sp}"
+---
+= {cid}
+
+== Responsibility
+r
+""",
+                encoding="utf-8",
+            )
     path = containers / filename
     path.write_text(
         f"""---
@@ -600,7 +623,7 @@ container_type: "library"
 runtime: "Python"
 {pkg_yaml}domain: DOM-X
 tier: core
-{comp_yaml}---
+---
 = {cnt_id}
 """,
         encoding="utf-8",
@@ -873,7 +896,7 @@ def _ownership_snapshot(idx: ArchitecturalIndex) -> dict[str, list]:
         "code_symbols": [
             tuple(r)
             for r in conn.execute(
-                "SELECT file_path, symbol, kind, parent_symbol, line_start, entity_id, component_id, is_primary "
+                "SELECT file_path, symbol, kind, parent_symbol, line_start, entity_id, is_primary "
                 "FROM code_symbols ORDER BY file_path, entity_id, kind, parent_symbol, symbol, line_start;"
             )
         ],
@@ -904,7 +927,7 @@ _ORDERINGS = {
 
 
 def test_recursive_package_indexing_respects_global_ownership(tmp_path, monkeypatch):
-    """INV-KNOWLEDGE-GRAPH-CATALOG: nested files are indexed even when a container declares inline components, and
+    """INV-KNOWLEDGE-GRAPH-CATALOG: nested files are indexed even when a container has standalone components, and
     the complete ownership state is identical under every spec/code processing order (forced via is_dirty)."""
     original_is_dirty = ArchitecturalIndex.is_dirty
     snapshots: dict[str, dict[str, list]] = {}
@@ -931,39 +954,39 @@ def test_recursive_package_indexing_respects_global_ownership(tmp_path, monkeypa
     for name, snap in snapshots.items():
         assert snap == reference, f"ownership differs for processing order '{name}'"
 
-    primary = {(f, e) for f, _, _, _, _, e, _, is_primary in reference["code_symbols"] if is_primary}
-    assert ("src/pkg/special.py", "CNT-CLAIMER") in primary  # explicit component claim beats package prefix
+    primary = {(f, e) for f, _, _, _, _, e, is_primary in reference["code_symbols"] if is_primary}
+    assert ("src/pkg/special.py", "CMP-SPECIAL") in primary  # explicit component claim beats package prefix
     assert {("src/pkg/base.py", "CNT-BROAD"), ("src/pkg/sub/deep.py", "CNT-BROAD")} <= primary
     assert ("src/pkg/sub/deeper/deepest.py", "CNT-BROAD") in primary
     assert not any(f.startswith("src/pkg/__pycache__") for f, _ in primary)  # excluded directories are pruned
     # 'lib' is declared by two containers: the deterministic (sorted by id) tie-break picks CNT-CLAIMER
     assert ("lib/inner/extra.py", "CNT-CLAIMER") in primary
-    assert ("lib/core.py", "CNT-INLINE") in primary
+    assert ("lib/core.py", "CMP-CORE") in primary
     special = [r for r in reference["code_symbols"] if r[0] == "src/pkg/special.py"]
-    assert {r[6] for r in special} == {"CMP-SPECIAL"}
+    assert {r[5] for r in special} == {"CMP-SPECIAL"}
 
 
 def test_shared_source_file_keeps_every_declaring_owner(tmp_path):
-    """INV-SYMBOL-LOCATION-FIDELITY: a file declared by several containers is indexed once (one primary row set for
-    repo maps) yet every declaring container keeps its symbol mappings and locations; dropping a declaration
-    prunes only that container's rows."""
+    """INV-SYMBOL-LOCATION-FIDELITY: a file declared by several components is indexed once (one primary row set for
+    repo maps) yet every declaring component keeps its symbol mappings and locations; dropping a declaration
+    prunes only that component's rows."""
     repo = _ownership_repo(tmp_path, "shared")
     idx = ArchitecturalIndex(db_path=repo / "eidos" / ".cache" / "index.db", repo_root=repo, eidos_dir=repo / "eidos")
     conn = idx._get_connection()
     try:
         idx.sync(force=True)
         rows = conn.execute(
-            "SELECT entity_id, component_id, is_primary FROM code_symbols "
+            "SELECT entity_id, is_primary FROM code_symbols "
             "WHERE file_path = 'shared/common.py' AND symbol = 'Shared';"
         ).fetchall()
-        assert sorted(tuple(r) for r in rows) == [("CNT-BROAD", "CMP-COMMON-B", 1), ("CNT-CLAIMER", "CMP-COMMON-C", 0)]
+        assert sorted(tuple(r) for r in rows) == [("CMP-COMMON-B", 1), ("CMP-COMMON-C", 0)]
 
         hits = [m for m in idx.find_symbol("Shared") if m["symbol"] == "Shared"]
-        assert sorted(m["entity_id"] for m in hits) == ["CNT-BROAD", "CNT-CLAIMER"]
+        assert sorted(m["entity_id"] for m in hits) == ["CMP-COMMON-B", "CMP-COMMON-C"]
         assert all(m["location"]["file"] == "shared/common.py" for m in hits)
         assert idx.get_repo_map().count("class Shared") == 1  # rendered once despite two owners
 
-        # CNT-CLAIMER drops its declaration: only its rows and mappings disappear
+        # CNT-CLAIMER drops CMP-COMMON-C: only its rows and mappings disappear
         spec = _write_container(
             repo, "claimer.adoc", "CNT-CLAIMER", "lib", components=[("CMP-SPECIAL", "src/pkg/special.py")]
         )
@@ -972,15 +995,15 @@ def test_shared_source_file_keeps_every_declaring_owner(tmp_path):
         assert {
             r[0]
             for r in conn.execute("SELECT DISTINCT entity_id FROM code_symbols WHERE file_path = 'shared/common.py';")
-        } == {"CNT-BROAD"}
+        } == {"CMP-COMMON-B"}
         assert not conn.execute(
-            "SELECT 1 FROM code_symbols WHERE entity_id = 'CNT-CLAIMER' AND symbol IN ('Shared', 'run');"
+            "SELECT 1 FROM code_symbols WHERE entity_id = 'CMP-COMMON-C' AND symbol IN ('Shared', 'run');"
         ).fetchone()
         assert not conn.execute(
-            "SELECT 1 FROM symbol_mappings WHERE symbol = 'shared/common.py' AND entity_id = 'CNT-CLAIMER';"
+            "SELECT 1 FROM symbol_mappings WHERE symbol = 'shared/common.py' AND entity_id = 'CMP-COMMON-C';"
         ).fetchone()
         assert conn.execute(
-            "SELECT 1 FROM code_symbols WHERE entity_id = 'CNT-BROAD' AND symbol = 'Shared';"
+            "SELECT 1 FROM code_symbols WHERE entity_id = 'CMP-COMMON-B' AND symbol = 'Shared';"
         ).fetchone()
     finally:
         idx.close()
@@ -1247,7 +1270,7 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
     db_path = eidos_dir / ".cache" / "index.db"
     with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
-        assert ver == SCHEMA_VERSION == "2.16.0"
+        assert ver == SCHEMA_VERSION == "2.17.0"
         val_rows_before = conn.execute("SELECT COUNT(*) FROM spec_validation_cache;").fetchone()[0]
         assert val_rows_before == 1
 
@@ -1492,15 +1515,17 @@ def test_readonly_warm_cache_open_db_path_singleton_and_custom_repo_root(tmp_pat
 
 
 def test_container_inline_component_invariants_ast_fts_projection_and_anchored_traversal(tmp_path):
-    """DLT-2026-078 (# eidos:fixture): Verify container and inline-component invariants are indexed into
+    """DLT-2026-078 (# eidos:fixture): Verify container and component invariants are indexed into
     entities/specs_fts/edges, AST code_symbols are projected into specs_fts.symbols, build_tiered_context_slice
     promotes owning container/component for directly matched invariants, and execute_k_hop_traversal uses
     delimiter-bounded cycle prevention."""
     repo = tmp_path / "repo"
     eidos_dir = repo / "eidos"
     cnts_dir = eidos_dir / "architecture" / "containers"
+    cmps_dir = eidos_dir / "architecture" / "components"
     src_dir = repo / "src" / "ledger"
     cnts_dir.mkdir(parents=True)
+    cmps_dir.mkdir(parents=True)
     src_dir.mkdir(parents=True)
 
     (src_dir / "engine.py").write_text(
@@ -1535,16 +1560,23 @@ def test_container_inline_component_invariants_ast_fts_projection_and_anchored_t
         "invariants:\n"
         "  - id: INV-CNT-LEDGER-TOP\n"
         "    rule: Primary ledger container must enforce idempotency keys.\n"
-        "components:\n"
-        "  - id: CMP-LEDGER-SETTLER\n"
-        "    title: LedgerSettler\n"
-        "    responsibility: Settles batches.\n"
-        "    source_path: src/ledger/engine.py\n"
-        "    invariants:\n"
-        "      - id: INV-CMP-SETTLER-INLINE\n"
-        "        rule: Batch settlement must be atomic across partitions.\n"
         "---\n"
         "= Primary Ledger\n",
+        encoding="utf-8",
+    )
+    (cmps_dir / "ledger-settler.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-LEDGER-SETTLER\n"
+        "title: LedgerSettler\n"
+        "container: CNT-LEDGER\n"
+        "status: active\n"
+        "source_path: src/ledger/engine.py\n"
+        "invariants:\n"
+        "  - id: INV-CMP-SETTLER-INLINE\n"
+        "    rule: Batch settlement must be atomic across partitions.\n"
+        "---\n"
+        "= LedgerSettler\n\n== Responsibility\nSettles batches.\n",
         encoding="utf-8",
     )
 
@@ -1553,19 +1585,19 @@ def test_container_inline_component_invariants_ast_fts_projection_and_anchored_t
         idx.sync(force=True)
         conn = idx._get_connection()
 
-        # 1. Both top-level container invariant and inline component invariant are in entities and specs_fts
+        # 1. Both top-level container invariant and component invariant are in entities and specs_fts
         inv_ids = {r[0] for r in conn.execute("SELECT id FROM entities WHERE type = 'invariant';").fetchall()}
         assert "INV-CNT-LEDGER-TOP" in inv_ids
         assert "INV-CMP-SETTLER-INLINE" in inv_ids
 
-        # 2. AST symbol 'QuantumReconciliationEngine' is projected into specs_fts.symbols for CNT-LEDGER
+        # 2. AST symbol 'QuantumReconciliationEngine' is projected into specs_fts.symbols for CMP-LEDGER-SETTLER
         fts_hits = idx.query_fts("QuantumReconciliationEngine")
-        assert any(h["id"] == "CNT-LEDGER" for h in fts_hits)
+        assert any(h["id"] == "CMP-LEDGER-SETTLER" for h in fts_hits)
 
-        # 3. Context slice matching inline component invariant promotes owning container CNT-LEDGER
+        # 3. Context slice matching component invariant promotes owning component CMP-LEDGER-SETTLER and container CNT-LEDGER
         ctx_slice = idx.get_tiered_context_slice(task="atomic across partitions", tier="guardrails")
         assert any(i["id"] == "INV-CMP-SETTLER-INLINE" for i in ctx_slice.invariants)
-        assert any(c["id"] == "CNT-LEDGER" for c in ctx_slice.components)
+        assert any(c["id"] in ("CNT-LEDGER", "CMP-LEDGER-SETTLER") for c in ctx_slice.components)
 
         # 4. k-hop traversal from CNT-LEDGER-2 reaches CNT-LEDGER (not blocked by substring 'CNT-LEDGER' in 'CNT-LEDGER-2')
         neighbors = idx.get_k_hop_neighborhood("CNT-LEDGER-2", max_depth=2)
@@ -1979,13 +2011,13 @@ def test_dlt_2026_086_unified_cache_and_vcs_shim_removal(tmp_path: Path, monkeyp
 
     # Subsequent _build_spec_catalog and ArchitecturalIndex.sync reuse cached SpecDocument instances with 0 re-parses
     parse_calls.clear()
-    specs_by_id, _, _ = catalog_mod._build_spec_catalog(eidos_dir)
+    specs_by_id, _ = catalog_mod._build_spec_catalog(eidos_dir)
     assert "DOM-CACHE-086" in specs_by_id
     assert parse_calls == []
 
     # Mutating returned catalog frontmatter dict must not mutate cached SpecDocument frontmatter
     specs_by_id["DOM-CACHE-086"][2]["title"] = "Mutated In Caller"
-    specs_again, _, _ = catalog_mod._build_spec_catalog(eidos_dir)
+    specs_again, _ = catalog_mod._build_spec_catalog(eidos_dir)
     assert specs_again["DOM-CACHE-086"][2]["title"] == "Cache 086 Domain"
 
     idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
@@ -2012,15 +2044,13 @@ def test_dlt_2026_088_single_pass_scandir_dirty_check(tmp_path: Path) -> None:
     cnt_path = create_spec(eidos_dir, "container", "CNT-SCAN", title="Scan Container")
     cnt_doc = parse_spec_file(cnt_path)
     cnt_doc.frontmatter["source_path"] = "src"
-    cnt_doc.frontmatter["components"] = [
-        {
-            "id": "CMP-SCAN-MOD",
-            "title": "ScanMod",
-            "responsibility": "Handles core scanning.",
-            "source_path": ["src/core_mod.py", "src_extra/outside_mod.py"],
-        }
-    ]
     cnt_path.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_doc.body), encoding="utf-8")
+
+    cmp_path = create_spec(eidos_dir, "component", "CMP-SCAN-MOD", title="ScanMod")
+    cmp_doc = parse_spec_file(cmp_path)
+    cmp_doc.frontmatter["container"] = "CNT-SCAN"
+    cmp_doc.frontmatter["source_path"] = ["src/core_mod.py", "src_extra/outside_mod.py"]
+    cmp_path.write_text(dump_spec_document(cmp_doc.frontmatter, cmp_doc.body), encoding="utf-8")
 
     (tmp_path / "src").mkdir(parents=True, exist_ok=True)
     (tmp_path / "src_extra").mkdir(parents=True, exist_ok=True)
@@ -2090,7 +2120,7 @@ def test_context_implements_edges_inline_cmp_blast_radius_and_path_resolution(tm
     create_spec(eidos_dir, "domain", "DOM-ENGINE", title="Engine Domain")
     create_spec(eidos_dir, "domain", "DOM-INTEL", title="Intelligence Domain")
 
-    # Container CNT-IDX bound to DOM-ENGINE, with inline component CMP-INLINE-IDX and dict-formatted interfaces (Bug 15b)
+    # Container CNT-IDX bound to DOM-ENGINE, with standalone component CMP-INLINE-IDX and dict-formatted interfaces (Bug 15b)
     cnt_idx = create_spec(eidos_dir, "container", "CNT-IDX", title="Index Container")
     cnt_idx_doc = parse_spec_file(cnt_idx)
     cnt_idx_doc.frontmatter["source_path"] = "src/index"
@@ -2099,15 +2129,13 @@ def test_context_implements_edges_inline_cmp_blast_radius_and_path_resolution(tm
         "provides": [{"signature": "POST /v1/index/query"}],
         "consumes": [{"signature": "GET /v1/config"}],
     }
-    cnt_idx_doc.frontmatter["components"] = [
-        {
-            "id": "CMP-INLINE-IDX",
-            "title": "Inline Indexer",
-            "responsibility": "Indexes AST symbols.",
-            "source_path": "src/index/worker.py",
-        }
-    ]
     cnt_idx.write_text(dump_spec_document(cnt_idx_doc.frontmatter, cnt_idx_doc.body), encoding="utf-8")
+
+    cmp_idx = create_spec(eidos_dir, "component", "CMP-INLINE-IDX", title="Inline Indexer")
+    cmp_idx_doc = parse_spec_file(cmp_idx)
+    cmp_idx_doc.frontmatter["container"] = "CNT-IDX"
+    cmp_idx_doc.frontmatter["source_path"] = "src/index/worker.py"
+    cmp_idx.write_text(dump_spec_document(cmp_idx_doc.frontmatter, cmp_idx_doc.body), encoding="utf-8")
 
     # Broad container CNT-SRC-ROOT (source_path: src) and sibling container CNT-OTHER (source_path: src/other)
     cnt_root = create_spec(eidos_dir, "container", "CNT-SRC-ROOT", title="Root Src Container")
@@ -2172,11 +2200,11 @@ def test_context_implements_edges_inline_cmp_blast_radius_and_path_resolution(tm
         assert "CNT-IDX" in khop_ids
         assert "CAP-INTEL-001" in khop_ids
 
-        # Bug 5: File path resolution returns longest source_path container (CNT-IDX),
+        # Bug 5: File path resolution returns specific component/container (CMP-INLINE-IDX / CNT-IDX),
         # excludes shorter source_path container (CNT-SRC-ROOT), and does NOT match class 'Py' on '.py' suffix
         resolved = idx.resolve_symbol_or_path("src/index/worker.py")
         resolved_ids = [m["entity_id"] for m in resolved if m.get("entity_id")]
-        assert resolved_ids[0] == "CNT-IDX"
+        assert resolved_ids[0] in ("CMP-INLINE-IDX", "CNT-IDX")
         assert "CNT-SRC-ROOT" not in resolved_ids
         assert not any(m.get("symbol") == "Py" for m in resolved)
 
@@ -2292,7 +2320,7 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
     from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 
-    assert SCHEMA_VERSION == "2.16.0"
+    assert SCHEMA_VERSION == "2.17.0"
     assert set(AstGrepIndexer.LANGUAGE_MAP.keys()) | {".proto", ".adoc"} <= _FILE_QUERY_EXTS
 
     # 1. Verify _ENTITY_ID_TOKEN_RE recognizes SYS-*, ARCH-*, PER-*, and underscore IDs
@@ -2310,26 +2338,17 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
         "DEC-CORE_CHOICE",
     }
 
-    # 2. Scaffold workspace with standalone component, container with inline component + decision, and capability
+    # 2. Scaffold workspace with standalone components, container with decision, and capability
     init_repository(tmp_path, name="dlt-097-repo")
     eidos_dir = tmp_path / "eidos"
     create_spec(eidos_dir, "domain", "DOM-CORE", title="Core Domain")
     cnt_path = create_spec(eidos_dir, "container", "CNT-RUNTIME", title="Runtime Container")
     cmp_path = create_spec(eidos_dir, "component", "CMP-STANDALONE", title="Standalone Worker")
+    cmp_orch_path = create_spec(eidos_dir, "component", "CMP-INLINE-ORCHESTRATOR", title="Inline Orchestrator Engine")
 
     cnt_doc = parse_spec_file(cnt_path)
     cnt_doc.frontmatter["domain"] = "DOM-CORE"
     cnt_doc.frontmatter["source_path"] = "src/runtime"
-    cnt_doc.frontmatter["components"] = [
-        {
-            "id": "CMP-INLINE-ORCHESTRATOR",
-            "title": "Inline Orchestrator Engine",
-            "responsibility": "Coordinates inline distributed workflow scheduling.",
-            "source_path": "src/runtime/orchestrator.py",
-            "domain": "DOM-OVERRIDE",
-            "status": "active",
-        }
-    ]
     cnt_doc.frontmatter["decisions"] = [
         {
             "id": "DEC-RUNTIME-SCHEDULER",
@@ -2340,12 +2359,30 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
     ]
     cnt_path.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_doc.body), encoding="utf-8")
 
+    cmp_orch_doc = parse_spec_file(cmp_orch_path)
+    cmp_orch_doc.frontmatter["container"] = "CNT-RUNTIME"
+    cmp_orch_doc.frontmatter["domain"] = "DOM-OVERRIDE"
+    cmp_orch_doc.frontmatter["status"] = "active"
+    cmp_orch_doc.frontmatter["source_path"] = "src/runtime/orchestrator.py"
+    cmp_orch_path.write_text(
+        dump_spec_document(
+            cmp_orch_doc.frontmatter,
+            "= Inline Orchestrator Engine\n\n== Responsibility\nCoordinates inline distributed workflow scheduling.\n",
+        ),
+        encoding="utf-8",
+    )
+
     cmp_doc = parse_spec_file(cmp_path)
     cmp_doc.frontmatter["container"] = "CNT-RUNTIME"
     cmp_doc.frontmatter["domain"] = "DOM-CORE"
-    cmp_doc.frontmatter["responsibility"] = "Executes standalone background batch compaction tasks."
     cmp_doc.frontmatter["source_path"] = "src/runtime/standalone.py"
-    cmp_path.write_text(dump_spec_document(cmp_doc.frontmatter, cmp_doc.body), encoding="utf-8")
+    cmp_path.write_text(
+        dump_spec_document(
+            cmp_doc.frontmatter,
+            "= Standalone Worker\n\n== Responsibility\nExecutes standalone background batch compaction tasks.\n",
+        ),
+        encoding="utf-8",
+    )
 
     cap_path = create_spec(eidos_dir, "capability", "CAP-ORCH", title="Orchestration Capability")
     cap_doc = parse_spec_file(cap_path)
@@ -2384,24 +2421,22 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
         idx.sync(force=True)
         conn = idx._get_connection()
 
-        # 4. Verify :toc: left is stripped from specs_fts.body_text and responsibility is indexed in jtbd_or_rule
+        # 4. Verify :toc: left is stripped from specs_fts.body_text and body responsibility is indexed in body_text
         fts_cnt = conn.execute(
             "SELECT jtbd_or_rule, body_text, keywords FROM specs_fts WHERE entity_id = 'CNT-RUNTIME';"
         ).fetchone()
         assert fts_cnt is not None
         assert ":toc:" not in fts_cnt["body_text"]
-        assert "Coordinates inline distributed workflow scheduling" in fts_cnt["jtbd_or_rule"]
-        assert "CMP-INLINE-ORCHESTRATOR" in fts_cnt["keywords"]
         assert "DEC-RUNTIME-SCHEDULER" in fts_cnt["keywords"]
 
-        fts_cmp = conn.execute("SELECT jtbd_or_rule FROM specs_fts WHERE entity_id = 'CMP-STANDALONE';").fetchone()
+        fts_cmp = conn.execute("SELECT body_text FROM specs_fts WHERE entity_id = 'CMP-STANDALONE';").fetchone()
         assert fts_cmp is not None
-        assert "Executes standalone background batch compaction tasks" in fts_cmp["jtbd_or_rule"]
+        assert "Executes standalone background batch compaction tasks" in fts_cmp["body_text"]
 
-        # 5. Verify exact-ID boost (-1000.0) when querying inline CMP-* or embedded DEC-* IDs
+        # 5. Verify exact-ID boost (-1000.0) when querying standalone CMP-* or embedded DEC-* IDs
         inline_hits = idx.query_fts("CMP-INLINE-ORCHESTRATOR", limit=3)
         assert inline_hits
-        assert inline_hits[0]["id"] == "CNT-RUNTIME"
+        assert inline_hits[0]["id"] == "CMP-INLINE-ORCHESTRATOR"
         assert inline_hits[0]["rank"] < -900.0
 
         dec_hits = idx.query_fts("DEC-RUNTIME-SCHEDULER", limit=3)
@@ -2409,7 +2444,7 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
         assert dec_hits[0]["id"] == "CNT-RUNTIME"
         assert dec_hits[0]["rank"] < -900.0
 
-        # 6. Verify execute_incoming_references resolves inline component title and normalizes ./ path
+        # 6. Verify execute_incoming_references resolves component title and normalizes ./ path
         conn.execute(
             "INSERT INTO edges (source_id, target_id, rel_type) VALUES ('CMP-INLINE-ORCHESTRATOR', 'CNT-RUNTIME', 'depends_on');"
         )
@@ -2421,7 +2456,7 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
         assert "CMP-INLINE-ORCHESTRATOR" in inc_by_src
         assert inc_by_src["CMP-INLINE-ORCHESTRATOR"]["title"] == "Inline Orchestrator Engine"
 
-        # 7. Verify execute_k_hop_traversal preserves inline component domain override
+        # 7. Verify execute_k_hop_traversal preserves component domain override
         trav = idx.get_k_hop_neighborhood("CNT-RUNTIME", max_depth=1)
         inline_node = next((n for n in trav if n["id"] == "CMP-INLINE-ORCHESTRATOR"), None)
         assert inline_node is not None
@@ -2430,7 +2465,7 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
 
         # 8. Verify find_symbol empty-query guard and method location deduplication
         assert idx.find_symbol("   ") == []
-        dispatch_hits = [h for h in idx.find_symbol("dispatch") if h["entity_id"] == "CNT-RUNTIME"]
+        dispatch_hits = [h for h in idx.find_symbol("dispatch") if h["entity_id"] == "CMP-INLINE-ORCHESTRATOR"]
         assert len(dispatch_hits) == 2
         assert {h["location"]["line_start"] for h in dispatch_hits if h["location"]} == {2, 6}
 
@@ -2460,8 +2495,8 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
     from eidos.portal.generator import get_portal_data
 
-    assert SCHEMA_VERSION == "2.16.0"
-    assert _build_spec_catalog_with_invariants(tmp_path / "nonexistent_eidos") == ({}, {}, {})
+    assert SCHEMA_VERSION == "2.17.0"
+    assert _build_spec_catalog_with_invariants(tmp_path / "nonexistent_eidos") == ({}, {})
 
     init_repository(tmp_path, name="dlt-104-repo")
     eidos_dir = tmp_path / "eidos"
@@ -2470,6 +2505,7 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     per_path = create_spec(eidos_dir, "persona", "PER-ARCH-104", title="Architect 104")
     pol_path = create_spec(eidos_dir, "policy", "POL-GOV-104", title="Gov Policy 104")
     cnt_path = create_spec(eidos_dir, "container", "CNT-API-104", title="API Container 104")
+    cmp_path = create_spec(eidos_dir, "component", "CMP-API-HANDLER-104", title="API Handler 104")
     cnt_gw_path = create_spec(eidos_dir, "container", "CNT-GW-104", title="Gateway Container 104")
     ctr_path = create_spec(eidos_dir, "contract", "CTR-API-104", title="API Contract 104")
     ds_path = create_spec(eidos_dir, "design-system", "DS-BRAND-104", title="Brand DS 104")
@@ -2483,7 +2519,7 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     ctr_doc.frontmatter["container"] = str(cnt_path.relative_to(eidos_dir))
     ctr_path.write_text(dump_spec_document(ctr_doc.frontmatter, ctr_doc.body), encoding="utf-8")
 
-    # Configure container with top-level invariant, inline component + invariant, and contract
+    # Configure container with top-level invariant and contract, plus standalone component + invariant
     cnt_doc = parse_spec_file(cnt_path)
     cnt_doc.frontmatter["domain"] = str(dom_path.relative_to(eidos_dir))
     cnt_doc.frontmatter["contracts"] = {"provides": [str(ctr_path.relative_to(eidos_dir))], "consumes": []}
@@ -2493,20 +2529,17 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
             "rule": "API container must expose health endpoint.",
         }
     ]
-    cnt_doc.frontmatter["components"] = [
+    cnt_path.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_doc.body), encoding="utf-8")
+
+    cmp_doc = parse_spec_file(cmp_path)
+    cmp_doc.frontmatter["container"] = "CNT-API-104"
+    cmp_doc.frontmatter["invariants"] = [
         {
-            "id": "CMP-API-HANDLER-104",
-            "title": "API Handler 104",
-            "responsibility": "Handles dashboard API requests.",
-            "invariants": [
-                {
-                    "id": "INV-API-HANDLER-104",
-                    "rule": "Must validate tokens.",
-                }
-            ],
+            "id": "INV-API-HANDLER-104",
+            "rule": "Must validate tokens.",
         }
     ]
-    cnt_path.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_doc.body), encoding="utf-8")
+    cmp_path.write_text(dump_spec_document(cmp_doc.frontmatter, cmp_doc.body), encoding="utf-8")
 
     # Configure gateway container consuming CNT-API-104 contract
     cnt_gw_doc = parse_spec_file(cnt_gw_path)
@@ -2575,12 +2608,10 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
         {
             "operation": "modify",
             "target": "CMP-API-HANDLER-104",
-            "parent": "CNT-API-104",
         },
         {
             "operation": "modify",
             "target": "INV-API-HANDLER-104",
-            "parent": "CNT-API-104",
         },
         {
             "operation": "modify",
@@ -2596,11 +2627,11 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
     try:
         conn = idx._get_connection()
-        # Simulate upgrading from schema_version 2.11.0 -> 2.16.0
+        # Simulate upgrading from schema_version 2.11.0 -> 2.17.0
         conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '2.11.0');")
         conn.commit()
         ensure_cache_schema(conn)
-        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.16.0"
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.17.0"
 
         idx.sync(force=True)
 
@@ -2633,9 +2664,9 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
         assert ("CNT-GW-104", "CNT-API-104", "depends_on") in edge_set
 
         # 3. Verify get_spec_catalog and _build_spec_catalog_with_invariants parity
-        specs_by_id, container_components, invariant_map = _build_spec_catalog_with_invariants(eidos_dir)
+        specs_by_id, invariant_map = _build_spec_catalog_with_invariants(eidos_dir)
         assert "CNT-API-104" in specs_by_id
-        assert container_components.get("CMP-API-HANDLER-104") == "CNT-API-104"
+        assert "CMP-API-HANDLER-104" in specs_by_id
         assert "INV-API-HANDLER-104" in invariant_map
 
         # 4. Verify compute_delta_impact matches get_portal_data delta blast radius and invariant categories
@@ -2719,25 +2750,32 @@ def test_dlt_2026_105_c4_level_1_and_exploration_edges(tmp_path: Path) -> None:
     ]
     arch_path.write_text(dump_spec_document(arch_doc.frontmatter, arch_doc.body), encoding="utf-8")
 
-    # Configure CNT-ALPHA-105 with inline component decision graduated_from EXP-2026-105
+    # Configure CNT-ALPHA-105 and standalone component CMP-ALPHA-WORKER-105 with decision graduated_from EXP-2026-105
     cnt_a_doc = parse_spec_file(cnt_a_path)
-    cnt_a_doc.frontmatter["components"] = [
+    cnt_a_doc.frontmatter["decisions"] = [
         {
-            "id": "CMP-ALPHA-WORKER-105",
-            "title": "Alpha Worker 105",
-            "responsibility": "Executes alpha tasks.",
-            "decisions": [
-                {
-                    "id": "DEC-CMP-ALPHA-105",
-                    "title": "Worker Spike Decision",
-                    "decision": "Adopt worker queue.",
-                    "rationale": "Low latency.",
-                    "graduated_from": "EXP-2026-105",
-                }
-            ],
+            "id": "DEC-CNT-ALPHA-105",
+            "title": "Container Spike Decision",
+            "decision": "Adopt alpha container.",
+            "rationale": "Low latency.",
+            "graduated_from": "EXP-2026-105",
         }
     ]
     cnt_a_path.write_text(dump_spec_document(cnt_a_doc.frontmatter, cnt_a_doc.body), encoding="utf-8")
+
+    cmp_a_path = create_spec(eidos_dir, "component", "CMP-ALPHA-WORKER-105", title="Alpha Worker 105")
+    cmp_a_doc = parse_spec_file(cmp_a_path)
+    cmp_a_doc.frontmatter["container"] = "CNT-ALPHA-105"
+    cmp_a_doc.frontmatter["decisions"] = [
+        {
+            "id": "DEC-CMP-ALPHA-105",
+            "title": "Worker Spike Decision",
+            "decision": "Adopt worker queue.",
+            "rationale": "Low latency.",
+            "graduated_from": "EXP-2026-105",
+        }
+    ]
+    cmp_a_path.write_text(dump_spec_document(cmp_a_doc.frontmatter, cmp_a_doc.body), encoding="utf-8")
 
     # Configure EXP-2026-106 with resulting_deltas -> DLT-2026-106 affecting CNT-BETA-105
     dlt_doc = parse_spec_file(dlt_path)

@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-DOCS-CONFIG
+title: SiteConfiguration
+container: CNT-EIDOS-DOCS
+status: active
+source_path: zensical.toml
+---
+= Component: SiteConfiguration
+:toc: left
+
+== Responsibility
+Zensical site metadata, theme palettes, navigation hierarchy, and Markdown extension configuration.
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

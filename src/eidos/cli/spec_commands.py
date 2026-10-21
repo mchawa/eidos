@@ -8,7 +8,6 @@ from rich.panel import Panel
 from rich.table import Table
 
 from eidos.cli._shared import PANEL_GOVERNANCE, console, resolve_cli_eidos_dir
-from eidos.cli.component_commands import component_app
 from eidos.core.lifecycle.catalog import find_spec_by_id_or_path
 from eidos.core.lifecycle.scaffolder import create_spec, delete_spec, get_spec_schema_info, list_specs
 from eidos.core.spec.parser import parse_spec_file
@@ -16,10 +15,9 @@ from eidos.core.spec.validator import SpecValidator
 
 spec_app = typer.Typer(
     name="spec",
-    help="Manage living specifications and C4 components (list, show, schema, create, delete, component).",
+    help="Manage living specifications (list, show, schema, create, delete).",
     add_completion=False,
 )
-spec_app.add_typer(component_app, name="component")
 
 
 def validate(

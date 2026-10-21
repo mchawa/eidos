@@ -460,10 +460,6 @@ def extract_invariants_and_verify(
             if doc_type not in doc_types:
                 continue
             model = doc.model
-            if doc_type == "tech/container":
-                for comp in model.components:
-                    for inv in comp.invariants:
-                        _record(inv, spec_path, str(comp.id or doc_id))
             inv_list = [*model.invariants, *model.technical.invariants]
             seen_doc_invs: set[str] = set()
             for inv in inv_list:

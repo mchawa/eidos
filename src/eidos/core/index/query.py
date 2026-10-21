@@ -226,11 +226,9 @@ def execute_fts_query(
         kw_clauses = " OR ".join("(' ' || UPPER(f.keywords) || ' ') LIKE '% ' || ? || ' %'" for _ in explicit_ids)
         id_boost_sql = (
             f"(CASE WHEN UPPER(e.id) IN ({ph}) "
-            f"OR e.id IN (SELECT entity_id FROM symbol_mappings WHERE kind = 'component_id' AND UPPER(symbol) IN ({ph})) "
             f"OR ({kw_clauses}) "
             f"THEN -1000.0 ELSE 0.0 END) + "
         )
-        id_boost_params.extend(explicit_ids)
         id_boost_params.extend(explicit_ids)
         id_boost_params.extend(explicit_ids)
 
@@ -294,23 +292,6 @@ def execute_fts_query(
         return []
 
 
-def _resolve_inline_component_node(
-    node_id: str,
-    row_type: str,
-    row_title: str,
-    row_data_json: str,
-) -> tuple[str, dict[str, Any]]:
-    """Extract inline component title and dict when node_id is an inline CMP-* resolved via its parent container."""
-    data = orjson.loads(row_data_json) if row_data_json else {}
-    if row_type == "tech/component" and isinstance(data, dict) and data.get("id") != node_id:
-        for comp in data.get("components") or []:
-            if isinstance(comp, dict) and comp.get("id") == node_id:
-                c_copy = dict(comp)
-                c_copy.setdefault("container", data.get("id", ""))
-                return str(comp.get("title") or node_id), c_copy
-    return row_title, data
-
-
 def execute_k_hop_traversal(
     conn: sqlite3.Connection,
     entity_id: str,
@@ -321,15 +302,6 @@ def execute_k_hop_traversal(
     cursor.execute(
         """
         WITH RECURSIVE
-        all_nodes(id, type, title, domain, file_path, data_json) AS (
-            SELECT id, type, title, domain, file_path, data_json FROM entities
-            UNION ALL
-            SELECT s.symbol, 'tech/component', s.symbol, e.domain, e.file_path, e.data_json
-            FROM symbol_mappings s
-            JOIN entities e ON e.id = s.entity_id
-            WHERE s.kind = 'component_id'
-              AND s.symbol NOT IN (SELECT id FROM entities)
-        ),
         graph_walk(node_id, depth, path) AS (
             SELECT ?, 0, ?
             UNION
@@ -339,7 +311,7 @@ def execute_k_hop_traversal(
                 gw.path || '->' || CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END
             FROM edges e
             JOIN graph_walk gw ON (e.source_id = gw.node_id OR e.target_id = gw.node_id)
-            JOIN all_nodes cur_ent ON cur_ent.id = gw.node_id
+            JOIN entities cur_ent ON cur_ent.id = gw.node_id
             WHERE gw.depth < ?
               AND (
                   gw.depth = 0
@@ -353,7 +325,7 @@ def execute_k_hop_traversal(
         )
         SELECT gw.node_id, MIN(gw.depth) AS depth, ent.type, ent.title, ent.domain, ent.file_path, ent.data_json
         FROM graph_walk gw
-        JOIN all_nodes ent ON ent.id = gw.node_id
+        JOIN entities ent ON ent.id = gw.node_id
         GROUP BY gw.node_id
         ORDER BY depth ASC, gw.node_id ASC;
         """,
@@ -362,14 +334,14 @@ def execute_k_hop_traversal(
 
     results = []
     for row in cursor.fetchall():
-        title, data = _resolve_inline_component_node(row["node_id"], row["type"], row["title"], row["data_json"])
+        data = orjson.loads(row["data_json"]) if row["data_json"] else {}
         comp_domain = str(data.get("domain") or "").strip() if isinstance(data, dict) else ""
         results.append(
             {
                 "id": row["node_id"],
                 "depth": row["depth"],
                 "type": row["type"],
-                "title": title,
+                "title": row["title"],
                 "domain": comp_domain or row["domain"],
                 "file_path": row["file_path"],
                 "data": data,
@@ -399,37 +371,25 @@ def execute_incoming_references(
         target = row["doc_id"]
     rows = conn.execute(
         """
-        WITH all_nodes(id, type, title, file_path, data_json) AS (
-            SELECT id, type, title, file_path, data_json FROM entities
-            UNION ALL
-            SELECT s.symbol, 'tech/component', s.symbol, e.file_path, e.data_json
-            FROM symbol_mappings s
-            JOIN entities e ON e.id = s.entity_id
-            WHERE s.kind = 'component_id'
-              AND s.symbol NOT IN (SELECT id FROM entities)
-        )
-        SELECT e.source_id, e.rel_type, ent.type, ent.title, ent.file_path, ent.data_json
+        SELECT e.source_id, e.rel_type, ent.type, ent.title, ent.file_path
         FROM edges e
-        JOIN all_nodes ent ON ent.id = e.source_id
+        JOIN entities ent ON ent.id = e.source_id
         WHERE e.target_id = ?
           AND e.rel_type NOT IN ('contains_container', 'describes_system')
         ORDER BY ent.type, e.source_id;
         """,
         (target,),
     ).fetchall()
-    results = []
-    for r in rows:
-        title, _ = _resolve_inline_component_node(r["source_id"], r["type"], r["title"], r["data_json"])
-        results.append(
-            {
-                "source_id": r["source_id"],
-                "rel_type": r["rel_type"],
-                "type": r["type"],
-                "title": title,
-                "file_path": r["file_path"],
-            }
-        )
-    return results
+    return [
+        {
+            "source_id": r["source_id"],
+            "rel_type": r["rel_type"],
+            "type": r["type"],
+            "title": r["title"],
+            "file_path": r["file_path"],
+        }
+        for r in rows
+    ]
 
 
 _FILE_QUERY_EXTS = frozenset(
@@ -744,12 +704,11 @@ def query_spec_catalog_in_db(
     conn: sqlite3.Connection,
     eidos_dir: Path,
     repo_root: Path | None = None,
-) -> tuple[dict[str, tuple[Path, str, dict[str, Any]]], dict[str, str], dict[str, tuple[Path, dict[str, Any]]]]:
-    """Query the specification catalog (specs_by_id, container_components, invariant_map) from indexed entities."""
+) -> tuple[dict[str, tuple[Path, str, dict[str, Any]]], dict[str, tuple[Path, dict[str, Any]]]]:
+    """Query the specification catalog (specs_by_id, invariant_map) from indexed entities."""
     from eidos.core.spec.models import FrontmatterModel
 
     specs_by_id: dict[str, tuple[Path, str, dict[str, Any]]] = {}
-    container_components: dict[str, str] = {}
     invariant_map: dict[str, tuple[Path, dict[str, Any]]] = {}
 
     rows = conn.execute(
@@ -783,15 +742,11 @@ def query_spec_catalog_in_db(
 
         specs_by_id[doc_id] = (p, doc_type, fm)
         model = FrontmatterModel.model_validate(fm)
-        if doc_type == "tech/container":
-            for comp in model.components:
-                if comp.id:
-                    container_components[comp.id] = doc_id
         for inv in model.all_invariants():
             if inv.id:
                 invariant_map[inv.id] = (p, inv.model_dump(exclude_none=True))
 
-    return specs_by_id, container_components, invariant_map
+    return specs_by_id, invariant_map
 
 
 def compute_delta_impact_in_db(
@@ -963,40 +918,38 @@ def compute_delta_impact_in_db(
     for m in muts:
         if not isinstance(m, dict):
             continue
-        for ref_field in ("target", "parent"):
-            raw_t = m.get(ref_field)
-            if not raw_t or not isinstance(raw_t, str) or not raw_t.strip():
-                continue
-            resolved_id = _resolve_ref_id(raw_t.strip())
-            p_meta = resolve_entity_prefix_meta(resolved_id)
-            if p_meta is None:
-                continue
-            entity_kind = p_meta[1]
-            if entity_kind == "invariant":
-                if ref_field == "target":
-                    _add_unique(br_lists["invariants_to_enforce"], resolved_id)
-                    for owner_id in inv_to_owners.get(resolved_id, []):
-                        o_meta = resolve_entity_prefix_meta(owner_id)
-                        o_cat = kind_to_cat.get(o_meta[1]) if o_meta else None
-                        if o_cat:
-                            _add_unique(aff_lists[o_cat], owner_id)
-                            _add_unique(seed_entities, owner_id)
-                            if o_cat == "components" and owner_id in comp_to_container:
-                                _add_unique(aff_lists["containers"], comp_to_container[owner_id])
-                            elif o_cat == "capabilities" and owner_id in cap_to_domain:
-                                _add_unique(aff_lists["domains"], cap_to_domain[owner_id])
-                continue
-            cat = kind_to_cat.get(entity_kind)
-            if not cat:
-                continue
-            _add_unique(aff_lists[cat], resolved_id)
-            _add_unique(seed_entities, resolved_id)
-            if cat == "components" and resolved_id in comp_to_container:
-                _add_unique(aff_lists["containers"], comp_to_container[resolved_id])
-            elif cat == "contracts" and resolved_id in contract_to_container:
-                _add_unique(aff_lists["containers"], contract_to_container[resolved_id])
-            elif cat == "capabilities" and resolved_id in cap_to_domain:
-                _add_unique(aff_lists["domains"], cap_to_domain[resolved_id])
+        raw_t = m.get("target")
+        if not raw_t or not isinstance(raw_t, str) or not raw_t.strip():
+            continue
+        resolved_id = _resolve_ref_id(raw_t.strip())
+        p_meta = resolve_entity_prefix_meta(resolved_id)
+        if p_meta is None:
+            continue
+        entity_kind = p_meta[1]
+        if entity_kind == "invariant":
+            _add_unique(br_lists["invariants_to_enforce"], resolved_id)
+            for owner_id in inv_to_owners.get(resolved_id, []):
+                o_meta = resolve_entity_prefix_meta(owner_id)
+                o_cat = kind_to_cat.get(o_meta[1]) if o_meta else None
+                if o_cat:
+                    _add_unique(aff_lists[o_cat], owner_id)
+                    _add_unique(seed_entities, owner_id)
+                    if o_cat == "components" and owner_id in comp_to_container:
+                        _add_unique(aff_lists["containers"], comp_to_container[owner_id])
+                    elif o_cat == "capabilities" and owner_id in cap_to_domain:
+                        _add_unique(aff_lists["domains"], cap_to_domain[owner_id])
+            continue
+        cat = kind_to_cat.get(entity_kind)
+        if not cat:
+            continue
+        _add_unique(aff_lists[cat], resolved_id)
+        _add_unique(seed_entities, resolved_id)
+        if cat == "components" and resolved_id in comp_to_container:
+            _add_unique(aff_lists["containers"], comp_to_container[resolved_id])
+        elif cat == "contracts" and resolved_id in contract_to_container:
+            _add_unique(aff_lists["containers"], contract_to_container[resolved_id])
+        elif cat == "capabilities" and resolved_id in cap_to_domain:
+            _add_unique(aff_lists["domains"], cap_to_domain[resolved_id])
 
     for cnt_id in aff_lists["containers"]:
         _add_unique(br_lists["impacted_containers"], cnt_id)

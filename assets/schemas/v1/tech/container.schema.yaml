@@ -1,6 +1,6 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
 title: ContainerSchema
-description: "Defines an independently deployable or runnable unit of code execution or data storage following Arc42 Building Block View (Section 5.1) and C4 Model Level 2 (Containers). Contains an embedded C4 Level 3 Component Whitebox View via the components array."
+description: "Defines an independently deployable or runnable unit of code execution or data storage following Arc42 Building Block View (Section 5.1) and C4 Model Level 2 (Containers)."
 type: object
 additionalProperties: false
 required:
@@ -40,12 +40,6 @@ properties:
   tier:
     type: string
     description: "Architectural tier classification (optional: presentation, service, core, persistence, or custom tier slug)."
-  components:
-    type: array
-    description: "Arc42 Section 5.2 / C4 Level 3: Component Whitebox View. Inline internal modules, services, or building blocks that constitute this container (standalone components declare their parent via 'container' in their own file)."
-    items:
-      $ref: "#/$defs/inline_component"
-      unevaluatedProperties: false
   contracts:
     $ref: "#/$defs/contracts_block"
   invariants:

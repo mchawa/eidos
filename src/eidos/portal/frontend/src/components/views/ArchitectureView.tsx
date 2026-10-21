@@ -1024,11 +1024,6 @@ export function ArchitectureView({
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5">
                           <span className="font-mono font-bold text-primary">{sub.id}</span>
-                          {sub.is_promoted && (
-                            <Badge variant="outline" className="text-[9px] font-mono">
-                              Promoted L3
-                            </Badge>
-                          )}
                         </div>
                         <span className="font-semibold text-foreground">{sub.title}</span>
                       </div>

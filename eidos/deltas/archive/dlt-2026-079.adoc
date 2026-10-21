@@ -20,6 +20,5 @@ mutations:
     target: CAP-PROD-002
   - operation: modify
     target: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
-    parent: CAP-PROD-002
 ---
 = SpecDelta: Structured Mutation Post-Condition Assertions (body/frontmatter) and Closed Schema Validation for SpecDeltas

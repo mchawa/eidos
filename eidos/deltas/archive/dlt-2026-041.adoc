@@ -17,6 +17,5 @@ mutations:
     target: UIC-PORTAL-READER
   - operation: add
     target: INV-PORTAL-AIR-GAPPED-BUNDLE
-    parent: CAP-EXP-001
 ---
 = SpecDelta: Air-Gapped Portal Bundle with Embedded Mermaid, Fonts, and Asciidoctor.js Rendering

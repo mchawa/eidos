@@ -1,5 +1,4 @@
-"""Lifecycle management, blueprint scaffolding, C4 component promotion/inlining,
-and deletion for Eidos living specifications (CMP-LIFECYCLE-SCAFFOLDER)."""
+"""Lifecycle management, blueprint scaffolding, and deletion for Eidos living specifications (CMP-LIFECYCLE-SCAFFOLDER)."""
 
 import contextlib
 from pathlib import Path
@@ -8,7 +7,6 @@ from typing import Any
 from eidos.core.lifecycle.catalog import (
     VALID_SPEC_TYPES,
     _build_spec_catalog,
-    _mutate_frontmatter_components,
     _render_spec,
     _single_line,
     find_references_to_spec,
@@ -16,7 +14,7 @@ from eidos.core.lifecycle.catalog import (
     normalize_id,
 )
 from eidos.core.lifecycle.design_engine import DESIGN_SPEC_KEYS, build_design_spec
-from eidos.core.spec.parser import extract_frontmatter, parse_spec_file
+from eidos.core.spec.parser import parse_spec_file
 from eidos.core.spec.validator import SpecValidator
 from eidos.core.workspace.assets import render_spec_template
 
@@ -82,7 +80,7 @@ def create_spec(
     body: str
 
     def _catalog() -> dict[str, tuple[Path, str, dict[str, Any]]]:
-        specs_by_id, _, _ = _build_spec_catalog(eidos_dir)
+        specs_by_id, _ = _build_spec_catalog(eidos_dir)
         return specs_by_id
 
     def _first_of_type(dtype: str, fallback: str) -> str:
@@ -219,14 +217,12 @@ def create_spec(
         dest_dir = eidos_dir / "architecture" / "components"
         dest_file = dest_dir / f"{slug.removeprefix('cmp-')}.adoc"
         parent_cnt = _first_of_type("tech/container", "CNT-CORE")
-        responsibility = f"Responsibility of {heading}."
         fm = {
             "type": "tech/component",
             "id": doc_id,
             "title": title,
             "container": parent_cnt,
             "status": "draft",
-            "responsibility": responsibility,
             "source_path": "src",
         }
         body = render_spec_template(
@@ -351,7 +347,7 @@ def list_specs(
     status_filter: str | None = None,
     include_archived: bool = False,
 ) -> list[dict[str, Any]]:
-    """List all living specifications (including inline C4 Level 3 components, excluding SpecDeltas) under eidos_dir."""
+    """List all living specifications (excluding SpecDeltas) under eidos_dir."""
     type_filter_clean = type_filter.strip().lower().replace("_", "/") if type_filter else None
     if type_filter_clean in ("delta", "mutation", "delta/mutation"):
         raise ValueError("SpecDeltas (DLT-*) are managed via 'eidos delta'. Use 'eidos delta list' instead.")
@@ -376,8 +372,6 @@ def list_specs(
         if canonical_type:
             return doc_type.lower() == canonical_type
         return raw_type_clean in doc_type.lower() or raw_type_clean in eid.lower()
-
-    seen_ids: set[str] = {str(ent.get("id", "")) for ent in all_entities if ent.get("id")}
 
     for ent in all_entities:
         doc_type = ent.get("type", "")
@@ -414,254 +408,7 @@ def list_specs(
                 }
             )
 
-        if doc_type == "tech/container":
-            inline_comps = ent.get("components", [])
-            for comp in inline_comps:
-                if not isinstance(comp, dict):
-                    continue
-                cid = str(comp.get("id", "")).strip()
-                if not cid or cid in seen_ids:
-                    continue
-                comp_type = "tech/component"
-                comp_status = comp.get("status") or status
-                if not _matches_type(comp_type, cid):
-                    continue
-                if status_filter_clean and str(comp_status).lower() != status_filter_clean:
-                    continue
-                seen_ids.add(cid)
-                results.append(
-                    {
-                        "id": cid,
-                        "type": comp_type,
-                        "title": comp.get("title") or "Untitled",
-                        "status": comp_status,
-                        "path": resolved_p,
-                        "relative_path": rel_p,
-                    }
-                )
-
     return sorted(results, key=lambda x: str(x.get("id", "")))
-
-
-def promote_component(
-    component_id: str,
-    eidos_dir: Path | None = None,
-    repo_root: Path | None = None,
-) -> tuple[Path, Path]:
-    """Promote an inline C4 Level 3 component to a dedicated specification file in eidos/architecture/components/.
-
-    Returns:
-        (component_spec_path, container_path)
-    """
-    if repo_root is not None:
-        root = Path(repo_root).resolve()
-    elif eidos_dir is not None:
-        edir_resolved = Path(eidos_dir).resolve()
-        root = (
-            edir_resolved.parent
-            if (
-                edir_resolved.name == "eidos"
-                or (edir_resolved / "architecture").exists()
-                or (edir_resolved / "system.adoc").exists()
-            )
-            else edir_resolved
-        )
-    else:
-        root = Path.cwd().resolve()
-    edir = (Path(eidos_dir) if eidos_dir is not None else (root / "eidos")).resolve()
-    containers_dir = edir / "architecture" / "containers"
-
-    if not containers_dir.exists():
-        raise FileNotFoundError(f"Container directory '{containers_dir}' does not exist.")
-
-    norm_id = component_id.strip().upper()
-    if not norm_id.startswith("CMP-"):
-        norm_id = f"CMP-{norm_id}"
-
-    target_container_path: Path | None = None
-    target_comp_data: dict[str, Any] | None = None
-
-    for cfile in sorted(containers_dir.glob("*.adoc")):
-        doc = parse_spec_file(cfile)
-        if doc.doc_type != "tech/container" or not doc.frontmatter:
-            continue
-        comps = list(doc.frontmatter.get("components") or [])
-        for c in comps:
-            if isinstance(c, dict) and c.get("id") == norm_id:
-                target_container_path = cfile
-                target_comp_data = c
-                break
-        if target_container_path:
-            break
-
-    if not target_container_path or not target_comp_data:
-        raise ValueError(f"Component '{norm_id}' not found inline within any container in '{containers_dir}'.")
-
-    c_doc = parse_spec_file(target_container_path)
-    c_fm = c_doc.frontmatter or {}
-    container_id = c_fm.get("id") or target_container_path.stem
-    source_path_val = target_comp_data.get("source_path") or ""
-
-    # Place dedicated component specification centrally in eidos/architecture/components/
-    components_dir = edir / "architecture" / "components"
-    components_dir.mkdir(parents=True, exist_ok=True)
-    slug = norm_id.removeprefix("CMP-").lower().replace("_", "-")
-    comp_file_path = components_dir / f"{slug}.adoc"
-
-    # Author centralized tech/component specification losslessly via safe YAML serialization
-    comp_title = target_comp_data.get("title") or norm_id
-    responsibility = target_comp_data.get("responsibility") or "In-process module logic and domain services."
-    promoted_fm: dict[str, Any] = {
-        "type": "tech/component",
-        "id": norm_id,
-        "title": comp_title,
-        "container": container_id,
-        "status": target_comp_data.get("status") or "active",
-        "source_path": source_path_val,
-        "responsibility": responsibility,
-        "invariants": target_comp_data.get("invariants")
-        if isinstance(target_comp_data.get("invariants"), list)
-        else [],
-    }
-    if isinstance(target_comp_data.get("version"), str) and target_comp_data["version"]:
-        promoted_fm["version"] = target_comp_data["version"]
-    if isinstance(target_comp_data.get("domain"), str) and target_comp_data["domain"]:
-        promoted_fm["domain"] = target_comp_data["domain"]
-    if isinstance(target_comp_data.get("decisions"), list) and target_comp_data["decisions"]:
-        promoted_fm["decisions"] = target_comp_data["decisions"]
-
-    heading_name = _single_line(comp_title)
-    component_body = render_spec_template("tech/component", heading=heading_name, responsibility=responsibility)
-    component_content = _render_spec(promoted_fm, component_body)
-    comp_file_path.write_text(component_content, encoding="utf-8")
-
-    # Remove inline entry from container document (standalone component declares container: CNT-*)
-    raw_text = target_container_path.read_text(encoding="utf-8")
-    fm_dict, _body_raw, _ = extract_frontmatter(raw_text)
-    if fm_dict:
-        new_c_content = _mutate_frontmatter_components(
-            raw_text,
-            "remove",
-            norm_id,
-        )
-        target_container_path.write_text(new_c_content, encoding="utf-8")
-
-    return comp_file_path, target_container_path
-
-
-def inline_component(
-    component_id: str,
-    eidos_dir: Path | None = None,
-    repo_root: Path | None = None,
-) -> tuple[Path, Path]:
-    """Demote / inline a dedicated C4 Level 3 component back into its container.
-
-    Returns:
-        (container_path, deleted_spec_path)
-    """
-    if repo_root is not None:
-        root = Path(repo_root).resolve()
-    elif eidos_dir is not None:
-        edir_resolved = Path(eidos_dir).resolve()
-        root = (
-            edir_resolved.parent
-            if (
-                edir_resolved.name == "eidos"
-                or (edir_resolved / "architecture").exists()
-                or (edir_resolved / "system.adoc").exists()
-            )
-            else edir_resolved
-        )
-    else:
-        root = Path.cwd().resolve()
-    edir = (Path(eidos_dir) if eidos_dir is not None else (root / "eidos")).resolve()
-    containers_dir = edir / "architecture" / "containers"
-    components_dir = edir / "architecture" / "components"
-
-    if not containers_dir.exists():
-        raise FileNotFoundError(f"Container directory '{containers_dir}' does not exist.")
-
-    norm_id = component_id.strip().upper()
-    if not norm_id.startswith("CMP-"):
-        norm_id = f"CMP-{norm_id}"
-
-    comp_file: Path | None = None
-    comp_doc = None
-    if components_dir.exists():
-        for cand in sorted(components_dir.glob("*.adoc")):
-            doc = parse_spec_file(cand)
-            if doc.doc_type == "tech/component" and doc.doc_id == norm_id:
-                comp_file = cand
-                comp_doc = doc
-                break
-    if comp_file is None:
-        cand = find_spec_by_id_or_path(edir, norm_id)
-        if cand and cand.exists():
-            doc = parse_spec_file(cand)
-            if doc.doc_type == "tech/component":
-                comp_file = cand
-                comp_doc = doc
-
-    if comp_file is None or comp_doc is None:
-        raise ValueError(f"Standalone component '{norm_id}' not found in '{components_dir}'.")
-
-    comp_fm = comp_doc.frontmatter or {}
-    parent_cnt_ref = str(comp_fm.get("container") or "").strip()
-    target_container_path: Path | None = None
-    if parent_cnt_ref:
-        target_container_path = find_spec_by_id_or_path(edir, parent_cnt_ref)
-    if target_container_path is None:
-        for cfile in sorted(containers_dir.glob("*.adoc")):
-            doc = parse_spec_file(cfile)
-            if doc.doc_type == "tech/container" and doc.doc_id == parent_cnt_ref:
-                target_container_path = cfile
-                break
-    if not target_container_path or not target_container_path.exists():
-        raise FileNotFoundError(
-            f"Parent container '{parent_cnt_ref}' for component '{norm_id}' not found in '{containers_dir}'."
-        )
-
-    comp_title = comp_fm.get("title") or norm_id
-    responsibility = comp_fm.get("responsibility")
-    if isinstance(responsibility, str):
-        responsibility = responsibility.strip()
-    source_path = comp_fm.get("source_path") or ""
-
-    inline_entry: dict[str, Any] = {
-        "id": norm_id,
-        "title": comp_title,
-        "source_path": source_path,
-    }
-    if responsibility:
-        inline_entry["responsibility"] = responsibility
-    comp_status = comp_fm.get("status")
-    if isinstance(comp_status, str) and comp_status.strip() and comp_status.strip() != "active":
-        inline_entry["status"] = comp_status.strip()
-    if isinstance(comp_fm.get("version"), str) and comp_fm["version"]:
-        inline_entry["version"] = comp_fm["version"]
-    if isinstance(comp_fm.get("domain"), str) and comp_fm["domain"]:
-        inline_entry["domain"] = comp_fm["domain"]
-    if isinstance(comp_fm.get("invariants"), list) and comp_fm["invariants"]:
-        inline_entry["invariants"] = comp_fm["invariants"]
-    if isinstance(comp_fm.get("decisions"), list) and comp_fm["decisions"]:
-        inline_entry["decisions"] = comp_fm["decisions"]
-
-    # Append inline component back into container frontmatter while preserving YAML comments and formatting
-    raw_text = target_container_path.read_text(encoding="utf-8")
-    fm_dict, _body_raw, _ = extract_frontmatter(raw_text)
-    if fm_dict:
-        new_c_content = _mutate_frontmatter_components(
-            raw_text,
-            "append",
-            norm_id,
-            inline_entry,
-        )
-        target_container_path.write_text(new_c_content, encoding="utf-8")
-
-    # Safely remove the dedicated .adoc file
-    comp_file.unlink(missing_ok=True)
-
-    return target_container_path, comp_file
 
 
 def _resolve_schema_node(node: dict[str, Any], defs: dict[str, Any]) -> dict[str, Any]:
@@ -856,7 +603,7 @@ def get_spec_schema_info(doc_type_key: str | None = None) -> dict[str, Any] | li
         merged_required: list[str] = []
         merged_props: dict[str, Any] = {}
 
-        # Flatten allOf (e.g. tech/component inherits #/$defs/inline_component from common/defs.yaml)
+        # Flatten allOf branches if present
         for branch in raw_schema.get("allOf") or []:
             if isinstance(branch, dict):
                 resolved_branch = _resolve_schema_node(branch, defs)

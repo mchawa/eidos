@@ -43,7 +43,7 @@ Modern software development often suffers from two major problems:
 
 **Eidos solves both problems** by organizing your project into executable, continuously validated **Living Specifications**:
 
-* **Living Arc42 & C4 Architecture**: System context (`SYS-*`, `ARCH-*`), containers (`CNT-*`), hybrid inline/promoted components (`CMP-*`), and interface contracts (`CTR-*`) are codified as AsciiDoc with YAML frontmatter.
+* **Living Arc42 & C4 Architecture**: System context (`SYS-*`, `ARCH-*`), containers (`CNT-*`), standalone components (`CMP-*`), and interface contracts (`CTR-*`) are codified as AsciiDoc with YAML frontmatter.
 * **Strictly No ADRs (`POL-001`)**: Durable design trade-offs and rejected alternatives are recorded in-place via embedded `decisions:` (`DEC-*`) blocks, while architectural transitions are governed by auditable **SpecDeltas** (`DLT-*`).
 * **Embedded SQLite + FTS5 + AST Knowledge Graph**: Auto-synchronizes in `<5ms` (`eidos/.cache/index.db`) to serve token-budgeted 3-tier context slices (`eidos context`), structural repo maps (`eidos index repo-map`), symbol resolution (`eidos index find-symbol`), and recursive blast-radius analysis.
 * **Bidirectional Polyglot Invariant-Test Traceability (`POL-002`)**: Every capability and policy enforces invariants (`INV-*`, `POL-*`) statically verified against automated tests across Python, TypeScript/JS, Go, Rust, Java, and Kotlin via `eidos drift`.

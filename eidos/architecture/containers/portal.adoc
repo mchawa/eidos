@@ -12,28 +12,6 @@ source_path:
 domain: DOM-EXPERIENCE-PORTAL
 tier: presentation
 
-components:
-  - id: CMP-PORTAL-SERVER
-    title: "PortalServer"
-    responsibility: "Hosts lightweight local multi-threaded HTTP server exposing web UI and `orjson`-serialized JSON endpoints (lazily loading HTML/SVG assets via get_portal_html_template and get_portal_favicon_svg, validating static paths via is_relative_to, exposing lightweight `/api/version` mtime snapshot polling and `/api/drift` uncommitted drift summaries, and resolving custom eidos_dir targets in /api/validate and /api/drift) with thread-safe (_cache_lock) eidos_dir file mtime snapshot response caching on EidosPortalHandler."
-    source_path: "src/eidos/portal/server.py"
-  - id: CMP-PORTAL-GENERATOR
-    title: "PortalGenerator"
-    responsibility: "Synthesizes living specifications (strictly consuming v1 schematized product/system and tech/architecture documents without legacy arch/system or unschematized frontmatter fallbacks, all declared personas derived from role_type without truncation, deduplicated policy/capability/container/component/UI-component invariants, product DEC-* decisions from top-level decisions lists with both source_entity and source_id, promoted tech/component domain and AST-derived component consumes_api, container depends_on, and delivered_by edges from get_architectural_index, pre-computed static graph `edges` and `validation` diagnostics, exploration decision.outcome and decision.resulting_deltas, AsciiDoc section extraction for container Architectural Boundary, domain Vision, capability JTBD, and exploration Hypothesis/Findings, and `orjson`-parsed tokens.manifest / extends design systems) into unified portal data model with HTML-escaped project-agnostic C4 Level 1 external_systems context diagrams from tech/architecture, hierarchical C4 Level 2 container topologies, C4 Level 3 component whitebox diagrams connecting intra-container component dependencies (both inline and promoted), contract- and AST-derived inter-container dependency connections, auto-generated Mermaid diagrams, and computes SpecDelta affects and blast_radius via ArchitecturalIndex.compute_delta_impact over normalized composable (operation + target + parent) mutations and the living specification graph with default intent.kind='feature' (fast-pathing archived SpecDeltas under deltas/archive/ and replacing verbose applied/rejected delta bodies in specs with concise motivation stubs)."
-    source_path: "src/eidos/portal/generator.py"
-  - id: CMP-PORTAL-BUILDER
-    title: "StaticSiteBuilder"
-    responsibility: "Compiles self-contained static documentation portals for GitHub Pages and GitLab Pages (via get_portal_html_template and get_portal_favicon_svg, writing `orjson`-serialized data.json after stripping redundant entity body/description strings via `_deduplicate_portal_payload`) and escapes inline </script> and U+2028/U+2029 sequences when embedding window.__EIDOS_DATA__ into index.html."
-    source_path: "src/eidos/portal/builder.py"
-  - id: CMP-PORTAL-ASSETS
-    title: "PortalAssets"
-    responsibility: "Delivers pre-compiled single-file React 19, Tailwind v4, Asciidoctor.js, and Mermaid v11 SPA assets (compiled from src/eidos/portal/frontend/src with tsc --noEmit verification, client-side `hydratePortalData` payload re-hydration, `window.location.hash` deep-linking across views/C4 levels/SpecReader drawers, non-passive native wheel zoom listeners preventing page scroll inside Mermaid diagrams, interactive C4 Blast Radius Simulator and Boundary Interface Contracts explorer, Validation & Governance Diagnostics panel, Recursive W3C Token Tree explorer, SpecDeltas Chronological Timeline and Archived status column, Explorations Archived status filter, domains-first BusinessView layout with clickable `CNT-*`/`CTR-*` technical anchors, composable operation/target/parent SpecDelta views, streamlined v1 exploration resulting_deltas and UI component invariants views, object-safe C4 dependency rendering, automatic C4 inspector closure on whitebox drill-down, and multi-client omnichannel flow filtering) with zero remote subresources by lazily loading and caching on first access (get_portal_html_template, get_portal_favicon_svg, and PEP 562 __getattr__ for PORTAL_HTML_TEMPLATE and PORTAL_FAVICON_SVG) from deterministic gzip-compressed assets (assets/portal/bundle.html.gz and assets/portal/favicon.svg) rather than a 4.7 MB raw Python string literal, mtime-gated during wheel/sdist builds via a Hatch custom build hook (hatch_build.py) and verified in CI via build_assets.py --check."
-    source_path:
-      - "src/eidos/portal/assets.py"
-      - "src/eidos/portal/frontend/scripts/build_assets.py"
-      - "src/eidos/portal/frontend/scripts/hatch_build.py"
-      - "src/eidos/portal/frontend/src"
-
 contracts:
   provides:
     - "CTR-EIDOS-PORTAL"
@@ -56,29 +34,26 @@ decisions:
     rationale: "Live portal sessions automatically refresh when specifications change on disk, while static builds remain 100% network-silent."
     graduated_from: DLT-2026-108-SCALABLE-STATIC
 ---
-= Container: Eidos Living Web Portal (C4 Level 2 Container & Level 3 Components)
+= Container: Eidos Living Web Portal (C4 Level 2 Container)
 :toc: left
 
 == Architectural Boundary
 This container represents the graphical web interface under `src/eidos/portal/` and packaged bundle assets under `assets/portal/`. It enables non-IDE stakeholders (product managers, architects, designers, and compliance officers) to visually navigate the living architecture, inspect C4 topologies, simulate architectural blast radius (`INV-PORTAL-STATIC-SCALABILITY`), monitor SpecDelta lifecycles, and explore multi-design system tokens via hash-based deep linking (`DEC-PORTAL-HASH-ROUTING`).
 
-== Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
+== Runtime & Static Compilation Architecture
+* **Dual Deployment Modes (`CTR-EIDOS-PORTAL`)**: Operates either as a local multi-threaded HTTP preview server (`eidos portal serve`, exposing `/api/data`, `/api/version`, `/api/drift`, and `/api/specs/{id}` with progressive 3-second mtime live reload) or as a zero-backend static site export (`eidos portal build`, emitting `index.html` and `data.json` for GitHub/GitLab Pages).
+* **Payload Deduplication & Client-Side Graph Traversal (`DEC-PORTAL-PAYLOAD-DEDUP-AND-CLIENT-BFS`)**: Serializes each specification body once in `data.specs`, strips duplicate prose fields from specialized entity collections in static builds, and pre-computes directed graph edges (`data.edges`) and validation diagnostics (`data.validation`) so interactive Blast Radius simulation and C4 drill-down work entirely client-side.
 
-[cols="1,1,2,2", options="header"]
-|===
-| Component ID | Name | Responsibility | Source Path
-| `CMP-PORTAL-SERVER` | **PortalServer** | Multi-threaded HTTP daemon hosting the portal UI and `orjson`-serialized REST endpoints | `src/eidos/portal/server.py`
-| `CMP-PORTAL-GENERATOR` | **PortalGenerator** | Synthesizes specs, `orjson`-parsed design tokens, C4 Mermaid graphs, and SpecDelta Kanban state | `src/eidos/portal/generator.py`
-| `CMP-PORTAL-BUILDER` | **StaticSiteBuilder** | Exports zero-dependency static documentation sites (`orjson` `data.json` and embedded `window.__EIDOS_DATA__`) for GitHub/GitLab Pages | `src/eidos/portal/builder.py`
-| `CMP-PORTAL-ASSETS` | **PortalAssets** | Loads the pre-compiled single-file React 19 / Tailwind CSS v4 / MD3 SPA from `assets/portal/bundle.html.gz` and `assets/portal/favicon.svg`, synchronized by `build_assets.py` and `hatch_build.py` (5 MiB uncompressed budget) | `src/eidos/portal/assets.py`, `src/eidos/portal/frontend/scripts/build_assets.py`, `src/eidos/portal/frontend/scripts/hatch_build.py`
-|===
-
-== Air-Gapped Bundle (INV-PORTAL-AIR-GAPPED-BUNDLE)
+== Air-Gapped Bundle (`INV-PORTAL-AIR-GAPPED-BUNDLE`)
 The single-file bundle served by `eidos portal serve` and emitted by `eidos portal build` loads zero scripts, stylesheets, fonts, or other subresources from remote origins, so C4 diagrams and the specification reader work in air-gapped environments and from `file://` static sites:
 
 * **Mermaid.js** is imported from npm at the version pinned in `package.json` / `pnpm-lock.yaml` (lazy `import()` folded inline by the single-file build; the ELK layout engine is not shipped, `dagre` is the portal layout).
-* **Asciidoctor.js** (`@asciidoctor/core`, `safe: 'secure'`) replaces the former regex AsciiDoc renderer; `include::` is unsupported in the browser.
+* **Asciidoctor.js** (`@asciidoctor/core`, `safe: 'secure'`) renders specification AsciiDoc bodies directly in the browser; `include::` is unsupported in the browser.
 * **Fonts**: Geist and Geist Mono latin `woff2` subsets from `@fontsource`; the `Inter` / `JetBrains Mono` stacks in `tokens.json` fall through to system fonts.
-* **Build & Packaging**: `cd src/eidos/portal/frontend && pnpm build:assets` runs the Vite build and `scripts/build_assets.py`, which writes deterministic gzip-compressed `assets/portal/bundle.html.gz` (marked `linguist-generated=true` in `.gitattributes`) and `assets/portal/favicon.svg`, and refuses bundles with remote references, more than one `</head>`, or more than 5 MiB. CI enforces bundle parity via `python3 scripts/build_assets.py --check`, and `hatch_build.py` synchronizes assets during `uv build`. Node.js is a build-time dependency only (INV-PORTAL-ZERO-NODE-DEP).
+* **Build & Packaging**: `cd src/eidos/portal/frontend && pnpm build:assets` runs the Vite build and `scripts/build_assets.py`, which writes deterministic gzip-compressed `assets/portal/bundle.html.gz` (marked `linguist-generated=true` in `.gitattributes`) and `assets/portal/favicon.svg`, and refuses bundles with remote references, more than one `</head>`, or more than 5 MiB. CI enforces bundle parity via `python3 scripts/build_assets.py --check`, and `hatch_build.py` synchronizes assets during `uv build`. Node.js is a build-time dependency only (`INV-PORTAL-ZERO-NODE-DEP`).
+
+== Quality Attributes & Operational Policies
+* **Zero Runtime Node.js Dependency (`INV-PORTAL-ZERO-NODE-DEP`)**: End users run `eidos portal serve` and `eidos portal build` using only Python and the pre-compiled `assets/portal/bundle.html.gz` asset.
+* **Air-Gapped & Offline Integrity (`INV-PORTAL-AIR-GAPPED-BUNDLE`)**: Zero external CDN, font, or telemetry requests at runtime.
 
 

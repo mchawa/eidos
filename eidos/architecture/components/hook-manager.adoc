@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-HOOK-MANAGER
+title: HookManager
+container: CNT-EIDOS-PLUGIN
+status: active
+source_path: src/eidos/plugin/validator.py
+---
+= Component: HookManager
+:toc: left
+
+== Responsibility
+Validates and orchestrates agent lifecycle hooks (`hooks.json` parsed via `orjson`) with version-pinned uvx execution, scoping eidos-drift-gate exclusively to Stop ('eidos hook').
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

@@ -27,8 +27,8 @@ eidos/
 ├── system.adoc                   # Root system descriptor (SYS-*, C4 Level 1)
 ├── architecture/                 # Technical architecture (Arc42 + C4)
 │   ├── system-architecture.adoc  # Global architecture & C4 Container topology (ARCH-*, L1 & L2)
-│   ├── containers/               # Container manifests & inline components (CNT-*, C4 Level 2 & L3)
-│   ├── components/               # Promoted standalone component manifests (CMP-*, C4 Level 3)
+│   ├── containers/               # Container manifests (CNT-*, C4 Level 2)
+│   ├── components/               # Standalone component manifests (CMP-*, C4 Level 3)
 │   └── contracts/                # Interface protocol contracts (CTR-*: OpenAPI, gRPC, CLI)
 ├── domains/                      # DDD bounded contexts & capability trees
 │   └── <domain-name>/
@@ -115,11 +115,6 @@ container_type: library
 runtime: "Python 3.12+"
 source_path: "src/eidos/core"
 domain: DOM-SPEC-ENGINE
-components:
-  - id: CMP-SPEC-PARSER
-    title: SpecParser
-    responsibility: "Extracts YAML frontmatter metadata and body text from AsciiDoc documents."
-    source_path: "src/eidos/core/spec/parser.py"
 contracts:
   provides:
     - "CTR-EIDOS-CLI"
@@ -139,7 +134,7 @@ and AST graph generation for all Eidos operations.
 
 ---
 
-## C4 Model Hierarchy & Centralized Hybrid Components (`CMP-*`)
+## C4 Model Hierarchy & Centralized Components (`CMP-*`)
 
 Eidos enforces a strict, first-principles mapping to the canonical **C4 Architecture Model**:
 
@@ -147,15 +142,14 @@ Eidos enforces a strict, first-principles mapping to the canonical **C4 Architec
 | :--- | :--- | :--- | :--- |
 | **Level 1** | **System Context** | Root System Spec (`SYS-*`) & Architecture (`ARCH-*`) | System boundaries, human/AI personas (`PER-*`), and external systems |
 | **Level 2** | **Container** | Container Manifests (`CNT-*`, `type: tech/container`) | **Process / Deployable / Package boundary** (CLI app, service, library, SPA, database) |
-| **Level 3** | **Component** | In-Process Modules (`CMP-*`, inline in `CNT-*.adoc` or promoted in `eidos/architecture/components/*.adoc`) | **In-Process / Memory boundary** (internal modules, engines, services, validators) |
+| **Level 3** | **Component** | In-Process Modules (`CMP-*` in `eidos/architecture/components/*.adoc` with `container: CNT-*`) | **In-Process / Memory boundary** (internal modules, engines, services, validators) |
 | **Level 4** | **Code** | Source Code & AST Symbols (`source_path`) | Classes, functions, methods, and signatures indexed in `eidos/.cache/index.db` |
 
-### Centralized Hybrid C4 Level 3 Architecture
-* **80% Inline**: Lightweight internal modules remain inline inside Level 2 container manifests (`eidos/architecture/containers/*.adoc`), keeping macro-architecture clean and saving 87–94% of context tokens.
-* **20% Centralized Promoted Specs**: Complex subsystems with dedicated state, invariants (`INV-*`), or rich domain responsibilities receive standalone `type: tech/component` specifications residing centrally in `eidos/architecture/components/<component>.adoc` (linking to implementation files via `source_path` and binding bottom-up to their parent container via `container: CNT-*`).
-* **Strict Centralization Mandate (`INV-COMPONENT-CENTRALIZATION-MANDATE`)**: Dedicated component manifests must always reside centrally under `eidos/architecture/components/`. Specifications must never touch or reside within source code directories (`src/`, `packages/`) so implementation trees remain 100% pure.
+### Centralized C4 Level 3 Architecture
+* **Standalone Component Specs**: Every C4 Level 3 component receives a standalone `type: tech/component` specification residing centrally in `eidos/architecture/components/<component>.adoc` (linking to implementation files via `source_path` and binding bottom-up to its parent container via `container: CNT-*`).
+* **Strict Centralization Mandate (`INV-COMPONENT-CENTRALIZATION-MANDATE`)**: Component manifests must always reside centrally under `eidos/architecture/components/` (never inline inside container manifests or inside source code directories `src/`, `packages/`) so implementation trees remain 100% pure.
 * **Interface Boundary Governance (`INV-INTERFACE-BOUNDARY-GOVERNANCE`) & AST Dependency Derivation**: Containers (`CNT-*`) own cross-process Boundary Protocol Contracts (`CTR-*`), while intra-container component dependencies (`consumes_api`) and inter-container dependencies (`depends_on`) are derived automatically from AST source file imports (`extract_imports`).
-* **CLI Automation**: Inspect v1 schemas with `eidos spec schema [type]`, and promote or inline components with a single command using `eidos spec component promote <ID>` and `eidos spec component inline <ID>`.
+* **CLI Automation**: Inspect v1 schemas with `eidos spec schema [type]` and scaffold components with `eidos spec create component <ID> --title <TITLE>`.
 
 
 

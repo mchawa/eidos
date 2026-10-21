@@ -16,6 +16,5 @@ mutations:
     target: CAP-AGENT-001
   - operation: modify
     target: INV-HOOK-BLOCK-ONCE
-    parent: CAP-AGENT-001
 ---
 = SpecDelta: Stateful Block-Once Stop Gate with TTL/Session Expiry and Explicit Bypass Warning Message

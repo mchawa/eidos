@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-CLI-CONTEXT-COMMAND
+title: ContextCommand
+container: CNT-EIDOS-CLI
+status: active
+source_path: src/eidos/cli/context_command.py
+---
+= Component: ContextCommand
+:toc: left
+
+== Responsibility
+Extracts compact, token-efficient architectural subgraph slices (`eidos context [--file] [--component] [--task] [--tier] [--json] [--path]`) for AI agents in Markdown or `orjson`-serialized JSON (`--json`), resolving `eidos/` via shared `resolve_cli_eidos_dir`.
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

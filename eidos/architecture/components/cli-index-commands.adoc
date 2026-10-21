@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-CLI-INDEX-COMMANDS
+title: IndexCommands
+container: CNT-EIDOS-CLI
+status: active
+source_path: src/eidos/cli/index_commands.py
+---
+= Component: IndexCommands
+:toc: left
+
+== Responsibility
+Knowledge graph operations (`eidos index`) with `orjson`-serialized `--json` outputs: `sync`, `status --json`, lexical `search --json`, `blast-radius --json`, structural `repo-map [--max-tokens] [--json]`, and `find-symbol --json` output including source Location (file:line) for AST symbols.
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

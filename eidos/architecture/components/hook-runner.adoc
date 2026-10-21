@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-HOOK-RUNNER
+title: HookRunner
+container: CNT-EIDOS-PLUGIN
+status: active
+source_path: src/eidos/plugin/hooks.py
+---
+= Component: HookRunner
+:toc: left
+
+== Responsibility
+Executes the stateless CLI-native Stop hook (handle_stop_hook, execute_hook via 'eidos hook' with `orjson` payload serialization) that runs detect_drift(uncommitted=True) once on Stop and returns {'decision': 'allow'} when clean or {'decision': 'allow', 'systemMessage': '...'} when specification validation errors, uncovered/orphan invariants, or code-to-spec drift are detected.
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

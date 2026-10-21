@@ -256,9 +256,6 @@ class AuditEngine:
         for m in normalized_mutations:
             op = str(m.get("operation", "")).strip().lower()
             t_id = _extract_mutation_target(m)
-            p_id = str(m.get("parent") or "").strip()
-            if p_id:
-                non_removed_ids.add(p_id)
             if op not in ("remove", "deprecate") and t_id and t_id != "unspecified_target":
                 non_removed_ids.add(t_id)
 
@@ -304,8 +301,6 @@ class AuditEngine:
                         primary_target = resolved_id
                         has_concrete_primary = True
 
-                parent_val = str(m.get("parent") or "").strip()
-                parent_context_ids = {parent_val} if parent_val and parent_val != primary_target else set()
                 allowed_detail_prefixes: tuple[str, ...] = (
                     "CNT-",
                     "CMP-",
@@ -330,7 +325,6 @@ class AuditEngine:
                     match = m_obj.group(1)
                     if (
                         match == primary_target
-                        or match in parent_context_ids
                         or match in non_removed_ids
                         or not allowed_detail_prefixes
                         or not any(match.startswith(p) for p in allowed_detail_prefixes)

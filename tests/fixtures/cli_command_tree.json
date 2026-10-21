@@ -455,13 +455,12 @@
       "show",
       "create",
       "delete",
-      "schema",
-      "component"
+      "schema"
     ],
     "path": [
       "spec"
     ],
-    "help": "Manage living specifications and C4 components (list, show, schema, create, delete, component).",
+    "help": "Manage living specifications (list, show, schema, create, delete).",
     "hidden": false,
     "panel": "Living Catalog & Mutations",
     "params": []
@@ -755,104 +754,6 @@
         "panel": null,
         "envvar": "None",
         "type": "BOOL"
-      }
-    ]
-  },
-  {
-    "order": [
-      "promote",
-      "inline"
-    ],
-    "path": [
-      "spec",
-      "component"
-    ],
-    "help": "Manage C4 Level 3 components (promote, inline).",
-    "hidden": false,
-    "panel": null,
-    "params": []
-  },
-  {
-    "order": [],
-    "path": [
-      "spec",
-      "component",
-      "promote"
-    ],
-    "help": "Promote an inline C4 Level 3 component to a dedicated specification in eidos/architecture/components/.",
-    "hidden": false,
-    "panel": null,
-    "params": [
-      {
-        "name": "component_id",
-        "opts": [
-          "component_id"
-        ],
-        "secondary": [],
-        "kind": "TyperArgument",
-        "required": true,
-        "default": "None",
-        "help": "Identifier of the inline component to promote (e.g. CMP-CORE-VALIDATOR).",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
-        "name": "eidos_dir",
-        "opts": [
-          "--path",
-          "-p"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "None",
-        "help": "Path to eidos directory.",
-        "panel": null,
-        "envvar": "None",
-        "type": "<typer.models.TyperPath object>"
-      }
-    ]
-  },
-  {
-    "order": [],
-    "path": [
-      "spec",
-      "component",
-      "inline"
-    ],
-    "help": "Demote / inline a dedicated C4 Level 3 component back into its container manifest.",
-    "hidden": false,
-    "panel": null,
-    "params": [
-      {
-        "name": "component_id",
-        "opts": [
-          "component_id"
-        ],
-        "secondary": [],
-        "kind": "TyperArgument",
-        "required": true,
-        "default": "None",
-        "help": "Identifier of the dedicated component to inline back into its container.",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
-        "name": "eidos_dir",
-        "opts": [
-          "--path",
-          "-p"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "None",
-        "help": "Path to eidos directory.",
-        "panel": null,
-        "envvar": "None",
-        "type": "<typer.models.TyperPath object>"
       }
     ]
   },

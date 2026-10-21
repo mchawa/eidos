@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-CLI-SPEC-COMMANDS
+title: SpecCommands
+container: CNT-EIDOS-CLI
+status: active
+source_path: src/eidos/cli/spec_commands.py
+---
+= Component: SpecCommands
+:toc: left
+
+== Responsibility
+Root specification validation (`eidos validate`, resolving `eidos/` via shared `resolve_cli_eidos_dir` and emitting `--json` output via `orjson`) and `eidos spec` subcommands enforcing a 100% disjoint boundary from `eidos delta` for catalog mutations alongside dynamic v1 schema introspection (`eidos spec schema [type] [--json]` via `get_spec_schema_info` across all 16 bundled schemas): catalog listing (`eidos spec list [--include-archived] --json` across all 15 living specification types, excluding `archive/` subdirectories by default unless `--include-archived` is passed, and rejecting `--type delta`), showing (`eidos spec show`, rejecting `delta/mutation`), minimal blueprint creation (`eidos spec create <type> <id> --title <title> [--path <path>]` across all 15 living specification types including `system`, `architecture`, and `exploration`, rejecting `delta/mutation`), and safe deletion (`eidos spec delete`, rejecting `delta/mutation`).
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

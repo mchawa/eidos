@@ -1,0 +1,450 @@
+---
+type: delta/mutation
+id: DLT-2026-112-REMOVE-INLINE-4CE1
+title: Remove Inline Components and SpecDelta Mutation Parent
+status: applied
+intent:
+  kind: enabler
+  motivation: Eliminate the dual-mode inline vs. promoted C4 Level 3 component model so that all CMP-* components are standalone specifications under eidos/architecture/components/<slug>.adoc, remove the obsolete eidos spec component promote/inline commands (CMP-CLI-COMPONENT-COMMANDS), and remove mutations[].parent from SpecDelta schemas and lifecycle engines with zero backward-compatibility shims.
+mutations:
+  - operation: remove
+    target: CMP-CLI-COMPONENT-COMMANDS
+    details: Remove src/eidos/cli/component_commands.py and unmount the 'eidos spec component' (promote/inline) CLI command group now that all C4 Level 3 components are standalone specifications in eidos/architecture/components/.
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: Remove inline components[] list from CNT-EIDOS-CORE frontmatter (migrating all 10 core CMP-* components to standalone eidos/architecture/components/*.adoc specs) and update DEC-CORE-COMPOSABLE-DELTA-MUTATIONS to reflect (operation + target) without parent.
+    expect:
+      frontmatter:
+        id: CNT-EIDOS-CORE
+      body:
+        not_contains:
+          - "promote/inline"
+  - operation: modify
+    target: CNT-EIDOS-CLI
+    details: Remove inline components[] list from CNT-EIDOS-CLI frontmatter (migrating 10 active CLI CMP-* components to standalone eidos/architecture/components/*.adoc specs) and remove CMP-CLI-COMPONENT-COMMANDS from the internal building blocks table.
+    expect:
+      frontmatter:
+        id: CNT-EIDOS-CLI
+      body:
+        not_contains:
+          - "CMP-CLI-COMPONENT-COMMANDS"
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+    details: Remove inline components[] list from CNT-EIDOS-INDEX frontmatter (migrating all 5 index CMP-* components to standalone eidos/architecture/components/*.adoc specs).
+    expect:
+      frontmatter:
+        id: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+    details: Remove inline components[] list from CNT-EIDOS-PORTAL frontmatter (migrating all 4 portal CMP-* components to standalone eidos/architecture/components/*.adoc specs).
+    expect:
+      frontmatter:
+        id: CNT-EIDOS-PORTAL
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: Remove inline components[] list from CNT-EIDOS-PLUGIN frontmatter (migrating all 4 plugin CMP-* components to standalone eidos/architecture/components/*.adoc specs).
+    expect:
+      frontmatter:
+        id: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CNT-EIDOS-VCS
+    details: Remove inline components[] list from CNT-EIDOS-VCS frontmatter (migrating CMP-DRIFT-DETECTOR to standalone eidos/architecture/components/drift-detector.adoc).
+    expect:
+      frontmatter:
+        id: CNT-EIDOS-VCS
+  - operation: modify
+    target: CNT-EIDOS-DOCS
+    details: Remove inline components[] list from CNT-EIDOS-DOCS frontmatter (migrating all 4 documentation CMP-* components to standalone eidos/architecture/components/*.adoc specs).
+    expect:
+      frontmatter:
+        id: CNT-EIDOS-DOCS
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: Extract CMP-SPEC-VALIDATOR to standalone eidos/architecture/components/spec-validator.adoc; remove #/$defs/inline_component from defs.yaml, remove components[] from container.schema.yaml, inline standalone component properties in component.schema.yaml, remove mutations[].parent from delta.schema.yaml, and strip inline component and mutations[].parent checks from SpecValidator.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-DOMAIN-MODELS
+    details: Extract CMP-DOMAIN-MODELS to standalone eidos/architecture/components/domain-models.adoc; remove InlineComponentModel, FrontmatterModel.components, and DeltaMutationModel.parent from src/eidos/core/spec/models.py.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+    details: Extract CMP-LIFECYCLE-SCAFFOLDER to standalone eidos/architecture/components/lifecycle-scaffolder.adoc; remove promote_component, inline_component, _format_component_item, _mutate_frontmatter_components, and inline container component catalog expansion from scaffolder.py and catalog.py.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+    details: Extract CMP-DELTA-ENGINE to standalone eidos/architecture/components/delta-engine.adoc; remove mutations[].parent normalization, _find_inline_component_dict, _check_structural_subtarget_precondition, and inline container component baseline/verification branches from src/eidos/core/lifecycle/delta_engine.py.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-DELTA-AUDITOR
+    details: Extract CMP-DELTA-AUDITOR to standalone eidos/architecture/components/delta-auditor.adoc; remove mutations[].parent target/token resolution from AuditEngine._extract_targets_and_tokens in src/eidos/core/lifecycle/audit.py.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-SPEC-PARSER
+    details: Extract CMP-SPEC-PARSER to standalone eidos/architecture/components/spec-parser.adoc under container CNT-EIDOS-CORE.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-DESIGN-ENGINE
+    details: Extract CMP-DESIGN-ENGINE to standalone eidos/architecture/components/design-engine.adoc under container CNT-EIDOS-CORE.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-REPO-INITIALIZER
+    details: Extract CMP-REPO-INITIALIZER to standalone eidos/architecture/components/repo-initializer.adoc under container CNT-EIDOS-CORE.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-ASSET-LOCATOR
+    details: Extract CMP-ASSET-LOCATOR to standalone eidos/architecture/components/asset-locator.adoc under container CNT-EIDOS-CORE.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-PROJECT-RESOLVER
+    details: Extract CMP-PROJECT-RESOLVER to standalone eidos/architecture/components/project-resolver.adoc under container CNT-EIDOS-CORE.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-CHANGELOG-GENERATOR
+    details: Extract CMP-CHANGELOG-GENERATOR to standalone eidos/architecture/components/changelog-generator.adoc under container CNT-EIDOS-CORE.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+    details: Extract CMP-CLI-SPEC-COMMANDS to standalone eidos/architecture/components/cli-spec-commands.adoc; unmount component_app from spec_app in src/eidos/cli/spec_commands.py and update help text.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CLI
+  - operation: modify
+    target: CMP-CLI-APP
+    details: Extract CMP-CLI-APP to standalone eidos/architecture/components/cli-app.adoc under container CNT-EIDOS-CLI.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CLI
+  - operation: modify
+    target: CMP-CLI-DELTA-COMMANDS
+    details: Extract CMP-CLI-DELTA-COMMANDS to standalone eidos/architecture/components/cli-delta-commands.adoc under container CNT-EIDOS-CLI.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CLI
+  - operation: modify
+    target: CMP-CLI-PLUGIN-COMMANDS
+    details: Extract CMP-CLI-PLUGIN-COMMANDS to standalone eidos/architecture/components/cli-plugin-commands.adoc under container CNT-EIDOS-CLI.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CLI
+  - operation: modify
+    target: CMP-CLI-DRIFT-COMMANDS
+    details: Extract CMP-CLI-DRIFT-COMMANDS to standalone eidos/architecture/components/cli-drift-commands.adoc under container CNT-EIDOS-CLI.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CLI
+  - operation: modify
+    target: CMP-CLI-INIT-COMMAND
+    details: Extract CMP-CLI-INIT-COMMAND to standalone eidos/architecture/components/cli-init-command.adoc under container CNT-EIDOS-CLI.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CLI
+  - operation: modify
+    target: CMP-CLI-CONTEXT-COMMAND
+    details: Extract CMP-CLI-CONTEXT-COMMAND to standalone eidos/architecture/components/cli-context-command.adoc under container CNT-EIDOS-CLI.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CLI
+  - operation: modify
+    target: CMP-CLI-INDEX-COMMANDS
+    details: Extract CMP-CLI-INDEX-COMMANDS to standalone eidos/architecture/components/cli-index-commands.adoc under container CNT-EIDOS-CLI.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CLI
+  - operation: modify
+    target: CMP-CLI-PORTAL-COMMANDS
+    details: Extract CMP-CLI-PORTAL-COMMANDS to standalone eidos/architecture/components/cli-portal-commands.adoc under container CNT-EIDOS-CLI.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CLI
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+    details: Extract CMP-CLI-DOCTOR-HOOKS to standalone eidos/architecture/components/cli-doctor-hooks.adoc under container CNT-EIDOS-CLI.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-CLI
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    details: Extract CMP-GRAPH-STORAGE to standalone eidos/architecture/components/graph-storage.adoc; bump SCHEMA_VERSION in src/eidos/core/index/storage.py and simplify get_components() to query standalone tech/component entities.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    details: Extract CMP-INCREMENTAL-SYNC-ENGINE to standalone eidos/architecture/components/incremental-sync-engine.adoc; remove inline container component indexing, component_id/module_name symbol_mappings, and mutations[].parent edge generation from src/eidos/core/index/sync.py, and update _CodeOwnershipResolver to resolve component source_path ownership from standalone tech/component entities.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+    details: Extract CMP-FTS-QUERY-ENGINE to standalone eidos/architecture/components/fts-query-engine.adoc; remove inline component_id symbol_mappings lookups from execute_fts_query in src/eidos/core/index/query.py.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+    details: Extract CMP-GRAPH-TRAVERSAL-ENGINE to standalone eidos/architecture/components/graph-traversal-engine.adoc; remove _resolve_inline_component_node, inline component_id CTE unions, inline container_components synthesis, and mutations[].parent traversal from src/eidos/core/index/query.py.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+    details: Extract CMP-TIERED-CONTEXT-COMPRESSOR to standalone eidos/architecture/components/tiered-context-compressor.adoc; remove inline container components[] traversal and _cap_binds_matched_inline_comp from src/eidos/core/index/context.py and render C4 Level 3 components from standalone tech/component entities.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+    details: Extract CMP-AST-SYMBOL-INDEXER to standalone eidos/architecture/components/ast-symbol-indexer.adoc under container CNT-EIDOS-INDEX.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    details: Extract CMP-DRIFT-DETECTOR to standalone eidos/architecture/components/drift-detector.adoc; remove mutations[].parent target resolution in drift.py, inline container component invariant scanning in invariants.py, and inline components[] ownership/1-hop neighborhood branches in structural.py.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-VCS
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+    details: Extract CMP-PORTAL-GENERATOR to standalone eidos/architecture/components/portal-generator.adoc; populate container internal_components exclusively from standalone tech/component specifications in src/eidos/portal/generator.py.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-PORTAL
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+    details: Extract CMP-PORTAL-ASSETS to standalone eidos/architecture/components/portal-assets.adoc; remove parent from SpecMutation and is_promoted from SpecComponent in src/eidos/portal/frontend/src/types.ts and rebuild the air-gapped portal bundle.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-PORTAL
+  - operation: modify
+    target: CMP-PORTAL-SERVER
+    details: Extract CMP-PORTAL-SERVER to standalone eidos/architecture/components/portal-server.adoc under container CNT-EIDOS-PORTAL.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-PORTAL
+  - operation: modify
+    target: CMP-PORTAL-BUILDER
+    details: Extract CMP-PORTAL-BUILDER to standalone eidos/architecture/components/portal-builder.adoc under container CNT-EIDOS-PORTAL.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-PORTAL
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    details: Extract CMP-PLUGIN-INSTALLER to standalone eidos/architecture/components/plugin-installer.adoc; update bundled agent skills (eidos, eidos-spec, eidos-plan, eidos-ops) to enforce standalone C4 Level 3 components and (operation + target) SpecDelta mutations without parent or component promote/inline.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CMP-PLUGIN-VALIDATOR
+    details: Extract CMP-PLUGIN-VALIDATOR to standalone eidos/architecture/components/plugin-validator.adoc under container CNT-EIDOS-PLUGIN.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CMP-HOOK-MANAGER
+    details: Extract CMP-HOOK-MANAGER to standalone eidos/architecture/components/hook-manager.adoc under container CNT-EIDOS-PLUGIN.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CMP-HOOK-RUNNER
+    details: Extract CMP-HOOK-RUNNER to standalone eidos/architecture/components/hook-runner.adoc under container CNT-EIDOS-PLUGIN.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CMP-DOCS-GETTING-STARTED
+    details: Extract CMP-DOCS-GETTING-STARTED to standalone eidos/architecture/components/docs-getting-started.adoc under container CNT-EIDOS-DOCS.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-DOCS
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: Extract CMP-DOCS-CORE-CONCEPTS to standalone eidos/architecture/components/docs-core-concepts.adoc; update docs/concepts/ (how-eidos-works.md, living-specs.md, spec-deltas.md, glossary.md) to reflect standalone tech/component specifications and (operation + target) SpecDelta mutations.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-DOCS
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: Extract CMP-DOCS-USER-GUIDES to standalone eidos/architecture/components/docs-user-guides.adoc; update docs/guides/cli.md and docs/guides/agent-plugins.md to remove eidos spec component promote/inline and mutations[].parent.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-DOCS
+  - operation: modify
+    target: CMP-DOCS-CONFIG
+    details: Extract CMP-DOCS-CONFIG to standalone eidos/architecture/components/docs-config.adoc under container CNT-EIDOS-DOCS.
+    expect:
+      frontmatter:
+        type: tech/component
+        container: CNT-EIDOS-DOCS
+  - operation: modify
+    target: ARCH-EIDOS-001
+    details: Update DEC-ARCH-CENTRALIZED-HYBRID-C4 and C4 Level 3 architecture sections in eidos/architecture/system-architecture.adoc to reflect standalone tech/component specifications under eidos/architecture/components/.
+    expect:
+      frontmatter:
+        id: ARCH-EIDOS-001
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: Remove 'component promote' and 'component inline' subcommands from the 'eidos spec' CLI interface contract in eidos/architecture/contracts/cli.adoc.
+    expect:
+      body:
+        not_contains:
+          - "component promote"
+          - "component inline"
+  - operation: modify
+    target: CAP-PROD-001
+    details: Update CAP-PROD-001 (INV-COMPONENT-CENTRALIZATION-MANDATE and INV-COMPONENT-CONTAINER-AFFINITY) to state that all C4 Level 3 components (CMP-*) are standalone tech/component specifications under eidos/architecture/components/.
+    expect:
+      body:
+        contains:
+          - "Living Specification Parsing"
+  - operation: modify
+    target: CAP-PROD-002
+    details: Update CAP-PROD-002 and INV-DELTA-VERIFY-MODIFICATION-EVIDENCE to reflect orthogonal (operation + target) SpecDelta mutations without parent or inline component digest branching.
+    expect:
+      body:
+        not_contains:
+          - "mutations[].parent"
+  - operation: modify
+    target: CAP-AGENT-001
+    details: Update INV-AGENT-TASK-RETRIEVAL-COVERAGE in CAP-AGENT-001 to reflect standalone CMP-* entity indexing.
+    expect:
+      frontmatter:
+        id: CAP-AGENT-001
+vcs:
+  branch: main
+  base_commit: 05536df63a44c9d1d203eec206f857ae4f964f24
+---
+= SpecDelta: Remove Inline Components and SpecDelta Mutation Parent
+:toc: left
+
+== Problem Statement
+Eidos previously supported a dual-mode C4 Level 3 component representation: components (`CMP-*`) could either be embedded inline inside a parent container's `components:` YAML frontmatter array (`tech/container`) or promoted to standalone `tech/component` files under `eidos/architecture/components/<slug>.adoc` via `eidos spec component promote` / `eidos spec component inline`.
+
+Supporting both inline and standalone components introduced widespread dual-path complexity across the entire architecture:
+
+1. **Schema & Model Duplication**: `assets/schemas/v1/common/defs.yaml` maintained `#/$defs/inline_component` shared between `container.schema.yaml` (`components[]`) and `component.schema.yaml`, while `FrontmatterModel` carried `InlineComponentModel` alongside top-level component fields.
+2. **SpecDelta `mutations[].parent` Indirection**: Because inline components (and invariants) lacked standalone document identity or required container disambiguation, `delta.schema.yaml` and `DeltaMutationModel` carried an extra `parent` field (`mutations[].parent`), requiring `_check_structural_subtarget_precondition`, `_find_inline_component_dict`, and dual `(target, parent)` loops across `SpecValidator`, `DeltaEngine`, `AuditEngine`, `IncrementalSyncEngine`, `GraphTraversalEngine`, and `DriftDetector`.
+3. **Graph Index & Query Dual-Pathing**: `IncrementalSyncEngine` (`sync.py`) had to synthesize virtual `tech/component` entity rows and `symbol_mappings` (`kind = 'component_id'`, `kind = 'module_name'`) from container frontmatters, while `query.py` (`_resolve_inline_component_node`, `execute_fts_query`, `execute_k_hop_traversal`, `execute_incoming_references`) and `context.py` (`_cap_binds_matched_inline_comp`) maintained separate branches for inline vs. standalone components.
+4. **Obsolete Promotion/Inlining Plumbing**: `src/eidos/cli/component_commands.py` (`CMP-CLI-COMPONENT-COMMANDS`) and `promote_component` / `inline_component` / `_mutate_frontmatter_components` in `scaffolder.py` and `catalog.py` existed solely to shuttle components back and forth between container YAML frontmatters and `eidos/architecture/components/`.
+
+== Proposed Specification Changes
+
+=== 1. Standalone-Only C4 Level 3 Components (`tech/component`)
+* **Living Catalog Migration First (`eidos/architecture/`)**:
+  - Before removing the promotion machinery and inline schema definitions, promote all 40 active `CMP-*` components across `CNT-EIDOS-CORE`, `CNT-EIDOS-CLI`, `CNT-EIDOS-INDEX`, `CNT-EIDOS-PORTAL`, `CNT-EIDOS-PLUGIN`, `CNT-EIDOS-VCS`, and `CNT-EIDOS-DOCS` into standalone `eidos/architecture/components/<slug>.adoc` specifications with `container: CNT-*`, keeping narrative component responsibility solely in the `== Responsibility` AsciiDoc body section (`DEC-SCHEMA-PROSE-IN-BODY-AND-AST-EDGES`).
+  - Remove `CMP-CLI-COMPONENT-COMMANDS` (`src/eidos/cli/component_commands.py`), remove `components:` from all 7 container frontmatters, and remove the duplicated `== Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks` tables from all 7 container specifications.
+* **Schemas (`assets/schemas/v1/`)**:
+  - Remove `#/$defs/inline_component` from `assets/schemas/v1/common/defs.yaml`.
+  - Remove the `components` property from `assets/schemas/v1/tech/container.schema.yaml` and `assets/schemas/v1/tech/container.template.adoc`.
+  - Make `assets/schemas/v1/tech/component.schema.yaml` self-contained with explicit `properties` (`type`, `id`, `title`, `container`, `status`, `version`, `domain`, `source_path`, `invariants`, `decisions`) and `additionalProperties: false` (moving `responsibility` out of YAML frontmatter into the `== Responsibility` AsciiDoc body section).
+* **Catalog, Index Ownership Precedence & Schema Cleanup**:
+  - Simplify `_build_spec_catalog_with_invariants` (`catalog.py`), `query_spec_catalog_in_db` (`query.py`), and `ArchitecturalIndex.get_spec_catalog` (`graph_index.py`) from a 3-tuple `(specs_by_id, container_components, invariant_map)` to a 2-tuple `(specs_by_id, invariant_map)`.
+  - In `_CodeOwnershipResolver` (`sync.py`), evaluate standalone `tech/component` (`CMP-*`) `owned_path` claims before `tech/container` (`CNT-*`) fallback so source files bind to their most specific `CMP-*` owner first.
+  - Drop the redundant `component_id` column from `code_symbols` in `storage.py` and `query.py` alongside bumping `SCHEMA_VERSION` to `"2.17.0"`.
+* **CLI Surface (`CTR-EIDOS-CLI`, `CMP-CLI-SPEC-COMMANDS`)**:
+  - Delete `src/eidos/cli/component_commands.py`, unmount `eidos spec component` (`promote` / `inline`) from `spec_app` in `src/eidos/cli/spec_commands.py`, and update `tests/fixtures/cli_command_tree.json`.
+  - Authoring a component uses the standard `eidos spec create component <CMP-ID> --title "<Title>"` and `eidos spec delete <CMP-ID>` commands.
+
+=== 2. Removal of `mutations[].parent` from SpecDelta (`delta/mutation`)
+* **Schema & Models**:
+  - Remove `parent` from `mutations.items.properties` in `assets/schemas/v1/delta/delta.schema.yaml` and `assets/schemas/v1/delta/delta.template.adoc`.
+  - Remove `parent: str | None = None` from `DeltaMutationModel` in `src/eidos/core/spec/models.py`.
+  - Strip legacy `parent:` entries from existing SpecDelta files under `eidos/deltas/` and `eidos/deltas/archive/` so the entire repository validates cleanly under `additionalProperties: false`.
+* **Validator, DeltaEngine, AuditEngine, Index & Drift**:
+  - Remove `mutations.parent` cross-reference checks and the `operation == "add" and target.startswith("INV-") requires parent` rule in `SpecValidator` (`src/eidos/core/spec/validator.py`).
+  - Remove `parent` normalization, `_find_inline_component_dict`, and `_check_structural_subtarget_precondition` from `src/eidos/core/lifecycle/delta_engine.py`.
+  - Remove `parent` extraction from `AuditEngine._extract_targets_and_tokens` (`src/eidos/core/lifecycle/audit.py`), `rebuild_spec_edges` (`src/eidos/core/index/sync.py`), `compute_delta_impact_in_db` (`src/eidos/core/index/query.py`), and `detect_drift` (`src/eidos/vcs/drift.py`).
+
+== Implementation Plan
+
+1. **Promote Existing Inline Components & Clean SpecDeltas (`eidos/architecture/`, `eidos/deltas/`)**:
+   - Promote all 40 active `CMP-*` inline components across all 7 `CNT-*` containers to standalone `eidos/architecture/components/<slug>.adoc` specifications (while existing promotion tooling is still intact), delete `CMP-CLI-COMPONENT-COMMANDS`, and remove `components:` from all 7 `CNT-*` container frontmatters.
+   - Strip legacy `parent:` fields from existing SpecDelta files in `eidos/deltas/` and `eidos/deltas/archive/`.
+2. **Schemas & Templates (`assets/schemas/v1/`)**:
+   - Remove `inline_component` from `assets/schemas/v1/common/defs.yaml`.
+   - Remove `components` from `assets/schemas/v1/tech/container.schema.yaml` and `assets/schemas/v1/tech/container.template.adoc`.
+   - Define standalone component properties directly in `assets/schemas/v1/tech/component.schema.yaml`.
+   - Remove `parent` from `assets/schemas/v1/delta/delta.schema.yaml` and `assets/schemas/v1/delta/delta.template.adoc`.
+3. **Core Spec Models & Validator (`src/eidos/core/spec/`)**:
+   - In `models.py`: Remove `InlineComponentModel`, `FrontmatterModel.components`, and `DeltaMutationModel.parent`; simplify `invariants_with_component()`, `all_invariants()`, and `all_decisions()`.
+   - In `validator.py`: Remove inline `doc.model.components` registration, `source_path` validation loops, `mutations.parent` reference checks, and the `INV-*` `add` `parent` requirement.
+4. **Lifecycle Engine (`src/eidos/core/lifecycle/`)**:
+   - In `catalog.py`: Remove `_format_component_item`, `_mutate_frontmatter_components`, and inline `container_components` extraction; return a 2-tuple `(specs_by_id, invariant_map)` from `_build_spec_catalog_with_invariants`.
+   - In `scaffolder.py`: Remove `promote_component`, `inline_component`, and inline container component iteration in `list_specs`.
+   - In `delta_engine.py`: Remove `parent` from `normalize_delta_mutation`, delete `_find_inline_component_dict` and `_check_structural_subtarget_precondition`, update `_build_spec_catalog_with_invariants` callers to unpack `(specs_by_id, invariant_map)`, and simplify `_resolve_git_baseline_sha`, `_evaluate_declarative_postcondition`, and `verify_delta_mutations` so `CMP-*` resolves strictly as a standalone `tech/component` document.
+   - In `audit.py`: Remove `parent` handling in `_extract_targets_and_tokens`.
+5. **Knowledge Graph Index & Context Slicing (`src/eidos/core/index/`)**:
+   - In `storage.py` & `graph_index.py`: Bump `SCHEMA_VERSION` to `"2.17.0"`, drop the redundant `component_id` column from `code_symbols`, update `get_spec_catalog` to return `(specs_by_id, invariant_map)`, and simplify `get_components()` to read `tech/component` entities.
+   - In `sync.py`: Remove inline `model.components` entity/FTS/edge synthesis, remove `component_id` and `module_name` from `_NON_AST_SYMBOL_KINDS`, prioritize `tech/component` over `tech/container` in `_CodeOwnershipResolver` so source files bind to their owning `CMP-*` entity first, and remove `"parent"` from `delta/mutation` `affects` edge generation.
+   - In `query.py`: Remove `_resolve_inline_component_node`, remove `symbol_mappings WHERE kind = 'component_id'` unions in `execute_fts_query`, `execute_k_hop_traversal`, and `execute_incoming_references`, drop `component_id` from `code_symbols` queries, return `(specs_by_id, invariant_map)` from `query_spec_catalog_in_db`, and remove `"parent"` from `compute_delta_impact_in_db`.
+   - In `context.py`: Remove inline `components[]` loops and `_cap_binds_matched_inline_comp`, projecting C4 Level 3 components from standalone `tech/component` entities.
+6. **CLI & VCS Drift (`src/eidos/cli/`, `src/eidos/vcs/`)**:
+   - Delete `src/eidos/cli/component_commands.py`, remove `component_app` from `src/eidos/cli/spec_commands.py`, and update `tests/fixtures/cli_command_tree.json`.
+   - In `src/eidos/vcs/drift.py`, `invariants.py`, and `structural.py`: Remove `"parent"` from delta target extraction, remove inline container component invariant scanning, change `_OWNERSHIP_KEYS` to `("source_path",)`, and remove inline `components[]` loops in `_declared_source_patterns` and `_collect_1hop_spec_targets`.
+7. **Portal, Agent Skills, Documentation & Tests (`src/eidos/portal/`, `assets/plugin_reference/`, `docs/`, `tests/`)**:
+   - Update `src/eidos/portal/generator.py` and `src/eidos/portal/frontend/src/types.ts` (and rebuild `assets/portal/bundle.html.gz`).
+   - Update `assets/plugin_reference/skills/` and `.agents/plugins/eidos/skills/`, plus `docs/`.
+   - Delete `tests/test_component_lifecycle.py` and update test suites (`tests/`) to use standalone `tech/component` specifications, 2-tuple `get_spec_catalog()` unpacking, and `(operation, target)` SpecDelta mutations.
+

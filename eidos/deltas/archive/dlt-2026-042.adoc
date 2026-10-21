@@ -15,6 +15,5 @@ mutations:
     target: CMP-DELTA-ENGINE
   - operation: modify
     target: INV-SPEC-GRAPH-INTEGRITY
-    parent: CAP-PROD-001
 ---
 = SpecDelta: Enforce Strict C4 Container (CNT-*) vs Component (CMP-*) Target Separation Across Schemas and Validator

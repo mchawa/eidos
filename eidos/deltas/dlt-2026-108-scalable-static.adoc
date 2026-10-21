@@ -35,7 +35,6 @@ mutations:
           - "hash"
   - operation: add
     target: INV-PORTAL-STATIC-SCALABILITY
-    parent: CAP-EXP-001
     details: "Add INV-PORTAL-STATIC-SCALABILITY invariant verifying payload deduplication, graph edge export, and static-first deep-linking."
     expect:
       frontmatter:

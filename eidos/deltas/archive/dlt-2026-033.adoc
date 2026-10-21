@@ -13,6 +13,5 @@ mutations:
     target: CNT-EIDOS-PLUGIN
   - operation: modify
     target: INV-AGENT-LINT-HOOK
-    parent: CAP-AGENT-001
 ---
 = SpecDelta: Normalize PreToolUse and PostToolUse Hook Payloads Across AI Agent Harnesses

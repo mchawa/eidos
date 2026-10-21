@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-DOCS-CORE-CONCEPTS
+title: CoreConceptsGuides
+container: CNT-EIDOS-DOCS
+status: active
+source_path: docs/concepts/how-eidos-works.md
+---
+= Component: CoreConceptsGuides
+:toc: left
+
+== Responsibility
+In-depth conceptual guides: How Eidos Works (7-container internal architecture, 4-stage execution pipeline, bidirectional contract parity, 10-table stateless SQLite knowledge graph at `SCHEMA_VERSION` `2.17.0` with `file_tokens_fts` and AST-derived component dependencies, two-tier FTS5 ranking with AST symbol projection, 17-language `AstGrepIndexer` polyglot structural diffing, composable operation/target SpecDelta mutations with nested dot-path `expect:` post-conditions, index-driven deletion auditing, `--keep-recent 15` two-tier archive slimming, and stateless Stop Hook), Living Specs (15 declarative blueprint types via `eidos spec`), Architectural Index (`CNT-EIDOS-CORE`, `eidos context --json`, and calibrated `token_estimate` Python API examples), SpecDeltas, Invariants, Explorations, Design Systems, and the streamlined v1 JSON Schema-validated 16-schema Glossary.
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

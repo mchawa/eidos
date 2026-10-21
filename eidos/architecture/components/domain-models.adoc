@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-DOMAIN-MODELS
+title: DomainModels
+container: CNT-EIDOS-CORE
+status: active
+source_path: src/eidos/core/spec/models.py
+---
+= Component: DomainModels
+:toc: left
+
+== Responsibility
+Canonical entity prefix and schema registry (`ENTITY_PREFIX_REGISTRY`, `ENTITY_ID_PREFIXES`, `PREFIX_TO_ENTITY_META`, `TYPE_TO_SCHEMA_NAME`, `DOC_TYPE_TO_PREFIX`, `VALID_SPEC_TYPES`, `resolve_entity_prefix_meta`, `infer_entity_type_from_path`), typed Pydantic frontmatter models (`_SpecBaseModel`, `FrontmatterModel`, `TechnicalSectionModel` with flat `contracts` list, `DeltaIntentModel`, `DeltaMutationModel` enforcing composable `operation`/`target` fields, `DecisionModel`, `InvariantModel`, `RejectedAlternativeModel`) with direct attribute access, helper accessors (`source_paths`, `effective_source_paths`, `effective_domain`, `effective_test_binding`, `all_invariants`, `all_decisions`), and dataclass domain models representing living specification documents and validation reports.
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

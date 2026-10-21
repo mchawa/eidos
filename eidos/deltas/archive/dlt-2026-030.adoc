@@ -19,6 +19,5 @@ mutations:
     target: CNT-EIDOS-CORE
   - operation: modify
     target: INV-DRIFT-DETECTION-ACCURACY
-    parent: CAP-VCS-001
 ---
 = SpecDelta: Strict 1-Hop Drift Scoping: Remove Global System Spec Escape Hatch and Graph-Scope Design Drift

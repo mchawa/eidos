@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-DELTA-ENGINE
+title: DeltaEngine
+container: CNT-EIDOS-CORE
+status: active
+source_path: src/eidos/core/lifecycle/delta_engine.py
+---
+= Component: DeltaEngine
+:toc: left
+
+== Responsibility
+Owns the SpecDelta lifecycle and composable mutation normalization (`SUPPORTED_MUTATION_OPERATIONS`, importing `PREFIX_TO_ENTITY_META` and `resolve_entity_prefix_meta` from `ENTITY_PREFIX_REGISTRY` in `models.py`, `normalize_delta_mutation`) across orthogonal mutations (`operation`, `target` supporting `deprecate` across all 14 lifecycle-status specification types and `add` on `ARCH-*`/`SYS-*`): standalone SpecDelta blueprint creation (`create_delta` auto-detecting `vcs.branch` via `_resolve_git_branch` and `vcs.base_commit` via `_resolve_git_head` alongside Git-free <SLUG>-<4HEX> ID generation in generate_collision_free_delta_id scanning local `eidos/deltas/` and `eidos/deltas/archive/` `.adoc` files without Git subprocesses to emit `DLT-YYYY-NNN-<SLUG>-<4HEX>` IDs and loading prose from `delta/delta.template.adoc` with Problem Statement, Proposed Specification Changes, and Implementation Plan sections), SpecDelta-exclusive deletion (`delete_delta` rejecting non-delta living specs), cached listing and 5-state status summaries (`list_deltas` with `include_archived=False` default, `get_delta_status_summary` across `proposed`, `in_review`, `approved`, `applied`, `rejected`), subdirectory partitioning and in-place `.adoc` slimming for older terminal SpecDeltas and Explorations (`archive_deltas`, `archive_explorations` retaining the most recent `keep_recent=15` terminal artifacts in hot directories and moving older terminal artifacts into `eidos/deltas/archive/` and `eidos/explorations/archive/`, extracting exploration hypothesis and findings strictly from AsciiDoc prose sections), verify-gated status transitions (`set_delta_status`), Git-native baselines (`_resolve_git_baseline_sha` with memoized Git revision and blob resolution), structured `body`/`frontmatter` `expect` verification (`_evaluate_declarative_postcondition` and `_resolve_frontmatter_path` supporting open `expect.frontmatter` key assertions, nested dot-path frontmatter expectations across dicts and lists of dicts, and leaf-key `_PROSE_EXPECT_FIELDS` substring matching with `orjson` diagnostic formatting and evaluating `extracted_body` even when empty without falling back to raw frontmatter, `verify_delta_mutations`), and default-verified atomic application with pre-commit `SpecValidator` verification (`apply_delta` with `verify=True`).
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

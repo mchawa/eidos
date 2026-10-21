@@ -87,7 +87,6 @@ def test_a2_declarative_postcondition_does_not_fallback_to_frontmatter_when_body
         "title: Empty Body Component\n"
         "container: CNT-API\n"
         "status: active\n"
-        "responsibility: Handle token validation\n"
         "---\n",
         encoding="utf-8",
     )
@@ -106,7 +105,6 @@ def test_a2_declarative_postcondition_does_not_fallback_to_frontmatter_when_body
         mutation_yaml_leak,
         target="CMP-EMPTY",
         specs_by_id={},
-        container_components={},
         invariant_map={},
         target_file=spec_file,
         diagnostics=diag,

@@ -15,6 +15,5 @@ mutations:
     target: CNT-EIDOS-INDEX
   - operation: modify
     target: INV-KNOWLEDGE-GRAPH-CATALOG
-    parent: CAP-PROD-001
 ---
 = SpecDelta: Preserve Test-to-Invariant Assertion Edges in Knowledge Graph Sync

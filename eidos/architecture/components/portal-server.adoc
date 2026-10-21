@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-PORTAL-SERVER
+title: PortalServer
+container: CNT-EIDOS-PORTAL
+status: active
+source_path: src/eidos/portal/server.py
+---
+= Component: PortalServer
+:toc: left
+
+== Responsibility
+Hosts lightweight local multi-threaded HTTP server exposing web UI and `orjson`-serialized JSON endpoints (lazily loading HTML/SVG assets via get_portal_html_template and get_portal_favicon_svg, validating static paths via is_relative_to, exposing lightweight `/api/version` mtime snapshot polling and `/api/drift` uncommitted drift summaries, and resolving custom eidos_dir targets in /api/validate and /api/drift) with thread-safe (_cache_lock) eidos_dir file mtime snapshot response caching on EidosPortalHandler.
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

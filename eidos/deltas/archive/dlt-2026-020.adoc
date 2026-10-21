@@ -15,6 +15,5 @@ mutations:
     target: SCR-PORTAL-ARCHITECTURE
   - operation: add
     target: INV-PORTAL-C4-CONTAINER-HIERARCHY
-    parent: CAP-EXP-001
 ---
 = SpecDelta: Hierarchical C4 Level 2 Container Topology and Inter-Container Connection Architecture

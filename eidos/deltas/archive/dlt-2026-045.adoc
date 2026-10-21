@@ -15,6 +15,5 @@ mutations:
     target: CAP-PROD-002
   - operation: modify
     target: INV-MUTATION-REVERSIBILITY
-    parent: CAP-PROD-002
 ---
 = SpecDelta: Transactional SpecDelta Execution, Complete Action Coverage, and Git-Backed Baseline SHAs

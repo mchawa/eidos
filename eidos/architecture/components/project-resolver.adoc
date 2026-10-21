@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-PROJECT-RESOLVER
+title: ProjectResolver
+container: CNT-EIDOS-CORE
+status: active
+source_path: src/eidos/core/workspace/project.py
+---
+= Component: ProjectResolver
+:toc: left
+
+== Responsibility
+Zero-config repository and specification root discovery (find_repo_root and resolve_spec_and_repo_roots recognizing .git, eidos/, .spec/, specs/, and subdirectory spec paths containing system.adoc, architecture/, domains/, policies/, deltas/, or design/), anchored path ownership glob matching (preserving leading dotfile segments, scoring literal directory-prefix specificity ahead of broad wildcards, and extracting declared source_path and specification_file via extract_entity_paths while filtering N/A/TBD/NONE placeholders), canonical polyglot test-file classification (is_polyglot_test_file), single-pass zero-delimited gitignore- and STANDARD_EXCLUDED_DIRS-aware file enumeration (get_tracked_files), and batched gitattributes linguist-generated/vendored file filtering with scalar input normalization.
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

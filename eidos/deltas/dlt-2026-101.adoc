@@ -15,7 +15,6 @@ vcs:
 mutations:
   - operation: modify
     target: CMP-GRAPH-STORAGE
-    parent: CNT-EIDOS-INDEX
     details: "Bump SCHEMA_VERSION to 2.11.0 and remove the has_fixture column from test_binding_cache DDL, load_test_binding_cache, and save_test_binding_cache in src/eidos/core/index/storage.py."
     expect:
       body:
@@ -23,7 +22,6 @@ mutations:
           - "2.11.0"
   - operation: modify
     target: CMP-DRIFT-DETECTOR
-    parent: CNT-EIDOS-VCS
     details: "Filter fixture lines at extraction time in _build_cached_test_file_entry and persist functions_json as a flat dict[str, list[str]] of non-empty function token lists without has_fixture or fixture_invs in src/eidos/vcs/invariants.py."
     expect:
       body:

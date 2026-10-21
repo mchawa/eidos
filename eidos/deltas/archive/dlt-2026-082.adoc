@@ -16,6 +16,5 @@ mutations:
     target: CAP-PROD-001
   - operation: modify
     target: INV-SPEC-GRAPH-INTEGRITY
-    parent: CAP-PROD-001
 ---
 = SpecDelta: Bidirectional Contract Parity Verification and Multi-Framework CLI Contract Extraction

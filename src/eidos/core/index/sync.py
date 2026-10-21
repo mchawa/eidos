@@ -72,9 +72,7 @@ _NON_AST_SYMBOL_KINDS = frozenset(
         "test_binding",
         "package_path",
         "owned_path",
-        "module_name",
         "source_path",
-        "component_id",
         "inferred_path",
     }
 )
@@ -141,51 +139,54 @@ class IndexSyncStats:
 
 
 class _CodeOwnershipResolver:
-    """Deterministic, spec-order-independent attribution of source files to owning containers/components.
+    """Deterministic, spec-order-independent attribution of source files to owning components/containers.
 
     Built once per sync from the persisted specification state, so every file resolves identically no matter
-    which spec was processed first. Precedence (DLT-2026-034):
+    which spec was processed first. Precedence (DLT-2026-034, DLT-2026-112):
 
-    1. exact component ``source_path`` declared by any container (lowest container id wins; every other declaring
+    1. exact literal ``source_path`` declared by a ``tech/component`` (lowest component id wins; every other declaring
        entity is kept as a secondary owner, see ``owners()``);
-    2. highest-scoring ``owned_path`` pattern (``match_path_pattern``);
-    3. longest ``package_path`` prefix (path-boundary aware) across all entries of all containers.
+    2. highest-scoring ``owned_path`` pattern (``match_path_pattern``), prioritizing ``tech/component`` over ``tech/container``;
+    3. longest ``package_path`` prefix (path-boundary aware) across all entries of all components and containers.
     """
 
     def __init__(self, conn: sqlite3.Connection) -> None:
-        self._component_sources: dict[str, tuple[str, str]] = {}
-        self._component_patterns: list[tuple[str, str, str]] = []
+        self._component_sources: dict[str, str] = {}
+        self._component_patterns: list[tuple[str, str]] = []
         self._declared_by: dict[str, set[str]] = {}
-        self._declared_components: dict[tuple[str, str], str] = {}
-        for row in conn.execute("SELECT id, data_json FROM entities WHERE type = 'tech/container' ORDER BY id;"):
+        for row in conn.execute("SELECT id, data_json FROM entities WHERE type = 'tech/component' ORDER BY id;"):
             try:
                 fm = orjson.loads(row["data_json"])
             except (TypeError, ValueError):
                 continue
-            for comp in fm.get("components") or []:
-                if not isinstance(comp, dict):
+            if not isinstance(fm, dict):
+                continue
+            raw = fm.get("source_path")
+            paths = raw if isinstance(raw, list) else ([raw] if raw else [])
+            cid = str(row["id"] or "")
+            for sp in paths:
+                norm = _normalize_rel_path(str(sp))
+                if not norm:
                     continue
-                raw = comp.get("source_path")
-                paths = raw if isinstance(raw, list) else ([raw] if raw else [])
-                cid = str(comp.get("id") or "")
-                for sp in paths:
-                    norm = _normalize_rel_path(str(sp))
-                    if not norm:
-                        continue
-                    if any(ch in norm for ch in "*?["):
-                        if cid:
-                            self._component_patterns.append((norm, row["id"], cid))
-                        continue
-                    if cid and "." not in norm.rsplit("/", 1)[-1]:
-                        self._component_patterns.append((norm, row["id"], cid))
-                    self._component_sources.setdefault(norm, (row["id"], cid))
-                    self._declared_by.setdefault(norm, set()).add(row["id"])
-                    self._declared_components.setdefault((norm, row["id"]), cid)
+                if any(ch in norm for ch in "*?["):
+                    if cid:
+                        self._component_patterns.append((norm, cid))
+                    continue
+                if cid and "." not in norm.rsplit("/", 1)[-1]:
+                    self._component_patterns.append((norm, cid))
+                self._component_sources.setdefault(norm, cid)
+                self._declared_by.setdefault(norm, set()).add(cid)
 
         self._owned: list[tuple[str, str]] = [
             (r["symbol"], r["entity_id"])
             for r in conn.execute(
-                "SELECT symbol, entity_id FROM symbol_mappings WHERE kind = 'owned_path' ORDER BY entity_id, symbol;"
+                """
+                SELECT s.symbol, s.entity_id
+                FROM symbol_mappings s
+                LEFT JOIN entities e ON e.id = s.entity_id
+                WHERE s.kind = 'owned_path'
+                ORDER BY CASE WHEN e.type = 'tech/component' THEN 0 ELSE 1 END, s.entity_id, s.symbol;
+                """
             )
         ]
         self._scan_dirs: set[str] = set()
@@ -207,7 +208,13 @@ class _CodeOwnershipResolver:
                     self._declared_by.setdefault(norm, set()).add(ent_id)
         self._packages: list[tuple[str, str]] = []
         for r in conn.execute(
-            "SELECT symbol, entity_id FROM symbol_mappings WHERE kind = 'package_path' ORDER BY entity_id, symbol;"
+            """
+            SELECT s.symbol, s.entity_id
+            FROM symbol_mappings s
+            LEFT JOIN entities e ON e.id = s.entity_id
+            WHERE s.kind = 'package_path'
+            ORDER BY CASE WHEN e.type = 'tech/component' THEN 0 ELSE 1 END, s.entity_id, s.symbol;
+            """
         ):
             norm = _normalize_rel_path(r["symbol"])
             if not norm:
@@ -238,33 +245,20 @@ class _CodeOwnershipResolver:
         """Every literal source file explicitly declared by any entity."""
         return set(self._declared_by)
 
-    def owners(self, rel_path: str) -> list[tuple[str, str]]:
-        """``(entity_id, component_id)`` owners of a file: the resolved primary owner first, then every other entity
+    def owners(self, rel_path: str) -> list[str]:
+        """Entity IDs owning a file: the resolved primary owner first, then every other entity
         that explicitly declares the file (sorted by id). Empty when the file is unowned."""
-        primary, component_id = self.resolve(rel_path)
+        primary = self.resolve(rel_path)
         if not primary:
             return []
         rel = _normalize_rel_path(rel_path)
-        result = [(primary, component_id)]
+        result = [primary]
         for entity_id in sorted(self._declared_by.get(rel, set()) - {primary}):
-            result.append((entity_id, self._declared_components.get((rel, entity_id), "")))
+            result.append(entity_id)
         return result
 
-    def _resolve_inline_component_for_owner(self, rel: str, owner: str | None) -> str:
-        if not owner:
-            return ""
-        best_score = 0
-        best_cid = ""
-        for pat, cnt_id, cid in self._component_patterns:
-            if cnt_id != owner:
-                continue
-            score = match_path_pattern(rel, pat)
-            if score > best_score:
-                best_score, best_cid = score, cid
-        return best_cid
-
-    def resolve(self, rel_path: str) -> tuple[str | None, str]:
-        """Return ``(owning entity id or None, component id or '')`` for a repo-relative source path."""
+    def resolve(self, rel_path: str) -> str | None:
+        """Return owning entity id or None for a repo-relative source path."""
         rel = _normalize_rel_path(rel_path)
         hit = self._component_sources.get(rel)
         if hit:
@@ -272,40 +266,46 @@ class _CodeOwnershipResolver:
 
         best_score = 0
         owner: str | None = None
+        for pattern, entity_id in self._component_patterns:
+            score = match_path_pattern(rel, pattern)
+            if score > best_score:
+                best_score, owner = score, entity_id
+        if owner:
+            return owner
+
         for pattern, entity_id in self._owned:
             score = match_path_pattern(rel, pattern)
             if score > best_score:
                 best_score, owner = score, entity_id
         if owner:
-            return owner, self._resolve_inline_component_for_owner(rel, owner)
+            return owner
 
         best_len = -1
         for pkg, entity_id in self._packages:
             if (rel == pkg or rel.startswith(pkg + "/")) and len(pkg) > best_len:
                 best_len, owner = len(pkg), entity_id
-        return owner, self._resolve_inline_component_for_owner(rel, owner)
+        return owner
 
 
 def store_code_symbols(
     conn: sqlite3.Connection,
     rel_path: str,
-    owners: list[tuple[str, str]],
+    owners: list[str],
     symbols: list[Any],
     imports: list[str] | None = None,
 ) -> None:
     """Replace all persisted symbols of one source file (delete-then-insert)."""
     conn.execute("DELETE FROM code_symbols WHERE file_path = ?;", (rel_path,))
 
-    for position, (entity_id, component_id) in enumerate(owners):
+    for position, entity_id in enumerate(owners):
         is_prim = 1 if position == 0 else 0
         for sym in symbols:
             parent = sym.parent_symbol or ""
             conn.execute(
                 """
                 INSERT OR IGNORE INTO code_symbols
-                (file_path, symbol, kind, parent_symbol, line_start, line_end, signature, entity_id,
-                 component_id, is_primary)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                (file_path, symbol, kind, parent_symbol, line_start, line_end, signature, entity_id, is_primary)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     rel_path,
@@ -316,7 +316,6 @@ def store_code_symbols(
                     sym.line_end,
                     sym.signature or "",
                     entity_id,
-                    component_id,
                     is_prim,
                 ),
             )
@@ -325,11 +324,10 @@ def store_code_symbols(
                 conn.execute(
                     """
                     INSERT OR IGNORE INTO code_symbols
-                    (file_path, symbol, kind, parent_symbol, line_start, line_end, signature, entity_id,
-                     component_id, is_primary)
-                    VALUES (?, ?, 'import', '', 0, 0, '', ?, ?, ?);
+                    (file_path, symbol, kind, parent_symbol, line_start, line_end, signature, entity_id, is_primary)
+                    VALUES (?, ?, 'import', '', 0, 0, '', ?, ?);
                     """,
-                    (rel_path, imp, entity_id, component_id, is_prim),
+                    (rel_path, imp, entity_id, is_prim),
                 )
 
 
@@ -397,7 +395,7 @@ def index_source_file(
 ) -> None:
     """Index one non-test source or governed text file for all its resolved owners (one AST parse)."""
     owners = resolver.owners(rel_path)
-    owner_ids = {entity_id for entity_id, _ in owners}
+    owner_ids = set(owners)
     is_ast_code = path.suffix.lower() in _CODE_EXTS
     keep = (resolver.declared_owners(rel_path) | owner_ids) if is_ast_code else resolver.declared_owners(rel_path)
     for stale in conn.execute(
@@ -443,7 +441,7 @@ def index_source_file(
         INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type)
         VALUES (?, ?, ?, ?, 'code/source');
         """,
-        (rel_path, mtime, sha, owners[0][0] if owners else "source"),
+        (rel_path, mtime, sha, owners[0] if owners else "source"),
     )
     _upsert_file_tokens_fts(conn, rel_path, "code/source", content or "")
 
@@ -492,12 +490,12 @@ def reconcile_code_ownership(
         if rel_code in processed or is_polyglot_test_file(rel_code):
             continue
         owners = resolver.owners(rel_code)
-        if rel_code in manifest and manifest[rel_code] == (owners[0][0] if owners else "source"):
+        if rel_code in manifest and manifest[rel_code] == (owners[0] if owners else "source"):
             stored = {
                 r[0]
                 for r in conn.execute("SELECT DISTINCT entity_id FROM code_symbols WHERE file_path = ?;", (rel_code,))
             }
-            if not stored or stored == {entity_id for entity_id, _ in owners}:
+            if not stored or stored == set(owners):
                 continue
         stat = p_file.stat()
         raw_bytes = p_file.read_bytes()
@@ -740,7 +738,7 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
     """Rebuild specification-declared relational edges from persisted entity frontmatter.
 
     When ``updated_doc_ids`` is provided on incremental single-spec edits, only non-test edges touching
-    ``updated_doc_ids`` (and their child invariants/components) are evicted and rebuilt alongside their
+    ``updated_doc_ids`` (and their child invariants) are evicted and rebuilt alongside their
     1-hop neighbors and any previously unresolved edge sources.
     """
     _resolve_ref = build_spec_path_resolver(conn)
@@ -753,7 +751,7 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
             SELECT target_id FROM edges
             WHERE source_id IN ({ph})
               AND rel_type IN (
-                  'asserts', 'contains_component', 'contains_container', 'describes_system',
+                  'asserts', 'contains_container', 'describes_system',
                   'graduated_from', 'graduated_to', 'implemented_by',
                   'styled_by', 'styles_container', 'extends',
                   'serves_persona', 'delivered_by', 'has_screen', 'has_flow', 'uses_screen'
@@ -767,13 +765,10 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                   'serves_persona', 'delivered_by', 'has_screen', 'has_flow', 'uses_screen'
               )
             UNION
-            SELECT symbol FROM symbol_mappings
-            WHERE entity_id IN ({ph}) AND kind = 'component_id'
-            UNION
             SELECT id FROM entities
             WHERE type = 'invariant' AND file_path IN (SELECT file_path FROM entities WHERE id IN ({ph}));
             """,
-            (*clean_ids, *clean_ids, *clean_ids, *clean_ids),
+            (*clean_ids, *clean_ids, *clean_ids),
         ).fetchall()
         evict_ids = sorted(set(clean_ids) | {r[0] for r in child_rows if r[0]})
         evict_ph = ",".join("?" for _ in evict_ids)
@@ -800,7 +795,7 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
         )
 
         # Also include any existing entity whose frontmatter JSON mentions one of evict_ids,
-        # so previously dangling references to a newly created target spec or inline component are linked on incremental sync.
+        # so previously dangling references to a newly created target spec are linked on incremental sync.
         like_clauses = " OR ".join("instr(data_json, ?) > 0" for _ in evict_ids)
         if like_clauses:
             ref_rows = conn.execute(
@@ -1012,71 +1007,23 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                 conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component');", (cnt_id, doc_id))
                 conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of');", (doc_id, cnt_id))
 
-        if doc_type == "tech/container":
-            for comp_entry in fm.get("components") or []:
-                if not isinstance(comp_entry, dict):
-                    continue
-                cid = comp_entry.get("id")
-                if cid:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component');",
-                        (doc_id, cid),
-                    )
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of');", (cid, doc_id))
-                for c_dec in comp_entry.get("decisions", []) or []:
-                    if isinstance(c_dec, dict) and c_dec.get("graduated_from"):
-                        grad_id = _resolve_ref(c_dec["graduated_from"])
-                        if grad_id:
-                            conn.execute(
-                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'graduated_from');",
-                                (doc_id, grad_id),
-                            )
-                            if cid:
-                                conn.execute(
-                                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'graduated_from');",
-                                    (cid, grad_id),
-                                )
-                for c_inv in comp_entry.get("invariants", []) or []:
-                    if isinstance(c_inv, dict) and c_inv.get("id"):
-                        invariants.append(c_inv)
-                        if cid:
-                            c_iid = c_inv["id"]
-                            conn.execute(
-                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts');",
-                                (cid, c_iid),
-                            )
-
         if doc_type == "delta/mutation":
             row_fp = f"/{str(row['file_path'] or '').replace(chr(92), '/').lstrip('/')}"
             is_archived_delta_edge = "/deltas/archive/" in row_fp
             for m in fm.get("mutations", []) or []:
                 if not isinstance(m, dict):
                     continue
-                for k in ("target", "parent"):
-                    v = m.get(k)
-                    if isinstance(v, str) and v.strip():
-                        target_val = _resolve_ref(v)
-                        if not is_archived_delta_edge:
-                            conn.execute(
-                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'affects');",
-                                (doc_id, target_val),
-                            )
-                            for c_row in conn.execute(
-                                "SELECT entity_id FROM symbol_mappings WHERE symbol = ? AND kind = 'component_id';",
-                                (target_val,),
-                            ).fetchall():
-                                conn.execute(
-                                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'affects');",
-                                    (doc_id, c_row["entity_id"]),
-                                )
-                        elif not str(target_val).startswith("DLT-"):
-                            t_set = archived_delta_targets.setdefault(doc_id, set())
-                            t_set.add(target_val)
-                            for c_row in conn.execute(
-                                "SELECT entity_id FROM symbol_mappings WHERE symbol = ? AND kind = 'component_id';",
-                                (target_val,),
-                            ).fetchall():
-                                t_set.add(c_row["entity_id"])
+                v = m.get("target")
+                if isinstance(v, str) and v.strip():
+                    target_val = _resolve_ref(v)
+                    if not is_archived_delta_edge:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'affects');",
+                            (doc_id, target_val),
+                        )
+                    elif not str(target_val).startswith("DLT-"):
+                        t_set = archived_delta_targets.setdefault(doc_id, set())
+                        t_set.add(target_val)
 
         for inv in invariants:
             iid = inv.get("id") if isinstance(inv, dict) else None
@@ -1124,14 +1071,9 @@ def _derive_ast_import_edges(
     for src_id, dst_id in conn.execute("SELECT source_id, target_id FROM edges WHERE rel_type = 'part_of';"):
         comp_to_cnt[src_id] = dst_id
 
-    def _effective_cnt_and_comp(rel_path: str, ent_id: str = "", comp_id: str = "") -> tuple[str, str]:
-        if not ent_id or not comp_id:
-            res_ent, res_comp = resolver.resolve(rel_path)
-            ent_id = res_ent or ent_id
-            comp_id = res_comp or comp_id
-        if comp_id:
-            cnt_id = ent_id if ent_id.startswith("CNT-") else comp_to_cnt.get(comp_id, ent_id)
-            return cnt_id, comp_id
+    def _effective_cnt_and_comp(rel_path: str, ent_id: str = "") -> tuple[str, str]:
+        if not ent_id:
+            ent_id = resolver.resolve(rel_path) or ""
         if ent_id.startswith("CMP-"):
             return comp_to_cnt.get(ent_id, ""), ent_id
         return ent_id, ""
@@ -1165,7 +1107,7 @@ def _derive_ast_import_edges(
 
     import_rows = conn.execute(
         """
-        SELECT file_path, symbol, entity_id, component_id
+        SELECT file_path, symbol, entity_id
         FROM code_symbols
         WHERE kind = 'import' AND is_primary = 1
         ORDER BY file_path, symbol;
@@ -1211,7 +1153,7 @@ def _derive_ast_import_edges(
         if not dst_file or dst_file == src_file:
             continue
 
-        src_cnt, src_cmp = _effective_cnt_and_comp(src_file, row["entity_id"], row["component_id"])
+        src_cnt, src_cmp = _effective_cnt_and_comp(src_file, row["entity_id"])
         dst_cnt, dst_cmp = _effective_cnt_and_comp(dst_file)
 
         if src_cmp and dst_cmp and src_cmp != dst_cmp:
@@ -1369,7 +1311,6 @@ def prune_stale_test_binding_edges(conn: sqlite3.Connection) -> None:
         DELETE FROM edges
         WHERE rel_type = 'asserts'
           AND source_id NOT IN (SELECT id FROM entities)
-          AND source_id NOT IN (SELECT symbol FROM symbol_mappings WHERE kind = 'component_id')
           AND (
             target_id NOT IN (SELECT id FROM entities)
             OR instr(source_id, '::') = 0
@@ -1569,10 +1510,8 @@ def sync_index(
                     conn.execute(
                         "DELETE FROM edges WHERE source_id = ? OR target_id = ? "
                         "OR source_id IN (SELECT id FROM entities WHERE file_path = ? AND type = 'invariant') "
-                        "OR target_id IN (SELECT id FROM entities WHERE file_path = ? AND type = 'invariant') "
-                        "OR source_id IN (SELECT symbol FROM symbol_mappings WHERE entity_id = ? AND kind = 'component_id') "
-                        "OR target_id IN (SELECT symbol FROM symbol_mappings WHERE entity_id = ? AND kind = 'component_id')",
-                        (doc_id, doc_id, d_rel, d_rel, doc_id, doc_id),
+                        "OR target_id IN (SELECT id FROM entities WHERE file_path = ? AND type = 'invariant')",
+                        (doc_id, doc_id, d_rel, d_rel),
                     )
                     conn.execute(
                         "DELETE FROM symbol_mappings WHERE entity_id = ? OR entity_id IN "
@@ -1782,16 +1721,16 @@ def sync_index(
                     )
                 conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'contract_path');", (rel_p, doc_id))
 
-            invariants_to_index: list[tuple[Any, str | None]] = []
+            invariants_to_index = []
             if (
                 doc_type
                 in ("product/capability", "product/domain", "product/policy", "tech/component", "tech/container")
                 or model.invariants
                 or model.technical.invariants
             ):
-                invariants_to_index = model.invariants_with_component()
+                invariants_to_index = model.all_invariants()
 
-            for inv_model, inline_comp_id in invariants_to_index:
+            for inv_model in invariants_to_index:
                 iid = inv_model.id
                 if iid:
                     inv_collision = conn.execute(
@@ -1825,7 +1764,7 @@ def sync_index(
                             if doc_type == "tech/container"
                             else (model.container if doc_type == "tech/component" else None)
                         ),
-                        "component_id": doc_id if doc_type == "tech/component" else inline_comp_id,
+                        "component_id": doc_id if doc_type == "tech/component" else None,
                         "has_test_coverage": False,
                         "matching_tests": [],
                     }
@@ -1851,7 +1790,7 @@ def sync_index(
                             iid,
                             rule_str,
                             str(title or ""),
-                            " ".join(str(x) for x in (iid, "invariant", domain, doc_id, inline_comp_id) if x),
+                            " ".join(str(x) for x in (iid, "invariant", domain, doc_id) if x),
                             " ".join(
                                 x for x in (test_str, compound_identifier_subtokens(f"{test_func} {rule_str}")) if x
                             ),
@@ -1871,18 +1810,6 @@ def sync_index(
             for owned_pat in extract_entity_paths(fm):
                 conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'owned_path');", (owned_pat, doc_id))
 
-            for module in model.components:
-                if module.title:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'module_name');", (module.title, doc_id)
-                    )
-                for mpath in module.source_paths():
-                    conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (mpath, doc_id))
-                if module.id:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'component_id');", (module.id, doc_id)
-                    )
-
             for pkg_item in pkg_list:
                 if any(ch in pkg_item for ch in "*?[") or not (index.root / pkg_item).is_file():
                     continue
@@ -1893,12 +1820,6 @@ def sync_index(
             jtbd_parts: list[str] = []
             if doc_type == "product/policy":
                 jtbd_parts.extend(inv.rule for inv in model.invariants if inv.rule)
-            if model.responsibility:
-                jtbd_parts.append(model.responsibility)
-            for comp in model.components:
-                for cval in (comp.title, comp.responsibility):
-                    if cval and str(cval).strip():
-                        jtbd_parts.append(str(cval).strip())
             if model.intent and model.intent.motivation:
                 jtbd_parts.append(model.intent.motivation)
             jtbd_or_rule = " ".join(jtbd_parts)
@@ -1922,14 +1843,11 @@ def sync_index(
                             decision_texts.append(str(aval).strip())
             if decision_texts:
                 body_clean = f"{body_clean} " + re.sub(r"[{}\[\]=:#*`]", " ", " ".join(decision_texts))
-            inline_cmp_ids = [str(m.id).strip() for m in model.components if m.id and str(m.id).strip()]
-            keywords = " ".join([doc_id, doc_type, domain, container_type, source_path, *inline_cmp_ids, *decision_ids])
-            symbol_parts: list[str] = [str(m.title) for m in model.components if m.title]
-            symbol_parts.extend(inline_cmp_ids)
-            symbols = " ".join(symbol_parts)
-            decompounded = compound_identifier_subtokens(f"{title or ''} {jtbd_or_rule or ''} {body_clean} {symbols}")
+            keywords = " ".join([doc_id, doc_type, domain, container_type, source_path, *decision_ids])
+            symbols = ""
+            decompounded = compound_identifier_subtokens(f"{title or ''} {jtbd_or_rule or ''} {body_clean}")
             if decompounded:
-                symbols = f"{symbols} {decompounded}".strip()
+                symbols = decompounded.strip()
             is_archived_delta = doc_type == "delta/mutation" and "/deltas/archive/" in f"/{rel_p.lstrip('/')}"
             if not is_archived_delta:
                 fresh_base_symbols[doc_id] = symbols
@@ -2186,15 +2104,13 @@ def sync_index(
                 ORDER BY length(rel_path) ASC
                 LIMIT 1
             )
-            WHERE target_id NOT IN (SELECT id FROM entities)
-              AND target_id NOT IN (SELECT symbol FROM symbol_mappings WHERE kind = 'component_id');
+            WHERE target_id NOT IN (SELECT id FROM entities);
             """
         )
         conn.execute(
             """
             DELETE FROM edges
             WHERE target_id NOT IN (SELECT id FROM entities)
-              AND target_id NOT IN (SELECT symbol FROM symbol_mappings WHERE kind = 'component_id')
               AND rel_type != 'consumes_api';
             """
         )
@@ -2211,7 +2127,6 @@ def sync_index(
                 LIMIT 1
             )
             WHERE source_id NOT IN (SELECT id FROM entities)
-              AND source_id NOT IN (SELECT symbol FROM symbol_mappings WHERE kind = 'component_id')
               AND rel_type != 'asserts';
             """
         )
@@ -2219,7 +2134,6 @@ def sync_index(
             """
             DELETE FROM edges
             WHERE source_id NOT IN (SELECT id FROM entities)
-              AND source_id NOT IN (SELECT symbol FROM symbol_mappings WHERE kind = 'component_id')
               AND rel_type != 'asserts';
             """
         )
@@ -2301,25 +2215,8 @@ def _project_ast_code_symbols_into_fts(
             title = str(srow[2] or "")
             jtbd_or_rule = str(srow[3] or "")
             body_clean = str(srow[4] or "")
-            try:
-                fm = orjson.loads(srow[7] or "{}")
-            except (TypeError, ValueError):
-                fm = {}
-            if not isinstance(fm, dict):
-                fm = {}
-
-            symbol_parts: list[str] = [
-                str(m.get("title", ""))
-                for m in (fm.get("components", []) or [])
-                if isinstance(m, dict) and m.get("title")
-            ]
-            symbol_parts.extend(
-                str(m.get("id", "")) for m in (fm.get("components", []) or []) if isinstance(m, dict) and m.get("id")
-            )
-            base_symbols = " ".join(symbol_parts)
-            decompounded = compound_identifier_subtokens(f"{title} {jtbd_or_rule} {body_clean} {base_symbols}")
-            if decompounded:
-                base_symbols = f"{base_symbols} {decompounded}".strip()
+            decompounded = compound_identifier_subtokens(f"{title} {jtbd_or_rule} {body_clean}")
+            base_symbols = decompounded.strip() if decompounded else ""
 
         existing_tokens = set(base_symbols.split())
         new_parts: list[str] = []

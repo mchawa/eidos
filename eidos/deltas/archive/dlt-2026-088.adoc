@@ -12,20 +12,16 @@ vcs:
 mutations:
   - operation: modify
     target: CMP-DELTA-ENGINE
-    parent: CNT-EIDOS-CORE
   - operation: modify
     target: CMP-CLI-DELTA-COMMANDS
-    parent: CNT-EIDOS-CLI
   - operation: modify
     target: CTR-EIDOS-CLI
   - operation: modify
     target: CMP-INCREMENTAL-SYNC-ENGINE
-    parent: CNT-EIDOS-INDEX
   - operation: modify
     target: CAP-PROD-002
   - operation: modify
     target: INV-MUTATION-REVERSIBILITY
-    parent: CAP-PROD-002
   - operation: modify
     target: CAP-PROD-001
 ---

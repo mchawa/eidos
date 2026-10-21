@@ -313,26 +313,45 @@ def detect_drift(
                         continue
             active_delta_files.append(df)
             for m in model.mutations:
-                for key in ("target", "parent"):
-                    val = getattr(m, key, None)
-                    if not val:
-                        continue
-                    val_str = str(val).strip()
-                    if not val_str:
-                        continue
-                    declared_delta_targets.add(val_str.lower())
-                    if (
-                        val_str.lower().endswith((".adoc", ".json", ".yaml", ".yml"))
-                        or "/" in val_str
-                        or "\\" in val_str
-                    ):
-                        norm_p = val_str.replace("\\", "/").strip("/")
-                        declared_delta_paths.add(norm_p.lower())
-                        pref_low = eidos_rel_prefix.lower().strip("/")
+                val = m.target
+                if not val:
+                    continue
+                val_str = str(val).strip()
+                if not val_str:
+                    continue
+                declared_delta_targets.add(val_str.lower())
+                if (
+                    val_str.lower().endswith((".adoc", ".json", ".yaml", ".yml"))
+                    or "/" in val_str
+                    or "\\" in val_str
+                ):
+                    norm_p = val_str.replace("\\", "/").strip("/")
+                    declared_delta_paths.add(norm_p.lower())
+                    pref_low = eidos_rel_prefix.lower().strip("/")
+                    if pref_low and not norm_p.lower().startswith(f"{pref_low}/"):
+                        declared_delta_paths.add(f"{pref_low}/{norm_p.lower()}")
+                    found_target_doc = False
+                    if effective_uncommitted:
+                        for cand_p in (root / norm_p, target_eidos / norm_p):
+                            if cand_p.is_file() and cand_p.suffix.lower() == ".adoc":
+                                t_doc, _, _ = get_cached_spec_document(cand_p)
+                                if t_doc is not None and t_doc.doc_id:
+                                    declared_delta_targets.add(t_doc.doc_id.strip().lower())
+                                    found_target_doc = True
+                                break
+                    else:
+                        rel_cands = [norm_p]
                         if pref_low and not norm_p.lower().startswith(f"{pref_low}/"):
-                            declared_delta_paths.add(f"{pref_low}/{norm_p.lower()}")
-                        found_target_doc = False
-                        if effective_uncommitted:
+                            rel_cands.append(f"{pref_low}/{norm_p}")
+                        for rel_cand in rel_cands:
+                            _, new_tc = _fetch_versions(rel_cand)
+                            if new_tc is not None:
+                                fm_tc, _, _ = extract_frontmatter(new_tc)
+                                if isinstance(fm_tc, dict) and fm_tc.get("id"):
+                                    declared_delta_targets.add(str(fm_tc["id"]).strip().lower())
+                                    found_target_doc = True
+                                    break
+                        if not found_target_doc:
                             for cand_p in (root / norm_p, target_eidos / norm_p):
                                 if cand_p.is_file() and cand_p.suffix.lower() == ".adoc":
                                     t_doc, _, _ = get_cached_spec_document(cand_p)
@@ -340,33 +359,13 @@ def detect_drift(
                                         declared_delta_targets.add(t_doc.doc_id.strip().lower())
                                         found_target_doc = True
                                     break
-                        else:
-                            rel_cands = [norm_p]
-                            if pref_low and not norm_p.lower().startswith(f"{pref_low}/"):
-                                rel_cands.append(f"{pref_low}/{norm_p}")
-                            for rel_cand in rel_cands:
-                                _, new_tc = _fetch_versions(rel_cand)
-                                if new_tc is not None:
-                                    fm_tc, _, _ = extract_frontmatter(new_tc)
-                                    if isinstance(fm_tc, dict) and fm_tc.get("id"):
-                                        declared_delta_targets.add(str(fm_tc["id"]).strip().lower())
-                                        found_target_doc = True
-                                        break
-                            if not found_target_doc:
-                                for cand_p in (root / norm_p, target_eidos / norm_p):
-                                    if cand_p.is_file() and cand_p.suffix.lower() == ".adoc":
-                                        t_doc, _, _ = get_cached_spec_document(cand_p)
-                                        if t_doc is not None and t_doc.doc_id:
-                                            declared_delta_targets.add(t_doc.doc_id.strip().lower())
-                                            found_target_doc = True
-                                        break
-                        if not found_target_doc and idx is not None:
-                            for ent in idx.get_entities():
-                                efp = str(ent.get("file_path", "")).replace("\\", "/").lower()
-                                eid = str(ent.get("id", "")).strip().lower()
-                                if eid and (efp == norm_p.lower() or efp.endswith("/" + norm_p.lower())):
-                                    declared_delta_targets.add(eid)
-                                    break
+                    if not found_target_doc and idx is not None:
+                        for ent in idx.get_entities():
+                            efp = str(ent.get("file_path", "")).replace("\\", "/").lower()
+                            eid = str(ent.get("id", "")).strip().lower()
+                            if eid and (efp == norm_p.lower() or efp.endswith("/" + norm_p.lower())):
+                                declared_delta_targets.add(eid)
+                                break
         except OSError:
             pass
 

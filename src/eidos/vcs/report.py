@@ -96,7 +96,7 @@ def build_drift_remediation_and_summary(
         )
         for rec in unanchored_records[:5]:
             remediation.append(
-                f"• '{rec['file']}' -> mention it (path, name, or a new public symbol) in {rec['owner']} or declare it under 'components'/'source_path'."
+                f"• '{rec['file']}' -> mention it (path, name, or a new public symbol) in {rec['owner']} or declare it under 'source_path'."
             )
 
     if not validation_report.is_clean:

@@ -495,7 +495,6 @@ def test_portal_promoted_components_invariants_decisions_and_explorations(tmp_pa
         "type: tech/component\n"
         "title: Auth Component\n"
         "container: CNT-TEST-API\n"
-        "responsibility: Authenticates callers.\n"
         "source_path: src/eidos/portal/generator.py\n"
         "invariants:\n"
         f"  - id: {cmp_inv_id}\n"
@@ -506,7 +505,9 @@ def test_portal_promoted_components_invariants_decisions_and_explorations(tmp_pa
         "    title: Stateless Tokens\n"
         "    decision: Use signed tokens.\n"
         "---\n"
-        "= Auth Component\n",
+        "= Auth Component\n\n"
+        "== Responsibility\n"
+        "Authenticates callers.\n",
         encoding="utf-8",
     )
     (eidos_dir / "explorations" / "exp-test.adoc").write_text(
@@ -536,7 +537,7 @@ def test_portal_promoted_components_invariants_decisions_and_explorations(tmp_pa
     assert len(syn_cnt["internal_components"]) == 1
     syn_sub = syn_cnt["internal_components"][0]
     assert syn_sub["id"] == "CMP-TEST-AUTH"
-    assert syn_sub["is_promoted"] is True
+    assert syn_sub["responsibility"] == "Authenticates callers."
     assert syn_sub["title"] == "Auth Component"
     assert len(syn_sub["invariants"]) == 1
     assert len(syn_sub["decisions"]) == 1
@@ -1049,6 +1050,7 @@ def test_dlt_2026_085_portal_graph_derived_affects_and_blast_radius(tmp_path: Pa
         encoding="utf-8",
     )
 
+    (eidos_dir / "architecture" / "components").mkdir(parents=True, exist_ok=True)
     (eidos_dir / "architecture" / "containers" / "core.adoc").write_text(
         "---\n"
         "type: tech/container\n"
@@ -1061,21 +1063,34 @@ def test_dlt_2026_085_portal_graph_derived_affects_and_blast_radius(tmp_path: Pa
         "  - id: INV-CNT-001\n"
         "    rule: Container invariant.\n"
         "    test_binding: tests/test_core.py::test_cnt\n"
-        "components:\n"
-        "  - id: CMP-TARGET\n"
-        "    title: Target\n"
-        "    responsibility: Direct mutation target.\n"
-        "    source_path: src/core/target.py\n"
-        "    invariants:\n"
-        "      - id: INV-CMP-001\n"
-        "        rule: Target invariant.\n"
-        "        test_binding: tests/test_core.py::test_cmp\n"
-        "  - id: CMP-CALLER\n"
-        "    title: Caller\n"
-        "    responsibility: Calls CMP-TARGET.\n"
-        "    source_path: src/core/caller.py\n"
         "---\n"
         "= Core\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "target.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-TARGET\n"
+        "title: Target\n"
+        "container: CNT-CORE\n"
+        "source_path: src/core/target.py\n"
+        "invariants:\n"
+        "  - id: INV-CMP-001\n"
+        "    rule: Target invariant.\n"
+        "    test_binding: tests/test_core.py::test_cmp\n"
+        "---\n"
+        "= Target\n\n== Responsibility\nDirect mutation target.\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "caller.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-CALLER\n"
+        "title: Caller\n"
+        "container: CNT-CORE\n"
+        "source_path: src/core/caller.py\n"
+        "---\n"
+        "= Caller\n\n== Responsibility\nCalls CMP-TARGET.\n",
         encoding="utf-8",
     )
 
@@ -1519,6 +1534,7 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
     (src_d1 / "alpha.py").write_text(
         "from beta import beta_fn\n\ndef alpha_fn():\n    return beta_fn()\n", encoding="utf-8"
     )
+    (eidos_dir / "architecture" / "components").mkdir(parents=True, exist_ok=True)
     cnt_a = eidos_dir / "architecture" / "containers" / "cnt-alpha.adoc"
     cnt_a.write_text(
         "---\n"
@@ -1529,14 +1545,20 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
         'tier: "tier_core"\n'
         'container_type: "service"\n'
         'runtime: "python3.12"\n'
-        'responsibility: "Alpha service."\n'
-        "components:\n"
-        '  - id: "CMP-ALPHA-MOD"\n'
-        '    title: "Alpha Mod"\n'
-        '    responsibility: "Alpha module."\n'
-        '    source_path: "src/alpha.py"\n'
         "---\n"
         "= Alpha Container\n\nBody.\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "alpha-mod.adoc").write_text(
+        "---\n"
+        'id: "CMP-ALPHA-MOD"\n'
+        'title: "Alpha Mod"\n'
+        'type: "tech/component"\n'
+        'container: "CNT-ALPHA"\n'
+        'status: "active"\n'
+        'source_path: "src/alpha.py"\n'
+        "---\n"
+        "= Alpha Mod\n\n== Responsibility\nAlpha module.\n",
         encoding="utf-8",
     )
     cnt_b = eidos_dir / "architecture" / "containers" / "cnt-beta.adoc"
@@ -1549,14 +1571,20 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
         'tier: "tier_core"\n'
         'container_type: "service"\n'
         'runtime: "python3.12"\n'
-        'responsibility: "Beta service."\n'
-        "components:\n"
-        '  - id: "CMP-BETA-MOD"\n'
-        '    title: "Beta Mod"\n'
-        '    responsibility: "Beta module."\n'
-        '    source_path: "src/beta.py"\n'
         "---\n"
         "= Beta Container\n\nBody.\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "beta-mod.adoc").write_text(
+        "---\n"
+        'id: "CMP-BETA-MOD"\n'
+        'title: "Beta Mod"\n'
+        'type: "tech/component"\n'
+        'container: "CNT-BETA"\n'
+        'status: "active"\n'
+        'source_path: "src/beta.py"\n'
+        "---\n"
+        "= Beta Mod\n\n== Responsibility\nBeta module.\n",
         encoding="utf-8",
     )
     dlt_file = eidos_dir / "deltas" / "dlt-2026-900-beta.adoc"
@@ -1572,7 +1600,6 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
         "mutations:\n"
         '  - operation: "modify"\n'
         '    target: "CMP-BETA-MOD"\n'
-        '    parent: "CNT-BETA"\n'
         '    details: "Update beta mod."\n'
         "---\n"
         "= Mutate Beta\n\nBody.\n",

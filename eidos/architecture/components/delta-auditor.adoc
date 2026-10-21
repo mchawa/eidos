@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-DELTA-AUDITOR
+title: DeltaAuditor
+container: CNT-EIDOS-CORE
+status: active
+source_path: src/eidos/core/lifecycle/audit.py
+---
+= Component: DeltaAuditor
+:toc: left
+
+== Responsibility
+Audits reverse-dependency blast radius for entities deprecated or removed by SpecDeltas across composable (operation: remove | deprecate, target, resolving .adoc path targets via infer_entity_type_from_path and excluding replacement target entities mentioned in details) mutations and all living specification prefixes (CNT-*, CMP-*, CTR-*, CAP-*, POL-*, DOM-*, PER-*, DS-*, SCR-*, UIC-*, CLT-*, FLOW-*, INV-*) by reusing the single synced ArchitecturalIndex (index.db), pre-filtering governed candidate files via the FTS5 file_tokens_fts table (_build_file_tokens_fts_query splitting dotted/path tokens into AND-joined sub-tokens), resolving applied/rejected delta and exploration statuses in O(1) from persisted entities rows, classifying active_spec_leak vs. active_code_leak by indexed_files.doc_type and container ownership, applying word-bounded multi-term and regex-safe tombstone pattern matching, polyglot test classification (is_polyglot_test_file), compressed archive exclusion (.gz), and fail-loud graph foreign-key verification with `orjson` JSON report serialization.
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

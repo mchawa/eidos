@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-REPO-INITIALIZER
+title: RepositoryInitializer
+container: CNT-EIDOS-CORE
+status: active
+source_path: src/eidos/core/lifecycle/initializer.py
+---
+= Component: RepositoryInitializer
+:toc: left
+
+== Responsibility
+Bootstraps repositories with streamlined living specification skeletons (`system.adoc`, `architecture/system-architecture.adoc`, `domain.adoc`, and policies with prose sections in AsciiDoc body), optional parameterized product/system frontmatter in eidos/system.adoc (--name / --title) or 0-byte bare system.adoc (preserving existing non-empty authored system.adoc when --force is run without --name/--title), progressive Eidos Lite onboarding profile (eidos init --lite), immediate validation, and self-contained gitignore (plugins managed via eidos plugin).
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

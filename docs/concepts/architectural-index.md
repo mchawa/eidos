@@ -38,7 +38,7 @@ The architectural index requires **zero external database daemons** and **zero t
 
 * Built on Python's standard library **`sqlite3`** in WAL (Write-Ahead Logging) mode, utilizing native SQLite 3.x FTS5 and recursive Common Table Expressions (CTEs).
 * Decomposed across 5 focused internal modules in `src/eidos/core/index/`: `storage.py` (`CMP-GRAPH-STORAGE`), `sync.py` (`CMP-INCREMENTAL-SYNC-ENGINE`), `query.py` (`CMP-FTS-QUERY-ENGINE` & `CMP-GRAPH-TRAVERSAL-ENGINE`), `context.py` (`CMP-TIERED-CONTEXT-COMPRESSOR`), and `ast_indexer.py` (`CMP-AST-SYMBOL-INDEXER`).
-* Stores all relational graph data, AST symbol coordinates, inverted file token FTS tables, and validation/test caches inside a single self-contained, 100% stateless derived file: `eidos/.cache/index.db` (canonical `SCHEMA_VERSION = "2.16.0"`).
+* Stores all relational graph data, AST symbol coordinates, inverted file token FTS tables, and validation/test caches inside a single self-contained, 100% stateless derived file: `eidos/.cache/index.db` (canonical `SCHEMA_VERSION = "2.17.0"`).
 * Automatically performs drop-and-rebuild migration on schema version upgrades and self-heals on database corruption.
 * The `eidos/.cache/` directory is isolated via `eidos/.gitignore`, keeping Git repositories pristine.
 
@@ -82,7 +82,7 @@ Output:
 ```text
 ╭───────────────── Eidos Architectural Knowledge Graph Index ──────────────────╮
 │        Database Path:  /path/to/project/eidos/.cache/index.db                │
-│       Schema Version:  2.16.0                                                │
+│       Schema Version:  2.17.0                                                │
 │           Cache Size:  5308.0 KB                                             │
 │               Status:  SYNCED (Clean) (1.76ms check)                         │
 │       Total Entities:  208                                                   │
@@ -133,7 +133,7 @@ When AI agents work on software engineering tasks, providing entire specificatio
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Tier 1: Anchor** | `--tier anchor` | **`<= 300 tokens`** | ~140 tokens | Owning `CNT-*` / `CMP-*`, container type, runtime, `source_path`, bound domain, direct `CTR-*` signatures, compact 1-line `DEC-*` decision summaries. | Fast, single-file edits, routine bug fixes, syntax changes. |
 | **Tier 2: Guardrails** *(Default)* | `--tier guardrails` | **`<= 1,000 tokens`** | ~300–900 tokens | Anchor content + domain capabilities (`CAP-*`), active invariants (`INV-*`) with `test_binding`, governing policies (`POL-*`), and full `DEC-*` rationale + rejected alternatives. | Standard feature development, refactorings, policy verification. |
-| **Tier 3: Deep** | `--tier deep` | **`<= 2,500 tokens`** | ~500–1,500 tokens | Guardrails content + C4 Level 3 internal modules (`components`), promoted component details, contract schemas, and downstream dependents. | Complex multi-module features, architecture reviews, SpecDeltas. |
+| **Tier 3: Deep** | `--tier deep` | **`<= 2,500 tokens`** | ~500–1,500 tokens | Guardrails content + C4 Level 3 standalone component details, contract schemas, and downstream dependents. | Complex multi-module features, architecture reviews, SpecDeltas. |
 
 ### CLI Usage:
 
@@ -177,7 +177,7 @@ Output:
 
 How lexical retrieval works (`INV-AGENT-TASK-RETRIEVAL-COVERAGE`):
 
-* **Every entity & code symbol is searchable (`DLT-2026-078`, `DLT-2026-106`)**: child invariants (`INV-*`) across capabilities (`CAP-*`), policies (`POL-*`), containers (`CNT-*`), and inline/promoted components (`CMP-*`) get their own `specs_fts` row (rule text, parent title, test binding), embedded `DEC-*` decisions are indexed alongside their owning container or component, and primary AST `code_symbols` (`class`, `function`, `interface`, `struct`, `enum`) are projected directly into `specs_fts.symbols` (while archived SpecDeltas under `eidos/deltas/archive/` are excluded from `specs_fts` to keep search results focused on active architecture and recent changes).
+* **Every entity & code symbol is searchable (`DLT-2026-078`, `DLT-2026-106`)**: child invariants (`INV-*`) across capabilities (`CAP-*`), policies (`POL-*`), containers (`CNT-*`), and standalone components (`CMP-*`) get their own `specs_fts` row (rule text, parent title, test binding), embedded `DEC-*` decisions are indexed alongside their owning container or component, and primary AST `code_symbols` (`class`, `function`, `interface`, `struct`, `enum`) are projected directly into `specs_fts.symbols` (while archived SpecDeltas under `eidos/deltas/archive/` are excluded from `specs_fts` to keep search results focused on active architecture and recent changes).
 * **Identifier de-compounding & Two-Tier FTS Precision (`DLT-2026-083`)**: `camelCase` / `snake_case` identifiers are split on both index and query sides — `ArchitecturalIndex` is indexed as `architectural index` too, and multi-word queries prioritize high-precision multi-term `AND` conjunction matches before falling back to `OR` expansion.
 * **Column-weighted BM25**: Positional weights `(0, 4, 2, 1, 2, 2)` rank `title` (4) > `jtbd_or_rule` / `keywords` / `symbols` (2) > `body_text` (1), with `0` assigned to the `UNINDEXED` `entity_id` placeholder column.
 * **Slice-scoped candidates, Calibrated Token Budgets & Honest Empty Slices**: `eidos context --task` filters sliceable types (containers, components, contracts, capabilities, policies, invariants, domains, design systems) *inside SQL before `LIMIT`*, so historical SpecDeltas and explorations never consume top-k slots. Matched domains, design systems, and container/component invariants expand to their owning containers, components, and capabilities. Token budgets are enforced using structure-calibrated token estimation (`~3` chars/token for YAML/JSON/code/paths vs `~4` chars/token for prose). If an explicit query matches zero entities, Eidos returns an honest empty slice rather than injecting unrelated alphabetical fallbacks.

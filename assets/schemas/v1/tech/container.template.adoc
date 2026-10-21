@@ -4,8 +4,5 @@
 == Architectural Boundary
 Describe the container boundary, deployment unit, and responsibilities.
 
-== Building Block View (C4 Level 3 Components)
-Internal components and modular building blocks contained within this deployable.
-
 == Quality Attributes & Operational Policies
 Document runtime characteristics, concurrency model, and operational guardrails.

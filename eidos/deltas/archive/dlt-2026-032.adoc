@@ -17,6 +17,5 @@ mutations:
     target: CNT-EIDOS-CLI
   - operation: modify
     target: INV-SPEC-VALIDATION
-    parent: CAP-PROD-001
 ---
 = SpecDelta: Fix Component Spec Scaffolding, Add Client/Flow Scaffolding, and Enforce Safe YAML Serialization

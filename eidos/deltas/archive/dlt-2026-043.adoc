@@ -11,22 +11,16 @@ vcs:
 mutations:
   - operation: modify
     target: CMP-DELTA-ENGINE
-    parent: CNT-EIDOS-CORE
   - operation: modify
     target: CMP-DELTA-AUDITOR
-    parent: CNT-EIDOS-CORE
   - operation: modify
     target: CMP-CHANGELOG-GENERATOR
-    parent: CNT-EIDOS-CORE
   - operation: modify
     target: CMP-LIFECYCLE-SCAFFOLDER
-    parent: CNT-EIDOS-CORE
   - operation: modify
     target: CMP-CLI-DELTA-COMMANDS
-    parent: CNT-EIDOS-CLI
   - operation: modify
     target: CMP-CLI-SPEC-COMMANDS
-    parent: CNT-EIDOS-CLI
   - operation: modify
     target: CNT-EIDOS-PLUGIN
   - operation: modify

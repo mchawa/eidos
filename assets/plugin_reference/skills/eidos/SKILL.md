@@ -115,7 +115,7 @@ When introducing/removing containers or components, making breaking contract cha
    ```bash
    eidos delta create --title "..." --slug --kind <feature|enabler|bug>
    ```
-3. **Declare Mutations & Implementation Plan**: Populate `mutations:` (with composable `operation`, `target`, optional `parent` for `add` / `remove` of child entities, and structured `expect: { body, frontmatter }` post-conditions; run `eidos spec schema delta` to inspect allowed keys) and fill out the `== Problem Statement`, `== Proposed Specification Changes`, and `== Implementation Plan` prose sections in the created `eidos/deltas/dlt-*.adoc` file. Never add manual `affects:` or `blast_radius:` blocks.
+3. **Declare Mutations & Implementation Plan**: Populate `mutations:` (with composable `operation`, `target`, and structured `expect: { body, frontmatter }` post-conditions; run `eidos spec schema delta` to inspect allowed keys) and fill out the `== Problem Statement`, `== Proposed Specification Changes`, and `== Implementation Plan` prose sections in the created `eidos/deltas/dlt-*.adoc` file. Never add manual `affects:` or `blast_radius:` blocks.
 4. **Implement Code, Specs & Tests**: Apply changes across code, `eidos/`, and `tests/`.
 5. **Verify & Apply**:
    ```bash
@@ -137,7 +137,7 @@ eidos drift --uncommitted --json
 ```
 
 * **`eidos validate`** checks v1 JSON Schemas, `x-eidos-ref` cross-references, `source_path`/`specification_file` paths on disk, and **bidirectional multi-protocol contract parity** (`cli_args`, `openapi`, `protobuf`, `graphql`, `python_protocol`).
-* **`eidos drift`** runs `eidos validate` internally plus Git diff ownership mapping, workflow mode verification (Direct vs. Planned `mutations[].target` / `parent`), substantive spec diff checks, and polyglot `INV-*` `test_binding` verification.
+* **`eidos drift`** runs `eidos validate` internally plus Git diff ownership mapping, workflow mode verification (Direct vs. Planned `mutations[].target`), substantive spec diff checks, and polyglot `INV-*` `test_binding` verification.
 * **If `is_clean: false` or `drift_detected: true`**: Follow the `remediation_suggestions` array in the JSON output and re-run until exit code is `0`.
 
 ### Stage 2: Mandatory Autonomous Adversarial Gap Review
@@ -161,8 +161,8 @@ eidos/
 ├── system.adoc                          # C4 Level 1 System Context (SYS-*)
 ├── architecture/
 │   ├── system-architecture.adoc         # Arc42 Sections 1-12 & C4 Level 2 Topology (ARCH-*)
-│   ├── containers/                      # C4 Level 2 Containers & inline Level 3 Components (CNT-*)
-│   ├── components/                      # Promoted standalone C4 Level 3 Components (CMP-*)
+│   ├── containers/                      # C4 Level 2 Containers (CNT-*)
+│   ├── components/                      # Standalone C4 Level 3 Components (CMP-*)
 │   └── contracts/                       # Interface Contracts: OpenAPI, Protobuf, GraphQL, CLI (CTR-*)
 ├── domains/<domain-slug>/
 │   ├── domain.adoc                      # Bounded Context & Ubiquitous Language (DOM-*)
@@ -178,6 +178,6 @@ eidos/
 ```
 
 Load the companion skill matching your task:
-* **`eidos-spec`**: YAML schemas and scaffolding (`eidos spec create/schema/list/show/delete/component`) for `DOM-*`, `CAP-*`, `PER-*`, `SYS-*`, `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DEC-*`, `DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`, `POL-*`, and polyglot `INV-*` test bindings.
+* **`eidos-spec`**: YAML schemas and scaffolding (`eidos spec create/schema/list/show/delete`) for `DOM-*`, `CAP-*`, `PER-*`, `SYS-*`, `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DEC-*`, `DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`, `POL-*`, and polyglot `INV-*` test bindings.
 * **`eidos-plan`**: Technical spikes (`EXP-*`), SpecDelta lifecycle (`eidos delta create/verify/audit/apply/changelog`), declarative `expect:` post-conditions, and 5-dimension Staff Architectural Reviews.
 * **`eidos-ops`**: Greenfield initialization (`eidos init [--lite]`), 8-phase brownfield codebase extraction, and Living Web Portal operations (`eidos portal serve/build`).

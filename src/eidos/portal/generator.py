@@ -111,19 +111,21 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             }
         )
 
-    # Components & Containers (C4 Level 2 Containers and Level 3 Promoted Components)
+    # Components & Containers (C4 Level 2 Containers and Level 3 Components)
     raw_containers = specs_by_type.get("tech/container", [])
-    raw_promoted_components = specs_by_type.get("tech/component", [])
+    raw_components = specs_by_type.get("tech/component", [])
 
-    # Index promoted components by their parent container ID
-    promoted_by_container: dict[str, list[dict[str, Any]]] = {}
-    for pc in raw_promoted_components:
+    # Index standalone components by their parent container ID
+    components_by_container: dict[str, list[dict[str, Any]]] = {}
+    for pc in raw_components:
         p_fm = pc.get("frontmatter", {})
         target_cnt = comp_to_cnt.get(pc["id"]) or _resolve_ref_id(p_fm.get("container", ""))
-        promoted_dict = {
+        m_resp = re.search(r"== Responsibility\s*\n+([^\n=]+(?:\n[^\n=]+)*)", pc.get("body", ""))
+        comp_resp = " ".join(m_resp.group(1).split()) if m_resp else ""
+        comp_item_dict = {
             "id": pc["id"],
             "title": p_fm.get("title", pc["id"]),
-            "responsibility": p_fm.get("responsibility", ""),
+            "responsibility": comp_resp,
             "source_path": p_fm.get("source_path", ""),
             "file_path": pc.get("path", ""),
             "spec_path": pc.get("path", ""),
@@ -133,11 +135,10 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             "invariants": p_fm.get("invariants", []),
             "decisions": p_fm.get("decisions", []),
             "status": p_fm.get("status", "active"),
-            "is_promoted": True,
             "description": pc.get("body", ""),
         }
         if target_cnt:
-            promoted_by_container.setdefault(target_cnt, []).append(promoted_dict)
+            components_by_container.setdefault(target_cnt, []).append(comp_item_dict)
 
     components: list[dict[str, Any]] = []
     for c in raw_containers:
@@ -149,29 +150,9 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         m = re.search(r"== Architectural Boundary\s*\n+([^\n=]+(?:\n[^\n=]+)*)", c.get("body", ""))
         resp = " ".join(m.group(1).split()) if m else f"Core architectural container for {c['id']}."
 
-        # Internal components (inline + promoted)
+        # Internal components (standalone C4 Level 3 components mapped to container)
         doc_id = c["id"]
-        cnt_promoted = promoted_by_container.get(doc_id, [])
-        raw_internal = list(fm.get("components", []) or [])
-        internal_components: list[dict[str, Any]] = []
-        existing_ids: set[str] = set()
-
-        for ic in raw_internal:
-            if not isinstance(ic, dict):
-                continue
-            ic_copy = dict(ic)
-            ic_id = ic_copy.get("id")
-            if ic_id:
-                ic_copy["title"] = ic_copy.get("title", ic_id)
-                ic_copy["dependencies"] = list(ast_consumes_by_comp.get(ic_id, []))
-                ic_copy["consumes_components"] = list(ast_consumes_by_comp.get(ic_id, []))
-                internal_components.append(ic_copy)
-                existing_ids.add(ic_id)
-
-        for pc_dict in cnt_promoted:
-            if pc_dict["id"] not in existing_ids:
-                internal_components.append(dict(pc_dict))
-                existing_ids.add(pc_dict["id"])
+        internal_components = [dict(pc_dict) for pc_dict in components_by_container.get(doc_id, [])]
 
         comp_dict = {
             "id": c["id"],
@@ -255,7 +236,6 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             continue
         src_doc_type = str(inv_ent.get("source_doc_type") or "")
         src_id = str(inv_ent.get("source_id") or "")
-        comp_id = inv_ent.get("component_id")
         rule = inv_ent.get("rule")
         tb = inv_ent.get("test_binding") or "N/A"
         if src_doc_type == "product/policy":
@@ -292,14 +272,14 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                     "test_binding": tb,
                 }
             )
-        elif comp_id or src_doc_type == "tech/component":
+        elif src_doc_type == "tech/component":
             invariants.append(
                 {
                     "id": iid,
                     "title": iid,
                     "rule": rule or "Component technical invariant.",
                     "category": "architecture",
-                    "source_type": f"component ({comp_id or src_id})",
+                    "source_type": f"component ({src_id})",
                     "test_binding": tb,
                 }
             )

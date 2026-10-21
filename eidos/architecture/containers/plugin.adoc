@@ -12,26 +12,6 @@ source_path:
 domain: DOM-AGENT-INTELLIGENCE
 tier: extensibility
 
-components:
-  - id: CMP-PLUGIN-INSTALLER
-    title: "PluginInstaller"
-    responsibility: "Installs, updates, and safely uninstalls portable agent plugins and 4 cohesive workflow skills (`ACTIVE_EIDOS_SKILLS` across `eidos`, `eidos-spec`, `eidos-plan`, and `eidos-ops`, synchronized with streamlined v1 JSON Schema-validated YAML frontmatter templates deriving schema from type across `SYS-*`/`ARCH-*`/product/tech/design/delta specs, explicit `additionalProperties: false` frontmatter guardrails, `eidos spec schema` introspection, 4-parameter blueprint `eidos spec create`, `eidos context --json`, composable `operation`/`target`/`parent` SpecDelta workflows with Implementation Plan prose guidance, and canonical `eidos/design/**` paths) via a declarative `TargetAdapter` registry (`TargetAdapter.install` and `TargetAdapter.uninstall` driving bundle copying via `_copy_plugin_tree` from `assets/plugin_reference` with `include_skills=(self.skills_subdir is None)` to avoid duplicating skills inside `plugin_subdir/skills` when flat skill projection is active, skill projection, instruction blocks including non-destructive append into existing `.github/copilot-instructions.md` when `COPILOT_START_MARKER` is absent, `orjson`-backed hook/JSONC merges, and manifest-only cleanup via `_uninstall_from_manifest`, with `PluginInstallTarget.PROJECT` scoped strictly to `.agents/plugins/eidos`, `Path`-typed `InstallResult.created_files` for Aider, and accurate fallback `plugin_dir` resolution in `check_plugin_version_status` alongside PEP 440 / SemVer normalization via `normalize_to_semver` and release-synchronized `get_bundled_plugin_version`) and manifest tracking (`.eidos-manifest.json` serialized via `orjson` after `post_install_hook` and flat skill projection, tracking pre-existing bundle files on `force=False` so uninstall remains complete) with SHA-256 digests, preserving existing manifest entries and user-owned files on `force=False`, enforcing ancestor-aware symlink protection (`_check_not_symlink`), and upgrading version-pinned `uvx` hook commands across `agent-plugins.org` v1.0.0, Claude Code, OpenAI Codex, OpenCode (`open-code`), Aider, Cline, Cursor, and GitHub Copilot."
-    source_path:
-      - "src/eidos/plugin/installer.py"
-      - "src/eidos/plugin/version.py"
-  - id: CMP-PLUGIN-VALIDATOR
-    title: "PluginValidator"
-    responsibility: "Validates plugin packages (`plugin.json` parsed via `orjson`) against agent-plugins.org v1.0.0 with line-anchored SKILL.md YAML frontmatter extraction and enforces SemVer 2.0.0 versioning across host agent environments."
-    source_path: "src/eidos/plugin/validator.py"
-  - id: CMP-HOOK-MANAGER
-    title: "HookManager"
-    responsibility: "Validates and orchestrates agent lifecycle hooks (`hooks.json` parsed via `orjson`) with version-pinned uvx execution, scoping eidos-drift-gate exclusively to Stop ('eidos hook')."
-    source_path: "src/eidos/plugin/validator.py"
-  - id: CMP-HOOK-RUNNER
-    title: "HookRunner"
-    responsibility: "Executes the stateless CLI-native Stop hook (handle_stop_hook, execute_hook via 'eidos hook' with `orjson` payload serialization) that runs detect_drift(uncommitted=True) once on Stop and returns {'decision': 'allow'} when clean or {'decision': 'allow', 'systemMessage': '...'} when specification validation errors, uncovered/orphan invariants, or code-to-spec drift are detected."
-    source_path: "src/eidos/plugin/hooks.py"
-
 decisions:
   - id: DEC-PLUGIN-STOP-SCOPED-DRIFT-GATE
     title: "Execute Full Spec-to-Code Drift Gate Strictly on Stop Instead of Per-Turn PostInvocation"
@@ -58,19 +38,19 @@ contracts:
   provides: []
   consumes: []
 ---
-= Container: Eidos Agent Plugin & Extension Manager (C4 Level 2 Container & Level 3 Components)
+= Container: Eidos Agent Plugin & Extension Manager (C4 Level 2 Container)
 :toc: left
 
 == Architectural Boundary
 This container represents the plugin distribution, hook execution, and validation system under `src/eidos/plugin/` and `assets/plugin_reference/`. It packages living specification skills, commands, and validation rules into standard bundles adhering to `agent-plugins.org v1.0.0` as well as Claude Code, OpenAI Codex, OpenCode, Aider, Cline, Cursor, and GitHub Copilot environments.
 
-== Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
+== Multi-Harness Distribution & Lifecycle Architecture
+* **Declarative Target Adapter Pipeline**: Synchronizes the 4 bundled workflow skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`), `plugin.json` manifests, and `hooks.json` lifecycle configurations across `.agents/plugins/eidos`, `.github/plugin/`, `.github/skills/`, `.claude/plugins/`, `.claude/skills/`, `.cursor/skills/`, `.cline/skills/`, `.opencode/skills/`, `.codex/`, and `.aider/skills/`.
+* **Manifest-Tracked Installation & Safe Uninstallation**: Records installed file relative paths and SHA-256 digests in `.eidos-manifest.json` so `eidos plugin uninstall` removes only Eidos-managed artifacts without disturbing user-authored skills or shared parent directories.
+* **Stateless Single Stop Hook (`DEC-PLUGIN-STATELESS-SINGLE-STOP-HOOK`)**: Executes `detect_drift(uncommitted=True)` once at the end of an agent turn (`Stop`) via `eidos hook` and emits a non-blocking `{"decision": "allow", "systemMessage": "..."}` diagnostic payload when validation or drift issues are present.
 
-[cols="1,1,2,2", options="header"]
-|===
-| Component ID | Name | Responsibility | Source Path
-| `CMP-PLUGIN-INSTALLER` | **PluginInstaller** | Declarative `TargetAdapter` pipeline managing `orjson` manifest-tracked (`.eidos-manifest.json`) installation, safe non-destructive uninstallation, legacy skill pruning, PEP 440 SemVer normalization via `normalize_to_semver`, and synchronization of 4 cohesive workflow skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`) into `.agents/plugins/eidos`, `.github/plugin/`, `.github/skills/`, `.claude/plugins/`, `.claude/skills/`, `.cursor/skills/`, `.cline/skills/`, `.opencode/skills/`, `.codex/`, and `.aider/skills/` | `src/eidos/plugin/installer.py`, `src/eidos/plugin/version.py`
-| `CMP-PLUGIN-VALIDATOR` | **PluginValidator** | Enforces `orjson`-parsed JSON Schema conformance and SemVer 2.0.0 rules for plugins | `src/eidos/plugin/validator.py`
-| `CMP-HOOK-MANAGER` | **HookManager** | Validates and coordinates lifecycle hooks (`hooks.json` parsed via `orjson`) with version-pinned uvx execution scoping `eidos-drift-gate` to `Stop` | `src/eidos/plugin/validator.py`
-| `CMP-HOOK-RUNNER` | **HookRunner** | Stateless CLI-native `Stop` hook execution (`eidos hook` with `orjson` output) | `src/eidos/plugin/hooks.py`
-|===
+== Quality Attributes & Operational Policies
+* **Non-Destructive File Safety**: Rejects symlink traversal outside the target repository and refuses to overwrite modified user files unless `--force` is explicitly supplied.
+* **Standard Conformance (`INV-PLUGIN-SCHEMA-CONFORMANCE`)**: Validates `plugin.json`, `SKILL.md` frontmatter, `hooks.json`, and PEP 440 -> SemVer 2.0.0 version normalization against `agent-plugins.org v1.0.0`.
+* **CLI-Native Hook Execution (`INV-HOOK-CLI-NATIVE`)**: Invokes `eidos hook` directly (or via version-pinned `uvx --from eidos-spec==<semver> eidos hook`) without shell or Python wrapper scripts.
+

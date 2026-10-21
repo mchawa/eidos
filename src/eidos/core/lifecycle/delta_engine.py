@@ -171,20 +171,17 @@ def _extract_mutation_target(m: dict[str, Any]) -> str:
 
 
 def normalize_delta_mutation(m: dict[str, Any]) -> dict[str, Any]:
-    """Normalize a composable SpecDelta mutation dictionary (operation + target + parent)."""
+    """Normalize a composable SpecDelta mutation dictionary (operation + target)."""
     if not isinstance(m, dict):
         return {}
     norm: dict[str, Any] = dict(m)
     raw_op = str(norm.get("operation") or "").strip().lower()
     raw_target = str(norm.get("target") or "").strip()
-    raw_parent = str(norm.get("parent") or "").strip()
 
     if raw_op:
         norm["operation"] = raw_op
     if raw_target:
         norm["target"] = raw_target
-    if raw_parent:
-        norm["parent"] = raw_parent
 
     if raw_target:
         t_meta = resolve_entity_prefix_meta(raw_target)
@@ -192,20 +189,6 @@ def normalize_delta_mutation(m: dict[str, Any]) -> dict[str, Any]:
             norm["entity_type"] = t_meta[1]
 
     return norm
-
-
-def _find_inline_component_dict(
-    comp_id: str,
-    cnt_fm: dict[str, Any] | None,
-) -> dict[str, Any] | None:
-    """Return the inline component dict for comp_id from a container frontmatter, if present."""
-    if not isinstance(cnt_fm, dict):
-        return None
-    comps = list(cnt_fm.get("components") or [])
-    for c in comps:
-        if isinstance(c, dict) and c.get("id") == comp_id:
-            return c
-    return None
 
 
 def _digest_dict(data: dict[str, Any]) -> str:
@@ -594,36 +577,21 @@ def _resolve_git_baseline_sha(
         if raw_bytes is None:
             return False, None
 
-        if target_key.startswith(("CMP-", "INV-")):
+        if target_key.startswith("INV-"):
             if hist_fm is None:
                 parsed_fm, _, _ = extract_frontmatter(raw_bytes.decode("utf-8", errors="replace"))
                 hist_fm = parsed_fm if isinstance(parsed_fm, dict) else {}
                 if blob_cache is not None:
                     blob_cache[cache_key] = (raw_bytes, hist_fm)
-            if target_key.startswith("CMP-"):
-                if hist_fm:
-                    if hist_fm.get("type") == "tech/component" or str(hist_fm.get("id", "")).upper() == target_key:
-                        return True, hashlib.sha256(raw_bytes).hexdigest()
-                    comp_dict = _find_inline_component_dict(target_key, hist_fm)
-                    if comp_dict is not None:
-                        return True, _digest_dict(comp_dict)
-                    if hist_fm.get("type") == "tech/container":
-                        return True, None
-                if target_file.stem.upper() != target_key and f"CMP-{target_file.stem.upper()}" != target_key:
-                    return True, None
-            if target_key.startswith("INV-"):
-                if hist_fm:
-                    invs = list(hist_fm.get("invariants", []) or [])
-                    tech = hist_fm.get("technical")
-                    if isinstance(tech, dict) and isinstance(tech.get("invariants"), list):
-                        invs.extend(tech["invariants"])
-                    for comp in hist_fm.get("components", []) or []:
-                        if isinstance(comp, dict) and isinstance(comp.get("invariants"), list):
-                            invs.extend(comp["invariants"])
-                    for inv in invs:
-                        if isinstance(inv, dict) and inv.get("id") == target_key:
-                            return True, _digest_dict(inv)
-                return True, None
+            if hist_fm:
+                invs = list(hist_fm.get("invariants", []) or [])
+                tech = hist_fm.get("technical")
+                if isinstance(tech, dict) and isinstance(tech.get("invariants"), list):
+                    invs.extend(tech["invariants"])
+                for inv in invs:
+                    if isinstance(inv, dict) and inv.get("id") == target_key:
+                        return True, _digest_dict(inv)
+            return True, None
         return True, hashlib.sha256(raw_bytes).hexdigest()
 
     for rev in revs:
@@ -643,72 +611,6 @@ def _resolve_git_baseline_sha(
                     return digest
 
     return None
-
-
-def _check_structural_subtarget_precondition(
-    m: dict[str, Any],
-    specs_by_id: dict[str, tuple[Path, str, dict[str, Any]]],
-    container_components: dict[str, str],
-) -> bool:
-    """Verify structural parent/target membership when both parent and target are specified.
-
-    Returns False if a declared parent/target relationship is missing, or True if satisfied (or not applicable).
-    """
-    target = str(m.get("target") or "").strip()
-    parent = str(m.get("parent") or "").strip()
-    if not parent or not target or parent == target:
-        return True
-
-    if target.startswith("INV-"):
-        owner_spec_id = parent if parent in specs_by_id else container_components.get(parent, parent)
-        if owner_spec_id not in specs_by_id:
-            return False
-        _, _, owner_fm = specs_by_id[owner_spec_id]
-        invs: list[Any] = []
-        if parent == owner_spec_id:
-            invs.extend((owner_fm or {}).get("invariants") or [])
-            invs.extend(((owner_fm or {}).get("technical") or {}).get("invariants") or [])
-        for comp in list((owner_fm or {}).get("components") or []):
-            if (
-                isinstance(comp, dict)
-                and comp.get("invariants")
-                and (parent == owner_spec_id or comp.get("id") == parent)
-            ):
-                invs.extend(comp.get("invariants") or [])
-        inv_ids = {i.get("id") if isinstance(i, dict) else str(i) for i in invs}
-        return target in inv_ids
-
-    if target.startswith("CMP-") and parent.startswith("CNT-"):
-        if parent not in specs_by_id:
-            return False
-        return bool(
-            container_components.get(target) == parent
-            or (target in specs_by_id and (specs_by_id[target][2] or {}).get("container") == parent)
-        )
-
-    if target.startswith("CTR-") and parent.startswith(("CNT-", "CMP-")):
-        if parent in specs_by_id:
-            _, _, cnt_fm = specs_by_id[parent]
-            contracts = (cnt_fm or {}).get("contracts", {}) or {}
-            all_ctrs = (contracts.get("provides") or []) + (contracts.get("consumes") or [])
-            if target in all_ctrs:
-                return True
-        elif parent in container_components and container_components[parent] in specs_by_id:
-            inline_comp = _find_inline_component_dict(parent, specs_by_id[container_components[parent]][2])
-            if inline_comp is not None:
-                ifaces = inline_comp.get("contracts") or {}
-                if isinstance(ifaces, dict):
-                    all_ifaces = (ifaces.get("provides") or []) + (ifaces.get("consumes") or [])
-                    if target in all_ifaces:
-                        return True
-        else:
-            return False
-        if target in specs_by_id:
-            ctr_fm = specs_by_id[target][2] or {}
-            return parent == ctr_fm.get("container")
-        return False
-
-    return True
 
 
 def _resolve_target_path_and_id(
@@ -735,7 +637,6 @@ def _resolve_target_path_and_id(
 
 _PROSE_EXPECT_FIELDS: frozenset[str] = frozenset(
     {
-        "responsibility",
         "rule",
         "test_binding",
         "description",
@@ -853,7 +754,6 @@ def _evaluate_declarative_postcondition(
     m: dict[str, Any],
     target: str,
     specs_by_id: dict[str, tuple[Path, str, dict[str, Any]]],
-    container_components: dict[str, str],
     invariant_map: dict[str, tuple[Path, dict[str, Any]]],
     target_file: Path | None = None,
     diagnostics: list[str] | None = None,
@@ -904,15 +804,6 @@ def _evaluate_declarative_postcondition(
             target_dict = spec_fm or {}
             if spec_path.exists():
                 raw_text = spec_path.read_text(encoding="utf-8")
-        elif target in container_components:
-            cnt_id = container_components[target]
-            if cnt_id in specs_by_id:
-                cnt_path, _, cnt_fm = specs_by_id[cnt_id]
-                if cnt_path.exists():
-                    raw_text = cnt_path.read_text(encoding="utf-8")
-                comp_dict = _find_inline_component_dict(target, cnt_fm)
-                if comp_dict is not None:
-                    target_dict = comp_dict
         elif target_file is not None and target_file.exists():
             raw_text = target_file.read_text(encoding="utf-8")
             parsed_fm, _, _ = extract_frontmatter(raw_text)
@@ -1004,7 +895,7 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
         raw_mutations = []
 
     delta_status = str(doc.frontmatter.get("status", "proposed")).strip().lower()
-    specs_by_id, container_components, invariant_map = _build_spec_catalog_with_invariants(eidos_dir)
+    specs_by_id, invariant_map = _build_spec_catalog_with_invariants(eidos_dir)
     invariants = set(invariant_map.keys())
     rev_cache: dict[Path, list[str]] = {}
     blob_cache: dict[tuple[str, str], tuple[bytes | None, dict[str, Any] | None]] = {}
@@ -1048,25 +939,11 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                 failure_reason = f"Invariant '{lookup_target}' is still present."
 
         elif op == "deprecate" or (op == "remove" and entity_kind in ("capability", "policy")):
-            if (
-                lookup_target not in specs_by_id
-                and lookup_target not in container_components
-                and not target_path_exists
-            ):
+            if lookup_target not in specs_by_id and not target_path_exists:
                 verified = True
                 status = "ABSENT_AS_EXPECTED"
             else:
                 doc_fm = specs_by_id[lookup_target][2] if lookup_target in specs_by_id else {}
-                if (
-                    not doc_fm
-                    and lookup_target in container_components
-                    and container_components[lookup_target] in specs_by_id
-                ):
-                    comp_dict = _find_inline_component_dict(
-                        lookup_target, specs_by_id[container_components[lookup_target]][2]
-                    )
-                    if comp_dict is not None:
-                        doc_fm = comp_dict
                 if not doc_fm and target_path_resolved and target_path_resolved.exists():
                     doc_fm = parse_spec_file(target_path_resolved).frontmatter or {}
                 if str(doc_fm.get("status", "")).lower() in ("deprecated", "retired"):
@@ -1080,7 +957,7 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                     )
 
         elif op == "remove":
-            still_present = lookup_target in specs_by_id or lookup_target in container_components or target_path_exists
+            still_present = lookup_target in specs_by_id or target_path_exists
             if not still_present:
                 verified = True
                 status = "ABSENT_AS_EXPECTED"
@@ -1091,11 +968,9 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
 
         # 2. Addition Operations
         elif op == "add" and entity_kind == "invariant":
-            if lookup_target in invariants and _check_structural_subtarget_precondition(
-                m, specs_by_id, container_components
-            ):
+            if lookup_target in invariants:
                 decl_ok = _evaluate_declarative_postcondition(
-                    m, lookup_target, specs_by_id, container_components, invariant_map, diagnostics=diag
+                    m, lookup_target, specs_by_id, invariant_map, diagnostics=diag
                 )
                 if decl_ok is False:
                     verified = False
@@ -1110,15 +985,12 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                 failure_reason = f"Invariant '{lookup_target}' not found on parent specification."
 
         elif op == "add":
-            found = (
-                lookup_target in specs_by_id or lookup_target in container_components or target_path_exists
-            ) and _check_structural_subtarget_precondition(m, specs_by_id, container_components)
+            found = lookup_target in specs_by_id or target_path_exists
             if found:
                 decl_ok = _evaluate_declarative_postcondition(
                     m,
                     lookup_target,
                     specs_by_id,
-                    container_components,
                     invariant_map,
                     target_file=target_path_resolved,
                     diagnostics=diag,
@@ -1137,9 +1009,7 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
 
         # 3. Modification Operations
         elif op == "modify" and entity_kind == "invariant":
-            if lookup_target not in invariant_map or not _check_structural_subtarget_precondition(
-                m, specs_by_id, container_components
-            ):
+            if lookup_target not in invariant_map:
                 verified = False
                 status = "MISSING"
                 failure_reason = f"Invariant '{lookup_target}' not found on parent specification."
@@ -1147,7 +1017,7 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                 inv_file, inv_dict = invariant_map[lookup_target]
                 inv_sha = _digest_dict(inv_dict)
                 decl_ok = _evaluate_declarative_postcondition(
-                    m, lookup_target, specs_by_id, container_components, invariant_map, diagnostics=diag
+                    m, lookup_target, specs_by_id, invariant_map, diagnostics=diag
                 )
                 if decl_ok is not None:
                     if not decl_ok:
@@ -1194,8 +1064,6 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
             target_file: Path | None = None
             if lookup_target in specs_by_id:
                 target_file = specs_by_id[lookup_target][0]
-            elif lookup_target in container_components and container_components[lookup_target] in specs_by_id:
-                target_file = specs_by_id[container_components[lookup_target]][0]
             elif target_path_resolved is not None:
                 target_file = target_path_resolved
             elif entity_kind == "architecture":
@@ -1211,30 +1079,17 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                         lookup_target = sys_id
                         break
 
-            if (
-                target_file is None
-                or not target_file.exists()
-                or not _check_structural_subtarget_precondition(m, specs_by_id, container_components)
-            ):
+            if target_file is None or not target_file.exists():
                 verified = False
                 status = "MISSING"
                 failure_reason = f"Target specification '{lookup_target}' not found."
             else:
-                cur_sha: str | None = None
-                if lookup_target not in specs_by_id and lookup_target in container_components:
-                    cnt_id = container_components[lookup_target]
-                    if cnt_id in specs_by_id:
-                        comp_dict = _find_inline_component_dict(lookup_target, specs_by_id[cnt_id][2])
-                        if comp_dict is not None:
-                            cur_sha = _digest_dict(comp_dict)
-                if cur_sha is None:
-                    cur_sha = hashlib.sha256(target_file.read_bytes()).hexdigest()
+                cur_sha = hashlib.sha256(target_file.read_bytes()).hexdigest()
 
                 decl_ok = _evaluate_declarative_postcondition(
                     m,
                     lookup_target,
                     specs_by_id,
-                    container_components,
                     invariant_map,
                     target_file=target_file,
                     diagnostics=diag,

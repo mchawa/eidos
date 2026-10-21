@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-AST-SYMBOL-INDEXER
+title: AstSymbolIndexer
+container: CNT-EIDOS-INDEX
+status: active
+source_path: src/eidos/core/index/ast_indexer.py
+---
+= Component: AstSymbolIndexer
+:toc: left
+
+== Responsibility
+Extracts polyglot AST symbols and cross-file imports exclusively via AstGrepIndexer and ast-grep-py (SgRoot) across all 17 supported languages (extract_symbols, extract_imports across top-level classes, functions, methods, structs, enums, interface signatures, TS/JS arrow functions and function expressions, Vue defineProps and Svelte export let props via _extract_sfc_script_blocks, and syntax-tree import specifiers across Python .py, TS/JS .ts/.tsx/.js/.jsx, Go .go including type_spec and receiver methods, Rust .rs including lifetime-safe signature parsing, Java .java, Kotlin .kt/.kts, C/C++ .c/.cpp/.h/.hpp, C# .cs, Ruby .rb including sibling private/protected/public visibility state, PHP .php, Swift .swift, and Vue/Svelte .vue/.svelte, including enclosing decorated_definition / attribute lines in CodeSymbol.line_start, prefixing normalized @decorator and #[attribute] annotations onto CodeSymbol.signature, slicing declaration headers up to body.range().start, and skipping nested local helper closures), enforces language-native visibility rules (stripping leading decorator/attribute prefixes via _strip_leading_decorators_from_signature before checking export in TS/JS/Vue/Svelte, uppercase initial rune in Go, pub in Rust, header-scoped public/protected in Java/Kotlin, non-static in C/C++, public in C#/PHP/Swift, non-private/protected in Ruby, and __all__ in Python), diffs public and boundary symbols between file versions (public_symbol_map, boundary_symbol_map, diff_symbol_maps, diff_public_symbols), classifies frontend/styling diffs into token or UI contract changes, generates structural AI repo maps (served from persisted primary 'code_symbols' rows without re-parsing), and binds polyglot test functions via unified _iter_test_function_spans (including first-argument it/test/describe descriptions, parameterized test.each/it.each/describe.each and Deno.test calls, Go t.Run subtests under both 'TestFunc/subtest' and 'subtest' keys, and Rust #[test]/#[tokio::test]/#[rstest]/#[test_case]/#[async_std::test] attributes) and shared fixture-aware extract_test_file_cache_payload (_has_function_level_fixture) under both qualified 'Class::method' and merged 'method' keys to capability and component invariants.
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

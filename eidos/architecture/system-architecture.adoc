@@ -18,9 +18,9 @@ c4_context:
 
 decisions:
   - id: DEC-ARCH-CENTRALIZED-HYBRID-C4
-    title: "Centralized Hybrid C4 Component Specifications Outside Source Trees"
-    decision: "Maintain C4 Level 3 components inline within container manifests by default and promote complex components to dedicated manifests under 'eidos/architecture/components/', never co-locating '.adoc' files inside 'src/'."
-    rationale: "Preserves 100% pure implementation source trees while achieving 87-94% context token savings and full C4 Level 3 whitebox governance."
+    title: "Centralized C4 Component Specifications Outside Source Trees"
+    decision: "Maintain C4 Level 3 components as standalone specifications under 'eidos/architecture/components/' linking bottom-up to their parent container via 'container: CNT-*', never inline in container manifests or co-located inside 'src/'."
+    rationale: "Preserves 100% pure implementation source trees while achieving uniform 1-to-1 C4 Level 3 component governance."
     rejected_alternatives:
       - option: "Co-Located Component Specs Inside src/ Directories"
         reason_rejected: "Pollutes source code packages with documentation artifacts and complicates build packaging and ownership resolution."
@@ -83,7 +83,7 @@ Eidos enforces a strict, first-principles mapping to the canonical C4 architectu
 | C4 Level | C4 Term | Eidos Specification Entity | Architectural Boundary
 | **Level 1** | **System Context** | Root System Spec (`SYS-*`) & Architecture (`ARCH-*`) | System boundaries, users/personas, and external platforms
 | **Level 2** | **Container** | Container Manifests (`CNT-*`, `type: tech/container`) | **Process / Deployable / Package boundary** (CLI app, library, daemon, SPA, docs)
-| **Level 3** | **Component** | In-Process Modules (`CMP-*`, `components` array in `CNT-*.adoc` or centralized `eidos/architecture/components/<comp>.adoc`) | **In-Process / Memory boundary** (internal modules, services, parsers, engines)
+| **Level 3** | **Component** | In-Process Modules (`CMP-*`, centralized in `eidos/architecture/components/<comp>.adoc` with `container: CNT-*`) | **In-Process / Memory boundary** (internal modules, services, parsers, engines)
 | **Level 4** | **Code** | Source Code & Schemas (`source_path`) | Exact classes, functions, and data structures (`src/eidos/**/*.py`)
 |===
 
@@ -111,7 +111,7 @@ The C4 Level 2 Container Diagram explicitly renders the inter-container dependen
 * `CNT-EIDOS-INDEX` consumes AST models and frontmatter definitions (`CNT-EIDOS-CORE`).
 
 === 5.3 Level 3 Component Whitebox View & Interface Governance
-Internal component building blocks are declared inline within each container manifest. In Centralized Hybrid Mode (see link:../explorations/EXP-2026-004.adoc[EXP-2026-004]), complex promoted components **reside centrally in `eidos/architecture/components/<component>.adoc`** (linked via `container:` in the standalone component manifest) and point to code via `source_path`. Eidos specifications **never touch or reside within source code directories** (`src/`, `packages/`).
+Internal component building blocks reside centrally in `eidos/architecture/components/<component>.adoc` (see link:../explorations/EXP-2026-004.adoc[EXP-2026-004]), linked bottom-up via `container: CNT-*` in the standalone component manifest, and point to code via `source_path`. Eidos specifications **never touch or reside within source code directories** (`src/`, `packages/`).
 
 Furthermore, interface ownership strictly distinguishes between deployment boundaries and in-memory linkage:
 * **Containers (`CNT-*`)** define **Boundary Protocol Contracts (`CTR-*`)**: Cross-process, network, or CLI protocols (CLI args, REST OpenAPI, gRPC).

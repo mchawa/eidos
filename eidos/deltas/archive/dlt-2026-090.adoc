@@ -19,7 +19,6 @@ vcs:
 mutations:
   - operation: remove
     target: CMP-CONTEXT-SLICER
-    parent: CNT-EIDOS-CORE
   - operation: modify
     target: CNT-EIDOS-CORE
   - operation: modify

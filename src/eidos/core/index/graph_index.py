@@ -372,8 +372,8 @@ class ArchitecturalIndex:
     def get_spec_catalog(
         self,
         eidos_dir: Path | None = None,
-    ) -> tuple[dict[str, tuple[Path, str, dict[str, Any]]], dict[str, str], dict[str, tuple[Path, dict[str, Any]]]]:
-        """Retrieve (specs_by_id, container_components, invariant_map) from the synchronized knowledge graph."""
+    ) -> tuple[dict[str, tuple[Path, str, dict[str, Any]]], dict[str, tuple[Path, dict[str, Any]]]]:
+        """Retrieve (specs_by_id, invariant_map) from the synchronized knowledge graph."""
         self._ensure_synced()
         return query_spec_catalog_in_db(
             self._get_connection(),

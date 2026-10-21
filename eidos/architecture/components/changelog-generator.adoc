@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-CHANGELOG-GENERATOR
+title: ChangelogGenerator
+container: CNT-EIDOS-CORE
+status: active
+source_path: src/eidos/core/lifecycle/changelog.py
+---
+= Component: ChangelogGenerator
+:toc: left
+
+== Responsibility
+Compiles applied SpecDeltas (recursively scanning deltas_dir including deltas/archive/ for status == 'applied', deterministically classified via v1 intent.kind and composable mutations[].operation without legacy feature_addition or architectural_refactor aliases, deduplicating Unreleased commits against unreleased_deltas across both tagged and untagged repositories, resolving Git commit and tag ancestry from the earliest commit that introduced status: applied across deltas/<name>.adoc and deltas/archive/<name>.adoc via batched git log -G, preserving acronym/entity-ID casing and conventional commit breaking-change prefixes in commit subjects, and scoping docs/changelog.md symlinking to default CHANGELOG.md output) and Git release history into a portable Keep a Changelog ledger with inline code badges (INV-DELTA-CHANGELOG-GENERATION).
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

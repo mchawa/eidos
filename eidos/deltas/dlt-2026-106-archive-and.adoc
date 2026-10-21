@@ -78,7 +78,6 @@ mutations:
           - "eidos/deltas/archive/"
   - operation: add
     target: INV-DELTA-EXPLORATION-ARCHIVE-LEDGER
-    parent: CAP-PROD-002
     details: "Add invariant INV-DELTA-EXPLORATION-ARCHIVE-LEDGER verifying that SpecDeltas and Explorations beyond the keep_recent window (15 by default) are moved into archive/ subdirectories and slimmed in-place as schema-valid .adoc documents while preserving SpecValidator x-eidos-ref resolution, collision-free ID sequencing, FTS5 search hygiene, and ChangelogGenerator parity."
     expect:
       frontmatter:

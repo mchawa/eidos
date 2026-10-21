@@ -53,7 +53,7 @@ STOP_WORDS = {
 
 
 def collect_component_decisions(comp: dict[str, Any]) -> list[dict[str, Any]]:
-    """Collect embedded architectural decisions from a container/component and its inline components."""
+    """Collect embedded architectural decisions from a container or component."""
     decisions: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     for d in comp.get("decisions", []) or []:
@@ -63,15 +63,6 @@ def collect_component_decisions(comp: dict[str, Any]) -> list[dict[str, Any]]:
                 if did:
                     seen_ids.add(did)
                 decisions.append(d)
-    for m in comp.get("components", []) or []:
-        if isinstance(m, dict):
-            for d in m.get("decisions", []) or []:
-                if isinstance(d, dict):
-                    did = str(d.get("id", "")).strip()
-                    if not did or did not in seen_ids:
-                        if did:
-                            seen_ids.add(did)
-                        decisions.append(d)
     return decisions
 
 
@@ -212,11 +203,6 @@ class ArchitecturalContextSlice:
                     lines.append(f"- **Specification:** `{comp['file_path']}`")
                 if self.tier == "deep" and comp.get("status"):
                     lines.append(f"- **Lifecycle Status:** `{comp['status']}`")
-                if comp.get("responsibility"):
-                    resp_txt = str(comp["responsibility"])
-                    if compact_prose:
-                        resp_txt = _clip_text(resp_txt.splitlines()[0], 120)
-                    lines.append(f"- **Responsibility:** {resp_txt}")
                 if self.tier in ("guardrails", "deep"):
                     invs = comp.get("invariants", [])
                     if invs:
@@ -249,23 +235,6 @@ class ArchitecturalContextSlice:
                             if compact_prose:
                                 irule = _clip_text(irule, 120)
                             lines.append(f"  - `{inv.get('id')}`: {irule}")
-
-                if self.tier == "deep" and not is_secondary:
-                    modules = comp.get("components", [])
-                    if modules:
-                        lines.append("- **C4 Level 3 Components:**")
-                        for m in modules[:6]:
-                            mid = f"`{m['id']}` " if m.get("id") else ""
-                            mtitle = m.get("title", "")
-                            mresp = str(m.get("responsibility", ""))
-                            if compact_prose and len(mresp) > 100:
-                                first_l = mresp.strip().splitlines()[0] if mresp.strip() else ""
-                                mresp = (
-                                    first_l.split(". ", 1)[0].rstrip(".") + "."
-                                    if ". " in first_l and len(first_l.split(". ", 1)[0]) < 100
-                                    else _clip_text(first_l, 100)
-                                )
-                            lines.append(f"  - {mid}**{mtitle}**: {mresp}")
 
             if (
                 not is_secondary
@@ -525,18 +494,11 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 "domain",
                 "container",
                 "file_path",
-                "responsibility",
             )
         )
         for base_key in base_keys:
             if comp.get(base_key):
-                val = comp[base_key]
-                if base_key == "responsibility" and (
-                    self._compact_prose or (self._compact_decisions and index_in_slice > 0)
-                ):
-                    out[base_key] = self._compact_summary(str(val), 120)
-                else:
-                    out[base_key] = val
+                out[base_key] = comp[base_key]
 
         is_secondary = self._is_secondary_dependency(cid)
         compact_comp = self._compact_decisions and index_in_slice > 0
@@ -555,23 +517,6 @@ class TieredContextSlice(ArchitecturalContextSlice):
                     }
                     for inv in comp.get("invariants", [])
                     if isinstance(inv, dict)
-                ]
-
-        if self.tier == "deep" and not is_secondary:
-            modules = comp.get("components", [])
-            if modules:
-                out["components"] = [
-                    {
-                        k: (
-                            self._compact_summary(str(m[k]), 100)
-                            if k == "responsibility" and self._compact_prose
-                            else m[k]
-                        )
-                        for k in ("id", "title", "responsibility", "source_path")
-                        if isinstance(m, dict) and m.get(k)
-                    }
-                    for m in modules
-                    if isinstance(m, dict)
                 ]
 
         if (
@@ -642,22 +587,15 @@ class TieredContextSlice(ArchitecturalContextSlice):
         return out
 
     def _compress_verbose_fields_in_place(self, primary_cids: set[str]) -> bool:
-        """Progressively compress verbose prose fields (responsibility)
+        """Progressively compress verbose prose fields (invariant rules and decision narratives)
         to compact 1-line summaries before dropping invariants or policies.
         """
-        changed = False
+        _ = primary_cids
         if not self._compact_prose:
             self._compact_prose = True
-            changed = True
-        for idx, comp in enumerate(self.components):
-            cid = comp.get("id", "")
-            is_non_primary = idx > 0 or (primary_cids and cid not in primary_cids)
-            if is_non_primary and comp.get("responsibility") and len(str(comp["responsibility"])) > 120:
-                comp["responsibility"] = self._compact_summary(str(comp["responsibility"]), 120)
-                changed = True
-        if changed:
             self._invalidate_budget_cache()
-        return changed
+            return True
+        return False
 
     def to_dict(self) -> dict[str, Any]:
         """Project tier-scoped view of matched architectural entities rather than raw frontmatter (DLT-2026-047)."""
@@ -766,8 +704,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
             sp_len = len(str(item.get("source_path", "") or ""))
             fp_len = len(str(item.get("file_path", "") or ""))
             dom_len = len(str(item.get("domain", "") or ""))
-            resp_len = min(len(str(item.get("responsibility", "") or "")), 120)
-            base_ub = id_len + title_len + sp_len + fp_len + dom_len + resp_len
+            base_ub = id_len + title_len + sp_len + fp_len + dom_len
             return base_ub + 140, base_ub + 260
         proj = self._project_component(item, idx if idx >= 0 else len(lst))
         comp_ub = len(orjson.dumps(proj, option=orjson.OPT_INDENT_2)) + 64
@@ -907,7 +844,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
 
         # Stage 1b: Trim 1-hop expanded (non-direct) entities before touching any direct query matches.
         _pop_non_direct(self.invariants, direct_invs, min_len=3)
-        _pop_non_direct(self.components, primary_cids, min_len=1 if has_non_comp_direct else 4)
+        _pop_non_direct(self.components, primary_cids, min_len=1 if has_non_comp_direct else max(4, len(primary_cids) + 3))
         _pop_non_direct(self.capabilities, direct_caps, min_len=3)
 
         _pop_non_direct(self.invariants, direct_invs, min_len=1)
@@ -1004,24 +941,6 @@ def build_tiered_context_slice(
             data.setdefault("file_path", row["file_path"])
             matched_components[cid] = data
             _add_reason(cid, f"Explicit component parameter '{component}'")
-        if not matched_components:
-            cursor.execute(
-                """
-                SELECT e.id, e.title, e.type, e.domain, e.file_path, e.data_json
-                FROM symbol_mappings s
-                JOIN entities e ON e.id = s.entity_id
-                WHERE s.kind = 'component_id' AND UPPER(s.symbol) = ?;
-                """,
-                (c_clean,),
-            )
-            for row in cursor.fetchall():
-                cid = row["id"]
-                data = orjson.loads(row["data_json"])
-                data["id"] = cid
-                data["title"] = row["title"]
-                data.setdefault("file_path", row["file_path"])
-                matched_components[cid] = data
-                _add_reason(cid, f"Inline component parameter '{component}'")
 
     # 2. Resolve by File paths
     raw_files = [files] if isinstance(files, str) else (files or [])
@@ -1198,6 +1117,22 @@ def build_tiered_context_slice(
             c_data.setdefault("file_path", row["file_path"])
             matched_components[row["id"]] = c_data
 
+    # 4b. Ensure every matched standalone tech/component includes its owning parent tech/container
+    for cid, c_data in list(matched_components.items()):
+        parent_cnt = str(c_data.get("container") or "").strip()
+        if parent_cnt and parent_cnt not in matched_components:
+            row = cursor.execute(
+                "SELECT id, title, type, domain, file_path, data_json FROM entities WHERE id = ?;",
+                (parent_cnt,),
+            ).fetchone()
+            if row:
+                cnt_data = orjson.loads(row["data_json"])
+                cnt_data["id"] = row["id"]
+                cnt_data["title"] = row["title"]
+                cnt_data.setdefault("file_path", row["file_path"])
+                matched_components[row["id"]] = cnt_data
+                _add_reason(row["id"], f"Owning container of {cid}")
+
     # 5. Expand 1-hop internal dependencies via graph edges (depends_on, consumes_api)
     primary_cids = list(matched_components.keys())
     if primary_cids:
@@ -1213,7 +1148,8 @@ def build_tiered_context_slice(
         if missing_dep_ids:
             ph_dep = ",".join("?" for _ in missing_dep_ids)
             cursor.execute(
-                f"SELECT id, title, type, domain, file_path, data_json FROM entities WHERE id IN ({ph_dep}) ORDER BY id;",
+                f"SELECT id, title, type, domain, file_path, data_json FROM entities WHERE id IN ({ph_dep}) "
+                "ORDER BY CASE WHEN type = 'tech/container' THEN 0 ELSE 1 END, id;",
                 tuple(missing_dep_ids),
             )
             for row in cursor.fetchall():
@@ -1247,35 +1183,11 @@ def build_tiered_context_slice(
             ctr_data.setdefault("file_path", row["file_path"])
             matched_contracts.setdefault(row["id"], ctr_data)
 
-    # Identify any inline C4 Level 3 components whose source_path specifically matches the queried files
-    matched_inline_comp_ids: set[str] = set()
-    if clean_files and primary_cids:
-        from eidos.core.workspace.project import matches_owned_paths
-
-        for cid in primary_cids:
-            c_entry = matched_components.get(cid) or {}
-            for inline_c in c_entry.get("components") or []:
-                if not isinstance(inline_c, dict) or not inline_c.get("id"):
-                    continue
-                raw_sp = inline_c.get("source_path")
-                sp_list = [raw_sp] if isinstance(raw_sp, str) else (raw_sp if isinstance(raw_sp, list) else [])
-                sp_clean = [str(s).strip() for s in sp_list if isinstance(s, str) and str(s).strip()]
-                if sp_clean and any(matches_owned_paths(f, sp_clean)[0] for f in clean_files):
-                    matched_inline_comp_ids.add(str(inline_c["id"]))
-
-    # 7. Include capabilities directly implementing/implemented by primary components (or their inline components),
+    # 7. Include capabilities directly implementing/implemented by primary components,
     # then fall back to domain capabilities when no direct capability edges exist or when domain capabilities match.
     direct_edge_cap_ids: set[str] = set()
     if primary_cids:
-        candidate_comp_targets: list[str] = list(primary_cids)
-        for cid in primary_cids:
-            c_entry = matched_components.get(cid) or {}
-            for inline_c in c_entry.get("components") or []:
-                if isinstance(inline_c, dict) and inline_c.get("id"):
-                    ic_id = str(inline_c["id"])
-                    if ic_id not in candidate_comp_targets:
-                        candidate_comp_targets.append(ic_id)
-        ph = ",".join("?" for _ in candidate_comp_targets)
+        ph = ",".join("?" for _ in primary_cids)
         cursor.execute(
             f"""
             SELECT id, title, type, domain, file_path, data_json FROM entities
@@ -1284,7 +1196,7 @@ def build_tiered_context_slice(
                 OR id IN (SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type IN ('implements', 'implemented_by'))
             );
             """,
-            tuple(candidate_comp_targets + candidate_comp_targets),
+            tuple(primary_cids + primary_cids),
         )
         for row in cursor.fetchall():
             cap_data = orjson.loads(row["data_json"])
@@ -1304,10 +1216,6 @@ def build_tiered_context_slice(
             tuple(domains),
         )
         all_matched_comp_ids = set(matched_components.keys())
-        for c_entry in matched_components.values():
-            for inline_c in c_entry.get("components") or []:
-                if isinstance(inline_c, dict) and inline_c.get("id"):
-                    all_matched_comp_ids.add(str(inline_c["id"]))
         for row in cursor.fetchall():
             cap_data = orjson.loads(row["data_json"])
             cap_data["id"] = row["id"]
@@ -1404,7 +1312,7 @@ def build_tiered_context_slice(
             inv_data["id"] = row["id"]
             matched_invariants.setdefault(row["id"], inv_data)
 
-    # Ensure embedded decisions (including inline component decisions) are surfaced on each matched component
+    # Ensure embedded decisions are surfaced on each matched component
     for comp_entry in matched_components.values():
         collected_decs = collect_component_decisions(comp_entry)
         if collected_decs:
@@ -1417,32 +1325,33 @@ def build_tiered_context_slice(
     direct_cap_rank = {cid: idx for idx, cid in enumerate(direct_cap_ids)}
     direct_pol_rank = {pid: idx for idx, pid in enumerate(direct_pol_ids)}
 
-    file_and_inline_tokens: set[str] = set()
+    file_tokens: set[str] = set()
     for f in clean_files:
-        file_and_inline_tokens.update(_tokenize_text(Path(f).stem.replace("_", " ").replace("-", " ")))
-    for ic_id in matched_inline_comp_ids:
-        file_and_inline_tokens.update(_tokenize_text(ic_id.removeprefix("CMP-").replace("_", " ").replace("-", " ")))
+        file_tokens.update(_tokenize_text(Path(f).stem.replace("_", " ").replace("-", " ")))
+    for cid in primary_cids:
+        if cid.startswith("CMP-"):
+            file_tokens.update(_tokenize_text(cid.removeprefix("CMP-").replace("_", " ").replace("-", " ")))
 
-    def _cap_binds_matched_inline_comp(cap_entry: dict[str, Any]) -> bool:
-        if not matched_inline_comp_ids:
+    def _cap_binds_matched_comp(cap_entry: dict[str, Any]) -> bool:
+        if not primary_set:
             return False
         tech = cap_entry.get("technical") if isinstance(cap_entry.get("technical"), dict) else {}
         comp_refs = {str(t).strip() for t in (tech.get("components") or []) if isinstance(t, str)}
-        return bool(comp_refs & matched_inline_comp_ids)
+        return bool(comp_refs & primary_set)
 
     def _cap_relevance_tuple(cap_entry: dict[str, Any]) -> tuple[int, int, int, str]:
         tech = cap_entry.get("technical") if isinstance(cap_entry.get("technical"), dict) else {}
         cnt_refs = [str(t).strip() for t in (tech.get("containers") or []) if isinstance(t, str) and str(t).strip()]
         primary_cnt_match = bool(cnt_refs and cnt_refs[0] in primary_set)
-        binds_inline = _cap_binds_matched_inline_comp(cap_entry)
+        binds_comp = _cap_binds_matched_comp(cap_entry)
         in_domain = cap_entry.get("domain", "") in domains
         overlap = 0
-        if file_and_inline_tokens:
+        if file_tokens:
             cap_tokens = set(_tokenize_text(str(cap_entry.get("title", "")).replace("_", " ").replace("-", " ")))
-            overlap = len(file_and_inline_tokens & cap_tokens)
-        if (primary_cnt_match and overlap > 0) or (binds_inline and in_domain):
+            overlap = len(file_tokens & cap_tokens)
+        if (primary_cnt_match and overlap > 0) or (binds_comp and in_domain):
             tier_score = 0
-        elif in_domain or binds_inline:
+        elif in_domain or binds_comp:
             tier_score = 1
         else:
             tier_score = 2
@@ -1453,6 +1362,7 @@ def build_tiered_context_slice(
         key=lambda x: (
             0 if x.get("id", "") in primary_set else 1,
             primary_rank.get(x.get("id", ""), 999),
+            0 if x.get("type") == "tech/container" else 1,
             x.get("id", ""),
         ),
     )
@@ -1496,9 +1406,6 @@ def build_tiered_context_slice(
         inv_lists: list[list[str]] = []
         for src in source_list:
             raw_invs = list((src.get("technical") or {}).get("invariants") or src.get("invariants") or [])
-            for comp_item in src.get("components") or []:
-                if isinstance(comp_item, dict):
-                    raw_invs.extend(comp_item.get("invariants") or [])
             inv_lists.append([inv.get("id") for inv in raw_invs if isinstance(inv, dict) and inv.get("id")])
         max_len = max((len(lst) for lst in inv_lists), default=0)
         for idx in range(max_len):

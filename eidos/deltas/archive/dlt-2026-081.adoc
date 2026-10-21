@@ -18,6 +18,5 @@ mutations:
     target: CAP-VCS-001
   - operation: modify
     target: INV-DRIFT-DIFF-AWARE-COVERAGE
-    parent: CAP-VCS-001
 ---
 = SpecDelta: Boundary-Aware Direct Mode Symbol Anchoring for Exported Package and Contract Symbols

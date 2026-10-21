@@ -15,7 +15,6 @@ tombstone:
 mutations:
   - operation: modify
     target: CMP-GRAPH-STORAGE
-    parent: CNT-EIDOS-INDEX
     details: "Bump SCHEMA_VERSION to '2.8.0' in src/eidos/core/index/storage.py to rebuild specs_fts and symbol_mappings; unify repository/eidos/db path resolution in src/eidos/core/index/graph_index.py via _resolve_index_paths(repo_root, eidos_dir, db_path) resolving Path(eidos_dir).resolve() before _is_inside_plugin_or_assets checks across ArchitecturalIndex.__init__ and get_architectural_index; hydrate title, type, domain, and default 'active' status in get_components(); push status filtering into SQL in get_entities(); halve SQL queries in get_index_status() from 8 to 4; and remove the dead _symbol_locations shim and unused resolve_symbol_locations_in_db import."
     expect:
       frontmatter:
@@ -26,7 +25,6 @@ mutations:
 
   - operation: modify
     target: CMP-INCREMENTAL-SYNC-ENGINE
-    parent: CNT-EIDOS-INDEX
     details: "Update sync_index in src/eidos/core/index/sync.py to populate specs_fts.jtbd_or_rule (weight=2.0) with component responsibility (standalone tech/component and inline CNT-*.components[]) and delta/mutation intent.motivation alongside product/policy rules, strip AsciiDoc document attribute lines (^:[A-Za-z0-9_-]+:.*$, e.g. :toc: left from *.template.adoc) when building body_clean for specs_fts.body_text, and remove retired component_ref, interface_method, interface_signature, and interface_command symbol_mappings handling."
     expect:
       frontmatter:
@@ -35,7 +33,6 @@ mutations:
 
   - operation: modify
     target: CMP-FTS-QUERY-ENGINE
-    parent: CNT-EIDOS-INDEX
     details: "Update src/eidos/core/index/query.py to expand _ENTITY_ID_TOKEN_RE to cover all v1 schema entity prefixes (adding SYS-, ARCH-, PER-) and underscore characters ([A-Za-z0-9_-]+), boost owning specifications in execute_fts_query when explicit_ids match inline CMP-* components (symbol_mappings kind='component_id') or embedded DEC-*/INV-* tokens in specs_fts.keywords, and guard find_symbol_in_db against empty normalized queries while ordering by length(s.symbol) ASC and deduplicating method locations."
     expect:
       frontmatter:
@@ -44,7 +41,6 @@ mutations:
 
   - operation: modify
     target: CMP-GRAPH-TRAVERSAL-ENGINE
-    parent: CNT-EIDOS-INDEX
     details: "Update src/eidos/core/index/query.py to derive _FILE_QUERY_EXTS dynamically from AstGrepIndexer.LANGUAGE_MAP plus contract/markup extensions (.proto, .graphql, .gql, .sql, .yaml, .yml, .json, .adoc, .md, .toml, .css, .scss, .html), remove retired component_ref and interface_method kinds from resolve_symbol_or_path_in_db, gate the owned_path/inferred_path glob fallback on is_file_query or wildcard queries while deferring orjson.loads(data_json) until after entity deduplication, resolve inline CMP-* component titles and normalize target paths in execute_incoming_references (excluding code/source and code/test rows when resolving doc_id), and preserve inline component domain overrides in execute_k_hop_traversal."
     expect:
       frontmatter:
@@ -53,7 +49,6 @@ mutations:
 
   - operation: modify
     target: CMP-DOMAIN-MODELS
-    parent: CNT-EIDOS-CORE
     details: "Add 'responsibility' to _FRONTMATTER_SCALAR_KEYS and FrontmatterModel in src/eidos/core/spec/models.py so standalone tech/component specifications expose doc.model.responsibility uniformly alongside InlineComponentModel.responsibility."
     expect:
       frontmatter:
@@ -62,7 +57,6 @@ mutations:
 
   - operation: modify
     target: INV-AGENT-TASK-RETRIEVAL-COVERAGE
-    parent: CAP-AGENT-001
     details: "Update INV-AGENT-TASK-RETRIEVAL-COVERAGE in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc to enforce full v1 entity prefix recognition (SYS-*, ARCH-*, PER-*, and underscore IDs), inline CMP-*/DEC-* exact-ID boosting, component responsibility indexing in specs_fts.jtbd_or_rule, and AsciiDoc attribute header stripping."
     expect:
       frontmatter:
@@ -70,7 +64,6 @@ mutations:
 
   - operation: modify
     target: CAP-AGENT-001
-    parent: DOM-AGENT-INTELLIGENCE
     details: "Bump CAP-AGENT-001 version to 1.7.0 in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc."
     expect:
       frontmatter:

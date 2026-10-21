@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-CLI-INIT-COMMAND
+title: InitCommand
+container: CNT-EIDOS-CLI
+status: active
+source_path: src/eidos/cli/init_command.py
+---
+= Component: InitCommand
+:toc: left
+
+== Responsibility
+CLI entrypoint (`eidos init [PATH] [--name] [--title] [--lite] [--force]`) for repository bootstrapping, living spec skeleton generation (including progressive Eidos Lite onboarding profile via `--lite`), and baseline validation without legacy plugin options.
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

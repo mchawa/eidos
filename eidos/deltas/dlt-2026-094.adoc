@@ -128,17 +128,14 @@ mutations:
 
   - operation: remove
     target: INV-AGENT-LINT-HOOK
-    parent: CAP-AGENT-001
     details: "Remove INV-AGENT-LINT-HOOK because PreToolUse/PostToolUse per-edit hooks and duplicate Stop lint hooks are retired and SpecValidator directory validation is already executed inside detect_drift (INV-AGENT-DRIFT-HOOK)."
 
   - operation: remove
     target: INV-HOOK-BLOCK-ONCE
-    parent: CAP-AGENT-001
     details: "Remove INV-HOOK-BLOCK-ONCE because the Stop hook is now 100% stateless (emitting decision: allow with systemMessage warning instead of persisting SHA-256 fingerprints in stop-gate.json)."
 
   - operation: remove
     target: INV-HOOK-FAIL-LOUD
-    parent: CAP-AGENT-001
     details: "Consolidate internal error reporting into INV-AGENT-DRIFT-HOOK (stateless Stop hook emits a structured allow decision with systemMessage warning on internal errors)."
 
   - operation: modify

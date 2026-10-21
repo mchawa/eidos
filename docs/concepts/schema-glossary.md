@@ -17,8 +17,8 @@ This glossary details all **16 document schemas** (plus shared `$defs` in `commo
 | `product/persona` | `PER-*` | `personas/*.adoc` | `product/persona.schema.yaml` | Human and autonomous AI actor roles, goals, and pain points. |
 | `product/exploration` | `EXP-*` | `explorations/*.adoc` (`archive/`) | `product/exploration.schema.yaml` | Technical spikes, hypotheses, and feasibility discovery. |
 | `tech/architecture` | `ARCH-*` | `architecture/system-architecture.adoc` | `tech/architecture.schema.yaml` | Global Arc42 architecture, C4 Level 1-2 container topology. |
-| `tech/container` | `CNT-*` | `architecture/containers/*.adoc` | `tech/container.schema.yaml` | C4 Level 2 Container manifests, deployables, runtimes, and nested components. |
-| `tech/component` | `CMP-*` | `architecture/components/*.adoc` | `tech/component.schema.yaml` | Promoted C4 Level 3 Component manifests, AST-derived dependencies, and component invariants. |
+| `tech/container` | `CNT-*` | `architecture/containers/*.adoc` | `tech/container.schema.yaml` | C4 Level 2 Container manifests, deployables, runtimes, and contracts. |
+| `tech/component` | `CMP-*` | `architecture/components/*.adoc` | `tech/component.schema.yaml` | Standalone C4 Level 3 Component manifests, AST-derived dependencies, and component invariants. |
 | `tech/contract` | `CTR-*` | `architecture/contracts/*.adoc` | `tech/contract.schema.yaml` | Interface protocol contracts (OpenAPI, gRPC, CLI, AsyncAPI, JSON Schema). |
 | `design/system` | `DS-*` | `design/systems/<system>/system.adoc` | `design/system.schema.yaml` | Multi-design system catalog, brand themes, and W3C DTCG tokens. |
 | `design/ui-component` | `UIC-*` | `design/systems/<system>/components/*.adoc` | `design/ui-component.schema.yaml` | UI component contract: variants, states, accessibility, and tests. |
@@ -28,7 +28,7 @@ This glossary details all **16 document schemas** (plus shared `$defs` in `commo
 | `delta/mutation` | `DLT-*` | `deltas/dlt-*.adoc` (`archive/`) | `delta/delta.schema.yaml` | Planned Mode semantic mutations, `expect:` post-conditions (including dot-paths), blast radius, and tombstones. |
 
 > [!NOTE]
-> **Shared Definitions (`assets/schemas/v1/common/defs.yaml`) & CLI Schema Introspection**: Reusable definitions for `#/$defs/decision` (`DEC-*`), `#/$defs/invariant` (`INV-*` with `test_binding`), `#/$defs/inline_component` (`CMP-*`), `#/$defs/lifecycle_status`, `#/$defs/delta_status`, `#/$defs/exploration_status`, `#/$defs/code_paths`, `#/$defs/contracts_block`, `#/$defs/external_design_references`, and `x-eidos-ref` entity references are automatically injected across schemas by `SpecValidator`. Each specification's JSON Schema path is automatically derived from `type`. Run `eidos spec schema [type] [--json]` at any time to inspect required/optional keys, nested sub-schemas, and valid YAML frontmatter templates.
+> **Shared Definitions (`assets/schemas/v1/common/defs.yaml`) & CLI Schema Introspection**: Reusable definitions for `#/$defs/decision` (`DEC-*`), `#/$defs/invariant` (`INV-*` with `test_binding`), `#/$defs/lifecycle_status`, `#/$defs/delta_status`, `#/$defs/exploration_status`, `#/$defs/code_paths`, `#/$defs/contracts_block`, `#/$defs/external_design_references`, and `x-eidos-ref` entity references are automatically injected across schemas by `SpecValidator`. Each specification's JSON Schema path is automatically derived from `type`. Run `eidos spec schema [type] [--json]` at any time to inspect required/optional keys, nested sub-schemas, and valid YAML frontmatter templates.
 
 ---
 
@@ -213,7 +213,7 @@ c4_context:
 * **ID Convention**: `CNT-<NAME>` (e.g., `CNT-EIDOS-CORE`, `CNT-EIDOS-CLI`)
 * **Location**: `eidos/architecture/containers/<name>.adoc`
 * **Required Properties**: `type`, `id`, `title`, `container_type`, `runtime`, `source_path`
-* **Intent**: C4 Level 2 Container manifest (deployable unit, library, service, or CLI). Declares inline C4 Level 3 components (`components[]`, `#/$defs/inline_component`), provided/consumed interface contracts (`CTR-*`), container invariants (`INV-*`), and embedded architectural decisions (`DEC-*`). Promoted standalone components (`eidos/architecture/components/*.adoc`) link bottom-up via their own `container: CNT-*` property.
+* **Intent**: C4 Level 2 Container manifest (deployable unit, library, service, or CLI). Declares provided/consumed interface contracts (`CTR-*`), container invariants (`INV-*`), and embedded architectural decisions (`DEC-*`). Standalone C4 Level 3 components (`eidos/architecture/components/*.adoc`) link bottom-up via their own `container: CNT-*` property.
 
 ```yaml
 ---
@@ -225,11 +225,6 @@ container_type: library # service | library | cli_app | web_app | worker | daemo
 runtime: "Python 3.12+"
 source_path: "src/eidos/core"
 domain: DOM-SPEC-ENGINE
-components:
-  - id: CMP-SPEC-PARSER
-    title: "SpecParser"
-    responsibility: "Parses AsciiDoc files with YAML frontmatter."
-    source_path: "src/eidos/core/spec/parser.py"
 contracts:
   provides:
     - "CTR-EIDOS-CLI"
@@ -252,8 +247,8 @@ decisions:
 * **Schema**: `schemas/v1/tech/component.schema.yaml`
 * **ID Convention**: `CMP-<NAME>` (e.g., `CMP-SPEC-VALIDATOR`, `CMP-AUTH-TOKEN-MGR`)
 * **Location**: Centralized in `eidos/architecture/components/<component>.adoc` (`INV-COMPONENT-CENTRALIZATION-MANDATE`; never placed inside `src/`)
-* **Required Properties**: `type`, `id`, `title`, `container`, `status`, `responsibility`, `source_path`
-* **Intent**: Dedicated C4 Level 3 Component specification in the Centralized Hybrid C4 Architecture (promoted via `eidos spec component promote <ID>` and composed from `#/$defs/inline_component`). Binds to its parent `CNT-*` container (`INV-COMPONENT-CONTAINER-AFFINITY`), maps to implementation files via `source_path` (intra-container `CMP-*` -> `CMP-*` dependencies are derived automatically via AST import analysis), and declares component invariants (`INV-*`) and embedded decisions (`DEC-*`).
+* **Required Properties**: `type`, `id`, `title`, `container`, `status`
+* **Intent**: Standalone C4 Level 3 Component specification in the Centralized C4 Architecture. Binds to its parent `CNT-*` container (`INV-COMPONENT-CONTAINER-AFFINITY`), maps to implementation files via `source_path` (intra-container `CMP-*` -> `CMP-*` dependencies are derived automatically via AST import analysis), documents its responsibility in the `== Responsibility` AsciiDoc section, and declares component invariants (`INV-*`) and embedded decisions (`DEC-*`).
 
 ```yaml
 ---
@@ -264,7 +259,6 @@ container: CNT-EIDOS-CORE
 status: active # draft | planned | active | deprecated | retired
 source_path: "src/eidos/core/spec/validator.py"
 domain: DOM-SPEC-ENGINE
-responsibility: "Validates specifications against v1 JSON Schemas and enforces x-eidos-ref graph integrity."
 invariants:
   - id: INV-COMPONENT-CENTRALIZATION-MANDATE
     rule: "Every dedicated tech/component specification MUST reside centrally within eidos/architecture/components/."
@@ -434,7 +428,7 @@ steps:
 * **ID Convention**: `DLT-<YEAR>-<NUMBER>` (e.g., `DLT-2026-005`)
 * **Location**: `eidos/deltas/dlt-*.adoc` (or `eidos/deltas/archive/dlt-*.adoc` after archiving)
 * **Required Properties**: `type`, `id`, `title`, `status`, `intent`, `mutations`
-* **Intent**: Declarative mutation artifact for Planned Mode. Documents planned architectural changes (`intent.kind`: `feature`, `enabler`, or `bug`), composable `mutations[].operation` (`add | modify | remove | deprecate`) paired with prefix-validated `target`, optional `parent` scope for `add` / `remove` of child entities (omitted on `modify`), and optional `expect:` post-conditions (supporting nested dot-path `frontmatter:` keys and comment-stripped `body:` assertions), plus `tombstone` deletion audit exemptions (while `affects` and `blast_radius` are derived automatically from the knowledge graph). Reconciled in-place upon completion (`status: applied`) and slimmed into `eidos/deltas/archive/` via `eidos delta archive --keep-recent 15` (with `vcs.applied_commit` and `vcs.release_tag`).
+* **Intent**: Declarative mutation artifact for Planned Mode. Documents planned architectural changes (`intent.kind`: `feature`, `enabler`, or `bug`), composable `mutations[].operation` (`add | modify | remove | deprecate`) paired with prefix-validated `target`, and optional `expect:` post-conditions (supporting nested dot-path `frontmatter:` keys and comment-stripped `body:` assertions), plus `tombstone` deletion audit exemptions (while `affects` and `blast_radius` are derived automatically from the knowledge graph). Reconciled in-place upon completion (`status: applied`) and slimmed into `eidos/deltas/archive/` via `eidos delta archive --keep-recent 15` (with `vcs.applied_commit` and `vcs.release_tag`).
 
 ```yaml
 ---

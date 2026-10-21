@@ -23,6 +23,5 @@ mutations:
     target: INV-KNOWLEDGE-GRAPH-CATALOG
   - operation: add
     target: INV-SYMBOL-LOCATION-FIDELITY
-    parent: CAP-AGENT-001
 ---
 = SpecDelta: Persistent AST Symbol Locations and Recursive Multi-Package Code Indexing

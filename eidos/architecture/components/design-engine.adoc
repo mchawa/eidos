@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-DESIGN-ENGINE
+title: DesignEngine
+container: CNT-EIDOS-CORE
+status: active
+source_path: src/eidos/core/lifecycle/design_engine.py
+---
+= Component: DesignEngine
+:toc: left
+
+== Responsibility
+Emits minimal, schema-valid draft blueprints (`build_design_spec` with `status: 'draft'` and AsciiDoc prose loaded from `assets/schemas/v1/design/*.template.adoc`) for Multi-Design Systems (`design/system`, writing baseline W3C DTCG `tokens.json` via `orjson` only when `system.adoc` does not already exist), UI component contracts (`design/ui-component` with path-aware `design_system` slug resolution and standard `invariants`), screens (`design/screen`), clients (`design/client`), and user flows (`design/flow`) using prefix-safe slug normalization (`.removeprefix`).
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

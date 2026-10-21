@@ -17,6 +17,5 @@ mutations:
     target: CMP-DRIFT-DETECTOR
   - operation: modify
     target: INV-AGENT-GRAPH-INDEX-FRESHNESS
-    parent: CAP-AGENT-001
 ---
 = SpecDelta: Incremental SQLite Caching for Specification Validation and Static Invariant Verification

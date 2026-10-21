@@ -165,7 +165,7 @@ Options:
 * `-T, --tier [anchor|guardrails|deep]`: Context compression budget (default: `guardrails`).
   * `anchor`: Container/component metadata, direct contract signatures, and 1-line `DEC-*` summaries (`<= 300 tokens`).
   * `guardrails`: Adds domain capabilities, active invariants with `test_binding`, policies, and full `DEC-*` rationale (`<= 1,000 tokens`).
-  * `deep`: Adds internal C4 modules, promoted component details, contract schemas, and downstream dependents (`<= 2,500 tokens`).
+  * `deep`: Adds standalone C4 component details, contract schemas, and downstream dependents (`<= 2,500 tokens`).
 * `--json`: Output context slice as machine-readable JSON instead of Markdown.
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
@@ -177,7 +177,7 @@ Manage and query the embedded SQLite architectural knowledge graph and FTS5 lexi
 The index initializes automatically on first use and lazily resynchronizes before every query via sub-5ms `mtime_ns` and `SHA-256` dirty checking, guaranteeing zero drift.
 
 #### `eidos index status`
-Display database cache size, schema version (`2.16.0`), clean/drift synchronization state across specs and code, check latency, entity/edge counts, active AST parser engine (`ast-grep`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
+Display database cache size, schema version (`2.17.0`), clean/drift synchronization state across specs and code, check latency, entity/edge counts, active AST parser engine (`ast-grep`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
 
 ```bash
 # Display rich visual status and AST telemetry:
@@ -279,10 +279,10 @@ Options:
 ## 4. Living Catalog & Mutations
 
 ### `eidos spec`
-Manage the living specification catalog and C4 Level 3 components: listing, authoring, inspecting, deleting, promoting, and inlining specification documents across all 15 living specification types (excluding SpecDeltas, which are managed via `eidos delta`).
+Manage the living specification catalog: listing, authoring, inspecting, and deleting specification documents across all 15 living specification types (excluding SpecDeltas, which are managed via `eidos delta`).
 
 ```bash
-# List all living specifications (including inline C4 Level 3 components)
+# List all living specifications
 eidos spec list
 
 # Filter by specification type (e.g. container, component, capability, exploration)
@@ -302,22 +302,14 @@ eidos spec create component CMP-AUTH-SERVICE --title "Authentication Service"
 
 # Safely delete a specification document
 eidos spec delete CMP-AUTH-SERVICE
-
-# Promote an inline C4 Level 3 component to eidos/architecture/components/
-eidos spec component promote CMP-SPEC-VALIDATOR
-
-# Demote / inline a dedicated component back into its parent container manifest
-eidos spec component inline CMP-SPEC-VALIDATOR
 ```
 
 Sub-commands:
-* `list`: Lists all living specifications across the 15 blueprint types (including inline C4 Level 3 components) in tabular or JSON format, with optional `--type, -t`, `--status, -s`, `--include-archived`, `--path, -p`, and `--json` flags.
+* `list`: Lists all living specifications across the 15 blueprint types in tabular or JSON format, with optional `--type, -t`, `--status, -s`, `--include-archived`, `--path, -p`, and `--json` flags.
 * `show <id_or_path>`: Displays detailed frontmatter metadata and preview of a specification document.
 * `schema [type] [--json]`: Dynamically loads and inspects bundled v1 YAML frontmatter schemas from `assets/schemas/v1/` across all 16 specification types (omit `[type]` to list all 16 schemas, or pass a short alias like `capability` or canonical type like `product/capability`), displaying required/optional keys, nested object/array item constraints, and schema-synthesized YAML frontmatter templates.
 * `create <type> <id> --title <title> [--path <path>]`: Scaffolds a minimal, schema-valid draft specification blueprint (`status: draft`) across all 15 living specification types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`).
 * `delete <id_or_path>`: Safely deletes a living specification document with cross-reference safety checks (`--force, -f` to override).
-* `component promote <component_id>`: Promotes an inline C4 Level 3 component (`CMP-*`) to a dedicated specification in `eidos/architecture/components/` (linking bottom-up via `container: CNT-*`) and removes the inline entry from the parent container.
-* `component inline <component_id>`: Inlines a promoted C4 Level 3 component (`CMP-*`) back into its parent container manifest.
 
 ---
 

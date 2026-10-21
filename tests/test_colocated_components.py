@@ -23,7 +23,7 @@ Verifies:
 import pytest
 
 from eidos.core.index.graph_index import ArchitecturalIndex
-from eidos.core.lifecycle.scaffolder import inline_component, promote_component
+from eidos.core.lifecycle.scaffolder import create_spec
 from eidos.core.spec.parser import parse_spec_file
 from eidos.core.spec.validator import SpecValidator
 
@@ -55,7 +55,7 @@ def repo_env(tmp_path):
     tests_dir.mkdir(parents=True)
     (tests_dir / "test_core.py").write_text("def test_parser(): pass\n", encoding="utf-8")
 
-    # Container manifest with 1 inline component (promoted components link bottom-up via container: CNT-*)
+    # Container manifest (standalone components link bottom-up via container: CNT-*)
     (containers_dir / "core.adoc").write_text(
         "---\n"
         "type: tech/container\n"
@@ -68,13 +68,23 @@ def repo_env(tmp_path):
         "contracts:\n"
         "  provides:\n"
         "    - CTR-SAMPLE-API\n"
-        "components:\n"
-        "  - id: CMP-CORE-PARSER\n"
-        "    title: SpecParser\n"
-        "    responsibility: Parses specification documents with frontmatter.\n"
-        "    source_path: src/sample/core/parser.py\n"
         "---\n"
         "= Sample Core Engine\n",
+        encoding="utf-8",
+    )
+
+    (components_dir / "parser.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-CORE-PARSER\n"
+        "title: SpecParser\n"
+        "container: CNT-SAMPLE-CORE\n"
+        "status: active\n"
+        "source_path: src/sample/core/parser.py\n"
+        "---\n"
+        "= Component: SpecParser\n\n"
+        "== Responsibility\n"
+        "Parses specification documents with frontmatter.\n",
         encoding="utf-8",
     )
 
@@ -87,13 +97,13 @@ def repo_env(tmp_path):
         "container: CNT-SAMPLE-CORE\n"
         "status: active\n"
         "source_path: src/sample/core/validator.py\n"
-        "responsibility: Validates living specifications against schemas.\n"
         "invariants:\n"
         "  - id: INV-VALIDATOR-CONFORMANCE\n"  # eidos:fixture
         "    rule: All documents must conform to Draft 2020-12 schemas.\n"
         "    test_binding: tests/test_core.py::test_parser\n"
         "---\n"
         "= Component: Specification Validator\n\n"
+        "== Responsibility\n"
         "Validates living specifications against Draft 2020-12 JSON schemas and cross-reference rules.\n",
         encoding="utf-8",
     )
@@ -142,7 +152,6 @@ def test_spike_1_centralization_mandate_enforcement(repo_env):
         "container: CNT-SAMPLE-CORE\n"
         "status: active\n"
         "source_path: src/sample/core/parser.py\n"
-        "responsibility: Illegally placed in src/ code tree.\n"
         "---\n"
         "= Illegal\n",
         encoding="utf-8",
@@ -166,7 +175,6 @@ def test_spike_1_centralization_mandate_enforcement(repo_env):
         "container: CNT-SAMPLE-CORE\n"
         "status: active\n"
         "source_path: src/sample/core/parser.py\n"
-        "responsibility: Placed in eidos/domains/ instead of eidos/architecture/components/.\n"
         "---\n"
         "= Misplaced\n",
         encoding="utf-8",
@@ -189,7 +197,6 @@ def test_spike_1_container_affinity_enforcement(repo_env):
         "container: CNT-NONEXISTENT\n"
         "status: active\n"
         "source_path: src/sample/core/parser.py\n"
-        "responsibility: References container that does not exist.\n"
         "---\n"
         "= Orphan\n",
         encoding="utf-8",
@@ -202,7 +209,6 @@ def test_spike_1_container_affinity_enforcement(repo_env):
         "container: CTR-SAMPLE-API\n"
         "status: active\n"
         "source_path: src/sample/core/parser.py\n"
-        "responsibility: References a contract ID instead of a container ID.\n"
         "---\n"
         "= Wrong Parent\n",
         encoding="utf-8",
@@ -284,103 +290,35 @@ def test_spike_2_centralized_component_indexing(repo_env):
     index.close()
 
 
-def test_spike_3_promotion_and_inlining_lifecycle(repo_env):
-    """Spike 3: Verify promote_component and inline_component lifecycle CLI prototype."""
+def test_spike_3_standalone_component_scaffolding_and_cli_unmounted(repo_env):
+    """Spike 3: Verify standalone component scaffolding and that eidos spec component is removed."""
     repo_root, eidos_dir = repo_env
 
-    # Enrich inline CMP-CORE-PARSER with domain and decisions
-    domains_dir = eidos_dir / "domains"
-    domains_dir.mkdir(parents=True, exist_ok=True)
-    (domains_dir / "core.adoc").write_text(
-        "---\ntype: product/domain\nid: DOM-SAMPLE\ntitle: Sample Domain\nstatus: active\nclassification: core\n---\n= Sample Domain\n",
-        encoding="utf-8",
+    created_spec = create_spec(
+        eidos_dir,
+        "component",
+        "CMP-CORE-LEXER",
+        title="Core Lexer",
     )
-    cnt_file = eidos_dir / "architecture" / "containers" / "core.adoc"
-    cnt_file.write_text(
-        cnt_file.read_text(encoding="utf-8").replace(
-            "    source_path: src/sample/core/parser.py\n",
-            "    source_path: src/sample/core/parser.py\n    domain: DOM-SAMPLE\n",
-        ),
-        encoding="utf-8",
-    )
-
-    # Error branches: promoting or inlining nonexistent component raises ValueError
-    with pytest.raises(ValueError, match="not found"):
-        promote_component("CMP-DOES-NOT-EXIST", eidos_dir=eidos_dir, repo_root=repo_root)
-    with pytest.raises(ValueError, match="not found"):
-        inline_component("CMP-CORE-PARSER", eidos_dir=eidos_dir, repo_root=repo_root)
-
-    # 1. Promote inline component CMP-CORE-PARSER to dedicated specification
-    promoted_spec, container_spec = promote_component(
-        component_id="CMP-CORE-PARSER",
-        eidos_dir=eidos_dir,
-        repo_root=repo_root,
-    )
-
-    assert promoted_spec.exists()
-    assert promoted_spec.name == "core-parser.adoc"
-    assert promoted_spec.parent == eidos_dir / "architecture" / "components"
+    assert created_spec.exists()
+    assert created_spec.parent == eidos_dir / "architecture" / "components"
 
     # Verify src/ contains ZERO .adoc files - Eidos never touches code!
     src_adocs = list((repo_root / "src").rglob("*.adoc"))
     assert len(src_adocs) == 0, f"Specs illegally created in src/: {src_adocs}"
 
-    # Verify inline component was removed from container components[] upon promotion
-    c_doc = parse_spec_file(container_spec)
-    comps = c_doc.frontmatter.get("components") or []
-    assert not any(c.get("id") == "CMP-CORE-PARSER" for c in comps)
+    doc = parse_spec_file(created_spec)
+    assert doc.doc_type == "tech/component"
+    assert doc.frontmatter["container"] == "CNT-SAMPLE-CORE"
+    assert doc.is_valid
 
-    # Verify promoted spec is valid tech/component and preserved domain
-    promoted_doc = parse_spec_file(promoted_spec)
-    assert promoted_doc.doc_type == "tech/component"
-    assert promoted_doc.frontmatter["container"] == "CNT-SAMPLE-CORE"
-    assert promoted_doc.frontmatter["domain"] == "DOM-SAMPLE"
-    assert promoted_doc.is_valid
-
-    # Validate entire eidos directory
-    validator = SpecValidator()
-    report = validator.validate_directory(eidos_dir)
-    assert report.is_clean, f"Errors after promotion: {report.schema_errors}"
-
-    # 2. Inline the component back into container
-    updated_container, _deleted_spec = inline_component(
-        component_id="CMP-CORE-PARSER",
-        eidos_dir=eidos_dir,
-        repo_root=repo_root,
-    )
-
-    assert not promoted_spec.exists()
-    c_doc_inlined = parse_spec_file(updated_container)
-    parser_inlined = next(c for c in c_doc_inlined.frontmatter["components"] if c["id"] == "CMP-CORE-PARSER")
-    assert "ref" not in parser_inlined
-    assert "source_path" in parser_inlined
-    assert parser_inlined.get("domain") == "DOM-SAMPLE"
-
-    report_after_inline = validator.validate_directory(eidos_dir)
-    assert report_after_inline.is_clean
-
-    # 3. Verify CLI 'eidos spec component promote' and 'eidos spec component inline' work and legacy shortcuts are rejected
     from typer.testing import CliRunner
 
     from eidos.cli.main import app
 
     runner = CliRunner()
     assert runner.invoke(app, ["component", "promote", "CMP-CORE-PARSER"]).exit_code != 0
-    assert runner.invoke(app, ["spec", "component", "list"]).exit_code != 0
-
-    res_prom = runner.invoke(
-        app,
-        ["spec", "component", "promote", "CMP-CORE-PARSER", "--path", str(eidos_dir)],
-    )
-    assert res_prom.exit_code == 0
-    assert promoted_spec.exists()
-
-    res_inl = runner.invoke(
-        app,
-        ["spec", "component", "inline", "CMP-CORE-PARSER", "--path", str(eidos_dir)],
-    )
-    assert res_inl.exit_code == 0
-    assert not promoted_spec.exists()
+    assert runner.invoke(app, ["spec", "component", "promote", "CMP-CORE-PARSER"]).exit_code != 0
 
 
 def test_spike_4_exit_criteria_token_budget_benchmark(repo_env):
@@ -397,9 +335,12 @@ def test_spike_4_exit_criteria_token_budget_benchmark(repo_env):
             "container: CNT-SAMPLE-CORE\n"
             "status: active\n"
             "source_path: src/sample/core/parser.py\n"
-            "responsibility: " + ("Handles auxiliary domain orchestration and telemetry routing. " * 8) + "\n"
             "---\n"
-            f"= Extra Component {i}\n\n" + ("Detailed component design narrative and architectural notes.\n" * 12),
+            f"= Extra Component {i}\n\n"
+            "== Responsibility\n"
+            + ("Handles auxiliary domain orchestration and telemetry routing. " * 8)
+            + "\n\n"
+            + ("Detailed component design narrative and architectural notes.\n" * 12),
             encoding="utf-8",
         )
 
@@ -445,7 +386,6 @@ def test_centralization_mandate_parent_path_named_src(tmp_path):
         "container: CNT-SAMPLE-CORE\n"
         "status: active\n"
         "source_path: src/sample/core/parser.py\n"
-        "responsibility: Valid component placed centrally in eidos/architecture/components/.\n"
         "---\n"
         "= Valid Component\n",
         encoding="utf-8",

@@ -119,6 +119,7 @@ eidos/
 * **Technical Architecture**:
   * [`Global System Architecture`](eidos/architecture/system-architecture.adoc)
   * [`Containers Directory`](eidos/architecture/containers/)
+  * [`Components Directory`](eidos/architecture/components/)
   * [`Contracts Directory`](eidos/architecture/contracts/)
 * **SpecDeltas**:
   * [`SpecDeltas Directory`](eidos/deltas/)

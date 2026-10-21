@@ -355,26 +355,11 @@ class SpecValidator:
             if isinstance(doc.doc_type, str) and doc.doc_type
         }
 
-        # Also register inline component IDs and embedded invariant IDs declared within documents in catalog_ids
+        # Register embedded invariant IDs declared within documents in catalog_ids
         # and enforce global uniqueness across the catalog.
-        comp_owners: dict[str, SpecDocument] = {}
         inv_owners: dict[str, SpecDocument] = {}
         for doc in report.documents:
             if doc.frontmatter:
-                if doc.doc_type == "tech/container":
-                    for comp in doc.model.components:
-                        if not comp.id:
-                            continue
-                        if comp.id in comp_owners or comp.id in report.entity_index:
-                            prev_doc = comp_owners.get(comp.id) or report.entity_index.get(comp.id)
-                            prev_name = prev_doc.file_path.name if prev_doc else doc.file_path.name
-                            report.broken_references.append(
-                                f"Duplicate entity ID '{comp.id}' found in {doc.file_path.name} (already defined in {prev_name})"
-                            )
-                        else:
-                            comp_owners[comp.id] = doc
-                            catalog_ids.add(comp.id)
-                            entity_types.setdefault(comp.id, "tech/component")
                 for inv in doc.model.all_invariants():
                     if not inv.id:
                         continue
@@ -409,7 +394,7 @@ class SpecValidator:
                     catalog_ids.add(dec_id)
                     entity_types[dec_id] = "tech/decision"
 
-        # When validating a subdirectory of an existing spec_root (e.g. eidos/domains), seed
+        # When validating a subdirectory of an existing spec_root (eidos/domains), seed
         # catalog_ids and entity_types from sibling specs in spec_root so cross-directory
         # references (such as SYS-* or CNT-*) do not falsely fail.
         spec_root, _ = resolve_spec_and_repo_roots(root_dir)
@@ -438,11 +423,6 @@ class SpecValidator:
                         catalog_ids.add(ext_doc.doc_id)
                         if isinstance(ext_doc.doc_type, str) and ext_doc.doc_type:
                             entity_types.setdefault(ext_doc.doc_id, ext_doc.doc_type)
-                    if ext_doc.doc_type == "tech/container":
-                        for comp in ext_doc.model.components:
-                            if comp.id:
-                                catalog_ids.add(comp.id)
-                                entity_types.setdefault(comp.id, "tech/component")
                     for inv in ext_doc.model.all_invariants():
                         if inv.id:
                             catalog_ids.add(inv.id)
@@ -710,7 +690,7 @@ class SpecValidator:
             )
             return
 
-        if actual_type and field_path in ("mutations.target", "mutations.parent"):
+        if actual_type and field_path == "mutations.target":
             p_meta = resolve_entity_prefix_meta(val)
             if p_meta is not None and actual_type != p_meta[2]:
                 label = ref_meta.get("entity_label") or "entity"
@@ -756,13 +736,6 @@ class SpecValidator:
                         f"Invalid composable mutation in {doc.file_path.name}: "
                         f"operation 'deprecate' is not supported for INV-* targets (got '{target_val}')."
                     )
-                elif effective_target_upper.startswith("INV-") and op_val == "add":
-                    has_parent = bool(str(mut.get("parent") or "").strip())
-                    if not has_parent:
-                        _record_err(
-                            f"Invalid composable mutation in {doc.file_path.name}: "
-                            f"adding invariant '{target_val}' requires a 'parent' specification ID."
-                        )
         elif dtype == "tech/contract":
             owning_ref = str(fm.get("container") or "").strip()
             if owning_ref:
@@ -836,7 +809,7 @@ class SpecValidator:
                                     for mk, mv in mut.items():
                                         if mk in ("expect", "details"):
                                             continue
-                                        if op not in ("modify", "deprecate") and mk != "parent":
+                                        if op not in ("modify", "deprecate"):
                                             continue
                                         self._check_dict_references(
                                             mv, source_file, root_dir, report, doc_type=doc_type
@@ -961,11 +934,7 @@ class SpecValidator:
         candidate_test_files: list[str] = []
         for doc in report.documents:
             model = doc.model
-            if doc.doc_type == "tech/container":
-                candidate_paths.extend(model.source_paths())
-                for comp in model.components:
-                    candidate_paths.extend(comp.source_paths())
-            elif doc.doc_type == "tech/component":
+            if doc.doc_type in ("tech/container", "tech/component"):
                 candidate_paths.extend(model.source_paths())
             elif doc.doc_type == "tech/contract":
                 sf = model.specification_file
@@ -1073,20 +1042,6 @@ class SpecValidator:
                                 f"Broken source_path in {doc.file_path.name}: "
                                 f"Container '{doc.doc_id}' references '{raw_p}' which does not exist on disk"
                             )
-                    for comp in model.components:
-                        comp_status = str(comp.status or "active").strip().lower()
-                        if comp_status in inactive_statuses:
-                            continue
-                        comp_id = str(comp.id or "unknown")
-                        for raw_sp in comp.source_paths():
-                            if (
-                                raw_sp.strip().upper() not in ("N/A", "TBD", "NONE")
-                                and self._resolve_source_path(repo_root, root_dir, raw_sp) is None
-                            ):
-                                report.broken_references.append(
-                                    f"Broken source_path in {doc.file_path.name}: "
-                                    f"Component '{comp_id}' references '{raw_sp}' which does not exist on disk"
-                                )
                 elif doc.doc_type == "tech/component":
                     for raw_sp in model.source_paths():
                         if (
@@ -1116,14 +1071,8 @@ class SpecValidator:
                             self._verify_contract_protocol(protocol, doc, resolved_sf, report)
 
             if has_test_tree:
-                # Collect invariants from top-level, technical.invariants, and active inline components via FrontmatterModel
-                invariants_to_check = list(model.invariants)
-                if model.technical and model.technical.invariants:
-                    invariants_to_check.extend(model.technical.invariants)
-                for comp in model.components:
-                    comp_status = str(comp.status or "active").strip().lower()
-                    if comp_status not in inactive_statuses and comp.invariants:
-                        invariants_to_check.extend(comp.invariants)
+                # Collect invariants from top-level and technical.invariants via FrontmatterModel
+                invariants_to_check = model.all_invariants()
                 for inv in invariants_to_check:
                     inv_id = str(inv.id or "unknown")
                     raw_tb = inv.effective_test_binding()

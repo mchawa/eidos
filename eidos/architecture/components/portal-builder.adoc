@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-PORTAL-BUILDER
+title: StaticSiteBuilder
+container: CNT-EIDOS-PORTAL
+status: active
+source_path: src/eidos/portal/builder.py
+---
+= Component: StaticSiteBuilder
+:toc: left
+
+== Responsibility
+Compiles self-contained static documentation portals for GitHub Pages and GitLab Pages (via get_portal_html_template and get_portal_favicon_svg, writing `orjson`-serialized data.json after stripping redundant entity body/description strings via `_deduplicate_portal_payload`) and escapes inline </script> and U+2028/U+2029 sequences when embedding window.__EIDOS_DATA__ into index.html.
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

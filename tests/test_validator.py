@@ -75,7 +75,6 @@ def test_delta_affects_validation_broken_references(tmp_path, validator):
         "id: CMP-TEST-CORE\n"
         "title: Core\n"
         "container: CNT-CORE\n"
-        "responsibility: Core\n"
         "source_path: src/core\n"
         "---\n"
         "= Core\n"
@@ -131,7 +130,6 @@ def test_capability_semantic_references_broken(tmp_path, validator):
         "id: CMP-TEST-CORE\n"
         "title: Core\n"
         "container: CNT-CORE\n"
-        "responsibility: Core\n"
         "source_path: src/core\n"
         "---\n"
         "= Core\n"
@@ -205,7 +203,6 @@ def test_component_semantic_references_broken(tmp_path, validator):
         "container: CNT-MISSING-CONTAINER\n"
         "status: planned\n"
         "domain: DOM-MISSING-PEER\n"
-        "responsibility: Parse specs\n"
         "---\n"
         "= Parser\n"
     )
@@ -295,7 +292,6 @@ def test_duplicate_entity_id_detection(tmp_path, validator):
         "id: CMP-DUPLICATE-ID\n"
         "title: First\n"
         "container: CNT-A\n"
-        "responsibility: First\n"
         "source_path: src/first\n"
         "---\n"
         "= First\n"
@@ -307,7 +303,6 @@ def test_duplicate_entity_id_detection(tmp_path, validator):
         "id: CMP-DUPLICATE-ID\n"
         "title: Second\n"
         "container: CNT-A\n"
-        "responsibility: Second\n"
         "source_path: src/second\n"
         "---\n"
         "= Second\n"
@@ -493,7 +488,6 @@ def test_validator_checks_package_path_specification_file_and_cli_contract_parit
         "source_path:\n"
         "  - src/cli\n"
         "  - src/missing_pkg\n"
-        "components: []\n"
         "---\n"
         "= CLI Container\n",
         encoding="utf-8",
@@ -580,17 +574,11 @@ def test_decisions_schema_and_cross_reference_validation(tmp_path, validator):
         "container_type: library\n"
         "runtime: Python\n"
         "source_path: src/core\n"
-        "components:\n"
-        "  - id: CMP-INLINE-ONE\n"
-        "    title: InlineOne\n"
-        "    responsibility: Does inline work\n"
-        "    source_path: src/core/one.py\n"
-        "    decisions:\n"
-        "      - id: DEC-SHARED-ID\n"
-        "        title: Duplicate Decision\n"
-        "        decision: Collides with system.adoc\n"
-        "        rationale: Testing duplicate detection\n"
         "decisions:\n"
+        "  - id: DEC-SHARED-ID\n"
+        "    title: Duplicate Decision\n"
+        "    decision: Collides with system.adoc\n"
+        "    rationale: Testing duplicate detection\n"
         "  - id: DEC-BROKEN-GRAD\n"
         "    title: Broken Graduated Ref\n"
         "    decision: Test broken ref\n"
@@ -608,7 +596,6 @@ def test_decisions_schema_and_cross_reference_validation(tmp_path, validator):
         "title: DedicatedOne\n"
         "container: CNT-TEST-CORE\n"
         "status: planned\n"
-        "responsibility: Dedicated component\n"
         "decisions:\n"
         "  - id: DEC-DEDICATED-VALID\n"
         "    title: Dedicated Component Decision\n"
@@ -671,10 +658,6 @@ def test_spec_validation_cache_warm_hit_and_invalidation(tmp_path: Path, monkeyp
         "container_type: library\n"
         "runtime: Python\n"
         "source_path: src/core\n"
-        "components:\n"
-        "  - id: CMP-CACHE-ENTRY\n"
-        "    title: Cache Entry\n"
-        "    responsibility: Entry point\n"
         "---\n"
         "= Core\n",
         encoding="utf-8",
@@ -686,7 +669,6 @@ def test_spec_validation_cache_warm_hit_and_invalidation(tmp_path: Path, monkeyp
         "title: CacheWorker\n"
         "container: eidos/architecture/containers/core.adoc\n"
         "status: planned\n"
-        "responsibility: Executes cached validation work\n"
         "---\n"
         "= Worker\n",
         encoding="utf-8",
@@ -771,10 +753,6 @@ def test_strict_container_vs_component_target_separation(tmp_path: Path, validat
         "container_type: library\n"
         "runtime: Python\n"
         "source_path: src/core\n"
-        "components:\n"
-        "  - id: CMP-INLINE\n"
-        "    title: Inline\n"
-        "    responsibility: Work\n"
         "---\n"
         "= Core\n",
         encoding="utf-8",
@@ -786,7 +764,6 @@ def test_strict_container_vs_component_target_separation(tmp_path: Path, validat
         "title: Parser\n"
         "container: CNT-CORE\n"
         "status: planned\n"
-        "responsibility: Parse specs\n"
         "---\n"
         "= Parser\n",
         encoding="utf-8",
@@ -988,7 +965,6 @@ def test_custom_spec_root_under_parent_src_and_subdirectory_validation(
         "container: CNT-CUSTOM-APP\n"
         "status: active\n"
         "source_path: src/app/worker.py\n"
-        "responsibility: Executes background tasks.\n"
         "---\n"
         "= Custom Worker\n",
         encoding="utf-8",
@@ -1167,7 +1143,9 @@ def test_v1_schema_parity_invariants_decisions_contracts_and_delta_refs(
     (tmp_path / "src" / "billing").mkdir(parents=True)
     (tmp_path / "src" / "billing" / "api.yaml").write_text("openapi: 3.0.0\n", encoding="utf-8")
 
-    # 1. Container with top-level invariants + inline component invariants
+    # 1. Container with top-level invariants + standalone component invariants
+    comps_dir = eidos_dir / "architecture" / "components"
+    comps_dir.mkdir(parents=True, exist_ok=True)
     (cnts_dir / "billing.adoc").write_text(
         "---\n"
         "type: tech/container\n"
@@ -1181,17 +1159,24 @@ def test_v1_schema_parity_invariants_decisions_contracts_and_delta_refs(
         "  - id: INV-CNT-BILLING-001\n"
         "    rule: Container must remain stateless.\n"
         "    test_binding: tests/test_billing.py::test_stateless\n"
-        "components:\n"
-        "  - id: CMP-BILLING-LEDGER\n"
-        "    title: BillingLedger\n"
-        "    responsibility: Double-entry ledger.\n"
-        "    source_path: src/billing\n"
-        "    invariants:\n"
-        "      - id: INV-CMP-LEDGER-001\n"
-        "        rule: Debits must equal credits.\n"
-        "        test_binding: tests/test_billing.py::test_ledger\n"
         "---\n"
         "= Billing\n",
+        encoding="utf-8",
+    )
+    (comps_dir / "billing-ledger.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-BILLING-LEDGER\n"
+        "title: BillingLedger\n"
+        "container: CNT-BILLING\n"
+        "status: active\n"
+        "source_path: src/billing\n"
+        "invariants:\n"
+        "  - id: INV-CMP-LEDGER-001\n"
+        "    rule: Debits must equal credits.\n"
+        "    test_binding: tests/test_billing.py::test_ledger\n"
+        "---\n"
+        "= BillingLedger\n",
         encoding="utf-8",
     )
 
@@ -1400,15 +1385,6 @@ def test_unified_block_scalar_safe_frontmatter_parser_and_extended_models(tmp_pa
             "source_path": ["src/a", "src/b"],
             "invariants": [{"id": "INV-CNT-1", "rule": "Top rule", "test_binding": "tests/t.py::test_1"}],
             "decisions": [{"id": "DEC-CNT-1", "title": "T1", "decision": "D1", "rationale": "R1"}],
-            "components": [
-                {
-                    "id": "CMP-INLINE-1",
-                    "title": "Inline1",
-                    "source_path": "src/a/mod.py",
-                    "invariants": [{"id": "INV-CMP-1", "rule": "Comp rule"}],
-                    "decisions": [{"id": "DEC-CMP-1", "title": "T2", "decision": "D2", "rationale": "R2"}],
-                }
-            ],
         },
         "= Container\n",
     )
@@ -1419,10 +1395,8 @@ def test_unified_block_scalar_safe_frontmatter_parser_and_extended_models(tmp_pa
     doc = parse_spec_file(spec_file)
     model = doc.as_model()
     assert model.source_paths() == ["src/a", "src/b"]
-    assert model.components[0].id == "CMP-INLINE-1"
-    assert model.components[0].source_paths() == ["src/a/mod.py"]
-    assert [i.id for i in model.all_invariants()] == ["INV-CNT-1", "INV-CMP-1"]
-    assert [d.id for d in model.all_decisions()] == ["DEC-CNT-1", "DEC-CMP-1"]
+    assert [i.id for i in model.all_invariants()] == ["INV-CNT-1"]
+    assert [d.id for d in model.all_decisions()] == ["DEC-CNT-1"]
 
 
 def test_scoped_empty_system_adoc_exemption_and_non_system_empty_failure(
@@ -1573,7 +1547,9 @@ def test_component_source_path_ui_test_bindings_and_invariant_test_binding_valid
     (src_dir / "real.py").write_text("def run():\n    return True\n", encoding="utf-8")
     (tests_dir / "test_app.py").write_text("def test_existing_rule():\n    assert True\n", encoding="utf-8")
 
-    # 1. Container with one valid inline component source_path and one missing inline component source_path
+    # 1. Container with one valid standalone component source_path and one missing standalone component source_path
+    comps_dir = eidos_dir / "architecture" / "components"
+    comps_dir.mkdir(parents=True, exist_ok=True)
     cnt_file = cnts_dir / "app.adoc"
     cnt_file.write_text(
         "---\n"
@@ -1583,17 +1559,32 @@ def test_component_source_path_ui_test_bindings_and_invariant_test_binding_valid
         "container_type: service\n"
         "runtime: Python 3.12\n"
         "source_path: src/app\n"
-        "components:\n"
-        "  - id: CMP-VALID\n"
-        "    title: ValidComp\n"
-        "    responsibility: Valid\n"
-        "    source_path: src/app/real.py\n"
-        "  - id: CMP-BROKEN-SRC\n"
-        "    title: BrokenComp\n"
-        "    responsibility: Broken\n"
-        "    source_path: src/app/missing.py\n"
         "---\n"
         "= App\n",
+        encoding="utf-8",
+    )
+    (comps_dir / "valid.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-VALID\n"
+        "title: ValidComp\n"
+        "container: CNT-APP\n"
+        "status: active\n"
+        "source_path: src/app/real.py\n"
+        "---\n"
+        "= ValidComp\n",
+        encoding="utf-8",
+    )
+    (comps_dir / "broken.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-BROKEN-SRC\n"
+        "title: BrokenComp\n"
+        "container: CNT-APP\n"
+        "status: active\n"
+        "source_path: src/app/missing.py\n"
+        "---\n"
+        "= BrokenComp\n",
         encoding="utf-8",
     )
 
@@ -1846,23 +1837,20 @@ def test_deep_review_subsystem_1_models_workspace_and_validator_edge_cases(tmp_p
     doc = _parse_spec_content(
         tmp_path / "num.adoc",
         "---\n"
-        "type: tech/container\n"
+        "type: tech/component\n"
         "id: 42\n"
-        "title: Numeric Container\n"
+        "title: Numeric Component\n"
+        "container: CNT-NUM\n"
         "source_path: src/num\n"
-        "components:\n"
-        "  - id: CMP-NUM\n"
-        "    title: NumComp\n"
-        "    responsibility: Handles numbers.\n"
-        "    status: active\n"
-        "    domain: DOM-CORE\n"
+        "status: active\n"
+        "domain: DOM-CORE\n"
         "---\n"
-        "= Numeric Container\n",
+        "= Numeric Component\n",
     )
     assert doc.doc_id == "42"
-    assert doc.model.type == "tech/container"
-    assert doc.model.components[0].status == "active"
-    assert doc.model.components[0].domain == "DOM-CORE"
+    assert doc.model.type == "tech/component"
+    assert doc.model.status == "active"
+    assert doc.model.domain == "DOM-CORE"
 
     # 2. Path normalization preserves dotfiles and specificity favors deeper subpackage over parent dir/**
     assert _normalize_rel_path(".github/workflows/ci.yml") == ".github/workflows/ci.yml"
@@ -1876,8 +1864,10 @@ def test_deep_review_subsystem_1_models_workspace_and_validator_edge_cases(tmp_p
     eidos_dir = tmp_path / "eidos"
     dom_dir = eidos_dir / "domains"
     cnt_dir = eidos_dir / "architecture" / "containers"
+    cmp_dir = eidos_dir / "architecture" / "components"
     dom_dir.mkdir(parents=True)
     cnt_dir.mkdir(parents=True)
+    cmp_dir.mkdir(parents=True)
     (cnt_dir / "svc.adoc").write_text(
         "---\n"
         "type: tech/container\n"
@@ -1887,15 +1877,22 @@ def test_deep_review_subsystem_1_models_workspace_and_validator_edge_cases(tmp_p
         "container_type: service\n"
         "runtime: Python 3.12\n"
         "source_path: src/billing\n"
-        "components:\n"
-        "  - id: CMP-BILLING-CORE\n"
-        "    title: BillingCore\n"
-        "    responsibility: Core billing.\n"
-        "    source_path: src/billing/core.py\n"
-        "    status: planned\n"
-        "    domain: DOM-BILLING\n"
+        "domain: DOM-BILLING\n"
         "---\n"
         "= Billing Container\n",
+        encoding="utf-8",
+    )
+    (cmp_dir / "core.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-BILLING-CORE\n"
+        "title: BillingCore\n"
+        "container: CNT-BILLING\n"
+        "source_path: src/billing/core.py\n"
+        "status: planned\n"
+        "domain: DOM-BILLING\n"
+        "---\n"
+        "= BillingCore\n",
         encoding="utf-8",
     )
     (dom_dir / "billing.adoc").write_text(
@@ -2247,31 +2244,26 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
     assert "which does not exist in 'tests/test_cls.py'" in joined_more
     assert "has invalid test_binding '::'" in joined_more
 
-    # Also cover inline component invariants (line 1114), TBD bindings (1082, 1124), and workspace/assets.py CWD fallback (22-26)
+    # Also cover component invariants, TBD bindings, and workspace/assets.py CWD fallback (22-26)
     import eidos.core.workspace.assets as ws_assets
 
-    (cnt_dir / "clean.adoc").write_text(
+    (cmp_dir / "clean-inl.adoc").write_text(
         "---\n"
-        "type: tech/container\n"
-        "id: CNT-CLEAN\n"
-        "title: Clean Service\n"
-        "container_type: service\n"
-        "runtime: Python 3.12\n"
-        "source_path: src/clean\n"
-        "components:\n"
-        "  - id: CMP-CLEAN-INL\n"
-        "    title: Clean Inline\n"
-        "    responsibility: Core\n"
-        "    source_path: src/clean/ports.py\n"
-        "    invariants:\n"
-        "      - id: INV-CMP-INL-1\n"
-        "        rule: Must hold\n"
-        '        test_binding: "::"\n'
-        "      - id: INV-CMP-INL-2\n"
-        "        rule: TBD binding\n"
-        "        test_binding: TBD\n"
+        "type: tech/component\n"
+        "id: CMP-CLEAN-INL\n"
+        "title: Clean Component\n"
+        "container: CNT-CLEAN\n"
+        "status: active\n"
+        "source_path: src/clean/ports.py\n"
+        "invariants:\n"
+        "  - id: INV-CMP-INL-1\n"
+        "    rule: Must hold\n"
+        '    test_binding: "::"\n'
+        "  - id: INV-CMP-INL-2\n"
+        "    rule: TBD binding\n"
+        "    test_binding: TBD\n"
         "---\n"
-        "= Clean Service\n",
+        "= Clean Component\n",
         encoding="utf-8",
     )
     rep_inl = validator.validate_directory(eidos_dir)
@@ -2556,9 +2548,12 @@ def test_dlt_2026_085_mutations_target_ref_validation_and_schema_rejection(
     eidos_dir = tmp_path / "eidos"
 
     cnts_dir = eidos_dir / "architecture" / "containers"
+    comps_dir = eidos_dir / "architecture" / "components"
     deltas_dir = eidos_dir / "deltas"
     cnts_dir.mkdir(parents=True)
+    comps_dir.mkdir(parents=True)
     deltas_dir.mkdir(parents=True)
+    (tmp_path / "src" / "core").mkdir(parents=True)
 
     (cnts_dir / "core.adoc").write_text(
         "---\n"
@@ -2569,13 +2564,20 @@ def test_dlt_2026_085_mutations_target_ref_validation_and_schema_rejection(
         "container_type: library\n"
         "runtime: Python 3.12\n"
         "source_path: src/core\n"
-        "components:\n"
-        "  - id: CMP-EXISTING\n"
-        "    title: Existing\n"
-        "    responsibility: Existing component.\n"
-        "    source_path: src/core\n"
         "---\n"
         "= Core\n",
+        encoding="utf-8",
+    )
+    (comps_dir / "existing.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-EXISTING\n"
+        "title: Existing\n"
+        "container: CNT-CORE\n"
+        "status: active\n"
+        "source_path: src/core\n"
+        "---\n"
+        "= Existing\n",
         encoding="utf-8",
     )
 
@@ -2607,7 +2609,7 @@ def test_dlt_2026_085_mutations_target_ref_validation_and_schema_rejection(
     assert "affects" in legacy_errs and "blast_radius" in legacy_errs
     legacy_delta.unlink()
 
-    # 2. Operation-aware catalog existence on mutations[].target and parent
+    # 2. Operation-aware catalog existence on mutations[].target
     (deltas_dir / "dlt-targets.adoc").write_text(
         "---\n"
         "type: delta/mutation\n"
@@ -2620,18 +2622,10 @@ def test_dlt_2026_085_mutations_target_ref_validation_and_schema_rejection(
         "mutations:\n"
         "  - operation: add\n"
         "    target: CMP-NEW-ADDED\n"
-        "    parent: CNT-CORE\n"
         "  - operation: add\n"
         "    target: CAP-NEW-001\n"
         "  - operation: add\n"
-        "    target: CAP-NEW-BAD-DOM\n"
-        "    parent: DOM-MISSING-PARENT\n"
-        "  - operation: add\n"
         "    target: INV-NEW-001\n"
-        "    parent: CAP-NEW-001\n"
-        "  - operation: add\n"
-        "    target: INV-ORPHAN-001\n"
-        "    parent: CAP-MISSING-PARENT\n"
         "  - operation: modify\n"
         "    target: CMP-MISSING-MODIFIED\n"
         "---\n"
@@ -2644,10 +2638,7 @@ def test_dlt_2026_085_mutations_target_ref_validation_and_schema_rejection(
     broken = "\n".join(report.broken_references)
     assert "CMP-NEW-ADDED" not in broken
     assert "CAP-NEW-001" not in broken
-    assert "CAP-NEW-BAD-DOM" not in broken
-    assert "DOM-MISSING-PARENT" in broken
     assert "INV-NEW-001" not in broken
-    assert "CAP-MISSING-PARENT" in broken
     assert "CMP-MISSING-MODIFIED" in broken
 
 
@@ -2672,13 +2663,6 @@ def test_dlt_2026_086_fault_tolerant_frontmatter_model_and_cache_isolation(
                 "INV-SHORTHAND-001",
                 {"id": "INV-DICT-001", "rule": None, "test_binding": "tests/test_a.py::test_ok"},
             ],
-            "components": [
-                {
-                    "id": "CMP-LEGACY-INLINE",
-                    "source_path": ["src/a/mod.py"],
-                    "invariants": [{"id": "INV-CMP-001", "rule": "Rule", "test_binding": "tests/test_a.py::test_cmp"}],
-                }
-            ],
             "decisions": [
                 {"id": "DEC-PARTIAL-001", "rejected_alternatives": ["plain-string-alt", {"option": "OptB"}]},
                 "non-dict-decision-ignored",
@@ -2688,9 +2672,8 @@ def test_dlt_2026_086_fault_tolerant_frontmatter_model_and_cache_isolation(
     assert fm.id is None
     assert fm.title == "123"
     assert fm.source_paths() == ["src/a", "src/b"]
-    assert fm.components[0].source_paths() == ["src/a/mod.py"]
     inv_ids = [inv.id for inv in fm.all_invariants()]
-    assert inv_ids == ["INV-SHORTHAND-001", "INV-DICT-001", "INV-CMP-001"]
+    assert inv_ids == ["INV-SHORTHAND-001", "INV-DICT-001"]
     assert fm.invariants[1].test_binding == "tests/test_a.py::test_ok"
     assert len(fm.all_decisions()) == 1
     assert fm.all_decisions()[0].rejected_alternatives[0].option == "plain-string-alt"
@@ -2712,11 +2695,13 @@ def test_dlt_2026_086_fault_tolerant_frontmatter_model_and_cache_isolation(
 
 
 def test_dlt_2026_087_composable_delta_mutation_validation(tmp_path):
-    """Verify DLT-2026-087: SpecValidator validates composable mutations (operation + target + parent)."""  # eidos:fixture
+    """Verify DLT-2026-087: SpecValidator validates composable mutations (operation + target)."""  # eidos:fixture
     eidos_dir = tmp_path / "eidos"
     cnt_dir = eidos_dir / "architecture" / "containers"
+    cmp_dir = eidos_dir / "architecture" / "components"
     dlt_dir = eidos_dir / "deltas"
     cnt_dir.mkdir(parents=True)
+    cmp_dir.mkdir(parents=True)
     dlt_dir.mkdir(parents=True)
     src_dir = tmp_path / "src" / "core"
     src_dir.mkdir(parents=True)
@@ -2731,17 +2716,24 @@ def test_dlt_2026_087_composable_delta_mutation_validation(tmp_path):
         "container_type: library\n"
         "runtime: Python 3.12\n"
         "source_path: src/core\n"
-        "components:\n"
-        "  - id: CMP-ENGINE\n"
-        "    title: Engine\n"
-        "    responsibility: Runs core engine\n"
-        "    source_path: src/core/engine.py\n"
         "invariants:\n"
         "  - id: INV-" + "CORE-001\n"
         "    rule: Core must run\n"
         "    test_binding: N/A\n"
         "---\n"
         "= Core\n",
+        encoding="utf-8",
+    )
+    (cmp_dir / "engine.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-ENGINE\n"
+        "title: Engine\n"
+        "container: CNT-CORE\n"
+        "status: active\n"
+        "source_path: src/core/engine.py\n"
+        "---\n"
+        "= Engine\n",
         encoding="utf-8",
     )
 
@@ -2759,13 +2751,10 @@ def test_dlt_2026_087_composable_delta_mutation_validation(tmp_path):
         "mutations:\n"
         "  - operation: modify\n"
         "    target: CMP-ENGINE\n"
-        "    parent: CNT-CORE\n"
         "  - operation: modify\n"
         "    target: INV-" + "CORE-001\n"
-        "    parent: CNT-CORE\n"
         "  - operation: add\n"
         "    target: CMP-NEW-WORKER\n"
-        "    parent: CNT-CORE\n"
         "---\n"
         "= Valid Composable Delta\n",
         encoding="utf-8",
@@ -2775,7 +2764,7 @@ def test_dlt_2026_087_composable_delta_mutation_validation(tmp_path):
     rep_ok = validator.validate_directory(eidos_dir)
     assert rep_ok.is_clean, f"Expected clean report, got schema={rep_ok.schema_errors}, refs={rep_ok.broken_references}"
 
-    # Invalid composable SpecDelta: deprecate on INV-*, add INV-* without parent, and missing modify target
+    # Invalid composable SpecDelta: deprecate on INV-* and missing modify target
     bad_dlt = dlt_dir / "dlt-2026-002.adoc"
     bad_dlt.write_text(
         "---\n"
@@ -2789,8 +2778,6 @@ def test_dlt_2026_087_composable_delta_mutation_validation(tmp_path):
         "mutations:\n"
         "  - operation: deprecate\n"
         "    target: INV-" + "CORE-001\n"
-        "  - operation: add\n"
-        "    target: INV-" + "ORPHAN-001\n"
         "  - operation: modify\n"
         "    target: CMP-NONEXISTENT\n"
         "---\n"
@@ -2801,7 +2788,6 @@ def test_dlt_2026_087_composable_delta_mutation_validation(tmp_path):
     assert not rep_bad.is_clean
     schema_errs = "\n".join(e for errs in rep_bad.schema_errors.values() for e in errs)
     assert "operation 'deprecate' is not supported for INV-* targets" in schema_errs
-    assert "requires a 'parent' specification ID" in schema_errs
     assert any("CMP-NONEXISTENT" in r for r in rep_bad.broken_references)
 
 
@@ -2886,11 +2872,19 @@ def test_warm_cache_idempotence_duplicate_ids_and_non_src_repo_validation(
         encoding="utf-8",
     )
     (eidos1 / "architecture" / "components" / "accepted-comp.adoc").write_text(
-        "---\ntype: tech/component\nid: CMP-ACCEPTED-001\ntitle: Accepted Comp\ncontainer: CNT-A\nstatus: active\nsource_path: src/a\nresponsibility: Accepted component.\n---\n= Accepted Comp\n",
+        "---\ntype: tech/component\nid: CMP-ACCEPTED-001\ntitle: Accepted Comp\ncontainer: CNT-A\nstatus: active\nsource_path: src/a\n---\n= Accepted Comp\n",
+        encoding="utf-8",
+    )
+    (eidos1 / "architecture" / "components" / "dup-1.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-DUP-001\ntitle: Dup One\ncontainer: CNT-A\n---\n= Dup One\n",
+        encoding="utf-8",
+    )
+    (eidos1 / "architecture" / "components" / "dup-2.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-DUP-001\ntitle: Dup Two\ncontainer: CNT-B\n---\n= Dup Two\n",
         encoding="utf-8",
     )
 
-    # Two containers declaring duplicate inline CMP-DUP-001 and duplicate INV-DUP-001
+    # Two containers declaring duplicate INV-DUP-001
     (eidos1 / "architecture" / "containers" / "cnt-a.adoc").write_text(
         "---\n"
         "type: tech/container\n"
@@ -2898,10 +2892,6 @@ def test_warm_cache_idempotence_duplicate_ids_and_non_src_repo_validation(
         "title: Container A\n"
         "container_type: service\n"
         "runtime: Python\n"
-        "components:\n"
-        "  - id: CMP-DUP-001\n"
-        "    title: Dup One\n"
-        "    responsibility: First duplicate.\n"
         "invariants:\n"
         "  - id: INV-DUP-001\n"
         "    rule: First duplicate invariant.\n"
@@ -2916,10 +2906,6 @@ def test_warm_cache_idempotence_duplicate_ids_and_non_src_repo_validation(
         "title: Container B\n"
         "container_type: service\n"
         "runtime: Python\n"
-        "components:\n"
-        "  - id: CMP-DUP-001\n"
-        "    title: Dup Two\n"
-        "    responsibility: Second duplicate.\n"
         "invariants:\n"
         "  - id: INV-DUP-001\n"
         "    rule: Second duplicate invariant.\n"
@@ -2956,7 +2942,6 @@ def test_warm_cache_idempotence_duplicate_ids_and_non_src_repo_validation(
         "    target: INV-DUP-001\n"
         "  - operation: modify\n"
         "    target: CMP-MISSING-999\n"
-        "    parent: CNT-A\n"
         "---\n= Broken Applied Delta\n",
         encoding="utf-8",
     )
@@ -3406,18 +3391,11 @@ def test_group_b_regressions_b1_through_b8(tmp_path: Path, validator: SpecValida
         {
             "source_path": ["src/core", "N/A", "src/owned", "NONE", "TBD"],
             "specification_file": "N/A",
-            "components": [
-                {
-                    "source_path": ["src/core/comp.py", "src/core/owned_comp.py", "TBD"],
-                }
-            ],
         }
     )
     assert extracted_paths == [
         "src/core",
         "src/owned",
-        "src/core/comp.py",
-        "src/core/owned_comp.py",
     ]
 
     git_b8 = tmp_path / "git_b8"
@@ -3446,19 +3424,9 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
     assert fm_min.model_extra["schema"] is None
     assert fm_min.id == "POL-MIN"
     assert fm_min.title is None
-    assert fm_min.components == []
     assert fm_min.invariants == []
     assert fm_min.mutations == []
     assert fm_min.decisions == []
-
-    fm_c4 = FrontmatterModel.model_validate(
-        {
-            "id": "CNT-C4",
-            "type": "tech/container",
-            "components": [{"id": "CMP-A", "title": "A"}, {"id": "CMP-B", "title": "B"}],
-        }
-    )
-    assert [c.id for c in fm_c4.components] == ["CMP-A", "CMP-B"]
 
     # --- B1: Nested design system.adoc is not classified as root product/system ---
     repo = tmp_path / "repo_b"
@@ -3496,6 +3464,8 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
         d.mkdir(parents=True, exist_ok=True)
 
     (tests_dir / "test_app.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+    cmp_dir = eidos_dir / "architecture" / "components"
+    cmp_dir.mkdir(parents=True, exist_ok=True)
     (cnt_dir / "app.adoc").write_text(
         "---\n"
         "type: tech/container\n"
@@ -3504,16 +3474,21 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
         "container_type: service\n"
         "runtime: Python\n"
         "source_path: src/app\n"
-        "components:\n"
-        "  - id: CMP-PLANNED\n"
-        "    title: Planned Comp\n"
-        "    status: planned\n"
-        "    responsibility: Future work\n"
-        "    invariants:\n"
-        "      - id: INV-PLANNED-SKIP\n"
-        "        rule: Planned component invariant\n"
-        "        test_binding: tests/test_app.py::test_not_written_yet\n"
         "---\n= App Container\n",
+        encoding="utf-8",
+    )
+    (cmp_dir / "planned.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-PLANNED\n"
+        "title: Planned Comp\n"
+        "container: CNT-APP\n"
+        "status: planned\n"
+        "invariants:\n"
+        "  - id: INV-PLANNED-SKIP\n"
+        "    rule: Planned component invariant\n"
+        "    test_binding: tests/test_app.py::test_not_written_yet\n"
+        "---\n= Planned Comp\n",
         encoding="utf-8",
     )
 
@@ -3614,7 +3589,7 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
         encoding="utf-8",
     )
 
-    # B6: Delta with .adoc targets for deprecate (INV), add on INV without parent, and broken parent .adoc
+    # B6: Delta with .adoc targets for deprecate (INV) and modify on missing .adoc
     (deltas_dir / "dlt_b6.adoc").write_text(
         "---\n"
         "type: delta/mutation\n"
@@ -3627,11 +3602,8 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
         "mutations:\n"
         "  - operation: deprecate\n"
         "    target: INV-DEPRECATED.adoc\n"
-        "  - operation: add\n"
-        "    target: INV-NO-PARENT.adoc\n"
-        "  - operation: add\n"
-        "    target: CMP-NEW\n"
-        "    parent: eidos/architecture/containers/missing_parent.adoc\n"
+        "  - operation: modify\n"
+        "    target: eidos/architecture/containers/missing_parent.adoc\n"
         "---\n= Delta B6\n",
         encoding="utf-8",
     )
@@ -3693,9 +3665,8 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
     assert "unrelated-note-token" not in broken_text
     # B3: Click subcommand migrate under db accepted cleanly
     assert "CTR-CLICK-SUB" not in broken_text
-    # B6: .adoc path invariants and broken parent reference caught
+    # B6: .adoc path invariants and broken target reference caught
     assert "operation 'deprecate' is not supported for INV-* targets" in schema_err_text
-    assert "adding invariant 'INV-NO-PARENT.adoc' requires a 'parent' specification ID" in schema_err_text
     assert "cannot locate 'eidos/architecture/containers/missing_parent.adoc'" in broken_text
     # B7: Double colons caught, and planned inline component invariant skipped
     assert "Malformed test_binding 'tests/test_app.py::::test_ok'" in broken_text

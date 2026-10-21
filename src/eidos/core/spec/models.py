@@ -213,53 +213,6 @@ class InvariantModel(_SpecBaseModel):
         return str(self.test_binding or "").strip()
 
 
-class InlineComponentModel(_SpecBaseModel):
-    """Typed inline C4 Level 3 component entry inside a container spec (CMP-*)."""
-
-    id: str = ""
-    title: str | None = None
-    status: str | None = None
-    version: str | None = None
-    domain: str | None = None
-    responsibility: str | None = None
-    source_path: list[str] | str | None = None
-    decisions: list[DecisionModel] = Field(default_factory=list)
-    invariants: list[InvariantModel] = Field(default_factory=list)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_input(cls, data: Any) -> dict[str, Any]:
-        if not isinstance(data, dict):
-            return {}
-        raw = dict(data)
-        raw["id"] = _coerce_req_str(raw.get("id"))
-        for opt_k in ("title", "status", "version", "domain", "responsibility"):
-            if opt_k in raw:
-                raw[opt_k] = _coerce_opt_str(raw.get(opt_k))
-        if "source_path" in raw:
-            sp = raw.get("source_path")
-            if isinstance(sp, list):
-                raw["source_path"] = [str(p).strip() for p in sp if _coerce_opt_str(p)]
-            elif _coerce_opt_str(sp) is not None:
-                raw["source_path"] = _coerce_opt_str(sp)
-            else:
-                raw["source_path"] = None
-        decs = raw.get("decisions")
-        raw["decisions"] = [d for d in decs if isinstance(d, (dict, DecisionModel))] if isinstance(decs, list) else []
-        invs = raw.get("invariants")
-        raw["invariants"] = (
-            [i for i in invs if isinstance(i, (dict, str, InvariantModel))] if isinstance(invs, list) else []
-        )
-        return raw
-
-    def source_paths(self) -> list[str]:
-        if isinstance(self.source_path, str) and self.source_path.strip():
-            return [self.source_path.strip()]
-        if isinstance(self.source_path, list):
-            return [str(p).strip() for p in self.source_path if str(p).strip()]
-        return []
-
-
 class CapabilityTechnicalModel(_SpecBaseModel):
     """Typed capability technical binding section."""
 
@@ -312,7 +265,6 @@ class DeltaMutationModel(_SpecBaseModel):
 
     operation: str = ""
     target: str = ""
-    parent: str | None = None
     title: str | None = None
     details: str | None = None
     expect: dict[str, Any] = Field(default_factory=dict)
@@ -325,7 +277,7 @@ class DeltaMutationModel(_SpecBaseModel):
         raw = dict(data)
         raw["operation"] = _coerce_req_str(raw.get("operation"))
         raw["target"] = _coerce_req_str(raw.get("target"))
-        for opt_k in ("parent", "title", "details"):
+        for opt_k in ("title", "details"):
             if opt_k in raw:
                 raw[opt_k] = _coerce_opt_str(raw.get(opt_k))
         exp = raw.get("expect")
@@ -343,7 +295,6 @@ _FRONTMATTER_SCALAR_KEYS = (
     "container",
     "container_type",
     "runtime",
-    "responsibility",
     "protocol",
     "specification_file",
     "category",
@@ -363,13 +314,11 @@ class FrontmatterModel(_SpecBaseModel):
     container: str | None = None
     container_type: str | None = None
     runtime: str | None = None
-    responsibility: str | None = None
     protocol: str | None = None
     specification_file: str | None = None
     category: str | None = None
     severity: str | None = None
     source_path: list[str] | str | None = None
-    components: list[InlineComponentModel] = Field(default_factory=list)
     technical: CapabilityTechnicalModel = Field(default_factory=CapabilityTechnicalModel)
     intent: DeltaIntentModel | None = None
     mutations: list[DeltaMutationModel] = Field(default_factory=list)
@@ -393,11 +342,6 @@ class FrontmatterModel(_SpecBaseModel):
                 raw["source_path"] = _coerce_opt_str(pval)
             else:
                 raw["source_path"] = None
-        if "components" in raw:
-            comps_a = raw.get("components")
-            raw["components"] = (
-                [c for c in comps_a if isinstance(c, (dict, InlineComponentModel))] if isinstance(comps_a, list) else []
-            )
         if "technical" in raw:
             tech_raw = raw.get("technical")
             raw["technical"] = tech_raw if isinstance(tech_raw, (dict, CapabilityTechnicalModel)) else {}
@@ -435,28 +379,16 @@ class FrontmatterModel(_SpecBaseModel):
         """Return normalized domain string."""
         return str(self.domain or "").strip()
 
-    def invariants_with_component(self) -> list[tuple[InvariantModel, str | None]]:
-        """Return (InvariantModel, owning_inline_component_id_or_None) across top-level, technical, and inline components."""
-        collected: list[tuple[InvariantModel, str | None]] = [(inv, None) for inv in self.invariants if inv.id]
-        if self.technical and self.technical.invariants:
-            collected.extend((inv, None) for inv in self.technical.invariants if inv.id)
-        for comp in self.components:
-            if comp.invariants:
-                cid = comp.id or None
-                collected.extend((inv, cid) for inv in comp.invariants if inv.id)
-        return collected
-
     def all_invariants(self) -> list[InvariantModel]:
-        """Return all invariants declared at top level, under technical.invariants, or on inline components."""
-        return [inv for inv, _ in self.invariants_with_component()]
+        """Return all invariants declared at top level or under technical.invariants."""
+        collected: list[InvariantModel] = [inv for inv in self.invariants if inv.id]
+        if self.technical and self.technical.invariants:
+            collected.extend(inv for inv in self.technical.invariants if inv.id)
+        return collected
 
     def all_decisions(self) -> list[DecisionModel]:
-        """Return all architectural decisions declared at top level or on inline components."""
-        collected: list[DecisionModel] = list(self.decisions)
-        for comp in self.components:
-            if comp.decisions:
-                collected.extend(comp.decisions)
-        return collected
+        """Return all architectural decisions declared at top level."""
+        return list(self.decisions)
 
 
 @dataclass

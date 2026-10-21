@@ -195,7 +195,7 @@ def test_architectural_index_find_symbol_and_repo_map():
     matches = arch_idx.find_symbol("ArchitecturalIndex")
     assert len(matches) > 0
     match_entities = {m["entity_id"] for m in matches}
-    assert "CNT-EIDOS-INDEX" in match_entities
+    assert "CMP-GRAPH-STORAGE" in match_entities
 
     # Partial match
     to_dict_matches = arch_idx.find_symbol("to_dict")
@@ -224,14 +224,14 @@ def test_cli_repo_map_and_find_symbol():
     # 3. find-symbol text
     res_sym = runner.invoke(app, ["index", "find-symbol", "ArchitecturalIndex"])
     assert res_sym.exit_code == 0
-    assert "CNT-EIDOS-IND" in res_sym.output
+    assert "CMP-GRAPH-STO" in res_sym.output
 
     # 4. find-symbol json
     res_sym_json = runner.invoke(app, ["index", "find-symbol", "ArchitecturalIndex", "--json"])
     assert res_sym_json.exit_code == 0
     sym_data = orjson.loads(res_sym_json.output)
     assert sym_data["count"] > 0
-    assert any(m["entity_id"] == "CNT-EIDOS-INDEX" for m in sym_data["matches"])
+    assert any(m["entity_id"] == "CMP-GRAPH-STORAGE" for m in sym_data["matches"])
 
     # 5. top-level shortcuts are removed
     res_top_map = runner.invoke(app, ["repo-map", "--max-tokens", "500"])

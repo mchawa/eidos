@@ -19,6 +19,5 @@ mutations:
     target: CAP-VCS-001
   - operation: add
     target: INV-DRIFT-DIFF-AWARE-COVERAGE
-    parent: CAP-VCS-001
 ---
 = SpecDelta: Diff-Aware Specification Coverage for Structural Code Additions

@@ -149,9 +149,10 @@ def test_context_slice_non_eidos_project_fallback(tmp_path):
         "container: CNT-AUTH\n"
         "status: active\n"
         "source_path: src/auth\n"
-        "responsibility: Auth service\n"
         "---\n"
-        "= Auth\n"
+        "= Auth\n\n"
+        "== Responsibility\n"
+        "Auth service\n"
     )
 
     (pols_dir / "security.adoc").write_text(
@@ -341,7 +342,7 @@ def test_inv_context_token_compression():
         assert "rationale" in guard_comp["decisions"][0]
 
     deep_comp = deep_dict["components"][0]
-    assert "components" in deep_comp
+    assert "file_path" in deep_comp
 
     # 3. Unmatched explicit queries (files, component, task) return an honest empty slice
     for kwargs in (
@@ -378,7 +379,7 @@ def test_inv_context_token_compression():
     ]
     assert any(c["id"] == "CAP-AGENT-002" for c in repo_map_sl.capabilities)
 
-    # 5. Progressive prose compression compresses verbose responsibilities before evicting direct invariants
+    # 5. Progressive prose compression compresses verbose rules/decisions before evicting direct invariants
     from eidos.core.index.graph_index import TieredContextSlice
 
     synthetic_sl = TieredContextSlice(
@@ -388,8 +389,13 @@ def test_inv_context_token_compression():
             {
                 "id": "CNT-PRIMARY",
                 "title": "Primary",
-                "responsibility": "Sentence one of primary responsibility. "
-                + ("Extra prose detail for primary. " * 45),
+                "invariants": [
+                    {
+                        "id": "RULE-PRIM-1",
+                        "rule": "Sentence one of primary invariant rule. "
+                        + ("Extra prose detail for primary. " * 45),
+                    }
+                ],
                 "decisions": [
                     {
                         "id": "DEC-SYN-1",
@@ -403,7 +409,12 @@ def test_inv_context_token_compression():
             {
                 "id": "CNT-SECONDARY",
                 "title": "Secondary",
-                "responsibility": "First sentence of secondary responsibility. " + ("Verbose tail sentence. " * 45),
+                "invariants": [
+                    {
+                        "id": "RULE-SEC-1",
+                        "rule": "First sentence of secondary invariant rule. " + ("Verbose tail sentence. " * 45),
+                    }
+                ],
             },
         ],
         invariants=[
@@ -415,7 +426,7 @@ def test_inv_context_token_compression():
         direct_inv_ids={"RULE-SYN-0", "RULE-SYN-1", "RULE-SYN-2"},
     )
     assert synthetic_sl._compact_prose is True
-    assert len(synthetic_sl.components[1]["responsibility"]) <= 120
+    assert len(synthetic_sl.to_dict()["invariants"][0]["rule"]) <= 110
     assert len(synthetic_sl.invariants) == 3
     assert synthetic_sl.token_estimate <= TIER_TOKEN_BUDGETS["guardrails"]
 
@@ -486,7 +497,7 @@ def test_progressive_compression_stages_and_inline_component_context(tmp_path):
     anchor_heavy._enforce_token_budget(primary_cids={"CNT-A-0"})
     assert anchor_heavy.token_estimate <= TIER_TOKEN_BUDGETS["anchor"]
 
-    # 3. Direct query on an inline C4 Level 3 component (CMP-CLI-APP) and base Markdown C4 L3 rendering
+    # 3. Direct query on a standalone C4 Level 3 component (CMP-CLI-APP) and base Markdown C4 L3 rendering
     inline_sl = get_context_slice(component="CMP-CLI-APP", tier="deep")
     assert any(c["id"] == "CNT-EIDOS-CLI" for c in inline_sl.components)
     assert "CMP-CLI-APP" in inline_sl.to_markdown()
@@ -500,7 +511,7 @@ def test_progressive_compression_stages_and_inline_component_context(tmp_path):
         tier="deep",
     )
     base_md = base_l3.to_markdown()
-    assert "C4 Level 3 Components" in base_md
+    assert "[C4 Level 3 Component]" in base_md
     assert "CMP-CLI-APP" in base_md
 
     # 4. Workspace project.py & assets.py edge cases: _is_inside_plugin_or_assets, load_project, get_tracked_files, globs

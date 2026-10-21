@@ -44,7 +44,7 @@ Specifications without verifiable test bindings are merely aspirations. By bindi
 
 ## 3. Capability & Component Invariants (`INV-*`)
 
-Invariants are fine-grained, verifiable behavioral conditions that **must always remain true** for a specific capability (`CAP-*`) or promoted component (`CMP-*`). Every capability invariant is explicitly mapped to a concrete test via `test_binding`.
+Invariants are fine-grained, verifiable behavioral conditions that **must always remain true** for a specific capability (`CAP-*`), container (`CNT-*`), or component (`CMP-*`). Every capability invariant is explicitly mapped to a concrete test via `test_binding`.
 
 ### Example Capability Invariants (`eidos/domains/spec-engine/capabilities/living-spec-engine.adoc`):
 

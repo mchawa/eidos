@@ -102,8 +102,8 @@ eidos delta changelog
 ### 2.2 SpecDelta Frontmatter & Schema Rules
 
 > **Critical Schema Rules (`delta.schema.yaml`)**:
-> 1. **Composable `operation` + `target` (+ optional `parent` for `add`/`remove`) is the Sole Mutation Contract**: Declare each mutation with `operation: add | modify | remove | deprecate` and `target: <ENTITY-ID>`. Omit `parent` on `modify` mutations (the catalog already resolves existing entities by ID); only include `parent: <PARENT-ENTITY-ID>` when adding or removing child entities (`INV-*`, inline `CMP-*`, etc.). Never add `affects:` or `blast_radius:` blocks to SpecDelta YAML frontmatter (`additionalProperties: false` rejects them).
-> 2. **Closed `expect:` Schema**: `expect:` only permits `body:` (`contains`, `not_contains`) and `frontmatter:` (`responsibility`, `source_path`, `rule`, `test_binding`, `status`, `severity`, `version`, `category`, `custom`). Flat top-level keys under `expect:` are rejected.
+> 1. **Composable `operation` + `target` is the Sole Mutation Contract**: Declare each mutation with `operation: add | modify | remove | deprecate` and `target: <ENTITY-ID>`. Never add `parent:`, `affects:`, or `blast_radius:` blocks to SpecDelta YAML frontmatter (`additionalProperties: false` rejects them).
+> 2. **Closed `expect:` Schema**: `expect:` only permits `body:` (`contains`, `not_contains`) and `frontmatter:` (`source_path`, `rule`, `test_binding`, `status`, `severity`, `version`, `category`, plus nested dot-path keys). Flat top-level keys under `expect:` are rejected.
 
 ```yaml
 ---
@@ -119,12 +119,13 @@ intent:
 mutations:
   - operation: add
     target: CMP-WEBHOOK-VERIFIER
-    parent: CNT-BILLING-API
     details: "Introduce WebhookSignatureVerifier in src/billing/verifier.py."
     expect:
       frontmatter:
         source_path: "src/billing/verifier.py"
-        responsibility: "HMAC-SHA256 signature verification"
+      body:
+        contains:
+          - "HMAC-SHA256 signature verification"
   - operation: modify
     target: CTR-BILLING-API
     details: "Require X-Webhook-Signature and X-Webhook-Timestamp headers on POST /v1/usage/webhooks and bump contract version to 1.2.0."
@@ -142,7 +143,6 @@ mutations:
         version: "1.1.0"
   - operation: add
     target: INV-BILL-WEBHOOK-SIG
-    parent: CAP-BILL-001
     details: "Add INV-BILL-WEBHOOK-SIG invariant bound to tests/billing/test_webhooks.py::test_webhook_hmac_signature."
 ---
 = SpecDelta: Add Webhook Signature Verification Contract and Ingestor Component
@@ -164,22 +164,22 @@ Prevent spoofed billing webhooks by enforcing HMAC-SHA256 timestamped signature 
 
 ### 2.3 Composable `operation` + `target` Matrix
 
-| Entity Category (`target` Prefix) | Supported `operation` Values | Optional `parent` Scope (`add` / `remove` only; omit on `modify`) |
-| :--- | :--- | :--- |
-| **Architecture (`ARCH-*`)** | `modify` | — |
-| **Containers (`CNT-*`)** | `add`, `modify`, `remove` | — |
-| **Components (`CMP-*`)** | `add`, `modify`, `remove` | `CNT-*` (on `add` / `remove` of inline components) |
-| **Contracts (`CTR-*`)** | `add`, `modify`, `remove` | `CNT-*` (on `add` / `remove`) |
-| **Domains (`DOM-*`)** | `add`, `modify`, `remove` | — |
-| **Capabilities (`CAP-*`)** | `add`, `modify`, `deprecate`, `remove` | `DOM-*` (on `add` / `remove`) |
-| **Invariants (`INV-*`)** | `add`, `modify`, `remove` | `CAP-*`, `POL-*`, `CNT-*`, or `CMP-*` (required on `add`, optional on `remove`) |
-| **Personas (`PER-*`)** | `add`, `modify`, `remove` | — |
-| **Policies (`POL-*`)** | `add`, `modify`, `deprecate`, `remove` | — |
-| **Design Systems (`DS-*`)** | `add`, `modify`, `remove` | — |
-| **UI Components (`UIC-*`)** | `add`, `modify`, `remove` | `DS-*` (on `add` / `remove`) |
-| **Clients (`CLT-*`)** | `add`, `modify`, `remove` | `CNT-*` (on `add` / `remove`) |
-| **Screens (`SCR-*`)** | `add`, `modify`, `remove` | `CLT-*` (on `add` / `remove`) |
-| **Flows (`FLOW-*`)** | `add`, `modify`, `remove` | `CLT-*` (on `add` / `remove`) |
+| Entity Category (`target` Prefix) | Supported `operation` Values |
+| :--- | :--- |
+| **System (`SYS-*`) & Architecture (`ARCH-*`)** | `add`, `modify` |
+| **Containers (`CNT-*`)** | `add`, `modify`, `deprecate`, `remove` |
+| **Components (`CMP-*`)** | `add`, `modify`, `deprecate`, `remove` |
+| **Contracts (`CTR-*`)** | `add`, `modify`, `deprecate`, `remove` |
+| **Domains (`DOM-*`)** | `add`, `modify`, `deprecate`, `remove` |
+| **Capabilities (`CAP-*`)** | `add`, `modify`, `deprecate`, `remove` |
+| **Invariants (`INV-*`)** | `add`, `modify`, `remove` |
+| **Personas (`PER-*`)** | `add`, `modify`, `deprecate`, `remove` |
+| **Policies (`POL-*`)** | `add`, `modify`, `deprecate`, `remove` |
+| **Design Systems (`DS-*`)** | `add`, `modify`, `deprecate`, `remove` |
+| **UI Components (`UIC-*`)** | `add`, `modify`, `deprecate`, `remove` |
+| **Clients (`CLT-*`)** | `add`, `modify`, `deprecate`, `remove` |
+| **Screens (`SCR-*`)** | `add`, `modify`, `deprecate`, `remove` |
+| **Flows (`FLOW-*`)** | `add`, `modify`, `deprecate`, `remove` |
 
 ### 2.4 Structured `expect:` Post-Conditions & `tombstone:` Audit Exemptions
 
@@ -189,7 +189,6 @@ For `add` and `modify` mutations, `eidos delta verify` checks both baseline dige
   * `status: "active"` — lifecycle status match (`draft`, `planned`, `active`, `deprecated`, `retired`).
   * `severity: "blocking"` — policy severity match (`blocking`, `warning`, `advisory`).
   * `source_path: "src/..."` (or list of paths) — exact or list-subset match on `source_path`.
-  * `responsibility: "substring"` — substring match on container/component `responsibility`.
   * `rule: "substring"` — substring match on invariant `rule`.
   * `test_binding: "tests/...::test_..."` — invariant `test_binding` match (`file::func`, `N/A`, or `TBD`).
   * `category: "security"` — policy `category` match.
@@ -216,11 +215,11 @@ eidos delta verify <DLT-ID> --json
 eidos delta audit <DLT-ID> --strict --json
 ```
 
-1. **Blast Radius & Boundary Integrity**: Do all modified code files map to containers/components authorized in `mutations[].target` / `parent` and its 1-hop ownership neighborhood? Are downstream dependents from `eidos index blast-radius` protected from unintended breakage or circular imports?
+1. **Blast Radius & Boundary Integrity**: Do all modified code files map to containers/components authorized in `mutations[].target` and its 1-hop ownership neighborhood? Are downstream dependents from `eidos index blast-radius` protected from unintended breakage or circular imports?
 2. **Interface Contract & SemVer Compatibility (`CTR-*`)**: Are added/removed CLI flags, endpoints, or RPCs bidirectionally synchronized in `CTR-*` specs with proper SemVer 2.0.0 bumps?
 3. **Governance Policies & Invariant Traceability (`POL-*`, `INV-*`)**: Does the change honor all active `POL-*` policies, and does every new/modified capability behavior have a genuine test bound via `test_binding: file::func`?
 4. **SpecDelta Verification Rigor**: Does every `modify` mutation include structured `expect: { frontmatter, body }` post-conditions?
-5. **Living Specification Purity & Decision Capture (`DEC-*`)**: Zero standalone ADRs; non-obvious trade-offs and `rejected_alternatives` recorded in `decisions:`; promoted `CMP-*` components obey `INV-COMPONENT-CENTRALIZATION-MANDATE` (standalone component files in `eidos/architecture/components/` link bottom-up via `container: CNT-*` without duplicating entries in the parent container's `components[]`).
+5. **Living Specification Purity & Decision Capture (`DEC-*`)**: Zero standalone ADRs; non-obvious trade-offs and `rejected_alternatives` recorded in `decisions:`; `CMP-*` components obey `INV-COMPONENT-CENTRALIZATION-MANDATE` (standalone component files reside in `eidos/architecture/components/` and link bottom-up via `container: CNT-*`).
 
 ### Review Report Template
 

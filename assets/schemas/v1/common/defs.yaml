@@ -311,39 +311,3 @@ $defs:
     additionalProperties:
       type: string
 
-  inline_component:
-    type: object
-    description: "Canonical C4 Level 3 component definition shared between inline container components and standalone component specifications."
-    required:
-      - id
-      - title
-    properties:
-      id:
-        type: string
-        pattern: "^CMP-[A-Z0-9_-]+$"
-        description: "Unique C4 Level 3 Component identifier following CMP-<NAME> (e.g. CMP-SPEC-PARSER, CMP-AUTH-SERVICE)."
-      title:
-        type: string
-        description: "Human-readable display title of the component."
-      status:
-        $ref: "#/$defs/lifecycle_status"
-      version:
-        $ref: "#/$defs/semver"
-      domain:
-        $ref: "#/$defs/domain_ref"
-      responsibility:
-        type: string
-        description: "What this component does and what domain logic, computation, or operational duties it encapsulates."
-      source_path:
-        $ref: "#/$defs/code_paths"
-      invariants:
-        type: array
-        description: "Component-specific operational or architectural invariants."
-        items:
-          $ref: "#/$defs/invariant"
-      decisions:
-        type: array
-        description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on this component (POL-001)."
-        items:
-          $ref: "#/$defs/decision"
-

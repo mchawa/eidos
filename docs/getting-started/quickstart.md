@@ -36,8 +36,8 @@ eidos/
 ├── system.adoc                   # Root system specification (SYS-*, C4 Level 1)
 ├── architecture/
 │   ├── system-architecture.adoc  # Global Arc42 & C4 Level 1-2 topology (ARCH-*)
-│   ├── containers/               # Container manifests (CNT-*, C4 Level 2 + inline Level 3)
-│   ├── components/               # Promoted standalone component manifests (CMP-*, C4 Level 3)
+│   ├── containers/               # Container manifests (CNT-*, C4 Level 2)
+│   ├── components/               # Standalone component manifests (CMP-*, C4 Level 3)
 │   └── contracts/                # Interface protocol contracts (CTR-*)
 ├── domains/                      # Domain & capability models (DOM-*, CAP-*)
 ├── personas/                     # User & agent personas (PER-*)
@@ -48,7 +48,7 @@ eidos/
 ```
 
 > [!NOTE]
-> **C4 Level 3 Components (`CMP-*`)** are declared inline within container manifests (`eidos/architecture/containers/*.adoc`) by default, or promoted to dedicated manifests in `eidos/architecture/components/<component>.adoc` via `eidos spec component promote <ID>`. Eidos specifications **never touch or reside within source code directories** (`src/`, `packages/`).
+> **C4 Level 3 Components (`CMP-*`)** are authored as standalone manifests in `eidos/architecture/components/<component>.adoc` via `eidos spec create component <ID> --title <TITLE>` and link bottom-up to their parent container via `container: CNT-*`. Eidos specifications **never touch or reside within source code directories** (`src/`, `packages/`).
 
 ---
 

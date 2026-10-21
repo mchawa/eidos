@@ -27,10 +27,8 @@ mutations:
     target: DOM-VCS-LIFECYCLE
   - operation: add
     target: CAP-EXP-001
-    parent: DOM-EXPERIENCE-PORTAL
   - operation: add
     target: CAP-EXP-002
-    parent: DOM-EXPERIENCE-PORTAL
   - operation: modify
     target: CAP-PROD-001
   - operation: modify

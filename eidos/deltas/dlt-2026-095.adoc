@@ -9,7 +9,6 @@ intent:
 mutations:
   - operation: modify
     target: CMP-GRAPH-STORAGE
-    parent: CNT-EIDOS-INDEX
     details: "Bump SCHEMA_VERSION to '2.7.0' in src/eidos/core/index/storage.py, remove 'delta_baselines' from _MANAGED_TABLES and _CACHE_SCHEMA_DDL, and remove the delta_baselines retention special-case from ensure_cache_schema (explicitly dropping any legacy delta_baselines table on version migration)."
     expect:
       frontmatter:
@@ -19,21 +18,18 @@ mutations:
           - "SCHEMA_VERSION` `2.7.0`"
   - operation: modify
     target: CMP-DELTA-ENGINE
-    parent: CNT-EIDOS-CORE
     details: "Remove _snapshot_delta_baselines, _check_or_record_baseline_sha, and SQLite delta_baselines fallback queries from src/eidos/core/lifecycle/delta_engine.py; streamline create_delta to skip full-catalog baseline snapshotting; and optimize _resolve_git_baseline_sha with per-verification memoization of resolved Git revisions and (rev, rel_target) blob contents while skipping git log --diff-filter=A when vcs.base_commit already resolves."
     expect:
       frontmatter:
         responsibility: "Git-native baselines (`_resolve_git_baseline_sha` distinguishing dedicated `tech/component` files from inline container components with memoized Git revision and blob resolution)"
   - operation: modify
     target: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
-    parent: CAP-PROD-002
     details: "Update INV-DELTA-VERIFY-MODIFICATION-EVIDENCE in eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc to specify Git-history / vcs.base_commit baseline verification without SQLite delta_baselines."
     expect:
       frontmatter:
         rule: "recorded Git-history / vcs.base_commit baseline via _resolve_git_baseline_sha"
   - operation: modify
     target: CAP-PROD-002
-    parent: DOM-SPEC-ENGINE
     details: "Update CAP-PROD-002 prose in eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc to reflect stateless Git-backed baseline verification without SQLite delta_baselines."
     expect:
       body:

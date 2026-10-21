@@ -11,7 +11,6 @@ mutations:
     target: CMP-EIDOS-PLUGIN
   - operation: add
     target: INV-AGENT-LINT-HOOK
-    parent: CAP-AGENT-001
   - operation: modify
     target: CMP-EIDOS-CLI
 ---

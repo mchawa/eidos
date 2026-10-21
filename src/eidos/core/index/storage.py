@@ -18,8 +18,8 @@ import orjson
 if TYPE_CHECKING:
     from eidos.core.spec.models import SpecDocument
 
-# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-110-BATCH-GIT).
-SCHEMA_VERSION = "2.16.0"
+# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-112-REMOVE-INLINE-4CE1).
+SCHEMA_VERSION = "2.17.0"
 
 # In-process parsed SpecDocument cache keyed by resolved Path -> (mtime_ns, st_size, sha256, SpecDocument)
 _PARSED_SPEC_MEM_CACHE: dict[Path, tuple[int, int, str, SpecDocument]] = {}
@@ -111,7 +111,6 @@ CREATE TABLE IF NOT EXISTS code_symbols (
     line_end INTEGER NOT NULL,
     signature TEXT NOT NULL DEFAULT '',
     entity_id TEXT NOT NULL,
-    component_id TEXT NOT NULL DEFAULT '',
     is_primary INTEGER NOT NULL DEFAULT 1,
     UNIQUE (file_path, entity_id, kind, parent_symbol, symbol, line_start)
 );

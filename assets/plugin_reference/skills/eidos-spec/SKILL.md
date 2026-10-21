@@ -1,6 +1,6 @@
 ---
 name: eidos-spec
-description: Author, inspect, and maintain Eidos living specifications across Product (domains DOM-*, capabilities CAP-*, personas PER-*), Arc42/C4 Architecture (containers CNT-*, inline and promoted components CMP-*, contracts CTR-*, embedded decisions DEC-*), Multi-Design Systems (DS-*, W3C tokens, UI components UIC-*, clients CLT-*, screens SCR-*, flows FLOW-*), and Policies/Invariants (POL-*, INV-* with polyglot file::func test bindings), grounded by eidos index search, find-symbol, blast-radius, and eidos context. Strictly enforces NO ADRs.
+description: Author, inspect, and maintain Eidos living specifications across Product (domains DOM-*, capabilities CAP-*, personas PER-*), Arc42/C4 Architecture (containers CNT-*, standalone components CMP-*, contracts CTR-*, embedded decisions DEC-*), Multi-Design Systems (DS-*, W3C tokens, UI components UIC-*, clients CLT-*, screens SCR-*, flows FLOW-*), and Policies/Invariants (POL-*, INV-* with polyglot file::func test bindings), grounded by eidos index search, find-symbol, blast-radius, and eidos context. Strictly enforces NO ADRs.
 ---
 # Eidos Specification & Invariant Authoring (`eidos-spec`)
 
@@ -21,7 +21,7 @@ eidos index find-symbol "UsageEventIngestor" --json
 eidos context -c CNT-BILLING-WORKER --tier guardrails --json
 eidos index blast-radius CNT-BILLING-WORKER --depth 2 --json
 
-# List and inspect living specifications (includes inline CMP-* components; excludes SpecDeltas)
+# List and inspect living specifications (excludes SpecDeltas)
 eidos spec list [--type <type>] [--status <status>] [--json]
 eidos spec show <ID_OR_PATH>
 
@@ -40,10 +40,6 @@ eidos spec create component CMP-USAGE-LEDGER --title "Double-Entry Usage Ledger"
 eidos spec create contract CTR-BILLING-API --title "Billing REST API"
 eidos spec create policy POL-005 --title "Idempotent Webhook Processing"
 
-# Promote an inline C4 Level 3 component to eidos/architecture/components/<slug>.adoc, or inline it back
-eidos spec component promote CMP-USAGE-LEDGER
-eidos spec component inline CMP-USAGE-LEDGER
-
 # Safely delete a specification after checking incoming cross-references (run blast-radius first)
 eidos spec delete <ID_OR_PATH>
 
@@ -53,7 +49,7 @@ eidos validate eidos --json
 
 ### 1.1 Frontmatter Guardrails & Common Pitfalls (`additionalProperties: false`)
 
-All 16 Eidos v1 schemas enforce `additionalProperties: false` (or `unevaluatedProperties: false` on `tech/component`) at both the top level and every nested object. Avoid these frequent frontmatter mistakes:
+All 16 Eidos v1 schemas enforce `additionalProperties: false` at both the top level and every nested object. Avoid these frequent frontmatter mistakes:
 
 | Pitfall / Construct | Correct Schema Placement & Allowed Keys | What Fails Validation |
 | :--- | :--- | :--- |
@@ -61,7 +57,7 @@ All 16 Eidos v1 schemas enforce `additionalProperties: false` (or `unevaluatedPr
 | **`invariant` item keys** | Exactly `{ id, rule, test_binding }` (`id` matching `^INV-[A-Z0-9_-]+$` and `rule` required; `test_binding` required on `CAP-*` invariants by `POL-002`). | Adding `title`, `description`, `severity`, `category`, or `status` inside an `invariants:` item. |
 | **`decisions:` item keys** | Available on living specs (`product/*`, `tech/*`, `design/*`) and `delta/mutation`. Each item allows **only** `{ id, title, decision, rationale, rejected_alternatives, graduated_from }` where `rejected_alternatives` items allow **only** `{ option, reason_rejected }`. | Adding `status`, `date`, `consequences`, `context`, or `pros`/`cons` inside a `decisions:` item, or using `decisions:` on `product/exploration` (`EXP-*` uses singular `decision: { outcome, resulting_deltas }`). |
 | **`contracts:` shape** | • **`tech/container` (`CNT-*`)**: Object `{ provides: [CTR-*], consumes: [CTR-*] }`.<br>• **`product/capability` (`CAP-*`)**: Flat array under `technical.contracts: [CTR-*]`.<br>• **`tech/component` (`CMP-*`)**: Not a frontmatter key (contracts belong to the container boundary). | Passing a flat array to `CNT-*.contracts`, or adding `contracts:` to `CMP-*`. |
-| **`components:` shape** | • **`tech/container` (`CNT-*`)**: Array of **inline component objects** (`{ id, title, status, domain, responsibility, source_path, invariants, decisions }`).<br>• **`product/capability` (`CAP-*`)**: Array of **component ID strings** under `technical.components: [CMP-*]`. | Listing string IDs under `CNT-*.components`, or duplicating a promoted standalone `eidos/architecture/components/*.adoc` component inside `CNT-*.components` (`INV-COMPONENT-CENTRALIZATION-MANDATE`). |
+| **`components:` shape** | • **`product/capability` (`CAP-*`)**: Array of **component ID strings** under `technical.components: [CMP-*]`.<br>• **`tech/component` (`CMP-*`)**: Standalone spec in `eidos/architecture/components/<slug>.adoc` linking bottom-up via `container: CNT-*`. | Adding `components:` to `CNT-*`. |
 | **`status` enum values** | • **Living specs (`SYS-*`, `DOM-*`, `CAP-*`, `POL-*`, `PER-*`, `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DS-*`, `UIC-*`, `SCR-*`, `CLT-*`, `FLOW-*`)**: `draft \| planned \| active \| deprecated \| retired`.<br>• **Explorations (`EXP-*`)**: `proposed \| in_progress \| adopted \| discarded`.<br>• **SpecDeltas (`DLT-*`)**: `proposed \| in_review \| approved \| applied \| rejected`. | Using `proposed` or `applied` on a living spec, or using `active` or `draft` on `EXP-*` / `DLT-*`. |
 | **Prose-only sections** | Jobs-to-be-Done (JTBD), functional requirements, acceptance criteria, ubiquitous language tables, and Arc42 narratives belong in the **AsciiDoc body** (`== ...`), never as custom YAML keys. | Adding `jtbd:`, `requirements:`, `summary:`, `description:`, or `owners:` (only `DOM-*` has `owners:`) to YAML frontmatter. |
 
@@ -188,12 +184,6 @@ source_path: "src/billing" # String or list of repo-relative directory/file path
 domain: DOM-BILLING
 tier: service # presentation | service | core | persistence | extensibility
 
-components:
-  - id: CMP-BILLING-INGESTOR
-    title: "UsageEventIngestor"
-    responsibility: "Validates incoming usage payloads and enforces idempotency keys."
-    source_path: "src/billing/ingestor.py"
-
 contracts:
   provides:
     - "CTR-BILLING-API"
@@ -211,11 +201,9 @@ decisions:
 = Container: Billing Aggregation Worker
 ```
 
-### 3.3 C4 Level 3 Components: Inline vs. Standalone (`INV-COMPONENT-CENTRALIZATION-MANDATE`)
+### 3.3 C4 Level 3 Components (`eidos/architecture/components/<slug>.adoc`)
 
-1. **Inline Components (Default)**: Defined inside the parent container's `components:` list (`#/$defs/inline_component`) with `id`, `title`, `responsibility`, and `source_path` (intra-container `CMP-*` -> `CMP-*` dependencies are derived automatically via AST import analysis).
-2. **Promoted Standalone Components (`eidos/architecture/components/<slug>.adoc`)**: Promote complex subsystems via `eidos spec component promote <CMP-ID>`.
-   * **Single-Definition Invariant (`INV-COMPONENT-CENTRALIZATION-MANDATE`)**: Standalone components reside in `eidos/architecture/components/` and link bottom-up via `container: CNT-*`. They are NOT duplicated in the parent container's `components:` array.
+Every C4 Level 3 component (`CMP-*`) is authored as a standalone `tech/component` specification in `eidos/architecture/components/<slug>.adoc` via `eidos spec create component <CMP-ID> --title "..."` and links bottom-up to its parent container via `container: CNT-*` (`INV-COMPONENT-CONTAINER-AFFINITY`). Intra-container `CMP-*` -> `CMP-*` dependencies are derived automatically via AST import analysis.
 
 ```yaml
 ---
@@ -226,9 +214,11 @@ container: CNT-BILLING-WORKER
 status: active
 source_path: "src/billing/ledger.py"
 domain: DOM-BILLING
-responsibility: "Appends immutable credit/debit usage entries and computes point-in-time account balances."
 ---
 = Component: Double-Entry Usage Ledger
+
+== Responsibility
+Appends immutable credit/debit usage entries and computes point-in-time account balances.
 ```
 
 ### 3.4 Interface Contracts (`eidos/architecture/contracts/<name>.adoc`)

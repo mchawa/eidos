@@ -13,7 +13,6 @@ from eidos.core.spec.parser import (
     YamlError,
     dump_spec_document,
     extract_frontmatter,
-    safe_dump_yaml,
     safe_load_yaml,
     split_frontmatter_and_body,
 )
@@ -153,140 +152,6 @@ def _set_frontmatter_scalar(raw_content: str, key: str, value: str) -> str:
     return f"---\n{new_yaml}\n---\n{body}"
 
 
-def _format_component_item(item: dict[str, Any], indent: str = "  ") -> str:
-    """Serialize a single component list item with the given leading indentation."""
-    dumped = safe_dump_yaml([item])
-    return "".join((indent + line if line.strip() else line) for line in dumped.splitlines(keepends=True))
-
-
-def _mutate_frontmatter_components(
-    raw_content: str,
-    op: str,
-    target_id: str,
-    item_dict: dict[str, Any] | None = None,
-) -> str:
-    """Mutate a single item in the top-level 'components:' list while preserving all YAML comments and formatting."""
-    parts = _split_raw_frontmatter(raw_content)
-    if parts is None:
-        return raw_content
-    raw_yaml, body = parts
-
-    def _fallback_mutate_parsed() -> str:
-        try:
-            parsed_fm = safe_load_yaml(raw_yaml)
-        except YamlError:
-            return raw_content
-        if not isinstance(parsed_fm, dict):
-            return raw_content
-        comps = parsed_fm.get("components")
-        if not isinstance(comps, list):
-            comps = []
-            parsed_fm["components"] = comps
-        if op == "append" and item_dict is not None:
-            comps.append(item_dict)
-        elif op in ("replace", "replace_with_ref", "replace_inline") and item_dict is not None:
-            for idx_c, c in enumerate(comps):
-                if isinstance(c, dict) and c.get("id") == target_id:
-                    comps[idx_c] = item_dict
-                    break
-        elif op == "remove":
-            parsed_fm["components"] = [c for c in comps if not (isinstance(c, dict) and c.get("id") == target_id)]
-        return dump_spec_document(parsed_fm, body)
-
-    lines = raw_yaml.splitlines(keepends=True)
-    if lines and not lines[-1].endswith("\n"):
-        lines[-1] += "\n"
-
-    comp_idx = next(
-        (i for i, ln in enumerate(lines) if re.match(r"^components\s*:", ln)),
-        None,
-    )
-    if comp_idx is None:
-        if op == "append" and item_dict is not None:
-            lines.append("components:\n")
-            lines.append(_format_component_item(item_dict, "  "))
-            return f"---\n{''.join(lines).rstrip(chr(10))}\n---\n{body}"
-        return raw_content
-
-    header_m = re.match(r"^(components\s*:\s*)\[\s*\](\s*(?:#.*)?\n?)$", lines[comp_idx])
-    if header_m:
-        if op == "append" and item_dict is not None:
-            trailing = header_m.group(2)
-            if not trailing.endswith("\n"):
-                trailing += "\n"
-            lines[comp_idx] = f"components:{trailing}"
-            lines.insert(comp_idx + 1, _format_component_item(item_dict, "  "))
-            return f"---\n{''.join(lines).rstrip(chr(10))}\n---\n{body}"
-        return raw_content
-
-    header_after_colon, header_comment = _split_yaml_inline_comment(lines[comp_idx].split(":", 1)[1].rstrip("\r\n"))
-    if header_after_colon.strip().startswith("["):
-        return _fallback_mutate_parsed()
-
-    end_idx = len(lines)
-    for i in range(comp_idx + 1, len(lines)):
-        ln = lines[i]
-        stripped = ln.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if not ln[0].isspace() and not stripped.startswith("-"):
-            end_idx = i
-            while end_idx > comp_idx + 1 and (not lines[end_idx - 1].strip() or lines[end_idx - 1].startswith("#")):
-                end_idx -= 1
-            break
-
-    item_indents = [len(m.group(1)) for i in range(comp_idx + 1, end_idx) if (m := re.match(r"^(\s*)-\s+", lines[i]))]
-    base_indent_len = min(item_indents) if item_indents else 2
-    base_indent = " " * base_indent_len
-    item_starts = [
-        i
-        for i in range(comp_idx + 1, end_idx)
-        if (m := re.match(r"^(\s*)-\s+", lines[i])) and len(m.group(1)) == base_indent_len
-    ]
-
-    if not item_starts and op in ("replace", "replace_with_ref", "replace_inline", "remove"):
-        return _fallback_mutate_parsed()
-
-    if op == "append" and item_dict is not None:
-        lines.insert(end_idx, _format_component_item(item_dict, base_indent))
-        return f"---\n{''.join(lines).rstrip(chr(10))}\n---\n{body}"
-
-    mutated = False
-    for idx_pos, start_line in enumerate(item_starts):
-        next_bound = item_starts[idx_pos + 1] if idx_pos + 1 < len(item_starts) else end_idx
-        stop_line = next_bound
-        while stop_line > start_line + 1 and (
-            not lines[stop_line - 1].strip() or lines[stop_line - 1].lstrip().startswith("#")
-        ):
-            stop_line -= 1
-        chunk_text = "".join(lines[start_line:stop_line])
-        try:
-            parsed_item = safe_load_yaml(chunk_text)
-        except YamlError:
-            continue
-        if (
-            isinstance(parsed_item, list)
-            and len(parsed_item) == 1
-            and isinstance(parsed_item[0], dict)
-            and parsed_item[0].get("id") == target_id
-        ):
-            mutated = True
-            if op in ("replace", "replace_with_ref", "replace_inline") and item_dict is not None:
-                lines[start_line:stop_line] = [_format_component_item(item_dict, base_indent)]
-            elif op == "remove":
-                if len(item_starts) == 1:
-                    del lines[comp_idx + 1 : end_idx]
-                    lines[comp_idx] = f"components: []{header_comment}\n"
-                else:
-                    del lines[start_line:stop_line]
-            break
-
-    if not mutated and op in ("replace", "replace_with_ref", "replace_inline", "remove"):
-        return _fallback_mutate_parsed()
-
-    return f"---\n{''.join(lines).rstrip(chr(10))}\n---\n{body}"
-
-
 def _single_line(text: str) -> str:
     """Collapse whitespace/newlines so user input cannot break AsciiDoc headings."""
     return " ".join(str(text).split())
@@ -406,18 +271,18 @@ def find_references_to_spec(eidos_dir: Path, target_id: str, target_path: Path) 
 
 def _build_spec_catalog(
     eidos_dir: Path,
-) -> tuple[dict[str, tuple[Path, str, dict[str, Any]]], dict[str, str], set[str]]:
-    """Build fast lookup indexes across living specs: specs_by_id, container_components, invariants."""
-    specs_by_id, container_components, invariant_map = _build_spec_catalog_with_invariants(eidos_dir)
-    return specs_by_id, container_components, set(invariant_map.keys())
+) -> tuple[dict[str, tuple[Path, str, dict[str, Any]]], set[str]]:
+    """Build fast lookup indexes across living specs: specs_by_id, invariants."""
+    specs_by_id, invariant_map = _build_spec_catalog_with_invariants(eidos_dir)
+    return specs_by_id, set(invariant_map.keys())
 
 
 def _build_spec_catalog_with_invariants(
     eidos_dir: Path,
-) -> tuple[dict[str, tuple[Path, str, dict[str, Any]]], dict[str, str], dict[str, tuple[Path, dict[str, Any]]]]:
+) -> tuple[dict[str, tuple[Path, str, dict[str, Any]]], dict[str, tuple[Path, dict[str, Any]]]]:
     """Build lookup indexes including owning file and dict for each invariant via ArchitecturalIndex."""
     if not eidos_dir.exists():
-        return {}, {}, {}
+        return {}, {}
 
     resolved_eidos = eidos_dir.resolve()
     repo_root = resolved_eidos.parent if resolved_eidos.name == "eidos" else resolved_eidos

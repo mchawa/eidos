@@ -50,7 +50,7 @@ _ADOC_LINE_COMMENT_RE = re.compile(r"^\s*//(?!/)")
 _ADOC_COMMENT_DELIM_RE = re.compile(r"^/{4,}$")
 _ADOC_VERBATIM_DELIM_RE = re.compile(r"^(-{4,}|\.{4,}|\+{4,})$")
 _FRONTMATTER_RE = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*(?:\n|\Z)", re.DOTALL)
-_OWNERSHIP_KEYS = ("components", "source_path")
+_OWNERSHIP_KEYS = ("source_path",)
 _MIN_ANCHOR_LEN = 3
 
 
@@ -236,7 +236,7 @@ def _canonical(value: Any) -> str:
 
 
 def _declared_source_patterns(frontmatter: dict[str, Any]) -> list[str]:
-    """Explicit file/glob ownership declared by a spec (top-level and component ``source_path``)."""
+    """Explicit file/glob ownership declared by a spec via ``source_path``."""
     patterns: list[str] = []
 
     def _add(value: Any) -> None:
@@ -247,9 +247,6 @@ def _declared_source_patterns(frontmatter: dict[str, Any]) -> list[str]:
                 _add(item)
 
     _add(frontmatter.get("source_path"))
-    for comp in frontmatter.get("components", []) or []:
-        if isinstance(comp, dict):
-            _add(comp.get("source_path"))
     return patterns
 
 
@@ -413,23 +410,7 @@ def _collect_1hop_spec_targets(
         self_type = (self_node or {}).get("type", "")
         self_data = (self_node or {}).get("data") or resolved_data_by_id.get(sid) or {}
 
-        if self_type == "tech/container" or (not self_type and sid.startswith("CNT-")):
-            for inline_comp in self_data.get("components") or []:
-                if not isinstance(inline_comp, dict) or not inline_comp.get("id"):
-                    continue
-                ic_id = str(inline_comp["id"]).strip()
-                ic_pats: list[str] = []
-                raw_p = inline_comp.get("source_path")
-                if isinstance(raw_p, str) and raw_p.strip():
-                    ic_pats.append(raw_p.strip())
-                elif isinstance(raw_p, list):
-                    ic_pats.extend(str(x).strip() for x in raw_p if isinstance(x, str) and str(x).strip())
-                if any(match_path_pattern(cf, pat) > 0 for pat in ic_pats) and ic_id not in seed_ids:
-                    seed_ids.add(ic_id)
-                    allowed_ids.add(ic_id.lower())
-                    queue.append(ic_id)
-
-        elif self_type == "tech/component" or (not self_type and sid.startswith("CMP-")):
+        if self_type == "tech/component" or (not self_type and sid.startswith("CMP-")):
             parent_cnt = str(self_data.get("container") or "").strip()
             if parent_cnt and parent_cnt not in seed_ids:
                 seed_ids.add(parent_cnt)
@@ -439,12 +420,7 @@ def _collect_1hop_spec_targets(
                 if nb.get("type") != "tech/container":
                     continue
                 nb_id = str(nb.get("id") or "").strip()
-                nb_data = nb.get("data", {}) or {}
-                is_parent = (nb_id and nb_id == parent_cnt) or any(
-                    isinstance(c, dict) and str(c.get("id") or "").strip() == sid
-                    for c in (nb_data.get("components") or [])
-                )
-                if is_parent and nb_id and nb_id not in seed_ids:
+                if nb_id and nb_id == parent_cnt and nb_id not in seed_ids:
                     seed_ids.add(nb_id)
                     allowed_ids.add(nb_id.lower())
                     queue.append(nb_id)
@@ -462,10 +438,6 @@ def _collect_1hop_spec_targets(
                 continue
             if nid:
                 allowed_ids.add(nid.lower())
-            if ntype == "tech/container" and nid in seed_ids:
-                for inline_comp in ndata.get("components") or []:
-                    if isinstance(inline_comp, dict) and inline_comp.get("id"):
-                        allowed_ids.add(str(inline_comp["id"]).strip().lower())
             nfp = n.get("file_path")
             if nfp:
                 allowed_paths.add(str(nfp).replace("\\", "/").lower())

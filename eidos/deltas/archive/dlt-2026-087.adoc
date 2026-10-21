@@ -12,37 +12,26 @@ vcs:
 mutations:
   - operation: modify
     target: CMP-DELTA-ENGINE
-    parent: CNT-EIDOS-CORE
   - operation: modify
     target: CMP-SPEC-VALIDATOR
-    parent: CNT-EIDOS-CORE
   - operation: modify
     target: CMP-DOMAIN-MODELS
-    parent: CNT-EIDOS-CORE
   - operation: modify
     target: CMP-DELTA-AUDITOR
-    parent: CNT-EIDOS-CORE
   - operation: modify
     target: CMP-CHANGELOG-GENERATOR
-    parent: CNT-EIDOS-CORE
   - operation: modify
     target: CMP-INCREMENTAL-SYNC-ENGINE
-    parent: CNT-EIDOS-INDEX
   - operation: modify
     target: CMP-DRIFT-DETECTOR
-    parent: CNT-EIDOS-VCS
   - operation: modify
     target: CMP-PORTAL-GENERATOR
-    parent: CNT-EIDOS-PORTAL
   - operation: modify
     target: CMP-HOOK-RUNNER
-    parent: CNT-EIDOS-PLUGIN
   - operation: modify
     target: CMP-HOOK-MANAGER
-    parent: CNT-EIDOS-PLUGIN
   - operation: modify
     target: CMP-CLI-DOCTOR-HOOKS
-    parent: CNT-EIDOS-CLI
   - operation: modify
     target: CTR-EIDOS-CLI
   - operation: modify
@@ -51,6 +40,5 @@ mutations:
     target: CAP-AGENT-001
   - operation: modify
     target: INV-HOOK-FAIL-LOUD
-    parent: CAP-AGENT-001
 ---
 = SpecDelta: Composable SpecDelta Mutation Schema (operation + target) and Stop-Scoped Drift Hook Execution

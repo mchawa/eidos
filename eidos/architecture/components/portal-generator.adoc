@@ -1,0 +1,16 @@
+---
+type: tech/component
+id: CMP-PORTAL-GENERATOR
+title: PortalGenerator
+container: CNT-EIDOS-PORTAL
+status: active
+source_path: src/eidos/portal/generator.py
+---
+= Component: PortalGenerator
+:toc: left
+
+== Responsibility
+Synthesizes living specifications (strictly consuming v1 schematized product/system and tech/architecture documents without legacy arch/system or unschematized frontmatter fallbacks, all declared personas derived from role_type without truncation, deduplicated policy/capability/container/component/UI-component invariants, product DEC-* decisions from top-level decisions lists with both source_entity and source_id, standalone tech/component domain and AST-derived component consumes_api, container depends_on, and delivered_by edges from get_architectural_index, pre-computed static graph `edges` and `validation` diagnostics, exploration decision.outcome and decision.resulting_deltas, AsciiDoc section extraction for container Architectural Boundary, component Responsibility, domain Vision, capability JTBD, and exploration Hypothesis/Findings, and `orjson`-parsed tokens.manifest / extends design systems) into unified portal data model with HTML-escaped project-agnostic C4 Level 1 external_systems context diagrams from tech/architecture, hierarchical C4 Level 2 container topologies, C4 Level 3 component whitebox diagrams connecting intra-container standalone component dependencies, contract- and AST-derived inter-container dependency connections, auto-generated Mermaid diagrams, and computes SpecDelta affects and blast_radius via ArchitecturalIndex.compute_delta_impact over normalized composable (operation + target) mutations and the living specification graph with default intent.kind='feature' (fast-pathing archived SpecDeltas under deltas/archive/ and replacing verbose applied/rejected delta bodies in specs with concise motivation stubs).
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

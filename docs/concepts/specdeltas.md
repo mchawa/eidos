@@ -60,7 +60,6 @@ mutations:
           - "CMP-DRIFT-DETECTOR"
   - operation: add
     target: "INV-VCS-UNOWNED-CODE-DRIFT"
-    parent: "CAP-VCS-001"
     details: "Require unowned structural code files to trigger drift unless claimed by a container/component."
 
 tombstone:
@@ -88,13 +87,13 @@ Previously, modifying an unowned source file could pass drift checks if an unrel
 
 ## How the SpecDelta Engine Works Under the Hood
 
-1. **Composable `operation` + `target` Mutations & Graph-Derived Scope (`DLT-2026-085`, `DLT-2026-087`, `DLT-2026-090`)**:
-   Every mutation targets a specific entity in the living architecture via `operation: add | modify | remove | deprecate`, `x-eidos-ref` validated `target` (inferring the entity type from its canonical prefix: `DOM-*`, `CAP-*`, `PER-*`, `POL-*`, `INV-*`, `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DS-*`, `UIC-*`, `SCR-*`, `CLT-*`, `FLOW-*`), and optional `parent` scope for `add` / `remove` of child entities (`INV-*`, inline `CMP-*`; omitted on `modify`), while `affects` and `blast_radius` are derived automatically from the SQLite knowledge graph:
+1. **Composable `operation` + `target` Mutations & Graph-Derived Scope (`DLT-2026-085`, `DLT-2026-087`, `DLT-2026-090`, `DLT-2026-112`)**:
+   Every mutation targets a specific entity in the living architecture via `operation: add | modify | remove | deprecate` and `x-eidos-ref` validated `target` (inferring the entity type from its canonical prefix: `SYS-*`, `DOM-*`, `CAP-*`, `PER-*`, `POL-*`, `INV-*`, `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DS-*`, `UIC-*`, `SCR-*`, `CLT-*`, `FLOW-*`), while `affects` and `blast_radius` are derived automatically from the SQLite knowledge graph:
    * **Product & Governance**: `DOM-*`, `CAP-*`, `PER-*`, `POL-*`, `INV-*`.
    * **Technical Architecture**: `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`.
    * **Design & Experience**: `DS-*`, `UIC-*`, `SCR-*`, `CLT-*`, `FLOW-*`.
 2. **Closed-Schema Declarative Post-Conditions (`expect:`) & Nested Dot-Path Verification (`eidos delta verify`, `DLT-2026-079`, `DLT-2026-103`)**:
-   Each mutation item can include a strictly schema-validated (`additionalProperties: false`) `expect:` block containing `frontmatter:` assertions (`responsibility`, `source_path`, `rule`, `test_binding`, `status`, `version`, `category`, `custom`, plus nested dot-path keys such as `contracts.provides`, `technical.containers`, `decisions.id`, or `components.id` with list-subset and leaf-key prose substring matching) and/or `body:` assertions (`contains` / `not_contains`, evaluated after stripping YAML and AsciiDoc comments). `eidos delta verify <ID>` deterministically verifies that `add`/`modify` targets exist and were substantively updated relative to `vcs.base_commit` (resolved from Git via `_resolve_git_baseline_sha`), `remove` targets are deleted, and all `expect:` assertions pass—reporting specific `failure_reason` diagnostics on any mismatch.
+   Each mutation item can include a strictly schema-validated (`additionalProperties: false`) `expect:` block containing `frontmatter:` assertions (`source_path`, `rule`, `test_binding`, `status`, `version`, `category`, plus nested dot-path keys such as `contracts.provides`, `technical.containers`, or `decisions.id` with list-subset and leaf-key prose substring matching) and/or `body:` assertions (`contains` / `not_contains`, evaluated after stripping YAML and AsciiDoc comments). `eidos delta verify <ID>` deterministically verifies that `add`/`modify` targets exist and were substantively updated relative to `vcs.base_commit` (resolved from Git via `_resolve_git_baseline_sha`), `remove` targets are deleted, and all `expect:` assertions pass—reporting specific `failure_reason` diagnostics on any mismatch.
 3. **Cross-Ref Collision-Safe IDs & Verified In-Place Application (`eidos delta create`, `eidos delta apply [--verify/--no-verify]`, `DLT-2026-080`, `DLT-2026-088`, `DLT-2026-095`)**:
    `eidos delta create` scans all local and remote Git refs (`refs/heads/*`, `refs/remotes/*`) plus `eidos/deltas/archive/` to generate collision-free `DLT-YYYY-NNN` IDs (with optional `--slug` suffixes) and records `vcs.base_commit` in frontmatter. `eidos delta apply` verifies all declared mutations against the living specification catalog by default (`--verify`, or bypass via `--no-verify`), validates the updated SpecDelta via `SpecValidator`, and transitions `status: applied` in place.
 4. **Index-Driven Spec-Scoped Deletion Auditing (`eidos delta audit`, `DLT-2026-107`)**:
