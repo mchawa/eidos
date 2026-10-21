@@ -3467,12 +3467,16 @@ def test_deep_audit_group_c_c1_through_c10(tmp_path: Path) -> None:
     import os
     import time
 
+    from eidos.core.index.ast_indexer import (
+        INV_OR_POL_TOKEN_RE as _INV_OR_POL_TOKEN_RE,
+    )
+    from eidos.core.index.ast_indexer import (
+        _has_function_level_fixture,
+    )
     from eidos.core.index.graph_index import ArchitecturalIndex
     from eidos.core.spec.models import FrontmatterModel
     from eidos.vcs.diff import _discover_container_package_paths
     from eidos.vcs.invariants import (
-        _INV_OR_POL_TOKEN_RE,
-        _has_function_level_fixture,
         _verify_single_invariant,
         extract_invariants_and_verify,
     )
@@ -3669,3 +3673,121 @@ def test_deep_audit_group_c_c1_through_c10(tmp_path: Path) -> None:
         assert "CMP-BILL-MOD" in {r[0] for r in mapped}
     finally:
         idx.close()
+
+
+def test_dlt_2026_110_batch_git_slug_ids_and_unified_test_binding_cache(tmp_path, monkeypatch):
+    """Verify DLT-2026-110-BATCH-GIT:
+    1. batch_read_git_blobs and _get_files_versions_batch handle multi-byte UTF-8 and missing blobs via single cat-file --batch pipe.
+    2. generate_collision_free_delta_id generates DLT-YYYY-NNN-<SLUG>-<4HEX> with zero Git subprocesses, and find_spec_by_id_or_path resolves unambiguous DLT-* prefixes.
+    3. sync_index populates and prunes test_binding_cache in one pass so _load_or_update_test_binding_cache achieves a warm cache hit without re-parsing test files.
+    """  # eidos:fixture
+    import subprocess
+
+    import orjson
+
+    from eidos.core.index.graph_index import ArchitecturalIndex
+    from eidos.core.lifecycle.catalog import find_spec_by_id_or_path
+    from eidos.core.lifecycle.delta_engine import create_delta, generate_collision_free_delta_id
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.vcs.diff import _get_files_versions_batch, batch_read_git_blobs
+    from eidos.vcs.invariants import _load_or_update_test_binding_cache
+
+    repo = tmp_path / "batch_repo"
+    init_repository(repo, name="batch-test")
+    eidos_dir = repo / "eidos"
+
+    # Pillar 1: Batched Git blob retrieval with multi-byte UTF-8 and missing object
+    src_dir = repo / "src"
+    src_dir.mkdir(parents=True, exist_ok=True)
+    utf8_file = src_dir / "unicode_mod.py"
+    utf8_content = "# Café 🚀 — Ω multi-byte UTF-8\ndef compute():\n    return 'ok'\n"
+    utf8_file.write_text(utf8_content, encoding="utf-8")
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "dev@eidos.dev"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Dev"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=repo, check=True, capture_output=True)
+
+    blobs = batch_read_git_blobs(
+        repo,
+        [
+            ("HEAD", "src/unicode_mod.py"),
+            ("HEAD", "src/does_not_exist.py"),
+        ],
+    )
+    assert blobs[("HEAD", "src/unicode_mod.py")] == utf8_content
+    assert blobs[("HEAD", "src/does_not_exist.py")] is None
+
+    utf8_file.write_text(utf8_content + "# uncommitted edit\n", encoding="utf-8")
+    versions = _get_files_versions_batch(
+        repo,
+        ["src/unicode_mod.py", "src/does_not_exist.py"],
+        base_ref="HEAD",
+        head_ref="HEAD",
+        uncommitted=True,
+    )
+    assert versions["src/unicode_mod.py"] == (utf8_content, utf8_content + "# uncommitted edit\n")
+    assert versions["src/does_not_exist.py"] == (None, None)
+
+    # Pillar 2: Zero-Git generate_collision_free_delta_id & unambiguous DLT-* prefix resolution
+    def _forbid_subprocess(*args, **kwargs):
+        raise AssertionError("generate_collision_free_delta_id must not spawn any subprocess!")
+
+    with monkeypatch.context() as m:
+        m.setattr(subprocess, "run", _forbid_subprocess)
+        gen_id = generate_collision_free_delta_id(eidos_dir, raw_id="DLT-2026-110", title="Batched Git Blob Retrieval")
+    assert gen_id.startswith("DLT-2026-110-BATCHED-GIT-")
+    assert len(gen_id.split("-")[-1]) == 4
+
+    d1_path = create_delta(eidos_dir, "DLT-2026-110", title="Batched Git Blob Retrieval")
+    assert find_spec_by_id_or_path(eidos_dir, "DLT-2026-110") == d1_path
+    assert find_spec_by_id_or_path(eidos_dir, "DLT-2026-110-BATCHED-GIT") == d1_path
+    assert find_spec_by_id_or_path(eidos_dir, gen_id) == d1_path
+
+    # Ambiguous bare prefix returns None when two deltas share DLT-2026-110
+    d2_path = create_delta(eidos_dir, "DLT-2026-110", title="Second Parallel Feature")
+    assert d2_path != d1_path
+    assert find_spec_by_id_or_path(eidos_dir, "DLT-2026-110") is None
+    assert find_spec_by_id_or_path(eidos_dir, "DLT-2026-110-BATCHED-GIT") == d1_path
+    assert find_spec_by_id_or_path(eidos_dir, "DLT-2026-110-SECOND-PARALLEL") == d2_path
+
+    # Pillar 3: Unified test_binding_cache populated by sync_index and reused by _load_or_update_test_binding_cache
+    tests_dir = repo / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    test_file = tests_dir / "test_batch.py"
+    test_file.write_text(
+        "def test_batch_behavior():\n"
+        '    """Verifies INV-SYS-001 behavior."""\n'
+        "    assert True\n\n"
+        "def test_plain_helper():\n"
+        "    assert 1 == 1\n",
+        encoding="utf-8",
+    )
+
+    idx = ArchitecturalIndex(repo_root=repo, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=True)
+        conn = idx._get_connection()
+        row = conn.execute(
+            "SELECT mtime_ns, sha256, file_tokens_json, functions_json FROM test_binding_cache WHERE file_path = 'tests/test_batch.py';"
+        ).fetchone()
+        assert row is not None
+        assert "INV-SYS-001" in orjson.loads(row[2])
+        funcs_map = orjson.loads(row[3])
+        assert "test_batch_behavior" in funcs_map
+        assert "test_plain_helper" not in funcs_map  # Only functions with non-empty tokens stored
+    finally:
+        idx.close()
+
+    # Verify _load_or_update_test_binding_cache hits the warm cache without calling extract_test_file_cache_payload
+    import eidos.vcs.invariants as inv_mod
+
+    def _forbid_reparse(*args, **kwargs):
+        raise AssertionError("Expected warm test_binding_cache hit without re-parsing test file!")
+
+    with monkeypatch.context() as m:
+        m.setattr(inv_mod, "extract_test_file_cache_payload", _forbid_reparse)
+        cache_map = _load_or_update_test_binding_cache(repo, eidos_dir)
+    assert "INV-SYS-001" in cache_map["tests/test_batch.py"].file_tokens
+    assert "INV-SYS-001" in cache_map["tests/test_batch.py"].functions["test_batch_behavior"]

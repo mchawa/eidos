@@ -6,6 +6,7 @@ attribution, AST symbol persistence, and incremental sync passes.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 import re
@@ -17,7 +18,7 @@ from typing import Any
 
 import orjson
 
-from eidos.core.index.ast_indexer import AstGrepIndexer, get_ast_indexer
+from eidos.core.index.ast_indexer import AstGrepIndexer, extract_test_file_cache_payload, get_ast_indexer
 from eidos.core.index.storage import get_cached_spec_document
 from eidos.core.workspace.project import (
     STANDARD_EXCLUDED_DIRS,
@@ -369,7 +370,7 @@ def restore_code_mappings(conn: sqlite3.Connection, entity_id: str) -> None:
 
 
 _SOURCE_AST_MEM_CACHE: dict[tuple[type[Any], str, str], tuple[list[Any], list[str]]] = {}
-_TEST_BINDING_MEM_CACHE: dict[tuple[type[Any], str, str], list[Any]] = {}
+_TEST_BINDING_MEM_CACHE: dict[tuple[type[Any], str, str], tuple[dict[str, list[str]], str, str]] = {}
 
 
 def _can_use_ast_mem_cache(ast_idx: Any) -> bool:
@@ -380,6 +381,7 @@ def _can_use_ast_mem_cache(ast_idx: Any) -> bool:
         and "extract_symbols" not in inst_dict
         and "extract_imports" not in inst_dict
         and "extract_test_bindings" not in inst_dict
+        and "list_test_functions" not in inst_dict
     )
 
 
@@ -1285,8 +1287,9 @@ def index_test_bindings(
     rel_test: str,
     sha: str = "",
     raw_bytes: bytes | None = None,
+    mtime_ns: int | None = None,
 ) -> None:
-    """Persist 'file::func' -> INV-* test-binding edges for a single test file (DLT-2026-029)."""
+    """Persist 'file::func' -> INV-* test-binding edges and test_binding_cache row for a single test file."""
     prefix_like = rel_test.replace("%", "\\%").replace("_", "\\_") + "::%"
     conn.execute(
         "DELETE FROM edges WHERE rel_type = 'asserts' AND source_id LIKE ? ESCAPE '\\';",
@@ -1296,28 +1299,59 @@ def index_test_bindings(
         "DELETE FROM symbol_mappings WHERE symbol = ? AND kind = 'test_binding';",
         (rel_test,),
     )
-    content = raw_bytes.decode("utf-8", errors="replace") if raw_bytes is not None else None
+    if mtime_ns is None:
+        with contextlib.suppress(OSError):
+            mtime_ns = test_path.stat().st_mtime_ns
+        if mtime_ns is None:
+            mtime_ns = 0
+    if raw_bytes is None:
+        with contextlib.suppress(OSError):
+            raw_bytes = test_path.read_bytes()
+    content = raw_bytes.decode("utf-8", errors="replace") if raw_bytes is not None else ""
+    if not sha and raw_bytes is not None:
+        sha = hashlib.sha256(raw_bytes).hexdigest()
+
     use_cache = bool(sha) and _can_use_ast_mem_cache(ast_idx)
     cache_key = (type(ast_idx), str(test_path.resolve()), sha) if use_cache else None
-    bindings = _TEST_BINDING_MEM_CACHE.get(cache_key) if cache_key is not None else None
-    if bindings is None:
-        bindings = (
-            ast_idx.extract_test_bindings(test_path, content)
-            if content is not None
-            else ast_idx.extract_test_bindings(test_path)
+    cached_payload = _TEST_BINDING_MEM_CACHE.get(cache_key) if cache_key is not None else None
+    functions: dict[str, list[str]] | None = None
+    functions_json = ""
+    file_tokens_json = ""
+    if cached_payload is not None:
+        functions, functions_json, file_tokens_json = cached_payload
+    elif use_cache:
+        row = conn.execute(
+            "SELECT sha256, functions_json, file_tokens_json FROM test_binding_cache WHERE file_path = ?;",
+            (rel_test,),
+        ).fetchone()
+        if row is not None and row[0] == sha:
+            with contextlib.suppress(ValueError, TypeError):
+                functions = orjson.loads(row[1])
+                functions_json = row[1]
+                file_tokens_json = row[2]
+                if cache_key is not None:
+                    _TEST_BINDING_MEM_CACHE[cache_key] = (functions, functions_json, file_tokens_json)
+    if functions is None:
+        functions, _file_tokens_list, functions_json, file_tokens_json = extract_test_file_cache_payload(
+            rel_test, content, ast_idx
         )
         if cache_key is not None:
-            _TEST_BINDING_MEM_CACHE[cache_key] = bindings
-    token_text = content
-    if token_text is None:
-        try:
-            token_text = test_path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            token_text = ""
-    _upsert_file_tokens_fts(conn, rel_test, "code/test", token_text)
-    for binding in bindings:
-        identifier = f"{rel_test}::{binding.test_name}"
-        for inv_id in binding.invariants:
+            _TEST_BINDING_MEM_CACHE[cache_key] = (functions, functions_json, file_tokens_json)
+
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO test_binding_cache
+        (file_path, mtime_ns, sha256, functions_json, file_tokens_json)
+        VALUES (?, ?, ?, ?, ?);
+        """,
+        (rel_test, mtime_ns, sha, functions_json, file_tokens_json),
+    )
+    _upsert_file_tokens_fts(conn, rel_test, "code/test", content)
+    for test_name, fn_tokens in functions.items():
+        identifier = f"{rel_test}::{test_name}"
+        for inv_id in fn_tokens:
+            if not inv_id.startswith("INV-"):
+                continue
             conn.execute(
                 "INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts');",
                 (identifier, inv_id),
@@ -1388,8 +1422,33 @@ def _reconcile_invariant_coverage(
     ).fetchall():
         assert_edges.setdefault(target_id, []).append(source_id)
 
-    test_funcs_cache: dict[str, dict[str, str]] = {}
-    test_content_cache: dict[str, str] = {}
+    test_cache_by_file: dict[str, tuple[dict[str, list[str]], set[str]]] | None = None
+
+    def _get_cached_test_tokens(tb_file: str, abs_tb: Path | None) -> tuple[dict[str, list[str]], set[str]]:
+        nonlocal test_cache_by_file
+        if test_cache_by_file is None:
+            test_cache_by_file = {}
+            for c_fp, c_fjson, c_ftjson in conn.execute(
+                "SELECT file_path, functions_json, file_tokens_json FROM test_binding_cache;"
+            ).fetchall():
+                with contextlib.suppress(ValueError, TypeError):
+                    test_cache_by_file[c_fp] = (
+                        orjson.loads(c_fjson),
+                        set(orjson.loads(c_ftjson)),
+                    )
+        if tb_file not in test_cache_by_file and abs_tb is not None and abs_tb.is_file():
+            index_test_bindings(conn, ast_idx, abs_tb, tb_file)
+            c_row = conn.execute(
+                "SELECT functions_json, file_tokens_json FROM test_binding_cache WHERE file_path = ?;",
+                (tb_file,),
+            ).fetchone()
+            if c_row is not None:
+                with contextlib.suppress(ValueError, TypeError):
+                    test_cache_by_file[tb_file] = (
+                        orjson.loads(c_row[0]),
+                        set(orjson.loads(c_row[1])),
+                    )
+        return test_cache_by_file.get(tb_file, ({}, set()))
 
     for row in inv_rows:
         iid = row["id"]
@@ -1421,20 +1480,16 @@ def _reconcile_invariant_coverage(
                 if target_ref in ast_matches:
                     tb_verified = True
                 elif abs_tb is not None and abs_tb.is_file():
-                    if tb_file not in test_funcs_cache:
-                        test_funcs_cache[tb_file] = ast_idx.list_test_functions(abs_tb)
-                    funcs = test_funcs_cache[tb_file]
-                    candidate_bodies: list[str] = []
+                    funcs, _ = _get_cached_test_tokens(tb_file, abs_tb)
+                    candidate_token_lists: list[list[str]] = []
                     if tb_func in funcs:
-                        candidate_bodies.append(funcs[tb_func])
+                        candidate_token_lists.append(funcs[tb_func])
                     elif "::" not in tb_func:
                         suffix = f"::{parts[-1]}"
-                        candidate_bodies.extend(
-                            body for k, body in funcs.items() if k == parts[-1] or k.endswith(suffix)
+                        candidate_token_lists.extend(
+                            toks for k, toks in funcs.items() if k == parts[-1] or k.endswith(suffix)
                         )
-                    if candidate_bodies:
-                        pat = re.compile(rf"\b{re.escape(iid)}\b")
-                        tb_verified = any(pat.search(body) for body in candidate_bodies)
+                    tb_verified = any(iid in toks for toks in candidate_token_lists)
                     if tb_verified:
                         conn.execute(
                             "INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts');",
@@ -1446,13 +1501,8 @@ def _reconcile_invariant_coverage(
                 if any(m.startswith(f"{tb_file}::") for m in ast_matches):
                     tb_verified = True
                 elif abs_tb is not None and abs_tb.is_file():
-                    if tb_file not in test_content_cache:
-                        try:
-                            test_content_cache[tb_file] = abs_tb.read_text(encoding="utf-8", errors="replace")
-                        except OSError:
-                            test_content_cache[tb_file] = ""
-                    pat = re.compile(rf"\b{re.escape(iid)}\b")
-                    tb_verified = bool(pat.search(test_content_cache[tb_file]))
+                    _, file_tokens = _get_cached_test_tokens(tb_file, abs_tb)
+                    tb_verified = iid in file_tokens
                 matching = list(dict.fromkeys([tb_file, *ast_matches])) if tb_verified else []
                 has_coverage = tb_verified
         else:
@@ -1515,6 +1565,7 @@ def sync_index(
                 code_deleted = True
                 store_code_symbols(conn, d_rel, [], [])
                 conn.execute("DELETE FROM symbol_mappings WHERE symbol = ?;", (d_rel,))
+                conn.execute("DELETE FROM test_binding_cache WHERE file_path = ?;", (d_rel,))
                 conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
             elif row and row["doc_id"]:
                 doc_id = row["doc_id"]
@@ -1928,7 +1979,8 @@ def sync_index(
             except ValueError:
                 rel_p = str(p).replace("\\", "/")
 
-            mtime = p.stat().st_mtime
+            st = p.stat()
+            mtime = st.st_mtime
             raw_bytes = p.read_bytes()
             sha = hashlib.sha256(raw_bytes).hexdigest()
 
@@ -1941,7 +1993,7 @@ def sync_index(
                 stats.indexed_new += 1
 
             if is_test:
-                index_test_bindings(conn, ast_idx, p, rel_p, sha=sha, raw_bytes=raw_bytes)
+                index_test_bindings(conn, ast_idx, p, rel_p, sha=sha, raw_bytes=raw_bytes, mtime_ns=st.st_mtime_ns)
                 conn.execute(
                     """
                     INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type)
@@ -2128,7 +2180,9 @@ def sync_index(
                     """,
                     (rel_t, stat.st_mtime, t_sha),
                 )
-                index_test_bindings(conn, ast_idx, tp, rel_t, sha=t_sha, raw_bytes=t_raw_bytes)
+                index_test_bindings(
+                    conn, ast_idx, tp, rel_t, sha=t_sha, raw_bytes=t_raw_bytes, mtime_ns=stat.st_mtime_ns
+                )
 
         conn.execute(
             """

@@ -82,7 +82,8 @@ eidos delta create \
   --slug \
   --kind feature
 
-# 3. Edit the created eidos/deltas/dlt-*.adoc file to declare mutations and structured expect post-conditions
+# 3. Edit the created eidos/deltas/dlt-*.adoc file to declare mutations, structured expect post-conditions,
+#    and the step-by-step Implementation Plan in the AsciiDoc prose body
 #    (Run `eidos spec schema delta` to inspect exact SpecDelta frontmatter keys and closed sub-schemas)
 
 # 4. Implement code changes, update living specs in eidos/, and bind tests
@@ -145,6 +146,20 @@ mutations:
     details: "Add INV-BILL-WEBHOOK-SIG invariant bound to tests/billing/test_webhooks.py::test_webhook_hmac_signature."
 ---
 = SpecDelta: Add Webhook Signature Verification Contract and Ingestor Component
+:toc: left
+
+== Problem Statement
+Prevent spoofed billing webhooks by enforcing HMAC-SHA256 timestamped signature verification at the ingestion boundary.
+
+== Proposed Specification Changes
+* Introduce `CMP-WEBHOOK-VERIFIER` (`WebhookSignatureVerifier` in `src/billing/verifier.py`) under `CNT-BILLING-API`.
+* Require `X-Webhook-Signature` and `X-Webhook-Timestamp` headers on `POST /v1/usage/webhooks` in `CTR-BILLING-API` (`1.2.0`).
+* Extend `CAP-BILL-001` (`1.1.0`) with `INV-BILL-WEBHOOK-SIG`.
+
+== Implementation Plan
+1. **Core Verifier Component**: Implement `WebhookSignatureVerifier` in `src/billing/verifier.py` with constant-time HMAC-SHA256 comparison and 5-minute replay window enforcement.
+2. **Route & Contract Integration**: Wire `WebhookSignatureVerifier` into `POST /v1/usage/webhooks` and update `CTR-BILLING-API` and `CNT-BILLING-API` specifications.
+3. **Invariant & Test Verification**: Add `tests/billing/test_webhooks.py::test_webhook_hmac_signature` referencing `INV-BILL-WEBHOOK-SIG`, then run `eidos delta verify` and `eidos delta apply`.
 ```
 
 ### 2.3 Composable `operation` + `target` Matrix

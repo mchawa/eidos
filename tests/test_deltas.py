@@ -190,7 +190,9 @@ def test_a4_generate_collision_free_delta_id_reads_frontmatter_and_loops_on_coll
     )
 
     next_id = generate_collision_free_delta_id(eidos_dir, raw_id="auto", title="New Feature")
-    assert next_id == f"DLT-{year}-008", f"Expected DLT-{year}-008 after DLT-{year}-007, got {next_id}"
+    assert next_id.startswith(f"DLT-{year}-008-NEW-FEATURE-"), (
+        f"Expected DLT-{year}-008-NEW-FEATURE-<4HEX> after DLT-{year}-007, got {next_id}"
+    )
 
     # Verify collision loop when an explicit ID + slug suffix + first hash already exist
     explicit_base = f"DLT-{year}-007"

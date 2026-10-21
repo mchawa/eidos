@@ -198,7 +198,9 @@ def test_cli_contract_json_and_create_flags(tmp_path):
         ],
     )
     assert res_dlt.exit_code == 0
-    dlt_content = (eidos_dir / "deltas" / "dlt-2026-901.adoc").read_text(encoding="utf-8")
+    dlt_files = list((eidos_dir / "deltas").glob("dlt-2026-901-branch-test-*.adoc"))
+    assert len(dlt_files) == 1
+    dlt_content = dlt_files[0].read_text(encoding="utf-8")
     assert "status: proposed" in dlt_content
 
     # 2. spec list --json (excludes delta/mutation per DLT-2026-092 disjoint boundary)
@@ -213,7 +215,7 @@ def test_cli_contract_json_and_create_flags(tmp_path):
     assert res_delta_list.exit_code == 0
     delta_list_data = orjson.loads(res_delta_list.stdout)
     assert delta_list_data["count"] == 1
-    assert delta_list_data["deltas"][0]["id"] == "DLT-2026-901"
+    assert delta_list_data["deltas"][0]["id"].startswith("DLT-2026-901-BRANCH-TEST-")
     assert delta_list_data["deltas"][0]["status"] == "proposed"
 
     # 4. delta status <ID> <STATUS> --json and dashboard --json
@@ -248,7 +250,7 @@ def test_cli_contract_json_and_create_flags(tmp_path):
         res_single_status = runner.invoke(app, ["delta", "status", "DLT-2026-901", "--path", str(eidos_dir), "--json"])
         assert res_single_status.exit_code == 0
         single_status_data = orjson.loads(res_single_status.stdout)
-        assert single_status_data["id"] == "DLT-2026-901"
+        assert single_status_data["id"].startswith("DLT-2026-901-BRANCH-TEST-")
         assert single_status_data["status"] == "in_review"
     finally:
         if gi._INDEX_INSTANCE is not None:

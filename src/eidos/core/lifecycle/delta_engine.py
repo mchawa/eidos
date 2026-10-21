@@ -3,7 +3,6 @@ and application of composable semantic mutations (CMP-DELTA-ENGINE)."""
 
 import contextlib
 import hashlib
-import os
 import re
 import subprocess
 from dataclasses import dataclass, field
@@ -268,11 +267,12 @@ def generate_collision_free_delta_id(
     title: str = "",
     slug_suffix: bool = False,
 ) -> str:
-    """Generate or normalize a SpecDelta ID, scanning local and Git ref deltas and optionally appending a collision-free slug/hash."""
+    """Generate a Git-free SpecDelta ID (DLT-YYYY-NNN-<SLUG>-<4HEX>) scanning local deltas only."""
     import datetime
 
     from eidos.core.lifecycle.catalog import normalize_id
 
+    _ = slug_suffix
     deltas_dir = eidos_dir / "deltas"
     existing_ids: set[str] = set()
     max_seq_by_year: dict[int, int] = {}
@@ -297,115 +297,33 @@ def generate_collision_free_delta_id(
                 if isinstance(fm_cand, dict) and isinstance(fm_cand.get("id"), str):
                     _record_candidate(fm_cand["id"])
 
-    repo_root = _resolve_git_repo_root(eidos_dir)
-    if repo_root is not None:
-        with contextlib.suppress(ValueError, OSError, subprocess.SubprocessError):
-            rel_deltas = str(deltas_dir.resolve().relative_to(repo_root)).replace("\\", "/")
-            seen_commits: set[str] = set()
-            refs_to_scan: list[str] = ["HEAD"]
-            ref_res = subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(repo_root),
-                    "for-each-ref",
-                    "--format=%(refname:short) %(objectname)",
-                    "refs/heads",
-                    "refs/remotes",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
-            if ref_res.returncode == 0:
-                for ref_ln in ref_res.stdout.splitlines():
-                    parts = ref_ln.strip().split()
-                    if not parts:
-                        continue
-                    r_name = parts[0]
-                    commit_sha = parts[1] if len(parts) > 1 else r_name
-                    if r_name.endswith("/HEAD"):
-                        continue
-                    if commit_sha not in seen_commits:
-                        seen_commits.add(commit_sha)
-                        refs_to_scan.append(r_name)
-            else:
-                for fallback_ref in ("main", "origin/main", "master", "origin/master"):
-                    if fallback_ref not in refs_to_scan:
-                        refs_to_scan.append(fallback_ref)
-
-            for ref in refs_to_scan[:32]:
-                ls_res = subprocess.run(
-                    ["git", "-C", str(repo_root), "ls-tree", "-r", "--name-only", ref, f"{rel_deltas}/"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    check=False,
-                )
-                if ls_res.returncode == 0:
-                    for ln in ls_res.stdout.splitlines():
-                        name = Path(ln.strip()).stem
-                        if name:
-                            _record_candidate(name)
-            if len(refs_to_scan) > 32:
-                log_res = subprocess.run(
-                    [
-                        "git",
-                        "-C",
-                        str(repo_root),
-                        "log",
-                        "--all",
-                        "--diff-filter=A",
-                        "--name-only",
-                        "--pretty=format:",
-                        "--",
-                        rel_deltas,
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    check=False,
-                )
-                if log_res.returncode == 0:
-                    for ln in log_res.stdout.splitlines():
-                        name = Path(ln.strip()).stem
-                        if name:
-                            _record_candidate(name)
-
     cleaned_raw = (raw_id or "").strip()
     is_auto = cleaned_raw.lower() in ("", "auto", "auto-slug")
-    if cleaned_raw.lower() == "auto-slug":
-        slug_suffix = True
 
     year = datetime.datetime.now(datetime.UTC).year
     if is_auto:
         next_seq = max_seq_by_year.get(year, 0) + 1
         base_id = f"DLT-{year}-{next_seq:03d}"
     else:
-        base_id = normalize_id("delta", cleaned_raw)
+        base_id = normalize_id("delta", cleaned_raw).replace("_", "-")
+        if re.match(r"^DLT-(?:\d{4}-\d+|\d+)-[A-Z0-9-]+-[0-9A-F]{4}$", base_id):
+            base_id = base_id[:-5]
 
-    if slug_suffix or base_id in existing_ids:
-        slug_tokens = [tok for tok in re.split(r"[^A-Za-z0-9]+", title.upper()) if len(tok) >= 2][:2]
-        suffix = (
-            "-".join(slug_tokens)
-            if slug_tokens
-            else hashlib.sha256(f"{base_id}:{title}:{os.getpid()}".encode()).hexdigest()[:6].upper()
-        )
-        if base_id.endswith(f"-{suffix}") and base_id not in existing_ids:
-            candidate_id = base_id
-        else:
-            candidate_id = f"{base_id}-{suffix}"
-        base_candidate = candidate_id
-        attempt = 0
-        while candidate_id in existing_ids:
-            hash_input = f"{base_candidate}:{title}" if attempt == 0 else f"{base_candidate}:{title}:{attempt}"
-            short_hash = hashlib.sha256(hash_input.encode()).hexdigest()[:4].upper()
-            candidate_id = f"{base_candidate}-{short_hash}"
-            attempt += 1
-        return candidate_id
+    slug_tokens = [tok for tok in re.split(r"[^A-Za-z0-9]+", title.upper()) if len(tok) >= 2][:2]
+    title_slug = "-".join(slug_tokens) if slug_tokens else "DELTA"
+    if re.match(r"^DLT-(?:\d{4}-\d+|\d+)-[A-Z][A-Z0-9-]*$", base_id):
+        base_with_slug = base_id
+    else:
+        base_with_slug = f"{base_id}-{title_slug}"
 
-    return base_id
+    attempt = 0
+    while True:
+        hash_input = f"{base_with_slug}:{title}" if attempt == 0 else f"{base_with_slug}:{title}:{attempt}"
+        short_hash = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()[:4].upper()
+        candidate_id = f"{base_with_slug}-{short_hash}"
+        if candidate_id not in existing_ids:
+            return candidate_id
+        attempt += 1
 
 
 def create_delta(

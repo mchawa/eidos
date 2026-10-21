@@ -115,7 +115,7 @@ When introducing/removing containers or components, making breaking contract cha
    ```bash
    eidos delta create --title "..." --slug --kind <feature|enabler|bug>
    ```
-3. **Declare Mutations**: Populate `mutations:` (with composable `operation`, `target`, optional `parent` for `add` / `remove` of child entities, and structured `expect: { body, frontmatter }` post-conditions; run `eidos spec schema delta` to inspect allowed keys) in the created `eidos/deltas/dlt-*.adoc` file. Never add manual `affects:` or `blast_radius:` blocks.
+3. **Declare Mutations & Implementation Plan**: Populate `mutations:` (with composable `operation`, `target`, optional `parent` for `add` / `remove` of child entities, and structured `expect: { body, frontmatter }` post-conditions; run `eidos spec schema delta` to inspect allowed keys) and fill out the `== Problem Statement`, `== Proposed Specification Changes`, and `== Implementation Plan` prose sections in the created `eidos/deltas/dlt-*.adoc` file. Never add manual `affects:` or `blast_radius:` blocks.
 4. **Implement Code, Specs & Tests**: Apply changes across code, `eidos/`, and `tests/`.
 5. **Verify & Apply**:
    ```bash

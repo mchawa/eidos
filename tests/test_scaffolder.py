@@ -125,6 +125,10 @@ def test_scaffold_all_spec_types(tmp_path):
         kind="feature",
     )
     assert dlt_file.exists()
+    dlt_doc = parse_spec_file(dlt_file)
+    assert "== Problem Statement" in dlt_doc.body
+    assert "== Proposed Specification Changes" in dlt_doc.body
+    assert "== Implementation Plan" in dlt_doc.body
     assert_valid_spec(validator, dlt_file)
 
     # 8. Exploration (INV-SPIKE-ISOLATION: isolated under explorations/ with hypothesis & graduation_target)
@@ -235,7 +239,8 @@ def test_delta_lifecycle_apply(tmp_path):
         title="Rate Limiter",
     )
     assert dlt_file.exists()
-    assert dlt_file.name == "dlt-2026-100.adoc"
+    assert dlt_file.name.startswith("dlt-2026-100-rate-limiter-")
+    assert dlt_file.name.endswith(".adoc")
     assert dlt_file.parent == tmp_path / "deltas"
 
     # Apply delta
@@ -1913,4 +1918,3 @@ def test_spec_schema_introspection_loads_from_assets_and_synthesizes_valid_examp
     res_invalid = runner.invoke(app, ["spec", "schema", "nonexistent-type", "--json"])
     assert res_invalid.exit_code == 1
     assert "Unknown specification schema type" in orjson.loads(res_invalid.stdout)["error"]
-

@@ -17,6 +17,10 @@ from typing import Any
 
 import orjson
 
+from eidos.core.index.ast_indexer import (
+    _has_function_level_fixture,
+    extract_test_file_cache_payload,
+)
 from eidos.core.index.storage import (
     get_cached_spec_document,
     load_spec_validation_cache,
@@ -50,100 +54,6 @@ class _CachedTestFile:
     file_tokens: set[str] = field(default_factory=set)
 
 
-_INV_OR_POL_TOKEN_RE = re.compile(r"\b(?:INV|POL)-[A-Za-z0-9_-]+\b")
-
-
-def _has_function_level_fixture(fslice: str, inv_pattern: re.Pattern[str]) -> bool:
-    """Return True if eidos:fixture appears in the function header, docstring, or leading standalone comment."""
-    if "eidos:fixture" not in fslice:
-        return False
-    lines = fslice.splitlines()
-    if not lines:
-        return False
-
-    idx = 0
-    seen_fn_decl = False
-    decorator_depth = 0
-    sig_paren_depth = 0
-    # 1. Consume decorator and signature lines (up to ':' in Python or '{' in brace languages)
-    while idx < len(lines):
-        line = lines[idx]
-        if "eidos:fixture" in line:
-            return True
-        idx += 1
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if stripped.startswith("#["):
-            comment_free = stripped.split("//", 1)[0].rstrip()
-        else:
-            comment_free = stripped.split("#", 1)[0].split("//", 1)[0].rstrip()
-        if not comment_free:
-            continue
-        if not seen_fn_decl:
-            if decorator_depth > 0 or stripped.startswith("@") or stripped.startswith("#["):
-                decorator_depth += sum(1 for c in comment_free if c in "([{") - sum(
-                    1 for c in comment_free if c in ")]}"
-                )
-                if decorator_depth < 0:
-                    decorator_depth = 0
-                continue
-            seen_fn_decl = True
-        sig_paren_depth += comment_free.count("(") - comment_free.count(")")
-        if sig_paren_depth < 0:
-            sig_paren_depth = 0
-        if sig_paren_depth == 0 and (comment_free.endswith(":") or comment_free.endswith("{")):
-            break
-
-    # Skip blank lines after signature
-    while idx < len(lines) and not lines[idx].strip():
-        idx += 1
-
-    # 2. Consume optional Python docstring
-    if idx < len(lines):
-        stripped = lines[idx].lstrip()
-        for quote in ('"""', "'''", 'r"""', "r'''"):
-            if stripped.startswith(quote):
-                raw_quote = quote[-3:]
-                if "eidos:fixture" in lines[idx]:
-                    return True
-                rest_after_open = stripped[len(quote) :]
-                idx += 1
-                if raw_quote not in rest_after_open:
-                    while idx < len(lines):
-                        if "eidos:fixture" in lines[idx]:
-                            return True
-                        if raw_quote in lines[idx]:
-                            idx += 1
-                            break
-                        idx += 1
-                break
-
-    # 3. Consume leading standalone comment lines before the first statement
-    while idx < len(lines):
-        stripped = lines[idx].strip()
-        if not stripped:
-            idx += 1
-            continue
-        if stripped.startswith("/*"):
-            while idx < len(lines):
-                cur_line = lines[idx]
-                if "eidos:fixture" in cur_line and not inv_pattern.search(cur_line):
-                    return True
-                idx += 1
-                if "*/" in cur_line:
-                    break
-            continue
-        if stripped.startswith("#") or stripped.startswith("//"):
-            if "eidos:fixture" in stripped and not inv_pattern.search(stripped):
-                return True
-            idx += 1
-            continue
-        break
-
-    return False
-
-
 def _build_cached_test_file_entry(
     rel: str,
     tcontent: str,
@@ -152,47 +62,9 @@ def _build_cached_test_file_entry(
     ast_idx: Any,
 ) -> tuple[_CachedTestFile, str, str]:
     """Extract test functions and file-level tokens in a single AST pass for caching."""
-    from eidos.core.index.ast_indexer import INVARIANT_PATTERN
-
-    has_fixture = "eidos:fixture" in tcontent
-    raw_funcs = ast_idx.list_test_functions(rel, tcontent)
-    functions: dict[str, list[str]] = {}
-    for fname, fslice in raw_funcs.items():
-        if not has_fixture:
-            fn_tokens = list(dict.fromkeys(_INV_OR_POL_TOKEN_RE.findall(fslice)))
-        elif _has_function_level_fixture(fslice, INVARIANT_PATTERN):
-            fn_tokens = list(
-                dict.fromkeys(
-                    tok
-                    for line in fslice.splitlines()
-                    if "eidos:fixture" not in line
-                    for tok in _INV_OR_POL_TOKEN_RE.findall(line)
-                    if tok.startswith("POL-")
-                )
-            )
-        else:
-            fn_tokens = list(
-                dict.fromkeys(
-                    tok
-                    for line in fslice.splitlines()
-                    if "eidos:fixture" not in line
-                    for tok in _INV_OR_POL_TOKEN_RE.findall(line)
-                )
-            )
-        if fn_tokens:
-            functions[fname] = fn_tokens
-
-    if not has_fixture:
-        file_tokens_list = list(dict.fromkeys(_INV_OR_POL_TOKEN_RE.findall(tcontent)))
-    else:
-        file_tokens_list = list(
-            dict.fromkeys(
-                tok
-                for line in tcontent.splitlines()
-                if "eidos:fixture" not in line
-                for tok in _INV_OR_POL_TOKEN_RE.findall(line)
-            )
-        )
+    functions, file_tokens_list, functions_json, file_tokens_json = extract_test_file_cache_payload(
+        rel, tcontent, ast_idx
+    )
     entry = _CachedTestFile(
         file_path=rel,
         mtime_ns=mtime_ns,
@@ -200,11 +72,7 @@ def _build_cached_test_file_entry(
         functions=functions,
         file_tokens=set(file_tokens_list),
     )
-    return (
-        entry,
-        orjson.dumps(functions, option=orjson.OPT_SORT_KEYS).decode("utf-8"),
-        orjson.dumps(file_tokens_list).decode("utf-8"),
-    )
+    return entry, functions_json, file_tokens_json
 
 
 def _load_or_update_test_binding_cache(

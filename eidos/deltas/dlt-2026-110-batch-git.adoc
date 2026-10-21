@@ -1,0 +1,152 @@
+---
+type: delta/mutation
+id: DLT-2026-110-BATCH-GIT
+title: Batch Git Blob Retrieval, Git-Free Slug-Hash Delta ID Generation, and Unified Test-Binding Cache Sync
+status: applied
+intent:
+  kind: enabler
+  motivation: "Replace O(N) per-file git show subprocesses during drift detection with a single git cat-file --batch pipe, eliminate all Git subprocesses from generate_collision_free_delta_id by enforcing a mandatory deterministic <SLUG>-<4HEX> suffix, and populate test_binding_cache during sync_index so index sync and invariant verification share one AST test-parsing pass."
+mutations:
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+    parent: CNT-EIDOS-CORE
+    details: "Remove all Git subprocesses (git for-each-ref, git ls-tree, git log) from generate_collision_free_delta_id in src/eidos/core/lifecycle/delta_engine.py, always deriving a mandatory title <SLUG> and engine-computed <4HEX> hash suffix (DLT-YYYY-NNN-<SLUG>-<4HEX>)."
+    expect:
+      frontmatter:
+        responsibility: "Git-free <SLUG>-<4HEX> ID generation in generate_collision_free_delta_id"
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+    parent: CNT-EIDOS-CORE
+    details: "Support unambiguous DLT-YYYY-NNN and DLT-YYYY-NNN-<SLUG> prefix resolution in find_spec_by_id_or_path in src/eidos/core/lifecycle/catalog.py."
+    expect:
+      frontmatter:
+        responsibility: "unambiguous SpecDelta prefix resolution"
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+    parent: CNT-EIDOS-INDEX
+    details: "Host shared fixture-aware test cache extractor (_has_function_level_fixture and extract_test_file_cache_payload) in src/eidos/core/index/ast_indexer.py so sync.py and invariants.py share a single AST test-parsing implementation without upward container imports."
+    expect:
+      frontmatter:
+        responsibility: "extract_test_file_cache_payload"
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    parent: CNT-EIDOS-INDEX
+    details: "Persist functions_json and file_tokens_json into test_binding_cache during index_test_bindings and query test_binding_cache in _reconcile_invariant_coverage in src/eidos/core/index/sync.py so sync_index and invariants.py share a single AST test-parsing pass."
+    expect:
+      frontmatter:
+        responsibility: "test_binding_cache"
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    parent: CNT-EIDOS-VCS
+    details: "Batch historical blob extraction in batch_read_git_blobs, _get_file_versions, and detect_drift (_fetch_versions / _SpecDiffInspector) via a single git cat-file --batch pipe in src/eidos/vcs/diff.py and src/eidos/vcs/drift.py instead of spawning 2N per-file git show subprocesses, and reuse test_binding_cache rows populated by sync_index in src/eidos/vcs/invariants.py without redundant AST re-parsing."
+    expect:
+      frontmatter:
+        responsibility: "git cat-file --batch"
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    parent: CNT-EIDOS-PLUGIN
+    details: "Synchronize bundled eidos and eidos-plan skills in assets/plugin_reference/skills/ with the SpecDelta Implementation Plan prose section scaffolded by delta/delta.template.adoc."
+    expect:
+      frontmatter:
+        responsibility: "Implementation Plan prose guidance"
+  - operation: modify
+    target: CAP-PROD-002
+    details: "Update CAP-PROD-002 specification prose to document Git-free mandatory <SLUG>-<4HEX> SpecDelta ID generation in generate_collision_free_delta_id and bump capability version to 2.3.0."
+    expect:
+      frontmatter:
+        version: "2.3.0"
+      body:
+        contains:
+          - "<SLUG>-<4HEX>"
+        not_contains:
+          - "git for-each-ref"
+  - operation: modify
+    target: CAP-VCS-001
+    details: "Update CAP-VCS-001 and INV-DRIFT-DETECTION-ACCURACY to require batched git cat-file --batch blob retrieval and shared index.db test_binding_cache reuse, and bump capability version to 1.7.0."
+    expect:
+      frontmatter:
+        version: "1.7.0"
+      body:
+        contains:
+          - "git cat-file --batch"
+  - operation: modify
+    target: INV-DRIFT-DETECTION-ACCURACY
+    parent: CAP-VCS-001
+    details: "Update INV-DRIFT-DETECTION-ACCURACY rule to enforce batched git cat-file --batch file version retrieval during drift detection."
+    expect:
+      frontmatter:
+        rule: "git cat-file --batch"
+        test_binding: "tests/test_drift.py::test_drift_detection_code_without_specs"
+vcs:
+  branch: main
+  base_commit: ac136c47df6af525c684621a11489110d2ea0699
+---
+= SpecDelta: Batch Git Blob Retrieval, Git-Free Slug-Hash Delta ID Generation, and Unified Test-Binding Cache Sync
+:toc: left
+:icons: font
+:sectnums:
+
+== 1. Problem Statement & Motivation
+
+Three Git subprocess and AST indexing bottlenecks currently impact Eidos latency on large repositories and multi-file pull requests:
+
+1. **$2N$ Sequential `git show` Subprocesses During Drift Detection**:
+   * `diff._get_file_versions` (`src/eidos/vcs/diff.py`), `drift.detect_drift` (`_fetch_versions` in `src/eidos/vcs/drift.py`), and `_SpecDiffInspector.versions` (`src/eidos/vcs/structural.py`) spawn up to two separate `git show <ref>:<path>` subprocesses per modified source, specification, and delta file. On a branch or pull request modifying 150+ files, `eidos drift` spawns 300+ sequential `git` processes.
+2. **Up-to-32-Branch `git ls-tree -r` Loop on `eidos delta create`**:
+   * `generate_collision_free_delta_id` (`src/eidos/core/lifecycle/delta_engine.py`) runs `git for-each-ref`, then loops over up to 32 local and remote branches spawning `git ls-tree -r <ref> -- eidos/deltas` on each (plus `git log --all` when $>32$ refs exist) just to prevent parallel branch ID collisions.
+3. **Dual AST Parsing of Test Suites Across `sync.py` and `invariants.py`**:
+   * `sync_index` (`src/eidos/core/index/sync.py`) walks and AST-parses all test files via `index_test_bindings` to populate `edges` (`asserts`) and `symbol_mappings`, but does not write to `test_binding_cache`.
+   * `_load_or_update_test_binding_cache` (`src/eidos/vcs/invariants.py`) independently walks and AST-parses all test files a second time to populate `test_binding_cache`.
+
+---
+
+== 2. Proposed Architectural & Specification Changes
+
+=== 2.1 Batched Git Blob Retrieval in `CMP-DRIFT-DETECTOR` (`src/eidos/vcs/diff.py` & `src/eidos/vcs/drift.py`)
+* Introduce `batch_read_git_blobs(repo_root, object_specs: Iterable[tuple[str, str]]) -> dict[tuple[str, str], str | None]` and `_get_files_versions_batch` in `src/eidos/vcs/diff.py` using a single `git -c core.quotePath=false cat-file --batch` subprocess pipe with byte-exact payload slicing.
+* Pre-fetch `(base_ref, path)` and `(head_ref, path)` blobs across `classification.code_files`, `classification.spec_files`, and `classification.delta_files` in a single batched pass inside `detect_drift` (when `_get_file_versions` is not monkeypatched by a synthetic test), feeding `_fetch_versions` and `_SpecDiffInspector` in $O(1)$.
+
+=== 2.2 Git-Free Mandatory `<SLUG>-<4HEX>` Delta ID Generation in `CMP-DELTA-ENGINE` & `CMP-LIFECYCLE-SCAFFOLDER` (`src/eidos/core/lifecycle/delta_engine.py` & `catalog.py`)
+* **Eliminate All Git Subprocesses**: Remove `git for-each-ref`, `git ls-tree -r`, and `git log --all` from `generate_collision_free_delta_id`. Scan only local `eidos/deltas/**/*.adoc` (active + `archive/`) on disk to determine `existing_ids` and `max_seq_by_year`.
+* **Mandatory `<SLUG>` + Engine-Generated `<4HEX>` Suffix (`DLT-YYYY-NNN-<SLUG>-<4HEX>`)**:
+   - Users never supply the `<4HEX>` suffix; it is always computed deterministically by the engine.
+   - Derive a mandatory 1–2 word uppercase alphanumeric `<SLUG>` from `title` (if not already present on `raw_id`), followed by a 4-character uppercase hex digest (`hashlib.sha256(f"{base_with_slug}:{title}".encode()).hexdigest()[:4].upper()`, salting on local collision).
+   - Support unambiguous prefix resolution in `find_spec_by_id_or_path` (`src/eidos/core/lifecycle/catalog.py`) so callers and CLI commands can reference a SpecDelta either by its full ID (`DLT-2026-052-BILLING-EXPANSION-9A2B`) or by its short prefix (`DLT-2026-052` or `DLT-2026-052-BILLING-EXPANSION`).
+
+=== 2.3 Unified Test-Binding Cache Population in `CMP-AST-SYMBOL-INDEXER`, `CMP-INCREMENTAL-SYNC-ENGINE`, & `CMP-DRIFT-DETECTOR`
+
+==== 2.3.1 Current Bottleneck: Three Redundant AST Test-Parsing Passes
+Currently, polyglot test files (`tests/`, `test/`, `*_test.py`, `*.test.ts`, etc.) are parsed with `SgRoot` (`ast-grep`) up to **three separate times** across `sync_index` and `eidos drift` / `eidos doctor`:
+1. **`index_test_bindings` (`src/eidos/core/index/sync.py`)**:
+   * Calls `ast_idx.extract_test_bindings(test_path, content)` to populate `edges` (`rel_type = 'asserts'`) and `symbol_mappings` (`kind = 'test_binding'`), **without** writing to `test_binding_cache` and without stripping `# eidos:fixture` / `// eidos:fixture` lines.
+2. **`_reconcile_invariant_coverage` (`src/eidos/core/index/sync.py`)**:
+   * Re-reads test files or calls `ast_idx.list_test_functions(abs_tb)` whenever an invariant declares a `test_binding` not already in `assert_edges`.
+3. **`_load_or_update_test_binding_cache` (`src/eidos/vcs/invariants.py`)**:
+   * Walks all test files again and calls `_build_cached_test_file_entry` -> `ast_idx.list_test_functions(rel, tcontent)` to populate `test_binding_cache` (`file_path`, `mtime_ns`, `sha256`, `functions_json`, `file_tokens_json`).
+
+==== 2.3.2 Unified Single-Pass Architecture
+* **Shared Fixture-Aware Extractor in `ast_indexer.py` (`extract_test_file_cache_payload` & `_has_function_level_fixture`)**:
+  - Executes a single `ast_idx.list_test_functions(rel_path, content)` AST pass, applies `eidos:fixture` filtering once, and returns `(functions, file_tokens_list, functions_json, file_tokens_json)` where `functions` maps non-empty function token lists (`{func_name: [tokens]}`, omitting empty functions per `DLT-2026-101`).
+* **Direct `test_binding_cache` Population & Pruning in `sync.py`**:
+  - `index_test_bindings` reuses warm `test_binding_cache` rows when `sha256` matches (refreshing `mtime_ns` if needed), or invokes `extract_test_file_cache_payload` once and upserts `(rel_test, mtime_ns, sha, functions_json, file_tokens_json)` into `test_binding_cache` while emitting `asserts` edges for `INV-*` tokens.
+  - `sync_index` deletes from `test_binding_cache` when a `code/test` file is deleted or when `force=True` resets the index, and `_reconcile_invariant_coverage` queries `test_binding_cache` directly instead of re-reading or re-parsing test files from disk.
+* **Zero-Parse Warm Path in `invariants.py`**:
+  - When `extract_invariants_and_verify` or `detect_orphan_invariants` runs after `sync_index`, `_load_or_update_test_binding_cache` hydrates `_CachedTestFile` entries directly from `test_binding_cache` with zero redundant AST parses.
+
+---
+
+== 3. Implementation Plan
+
+1. **Phase 1 — Batched Git Blob Extraction (`src/eidos/vcs/diff.py`, `src/eidos/vcs/drift.py`, `src/eidos/vcs/structural.py`)**:
+   * Implement `batch_read_git_blobs` and `_get_files_versions_batch` in `src/eidos/vcs/diff.py` using a single `git -c core.quotePath=false cat-file --batch` subprocess pipe.
+   * Pre-fetch `(base_ref, path)` and `(head_ref, path)` blobs in `detect_drift` (`src/eidos/vcs/drift.py`) across modified code, spec, and delta files, passing the pre-fetched version map to `_SpecDiffInspector` while preserving fallback compatibility when `_get_file_versions` is monkeypatched in unit tests.
+2. **Phase 2 — Git-Free Mandatory `<SLUG>-<4HEX>` SpecDelta IDs & Prefix Lookup (`src/eidos/core/lifecycle/delta_engine.py`, `src/eidos/core/lifecycle/catalog.py`)**:
+   * Refactor `generate_collision_free_delta_id` in `src/eidos/core/lifecycle/delta_engine.py` to remove all Git subprocess calls (`git for-each-ref`, `git ls-tree -r`, `git log --all`), scanning local `eidos/deltas/` (including `archive/`) and always deriving a mandatory `<SLUG>-<4HEX>` suffix (`DLT-YYYY-NNN-<SLUG>-<4HEX>`).
+   * Extend `find_spec_by_id_or_path` in `src/eidos/core/lifecycle/catalog.py` to resolve unambiguous `DLT-YYYY-NNN` and `DLT-YYYY-NNN-<SLUG>` prefixes to their full `DLT-YYYY-NNN-<SLUG>-<4HEX>` files.
+3. **Phase 3 — Unified Test-Binding Cache Population (`src/eidos/core/index/ast_indexer.py`, `src/eidos/core/index/sync.py`, `src/eidos/vcs/invariants.py`)**:
+   * Add `_has_function_level_fixture` and `extract_test_file_cache_payload` in `src/eidos/core/index/ast_indexer.py`.
+   * Update `index_test_bindings`, `_reconcile_invariant_coverage`, and `sync_index` in `src/eidos/core/index/sync.py` to populate, query, and prune `test_binding_cache` directly during index synchronization.
+   * Update `_load_or_update_test_binding_cache` in `src/eidos/vcs/invariants.py` to delegate AST test extraction to `extract_test_file_cache_payload` and reuse warm `test_binding_cache` rows populated by `sync_index`.
+4. **Phase 4 — Living Specifications & Regression Tests (`eidos/`, `tests/`)**:
+   * Update `CNT-EIDOS-CORE`, `CNT-EIDOS-INDEX`, `CNT-EIDOS-VCS`, `CAP-PROD-002` (`2.3.0`), and `CAP-VCS-001` (`1.7.0`) specifications.
+   * Add regression tests in `tests/test_drift.py`, `tests/test_delta_engine.py`, `tests/test_deltas.py`, and `tests/test_graph_index.py`, then verify via `eidos delta verify` and `eidos drift --uncommitted --json`.

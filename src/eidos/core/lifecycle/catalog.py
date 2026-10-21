@@ -327,17 +327,34 @@ def find_spec_by_id_or_path(eidos_dir: Path, target: str) -> Path | None:
     # 2. Search by ID or filename across all .adoc files in eidos_dir
     target_lower = target_clean.lower()
     target_stem_lower = target_lower.removesuffix(".adoc")
-    for p in eidos_dir.rglob("*.adoc"):
+    stem_only = Path(target_stem_lower).name.replace("_", "-")
+    prefix_needle = f"{stem_only}-" if stem_only.startswith("dlt-") else ""
+    prefix_candidates: list[Path] = []
+    for p in sorted(eidos_dir.rglob("*.adoc")):
         if p.is_symlink():
             continue
         if p.name.lower() == target_lower or p.stem.lower() == target_stem_lower:
             return p.resolve()
+        matched_prefix = bool(prefix_needle and p.stem.lower().replace("_", "-").startswith(prefix_needle))
         try:
             doc, _, _ = get_cached_spec_document(p)
-            if doc is not None and doc.doc_id and doc.doc_id.lower() in (target_lower, target_stem_lower):
-                return p.resolve()
+            if doc is not None and doc.doc_id:
+                doc_id_lower = doc.doc_id.lower()
+                if doc_id_lower in (target_lower, target_stem_lower):
+                    return p.resolve()
+                if prefix_needle and doc_id_lower.replace("_", "-").startswith(prefix_needle):
+                    matched_prefix = True
         except OSError:
-            continue
+            pass
+        if matched_prefix:
+            prefix_candidates.append(p.resolve())
+
+    if len(prefix_candidates) == 1:
+        return prefix_candidates[0]
+    if len(prefix_candidates) > 1:
+        active_candidates = [c for c in prefix_candidates if "archive" not in c.parts]
+        if len(active_candidates) == 1:
+            return active_candidates[0]
 
     return None
 

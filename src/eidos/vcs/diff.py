@@ -587,6 +587,113 @@ def map_code_to_components(
     return mappings
 
 
+def batch_read_git_blobs(
+    repo_root: Path,
+    object_specs: Iterable[tuple[str, str]],
+) -> dict[tuple[str, str], str | None]:
+    """Read multiple (ref, rel_path) blobs in a single `git cat-file --batch` pipe."""
+    repo = repo_root.resolve()
+    unique_specs: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for ref, raw_path in object_specs:
+        norm_rel = raw_path.replace("\\", "/").strip("\r\n")
+        key = (ref.strip("\r\n"), norm_rel)
+        if key[0] and norm_rel and key not in seen:
+            seen.add(key)
+            unique_specs.append(key)
+
+    results: dict[tuple[str, str], str | None] = dict.fromkeys(unique_specs)
+    if not unique_specs:
+        return results
+
+    stdin_bytes = "".join(f"{ref}:{rel}\n" for ref, rel in unique_specs).encode("utf-8")
+    try:
+        res = subprocess.run(
+            ["git", "-c", "core.quotePath=false", "cat-file", "--batch"],
+            cwd=repo,
+            input=stdin_bytes,
+            capture_output=True,
+            check=False,
+        )
+        if res.returncode != 0 or not res.stdout:
+            return results
+        out = res.stdout
+        pos = 0
+        out_len = len(out)
+        for key in unique_specs:
+            if pos >= out_len:
+                break
+            nl_idx = out.find(b"\n", pos)
+            if nl_idx == -1:
+                break
+            header = out[pos:nl_idx].decode("utf-8", errors="replace")
+            pos = nl_idx + 1
+            if header.endswith((" missing", " ambiguous", " excluded")) or not header:
+                continue
+            parts = header.rsplit(" ", 2)
+            if len(parts) < 3 or not parts[2].isdigit():
+                continue
+            obj_type = parts[1]
+            size = int(parts[2])
+            blob_bytes = out[pos : pos + size]
+            pos += size + 1
+            if obj_type == "blob":
+                results[key] = blob_bytes.decode("utf-8", errors="replace")
+    except OSError:
+        pass
+    return results
+
+
+def _get_files_versions_batch(
+    repo_root: Path,
+    rel_paths: Iterable[str],
+    base_ref: str | None = None,
+    head_ref: str = "HEAD",
+    uncommitted: bool = False,
+    merge_base: str | None = None,
+) -> dict[str, tuple[str | None, str | None]]:
+    """Retrieve {rel_path: (old_content, new_content)} for multiple files in a single git cat-file --batch pass."""
+    path_list = list(dict.fromkeys(rel_paths))
+    if not path_list:
+        return {}
+    repo = repo_root.resolve()
+    norm_map = {rp: rp.replace("\\", "/") for rp in path_list}
+
+    if uncommitted:
+        blobs = batch_read_git_blobs(repo, [("HEAD", norm_rel) for norm_rel in norm_map.values()])
+        out: dict[str, tuple[str | None, str | None]] = {}
+        for rp, norm_rel in norm_map.items():
+            old_content = blobs.get(("HEAD", norm_rel))
+            abs_p = repo / norm_rel
+            new_content = None
+            if abs_p.exists() and abs_p.is_file():
+                with contextlib.suppress(OSError):
+                    new_content = abs_p.read_text(encoding="utf-8", errors="replace")
+            out[rp] = (old_content, new_content)
+        return out
+
+    baseline_ref = merge_base
+    if not baseline_ref:
+        if base_ref:
+            baseline_ref = _resolve_merge_base(repo, base_ref, head_ref, fail_loudly=True)
+        else:
+            _, baseline_ref, fell_back = _resolve_base_and_merge_base(repo, None, head_ref)
+            if fell_back or not baseline_ref:
+                return dict.fromkeys(path_list, (None, None))
+
+    if not baseline_ref:
+        return dict.fromkeys(path_list, (None, None))
+
+    requests: list[tuple[str, str]] = []
+    for norm_rel in norm_map.values():
+        requests.append((baseline_ref, norm_rel))
+        requests.append((head_ref, norm_rel))
+    blobs = batch_read_git_blobs(repo, requests)
+    return {
+        rp: (blobs.get((baseline_ref, norm_rel)), blobs.get((head_ref, norm_rel))) for rp, norm_rel in norm_map.items()
+    }
+
+
 def _get_file_versions(
     repo_root: Path,
     rel_path: str,
@@ -596,45 +703,11 @@ def _get_file_versions(
     merge_base: str | None = None,
 ) -> tuple[str | None, str | None]:
     """Retrieve (old_content, new_content) for a modified file to evaluate structural AST diffs."""
-    repo = repo_root.resolve()
-    norm_rel = rel_path.replace("\\", "/")
-
-    def _git_show(ref: str, path_str: str) -> str | None:
-        try:
-            res = subprocess.run(
-                ["git", "show", f"{ref}:{path_str}"],
-                cwd=repo,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if res.returncode == 0:
-                return res.stdout
-        except OSError:
-            pass
-        return None
-
-    if uncommitted:
-        old_content = _git_show("HEAD", norm_rel)
-        abs_p = repo / norm_rel
-        new_content = None
-        if abs_p.exists() and abs_p.is_file():
-            with contextlib.suppress(OSError):
-                new_content = abs_p.read_text(encoding="utf-8", errors="replace")
-        return old_content, new_content
-
-    baseline_ref = merge_base
-    if not baseline_ref:
-        if base_ref:
-            baseline_ref = _resolve_merge_base(repo, base_ref, head_ref, fail_loudly=True)
-        else:
-            _, baseline_ref, fell_back = _resolve_base_and_merge_base(repo, None, head_ref)
-            if fell_back or not baseline_ref:
-                return None, None
-
-    if not baseline_ref:
-        return None, None
-
-    old_content = _git_show(baseline_ref, norm_rel)
-    new_content = _git_show(head_ref, norm_rel)
-    return old_content, new_content
+    return _get_files_versions_batch(
+        repo_root,
+        [rel_path],
+        base_ref=base_ref,
+        head_ref=head_ref,
+        uncommitted=uncommitted,
+        merge_base=merge_base,
+    ).get(rel_path, (None, None))

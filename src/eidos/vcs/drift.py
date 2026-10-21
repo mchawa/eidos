@@ -16,9 +16,11 @@ from eidos.vcs.diff import (
     ChangedFilesClassification,
     GitResolutionError,
     _get_file_versions,
+    _get_files_versions_batch,
     _resolve_base_and_merge_base,
     _resolve_base_ref,
     _resolve_merge_base,
+    batch_read_git_blobs,
     classify_changed_files,
     collect_polyglot_test_files,
     get_git_diff_files,
@@ -58,6 +60,7 @@ __all__ = [
     "_resolve_base_and_merge_base",
     "_resolve_base_ref",
     "_resolve_merge_base",
+    "batch_read_git_blobs",
     "build_drift_remediation_and_summary",
     "classify_changed_files",
     "collect_polyglot_test_files",
@@ -168,6 +171,22 @@ def detect_drift(
     synthetic_diff_mock = (
         get_git_diff_files is not _DEFAULT_GET_GIT_DIFF_FILES and _get_file_versions is _DEFAULT_GET_FILE_VERSIONS
     )
+    prefetched_versions: dict[str, tuple[str | None, str | None]] = {}
+    if not synthetic_diff_mock and _get_file_versions is _DEFAULT_GET_FILE_VERSIONS:
+        batch_candidates = [
+            *classification.code_files,
+            *classification.spec_files,
+            *classification.delta_files,
+        ]
+        if batch_candidates:
+            prefetched_versions = _get_files_versions_batch(
+                root,
+                batch_candidates,
+                base_ref=resolved_base_ref,
+                head_ref=head_ref,
+                uncommitted=effective_uncommitted,
+                merge_base=resolved_mb,
+            )
 
     def _fetch_versions(rel_p: str) -> tuple[str | None, str | None]:
         if synthetic_diff_mock:
@@ -178,7 +197,12 @@ def detect_drift(
                     return txt, txt
                 except OSError:
                     pass
-        return _get_file_versions(
+        if rel_p in prefetched_versions:
+            return prefetched_versions[rel_p]
+        norm_rel_p = rel_p.replace("\\", "/")
+        if norm_rel_p in prefetched_versions:
+            return prefetched_versions[norm_rel_p]
+        res_ver = _get_file_versions(
             root,
             rel_p,
             base_ref=resolved_base_ref,
@@ -186,6 +210,9 @@ def detect_drift(
             uncommitted=effective_uncommitted,
             merge_base=resolved_mb,
         )
+        if not synthetic_diff_mock and _get_file_versions is _DEFAULT_GET_FILE_VERSIONS:
+            prefetched_versions[rel_p] = res_ver
+        return res_ver
 
     # 0. Filter code files into structural vs body-only edits (DLT-2026-028)
     #    and classify frontend/styling diffs into design categories (DLT-2026-030)

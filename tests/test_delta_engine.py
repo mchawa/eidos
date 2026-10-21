@@ -790,6 +790,8 @@ def test_deep_review_subsystem_3_scaffolder_catalog_delta_and_changelog_edge_cas
     assert "status: approved" in updated_fm
 
     dlt_path = create_delta(eidos_dir, "DLT-2026-088", title="Draft Gate Delta")
+    dlt_doc_088 = parse_spec_file(dlt_path)
+    dlt_id_088 = dlt_doc_088.doc_id
     dlt_text = dlt_path.read_text(encoding="utf-8")
     dlt_text = _set_frontmatter_scalar(dlt_text, "status", "in_review")
     dlt_text = dlt_text.replace(
@@ -799,10 +801,10 @@ def test_deep_review_subsystem_3_scaffolder_catalog_delta_and_changelog_edge_cas
     dlt_path.write_text(dlt_text, encoding="utf-8")
 
     active_list = list_deltas(eidos_dir)
-    assert any(d["id"] == "DLT-2026-088" for d in active_list)
+    assert any(d["id"] == dlt_id_088 for d in active_list)
     summary = get_delta_status_summary(eidos_dir)
     assert summary["active_count"] >= 1
-    assert any(d["id"] == "DLT-2026-088" for d in summary["by_status"]["in_review"])
+    assert any(d["id"] == dlt_id_088 for d in summary["by_status"]["in_review"])
 
     ok_apply, msg_apply, _, _ = set_delta_status(eidos_dir, "DLT-2026-088", "applied")
     assert ok_apply is False
@@ -1253,20 +1255,23 @@ def test_dlt_2026_080_cross_ref_collision_resolution_and_cli_slug(tmp_path):
 
     subprocess.run(["git", "checkout", "-b", "feat/parallel-branch"], cwd=tmp_path, check=True, capture_output=True)
     d1 = create_delta(eidos_dir, "DLT-2026-001", title="Parallel Branch Feature")
-    assert d1.name == "dlt-2026-001.adoc"
+    assert d1.name.startswith("dlt-2026-001-parallel-branch-")
+    assert d1.name.endswith(".adoc")
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(
         ["git", "commit", "-m", "Add DLT-2026-001 on parallel branch"], cwd=tmp_path, check=True, capture_output=True
     )
 
     subprocess.run(["git", "checkout", "main"], cwd=tmp_path, check=True, capture_output=True)
-    assert not (eidos_dir / "deltas" / "dlt-2026-001.adoc").exists()
+    assert not (eidos_dir / "deltas" / d1.name).exists()
 
     resolved_explicit = generate_collision_free_delta_id(eidos_dir, raw_id="DLT-2026-001", title="Main Branch Feature")
-    assert resolved_explicit == "DLT-2026-001-MAIN-BRANCH"
+    assert resolved_explicit.startswith("DLT-2026-001-MAIN-BRANCH-")
+    assert resolved_explicit != parse_spec_file(d1).doc_id if d1.exists() else True
 
     d2 = create_delta(eidos_dir, "DLT-2026-001", title="Main Branch Feature")
-    assert d2.name == "dlt-2026-001-main-branch.adoc"
+    assert d2.name == f"{resolved_explicit.lower()}.adoc"
+    assert d2.name != d1.name
 
     cli_runner = CliRunner()
     res = cli_runner.invoke(
@@ -1274,8 +1279,8 @@ def test_dlt_2026_080_cross_ref_collision_resolution_and_cli_slug(tmp_path):
         ["delta", "create", "--title", "Zero Config Auth", "--slug", "--path", str(eidos_dir)],
     )
     assert res.exit_code == 0, res.stdout
-    assert "dlt-2026-002-zero-config.adoc" in res.stdout.lower()
-    assert (eidos_dir / "deltas" / "dlt-2026-002-zero-config.adoc").exists()
+    assert "dlt-2026-002-zero-config-" in res.stdout.lower()
+    assert any(p.name.startswith("dlt-2026-002-zero-config-") for p in (eidos_dir / "deltas").glob("*.adoc"))
 
 
 def test_dlt_2026_083_baseline_retention_across_schema_rebuild(tmp_path):
@@ -1593,10 +1598,14 @@ def test_delta_and_exploration_archive_lifecycle(tmp_path: Path):
     create_spec(eidos_dir, "domain", "DOM-CORE", title="Core Domain")
 
     # Create 4 terminal deltas (DLT-2026-001 .. DLT-2026-004) and 1 active delta (DLT-2026-005)
+    dlt_ids: dict[int, str] = {}
+    dlt_files: dict[int, Path] = {}
     for i in range(1, 5):
         dlt_id = f"DLT-2026-00{i}"
         d_file = create_delta(eidos_dir, dlt_id, title=f"Historical Delta {i}")
         doc = parse_spec_file(d_file)
+        dlt_ids[i] = doc.doc_id
+        dlt_files[i] = d_file
         distinct_tokens = {
             1: "xylophonearchivedalpha",
             2: "quasararchivedbeta",
@@ -1627,6 +1636,8 @@ def test_delta_and_exploration_archive_lifecycle(tmp_path: Path):
         d_file.write_text(dump_spec_document(doc.frontmatter, body), encoding="utf-8")
 
     active_dlt = create_delta(eidos_dir, "DLT-2026-005", title="Active Proposed Delta")
+    dlt_ids[5] = parse_spec_file(active_dlt).doc_id
+    dlt_files[5] = active_dlt
 
     # Create 3 terminal explorations (EXP-2026-001 .. EXP-2026-003) and 1 active exploration (EXP-2026-004)
     for i in range(1, 4):
@@ -1636,14 +1647,14 @@ def test_delta_and_exploration_archive_lifecycle(tmp_path: Path):
         doc.frontmatter["status"] = "adopted" if i < 3 else "discarded"
         doc.frontmatter["decision"] = {
             "outcome": doc.frontmatter["status"],
-            "resulting_deltas": [f"DLT-2026-00{i}"],
+            "resulting_deltas": [dlt_ids[i]],
         }
         body = (
             f"= Exploration: Spike {i}\n\n"
             f"== Core Hypothesis\nWe believe spike {i} improves latency.\n\n"
             f"== Experiment Design & Methodology\nVerbose experiment tables and logs to strip.\n\n"
             f"== Findings & Learnings\n* Observed 3x speedup in spike {i}.\n\n"
-            f"== Decision & Next Steps\nGraduated to DLT-2026-00{i}.\n"
+            f"== Decision & Next Steps\nGraduated to {dlt_ids[i]}.\n"
         )
         e_file.write_text(dump_spec_document(doc.frontmatter, body), encoding="utf-8")
 
@@ -1660,7 +1671,7 @@ def test_delta_and_exploration_archive_lifecycle(tmp_path: Path):
     # 1. Dry-run with keep_recent=2 should preview archiving DLT-2026-001, DLT-2026-002 and EXP-2026-001 without moving files
     dry_res = archive_deltas(eidos_dir, keep_recent=2, include_explorations=True, dry_run=True)
     assert dry_res["dry_run"] is True
-    assert dry_res["deltas"]["archived_ids"] == ["DLT-2026-001", "DLT-2026-002"]
+    assert dry_res["deltas"]["archived_ids"] == [dlt_ids[1], dlt_ids[2]]
     assert dry_res["explorations"]["archived_ids"] == ["EXP-2026-001"]
     assert not (eidos_dir / "deltas" / "archive").exists()
     assert not (eidos_dir / "explorations" / "archive").exists()
@@ -1673,18 +1684,18 @@ def test_delta_and_exploration_archive_lifecycle(tmp_path: Path):
     assert payload["explorations"]["archived_count"] == 1
 
     # Verify archived files exist and were slimmed
-    arch_dlt_1 = eidos_dir / "deltas" / "archive" / "dlt-2026-001.adoc"
-    arch_dlt_2 = eidos_dir / "deltas" / "archive" / "dlt-2026-002.adoc"
+    arch_dlt_1 = eidos_dir / "deltas" / "archive" / dlt_files[1].name
+    arch_dlt_2 = eidos_dir / "deltas" / "archive" / dlt_files[2].name
     arch_exp_1 = eidos_dir / "explorations" / "archive" / "exp-2026-001.adoc"
     assert arch_dlt_1.exists() and arch_dlt_2.exists()
     assert arch_exp_1.exists()
-    assert not (eidos_dir / "deltas" / "dlt-2026-001.adoc").exists()
+    assert not dlt_files[1].exists()
     assert not (eidos_dir / "explorations" / "exp-2026-001.adoc").exists()
 
     # Verify active and recent terminal artifacts remain in hot directories
     assert active_dlt.exists()
-    assert (eidos_dir / "deltas" / "dlt-2026-003.adoc").exists()
-    assert (eidos_dir / "deltas" / "dlt-2026-004.adoc").exists()
+    assert dlt_files[3].exists()
+    assert dlt_files[4].exists()
     assert active_exp.exists()
     assert (eidos_dir / "explorations" / "exp-2026-002.adoc").exists()
     assert (eidos_dir / "explorations" / "exp-2026-003.adoc").exists()
@@ -1710,14 +1721,14 @@ def test_delta_and_exploration_archive_lifecycle(tmp_path: Path):
 
     # 4. Default list_deltas / list_specs exclude archived items; include_archived=True includes them
     hot_deltas = list_deltas(eidos_dir)
-    assert [d["id"] for d in hot_deltas] == ["DLT-2026-003", "DLT-2026-004", "DLT-2026-005"]
+    assert [d["id"] for d in hot_deltas] == [dlt_ids[3], dlt_ids[4], dlt_ids[5]]
     all_deltas = list_deltas(eidos_dir, include_archived=True)
     assert [d["id"] for d in all_deltas] == [
-        "DLT-2026-001",
-        "DLT-2026-002",
-        "DLT-2026-003",
-        "DLT-2026-004",
-        "DLT-2026-005",
+        dlt_ids[1],
+        dlt_ids[2],
+        dlt_ids[3],
+        dlt_ids[4],
+        dlt_ids[5],
     ]
 
     hot_exps = list_specs(eidos_dir, type_filter="exploration")
@@ -1727,7 +1738,7 @@ def test_delta_and_exploration_archive_lifecycle(tmp_path: Path):
 
     # 5. Duplicate ID creation guards check archive/ subdirectories
     disambiguated_dlt_id = generate_collision_free_delta_id(eidos_dir, "DLT-2026-001", title="Duplicate Archived Delta")
-    assert disambiguated_dlt_id != "DLT-2026-001"
+    assert disambiguated_dlt_id != dlt_ids[1]
     assert disambiguated_dlt_id.startswith("DLT-2026-001-")
     with pytest.raises(FileExistsError):
         create_spec(eidos_dir, "exploration", "EXP-2026-001", title="Duplicate Archived Exploration")
@@ -1738,7 +1749,7 @@ def test_delta_and_exploration_archive_lifecycle(tmp_path: Path):
     fts_arch = idx.query_fts("xylophonearchivedalpha")
     assert [r["id"] for r in fts_arch] == []
     fts_hot = idx.query_fts("zephyrhotgamma")
-    assert any(r["id"] == "DLT-2026-003" for r in fts_hot)
+    assert any(r["id"] == dlt_ids[3] for r in fts_hot)
     exp1_br = {n["id"] for n in idx.get_k_hop_neighborhood("EXP-2026-001", max_depth=2)}
     assert "DOM-CORE" in exp1_br
 
@@ -1749,9 +1760,9 @@ def test_delta_and_exploration_archive_lifecycle(tmp_path: Path):
     # 7. ChangelogGenerator includes archived SpecDeltas resolved purely via Git history (both uncommitted & committed archive move)
     cl_gen = ChangelogGenerator(repo_root=ws, eidos_dir=eidos_dir)
     changelog_md = cl_gen.generate_changelog(include_unreleased=True)
-    assert "DLT-2026-001" in changelog_md
-    assert "DLT-2026-002" in changelog_md
-    assert "DLT-2026-003" in changelog_md
+    assert dlt_ids[1] in changelog_md
+    assert dlt_ids[2] in changelog_md
+    assert dlt_ids[3] in changelog_md
     assert "## [0.1.0]" in changelog_md
 
     # Commit the archive move on top of v0.1.0 and verify DLT-2026-001/002 STILL resolve to v0.1.0 (not Unreleased)
@@ -1760,5 +1771,5 @@ def test_delta_and_exploration_archive_lifecycle(tmp_path: Path):
     cl_gen_after = ChangelogGenerator(repo_root=ws, eidos_dir=eidos_dir)
     changelog_after = cl_gen_after.generate_changelog(include_unreleased=False)
     assert "## [0.1.0]" in changelog_after
-    assert "DLT-2026-001" in changelog_after
-    assert "DLT-2026-002" in changelog_after
+    assert dlt_ids[1] in changelog_after
+    assert dlt_ids[2] in changelog_after

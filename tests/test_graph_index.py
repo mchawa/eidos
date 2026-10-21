@@ -2658,7 +2658,7 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
         assert set(br["invariants_to_enforce"]) >= {"INV-API-HANDLER-104", "INV-CNT-UPTIME-104"}
 
         portal_data = get_portal_data(eidos_dir)
-        portal_dlt = next(d for d in portal_data["deltas"]["proposed"] if d["id"] == "DLT-2026-104")
+        portal_dlt = next(d for d in portal_data["deltas"]["proposed"] if d["id"] == dlt_doc.doc_id)
         assert portal_dlt["affects"] == aff
         assert portal_dlt["blast_radius"] == br
 
@@ -2750,7 +2750,7 @@ def test_dlt_2026_105_c4_level_1_and_exploration_edges(tmp_path: Path) -> None:
     exp2_doc.frontmatter["status"] = "adopted"
     exp2_doc.frontmatter["decision"] = {
         "outcome": "adopted",
-        "resulting_deltas": ["DLT-2026-106"],
+        "resulting_deltas": [dlt_doc.doc_id],
     }
     exp2_path.write_text(dump_spec_document(exp2_doc.frontmatter, exp2_doc.body), encoding="utf-8")
 
@@ -2771,7 +2771,7 @@ def test_dlt_2026_105_c4_level_1_and_exploration_edges(tmp_path: Path) -> None:
         assert ("ARCH-001", "EXP-2026-105", "graduated_from") in edges
         assert ("CNT-ALPHA-105", "EXP-2026-105", "graduated_from") in edges
         assert ("CMP-ALPHA-WORKER-105", "EXP-2026-105", "graduated_from") in edges
-        assert ("EXP-2026-106", "DLT-2026-106", "graduated_to") in edges
+        assert ("EXP-2026-106", dlt_doc.doc_id, "graduated_to") in edges
         assert ("EXP-2026-106", "CNT-BETA-105", "graduated_to") in edges
 
         # Verify execute_incoming_references excludes synthetic C4 structural edges (contains_container, describes_system)

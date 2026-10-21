@@ -16,10 +16,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
 
+import orjson
 from ast_grep_py import SgRoot
 
 INVARIANT_PATTERN = re.compile(r"\b(INV-[A-Z0-9_-]+)\b")
 POLICY_PATTERN = re.compile(r"\b(POL-[A-Z0-9_-]+)\b")
+INV_OR_POL_TOKEN_RE = re.compile(r"\b(?:INV|POL)-[A-Za-z0-9_-]+\b")
 _RUST_TEST_ATTR_RE = re.compile(r"#\[\s*(?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)*(?:test|rstest|test_case)\b")
 _SCRIPT_BLOCK_RE = re.compile(r"<script\b[^>]*>(.*?)</script>", re.DOTALL | re.IGNORECASE)
 _RUST_LIFETIME_AT_START_RE = re.compile(r"^'[A-Za-z_][A-Za-z0-9_]*(?![A-Za-z0-9_'-])")
@@ -309,7 +311,11 @@ class BaseAstIndexer(ABC):
                 for idecl in java_root.find_all(kind="import_declaration"):
                     has_wildcard = any(ch.kind() == "asterisk" for ch in idecl.children())
                     target = next(
-                        (ch.text().strip() for ch in idecl.children() if ch.kind() in ("scoped_identifier", "identifier")),
+                        (
+                            ch.text().strip()
+                            for ch in idecl.children()
+                            if ch.kind() in ("scoped_identifier", "identifier")
+                        ),
                         "",
                     )
                     if target:
@@ -345,7 +351,9 @@ class BaseAstIndexer(ABC):
             try:
                 cs_root = SgRoot(content, "csharp").root()
                 for udir in cs_root.find_all(kind="using_directive"):
-                    targets = [ch.text().strip() for ch in udir.children() if ch.kind() in ("qualified_name", "identifier")]
+                    targets = [
+                        ch.text().strip() for ch in udir.children() if ch.kind() in ("qualified_name", "identifier")
+                    ]
                     if targets:
                         _add(targets[-1])
             except (RuntimeError, ValueError):
@@ -373,7 +381,9 @@ class BaseAstIndexer(ABC):
             try:
                 php_root = SgRoot(content, "php").root()
                 for udecl in php_root.find_all(kind="namespace_use_declaration"):
-                    prefix_ns = next((ch.text().strip() for ch in udecl.children() if ch.kind() == "namespace_name"), "")
+                    prefix_ns = next(
+                        (ch.text().strip() for ch in udecl.children() if ch.kind() == "namespace_name"), ""
+                    )
                     clauses = list(udecl.find_all(kind="namespace_use_clause"))
                     for clause in clauses:
                         raw_clause = clause.text().strip().split(" as ", 1)[0].strip().lstrip("\\")
@@ -400,7 +410,11 @@ class BaseAstIndexer(ABC):
                 sw_root = SgRoot(content, "swift").root()
                 for idecl in sw_root.find_all(kind="import_declaration"):
                     target = next(
-                        (ch.text().strip() for ch in idecl.children() if ch.kind() in ("identifier", "simple_identifier")),
+                        (
+                            ch.text().strip()
+                            for ch in idecl.children()
+                            if ch.kind() in ("identifier", "simple_identifier")
+                        ),
                         "",
                     )
                     if target:
@@ -843,16 +857,18 @@ class AstGrepIndexer(BaseAstIndexer):
                         sig = hdr_sig
                     elif lang in ("c", "cpp"):
                         kind_label = (
-                            "struct"
-                            if ck == "struct_specifier"
-                            else ("enum" if ck == "enum_specifier" else "class")
+                            "struct" if ck == "struct_specifier" else ("enum" if ck == "enum_specifier" else "class")
                         )
                         sig = hdr_sig
                     elif lang == "csharp":
                         kind_label = (
                             "interface"
                             if ck == "interface_declaration"
-                            else ("struct" if ck == "struct_declaration" else ("enum" if ck == "enum_declaration" else "class"))
+                            else (
+                                "struct"
+                                if ck == "struct_declaration"
+                                else ("enum" if ck == "enum_declaration" else "class")
+                            )
                         )
                         sig = hdr_sig
                     elif lang == "php":
@@ -1917,7 +1933,9 @@ def _extract_ui_contract(content: str, suffix: str) -> dict[str, set[str]]:
     exports: set[str] = set()
     props: set[str] = set()
     blocks = _extract_sfc_script_blocks(content) if suffix in (".vue", ".svelte") else [(content, 0)]
-    ts_lang = "tsx" if suffix in (".tsx", ".jsx", ".vue", ".svelte") else ("typescript" if suffix == ".ts" else "javascript")
+    ts_lang = (
+        "tsx" if suffix in (".tsx", ".jsx", ".vue", ".svelte") else ("typescript" if suffix == ".ts" else "javascript")
+    )
     if suffix != ".html":
         for block_text, _ in blocks:
             try:
@@ -1998,6 +2016,148 @@ def classify_design_changes(
     if reasons:
         return "ui_contract", reasons
     return "body_only", []
+
+
+def _has_function_level_fixture(fslice: str, inv_pattern: re.Pattern[str] = INVARIANT_PATTERN) -> bool:
+    """Return True if eidos:fixture appears in the function header, docstring, or leading standalone comment."""
+    if "eidos:fixture" not in fslice:
+        return False
+    lines = fslice.splitlines()
+    if not lines:
+        return False
+
+    idx = 0
+    seen_fn_decl = False
+    decorator_depth = 0
+    sig_paren_depth = 0
+    while idx < len(lines):
+        line = lines[idx]
+        if "eidos:fixture" in line:
+            return True
+        idx += 1
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#["):
+            comment_free = stripped.split("//", 1)[0].rstrip()
+        else:
+            comment_free = stripped.split("#", 1)[0].split("//", 1)[0].rstrip()
+        if not comment_free:
+            continue
+        if not seen_fn_decl:
+            if decorator_depth > 0 or stripped.startswith("@") or stripped.startswith("#["):
+                decorator_depth += sum(1 for c in comment_free if c in "([{") - sum(
+                    1 for c in comment_free if c in ")]}"
+                )
+                if decorator_depth < 0:
+                    decorator_depth = 0
+                continue
+            seen_fn_decl = True
+        sig_paren_depth += comment_free.count("(") - comment_free.count(")")
+        if sig_paren_depth < 0:
+            sig_paren_depth = 0
+        if sig_paren_depth == 0 and (comment_free.endswith(":") or comment_free.endswith("{")):
+            break
+
+    while idx < len(lines) and not lines[idx].strip():
+        idx += 1
+
+    if idx < len(lines):
+        stripped = lines[idx].lstrip()
+        for quote in ('"""', "'''", 'r"""', "r'''"):
+            if stripped.startswith(quote):
+                raw_quote = quote[-3:]
+                if "eidos:fixture" in lines[idx]:
+                    return True
+                rest_after_open = stripped[len(quote) :]
+                idx += 1
+                if raw_quote not in rest_after_open:
+                    while idx < len(lines):
+                        if "eidos:fixture" in lines[idx]:
+                            return True
+                        if raw_quote in lines[idx]:
+                            idx += 1
+                            break
+                        idx += 1
+                break
+
+    while idx < len(lines):
+        stripped = lines[idx].strip()
+        if not stripped:
+            idx += 1
+            continue
+        if stripped.startswith("/*"):
+            while idx < len(lines):
+                cur_line = lines[idx]
+                if "eidos:fixture" in cur_line and not inv_pattern.search(cur_line):
+                    return True
+                idx += 1
+                if "*/" in cur_line:
+                    break
+            continue
+        if stripped.startswith("#") or stripped.startswith("//"):
+            if "eidos:fixture" in stripped and not inv_pattern.search(stripped):
+                return True
+            idx += 1
+            continue
+        break
+
+    return False
+
+
+def extract_test_file_cache_payload(
+    rel_path: str,
+    content: str,
+    ast_idx: Any = None,
+) -> tuple[dict[str, list[str]], list[str], str, str]:
+    """Extract fixture-filtered test function tokens and file-level tokens in a single AST pass."""
+    if ast_idx is None:
+        ast_idx = get_ast_indexer()
+    has_fixture = "eidos:fixture" in content
+    raw_funcs = ast_idx.list_test_functions(rel_path, content)
+    functions: dict[str, list[str]] = {}
+    for fname, fslice in raw_funcs.items():
+        if not has_fixture:
+            fn_tokens = list(dict.fromkeys(INV_OR_POL_TOKEN_RE.findall(fslice)))
+        elif _has_function_level_fixture(fslice, INVARIANT_PATTERN):
+            fn_tokens = list(
+                dict.fromkeys(
+                    tok
+                    for line in fslice.splitlines()
+                    if "eidos:fixture" not in line
+                    for tok in INV_OR_POL_TOKEN_RE.findall(line)
+                    if tok.startswith("POL-")
+                )
+            )
+        else:
+            fn_tokens = list(
+                dict.fromkeys(
+                    tok
+                    for line in fslice.splitlines()
+                    if "eidos:fixture" not in line
+                    for tok in INV_OR_POL_TOKEN_RE.findall(line)
+                )
+            )
+        if fn_tokens:
+            functions[fname] = fn_tokens
+
+    if not has_fixture:
+        file_tokens_list = list(dict.fromkeys(INV_OR_POL_TOKEN_RE.findall(content)))
+    else:
+        file_tokens_list = list(
+            dict.fromkeys(
+                tok
+                for line in content.splitlines()
+                if "eidos:fixture" not in line
+                for tok in INV_OR_POL_TOKEN_RE.findall(line)
+            )
+        )
+    return (
+        functions,
+        file_tokens_list,
+        orjson.dumps(functions, option=orjson.OPT_SORT_KEYS).decode("utf-8"),
+        orjson.dumps(file_tokens_list).decode("utf-8"),
+    )
 
 
 def get_ast_indexer() -> BaseAstIndexer:
