@@ -5,7 +5,7 @@ title: Remove Inline Components and SpecDelta Mutation Parent
 status: applied
 intent:
   kind: enabler
-  motivation: Eliminate the dual-mode inline vs. promoted C4 Level 3 component model so that all CMP-* components are standalone specifications under eidos/architecture/components/<slug>.adoc, remove the obsolete eidos spec component promote/inline commands (CMP-CLI-COMPONENT-COMMANDS), and remove mutations[].parent from SpecDelta schemas and lifecycle engines with zero backward-compatibility shims.
+  motivation: Eliminate the dual-mode inline vs. promoted C4 Level 3 component model so that all CMP-* components are standalone specifications under eidos/architecture/components/, remove the obsolete eidos spec component promote/inline commands (CMP-CLI-COMPONENT-COMMANDS), and remove mutations[].parent from SpecDelta schemas and lifecycle engines with zero backward-compatibility shims.
 mutations:
   - operation: remove
     target: CMP-CLI-COMPONENT-COMMANDS
