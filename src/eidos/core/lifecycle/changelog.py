@@ -405,7 +405,12 @@ class ChangelogGenerator:
         # Check if already mentioned by a delta ID in the section
         if existing_deltas:
             for d in existing_deltas:
-                if d["id"] in clean or (d["title"] and d["title"].lower() in clean.lower()):
+                short_id = "-".join(d["id"].split("-")[:3])
+                if (
+                    d["id"] in clean
+                    or (short_id and short_id in clean)
+                    or (d["title"] and d["title"].lower() in clean.lower())
+                ):
                     return
 
         # Format and categorize by conventional commit prefix

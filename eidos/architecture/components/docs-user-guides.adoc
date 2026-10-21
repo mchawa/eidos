@@ -4,15 +4,13 @@ id: CMP-DOCS-USER-GUIDES
 title: UserGuides
 container: CNT-EIDOS-DOCS
 status: active
-source_path:
-  - docs/guides
-  - docs/changelog.md
+source_path: docs/guides
 ---
 = Component: UserGuides
 :toc: left
 
 == Responsibility
-Provides operational reference manuals for the Eidos CLI (`docs/guides/cli.md`), AI Agent Plugin integration across 8 coding harnesses (`docs/guides/agent-plugin.md`), Living Web Portal deployment (`docs/guides/living-portal.md`), and the release changelog (`docs/changelog.md`).
+Provides operational reference manuals for the Eidos CLI (`docs/guides/cli.md`), AI Agent Plugin integration across 8 coding harnesses (`docs/guides/agent-plugin.md`), and Living Web Portal deployment (`docs/guides/living-portal.md`).
 
 == Key Responsibilities & Collaborators
 * **CLI, Agent Plugin & Portal Manuals**: Documents every top-level command, subcommand, and flag exposed by `CTR-EIDOS-CLI`, the 4 bundled workflow skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`), and interactive/static Living Portal workflows.
@@ -21,7 +19,6 @@ Provides operational reference manuals for the Eidos CLI (`docs/guides/cli.md`),
 * `docs/guides/cli.md`
 * `docs/guides/agent-plugin.md`
 * `docs/guides/living-portal.md`
-* `docs/changelog.md`
 
 == Design Constraints & Operational Notes
 * **Automated Command Tree Verification (`INV-DOCS-SYNCHRONIZATION`)**: `tests/test_docs_sync.py` dynamically introspects the live Typer command tree and asserts that every command, subcommand, and CLI flag in `docs/guides/cli.md` matches the implementation.
