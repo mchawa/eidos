@@ -13,11 +13,11 @@ source_path: src/eidos/core/lifecycle/initializer.py
 Bootstraps greenfield and brownfield repositories with an Eidos living specification directory skeleton (`eidos/`), self-contained `eidos/.gitignore`, root `system.adoc` descriptor, and immediate schema validation.
 
 == Key Responsibilities & Collaborators
-* **Full vs. Lite Skeleton Provisioning**: Creates either the complete 12-directory Eidos hierarchy or the progressive 3-directory Eidos Lite profile (`--lite`) with `.gitkeep` markers.
-* **System Context & Cache Isolation**: Renders `eidos/system.adoc` (`product/system`) when `--name` or `--title` is provided (or a 0-byte placeholder otherwise), writes `eidos/.gitignore` to exclude `.cache/`, and validates the initialized tree via `CMP-SPEC-VALIDATOR`.
+* **Skeleton Provisioning**: Creates the complete 12-directory Eidos hierarchy with `.gitkeep` markers.
+* **System Context & Cache Isolation**: Renders `eidos/system.adoc` (`product/system`) when `--title` is provided (or a 0-byte placeholder otherwise), writes `eidos/.gitignore` to exclude `.cache/`, and validates the initialized tree via `CMP-SPEC-VALIDATOR`.
 
 == Public Surface
-* `init_repository(project_dir: Path, name: str | None = None, title: str | None = None, eidos_dir_name: str = "eidos", force: bool = False, lite: bool = False) -> tuple[bool, str, list[Path]]`
+* `init_repository(project_dir: Path, title: str | None = None, eidos_dir_name: str = "eidos", force: bool = False) -> tuple[bool, str, list[Path]]`
 
 == Design Constraints & Operational Notes
-* **Non-Destructive Re-Initialization**: Refuses to overwrite a non-empty `eidos/` directory unless `force=True` is passed, and preserves an already authored `system.adoc` when `--force` is invoked without `--name`/`--title`.
+* **Non-Destructive Re-Initialization**: Refuses to overwrite a non-empty `eidos/` directory unless `force=True` is passed, and preserves an already authored `system.adoc` when `--force` is invoked without `--title`.

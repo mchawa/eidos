@@ -63,7 +63,7 @@ C4Context
 
 == 4. Solution Strategy
 * **Git as the OS**: All states (PRDs, ADR-free architectures, task graphs, test bindings) reside in Git.
-* **Progressive Onboarding (`eidos init --lite`)**: Supports a compact 3-file starter profile (`system.adoc`, `architecture/system-architecture.adoc`, and `POL-001`) that expands seamlessly as the project grows.
+* **Zero-Config Onboarding (`eidos init`)**: Scaffolds the canonical 12-directory living specification skeleton (`eidos/`), self-contained `eidos/.gitignore`, and root `eidos/system.adoc` descriptor.
 * **SpecDelta Diff Engine**: Evolutionary changes are composable semantic mutations (`add`, `modify`, `remove`, `deprecate`) stored flat in `eidos/deltas/`.
 * **Multi-Design Systems & W3C Tokens**: Product capabilities bridge business JTBD with technical code packages and W3C tokenized multi-brand design systems.
 * **Interactive Hierarchical C4 Explorer**: Living Web Portal provides dynamic, clickable drill-down from C4 Level 1 System Context to Level 2 Container Topologies and Level 3 Component Whiteboxes with breadcrumbs and slide-over component inspection, packaged via deterministic gzipped assets (`assets/portal/bundle.html.gz`) and a Hatch custom build hook.

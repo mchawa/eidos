@@ -98,7 +98,7 @@ eidos doctor
 
 * **[How Eidos Works](concepts/how-eidos-works.md)**: Deep dive into the Eidos execution loop, SQLite knowledge graph, AST drift engine, and lifecycle hooks.
 * **[Installation Guide](getting-started/installation.md)**: System requirements, optional extras, and workspace diagnostics.
-* **[5-Minute Quickstart](getting-started/quickstart.md)**: Bootstrap your repository (`eidos init` or `eidos init --lite`) and inspect your first living specifications.
+* **[5-Minute Quickstart](getting-started/quickstart.md)**: Bootstrap your repository (`eidos init`) and inspect your first living specifications.
 * **[Core Concepts](concepts/living-specs.md)**: Learn about Living Specs, Embedded Decisions (`DEC-*`), SpecDeltas, Invariants, and Dual Workflows.
 * **[Explorations & Spikes](concepts/explorations.md)**: Hypothesis-driven technical discovery and prototype spikes (`EXP-*`).
 * **[Multi-Design Systems](concepts/design.md)**: Multi-brand design systems, W3C tokens, and UI component contracts.

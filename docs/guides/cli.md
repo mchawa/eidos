@@ -54,25 +54,20 @@ Options:
 ---
 
 ### `eidos init`
-Initialize a Git repository with an Eidos living specification skeleton, tracking empty directories with `.gitkeep` files, self-contained `eidos/.gitignore`, and immediate validation. Supports both the full multi-domain catalog and the progressive **Eidos Lite** starter profile (`--lite`). Note that `eidos init` initializes specifications; agent plugins are installed separately via `eidos plugin install`.
+Initialize a Git repository with an Eidos living specification skeleton, tracking empty directories with `.gitkeep` files, self-contained `eidos/.gitignore`, and immediate validation. Note that `eidos init` initializes specifications; agent plugins are installed separately via `eidos plugin install`.
 
 ```bash
-# Full multi-domain catalog skeleton (default)
+# Initialize living specification skeleton in current repository
 eidos init
 
-# Progressive 3-file Eidos Lite onboarding profile
-eidos init --lite
-
 # Initialize at a custom path:
-eidos init /path/to/repo --name my-system --title "My System"
+eidos init /path/to/repo --title "My System"
 ```
 
 Options:
 * `PATH`: Target directory to initialize (default: current working directory `.`).
-* `--name, -n TEXT`: Custom machine-readable system identifier.
 * `--title, -t TEXT`: Human-readable display title.
-* `--lite, -l`: Initialize with the progressive Eidos Lite specification profile (`system.adoc`, `architecture/system-architecture.adoc`, `containers/`, `capabilities/`).
-* `--force, -f`: Overwrite existing files if present.
+* `--force, -f`: Overwrite existing files if present (preserving an existing authored `system.adoc` when `--title` is omitted).
 
 ---
 

@@ -29,11 +29,9 @@ def _ensure_eidos_gitignore(eidos_dir: Path) -> None:
 
 def init_repository(
     project_dir: Path,
-    name: str | None = None,
     title: str | None = None,
     eidos_dir_name: str = "eidos",
     force: bool = False,
-    lite: bool = False,
 ) -> tuple[bool, str, list[Path]]:
     """Initialize a repository with an Eidos living specification skeleton and governance."""
     eidos_dir = project_dir / eidos_dir_name
@@ -46,28 +44,21 @@ def init_repository(
             [],
         )
 
-    # Standard vs Progressive Lite Eidos living specification directory skeleton
-    if lite:
-        skeleton_dirs = [
-            eidos_dir / "architecture" / "containers",
-            eidos_dir / "domains" / "core" / "capabilities",
-            eidos_dir / "deltas",
-        ]
-    else:
-        skeleton_dirs = [
-            eidos_dir / "architecture" / "containers",
-            eidos_dir / "architecture" / "components",
-            eidos_dir / "architecture" / "contracts",
-            eidos_dir / "domains",
-            eidos_dir / "policies",
-            eidos_dir / "personas",
-            eidos_dir / "deltas",
-            eidos_dir / "explorations",
-            eidos_dir / "design" / "clients",
-            eidos_dir / "design" / "flows",
-            eidos_dir / "design" / "screens",
-            eidos_dir / "design" / "systems" / "core" / "components",
-        ]
+    # Standard Eidos living specification directory skeleton
+    skeleton_dirs = [
+        eidos_dir / "architecture" / "containers",
+        eidos_dir / "architecture" / "components",
+        eidos_dir / "architecture" / "contracts",
+        eidos_dir / "domains",
+        eidos_dir / "policies",
+        eidos_dir / "personas",
+        eidos_dir / "deltas",
+        eidos_dir / "explorations",
+        eidos_dir / "design" / "clients",
+        eidos_dir / "design" / "flows",
+        eidos_dir / "design" / "screens",
+        eidos_dir / "design" / "systems" / "core" / "components",
+    ]
     for d in skeleton_dirs:
         d.mkdir(parents=True, exist_ok=True)
         gitkeep = d / ".gitkeep"
@@ -93,15 +84,14 @@ def init_repository(
     if gitignore_file.exists() and gitignore_file not in created_files:
         created_files.append(gitignore_file)
 
-    # Root system.adoc: scaffold product/system frontmatter when name or title is provided,
+    # Root system.adoc: scaffold product/system frontmatter when title is provided,
     # otherwise create 0-byte system.adoc ready for user authoring.
     sys_file = eidos_dir / "system.adoc"
-    if name or title:
-        clean_name = (name or "").strip()
-        clean_title = (title or "").strip()
-        raw_slug = re.sub(r"[^A-Z0-9_-]+", "-", (clean_name or clean_title or "SYSTEM").upper()).strip("-") or "SYSTEM"
+    if title:
+        clean_title = title.strip()
+        raw_slug = re.sub(r"[^A-Z0-9_-]+", "-", (clean_title or "SYSTEM").upper()).strip("-") or "SYSTEM"
         sys_id = raw_slug if raw_slug.startswith("SYS-") else f"SYS-{raw_slug}"
-        sys_title = clean_title or clean_name or sys_id
+        sys_title = clean_title or sys_id
         sys_fm = {
             "type": "product/system",
             "id": sys_id,

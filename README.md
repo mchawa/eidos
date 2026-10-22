@@ -25,7 +25,7 @@ pipx install eidos-ai
 # Or run ephemerally without installing
 uvx --from eidos-ai eidos --help
 
-# Initialize Eidos in your repository (or use `eidos init --lite` for a 3-file starter profile)
+# Initialize Eidos in your repository
 eidos init
 
 # Synchronize SQLite + FTS5 + AST knowledge graph index

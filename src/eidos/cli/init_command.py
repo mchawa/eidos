@@ -14,12 +14,6 @@ def init_cmd(
         None,
         help="Target project directory to initialize with Eidos (defaults to current directory).",
     ),
-    name: str | None = typer.Option(
-        None,
-        "--name",
-        "-n",
-        help="System identifier (e.g. 'my-app'). Defaults to directory name.",
-    ),
     title: str | None = typer.Option(
         None,
         "--title",
@@ -32,12 +26,6 @@ def init_cmd(
         "-f",
         help="Force initialization even if eidos/ directory already exists.",
     ),
-    lite: bool = typer.Option(
-        False,
-        "--lite",
-        "-l",
-        help="Initialize progressive Eidos Lite profile (essential baseline: system, containers, capabilities, deltas).",
-    ),
 ):
     """Initialize a repository with an empty Eidos living specification skeleton."""
     project_dir = target_path or Path.cwd()
@@ -45,10 +33,8 @@ def init_cmd(
 
     success, msg, created_files = init_repository(
         project_dir=project_dir,
-        name=name,
         title=title,
         force=force,
-        lite=lite,
     )
 
     if not success:

@@ -24,7 +24,7 @@ def _init_git_repo(repo: Path) -> None:
 def test_a1_git_baseline_resolves_dedicated_component_without_cmp_prefix(tmp_path: Path) -> None:
     """A1: _resolve_git_baseline_sha locates architecture/components/<slug>.adoc when cmp- prefix is stripped."""
     _init_git_repo(tmp_path)
-    ok, msg, _ = init_repository(tmp_path, name="TestSys")
+    ok, msg, _ = init_repository(tmp_path, title="TestSys")
     assert ok, msg
     eidos_dir = tmp_path / "eidos"
 
@@ -118,7 +118,7 @@ def test_a3_git_baseline_memoizes_revisions_and_blobs(tmp_path: Path) -> None:
     from typing import Any
 
     _init_git_repo(tmp_path)
-    ok, msg, _ = init_repository(tmp_path, name="TestSys")
+    ok, msg, _ = init_repository(tmp_path, title="TestSys")
     assert ok, msg
     eidos_dir = tmp_path / "eidos"
 

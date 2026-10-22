@@ -180,4 +180,4 @@ eidos/
 Load the companion skill matching your task:
 * **`eidos-spec`**: YAML schemas and scaffolding (`eidos spec create/schema/list/show/delete`) for `DOM-*`, `CAP-*`, `PER-*`, `SYS-*`, `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DEC-*`, `DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`, `POL-*`, and polyglot `INV-*` test bindings.
 * **`eidos-plan`**: Technical spikes (`EXP-*`), SpecDelta lifecycle (`eidos delta create/verify/audit/apply/changelog`), declarative `expect:` post-conditions, and 5-dimension Staff Architectural Reviews.
-* **`eidos-ops`**: Greenfield initialization (`eidos init [--lite]`), 8-phase brownfield codebase extraction, and Living Web Portal operations (`eidos portal serve/build`).
+* **`eidos-ops`**: Greenfield initialization (`eidos init`), 8-phase brownfield codebase extraction, and Living Web Portal operations (`eidos portal serve/build`).

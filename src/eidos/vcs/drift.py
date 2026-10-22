@@ -122,10 +122,6 @@ class DriftCheckResult:
         return self.classification.code_files
 
 
-_DEFAULT_GET_GIT_DIFF_FILES = get_git_diff_files
-_DEFAULT_GET_FILE_VERSIONS = _get_file_versions
-
-
 def detect_drift(
     repo_root: Path,
     base_ref: str | None = None,
@@ -168,35 +164,23 @@ def detect_drift(
     )
     classification = classify_changed_files(changed_files, repo_root=root, eidos_dir=target_eidos)
 
-    synthetic_diff_mock = (
-        get_git_diff_files is not _DEFAULT_GET_GIT_DIFF_FILES and _get_file_versions is _DEFAULT_GET_FILE_VERSIONS
-    )
     prefetched_versions: dict[str, tuple[str | None, str | None]] = {}
-    if not synthetic_diff_mock and _get_file_versions is _DEFAULT_GET_FILE_VERSIONS:
-        batch_candidates = [
-            *classification.code_files,
-            *classification.spec_files,
-            *classification.delta_files,
-        ]
-        if batch_candidates:
-            prefetched_versions = _get_files_versions_batch(
-                root,
-                batch_candidates,
-                base_ref=resolved_base_ref,
-                head_ref=head_ref,
-                uncommitted=effective_uncommitted,
-                merge_base=resolved_mb,
-            )
+    batch_candidates = [
+        *classification.code_files,
+        *classification.spec_files,
+        *classification.delta_files,
+    ]
+    if batch_candidates:
+        prefetched_versions = _get_files_versions_batch(
+            root,
+            batch_candidates,
+            base_ref=resolved_base_ref,
+            head_ref=head_ref,
+            uncommitted=effective_uncommitted,
+            merge_base=resolved_mb,
+        )
 
     def _fetch_versions(rel_p: str) -> tuple[str | None, str | None]:
-        if synthetic_diff_mock:
-            abs_p = root / rel_p.replace("\\", "/")
-            if abs_p.is_file():
-                try:
-                    txt = abs_p.read_text(encoding="utf-8", errors="replace")
-                    return txt, txt
-                except OSError:
-                    pass
         if rel_p in prefetched_versions:
             return prefetched_versions[rel_p]
         norm_rel_p = rel_p.replace("\\", "/")
@@ -210,8 +194,7 @@ def detect_drift(
             uncommitted=effective_uncommitted,
             merge_base=resolved_mb,
         )
-        if not synthetic_diff_mock and _get_file_versions is _DEFAULT_GET_FILE_VERSIONS:
-            prefetched_versions[rel_p] = res_ver
+        prefetched_versions[rel_p] = res_ver
         return res_ver
 
     # 0. Filter code files into structural vs body-only edits (DLT-2026-028)
@@ -226,13 +209,9 @@ def detect_drift(
     moved_from = _pair_moved_files(versions, smap)
     for cf in classification.code_files:
         old_c, new_c = versions[cf]
-        synthetic = synthetic_diff_mock and old_c is not None and new_c is not None and old_c == new_c
         symbol_diff = None
         if old_c is not None and new_c is not None:
-            if synthetic:
-                # Synthetic/mocked diff where git blobs are identical
-                is_structural = True
-            elif smap.supports(cf):
+            if smap.supports(cf):
                 symbol_diff = smap.diff(cf)
                 is_structural = bool(symbol_diff)
             else:
@@ -244,9 +223,6 @@ def detect_drift(
         is_style = Path(cf).suffix.lower() in STYLE_EXTS
         design_cat, design_reasons = classify_design_changes(old_c, new_c, cf)
         if design_cat != "none":
-            if synthetic:
-                design_cat = "token" if is_style else "ui_contract"
-                design_reasons = ["modified (content identical in git; treated as design-structural)"]
             if is_style:
                 # Stylesheets are structural only when they mutate design tokens
                 is_structural = design_cat != "body_only"
@@ -255,9 +231,7 @@ def detect_drift(
 
         if is_structural:
             structural_code_files.append(cf)
-            addition = _structural_addition_for(
-                cf, synthetic, smap, symbol_diff=symbol_diff, moved_from=moved_from.get(cf)
-            )
+            addition = _structural_addition_for(cf, smap, symbol_diff=symbol_diff, moved_from=moved_from.get(cf))
             if addition is not None:
                 structural_additions[cf] = addition
         else:
@@ -320,11 +294,7 @@ def detect_drift(
                 if not val_str:
                     continue
                 declared_delta_targets.add(val_str.lower())
-                if (
-                    val_str.lower().endswith((".adoc", ".json", ".yaml", ".yml"))
-                    or "/" in val_str
-                    or "\\" in val_str
-                ):
+                if val_str.lower().endswith((".adoc", ".json", ".yaml", ".yml")) or "/" in val_str or "\\" in val_str:
                     norm_p = val_str.replace("\\", "/").strip("/")
                     declared_delta_paths.add(norm_p.lower())
                     pref_low = eidos_rel_prefix.lower().strip("/")
@@ -413,7 +383,6 @@ def detect_drift(
         effective_uncommitted,
         merge_base=resolved_mb,
         versions_fn=_fetch_versions,
-        synthetic_diff_mock=synthetic_diff_mock,
     )
     if code_changed:
         for cf, cid, spath in comp_mappings:

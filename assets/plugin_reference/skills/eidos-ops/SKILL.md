@@ -5,7 +5,7 @@ description: Initialize greenfield repositories with Eidos (eidos init), systema
 # Eidos Operations: Bootstrap, Brownfield Extraction & Web Portal (`eidos-ops`)
 
 This skill covers repository-level lifecycle operations in Eidos:
-1. **Greenfield Repository Initialization (`eidos init`)**: Bootstrapping a new repository with the full Eidos specification skeleton or the progressive Eidos Lite profile (`--lite`).
+1. **Greenfield Repository Initialization (`eidos init`)**: Bootstrapping a new repository with the Eidos specification skeleton.
 2. **Brownfield Codebase Extraction**: Reverse-engineering an existing codebase into accurate Arc42/C4 living specifications, domains, capabilities, and test-bound invariants.
 3. **Living Web Portal & Static Site Operations (`eidos portal serve`, `eidos portal build`)**: Launching the interactive architecture portal locally or exporting a static bundle for CI/CD hosting.
 
@@ -14,26 +14,20 @@ This skill covers repository-level lifecycle operations in Eidos:
 ## 1. Greenfield Repository Bootstrapping (`eidos init`)
 
 ```bash
-# 1a. Full profile: scaffold eidos/ directory skeleton and baseline governance policies (POL-001..POL-004)
-eidos init --name my-system --title "My System"
+# 1. Scaffold 12-directory eidos/ skeleton, eidos/.gitignore, and root eidos/system.adoc
+eidos init --title "My System"
 
-# 1b. Or Eidos Lite profile: minimal baseline (system.adoc, system-architecture.adoc, containers/, capabilities/)
-eidos init --lite --name my-system --title "My System"
-
-# 2. Install AI agent plugin integrations
-eidos plugin install
-# Or install across all supported coding agents (Antigravity, Claude, Cursor, Copilot, Cline, OpenCode, Codex, Aider):
-eidos plugin install all
-
-# 3. Populate C4 Level 1 System Context (eidos/system.adoc) and Arc42 Master Architecture (eidos/architecture/system-architecture.adoc)
-
-# 4. Scaffold initial product domains, personas, and C4 containers (consult 'eidos-spec' or run 'eidos spec schema <type>' for YAML schemas)
+# 2. Scaffold Arc42 Master Architecture, initial product domains, personas, and C4 containers
+#    (consult 'eidos-spec' or run 'eidos spec schema <type>' for YAML schemas)
 eidos spec schema
+eidos spec create architecture ARCH-CORE-001 --title "My System Architecture"
 eidos spec create domain DOM-CORE --title "Core Application Domain"
 eidos spec create persona PER-DEVELOPER --title "Application Developer"
 eidos spec create container CNT-APP-API --title "Core Application API"
 
-# 5. Synchronize the knowledge graph index and verify workspace health
+# 3. Populate C4 Level 1 System Context (eidos/system.adoc) and Arc42 Master Architecture (eidos/architecture/system-architecture.adoc)
+
+# 4. Synchronize the knowledge graph index and verify workspace health
 eidos index sync --force
 eidos validate eidos --json
 eidos doctor --json

@@ -1636,7 +1636,7 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
 
     # 6d. plugin/hooks.py: execute_hook on clean & invalid spec repos, and on git repo with drift
     hook_ws = tmp_path / "hook_exec_ws"
-    init_repository(hook_ws, name="hook-exec", title="Hook Exec")
+    init_repository(hook_ws, title="Hook Exec")
     assert execute_hook(path=hook_ws, stdin_data="") == 0
     (hook_ws / "eidos" / "domains" / "bad.adoc").write_text(
         "---\ntype: product/domain\nid: BAD_ID\n---\n= Bad\n", encoding="utf-8"
@@ -1816,7 +1816,7 @@ def test_group_d1_d2_d3_regressions(tmp_path, monkeypatch):  # eidos:fixture
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo_ws, check=True)
     subprocess.run(["git", "config", "user.email", "t@eidos.ai"], cwd=repo_ws, check=True)
     subprocess.run(["git", "config", "user.name", "t"], cwd=repo_ws, check=True)
-    assert runner.invoke(app, ["init", str(repo_ws / "eidos"), "--name", "Sub Test"]).exit_code == 0
+    assert runner.invoke(app, ["init", str(repo_ws / "eidos"), "--title", "Sub Test"]).exit_code == 0
     sub_dir = repo_ws / "src" / "pkg"
     sub_dir.mkdir(parents=True)
     (sub_dir / "mod.py").write_text("x = 1\n", encoding="utf-8")
@@ -1961,5 +1961,3 @@ def test_sdist_and_multi_root_plugin_reference_resolution(tmp_path, monkeypatch)
     assert ws_assets.get_assets_root() == (valid_cwd / "assets").resolve()
     assert ws_assets.get_plugin_reference_dir() == valid_plugin_ref.resolve()
     assert locate_plugin_bundle() == valid_plugin_ref.resolve()
-
-

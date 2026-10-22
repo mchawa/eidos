@@ -976,8 +976,7 @@ def test_shared_source_file_keeps_every_declaring_owner(tmp_path):
     try:
         idx.sync(force=True)
         rows = conn.execute(
-            "SELECT entity_id, is_primary FROM code_symbols "
-            "WHERE file_path = 'shared/common.py' AND symbol = 'Shared';"
+            "SELECT entity_id, is_primary FROM code_symbols WHERE file_path = 'shared/common.py' AND symbol = 'Shared';"
         ).fetchall()
         assert sorted(tuple(r) for r in rows) == [("CMP-COMMON-B", 1), ("CMP-COMMON-C", 0)]
 
@@ -2114,7 +2113,7 @@ def test_context_implements_edges_inline_cmp_blast_radius_and_path_resolution(tm
     from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 
-    init_repository(tmp_path, name="graph-bug-fixes")
+    init_repository(tmp_path, title="graph-bug-fixes")
     eidos_dir = tmp_path / "eidos"
 
     create_spec(eidos_dir, "domain", "DOM-ENGINE", title="Engine Domain")
@@ -2230,7 +2229,7 @@ def test_incremental_spec_sync_skips_unchanged_test_reparse_and_scopes_fts(tmp_p
     from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 
-    init_repository(tmp_path, name="inc-perf-repo")
+    init_repository(tmp_path, title="inc-perf-repo")
     eidos_dir = tmp_path / "eidos"
     create_spec(eidos_dir, "domain", "DOM-PERF", title="Perf Domain")
     cnt_perf = create_spec(eidos_dir, "container", "CNT-PERF", title="Perf Container")
@@ -2339,7 +2338,7 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
     }
 
     # 2. Scaffold workspace with standalone components, container with decision, and capability
-    init_repository(tmp_path, name="dlt-097-repo")
+    init_repository(tmp_path, title="dlt-097-repo")
     eidos_dir = tmp_path / "eidos"
     create_spec(eidos_dir, "domain", "DOM-CORE", title="Core Domain")
     cnt_path = create_spec(eidos_dir, "container", "CNT-RUNTIME", title="Runtime Container")
@@ -2498,7 +2497,7 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     assert SCHEMA_VERSION == "2.17.0"
     assert _build_spec_catalog_with_invariants(tmp_path / "nonexistent_eidos") == ({}, {})
 
-    init_repository(tmp_path, name="dlt-104-repo")
+    init_repository(tmp_path, title="dlt-104-repo")
     eidos_dir = tmp_path / "eidos"
 
     dom_path = create_spec(eidos_dir, "domain", "DOM-CORE-104", title="Core 104 Domain")
@@ -2722,7 +2721,7 @@ def test_dlt_2026_105_c4_level_1_and_exploration_edges(tmp_path: Path) -> None:
     from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 
-    init_repository(tmp_path, name="dlt-105-repo")
+    init_repository(tmp_path, title="dlt-105-repo")
     eidos_dir = tmp_path / "eidos"
 
     per_path = create_spec(eidos_dir, "persona", "PER-LEAD-105", title="Lead Persona 105")

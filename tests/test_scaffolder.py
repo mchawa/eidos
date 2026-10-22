@@ -472,7 +472,6 @@ def test_init_repository_programmatic(tmp_path):
 
     success, _msg, _files = init_repository(
         project_dir=tmp_path,
-        name="test-project",
         title="Test Project System",
     )
     assert success
@@ -480,10 +479,10 @@ def test_init_repository_programmatic(tmp_path):
     assert (eidos_dir / ".gitignore").exists()
     assert not (tmp_path / ".agents").exists()
 
-    # Verify system.adoc is scaffolded when name and title are provided
+    # Verify system.adoc is scaffolded when title is provided
     assert (eidos_dir / "system.adoc").exists()
     sys_content = (eidos_dir / "system.adoc").read_text(encoding="utf-8")
-    assert "SYS-TEST-PROJECT" in sys_content
+    assert "SYS-TEST-PROJECT-SYSTEM" in sys_content
     assert "Test Project System" in sys_content
 
     # Verify no other example .adoc specifications exist
@@ -513,10 +512,10 @@ def test_init_repository_programmatic(tmp_path):
     assert not success2
     assert "already exist" in msg2
 
-    # Re-init with force (without name/title) preserves existing authored system.adoc
+    # Re-init with force (without title) preserves existing authored system.adoc
     success3, _, _ = init_repository(project_dir=tmp_path, force=True)
     assert success3
-    assert "SYS-TEST-PROJECT" in (eidos_dir / "system.adoc").read_text(encoding="utf-8")
+    assert "SYS-TEST-PROJECT-SYSTEM" in (eidos_dir / "system.adoc").read_text(encoding="utf-8")
 
     # Validate directory
     validator = SpecValidator()
@@ -528,7 +527,7 @@ def test_init_repository_programmatic(tmp_path):
 def test_init_repository_cli(tmp_path):
     """Verify eidos init CLI command scaffolds without installing plugins (CTR-EIDOS-CLI)."""
     target = tmp_path / "cli_init_target"
-    result = runner.invoke(app, ["init", str(target), "--name", "my-app"])
+    result = runner.invoke(app, ["init", str(target), "--title", "my-app"])
     assert result.exit_code == 0
     assert "Successfully initialized" in result.stdout
     assert (target / "eidos" / ".gitignore").exists()
@@ -542,32 +541,11 @@ def test_init_repository_cli(tmp_path):
     assert not (target / ".agents").exists()
 
 
-def test_init_repository_lite_cli(tmp_path):
-    """Verify eidos init --lite scaffolds progressive minimal baseline skeleton (DLT-2026-050)."""
-    target = tmp_path / "cli_init_lite_target"
-    result = runner.invoke(app, ["init", str(target), "--lite", "--name", "my-lite-app"])
-    assert result.exit_code == 0
-    assert "Successfully initialized" in result.stdout
-    eidos_dir = target / "eidos"
-    assert (eidos_dir / ".gitignore").exists()
-    assert (eidos_dir / "system.adoc").exists()
-    assert (eidos_dir / "architecture" / "containers" / ".gitkeep").exists()
-    assert (eidos_dir / "domains" / "core" / "capabilities" / ".gitkeep").exists()
-    assert (eidos_dir / "deltas" / ".gitkeep").exists()
-    # Lite profile skips heavy optional taxonomies
-    assert not (eidos_dir / "architecture" / "contracts").exists()
-    assert not (eidos_dir / "policies").exists()
-    assert not (eidos_dir / "personas").exists()
-    assert not (eidos_dir / "design").exists()
-    assert not (eidos_dir / "explorations").exists()
-
-
 def test_init_repository_custom(tmp_path):
     """Verify programmatic init_repository call."""
     target = tmp_path / "custom_init_target"
     ok, _msg, _created = init_repository(
         project_dir=target,
-        name="custom-service",
         title="Custom Service",
     )
     assert ok
@@ -891,7 +869,7 @@ def test_foreign_repo_end_to_end_workflow(tmp_path):
     from eidos.portal.builder import build_static_portal
 
     repo = tmp_path / "src" / "acme_payments"
-    ok, _, _ = init_repository(project_dir=repo, name="acme-payments", title="Acme Payments Platform")
+    ok, _, _ = init_repository(project_dir=repo, title="Acme Payments Platform")
     assert ok
 
     eidos_dir = repo / "eidos"
@@ -1425,7 +1403,7 @@ def test_a7_a8_a11_catalog_scaffolder_and_design_edge_cases(tmp_path: Path) -> N
     from eidos.core.spec.parser import dump_spec_document
 
     eidos_dir = tmp_path / "eidos"
-    init_repository(tmp_path, name="TestSys")
+    init_repository(tmp_path, title="TestSys")
 
     # A7a: find_spec_by_id_or_path rejects non-.adoc files (like tokens.json) and paths escaping eidos_dir
     ds_file = create_spec(eidos_dir, "design-system", "DS-CORE", "Core Design")
@@ -1538,10 +1516,10 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
     from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec.parser import parse_spec_file
 
-    # --- A8: init_repository strips whitespace-only name and title ---
+    # --- A8: init_repository strips whitespace-only title ---
     ws_a8 = tmp_path / "my-clean-service"
     ws_a8.mkdir()
-    init_repository(ws_a8, name="   ", title="  My Clean Service  ")
+    init_repository(ws_a8, title="  My Clean Service  ")
     sys_doc_a8 = parse_spec_file(ws_a8 / "eidos" / "system.adoc")
     assert sys_doc_a8.frontmatter["id"] == "SYS-MY-CLEAN-SERVICE"
     assert sys_doc_a8.frontmatter["title"] == "My Clean Service"
@@ -1568,7 +1546,7 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
     # --- A2 & A3: bare .adoc lookup, capability domain auto-discovery, design entity refs, contract container ---
     ws = tmp_path / "ws_a"
     ws.mkdir()
-    init_repository(ws, name="ws-a", title="WS A")
+    init_repository(ws, title="WS A")
     eidos_dir = ws / "eidos"
     cnt_path = create_spec(eidos_dir, "container", "CNT-API-GATEWAY", "API Gateway")
     assert find_spec_by_id_or_path(eidos_dir, "cnt-api-gateway.adoc") == cnt_path.resolve()

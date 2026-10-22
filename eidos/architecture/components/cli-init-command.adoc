@@ -10,14 +10,14 @@ source_path: src/eidos/cli/init_command.py
 :toc: left
 
 == Responsibility
-Exposes the `eidos init` CLI command for bootstrapping repositories with a full or progressive Lite (`--lite`) living specification directory skeleton and baseline `system.adoc` descriptor.
+Exposes the `eidos init` CLI command for bootstrapping repositories with the living specification directory skeleton and baseline `system.adoc` descriptor.
 
 == Key Responsibilities & Collaborators
-* **Repository Onboarding CLI**: Parses `[PATH]`, `--name`, `--title`, `--lite`, and `--force` flags and delegates skeleton generation and immediate schema validation to `CMP-REPO-INITIALIZER` (`init_repository`).
+* **Repository Onboarding CLI**: Parses `[PATH]`, `--title`, and `--force` flags and delegates skeleton generation and immediate schema validation to `CMP-REPO-INITIALIZER` (`init_repository`).
 
 == Public Surface
 * `register(app: typer.Typer) -> None`
-* `init_cmd(path: Path, name: str | None, title: str | None, lite: bool, force: bool) -> None`
+* `init_cmd(path: Path, title: str | None, force: bool) -> None`
 
 == Design Constraints & Operational Notes
 * **Safe Default Execution**: Exits with code `1` if `eidos/` is already populated and `--force` is not supplied.

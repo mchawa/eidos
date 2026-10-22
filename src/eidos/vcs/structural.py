@@ -153,7 +153,6 @@ def _pair_moved_files(
 
 def _structural_addition_for(
     cf: str,
-    synthetic: bool,
     smap: _SymbolMapCache,
     *,
     symbol_diff: Any = None,
@@ -161,7 +160,7 @@ def _structural_addition_for(
 ) -> _StructuralAddition | None:
     """Return the structural additions of a structurally changed file, or None when it adds nothing."""
     old_content, new_content = smap.versions_of(cf)
-    if synthetic or new_content is None:
+    if new_content is None:
         return None
     if moved_from is None and old_content is None:
         diff = smap.diff(cf)
@@ -261,7 +260,6 @@ class _SpecDiffInspector:
         uncommitted: bool,
         merge_base: str | None = None,
         versions_fn: Any = None,
-        synthetic_diff_mock: bool = False,
     ) -> None:
         self._root = root
         self._base_ref = base_ref
@@ -269,7 +267,6 @@ class _SpecDiffInspector:
         self._uncommitted = uncommitted
         self.merge_base = merge_base
         self._versions_fn = versions_fn
-        self._synthetic_diff_mock = synthetic_diff_mock
         self._versions: dict[str, tuple[str | None, str | None]] = {}
 
     def versions(self, spec: str) -> tuple[str | None, str | None]:
@@ -299,7 +296,7 @@ class _SpecDiffInspector:
         if old is None:
             return True
         if old == new:
-            return self._synthetic_diff_mock
+            return False
 
         spec_lower = spec.lower()
         if spec_lower.endswith(".json"):

@@ -56,7 +56,7 @@ def _commit_git_baseline(repo_dir: Path) -> None:
 
 def test_delta_verify_all_satisfied(tmp_path):
     """Verify that verify_delta_mutations rejects unmodified modify targets and passes once modified."""
-    init_repository(tmp_path, name="test-system")
+    init_repository(tmp_path, title="test-system")
     eidos_dir = tmp_path / "eidos"
 
     create_spec(eidos_dir, "domain", "DOM-AUTH", title="Auth Domain")
@@ -129,7 +129,7 @@ def test_delta_verify_all_satisfied(tmp_path):
 
 def test_delta_verify_declarative_expect_and_patch_invariant(tmp_path):
     """Verify declarative expect post-conditions and invariant modification baseline checks."""
-    init_repository(tmp_path, name="test-system")
+    init_repository(tmp_path, title="test-system")
     eidos_dir = tmp_path / "eidos"
 
     create_spec(eidos_dir, "domain", "DOM-AUTH", title="Auth Domain")
@@ -177,7 +177,7 @@ def test_delta_verify_declarative_expect_and_patch_invariant(tmp_path):
 
 def test_delta_verify_unfulfilled_mutations(tmp_path):
     """Verify that verify_delta_mutations detects missing specs and un-executed removals."""
-    init_repository(tmp_path, name="test-system")
+    init_repository(tmp_path, title="test-system")
     eidos_dir = tmp_path / "eidos"
 
     create_spec(eidos_dir, "container", "CNT-STILL-EXISTS", title="Zombie Container")
@@ -209,7 +209,7 @@ def test_delta_verify_unfulfilled_mutations(tmp_path):
 
 def test_delta_execute_and_verify_lifecycle(tmp_path):
     """Verify INV-MUTATION-REVERSIBILITY: apply_delta enforces default verification and pre-commit SpecValidator checks before committing status: applied."""
-    init_repository(tmp_path, name="test-system")
+    init_repository(tmp_path, title="test-system")
     eidos_dir = tmp_path / "eidos"
 
     create_spec(eidos_dir, "domain", "DOM-BILLING", title="Billing Domain")
@@ -282,7 +282,7 @@ def test_delta_execute_and_verify_lifecycle(tmp_path):
 
 def test_delta_apply_cli_with_verify(tmp_path):
     """Verify 'eidos delta apply' via CLI with --verify and --no-verify."""
-    init_repository(tmp_path, name="test-system")
+    init_repository(tmp_path, title="test-system")
     eidos_dir = tmp_path / "eidos"
 
     create_spec(eidos_dir, "domain", "DOM-NOTIFY", title="Notification Domain")
@@ -317,7 +317,7 @@ def test_delta_apply_cli_with_verify(tmp_path):
 
 def test_delta_verify_requires_modification_evidence(tmp_path):
     """INV-DELTA-VERIFY-MODIFICATION-EVIDENCE: verify modify mutations require positive evidence of change."""
-    init_repository(tmp_path, name="test-system")
+    init_repository(tmp_path, title="test-system")
     eidos_dir = tmp_path / "eidos"
 
     create_spec(eidos_dir, "domain", "DOM-CORE", title="Core Domain")
@@ -343,9 +343,7 @@ def test_delta_verify_requires_modification_evidence(tmp_path):
     cmp_sibling_path = create_spec(eidos_dir, "component", "CMP-SIBLING", title="SiblingComponent")
     cmp_sibling_doc = parse_spec_file(cmp_sibling_path)
     cmp_sibling_doc.frontmatter["responsibility"] = "Initial sibling responsibility."
-    cmp_sibling_path.write_text(
-        dump_spec_document(cmp_sibling_doc.frontmatter, cmp_sibling_doc.body), encoding="utf-8"
-    )
+    cmp_sibling_path.write_text(dump_spec_document(cmp_sibling_doc.frontmatter, cmp_sibling_doc.body), encoding="utf-8")
 
     cap_doc = parse_spec_file(cap_path)
     cap_doc.frontmatter["technical"]["invariants"] = [
@@ -624,7 +622,7 @@ def test_delta_schema_operation_coverage_and_git_baseline_fallback(tmp_path):
     schema_ops = set(schema_data["properties"]["mutations"]["items"]["properties"]["operation"]["enum"])
     assert schema_ops == set(SUPPORTED_MUTATION_OPERATIONS)
 
-    init_repository(tmp_path, name="git-baseline-test")
+    init_repository(tmp_path, title="git-baseline-test")
     eidos_dir = tmp_path / "eidos"
 
     create_spec(eidos_dir, "domain", "DOM-GIT", title="Git Domain")
@@ -693,7 +691,7 @@ def test_delta_schema_operation_coverage_and_git_baseline_fallback(tmp_path):
 
 def test_delta_vcs_base_commit_and_collision_free_ids(tmp_path):
     """Verify vcs.base_commit on uncommitted deltas and collision-free delta IDs."""
-    init_repository(tmp_path, name="cow-baseline-test")
+    init_repository(tmp_path, title="cow-baseline-test")
     eidos_dir = tmp_path / "eidos"
 
     create_spec(eidos_dir, "domain", "DOM-COW", title="COW Domain")
@@ -745,7 +743,7 @@ def test_delta_vcs_base_commit_and_collision_free_ids(tmp_path):
 def test_deep_review_subsystem_3_scaffolder_catalog_delta_and_changelog_edge_cases(tmp_path):
     """Verify contract owning_container fallback ignores CMP-*, _set_frontmatter_scalar preserves '#' in quotes,
     set_delta_status('applied') enforces verification, and generate_changelog includes commits in tagless repos."""
-    init_repository(tmp_path, name="subsystem-3-deep")
+    init_repository(tmp_path, title="subsystem-3-deep")
     eidos_dir = tmp_path / "eidos"
 
     (eidos_dir / "architecture" / "components").mkdir(parents=True, exist_ok=True)
@@ -809,7 +807,7 @@ def test_deep_review_subsystem_3_scaffolder_catalog_delta_and_changelog_edge_cas
 def test_delta_engine_all_mutation_families_and_helpers(tmp_path):
     """Verify composable add/modify/remove/deprecate across invariants, components, architecture, policies, and helpers."""
     # eidos:fixture
-    init_repository(tmp_path, name="all-mutations-test")
+    init_repository(tmp_path, title="all-mutations-test")
     eidos_dir = tmp_path / "eidos"
     arch_file = eidos_dir / "architecture" / "system-architecture.adoc"
     arch_file.write_text(
@@ -950,14 +948,14 @@ def test_delta_engine_git_baseline_and_catalog_helpers(tmp_path):
     """Cover _resolve_git_baseline_sha, _evaluate_declarative_postcondition branches, catalog.py helpers, and initializer.py."""
     # eidos:fixture
     repo_init = tmp_path / "init_full"
-    ok_init, _, _ = init_repository(repo_init, lite=False)
+    ok_init, _, _ = init_repository(repo_init)
     assert ok_init is True
     ok_reinit, msg_reinit, _ = init_repository(repo_init, force=False)
     assert ok_reinit is False and "Use --force" in msg_reinit
 
     git_repo = tmp_path / "git_delta_ws"
     eidos_dir = git_repo / "eidos"
-    init_repository(git_repo, name="git-delta", title="Git Delta")
+    init_repository(git_repo, title="Git Delta")
     cnt_file = create_spec(eidos_dir, "container", "CNT-BASE", "Base Container")
     cmp_inline_file = create_spec(eidos_dir, "component", "CMP-INLINE-1", "Inline One")
     doc_cmp = parse_spec_file(cmp_inline_file)
@@ -1035,7 +1033,7 @@ def test_delta_engine_git_baseline_and_catalog_helpers(tmp_path):
 def test_dlt_2026_079_structured_expect_assertions_and_diagnostics(tmp_path):
     """Verify DLT-2026-079: structured body/frontmatter expect post-conditions, multi-string contains/not_contains,
     list-subset matching, comment stripping, baseline SHA verification alongside expect, and failure_reason diagnostics."""
-    init_repository(tmp_path, name="dlt-079-ws")
+    init_repository(tmp_path, title="dlt-079-ws")
     eidos_dir = tmp_path / "eidos"
 
     cnt_path = create_spec(eidos_dir, "container", "CNT-API", title="API Service")
@@ -1247,9 +1245,7 @@ def test_catalog_and_delta_engine_edge_cases(tmp_path):
 
     diag.clear()
     assert (
-        _evaluate_declarative_postcondition(
-            {"expect": {"frontmatter": "not_dict"}}, "CNT-1", {}, {}, diagnostics=diag
-        )
+        _evaluate_declarative_postcondition({"expect": {"frontmatter": "not_dict"}}, "CNT-1", {}, {}, diagnostics=diag)
         is False
     )
     assert "expect.frontmatter must be a mapping" in diag
@@ -1400,7 +1396,7 @@ def test_component_invariant_git_baseline_and_pre_create_precedence(tmp_path):
     import subprocess
 
     ws = tmp_path / "git_comp_inv_ws"
-    init_repository(ws, name="comp-inv-test")
+    init_repository(ws, title="comp-inv-test")
     eidos_dir = ws / "eidos"
 
     cnt_path = create_spec(eidos_dir, "container", "CNT-API-GW", title="API Gateway")
@@ -1485,7 +1481,7 @@ def test_delta_and_exploration_archive_lifecycle(tmp_path: Path):
     from eidos.core.spec.validator import SpecValidator
 
     ws = tmp_path / "archive-ws"
-    init_repository(ws, name="archive-test")
+    init_repository(ws, title="archive-test")
     eidos_dir = ws / "eidos"
     create_spec(eidos_dir, "domain", "DOM-CORE", title="Core Domain")
 

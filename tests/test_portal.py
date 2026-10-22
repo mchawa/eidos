@@ -799,7 +799,7 @@ def test_portal_zero_node_subprocess_http_endpoints_mermaid_and_build_assets(tmp
     from eidos.portal.server import EidosPortalHandler
 
     repo = tmp_path / "portal_ws"
-    init_repository(repo, name="portal-ws", title="Portal Test System")
+    init_repository(repo, title="Portal Test System")
     eidos_dir = repo / "eidos"
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 
@@ -1039,7 +1039,7 @@ def test_dlt_2026_085_portal_graph_derived_affects_and_blast_radius(tmp_path: Pa
     from eidos.portal.generator import get_portal_data
 
     repo = tmp_path / "portal_graph_ws"
-    init_repository(repo, name="portal-graph", title="Portal Graph System")
+    init_repository(repo, title="Portal Graph System")
     eidos_dir = repo / "eidos"
 
     src_core = repo / "src" / "core"
@@ -1524,7 +1524,7 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
     )
     from eidos.portal.server import EidosPortalHandler
 
-    init_repository(tmp_path, name="DeepAuditD")
+    init_repository(tmp_path, title="DeepAuditD")
     eidos_dir = tmp_path / "eidos"
 
     # D1: get_portal_data populates cnt_dependents and comp_dependents for delta blast_radius

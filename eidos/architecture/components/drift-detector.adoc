@@ -29,4 +29,4 @@ Detects specification-to-code and design drift across Git commit ranges and unco
 
 == Design Constraints & Operational Notes
 * **Fail-Closed Git Ref Resolution (`INV-DRIFT-FAIL-CLOSED-ON-GIT-ERROR`)**: Raises `DriftError` immediately when an explicit or shallow-clone `--base` Git reference cannot be resolved.
-* **Substantive Spec Diff Enforcement**: Whitespace-only or comment-only edits to `.adoc` files do not satisfy structural code or design token drift.
+* **Deterministic Spec Diff & AST Inspection**: Evaluates baseline/head blob versions (`_get_files_versions_batch` and `_SpecDiffInspector`) purely from resolved version tuples without test-mocking sentinel heuristics; whitespace-only, comment-only, or identity (`old == new`) edits do not satisfy structural code or design token drift.

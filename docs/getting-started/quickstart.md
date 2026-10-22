@@ -6,30 +6,17 @@ This guide will walk you through initializing, validating, and exploring Eidos l
 
 ## Step 1: Initialize Eidos in Your Repository
 
-Navigate to your project root and run `eidos init`. You can choose between the **Full Multi-Domain Skeleton** or the progressive **Eidos Lite Profile** (`--lite`):
+Navigate to your project root and run `eidos init`:
 
-=== "Full Catalog (Default)"
+```bash
+# Initialize living specification directory hierarchy
+eidos init
 
-    ```bash
-    # Initialize complete living specification hierarchy
-    eidos init
+# Populate and synchronize the architectural knowledge graph
+eidos index sync
+```
 
-    # Populate and synchronize the architectural knowledge graph
-    eidos index sync
-    ```
-
-=== "Progressive Eidos Lite (`--lite`)"
-
-    ```bash
-    # Minimal 3-file starter profile (system.adoc, system-architecture.adoc, POL-001)
-    # plus containers/ and capabilities/ directories
-    eidos init --lite
-
-    # Populate and synchronize the architectural knowledge graph
-    eidos index sync
-    ```
-
-The full profile creates the canonical `eidos/` directory skeleton, tracked in Git by `.gitkeep` files and isolated by a self-contained `eidos/.gitignore`:
+This creates the canonical `eidos/` directory skeleton, tracked in Git by `.gitkeep` files and isolated by a self-contained `eidos/.gitignore`:
 
 ```text
 eidos/

@@ -110,21 +110,6 @@
         "type": "<typer.models.TyperPath object>"
       },
       {
-        "name": "name",
-        "opts": [
-          "--name",
-          "-n"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "None",
-        "help": "System identifier (e.g. 'my-app'). Defaults to directory name.",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
         "name": "title",
         "opts": [
           "--title",
@@ -150,21 +135,6 @@
         "required": false,
         "default": "False",
         "help": "Force initialization even if eidos/ directory already exists.",
-        "panel": null,
-        "envvar": "None",
-        "type": "BOOL"
-      },
-      {
-        "name": "lite",
-        "opts": [
-          "--lite",
-          "-l"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "False",
-        "help": "Initialize progressive Eidos Lite profile (essential baseline: system, containers, capabilities, deltas).",
         "panel": null,
         "envvar": "None",
         "type": "BOOL"

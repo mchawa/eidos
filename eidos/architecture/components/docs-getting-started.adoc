@@ -15,7 +15,7 @@ source_path:
 Provides the landing page (`docs/index.md`), installation instructions (`docs/getting-started/installation.md`), and end-to-end 5-minute onboarding quickstart (`docs/getting-started/quickstart.md`).
 
 == Key Responsibilities & Collaborators
-* **Developer Onboarding & Installation**: Documents global CLI installation (`uv tool install eidos-ai`, `pipx`), repository initialization (`eidos init` and `eidos init --lite`), schema introspection (`eidos spec schema`), blueprint scaffolding (`eidos spec create`), and drift verification (`eidos drift`).
+* **Developer Onboarding & Installation**: Documents global CLI installation (`uv tool install eidos-ai`, `pipx`), repository initialization (`eidos init`), schema introspection (`eidos spec schema`), blueprint scaffolding (`eidos spec create`), and drift verification (`eidos drift`).
 
 == Public Surface
 * `docs/index.md`
