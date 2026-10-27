@@ -22,28 +22,11 @@ if [ -d "src/eidos/portal/frontend" ] && command -v pnpm &>/dev/null; then
   (cd src/eidos/portal/frontend && pnpm install)
 fi
 
-# 4. Configure persistent AI tool directories and migrate initial backups
+# 4. Configure persistent AI tool directories
 echo "==> Configuring persistent volumes (~/.gemini)..."
 sudo mkdir -p "${HOME}/.gemini"
 sudo chown -R vscode:vscode "${HOME}/.gemini"
 chmod 700 "${HOME}/.gemini"
-
-BACKUP_DIR="${PWD}/backups"
-if [ -d "${BACKUP_DIR}/.gemini" ]; then
-  echo "    Migrating initial Gemini data from ${BACKUP_DIR}/.gemini..."
-  cp -a "${BACKUP_DIR}/.gemini/." "${HOME}/.gemini/"
-  rm -rf "${BACKUP_DIR}/.gemini"
-elif [ -d "${BACKUP_DIR}/gemini" ]; then
-  echo "    Migrating initial Gemini data from ${BACKUP_DIR}/gemini..."
-  cp -a "${BACKUP_DIR}/gemini/." "${HOME}/.gemini/"
-  rm -rf "${BACKUP_DIR}/gemini"
-fi
-
-if [ -d "${BACKUP_DIR}" ]; then
-  rmdir "${BACKUP_DIR}" 2>/dev/null || true
-fi
-
-sudo chown -R vscode:vscode "${HOME}/.gemini"
 
 # 5. Validate Eidos specifications
 if [ -f ".venv/bin/eidos" ]; then

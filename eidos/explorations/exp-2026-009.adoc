@@ -1,0 +1,239 @@
+---
+type: product/exploration
+id: EXP-2026-009
+title: "Hybrid Semantic Retrieval with Harrier-OSS-v1-0.6B FP16 ONNX"
+status: in_progress
+---
+= Exploration: Hybrid Semantic Retrieval with Harrier-OSS-v1-0.6B FP16 ONNX
+:toc: left
+:icons: font
+:sectnums:
+
+== Core Hypothesis
+Integrating **`microsoft/harrier-oss-v1-0.6b`** in **ONNX** format (`onnx-community/harrier-oss-v1-0.6b-ONNX`, targeting `onnx/model_fp16.onnx` + `onnx/model_fp16.onnx_data` with `onnx/model.onnx` FP32 and `onnx/model_quantized.onnx` INT8 as CPU execution comparators) via a lightweight optional runtime extra (`eidos-ai[semantic]` using `onnxruntime`, `tokenizers`, and `numpy`, with zero PyTorch or external LLM API dependencies) and fusing its 1,024-dimensional dense embeddings with Eidos's existing FTS5 BM25 lexical engine via **Reciprocal Rank Fusion (RRF)** will:
+
+1. Preserve **reference embedding fidelity** (`cosine_similarity >= 0.9999` vs. Microsoft's PyTorch reference implementation for FP16/FP32, and `>= 0.995` if INT8 is required by CPU kernel constraints) using right-padded `<|endoftext|>` (`EOS`) last-token pooling and $L_2$ normalization.
+2. Execute warm single-query forward-pass inference in **`<= 75 ms` on a modern multi-core CPU**, bound one-shot CLI `ort.InferenceSession` initialization overhead via basic graph optimization / OS page-cache reuse, and complete incremental single-spec sync updates in **`<= 150 ms`** using spec-only content-addressed SHA-256 caching (`spec_embeddings` table in `eidos/.cache/index.db`).
+3. Improve conceptual/zero-keyword-overlap retrieval recall on a fresh held-out benchmark (`HOLD_V2`, $\ge 30$ conceptual & architectural queries) and unbound test-to-invariant recommendation (`eidos drift`) by **`>= 15%`** over the pure lexical `DEC-INDEX-FTS-RETRIEVAL-HYGIENE` baseline while preserving `>= 94.4%` DEV / `>= 92.9%` HOLD recall and `100%` graceful fallback when the semantic runtime is not installed.
+
+== Questions & Spikes
+* **Questions to Answer**:
+  1. *ONNX CPU Kernel Compatibility & Numerical Fidelity*: Does `onnxruntime`'s `CPUExecutionProvider` execute the fused `com.microsoft::GroupQueryAttention`, `RotaryEmbedding`, and `SkipSimplifiedLayerNormalization` contrib nodes in `onnx/model_fp16.onnx` natively on x86_64/ARM64 CPUs without `NOT_IMPLEMENTED` errors or `float16 <-> float32` `Cast` thrashing, and how does it compare in fidelity and latency against `onnx/model.onnx` (FP32) and `onnx/model_quantized.onnx` (INT8)?
+  2. *Modern CPU Latency (One-Shot CLI Cold Load + Warm Forward Pass)*: What are the exact `ort.InferenceSession` initialization latency (cold vs. OS page-cache warm across `GraphOptimizationLevel` settings), single-query forward-pass latency (~30 tokens with Harrier `Instruct:` prefix), and batched full-catalog indexing throughput (`batch_size=8..16`) on a modern CPU?
+  3. *Hybrid RRF, Exact-ID Pinning & Prompt Ablation*: What RRF constant $k_0$, weight ratio $(w_{\text{lex}}, w_{\text{sem}})$, exact-ID/AND boost preservation rules, and Harrier `Instruct:` prefix (`web_search_query` vs. custom architecture instruction) maximize conceptual query recall (`HOLD_V2`) without regressing exact entity ID (`CNT-*`, `INV-*`) or `snake_case`/`camelCase` symbol precision on `DEV` and `HOLD` from `EXP-2026-006`?
+  4. *Seamless Installation, Cache Lifecycle & `POL-004` Governance*: How should model provisioning (`eidos/.cache/models/harrier-oss-v1-0.6b-fp16/`), `_MANAGED_TABLES` registration in `storage.py`, `sync --force` retention in `sync.py`, and `POL-004` governance rules be structured so standard CLI gates (`eidos validate`, `eidos drift`) incur `0 ms` overhead while `eidos index search` and `eidos context -t` transparently upgrade to hybrid semantic retrieval?
+* **Spikes**:
+  - `spike-fp16-onnx-cpu-harness`: Prototype a zero-PyTorch Python wrapper around `onnxruntime` + `tokenizers` testing `onnx/model_fp16.onnx` (and comparing `model.onnx` FP32 / `model_quantized.onnx` INT8 on `CPUExecutionProvider`), verifying in-graph `sentence_embedding` vs. manual `last_hidden_state` pooling and right-padding alignment.
+  - `spike-cpu-latency-and-incremental-sync`: Benchmark `InferenceSession` load time, warm query latency, and spec-only SHA-256 content-addressed SQLite persistence (`spec_embeddings` table in `storage.py` / `sync.py`) across all living specifications and invariants in `eidos/`.
+  - `spike-hybrid-rrf-retrieval-ablation`: Evaluate FTS5 BM25 alone vs. Harrier Dense Cosine alone vs. Hybrid RRF (with `web_search_query` vs. custom domain `Instruct:` prompt ablation) across `DEV` (18 targets), `HOLD` (28 targets), and a new conceptual vocabulary-mismatch benchmark (`HOLD_V2`, 30+ targets), plus unbound test-to-`INV-*` matching.
+
+---
+
+== 1. Motivation & Context (`EXP-2026-006` Retrospective)
+
+In `EXP-2026-006` (`DEC-INDEX-FTS-RETRIEVAL-HYGIENE`), we fixed six structural FTS5 indexing and context-slice truncation bugs in `CNT-EIDOS-INDEX`, reaching `94.4%` (`DEV`) and `92.9%` (`HOLD`) recall on prompts that share lexical stems or identifier sub-tokens with target specifications, while rejecting the hand-rolled 256-dim feature hashing and corpus PPMI heuristics.
+
+However, pure lexical BM25 (`specs_fts`) still exhibits three fundamental limitations as repositories scale:
+
+1. **Conceptual & Vocabulary-Mismatch Queries (`eidos context -t` & `eidos index search`)**:
+   When an engineer or autonomous agent describes an intent conceptually without guessing the exact terminology used in `eidos/` (e.g., *"how do we prevent breaking API changes across services?"* when the spec says `bidirectional contract parity` and `SemVer 2.0.0`, or *"protect against spoofed incoming requests"* when the spec says `HMAC-SHA256 signature verification`), lexical BM25 returns empty or low-signal matches.
+2. **Multilingual & Cross-Domain Queries**:
+   Developers querying or authoring documentation across multilingual teams or non-standard domain jargon cannot rely on English Porter stemming (`porter unicode61`).
+3. **Unbound Test-to-Invariant & Spec-to-Spec Semantic Alignment (`eidos drift`)**:
+   Matching a newly written test function body (`def test_...`) to candidate `INV-*` rules—or detecting semantically overlapping capabilities (`CAP-*`) and invariants across domains—requires deep contextual representation rather than token overlap or `zlib` compression distance.
+
+---
+
+== 2. Why `microsoft/harrier-oss-v1-0.6b` in ONNX?
+
+=== 2.1 Model Architecture & ONNX Graph Profile
+
+`microsoft/harrier-oss-v1-0.6b` is a state-of-the-art open-source (MIT License) embedding model developed by Microsoft Research, with official ONNX exports published at `onnx-community/harrier-oss-v1-0.6b-ONNX`:
+
+[cols="1,3", options="header"]
+|===
+| Specification | Details
+
+| **Base Architecture** | `Qwen3Model` decoder-only causal transformer (28 layers, `hidden_size=1024`, GQA attention) distilled from the 27B Harrier teacher model.
+| **Parameters & ONNX Variants** | ~600M (`0.6B`) parameters. `onnx-community/harrier-oss-v1-0.6b-ONNX` provides:
+• `onnx/model_fp16.onnx` (`287 KB` graph + `1.20 GB` `model_fp16.onnx_data`)
+• `onnx/model.onnx` (`300 KB` graph + `2.40 GB` FP32 `model.onnx_data` + `model.onnx_data_1`)
+• `onnx/model_quantized.onnx` (`394 KB` graph + `706 MB` INT8 `model_quantized.onnx_data`)
+| **Context Window** | **32,768 tokens** — allows encoding entire Eidos `.adoc` specifications (YAML frontmatter + full AsciiDoc prose + `DEC-*` rationale + `INV-*` rules) in a single pass with **zero chunking loss**.
+| **Output Dimension** | **1,024-dimensional** dense $L_2$-normalized vector (`4,096 bytes` per entity in `float32`).
+| **In-Graph Pooling & Normalization** | Binary inspection of `onnx/model_fp16.onnx` and `onnx/model.onnx` confirms that Sentence-Transformers last-token pooling (`/model/st/pool_0/GatherElements` at `ReduceSum(attention_mask) - 1`) and $L_2$ normalization (`/model/st/normalize_1`) are **already fused into the ONNX graph**, exposing output tensor **`sentence_embedding`** `(batch_size, 1024)` alongside `last_hidden_state`.
+| **Tokenizer & EOS Handling** | `tokenizer.json` (`9.1 MB`) includes a `TemplateProcessing` post-processor that automatically appends `<|endoftext|>` (`id=151643`) to every single or paired sequence.
+|===
+
+=== 2.2 Why ONNX (`onnxruntime` + `tokenizers`) Over GGUF (`llama.cpp`) or PyTorch (`sentence-transformers`)?
+
+When download size (~1.2 GB cached locally in `eidos/.cache/models/`) is unconstrained and **embedding quality + modern CPU reliability** are prioritized, **ONNX (`onnxruntime` + `tokenizers`)** dominates alternative packaging formats:
+
+[cols="2,3,3", options="header"]
+|===
+| Dimension | **ONNX (`onnxruntime` + `tokenizers`)** | **GGUF (`llama-cpp-python`) / PyTorch (`sentence-transformers`)**
+
+| **Embedding Quality** | **100% Reference Fidelity**: Preserves Microsoft's exact computational graph with in-graph `/model/st/pool_0` and `/model/st/normalize_1` (`cos_sim >= 0.9999` vs. PyTorch reference). | GGUF `Q4_K_M` / `Q8_0` introduces block-quantization approximation and relies on `llama.cpp` causal embedding flags (`LLAMA_POOLING_TYPE_LAST`) that can silently mis-pool Qwen3 models if metadata headers drift.
+| **Seamless Installation (`pip` / `uv`)** | **100% Prebuilt Binary Wheels** (`~18 MB` total for `onnxruntime` + `tokenizers` + `numpy`) across Linux (`manylinux`/`musllinux`), macOS (`arm64`/`x86_64`), and Windows (`py311`–`py314`). Zero C++/CMake compilation; zero 2 GB PyTorch/CUDA bloat. | `llama-cpp-python` frequently compiles C++ from source via `cmake` when wheel matrices lag Python releases; `sentence-transformers` pulls `~2+ GB` of `torch` + `triton` + `nvidia-*` packages.
+| **Modern CPU Execution** | Leverages AVX-512 / Intel AMX / oneDNN on x86_64 and NEON / KleidiAI / CoreML on ARM64, saturating multi-core CPUs during batched document indexing (`batch_size=8..16`). | `llama.cpp` is optimized for `batch_size=1` autoregressive generation rather than batched full-sequence document encoding.
+|===
+
+[WARNING]
+====
+*CPU Execution Caveat for `com.microsoft::GroupQueryAttention` in `model_fp16.onnx`:*
+Binary inspection of all five ONNX graphs in `onnx-community/harrier-oss-v1-0.6b-ONNX` shows they use Microsoft ONNX Runtime contrib operators (`com.microsoft::GroupQueryAttention`, `com.microsoft::RotaryEmbedding`, and `com.microsoft::SkipSimplifiedLayerNormalization`). On `CPUExecutionProvider`, `GroupQueryAttention` has historically prioritized `float32` (`model.onnx`) and `int8`/`uint4` (`model_quantized.onnx` / `model_q4.onnx`) kernels, whereas `MLFloat16` (`model_fp16.onnx`) may either raise a missing-kernel error on CPUs without native AVX-512 FP16 / AMX support or insert `Cast(float16 <-> float32)` nodes around every attention block. **Spike 1 (`spike-fp16-onnx-cpu-harness`) must empirically test `model_fp16.onnx` on `CPUExecutionProvider` first and benchmark `model.onnx` (FP32) and `model_quantized.onnx` (INT8) side-by-side.**
+====
+
+---
+
+== 3. Technical Design Under Investigation
+
+=== 3.1 Zero-PyTorch ONNX Inference Pipeline (`src/eidos/core/index/semantic.py`)
+
+Using `onnx-community/harrier-oss-v1-0.6b-ONNX`, the runtime caches the model artifacts directly inside the repository's gitignored Eidos cache directory at `eidos/.cache/models/harrier-oss-v1-0.6b-fp16/` (co-located with `eidos/.cache/index.db`):
+
+1. `config.json`
+2. `tokenizer.json` and `tokenizer_config.json`
+3. `onnx/model_fp16.onnx` and `onnx/model_fp16.onnx_data` *(or the winning CPU variant from Spike 1)*
+
+==== Asymmetric Prompt Formatting & Instruction Ablation
+Per `config_sentence_transformers.json` and `mteb_v2_eval_prompts.json` in `microsoft/harrier-oss-v1-0.6b`, queries must be prefixed with `Instruct: <task>\nQuery: ` (note the trailing space after `Query:`), while documents are encoded without any prefix. Spike 3 will ablate two query instruction prefixes:
+
+* **Option A (Pre-Trained Canonical `web_search_query` Prompt)**:
+  ```text
+  Instruct: Given a web search query, retrieve relevant passages that answer the query
+  Query: {user_query}
+  ```
+* **Option B (Domain-Specific Software Architecture Prompt)**:
+  ```text
+  Instruct: Given a software architecture, specification, or engineering query, retrieve relevant living specifications, components, capabilities, contracts, and invariants
+  Query: {user_query}
+  ```
+* **Document Encoding (`encode_documents`, No `Instruct:` Prefix)**:
+  Constructed deterministically from the specification's own fields (excluding post-sync AST `code_symbols`):
+  ```text
+  [{entity_id}] ({entity_type}) {title}
+  Domain: {domain} | Symbols: {spec_symbols}
+  Rule/JTBD: {jtbd_or_rule}
+  {body_text}
+  ```
+
+==== Right-Padding Mandate & In-Graph `sentence_embedding` Extraction
+Inspection of `tokenizer.json` and the ONNX graph's `/model/st/pool_0` subgraph reveals a critical tokenization invariant:
+
+1. **Automatic `<|endoftext|>` Post-Processing**: `tokenizer.json` already configures `TemplateProcessing` to append `<|endoftext|>` (`id=151643`) to the end of every encoded sequence, with `padding: null` by default.
+2. **Mandatory Right-Padding (`direction="right"`) for Batched Inference**:
+   Because the fused ONNX node `/model/st/pool_0/last_idx` computes `ReduceSum(attention_mask, axis=1) - 1` and calls `GatherElements` along the sequence dimension, **any batched call MUST use right-padding (`direction="right"`)**. If left-padding (`direction="left"`) were enabled on a batch with variable sequence lengths, `ReduceSum(attention_mask) - 1` would index into the wrong token position for every shorter sequence in the batch.
+
+```python
+import numpy as np
+import onnxruntime as ort
+from tokenizers import Tokenizer
+
+def load_harrier_session(model_dir: Path) -> tuple[Tokenizer, ort.InferenceSession]:
+    """Load right-padded Harrier tokenizer and CPU-optimized ONNX InferenceSession."""
+    tokenizer = Tokenizer.from_file(str(model_dir / "tokenizer.json"))
+    # CRITICAL: /model/st/pool_0 in the ONNX graph gathers at index (sum(attention_mask) - 1),
+    # which strictly requires right-padding so valid tokens occupy indices [0 .. sum(mask)-1]
+    # and the trailing <|endoftext|> (151643) token sits at sum(mask) - 1.
+    tokenizer.enable_padding(direction="right", pad_id=151643, pad_token="<|endoftext|>")
+    tokenizer.enable_truncation(max_length=32768)
+
+    sess_opts = ort.SessionOptions()
+    # Use ORT_ENABLE_BASIC to minimize one-shot CLI session startup overhead
+    sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
+    session = ort.InferenceSession(
+        str(model_dir / "onnx" / "model_fp16.onnx"),
+        sess_options=sess_opts,
+        providers=["CPUExecutionProvider"],
+    )
+    return tokenizer, session
+
+def encode_texts(
+    tokenizer: Tokenizer,
+    session: ort.InferenceSession,
+    texts: list[str],
+) -> np.ndarray:
+    """Encode texts into L2-normalized 1024-dim float32 embeddings using in-graph sentence_embedding."""
+    encodings = tokenizer.encode_batch(texts)
+    input_ids = np.array([e.ids for e in encodings], dtype=np.int64)
+    attention_mask = np.array([e.attention_mask for e in encodings], dtype=np.int64)
+
+    # Request only 'sentence_embedding' so ONNX Runtime skips materializing the large
+    # (batch, seq_len, 1024) 'last_hidden_state' output buffer across Python/C++ boundaries.
+    (sentence_embeddings,) = session.run(
+        ["sentence_embedding"],
+        {"input_ids": input_ids, "attention_mask": attention_mask},
+    )
+    vecs = np.asarray(sentence_embeddings, dtype=np.float32)
+    # Re-normalize in float32 to guarantee unit-norm precision after FP16 graph division
+    norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+    return vecs / np.clip(norms, a_min=1e-12, a_max=None)
+```
+
+=== 3.2 Content-Addressed SQLite Storage & Incremental Sync (`storage.py`, `sync.py`)
+
+To guarantee that `eidos validate`, `eidos drift`, `eidos index sync --force`, and warm `eidos context` runs remain fast and deterministic:
+
+1. **Dedicated `spec_embeddings` Table in `_MANAGED_TABLES` (`storage.py`) & Why `sqlite-vec` Is Unnecessary**:
+   ```sql
+   CREATE TABLE IF NOT EXISTS spec_embeddings (
+       entity_id TEXT PRIMARY KEY,
+       content_sha256 TEXT NOT NULL,
+       model_id TEXT NOT NULL,
+       embedding BLOB NOT NULL -- 1024 float32 (4,096 B) L2-normalized vector
+   );
+   ```
+   * **`_MANAGED_TABLES` & `SCHEMA_VERSION` Registration (`storage.py`)**:
+     `ensure_cache_schema()` (`storage.py:150-167`) checks `if user_tables > set(_MANAGED_TABLES):` and drops **all** tables in `eidos/.cache/index.db` if an unregistered table is present. Therefore, `spec_embeddings` **must** be added to `_MANAGED_TABLES` alongside a `SCHEMA_VERSION` bump.
+   * **Preservation Across `eidos index sync --force` (`sync.py`)**:
+     In `sync.py:1464-1474`, `sync_index(force=True)` truncates `entities`, `edges`, and `specs_fts` while preserving `spec_validation_cache` and `test_binding_cache`. `spec_embeddings` must likewise **not** be truncated on `force=True`; instead, existing rows whose `(entity_id, content_sha256, model_id)` still match are reused at `0 ms` cost, and orphaned rows for deleted entities are garbage-collected via `DELETE FROM spec_embeddings WHERE entity_id NOT IN (SELECT id FROM entities);` at the end of `sync_index`.
+   * **Why Native SQLite `BLOB` + NumPy BLAS Beats `sqlite-vec`**:
+     - *Platform Compatibility*: `sqlite-vec` requires `sqlite3.Connection.enable_load_extension(True)`, which is **compiled out by default** on macOS system/Homebrew Python and many Linux/pyenv builds (`AttributeError: 'sqlite3.Connection' object has no attribute 'enable_load_extension'`). Standard SQLite `BLOB` columns require zero loadable C extensions.
+     - *Sub-Millisecond Exact BLAS Scan*: Because `onnxruntime` already depends on `numpy` and embeddings are $L_2$-normalized on write, cosine similarity reduces to a single BLAS matrix-vector dot product (`embeddings_matrix @ query_vec`). At 200 entities (`800 KB`), `np.frombuffer` + `matmul` takes **`~0.04 ms`** (and **`~0.25 ms`** at 2,000 entities)—eliminating any need for `sqlite-vec` or approximate HNSW indexes (`DEC-INDEX-SQLITE-WAL`).
+     - *Relational Pre-Filtering*: Standard SQL `JOIN entities e ON e.id = s.entity_id WHERE e.type IN (...)` pre-filters candidate vectors cleanly before scoring, whereas `sqlite-vec` `vec0` virtual tables struggle with relational `JOIN` pre-filters during KNN queries.
+2. **Spec-Only `content_sha256` Isolation from Derived AST Symbols (`sync.py`)**:
+   In `sync.py:2005`, `_project_ast_code_symbols_into_fts()` appends AST symbols extracted from `.py`/`.ts` source files into `specs_fts.symbols`. If `content_sha256` included post-AST `symbols`, editing any Python file would invalidate the embeddings of its owning `CMP-*` and `CNT-*` specs. Therefore, `content_sha256` is computed **strictly from the `.adoc` specification's own fields** (`doc_id`, `doc_type`, `title`, `domain`, `jtbd_or_rule`, `body_clean`, and spec-local `compound_identifier_subtokens`), ensuring source-code edits never trigger neural re-embedding.
+3. **Lazy On-Demand Execution**:
+   Commands that do not perform semantic search (`eidos validate`, `eidos drift`, `eidos spec`, `eidos delta`, `eidos context -f <file>`, `eidos context -c <ID>`) **never import `onnxruntime` or load the model**. The ONNX session is initialized lazily only when `eidos index search`, `eidos context -t "<task>"`, or `eidos index semantic` is invoked and the model is present in `eidos/.cache/models/`.
+
+=== 3.3 Hybrid Reciprocal Rank Fusion (RRF) & Exact-Match Pinning (`query.py`, `context.py`)
+
+When semantic embeddings are available, `execute_fts_query` and `build_tiered_context_slice` combine:
+* **Ranker 1 (Lexical & Exact Symbol Precision)**: Column-weighted FTS5 BM25 (`specs_fts`) with explicit entity ID detection (`_ENTITY_ID_TOKEN_RE`, e.g., `CNT-*`, `INV-*`) and multi-term `AND` matching (`and_matched_ids`).
+* **Ranker 2 (Dense Semantic Recall)**: Cosine similarity (`np.dot(E, q)`) from Harrier embeddings, filtered to `include_types` / `exclude_types` (excluding archived deltas) and gated by a minimum cosine threshold $\tau_{\min}$ so irrelevant tail documents are not promoted.
+
+Because standard RRF ($\frac{1}{k_0 + \text{rank}}$) discards raw score magnitudes, a naive sum of reciprocal ranks can allow a broad container ranked `#2` in BM25 and `#1` in Harrier to outscore an **exact entity ID match** ranked `#1` in BM25 (`-1000.0` boost) and `#4` in Harrier. To prevent regressions on `DEV` and `HOLD` identifier queries, the hybrid score preserves explicit lexical pinning boosts:
+
+$$\text{Score}_{\text{Hybrid}}(e) = \mathbb{I}_{\text{explicit\_id}}(e) \cdot 1.0 + \mathbb{I}_{\text{and\_match}}(e) \cdot \beta_{\text{AND}} + \frac{w_{\text{lex}}}{k_0 + \text{rank}_{\text{BM25}}(e)} + \frac{w_{\text{sem}}}{k_0 + \text{rank}_{\text{Harrier}}(e)}$$
+
+* **Integration with `build_tiered_context_slice` (`context.py:994`)**:
+  - Entities surfaced by hybrid search populate `matched_reasons` with concise provenance (e.g., `"Hybrid task match (RRF: 0.032, BM25 #1, cos: 0.74)"` or `"Semantic task match (cos: 0.71)"`).
+  - `direct_inv_ids` and `direct_ctr_ids` continue to preserve hybrid rank order (`list[str]`), promote owning `capability_id` / `policy_id` parents, and obey two-stage token-budget eviction in `_enforce_token_budget` (`<= 1,000` tokens for `guardrails`).
+
+=== 3.4 Seamless User Experience & `POL-004` Alignment
+
+1. **Installation & Provisioning Flow**:
+   * `pip install "eidos-ai[semantic]"` (or `uv add --optional semantic onnxruntime tokenizers numpy`).
+   * `eidos index semantic setup` (or opt-in prompt) streams `onnx/model_fp16.onnx`, `onnx/model_fp16.onnx_data`, `tokenizer.json`, `tokenizer_config.json`, and `config.json` from Hugging Face into `eidos/.cache/models/harrier-oss-v1-0.6b-fp16/` with SHA-256 verification and a `rich` progress bar, then populates `spec_embeddings` in `eidos/.cache/index.db`.
+2. **Governance Alignment (`POL-004-ZERO-AI-CALL-DEPENDENCY`)**:
+   * `POL-004` prohibits external LLM/AI API calls, API keys, non-deterministic generative loops, and mandatory heavy AI SDK dependencies (`openai`, `anthropic`, `transformers`, `langchain`).
+   * Local, offline, deterministic CPU matrix math via `onnxruntime` (as an **optional** `[semantic]` extra with 100% deterministic fallback to FTS5 BM25 when absent) preserves air-gapped CI determinism and zero API cost. If this exploration is adopted, its graduating SpecDelta (`DLT-*`) will explicitly codify the optional local ONNX embedding boundary in `POL-004` and `CNT-EIDOS-INDEX`.
+
+---
+
+== 4. Exit Criteria & Evaluation Plan
+
+This exploration will graduate to **`adopted`** (via a formal SpecDelta `DLT-*`) if and only if empirical benchmarking across the three spikes demonstrates:
+
+[cols="2,2,2", options="header"]
+|===
+| Criterion | Target Threshold | Measurement Method
+
+| **1. CPU Kernel Compatibility & Numerical Parity** | `cosine_similarity >= 0.9999` (FP16/FP32) or `>= 0.995` (INT8) | Verify `onnx/model_fp16.onnx` (and compare `model.onnx` / `model_quantized.onnx`) on `CPUExecutionProvider` with right-padded `sentence_embedding` output against reference `microsoft/harrier-oss-v1-0.6b` embeddings across 20 spec/query strings.
+| **2. CLI Session Load & Single-Query Latency (CPU)** | Forward pass `<= 75 ms` (p50); warm process total `<= 250 ms` | Measure **both** `ort.InferenceSession` init latency (cold vs. OS page-cache warm with `ORT_ENABLE_BASIC`) and single-query tokenization + forward pass + SQLite/NumPy cosine scan + RRF fusion on modern CPU.
+| **3. Incremental 1-Spec Sync Latency** | `<= 150 ms` per modified spec (`0 ms` on code-only edits or clean sync) | Verify `spec_embeddings` survives `eidos index sync --force`, skips re-embedding when only `.py`/`.ts` AST symbols change, and re-embeds a modified `.adoc` spec in `<= 150 ms`.
+| **4. Regression Guard (`DEV` + `HOLD`)** | `>= 94.4%` DEV / `>= 92.9%` HOLD | Zero regression on existing `EXP-2026-006` lexical/identifier benchmark sets under the 1,000-token `guardrails` budget.
+| **5. Conceptual Retrieval Lift (`HOLD_V2`)** | `>= +15.0%` Recall@8 lift over pure FTS5 | Evaluate on $\ge 30$ held-out conceptual/synonym task prompts (`web_search_query` vs. custom `Instruct:` ablation) where query terms do not lexically match spec titles.
+| **6. Zero-Overhead Fallback** | `0.0 ms` overhead when `[semantic]` absent | Verify `eidos validate`, `eidos drift`, and fallback `eidos index search` pass with zero `onnxruntime` imports on base install.
+|===

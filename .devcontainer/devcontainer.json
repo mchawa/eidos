@@ -2,25 +2,27 @@
   "name": "Eidos Devcontainer",
   "image": "ubuntu:26.04",
   "features": {
-    "ghcr.io/devcontainers/features/common-utils:2": {
+    "ghcr.io/devcontainers/features/common-utils:latest": {
       "installZsh": true,
       "configureZshAsDefaultShell": true,
       "installOhMyZsh": true,
       "installOhMyZshConfig": true,
       "upgradePackages": true,
       "nonFreePackages": true,
-      "username": "vscode"
+      "username": "vscode",
+      "userUid": "automatic",
+      "userGid": "automatic"
     },
-    "ghcr.io/devcontainers/features/git:1": {},
-    "ghcr.io/devcontainers/features/git-lfs:1": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {},
-    "ghcr.io/devcontainer-community/devcontainer-features/astral.sh-uv:1": {
+    "ghcr.io/devcontainers/features/git:latest": {},
+    "ghcr.io/devcontainers/features/git-lfs:latest": {},
+    "ghcr.io/devcontainers/features/github-cli:latest": {},
+    "ghcr.io/devcontainer-community/devcontainer-features/astral.sh-uv:latest": {
       "shellautocompletion": true
     },
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+    "ghcr.io/devcontainers/features/docker-in-docker:latest": {
       "moby": false
     },
-    "ghcr.io/devcontainers/features/node:2": {
+    "ghcr.io/devcontainers/features/node:latest": {
       "version": "lts",
       "pnpmVersion": "latest"
     }
@@ -52,7 +54,9 @@
   "mounts": [
     "source=eidos-gemini,target=/home/vscode/.gemini,type=volume"
   ],
+  "containerUser": "vscode",
   "remoteUser": "vscode",
+  "updateRemoteUserUID": true,
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   "customizations": {
     "vscode": {
