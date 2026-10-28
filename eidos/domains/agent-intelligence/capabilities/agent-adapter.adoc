@@ -4,7 +4,7 @@ id: CAP-AGENT-001
 title: "Universal Agent Adapter & Context Slicing Engine"
 domain: DOM-AGENT-INTELLIGENCE
 status: active
-version: "1.7.0"
+version: "1.8.0"
 
 business:
   personas:
@@ -21,6 +21,8 @@ technical:
     - "CNT-EIDOS-CLI"
     - "CNT-EIDOS-INDEX"
     - "CNT-EIDOS-PLUGIN"
+  components:
+    - "CMP-SEMANTIC-EMBEDDING-ENGINE"
   contracts:
     - "CTR-EIDOS-CLI"
   invariants:
@@ -43,8 +45,11 @@ technical:
       rule: "Indexed AST symbols must keep accurate source file and line coordinates, invalidated on edit, deletion, or ownership change, and served to find-symbol and repo-map without re-parsing source."
       test_binding: "tests/test_graph_index.py::test_code_symbols_invalidated_on_edit_and_delete"
     - id: INV-AGENT-TASK-RETRIEVAL-COVERAGE
-      rule: "Task-prompt retrieval must index every entity (including child INV-* invariants, policy rules, and delta motivation in specs_fts.jtbd_or_rule and AsciiDoc body prose including component Responsibility in specs_fts.body_text while stripping AsciiDoc attribute headers) in FTS5, filter English stop-word and single-character noise tokens in build_fts_match_query (with fallback when all tokens are stop words), boost exact entity ID matches (including SYS-*, ARCH-*, PER-*, underscore IDs, and CMP-*/DEC-* exact-ID matches), de-compound camelCase/snake_case identifiers on both index and query sides, apply BM25 column weights positionally (UNINDEXED entity_id placeholder first), rank only sliceable entity types for context slices so historical SpecDeltas never consume top-k slots, resolve matched domains and design systems to their member containers and capabilities, and purge stale invariant FTS rows on incremental sync."
+      rule: "Task-prompt retrieval must index every entity (including child INV-* invariants, policy rules, and delta motivation in specs_fts.jtbd_or_rule and AsciiDoc body prose including component Responsibility in specs_fts.body_text while stripping AsciiDoc attribute headers) in FTS5, filter English stop-word and single-character noise tokens in build_fts_match_query (with fallback when all tokens are stop words), boost exact entity ID matches (including SYS-*, ARCH-*, PER-*, underscore IDs, and CMP-*/DEC-* exact-ID matches), de-compound camelCase/snake_case identifiers on both index and query sides, apply BM25 column weights positionally (UNINDEXED entity_id placeholder first), rank only sliceable entity types for context slices so historical SpecDeltas never consume top-k slots, resolve matched domains and design systems to their member containers and capabilities while prioritizing direct container matches ahead of 1-hop domain/design-system expansions, and purge stale invariant FTS rows on incremental sync."
       test_binding: "tests/test_graph_index.py::test_task_retrieval_indexes_invariants_and_filters_types"
+    - id: INV-AGENT-HYBRID-SEMANTIC-FALLBACK
+      rule: "Optional Hybrid RRF retrieval (CMP-SEMANTIC-EMBEDDING-ENGINE) must cache spec-only SHA-256 embeddings in spec_embeddings across sync --force (isolated from AST code_symbols edits), enforce right-padded Harrier sts_query query formatting and tau_min=0.50 cosine gating with exact entity ID pinning, and fall back 100% deterministically to FTS5 BM25 when onnxruntime or spec_embeddings are absent."
+      test_binding: "tests/test_graph_index.py::test_hybrid_semantic_rrf_and_deterministic_fallback"
 ---
 = Capability: Universal Agent Adapter & Context Slicing Layer
 :toc: left
@@ -78,7 +83,7 @@ Eidos implements a three-tier context compression model:
 |===
 
 == Hybrid Retrieval & Freshness Invariant
-* **FTS5 BM25 Lexical Ranking**: Translates natural language engineering tasks (e.g. "update auth token expiration") into exact architectural IDs using two-tier multi-term `AND` coordination boosting over `OR` prefix matches and hop $\ge 2$ organizational hub fan-out suppression across `product/domain` and `design/system` nodes.
+* **FTS5 BM25 Lexical Ranking & Opt-In Harrier Hybrid RRF (`CMP-SEMANTIC-EMBEDDING-ENGINE`)**: Translates natural language engineering tasks into exact architectural IDs using two-tier multi-term `AND` coordination boosting over `OR` prefix matches, direct-over-1-hop container prioritization, and optional gated Harrier-OSS-v1-0.6B ONNX Reciprocal Rank Fusion (`spec_embeddings`, $\tau_{\min} = 0.50$, $w_{\text{sem}} = 0.50$) with 100% deterministic fallback to FTS5 BM25 (`INV-AGENT-HYBRID-SEMANTIC-FALLBACK`).
 * **Calibrated Token Budget Estimation**: `TieredContextSlice._estimate_tokens` weights structural syntax characters (`{}[]:,"'|`) at ~3.0 characters per token and natural-language prose at ~4.0 characters per token so `anchor`, `guardrails`, and `deep` slices honor strict token budgets across both Markdown and JSON outputs.
 * **Zero-Drift Freshness (`INV-AGENT-GRAPH-INDEX-FRESHNESS`)**: Every CLI query lazily checks dirty status via SHA-256 and mtime hashing, synchronizing modified specs in sub-5ms so agents never operate on stale architecture.
 * **Non-Destructive Plugin Management (`INV-PLUGIN-SCHEMA-CONFORMANCE`)**: The `eidos plugin` ecosystem ensures non-destructive installation, manifest-tracked uninstallation (`.eidos-manifest.json`), `force=False` overwrite protection, symlink traversal prevention, and version-pinned `uvx` hook commands.

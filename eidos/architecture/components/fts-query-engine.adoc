@@ -13,12 +13,13 @@ source_path: src/eidos/core/index/query.py
 Executes column-weighted SQLite FTS5 BM25 lexical search (`execute_fts_query`), reverse symbol lookup (`find_symbol_in_db`), and token-budgeted structural repository map generation (`generate_repo_map_from_db`) over the indexed knowledge graph.
 
 == Key Responsibilities & Collaborators
-* **Two-Tier Weighted FTS5 Search (`DEC-INDEX-FTS-RETRIEVAL-HYGIENE`)**: Prioritizes high-precision multi-term `AND` queries before `OR` fallback using positional BM25 column weights `(0, 4, 2, 1, 2, 2)` (`title` > `jtbd_or_rule`/`keywords`/`symbols` > `body_text`), identifier de-compounding, and exact `CMP-*`/`DEC-*` entity ID boosting.
+* **Two-Tier Weighted FTS5 Search & Synonym Backfill (`DEC-INDEX-FTS-RETRIEVAL-HYGIENE`)**: Prioritizes high-precision multi-term `AND` queries before `OR` fallback using positional BM25 column weights `(0, 4, 2, 1, 2, 2)` (`title` > `jtbd_or_rule`/`keywords`/`symbols` > `body_text`), identifier de-compounding, deterministic architectural synonym expansion (`expand_architectural_synonyms`), and exact `CMP-*`/`DEC-*` entity ID boosting.
+* **Gated Hybrid Reciprocal Rank Fusion (`DEC-INDEX-HYBRID-SEMANTIC-RRF`)**: When `spec_embeddings` is populated and `use_semantic=True`, `execute_fts_query` delegates dense cosine scanning (`tau_min = 0.50`) and Reciprocal Rank Fusion ($k_0 = 20, w_{\text{lex}} = 1.0, w_{\text{sem}} = 0.50$) to `CMP-SEMANTIC-EMBEDDING-ENGINE`, falling back 100% deterministically to FTS5 BM25 when absent.
 * **Reverse Symbol & Repo Map Resolution**: Resolves AST symbol names (`find_symbol_in_db`, `resolve_symbol_locations_in_db`) across `code_symbols` and `symbol_mappings`, and formats token-budgeted structural outlines (`generate_repo_map_from_db`) from persisted primary `code_symbols` rows without re-parsing source files.
 
 == Public Surface
-* `execute_fts_query(conn: sqlite3.Connection, query: str, limit: int = 10, include_types: set[str] | None = None, exclude_types: set[str] | None = None) -> list[dict[str, Any]]`
-* `build_fts_match_query(query: str, operator: str = "OR") -> str`
+* `execute_fts_query(conn: sqlite3.Connection, text: str, limit: int = 10, include_types: tuple[str, ...] | list[str] | None = None, exclude_types: tuple[str, ...] | list[str] = (), use_semantic: bool = True, eidos_dir: Path | None = None) -> list[dict[str, Any]]`
+* `build_fts_match_query(text: str, operator: str = "OR", expand_synonyms: bool = False) -> str`, `expand_architectural_synonyms(text: str) -> str`
 * `find_symbol_in_db(conn: sqlite3.Connection, query: str, limit: int = 20) -> list[dict[str, Any]]`
 * `generate_repo_map_from_db(conn: sqlite3.Connection, max_tokens: int = 1500) -> dict[str, Any]`
 

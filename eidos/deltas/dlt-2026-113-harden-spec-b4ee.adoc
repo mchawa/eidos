@@ -1,0 +1,236 @@
+---
+type: delta/mutation
+id: DLT-2026-113-HARDEN-SPEC-B4EE
+title: "Harden Spec-to-Code Drift Detection, Component Attribution, and Stale Spec Parity"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: high
+  motivation: "Resolve touched_components across all modified code files (including body-only edits), surface body_only_code_files and structural_code_files on DriftCheckResult and in eidos drift --json / CLI reports, enforce spec anchor cleanup on public symbol removals/signature changes, verify static CMP-*/CNT-* Public Surface symbols in SpecValidator._validate_source_and_contract_paths while reconciling stale Public Surface entries across existing component specs, and add --strict drift mode for behavioral/body-only code changes."
+vcs:
+  branch: main
+  base_commit: abbfedb2b1264eeebe60b6048ed1529514807ffd
+mutations:
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    details: "Map all classification.code_files to owning CNT-*/CMP-* entities when populating touched_components in detect_drift (src/eidos/vcs/drift.py), add structural_code_files to DriftCheckResult, enforce removed/signature-changed symbol anchor verification (stale_removed_symbol) in src/eidos/vcs/structural.py and src/eidos/vcs/report.py, support strict=True on detect_drift so body-only code changes require 1-hop spec or bound test co-evolution when requested, and reconcile stale Public Surface symbols (GitResolutionError, build_drift_remediation_and_summary) in eidos/architecture/components/drift-detector.adoc."
+    expect:
+      body:
+        contains:
+          - "body_only_code_files"
+          - "strict"
+          - "GitResolutionError"
+        not_contains:
+          - "DriftError"
+          - "generate_verification_markdown"
+  - operation: modify
+    target: CMP-CLI-DRIFT-COMMANDS
+    details: "Add --strict flag to eidos drift in src/eidos/cli/drift_commands.py, expose structural_code_files and body_only_code_files in --json output, distinguish structural vs. body-only code modifications in Rich terminal output, and reconcile drift_cmd in eidos/architecture/components/cli-drift-commands.adoc."
+    expect:
+      body:
+        contains:
+          - "--strict"
+          - "body_only_code_files"
+          - "drift_cmd"
+        not_contains:
+          - "drift_command("
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: "Extend SpecValidator._validate_source_and_contract_paths in src/eidos/core/spec/validator.py to verify that backticked code symbols declared under '== Public Surface' in active tech/component (CMP-*) and tech/container (CNT-*) specifications resolve to existing AST symbols, module-level assignments, __all__ exports, or TYPE_CHECKING declarations in the entity's owned code source_path (preserving spec_validation_cache isolation and skipping non-code/documentation source_paths)."
+    expect:
+      body:
+        contains:
+          - "Public Surface"
+  - operation: modify
+    target: CMP-CLI-APP
+    details: "Reconcile stale '== Public Surface' function names (main, info) in eidos/architecture/components/cli-app.adoc with src/eidos/cli/main.py."
+    expect:
+      body:
+        contains:
+          - "main()"
+          - "info()"
+        not_contains:
+          - "cli_entrypoint"
+          - "info_command"
+  - operation: modify
+    target: CMP-CLI-CONTEXT-COMMAND
+    details: "Reconcile stale '== Public Surface' function name (context_cmd) in eidos/architecture/components/cli-context-command.adoc with src/eidos/cli/context_command.py."
+    expect:
+      body:
+        contains:
+          - "context_cmd"
+        not_contains:
+          - "context_command("
+  - operation: modify
+    target: CMP-CLI-DELTA-COMMANDS
+    details: "Reconcile stale '== Public Surface' function names (delta_*_cmd) in eidos/architecture/components/cli-delta-commands.adoc with src/eidos/cli/delta_commands.py."
+    expect:
+      body:
+        contains:
+          - "delta_status_cmd"
+          - "delta_verify_cmd"
+        not_contains:
+          - "delta_status("
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+    details: "Reconcile stale '== Public Surface' function names (doctor_cmd, hook_cmd) in eidos/architecture/components/cli-doctor-hooks.adoc with src/eidos/cli/doctor_hook_commands.py."
+    expect:
+      body:
+        contains:
+          - "doctor_cmd"
+          - "hook_cmd"
+        not_contains:
+          - "doctor_command("
+          - "hook_command("
+  - operation: modify
+    target: CMP-CLI-INDEX-COMMANDS
+    details: "Reconcile stale '== Public Surface' function names (index_*_cmd, preserving index_semantic_cmd) in eidos/architecture/components/cli-index-commands.adoc with src/eidos/cli/index_commands.py."
+    expect:
+      body:
+        contains:
+          - "index_status_cmd"
+          - "index_blast_radius_cmd"
+          - "index_semantic_cmd"
+        not_contains:
+          - "index_status("
+  - operation: modify
+    target: CMP-DELTA-AUDITOR
+    details: "Reconcile stale '== Public Surface' return type and class name (DeltaAuditResult, DeltaAuditResult.to_dict, DeltaAuditResult.to_json) in eidos/architecture/components/delta-auditor.adoc with src/eidos/core/lifecycle/audit.py."
+    expect:
+      body:
+        contains:
+          - "DeltaAuditResult"
+        not_contains:
+          - "AuditReport"
+  - operation: modify
+    target: CMP-CLI-PORTAL-COMMANDS
+    details: "Reconcile stale '== Public Surface' function names (serve_cmd, build_site_cmd) in eidos/architecture/components/cli-portal-commands.adoc with src/eidos/cli/portal_commands.py."
+    expect:
+      body:
+        contains:
+          - "serve_cmd"
+          - "build_site_cmd"
+        not_contains:
+          - "portal_serve("
+          - "portal_build("
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+    details: "Reconcile stale '== Public Surface' function names (validate, spec_*_cmd) in eidos/architecture/components/cli-spec-commands.adoc with src/eidos/cli/spec_commands.py."
+    expect:
+      body:
+        contains:
+          - "validate("
+          - "spec_list_cmd"
+        not_contains:
+          - "validate_command("
+          - "spec_list("
+  - operation: modify
+    target: CMP-HOOK-MANAGER
+    details: "Reconcile stale '== Public Surface' symbols (validate_plugin_package, _verify_hook_command) in eidos/architecture/components/hook-manager.adoc with src/eidos/plugin/validator.py."
+    expect:
+      body:
+        contains:
+          - "validate_plugin_package"
+        not_contains:
+          - "validate_hooks_file"
+  - operation: modify
+    target: CMP-PLUGIN-VALIDATOR
+    details: "Reconcile stale '== Public Surface' function name (validate_plugin_package) in eidos/architecture/components/plugin-validator.adoc with src/eidos/plugin/validator.py."
+    expect:
+      body:
+        contains:
+          - "validate_plugin_package"
+        not_contains:
+          - "validate_plugin_directory"
+  - operation: modify
+    target: CMP-PORTAL-SERVER
+    details: "Reconcile stale '== Public Surface' function name (run_portal_server) in eidos/architecture/components/portal-server.adoc with src/eidos/portal/server.py."
+    expect:
+      body:
+        contains:
+          - "run_portal_server"
+        not_contains:
+          - "serve_portal("
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Document --strict flag (in both command signature heading and options list), the structural_code_files / body_only_code_files fields, and the stale_removed_symbol rejection rule in eidos drift --json contract in eidos/architecture/contracts/cli.adoc."
+    expect:
+      body:
+        contains:
+          - "--strict"
+          - "body_only_code_files"
+          - "stale_removed_symbol"
+  - operation: modify
+    target: CAP-VCS-001
+    details: "Bump CAP-VCS-001 to 1.8.0 and update INV-DRIFT-DETECTION-ACCURACY and INV-DRIFT-DIFF-AWARE-COVERAGE in eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc to cover full code_files component attribution, stale removed-symbol rejection, and --strict mode."
+    expect:
+      frontmatter:
+        version: "1.8.0"
+      body:
+        contains:
+          - "body_only_code_files"
+  - operation: modify
+    target: INV-DRIFT-DETECTION-ACCURACY
+    details: "Extend INV-DRIFT-DETECTION-ACCURACY rule in eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc to require touched_components resolution across all modified code_files (structural and body-only) and support --strict body-level drift enforcement."
+    expect:
+      frontmatter:
+        rule: "touched_components"
+  - operation: modify
+    target: INV-DRIFT-DIFF-AWARE-COVERAGE
+    details: "Extend INV-DRIFT-DIFF-AWARE-COVERAGE rule in eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc to reject spec coverage when removed public symbols remain referenced in the owning specification."
+    expect:
+      frontmatter:
+        rule: "removed public symbols"
+  - operation: modify
+    target: INV-SPEC-GRAPH-INTEGRITY
+    details: "Extend INV-SPEC-GRAPH-INTEGRITY rule in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc to include static AST verification of backticked '== Public Surface' symbols in active CMP-* and CNT-* specifications."
+    expect:
+      frontmatter:
+        rule: "Public Surface"
+---
+= SpecDelta: Harden Spec-to-Code Drift Detection, Component Attribution, and Stale Spec Parity
+:toc: left
+
+== Problem Statement
+Editing a source file under an owning container or component's `source_path` and running `eidos drift --uncommitted --json` currently exhibits three gaps:
+
+1. **Empty `touched_components` and hidden `body_only_code_files` / `structural_code_files` on non-structural edits**:
+   * `classify_changed_files()` in `src/eidos/vcs/diff.py` places every modified source file into `classification.code_files` (which `eidos drift --json` serializes as `"code_files"`).
+   * However, `detect_drift()` in `src/eidos/vcs/drift.py` filters `classification.code_files` through `_SymbolMapCache.diff()` (`public_symbol_map`), partitioning files without public symbol header changes into `body_only_code_files`, omitting `structural_code_files` from `DriftCheckResult`, and passing only `structural_code_files` to `map_code_to_components()`.
+   * As a result, any internal or behavioral code edit reports the file in `"code_files"`, but `"touched_components"` is `[]`, `"body_only_code_files"` and `"structural_code_files"` are omitted from the `--json` payload in `src/eidos/cli/drift_commands.py`, and `"is_clean"` is `true` with no indication that the file was classified as body-only.
+2. **Stale specs on public symbol removals and `== Public Surface` drift**:
+   * In `src/eidos/vcs/structural.py`, `_structural_addition_for()` returns `None` when public symbols are removed or have their signatures modified without adding a new symbol (`diff.added` is empty). `_spec_coverage_verdict()` then accepts *any* substantive edit to the owning spec (or a 1-hop neighbor), even if the owning spec still references a deleted symbol.
+   * Furthermore, `SpecValidator` in `src/eidos/core/spec/validator.py` checks code-to-spec parity only for `CTR-*` contracts (`specification_file`), leaving stale `== Public Surface` declarations in `CMP-*` / `CNT-*` specifications undetected when no diff is present (including 13 existing `CMP-*` specs in `eidos/architecture/components/` whose `== Public Surface` currently lists pre-refactor function or class names, including `CMP-DELTA-AUDITOR` referencing `AuditReport` instead of `DeltaAuditResult`).
+3. **No strict gate for behavioral / body-only code changes**:
+   * Teams and autonomous agent workflows that want body-only implementation edits to require explicit spec or bound test co-evolution have no `--strict` flag on `eidos drift`.
+
+== Proposed Specification Changes
+* **Update `CMP-DRIFT-DETECTOR` (`eidos/architecture/components/drift-detector.adoc`)**:
+  - Resolve `touched_components` across all `classification.code_files` (both `structural_code_files` and `body_only_code_files`) so component impact telemetry is never empty when an owned source file is modified.
+  - Add `structural_code_files: list[str]` to `DriftCheckResult` alongside `body_only_code_files`.
+  - Reject spec coverage (`stale_removed_symbol`) when a deleted public symbol (whose name no longer exists in the file's or sibling component files' head symbol maps) remains referenced in backticked code spans (or compound/qualified identifiers) in the owning specification's uncommented head body, and render remediation guidance in `build_drift_remediation_and_summary()`.
+  - Add `strict: bool = False` to `detect_drift()` so body-only code edits trigger drift unless accompanied by a substantive 1-hop spec update, an active SpecDelta target, or a modified bound test file in `classification.test_files`.
+  - Reconcile `== Public Surface` in `drift-detector.adoc` (`GitResolutionError`, `build_drift_remediation_and_summary`, and `strict: bool = False`, while preserving `recommend_invariants_for_unbound_tests`).
+* **Update `CMP-CLI-DRIFT-COMMANDS` (`eidos/architecture/components/cli-drift-commands.adoc`) & `CTR-EIDOS-CLI` (`eidos/architecture/contracts/cli.adoc`)**:
+  - Add `--strict` option to `eidos drift` (in both the `=== \`eidos drift ...\`` heading and options list, plus `docs/guides/cli.md` and `tests/fixtures/cli_command_tree.json`) and reconcile `drift_cmd` in `cli-drift-commands.adoc`.
+  - Include `"structural_code_files"` and `"body_only_code_files"` in `eidos drift --json` output, document `"stale_removed_symbol"` under `trivially_covered_files`, and display structural vs. body-only counts in the Rich terminal summary table.
+* **Update `CMP-SPEC-VALIDATOR` (`eidos/architecture/components/spec-validator.adoc`), `INV-SPEC-GRAPH-INTEGRITY` (`eidos/domains/spec-engine/capabilities/living-spec-engine.adoc`), and Reconcile Existing `CMP-*` Public Surfaces**:
+  - Validate backticked symbol identifiers listed under `== Public Surface` in active `CMP-*` and `CNT-*` specifications inside `SpecValidator._validate_source_and_contract_paths()` (preserving `spec_validation_cache` isolation and resolving inherited `Class.method` pairs when both class and method exist in `source_path`) against AST symbols, module-level assignments, `__all__`, and `TYPE_CHECKING` declarations extracted from their declared code `source_path`.
+  - Reconcile stale `== Public Surface` symbol names in `CMP-CLI-APP`, `CMP-CLI-CONTEXT-COMMAND`, `CMP-CLI-DELTA-COMMANDS`, `CMP-CLI-DOCTOR-HOOKS`, `CMP-CLI-INDEX-COMMANDS`, `CMP-CLI-PORTAL-COMMANDS`, `CMP-CLI-SPEC-COMMANDS`, `CMP-DELTA-AUDITOR`, `CMP-HOOK-MANAGER`, `CMP-PLUGIN-VALIDATOR`, and `CMP-PORTAL-SERVER`.
+* **Update `CAP-VCS-001` (`1.8.0`), `INV-DRIFT-DETECTION-ACCURACY`, and `INV-DRIFT-DIFF-AWARE-COVERAGE` (`eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc`)**:
+  - Codify full `touched_components` attribution, `body_only_code_files` / `structural_code_files` JSON telemetry, stale removed-symbol rejection, and `--strict` drift enforcement.
+
+== Implementation Plan
+1. **Component Attribution, Removed Symbol Parity & Strict Drift (`src/eidos/vcs/drift.py`, `src/eidos/vcs/structural.py`, `src/eidos/vcs/report.py`)**:
+   * Add `structural_code_files: list[str] = field(default_factory=list)` to `DriftCheckResult`.
+   * Map all `classification.code_files` via `map_code_to_components()` to compute `touched_components`, then evaluate drift across `structural_code_files` by default, or also require `body_only_code_files` when `strict=True` to be covered by a substantive 1-hop spec edit, an active SpecDelta target, or a modified test file in `classification.test_files` (bound to an invariant in the component's 1-hop neighborhood or `classification.test_files`).
+   * Extend `_StructuralAddition` and `_structural_addition_for()` in `src/eidos/vcs/structural.py` to populate `removed_symbol_names` (excluding symbols still present in `smap.get(cf, 1)`) even when `diff.added` is empty, and update `_spec_coverage_verdict()` to check the head uncommented body of `owner_spec` (and modified 1-hop specs) for backticked or compound references to deleted public symbols and reject coverage with `rule="stale_removed_symbol"` if a deleted public symbol is still referenced; add remediation formatting for `stale_removed_symbol` in `src/eidos/vcs/report.py`.
+2. **CLI & JSON Telemetry (`src/eidos/cli/drift_commands.py`, `eidos/architecture/contracts/cli.adoc`, `docs/guides/cli.md`, `tests/fixtures/cli_command_tree.json`)**:
+   * Add `--strict` to `drift_cmd()` and pass `strict=strict` to `detect_drift()`, and synchronize `docs/guides/cli.md` and `tests/fixtures/cli_command_tree.json`.
+   * Emit `"structural_code_files"` and `"body_only_code_files"` in `drift_cmd()` `--json` output and update the Rich table row for `Modified Code Files` to show `N (M structural, K body-only)` when code files are modified.
+3. **Static Component/Container Public Surface Parity & Catalog Reconciliation (`src/eidos/core/spec/validator.py`, `eidos/architecture/components/*.adoc`)**:
+   * Add a helper invoked from `SpecValidator._validate_source_and_contract_paths()` (when `has_source_tree` is true and document `status` is active) that inspects `== Public Surface` sections of `tech/component` and `tech/container` specs owning AST-supported code files, extracts leading symbol identifiers from backticked spans (ignoring file paths with `/`, quoted literals, or TOML headers starting with `[`), and appends to `report.broken_references` when a documented public symbol does not exist in the entity's `source_path` AST symbols (supporting inherited `Class.method` resolution across classes in `source_path`), module-level assignments, `__all__`, or `TYPE_CHECKING` stubs.
+   * Reconcile the `== Public Surface` sections of the 13 `CMP-*` component specs (`CMP-DRIFT-DETECTOR`, `CMP-CLI-DRIFT-COMMANDS`, `CMP-CLI-APP`, `CMP-CLI-CONTEXT-COMMAND`, `CMP-CLI-DELTA-COMMANDS`, `CMP-CLI-DOCTOR-HOOKS`, `CMP-CLI-INDEX-COMMANDS`, `CMP-CLI-PORTAL-COMMANDS`, `CMP-CLI-SPEC-COMMANDS`, `CMP-DELTA-AUDITOR`, `CMP-HOOK-MANAGER`, `CMP-PLUGIN-VALIDATOR`, and `CMP-PORTAL-SERVER`).
+4. **Tests & Verification (`tests/test_drift.py`, `tests/test_validator.py`)**:
+   * Add regression tests for `touched_components` and `body_only_code_files` / `structural_code_files` on body-only edits, `eidos drift --strict`, `stale_removed_symbol` rejection, and `CMP-*` `== Public Surface` validation, then run `eidos delta verify DLT-2026-113-HARDEN-SPEC-B4EE --json`.

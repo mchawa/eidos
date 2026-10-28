@@ -242,7 +242,7 @@ class ArchitecturalContextSlice:
                 and not (self.tier != "deep" and len(self.components) > 4)
             ):
                 decisions = collect_component_decisions(comp)
-                if decisions and not (self.tier == "anchor" and compact_decisions and len(decisions) > 4):
+                if decisions and not (self.tier == "anchor" and compact_decisions and len(decisions) > 6):
                     compact_decs = (
                         (self.tier == "guardrails" and idx_comp > 0)
                         or (compact_prose and idx_comp > 0)
@@ -525,7 +525,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
             and not (self.tier != "deep" and len(self.components) > 4)
         ):
             decisions = collect_component_decisions(comp)
-            if decisions and not (self.tier == "anchor" and self._compact_decisions and len(decisions) > 4):
+            if decisions and not (self.tier == "anchor" and self._compact_decisions and len(decisions) > 6):
                 compact_decs = (
                     (self.tier == "guardrails" and index_in_slice > 0)
                     or (self._compact_prose and index_in_slice > 0)
@@ -844,7 +844,9 @@ class TieredContextSlice(ArchitecturalContextSlice):
 
         # Stage 1b: Trim 1-hop expanded (non-direct) entities before touching any direct query matches.
         _pop_non_direct(self.invariants, direct_invs, min_len=3)
-        _pop_non_direct(self.components, primary_cids, min_len=1 if has_non_comp_direct else max(4, len(primary_cids) + 3))
+        _pop_non_direct(
+            self.components, primary_cids, min_len=1 if has_non_comp_direct else max(4, len(primary_cids) + 3)
+        )
         _pop_non_direct(self.capabilities, direct_caps, min_len=3)
 
         _pop_non_direct(self.invariants, direct_invs, min_len=1)
@@ -901,6 +903,7 @@ def build_tiered_context_slice(
     component: str | None = None,
     task: str | None = None,
     tier: str = "guardrails",
+    use_semantic: bool = True,
 ) -> TieredContextSlice:
     """Extract a token-budgeted architectural context slice using hybrid indexed retrieval."""
     t0 = time.perf_counter()
@@ -913,6 +916,8 @@ def build_tiered_context_slice(
     matched_policies: dict[str, dict[str, Any]] = {}
     matched_reasons: dict[str, list[str]] = {}
     direct_inv_ids: list[str] = []
+    direct_cnt_ids: list[str] = []
+    expanded_cnt_ids: list[str] = []
 
     def _add_reason(eid: str, reason: str) -> None:
         bucket = matched_reasons.setdefault(eid, [])
@@ -940,6 +945,8 @@ def build_tiered_context_slice(
             data["title"] = row["title"]
             data.setdefault("file_path", row["file_path"])
             matched_components[cid] = data
+            if cid not in direct_cnt_ids:
+                direct_cnt_ids.append(cid)
             _add_reason(cid, f"Explicit component parameter '{component}'")
 
     # 2. Resolve by File paths
@@ -978,6 +985,8 @@ def build_tiered_context_slice(
 
             if etype in ("tech/container", "tech/component"):
                 matched_components[eid] = data
+                if eid not in direct_cnt_ids:
+                    direct_cnt_ids.append(eid)
                 _add_reason(eid, f"Source file match on '{fpath}'")
             elif etype == "invariant":
                 matched_invariants[eid] = data
@@ -988,10 +997,18 @@ def build_tiered_context_slice(
                 matched_contracts[eid] = data
                 _add_reason(eid, f"Contract file match on '{fpath}'")
 
-    # 3. Resolve by Task prompt (FTS5 lexical search restricted to sliceable entity types, so historical
-    #    SpecDeltas, explorations, and personas never consume the top-k candidate slots)
+    # 3. Resolve by Task prompt (FTS5 lexical + optional Harrier Hybrid RRF search restricted to sliceable entity types,
+    #    so historical SpecDeltas, explorations, and personas never consume the top-k candidate slots)
     if task and task.strip():
-        fts_matches = execute_fts_query(conn, text=task, limit=8, include_types=TASK_SLICE_ENTITY_TYPES)
+        fts_matches = execute_fts_query(
+            conn,
+            text=task,
+            limit=8,
+            include_types=TASK_SLICE_ENTITY_TYPES,
+            use_semantic=use_semantic,
+            eidos_dir=getattr(index, "eidos_dir", None),
+        )
+        fts_hit_ranks = {m["id"]: idx for idx, m in enumerate(fts_matches)}
         for m in fts_matches:
             eid = m["id"]
             etype = m["type"]
@@ -1001,9 +1018,25 @@ def build_tiered_context_slice(
             if m.get("file_path"):
                 data.setdefault("file_path", m["file_path"])
 
-            reason = f"FTS lexical match on task (BM25 score: {m['rank']:.2f})"
+            match_source = m.get("match_source")
+            if match_source == "hybrid":
+                lex_rank = int(m.get("bm25_rank") or m.get("lexical_rank") or 0)
+                reason = (
+                    f"Hybrid task match (RRF: {float(m.get('rrf_score') or 0.0):.3f}, "
+                    f"BM25 #{lex_rank}, cos: {float(m.get('semantic_score') or 0.0):.2f})"
+                )
+            elif match_source == "semantic":
+                reason = (
+                    f"Semantic task match (RRF: {float(m.get('rrf_score') or 0.0):.3f}, "
+                    f"cos: {float(m.get('semantic_score') or 0.0):.2f})"
+                )
+            else:
+                reason = f"FTS lexical match on task (BM25 score: {m['rank']:.2f})"
+
             if etype in ("tech/container", "tech/component"):
                 matched_components[eid] = data
+                if eid not in direct_cnt_ids:
+                    direct_cnt_ids.append(eid)
                 _add_reason(eid, reason)
             elif etype == "tech/contract":
                 matched_contracts[eid] = data
@@ -1040,14 +1073,20 @@ def build_tiered_context_slice(
                     ORDER BY e.id;
                     """
                 )
+                member_rows = sorted(
+                    cursor.execute(member_sql, (eid,)).fetchall(),
+                    key=lambda r: (0 if r["id"] in fts_hit_ranks else 1, fts_hit_ranks.get(r["id"], 999), r["id"]),
+                )
                 member_ids: list[str] = []
-                for row in cursor.execute(member_sql, (eid,)).fetchall():
+                for row in member_rows:
                     m_data = orjson.loads(row["data_json"])
                     m_data["id"] = row["id"]
                     m_data["title"] = row["title"]
                     m_data.setdefault("file_path", row["file_path"])
                     if row["type"] in ("tech/container", "tech/component"):
                         matched_components.setdefault(row["id"], m_data)
+                        if row["id"] not in direct_cnt_ids and row["id"] not in expanded_cnt_ids:
+                            expanded_cnt_ids.append(row["id"])
                     elif row["type"] == "product/capability":
                         matched_capabilities.setdefault(row["id"], m_data)
                     else:
@@ -1098,6 +1137,8 @@ def build_tiered_context_slice(
                     comp_data["title"] = row["title"]
                     comp_data.setdefault("file_path", row["file_path"])
                     matched_components[row["id"]] = comp_data
+                    if row["id"] not in direct_cnt_ids:
+                        direct_cnt_ids.append(row["id"])
                     _add_reason(row["id"], f"Owning component/container of matched invariant {iid}")
 
     has_explicit_query = bool(clean_files or (component and component.strip()) or (task and task.strip()))
@@ -1117,7 +1158,33 @@ def build_tiered_context_slice(
             c_data.setdefault("file_path", row["file_path"])
             matched_components[row["id"]] = c_data
 
-    # 4b. Ensure every matched standalone tech/component includes its owning parent tech/container
+    # 4b. Ensure every matched standalone tech/component includes its owning parent tech/container,
+    #     interleaving the owning container of any direct component hit immediately after that component
+    #     in direct_cnt_ids so token-budget tail eviction never drops the #1 component's parent container.
+    prioritized_direct_cnt_ids: list[str] = []
+    for cid in list(direct_cnt_ids):
+        if cid not in prioritized_direct_cnt_ids:
+            prioritized_direct_cnt_ids.append(cid)
+        c_data = matched_components.get(cid) or {}
+        parent_cnt = str(c_data.get("container") or "").strip()
+        if parent_cnt:
+            if parent_cnt not in matched_components:
+                row = cursor.execute(
+                    "SELECT id, title, type, domain, file_path, data_json FROM entities WHERE id = ?;",
+                    (parent_cnt,),
+                ).fetchone()
+                if row:
+                    cnt_data = orjson.loads(row["data_json"])
+                    cnt_data["id"] = row["id"]
+                    cnt_data["title"] = row["title"]
+                    cnt_data.setdefault("file_path", row["file_path"])
+                    matched_components[row["id"]] = cnt_data
+            if parent_cnt in matched_components:
+                _add_reason(parent_cnt, f"Owning container of {cid}")
+                if parent_cnt not in prioritized_direct_cnt_ids:
+                    prioritized_direct_cnt_ids.append(parent_cnt)
+    direct_cnt_ids = prioritized_direct_cnt_ids
+
     for cid, c_data in list(matched_components.items()):
         parent_cnt = str(c_data.get("container") or "").strip()
         if parent_cnt and parent_cnt not in matched_components:
@@ -1131,10 +1198,14 @@ def build_tiered_context_slice(
                 cnt_data["title"] = row["title"]
                 cnt_data.setdefault("file_path", row["file_path"])
                 matched_components[row["id"]] = cnt_data
+                if row["id"] not in direct_cnt_ids and row["id"] not in expanded_cnt_ids:
+                    expanded_cnt_ids.append(row["id"])
                 _add_reason(row["id"], f"Owning container of {cid}")
 
     # 5. Expand 1-hop internal dependencies via graph edges (depends_on, consumes_api)
-    primary_cids = list(matched_components.keys())
+    primary_cids = list(
+        dict.fromkeys([*direct_cnt_ids, *[cid for cid in matched_components if cid not in direct_cnt_ids]])
+    )
     if primary_cids:
         ph = ",".join("?" for _ in primary_cids)
         dep_rows = cursor.execute(
@@ -1320,6 +1391,9 @@ def build_tiered_context_slice(
 
     # Assemble and rank-order lists so token-budget truncation retains highest-priority entities first
     primary_set = set(primary_cids)
+    direct_cnt_set = set(direct_cnt_ids)
+    direct_cnt_rank = {cid: idx for idx, cid in enumerate(direct_cnt_ids)}
+    expanded_cnt_rank = {cid: idx for idx, cid in enumerate(expanded_cnt_ids)}
     primary_rank = {cid: idx for idx, cid in enumerate(primary_cids)}
     direct_ctr_rank = {cid: idx for idx, cid in enumerate(direct_ctr_ids)}
     direct_cap_rank = {cid: idx for idx, cid in enumerate(direct_cap_ids)}
@@ -1360,8 +1434,12 @@ def build_tiered_context_slice(
     sorted_comps = sorted(
         matched_components.values(),
         key=lambda x: (
-            0 if x.get("id", "") in primary_set else 1,
-            primary_rank.get(x.get("id", ""), 999),
+            0 if x.get("id", "") in direct_cnt_set else (1 if x.get("id", "") in primary_set else 2),
+            direct_cnt_rank.get(
+                x.get("id", ""),
+                100 + expanded_cnt_rank.get(x.get("id", ""), primary_rank.get(x.get("id", ""), 999)),
+            ),
+            -len(matched_reasons.get(x.get("id", ""), ())),
             0 if x.get("type") == "tech/container" else 1,
             x.get("id", ""),
         ),
@@ -1434,7 +1512,7 @@ def build_tiered_context_slice(
         token_estimate=0,
     )
     slice_obj._enforce_token_budget(
-        primary_set,
+        direct_cnt_set if direct_cnt_set else primary_set,
         direct_cap_ids=set(direct_cap_ids),
         direct_inv_ids=set(direct_inv_ids),
         direct_pol_ids=set(direct_pol_ids),

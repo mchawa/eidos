@@ -18,10 +18,10 @@ Extracts rank-ordered, token-budgeted architectural subgraph slices (`Architectu
 
 == Public Surface
 * `ArchitecturalContextSlice`, `TieredContextSlice`
-* `build_tiered_context_slice(index: ArchitecturalIndex, files: list[str] | None, component: str | None, task: str | None, tier: str = "guardrails") -> ArchitecturalContextSlice`
+* `build_tiered_context_slice(index: ArchitecturalIndex, files: list[str] | None, component: str | None, task: str | None, tier: str = "guardrails", use_semantic: bool = True) -> ArchitecturalContextSlice`
 * `get_context_slice(...) -> ArchitecturalContextSlice`
 * `collect_component_decisions(comp: dict) -> list[dict]`, `format_decisions_markdown(...) -> list[str]`
 
 == Design Constraints & Operational Notes
 * **Honest Empty Slices**: Returns an empty `ArchitecturalContextSlice` when an explicit query matches zero entities rather than injecting unrelated alphabetical fallback specs.
-* **BM25 Rank Preservation**: Preserves direct FTS match ordering and promotes the owning `CAP-*`, `POL-*`, `CMP-*`, and `CNT-*` of directly matched invariants.
+* **Direct-Over-1-Hop Container Prioritization & Hybrid Provenance (`DEC-INDEX-HYBRID-SEMANTIC-RRF`)**: Separates directly matched containers/components (`direct_cnt_ids`) from 1-hop domain/design-system expansions (`expanded_cnt_ids`) so 1-hop expansions never crowd out direct FTS/Hybrid container hits or survive `_enforce_token_budget` ahead of direct matches, and records `"Hybrid task match"` / `"Semantic task match"` provenance in `matched_reasons`.

@@ -41,6 +41,11 @@ dev = [
 docs = [
     "zensical>=0.0.69",
 ]
+semantic = [
+    "onnxruntime>=1.20.0; python_version < '3.15'",
+    "tokenizers>=0.20.0",
+    "numpy>=1.26.0",
+]
 
 [project.scripts]
 eidos = "eidos.cli.main:app"

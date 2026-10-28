@@ -56,13 +56,14 @@ _MIN_ANCHOR_LEN = 3
 
 @dataclass
 class _StructuralAddition:
-    """Structural additions of one code file: a new file and/or new public symbols."""
+    """Structural additions or public symbol removals of one code file."""
 
     file: str
     reasons: list[str]
     symbol_names: list[str]
     is_new_file: bool
     boundary_symbol_names: list[str] | None = None
+    removed_symbol_names: list[str] | None = None
 
 
 class _SymbolMapCache:
@@ -158,7 +159,7 @@ def _structural_addition_for(
     symbol_diff: Any = None,
     moved_from: str | None = None,
 ) -> _StructuralAddition | None:
-    """Return the structural additions of a structurally changed file, or None when it adds nothing."""
+    """Return the structural additions or public symbol removals of a structurally changed file."""
     old_content, new_content = smap.versions_of(cf)
     if new_content is None:
         return None
@@ -170,16 +171,34 @@ def _structural_addition_for(
             symbol_names=[diff.qualified_name(k) for k in diff.added],
             is_new_file=True,
             boundary_symbol_names=[diff.qualified_name(k) for k in getattr(diff, "boundary_added", diff.added)],
+            removed_symbol_names=[],
         )
     diff = smap.diff(cf, old_from=moved_from) if moved_from else (symbol_diff or smap.diff(cf))
-    if not diff.added:
+    cf_parent = Path(cf).parent
+    still_present: set[str] = set()
+    for other_cf in smap._versions:
+        if (other_cf == cf or Path(other_cf).parent == cf_parent) and smap.supports(other_cf):
+            for k in smap.get(other_cf, 1):
+                still_present.add(diff.qualified_name(k))
+    removed_keys = [
+        k
+        for k in getattr(diff, "removed", ())
+        if diff.qualified_name(k) not in still_present
+    ]
+    removed_names = [diff.qualified_name(k) for k in removed_keys]
+    if not diff.added and not removed_names:
         return None
+    reasons = [
+        *[f"added {k[0]} '{diff.qualified_name(k)}'" for k in diff.added],
+        *[f"removed {k[0]} '{diff.qualified_name(k)}'" for k in removed_keys],
+    ]
     return _StructuralAddition(
         file=cf,
-        reasons=[f"added {k[0]} '{diff.qualified_name(k)}'" for k in diff.added],
+        reasons=reasons,
         symbol_names=[diff.qualified_name(k) for k in diff.added],
         is_new_file=False,
         boundary_symbol_names=[diff.qualified_name(k) for k in getattr(diff, "boundary_added", diff.added)],
+        removed_symbol_names=removed_names,
     )
 
 
@@ -365,6 +384,52 @@ class _SpecDiffInspector:
         ]
         return any(p.search(line) for line in added for p in patterns)
 
+    def head_content(self, spec: str) -> str | None:
+        """Return the head (new) content of ``spec``, falling back to disk when unmodified."""
+        old, new = self.versions(spec)
+        if new is not None:
+            return new
+        if old is None:
+            for cand in (self._root / spec, self._root / "eidos" / spec):
+                if cand.is_file():
+                    try:
+                        return cand.read_text(encoding="utf-8", errors="replace")
+                    except OSError:
+                        pass
+        return None
+
+    def has_stale_removed_symbols(self, spec: str, removed_symbol_names: list[str]) -> bool:
+        """True when ``spec`` at head still references any deleted public symbol in ``removed_symbol_names``."""
+        if not removed_symbol_names:
+            return False
+        content = self.head_content(spec)
+        if not content:
+            return False
+        _raw_fm, body = _split_spec(content)
+        lines = _normalized_body_lines(body)
+        if not lines:
+            return False
+        spans = [m.group(1) for line in lines for m in re.finditer(r"`([^`]+)`", line)]
+        for sym in removed_symbol_names:
+            if not sym or len(sym) < _MIN_ANCHOR_LEN:
+                continue
+            is_compound = "_" in sym or "." in sym or any(c.isupper() for c in sym)
+            matched = False
+            for span in spans:
+                s_clean = span.strip()
+                if s_clean == sym or re.search(rf"(?<![A-Za-z0-9_./-]){re.escape(sym)}\s*\(", s_clean):
+                    matched = True
+                    break
+                if is_compound and re.search(rf"(?<![A-Za-z0-9_./-]){re.escape(sym)}(?![A-Za-z0-9_/-])", s_clean):
+                    matched = True
+                    break
+            if not matched and ("_" in sym or "." in sym):
+                pat = re.compile(rf"(?<![A-Za-z0-9_./-]){re.escape(sym)}(?![A-Za-z0-9_/-])")
+                matched = any(pat.search(line) for line in lines)
+            if matched:
+                return True
+        return False
+
 
 def _collect_1hop_spec_targets(
     idx: Any,
@@ -505,6 +570,15 @@ def _spec_coverage_verdict(
 
     if addition is None or not owner_spec or inspector is None:
         return True, None, []
+
+    if addition.removed_symbol_names:
+        stale_specs = (
+            [owner_spec]
+            if owner_spec and inspector.has_stale_removed_symbols(owner_spec, addition.removed_symbol_names)
+            else []
+        )
+        if stale_specs:
+            return False, "stale_removed_symbol", stale_specs
 
     owner_norm = owner_spec.replace("\\", "/").lower()
     owner_changed = [s for s in substantive if s.replace("\\", "/").lower() == owner_norm]

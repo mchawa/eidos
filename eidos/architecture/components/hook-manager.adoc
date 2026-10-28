@@ -16,7 +16,8 @@ Validates agent lifecycle hook configurations (`hooks.json`) against the `agent-
 * **Hook Schema & Command Validation**: Parses `hooks.json` via `orjson`, validates structural conformance against `hooks.schema.json`, and verifies that hook commands invoke `eidos hook` natively without wrapper scripts.
 
 == Public Surface
-* `validate_hooks_file(hooks_path: Path) -> list[str]`
+* `validate_plugin_package(plugin_dir: Path | None = None) -> PluginValidationReport`
+* `_verify_hook_command(command: str, errors: list[str], context: str) -> None`
 
 == Design Constraints & Operational Notes
 * **Stop-Only Lifecycle Scope (`DEC-PLUGIN-STOP-SCOPED-DRIFT-GATE`)**: Ensures drift gates run only on `Stop` rather than intermediate `PreToolUse` / `PostToolUse` turns.

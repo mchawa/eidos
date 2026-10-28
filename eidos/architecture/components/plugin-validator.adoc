@@ -16,7 +16,7 @@ Validates Eidos Agent Plugin bundles (`plugin.json` and `skills/*/SKILL.md`) aga
 * **Manifest & Skill Frontmatter Validation**: Parses `plugin.json` via `orjson`, validates against `assets/schemas/agent_plugins/plugin.schema.json` (via `CMP-ASSET-LOCATOR`), extracts line-anchored YAML frontmatter from `SKILL.md` files, and verifies skill directory naming parity.
 
 == Public Surface
-* `validate_plugin_directory(plugin_dir: Path | None = None) -> PluginValidationReport`
+* `validate_plugin_package(plugin_dir: Path | None = None) -> PluginValidationReport`
 * `PluginValidationReport`
 
 == Design Constraints & Operational Notes

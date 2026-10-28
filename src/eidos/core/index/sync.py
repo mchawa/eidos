@@ -1456,7 +1456,7 @@ def sync_index(
     strict: bool = False,
 ) -> IndexSyncStats:
     """Incrementally synchronize the index with specifications and code on disk."""
-    from eidos.core.index.query import compound_identifier_subtokens
+    from eidos.core.index.query import compound_identifier_subtokens, expand_architectural_synonyms
 
     t0 = time.perf_counter()
     stats = IndexSyncStats()
@@ -1471,6 +1471,9 @@ def sync_index(
             conn.execute("DELETE FROM code_symbols;")
             conn.execute("DELETE FROM specs_fts;")
             conn.execute("DELETE FROM file_tokens_fts;")
+            # Content-addressed caches (spec_validation_cache, test_binding_cache, spec_embeddings)
+            # are intentionally preserved across force rebuilds; orphaned spec_embeddings rows are
+            # pruned after entity reconciliation.
 
     if force or dirty_state is None:
         dirty, to_update, deleted = index.is_dirty()
@@ -1780,6 +1783,7 @@ def sync_index(
                     test_str = str(test or "")
                     rule_str = str(rule or "")
                     test_func = test_str.split("::", 1)[1] if "::" in test_str else ""
+                    inv_synonyms = expand_architectural_synonyms(rule_str)
                     conn.execute("DELETE FROM specs_fts WHERE entity_id = ?", (iid,))
                     conn.execute(
                         """
@@ -1790,7 +1794,7 @@ def sync_index(
                             iid,
                             rule_str,
                             str(title or ""),
-                            " ".join(str(x) for x in (iid, "invariant", domain, doc_id) if x),
+                            " ".join(str(x) for x in (iid, "invariant", domain, doc_id, inv_synonyms) if x),
                             " ".join(
                                 x for x in (test_str, compound_identifier_subtokens(f"{test_func} {rule_str}")) if x
                             ),
@@ -1843,7 +1847,10 @@ def sync_index(
                             decision_texts.append(str(aval).strip())
             if decision_texts:
                 body_clean = f"{body_clean} " + re.sub(r"[{}\[\]=:#*`]", " ", " ".join(decision_texts))
-            keywords = " ".join([doc_id, doc_type, domain, container_type, source_path, *decision_ids])
+            spec_synonyms = expand_architectural_synonyms(f"{title or ''} {jtbd_or_rule or ''}")
+            keywords = " ".join(
+                x for x in [doc_id, doc_type, domain, container_type, source_path, *decision_ids, spec_synonyms] if x
+            )
             symbols = ""
             decompounded = compound_identifier_subtokens(f"{title or ''} {jtbd_or_rule or ''} {body_clean}")
             if decompounded:
@@ -2135,6 +2142,13 @@ def sync_index(
             DELETE FROM edges
             WHERE source_id NOT IN (SELECT id FROM entities)
               AND rel_type != 'asserts';
+            """
+        )
+        conn.execute(
+            """
+            DELETE FROM spec_embeddings
+            WHERE entity_id NOT IN (SELECT id FROM entities)
+               OR entity_id NOT IN (SELECT entity_id FROM specs_fts);
             """
         )
         prune_stale_test_binding_edges(conn)

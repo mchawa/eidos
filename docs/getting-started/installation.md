@@ -48,6 +48,7 @@ Optional extras are available for documentation building and repository developm
 
 | Extra | Description | Installation |
 | :--- | :--- | :--- |
+| `semantic` | Optional local Harrier-OSS-v1-0.6B ONNX semantic embedding engine (`onnxruntime`, `tokenizers`, `numpy`) | `uv tool install "eidos-ai[semantic]"` |
 | `docs` | Documentation site building with Zensical | `uv tool install "eidos-ai[docs]"` |
 | `dev` | Contributor test suite (`pytest`, `pytest-cov`, `ruff`) | `uv sync --all-extras --dev` |
 

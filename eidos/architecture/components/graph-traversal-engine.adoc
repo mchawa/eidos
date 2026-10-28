@@ -10,18 +10,19 @@ source_path: src/eidos/core/index/query.py
 :toc: left
 
 == Responsibility
-Executes recursive Common Table Expression (CTE) `k`-hop blast-radius traversals (`execute_k_hop_traversal`), incoming reference lookups, file/symbol-to-entity resolution, indexed catalog reconstruction (`query_spec_catalog_in_db`), and SpecDelta impact analysis (`compute_delta_impact_in_db`).
+Executes recursive Common Table Expression (CTE) `k`-hop blast-radius traversals (`execute_k_hop_traversal`), multi-target blast-radius symbol/path resolution (`resolve_blast_radius_targets`), incoming reference lookups, file/symbol-to-entity resolution, indexed catalog reconstruction (`query_spec_catalog_in_db`), and SpecDelta impact analysis (`compute_delta_impact_in_db`).
 
 == Key Responsibilities & Collaborators
-* **Hub-Scoped Recursive CTE Blast Radius**: Traverses forward and reverse architectural edges up to `max_depth` hops with delimiter-anchored cycle prevention while suppressing hop >= 2 sibling fan-out through organizational hub nodes (`DOM-*`, `DS-*`, `PER-*`, `ARCH-*`, `SYS-*`, `DLT-*`, `EXP-*`).
+* **Hub-Scoped Recursive CTE Blast Radius**: Resolves entity IDs, specification paths, source file paths, and AST code symbols to seed entity IDs (`resolve_blast_radius_targets`, filtering to `CMP-*` seeds when component matches resolve) and traverses forward and reverse architectural edges up to `max_depth` hops with delimiter-anchored cycle prevention while suppressing hop >= 2 sibling fan-out through organizational hub nodes (`DOM-*`, `DS-*`, `PER-*`, `ARCH-*`, `SYS-*`, `DLT-*`, `EXP-*`).
 * **Indexed Catalog & SpecDelta Impact**: Reconstructs `(specs_by_id, invariant_map)` directly from `entities` (`query_spec_catalog_in_db`) for `CMP-LIFECYCLE-SCAFFOLDER` and computes direct `affects` and transitive `blast_radius` sets (`compute_delta_impact_in_db`) for `CMP-PORTAL-GENERATOR` and `eidos delta`.
 
 == Public Surface
-* `execute_k_hop_traversal(conn: sqlite3.Connection, start_entity_id: str, max_depth: int = 2) -> list[dict[str, Any]]`
-* `execute_incoming_references(conn: sqlite3.Connection, target_id: str, rel_path: str = "") -> list[str]`
-* `resolve_symbol_or_path_in_db(conn: sqlite3.Connection, symbol_or_path: str) -> list[str]`
-* `query_spec_catalog_in_db(conn: sqlite3.Connection, eidos_dir: Path)`
-* `compute_delta_impact_in_db(conn: sqlite3.Connection, mutations: list[dict[str, Any]]) -> tuple[list[str], list[str]]`
+* `resolve_blast_radius_targets(conn: sqlite3.Connection, symbol_or_path: str) -> list[str]`
+* `execute_k_hop_traversal(conn: sqlite3.Connection, entity_id: str | Sequence[str], max_depth: int = 2) -> list[dict[str, Any]]`
+* `execute_incoming_references(conn: sqlite3.Connection, target_id_or_path: str) -> list[dict[str, Any]]`
+* `resolve_symbol_or_path_in_db(conn: sqlite3.Connection, query: str) -> list[dict[str, Any]]`
+* `query_spec_catalog_in_db(conn: sqlite3.Connection, eidos_dir: Path, repo_root: Path | None = None)`
+* `compute_delta_impact_in_db(conn: sqlite3.Connection, mutations: list[dict[str, Any]]) -> tuple[dict[str, list[str]], dict[str, list[str]]]`
 
 == Design Constraints & Operational Notes
 * **Sub-2ms Traversal Latency**: All graph neighborhood and catalog queries run entirely against indexed SQLite tables without disk scans.

@@ -3676,3 +3676,180 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
     assert sum(1 for r in rep.broken_references if "Circular design system inheritance" in r) == 1
     # B9: Contract with component path owner flagged by INV-INTERFACE-BOUNDARY-GOVERNANCE
     assert "Contract 'CTR-BAD-OWNER' specifies in-process component" in schema_err_text
+
+
+def test_dlt_2026_113_component_public_surface_symbol_validation(tmp_path: Path, validator: SpecValidator) -> None:
+    """Verify DLT-2026-113-HARDEN-SPEC-B4EE: SpecValidator._validate_source_and_contract_paths
+    flags nonexistent backticked symbols under '== Public Surface' in active CMP-*/CNT-* specs."""
+    repo_root = tmp_path / "pub_surface_repo"
+    eidos_dir = repo_root / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    comps_dir = eidos_dir / "architecture" / "components"
+    cnts_dir.mkdir(parents=True)
+    comps_dir.mkdir(parents=True)
+    (repo_root / "src" / "pkg").mkdir(parents=True)
+    (repo_root / "src" / "pkg" / "engine.py").write_text(
+        "DEFAULT_LIMIT = 10\n\n"
+        "class BaseEngine:\n"
+        "    def shared_run(self) -> bool:\n"
+        "        return True\n\n"
+        "class SubEngine(BaseEngine):\n"
+        "    def execute(self) -> int:\n"
+        "        return DEFAULT_LIMIT\n",
+        encoding="utf-8",
+    )
+
+    (cnts_dir / "pkg.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-PKG\n"
+        "title: Package Container\n"
+        "status: active\n"
+        "container_type: library\n"
+        "runtime: Python 3.12\n"
+        "source_path: src/pkg\n"
+        "---\n"
+        "= Container: Package\n",
+        encoding="utf-8",
+    )
+    cmp_path = comps_dir / "engine.adoc"
+    cmp_path.write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-ENGINE\n"
+        "title: Engine Component\n"
+        "container: CNT-PKG\n"
+        "status: active\n"
+        "source_path: src/pkg/engine.py\n"
+        "---\n"
+        "= Component: Engine\n\n"
+        "== Public Surface\n"
+        "* `DEFAULT_LIMIT`\n"
+        "* `SubEngine.execute() -> int`\n"
+        "* `SubEngine.shared_run() -> bool`\n"
+        "* `ghost_removed_func(x: int) -> None`\n",
+        encoding="utf-8",
+    )
+
+    rep_bad = validator.validate_directory(eidos_dir)
+    assert not rep_bad.is_clean
+    broken_str = "\n".join(rep_bad.broken_references)
+    assert "ghost_removed_func" in broken_str
+    assert "SubEngine.shared_run" not in broken_str
+    assert "DEFAULT_LIMIT" not in broken_str
+
+    # Removing the nonexistent symbol makes the report clean
+    cmp_path.write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-ENGINE\n"
+        "title: Engine Component\n"
+        "container: CNT-PKG\n"
+        "status: active\n"
+        "source_path: src/pkg/engine.py\n"
+        "---\n"
+        "= Component: Engine\n\n"
+        "== Public Surface\n"
+        "* `DEFAULT_LIMIT`\n"
+        "* `SubEngine.execute() -> int`\n"
+        "* `SubEngine.shared_run() -> bool`\n",
+        encoding="utf-8",
+    )
+    rep_clean = validator.validate_directory(eidos_dir)
+    assert rep_clean.is_clean, f"Unexpected errors: {rep_clean.broken_references}"
+
+
+def test_dlt_2026_114_cli_contract_positional_placeholder_alignment(tmp_path: Path, validator: SpecValidator) -> None:
+    """Verify DLT-2026-114-RESOLVE-SYMBOLS-0327: SpecValidator._verify_cli_contract_commands
+    flags positional argument count mismatch and placeholder-to-parameter/metavar misalignment."""
+    repo_root = tmp_path / "cli_pos_repo"
+    eidos_dir = repo_root / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    ctrs_dir = eidos_dir / "architecture" / "contracts"
+    cnts_dir.mkdir(parents=True)
+    ctrs_dir.mkdir(parents=True)
+    src_dir = repo_root / "src" / "cli"
+    src_dir.mkdir(parents=True)
+
+    (src_dir / "main.py").write_text(
+        "import typer\n\n"
+        "app = typer.Typer()\n"
+        "index_app = typer.Typer(name='index')\n"
+        "app.add_typer(index_app, name='index')\n\n"
+        "@index_app.command('blast-radius')\n"
+        "def blast_radius_cmd(entity_id: str = typer.Argument(...)):\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    (cnts_dir / "cli.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-CLI\n"
+        "title: CLI Container\n"
+        "status: active\n"
+        "container_type: cli\n"
+        "runtime: Python 3.12\n"
+        "source_path: src/cli\n"
+        "---\n= CLI\n",
+        encoding="utf-8",
+    )
+    ctr_path = ctrs_dir / "cli.adoc"
+    ctr_path.write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "id: CTR-CLI\n"
+        "title: CLI Contract\n"
+        "status: active\n"
+        "protocol: cli_args\n"
+        "container: CNT-CLI\n"
+        "specification_file: src/cli/main.py\n"
+        "---\n= CLI Contract\n\n"
+        "=== `eidos index`\n"
+        "* **Sub-commands**:\n"
+        "  - `blast-radius <symbol_or_path>`: Computes blast radius.\n",
+        encoding="utf-8",
+    )
+
+    rep_mismatch = validator.validate_directory(eidos_dir)
+    assert not rep_mismatch.is_clean
+    assert any("symbol_or_path" in r and "entity_id" in r for r in rep_mismatch.broken_references)
+
+    # Aligning the parameter name in main.py (plus Annotated[..., typer.Argument(...)] and 3-level nested subcommands) resolves drift
+    (src_dir / "main.py").write_text(
+        "from typing import Annotated\n"
+        "import typer\n\n"
+        "app = typer.Typer()\n"
+        "index_app = typer.Typer(name='index')\n"
+        "semantic_app = typer.Typer(name='semantic')\n"
+        "index_app.add_typer(semantic_app, name='semantic')\n"
+        "app.add_typer(index_app, name='index')\n\n"
+        "@index_app.command('blast-radius')\n"
+        "def blast_radius_cmd(symbol_or_path: str = typer.Argument(..., metavar='SYMBOL_OR_PATH')):\n"
+        "    pass\n\n"
+        "@index_app.command('sync')\n"
+        "def index_sync_cmd(target: Annotated[str, typer.Argument()] = 'all'):\n"
+        "    pass\n\n"
+        "@semantic_app.command('sync')\n"
+        "def semantic_sync_cmd(force: bool = typer.Option(False, '--force')):\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    ctr_path.write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "id: CTR-CLI\n"
+        "title: CLI Contract\n"
+        "status: active\n"
+        "protocol: cli_args\n"
+        "container: CNT-CLI\n"
+        "specification_file: src/cli/main.py\n"
+        "---\n= CLI Contract\n\n"
+        "=== `eidos index`\n"
+        "* **Sub-commands**:\n"
+        "  - `eidos index blast-radius <symbol_or_path>`: Computes blast radius.\n"
+        "  - `eidos index sync [target]`: Syncs index.\n"
+        "  - `eidos index semantic sync [--force]`: Syncs semantic embeddings.\n",
+        encoding="utf-8",
+    )
+    rep_ok = validator.validate_directory(eidos_dir)
+    assert rep_ok.is_clean, f"Unexpected errors: {rep_ok.broken_references}"

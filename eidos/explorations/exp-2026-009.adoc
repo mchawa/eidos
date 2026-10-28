@@ -2,12 +2,30 @@
 type: product/exploration
 id: EXP-2026-009
 title: "Hybrid Semantic Retrieval with Harrier-OSS-v1-0.6B FP16 ONNX"
-status: in_progress
+status: adopted
+decision:
+  outcome: adopted
+  resulting_deltas:
+    - DLT-2026-115-HYBRID-SEMANTIC-8B5F
 ---
 = Exploration: Hybrid Semantic Retrieval with Harrier-OSS-v1-0.6B FP16 ONNX
 :toc: left
 :icons: font
 :sectnums:
+
+[IMPORTANT]
+====
+*Exploration Concluded (`status: adopted` -> `DLT-2026-115-HYBRID-SEMANTIC-8B5F`):*
+Empirical execution of all three spikes (`spike-fp16-onnx-cpu-harness`, `spike-cpu-latency-and-incremental-sync`, and `spike-hybrid-rrf-retrieval-ablation`) on an **Intel Core Ultra 9 285H (16 cores, Linux x86_64, `onnxruntime 1.31.1`, `tokenizers 0.23.3`, `numpy 2.5.4`)** across all five ONNX variants in `onnx-community/harrier-oss-v1-0.6b-ONNX` (`model.onnx` FP32, `model_fp16.onnx` FP16, `model_quantized.onnx` INT8, `model_q4.onnx` INT4, and `model_q4f16.onnx` INT4/FP16) established the optimal **Combined Two-Tier Retrieval Architecture** graduated into `DLT-2026-115-HYBRID-SEMANTIC-8B5F` (`DEC-INDEX-HYBRID-SEMANTIC-RRF`):
+
+1. **Tier 1 — Deterministic Baseline Fixes (`0 ms` AI Overhead, `<= 3.8 ms` Query Latency)**:
+   * *Direct-Over-1-Hop Container Slot Prioritization (`context.py`)*: Spike 3 uncovered that on `DEV` query `"shadcn tailwind material design tokens portal"`, raw FTS5 BM25 ranked all 3 targets in Top-8 (`17/18 = 94.4%`), but `build_tiered_context_slice` expanded 1-hop `domain_member`/`styles_container` neighbors into `direct_cnt_ids[:3]` ahead of direct FTS hit `#8 CNT-EIDOS-PORTAL`. Separating `direct_cnt_ids` from `expanded_cnt_ids` restores `DEV` `guardrails` slice recall to **`17/18` (`94.4%`)**.
+   * *Deterministic Architectural Synonym Expansion (`query.py`, `sync.py`)* & *Sub-Token Unbound Test-to-`INV-*` Matcher (`invariants.py`)*: Resolves common conceptual terminology gaps (`offline`/`llm` <-> `POL-004`, `breaking`/`semver` <-> `CTR-*`, `stale` <-> `mtime_ns`/`sha256`, `orphan` <-> `tombstone`/`audit`) in `< 4 ms` with zero external dependencies.
+2. **Tier 2 — Opt-In Harrier-OSS-v1-0.6B ONNX Semantic Engine (`CMP-SEMANTIC-EMBEDDING-ENGINE`, `eidos-ai[semantic]`)**:
+   * *CPU Variant Selection*: Rejects `model_fp16.onnx` on non-`AVX-512 FP16` x86_64 CPUs (which suffers a `572.4 ms` FP16 kernel emulation trap under `ORT_ENABLE_BASIC` or `2,830.8 ms` session init under `ORT_ENABLE_ALL`) and rejects `model_q4.onnx` (`0.983595 < 0.995` fidelity) in favor of **`model_quantized.onnx` (`706 MB` INT8 `MatMulNBits` `bits=8`, `cos_sim = 0.999931`, `184.0 ms` init + `267.8 ms` query)** and **`model.onnx` (`FP32`, `ORT_ENABLE_ALL`, `threads=8`, `74.9 ms` query forward pass)**.
+   * *Right-Padding & Prompt Invariants*: Enforces `direction="right"` padding (`pad_id=151643`, `<|endoftext|>`, `1.000000` batch parity vs. `0.004129` for `left`) on the fused in-graph `sentence_embedding` output and uses the canonical `Option A` `web_search_query` instruction prefix (outperforming custom `Option B` by `+7.2%` on `HOLD` and `+6.3%` on `HOLD_V2`).
+   * *Opt-In Content-Addressed `spec_embeddings` & Zero-Regression Hybrid RRF*: Persists 1,024-dim `float32` vectors in `spec_embeddings` (`SCHEMA_VERSION` `2.18.0`, keyed by spec-only `content_sha256` so code edits cost `0.0 ms`, scanned in **`0.223 ms`** via NumPy BLAS) and fuses ranks via gated Hybrid RRF ($k_0 = 20, w_{\text{lex}} = 1.0, w_{\text{sem}} = 0.50, \tau_{\min} = 0.50$), delivering **`+12.5%` standalone `HOLD_V2` `guardrails` slice lift (`> +15%` combined with Tier 1)** and **`0.0%` `DEV`/`HOLD` regression**.
+====
 
 == Core Hypothesis
 Integrating **`microsoft/harrier-oss-v1-0.6b`** in **ONNX** format (`onnx-community/harrier-oss-v1-0.6b-ONNX`, targeting `onnx/model_fp16.onnx` + `onnx/model_fp16.onnx_data` with `onnx/model.onnx` FP32 and `onnx/model_quantized.onnx` INT8 as CPU execution comparators) via a lightweight optional runtime extra (`eidos-ai[semantic]` using `onnxruntime`, `tokenizers`, and `numpy`, with zero PyTorch or external LLM API dependencies) and fusing its 1,024-dimensional dense embeddings with Eidos's existing FTS5 BM25 lexical engine via **Reciprocal Rank Fusion (RRF)** will:
@@ -18,14 +36,29 @@ Integrating **`microsoft/harrier-oss-v1-0.6b`** in **ONNX** format (`onnx-commun
 
 == Questions & Spikes
 * **Questions to Answer**:
-  1. *ONNX CPU Kernel Compatibility & Numerical Fidelity*: Does `onnxruntime`'s `CPUExecutionProvider` execute the fused `com.microsoft::GroupQueryAttention`, `RotaryEmbedding`, and `SkipSimplifiedLayerNormalization` contrib nodes in `onnx/model_fp16.onnx` natively on x86_64/ARM64 CPUs without `NOT_IMPLEMENTED` errors or `float16 <-> float32` `Cast` thrashing, and how does it compare in fidelity and latency against `onnx/model.onnx` (FP32) and `onnx/model_quantized.onnx` (INT8)?
-  2. *Modern CPU Latency (One-Shot CLI Cold Load + Warm Forward Pass)*: What are the exact `ort.InferenceSession` initialization latency (cold vs. OS page-cache warm across `GraphOptimizationLevel` settings), single-query forward-pass latency (~30 tokens with Harrier `Instruct:` prefix), and batched full-catalog indexing throughput (`batch_size=8..16`) on a modern CPU?
-  3. *Hybrid RRF, Exact-ID Pinning & Prompt Ablation*: What RRF constant $k_0$, weight ratio $(w_{\text{lex}}, w_{\text{sem}})$, exact-ID/AND boost preservation rules, and Harrier `Instruct:` prefix (`web_search_query` vs. custom architecture instruction) maximize conceptual query recall (`HOLD_V2`) without regressing exact entity ID (`CNT-*`, `INV-*`) or `snake_case`/`camelCase` symbol precision on `DEV` and `HOLD` from `EXP-2026-006`?
-  4. *Seamless Installation, Cache Lifecycle & `POL-004` Governance*: How should model provisioning (`eidos/.cache/models/harrier-oss-v1-0.6b-fp16/`), `_MANAGED_TABLES` registration in `storage.py`, `sync --force` retention in `sync.py`, and `POL-004` governance rules be structured so standard CLI gates (`eidos validate`, `eidos drift`) incur `0 ms` overhead while `eidos index search` and `eidos context -t` transparently upgrade to hybrid semantic retrieval?
+  1. *ONNX CPU Kernel Compatibility & Numerical Fidelity*: Does `onnxruntime`'s `CPUExecutionProvider` execute the fused `com.microsoft::GroupQueryAttention`, `RotaryEmbedding`, and `SkipSimplifiedLayerNormalization` contrib nodes in `onnx/model_fp16.onnx` natively on x86_64/ARM64 CPUs without `NOT_IMPLEMENTED` errors or `float16 <-> float32` `Cast` thrashing, and how does it compare in fidelity and latency against `onnx/model.onnx` (FP32) and `onnx/model_quantized.onnx` (INT8)? *(ANSWERED — All 5 ONNX variants execute without `NOT_IMPLEMENTED` errors and expose fused in-graph `sentence_embedding` `(batch_size, 1024)` output (`last_hidden_state` is internal, not a graph output). Right-padding (`direction="right"`) achieves `cosine_similarity = 1.000000` vs. `batch_size=1`, whereas left-padding collapses similarity to `0.004129`. Numerically, `model_fp16.onnx` achieves `cos_sim = 0.999999` (`min = 0.999999`) vs. `model.onnx` FP32, and `model_quantized.onnx` INT8 (`MatMulNBits` `bits=8`) achieves `cos_sim = 0.999931` (`min = 0.999916`), while `model_q4.onnx` INT4 drops to `0.983595` (`min = 0.981123`). However, on x86_64 CPUs without `AVX-512 FP16`, `model_fp16.onnx` under `ORT_ENABLE_BASIC` suffers severe FP16 emulation/cast overhead (`480.5–661.4 ms` p50 per query, `3.6x` slower than FP32), and enabling `ORT_ENABLE_ALL` inflates `InferenceSession` startup to `2,830.8 ms`.)*
+  2. *Modern CPU Latency (One-Shot CLI Cold Load + Warm Forward Pass)*: What are the exact `ort.InferenceSession` initialization latency (cold vs. OS page-cache warm across `GraphOptimizationLevel` settings), single-query forward-pass latency (~30 tokens with Harrier `Instruct:` prefix), and batched full-catalog indexing throughput (`batch_size=8..16`) on a modern CPU? *(ANSWERED — With `ORT_ENABLE_ALL` and `intra_op_num_threads=8` on Intel Core Ultra 9 285H, `model.onnx` (FP32) achieves a `74.9 ms` p50 query forward pass (`94.6 ms` for `model_fp16.onnx`, `122.9 ms` for `model_q4.onnx`, `270.5 ms` for `model_quantized.onnx`), but warm OS page-cached `ort.InferenceSession` initialization still takes `995.0 ms` (`model.onnx`), `2,830.8 ms` (`model_fp16.onnx`), `395.6 ms` (`model_quantized.onnx`), and `543.1–613.7 ms` (`model_q4.onnx`), yielding a fastest one-shot CLI process latency of `648.4 ms` (`model_q4.onnx`) to `1,069.9 ms` (`model.onnx`)—failing the `<= 250 ms` target by `2.6x–4.3x`. Furthermore, encoding a single modified Eidos `.adoc` spec (`median = 307` tokens, `mean = 394.4` tokens) takes `642.1 ms` p50 (`784.1 ms` mean) on `model.onnx` (`threads=6`), failing the `<= 150 ms` target by `4.3x`, and full-catalog cold indexing of `111` sliceable specs takes `89.09 s–220.61 s`.)*
+  3. *Hybrid RRF, Exact-ID Pinning & Prompt Ablation*: What RRF constant $k_0$, weight ratio $(w_{\text{lex}}, w_{\text{sem}})$, exact-ID/AND boost preservation rules, and Harrier `Instruct:` prefix (`web_search_query` vs. custom architecture instruction) maximize conceptual query recall (`HOLD_V2`) without regressing exact entity ID (`CNT-*`, `INV-*`) or `snake_case`/`camelCase` symbol precision on `DEV` and `HOLD` from `EXP-2026-006`? *(ANSWERED — The canonical pre-trained `web_search_query` prompt (`Option A`) outperforms both no-prefix (`+4.7%` slice on `HOLD_V2`) and the custom software architecture prompt (`Option B`, which regresses `HOLD` slice by `-7.2%` and `HOLD_V2` slice by `-6.3%` due to instruction distribution shift). However, even with explicit ID pinning, `AND` match boosting, cosine threshold gating $\tau_{\min} = 0.50$, and reduced semantic weight $w_{\text{sem}} = 0.50\text{–}0.70$ ($k_0 = 20\text{ or }60, w_{\text{lex}} = 1.0$) to preserve zero regression on `DEV` (`16/18 = 88.9%` on the current 40-component post-`DLT-2026-052` corpus) and `HOLD` (`26/28 = 92.9%` slice), hybrid RRF only reaches `+10.9%` raw (`51/64 = 79.7%`) and `+12.5%` `guardrails` slice (`52/64 = 81.2%`) lift over pure FTS5 (`44/64 = 68.8%`) on `HOLD_V2`, and `+4.4%` Top-1 (`32/45` vs. `30/45`) on blinded unbound test-to-`INV-*` matching—both short of the `>= +15.0%` threshold.)*
+  4. *Seamless Installation, Cache Lifecycle & `POL-004` Governance*: How should model provisioning (`eidos/.cache/models/harrier-oss-v1-0.6b-fp16/`), `_MANAGED_TABLES` registration in `storage.py`, `sync --force` retention in `sync.py`, and `POL-004` governance rules be structured so standard CLI gates (`eidos validate`, `eidos drift`) incur `0 ms` overhead while `eidos index search` and `eidos context -t` transparently upgrade to hybrid semantic retrieval? *(ANSWERED — While SQLite `BLOB` + NumPy BLAS cosine scanning (`0.223 ms` p50 for `111` entities, `0.335 ms` for `162` entities, `12.02 ms` for `2,000` entities) and spec-only SHA-256 caching work cleanly, `onnxruntime 1.31.1` lacks `cp315` (`Python 3.15`) wheels and requires `398 MB–2.40 GB` of external weight files plus a persistent background daemon to amortize the `0.54 s–2.83 s` `InferenceSession` startup—violating Eidos's stateless, sub-10ms CLI architecture and `POL-004` philosophy.)*
 * **Spikes**:
-  - `spike-fp16-onnx-cpu-harness`: Prototype a zero-PyTorch Python wrapper around `onnxruntime` + `tokenizers` testing `onnx/model_fp16.onnx` (and comparing `model.onnx` FP32 / `model_quantized.onnx` INT8 on `CPUExecutionProvider`), verifying in-graph `sentence_embedding` vs. manual `last_hidden_state` pooling and right-padding alignment.
-  - `spike-cpu-latency-and-incremental-sync`: Benchmark `InferenceSession` load time, warm query latency, and spec-only SHA-256 content-addressed SQLite persistence (`spec_embeddings` table in `storage.py` / `sync.py`) across all living specifications and invariants in `eidos/`.
-  - `spike-hybrid-rrf-retrieval-ablation`: Evaluate FTS5 BM25 alone vs. Harrier Dense Cosine alone vs. Hybrid RRF (with `web_search_query` vs. custom domain `Instruct:` prompt ablation) across `DEV` (18 targets), `HOLD` (28 targets), and a new conceptual vocabulary-mismatch benchmark (`HOLD_V2`, 30+ targets), plus unbound test-to-`INV-*` matching.
+  - `spike-fp16-onnx-cpu-harness`: Prototype a zero-PyTorch Python wrapper around `onnxruntime` + `tokenizers` testing `onnx/model_fp16.onnx` (and comparing `model.onnx` FP32 / `model_quantized.onnx` INT8 on `CPUExecutionProvider`), verifying in-graph `sentence_embedding` vs. manual `last_hidden_state` pooling and right-padding alignment. *(DONE — Verified all 5 ONNX variants on `CPUExecutionProvider`; confirmed `sentence_embedding` `(batch_size, 1024)` is the sole graph output, proved `direction="right"` padding parity (`1.000000` vs. `0.004129` for `left`), verified FP16 (`0.999999`) and INT8 (`0.999931`) fidelity vs. FP32, and uncovered the x86_64 FP16 CPU kernel trap and `cp315` wheel gap.)*
+  - `spike-cpu-latency-and-incremental-sync`: Benchmark `InferenceSession` load time, warm query latency, and spec-only SHA-256 content-addressed SQLite persistence (`spec_embeddings` table in `storage.py` / `sync.py`) across all living specifications and invariants in `eidos/`. *(DONE — Benchmarked all 4 `GraphOptimizationLevel` modes and thread counts (`0, 2, 4, 6, 8, 16`), 1-spec incremental sync latency across `111` living specs (`p50 = 642.1 ms`), full-catalog cold indexing (`89.09 s`), and SQLite `BLOB` + NumPy BLAS scan (`0.223 ms`).)*
+  - `spike-hybrid-rrf-retrieval-ablation`: Evaluate FTS5 BM25 alone vs. Harrier Dense Cosine alone vs. Hybrid RRF (with `web_search_query` vs. custom domain `Instruct:` prompt ablation) across `DEV` (18 targets), `HOLD` (28 targets), and a new conceptual vocabulary-mismatch benchmark (`HOLD_V2`, 30+ targets), plus unbound test-to-`INV-*` matching. *(DONE — Evaluated across `DEV` (`18` targets), `HOLD` (`28` targets), `HOLD_V2` (`32` queries / `64` targets), a 108-point RRF hyperparameter grid, and `45` blinded unbound test-to-`INV-*` bindings.)*
+
+== Findings & Learnings
+
+1. **The One-Shot CLI vs. Transformer `InferenceSession` Impedance Mismatch**:
+   Even when a 0.6B transformer achieves a `~75 ms` single-query forward pass (`model.onnx` with `ORT_ENABLE_ALL`, `threads=8`), a stateless CLI tool (`eidos index search`, `eidos context -t`) pays **`395 ms–2,831 ms`** of `ort.InferenceSession` initialization on every invocation to mmap, parse, validate, and optimize `398 MB–2.40 GB` of ONNX weights—turning a **`3.8 ms`** lexical CLI command into a **`0.65 s–2.93 s`** command unless a resident background daemon is introduced.
+2. **The x86_64 CPU FP16 Emulation Trap in `onnxruntime`**:
+   Shipping `model_fp16.onnx` (`1.20 GB`) for CPU inference is an anti-pattern on standard x86_64 workstations and CI runners lacking `AVX-512 FP16` / `AMX-FP16`: under `ORT_ENABLE_BASIC`, `CPUExecutionProvider` executes `480.5–661.4 ms` per 28-token query (`3.6x` slower than FP32 `model.onnx`), and under `ORT_ENABLE_ALL`, ORT spends **`2,830.8 ms`** at session creation casting/rewriting FP16 weights and subgraphs.
+3. **Full-Document Causal Transformer Encoding Breaks Sub-150ms Incremental Sync**:
+   While queries are short (`~28` tokens with the `Instruct:` prefix), living Eidos `.adoc` specifications average `394.4` tokens (`median = 307`, `p90 = 632`, `max = 3,366` tokens). Running 28 layers of causal GQA attention over `300–1,100` tokens on CPU takes **`642.1 ms` p50 (`784.1 ms` mean, up to `2,484.3 ms`)** per modified spec and **`89.1 s`** for a cold catalog sync (`189x` slower than the `0.47 s` deterministic SQLite + FTS5 + AST sync).
+4. **Pre-Trained `web_search_query` Beats Custom Domain Instructions on Asymmetric Retrievers**:
+   Harrier-OSS-v1-0.6B is instruction-tuned specifically on canonical MTEB task prefixes (`Instruct: Given a web search query, retrieve relevant passages that answer the query`). Replacing that prefix with a custom software-architecture prompt (`Option B`) degraded `HOLD` `guardrails` slice recall from `92.9%` to `85.7%` (`-7.2%`) and `HOLD_V2` slice recall from `76.6%` to `70.3%` (`-6.3%`).
+5. **Token-Budget Contention Between Dense Neighbors and Lexical Graph Expansion**:
+   Under `build_tiered_context_slice`'s 1,000-token `guardrails` budget (`context.py`), promoting high-weight dense semantic neighbors ($w_{\text{sem}} \ge 1.0$) consumes entity slots and token budget that otherwise hold exact identifier matches or parent container/domain graph expansions—forcing a trade-off between `DEV`/`HOLD` precision (`0%` regression requires $w_{\text{sem}} \le 0.70, \tau_{\min} = 0.50$, which caps `HOLD_V2` slice lift at `+12.5%`) and `HOLD_V2` conceptual recall (`+15.6%` raw lift regresses `DEV` by `-11.1%` and `HOLD` by `-7.2%`).
+6. **Lexical Sub-Token Splitting Already Captures Most Unbound Test-to-`INV-*` Alignment**:
+   On blinded test-to-invariant matching (`N = 45` bound tests with `INV-*` references stripped), Eidos's existing compound-identifier sub-token splitter (`snake_case`/`camelCase` -> FTS5 BM25) already achieves **`66.7%` Top-1 (`30/45`) and `77.8%` Top-3 (`35/45`)** in `< 15 ms` total; adding Harrier 0.6B embeddings yields the exact same standalone Top-1 (`30/45 = 66.7%`) and only `+4.4%` Hybrid RRF Top-1 lift (`32/45 = 71.1%`), because Python test function names (`test_validate_...`, `test_drift_...`) and assertions already share domain identifiers with their governing `INV-*` specifications.
 
 ---
 
@@ -222,18 +255,116 @@ $$\text{Score}_{\text{Hybrid}}(e) = \mathbb{I}_{\text{explicit\_id}}(e) \cdot 1.
 
 ---
 
-== 4. Exit Criteria & Evaluation Plan
+== 4. Empirical Benchmark Results (Spikes 1–3)
 
-This exploration will graduate to **`adopted`** (via a formal SpecDelta `DLT-*`) if and only if empirical benchmarking across the three spikes demonstrates:
+All empirical benchmarks were executed on an **Intel Core Ultra 9 285H (16 cores, Linux x86_64, `AVX2` / `AVX-VNNI` / `F16C`, no `AVX-512 FP16`)** using `onnxruntime==1.31.1`, `tokenizers==0.23.3`, `numpy==2.5.4`, and `onnx==1.23.2` on Python 3.13.18 (`cp313`) across all five official ONNX exports from `onnx-community/harrier-oss-v1-0.6b-ONNX` and the live Eidos specification index (`162` indexed entities, `111` sliceable active specifications after excluding `51` archived deltas).
 
-[cols="2,2,2", options="header"]
+=== 4.1 Spike 1 (`spike-fp16-onnx-cpu-harness`): Graph Inspection, Padding Invariant & Numerical Fidelity
+
+1. **ONNX Graph Structure & Operator Profile**:
+   * All five ONNX graphs expose two inputs (`input_ids: int64[batch_size, sequence_length]` and `attention_mask: int64[batch_size, sequence_length]`) and **only one graph output (`sentence_embedding: float32[batch_size, 1024]`)**—`last_hidden_state` is an internal tensor feeding `/model/st/pool_0/lasttoken_gather` (`GatherElements` at `ReduceSum(attention_mask, axis=1) - 1`) and `/model/st/normalize_1` ($L_2$ normalization).
+   * Every variant uses Microsoft ONNX Runtime contrib operators: `28` `com.microsoft::GroupQueryAttention` nodes, `56` `com.microsoft::RotaryEmbedding` nodes, and `56` `com.microsoft::SkipSimplifiedLayerNormalization` nodes. Quantized variants (`model_quantized.onnx` INT8, `model_q4.onnx` INT4, `model_q4f16.onnx` INT4/FP16) additionally replace `196` `MatMul` nodes with `com.microsoft::MatMulNBits` (`block_size=32`, `bits=8` or `bits=4`) and `1` `GatherBlockQuantized` node.
+2. **Right-Padding vs. Left-Padding Verification**:
+   * Encoding a variable-length batch (`31` tokens and `9` tokens) with `tokenizer.enable_padding(direction="right", pad_id=151643, pad_token="<|endoftext|>")` yields **`cosine_similarity = 1.000000`** (`max_abs_diff = 1.19e-07`) against unpadded `batch_size=1` encoding.
+   * Switching to `direction="left"` causes `ReduceSum(attention_mask) - 1` on the shorter sequence (`len=9` in a `len=31` batch) to gather index `8`—which sits inside the `22` leading `<|endoftext|>` pad tokens—collapsing cosine similarity to **`0.004129`**.
+3. **Cross-Variant Numerical Fidelity (20 Eidos Queries & Living Specifications)**:
+
+[cols="2,1,2,2,2,1", options="header"]
 |===
-| Criterion | Target Threshold | Measurement Method
+| ONNX Variant | Disk Size | Quantization / Precision | Mean Cosine vs. FP32 (`model.onnx`) | Min Cosine vs. FP32 (`model.onnx`) | Parity Verdict
 
-| **1. CPU Kernel Compatibility & Numerical Parity** | `cosine_similarity >= 0.9999` (FP16/FP32) or `>= 0.995` (INT8) | Verify `onnx/model_fp16.onnx` (and compare `model.onnx` / `model_quantized.onnx`) on `CPUExecutionProvider` with right-padded `sentence_embedding` output against reference `microsoft/harrier-oss-v1-0.6b` embeddings across 20 spec/query strings.
-| **2. CLI Session Load & Single-Query Latency (CPU)** | Forward pass `<= 75 ms` (p50); warm process total `<= 250 ms` | Measure **both** `ort.InferenceSession` init latency (cold vs. OS page-cache warm with `ORT_ENABLE_BASIC`) and single-query tokenization + forward pass + SQLite/NumPy cosine scan + RRF fusion on modern CPU.
-| **3. Incremental 1-Spec Sync Latency** | `<= 150 ms` per modified spec (`0 ms` on code-only edits or clean sync) | Verify `spec_embeddings` survives `eidos index sync --force`, skips re-embedding when only `.py`/`.ts` AST symbols change, and re-embeds a modified `.adoc` spec in `<= 150 ms`.
-| **4. Regression Guard (`DEV` + `HOLD`)** | `>= 94.4%` DEV / `>= 92.9%` HOLD | Zero regression on existing `EXP-2026-006` lexical/identifier benchmark sets under the 1,000-token `guardrails` budget.
-| **5. Conceptual Retrieval Lift (`HOLD_V2`)** | `>= +15.0%` Recall@8 lift over pure FTS5 | Evaluate on $\ge 30$ held-out conceptual/synonym task prompts (`web_search_query` vs. custom `Instruct:` ablation) where query terms do not lexically match spec titles.
-| **6. Zero-Overhead Fallback** | `0.0 ms` overhead when `[semantic]` absent | Verify `eidos validate`, `eidos drift`, and fallback `eidos index search` pass with zero `onnxruntime` imports on base install.
+| `onnx/model.onnx` | `2.40 GB` | FP32 (`float32` weights & activations) | `1.000000` (Reference) | `1.000000` | **PASS**
+| `onnx/model_fp16.onnx` | `1.20 GB` | FP16 (`float16` weights & GQA, `float32` output) | **`0.999999`** | **`0.999999`** (`max_diff = 8.47e-05`) | **PASS** (`>= 0.9999`)
+| `onnx/model_quantized.onnx` | `706 MB` | INT8 (`MatMulNBits` `bits=8, block_size=32`) | **`0.999931`** | **`0.999916`** (`max_diff = 1.25e-03`) | **PASS** (`>= 0.995`)
+| `onnx/model_q4.onnx` | `398 MB` | INT4 (`MatMulNBits` `bits=4, block_size=32`, FP32 act) | `0.983595` | `0.981123` | **FAIL** (`< 0.995`)
+| `onnx/model_q4f16.onnx` | `353 MB` | INT4 (`MatMulNBits` `bits=4`, FP16 act) | `0.983591` | `0.981118` | **FAIL** (`< 0.995`)
 |===
+
+4. **Python 3.15 (`cp315`) Wheel Gap**:
+   * Installing `onnxruntime==1.31.1` on `Python 3.15.2` (`cp315`) fails with `No solution found when resolving dependencies: onnxruntime==1.31.1 has no wheels with a matching Python ABI tag (cp311..cp314 only)`. Because Eidos supports modern Python toolchains (`3.12+`, including `3.15` in `uv` environments), `onnxruntime` cannot be installed on `cp315` without building ONNX Runtime C++ from source.
+
+=== 4.2 Spike 2 (`spike-cpu-latency-and-incremental-sync`): Session Init, Query Latency & Sync Throughput
+
+1. **One-Shot CLI Session Initialization & Single-Query Forward Pass (`28` tokens with `Instruct:` prefix, OS Page-Cache Warm)**:
+
+[cols="2,2,1,1,1,1,1", options="header"]
+|===
+| ONNX Variant | `GraphOptimizationLevel` (`threads`) | Warm `InferenceSession` Init | Query Forward `p50` (`min` / `p95`) | SQLite+BLAS Scan (`111` specs) | Warm Process Total (`Init + Query`) | Target (`<= 75 ms` fwd / `<= 250 ms` total)
+
+| `model.onnx` (`2.40 GB` FP32) | `ORT_ENABLE_BASIC` (`threads=0`) | `1,459.1 ms` | `133.1 ms` (`130.9` / `146.9 ms`) | `0.22 ms` | `1,592.4 ms` | **FAIL**
+| `model.onnx` (`2.40 GB` FP32) | `ORT_ENABLE_ALL` (`threads=8`) | `995.0 ms` | **`74.9 ms`** (`74.0` / `89.7 ms`) | `0.22 ms` | **`1,070.1 ms`** | **FAIL** (Init `4.3x` over `250 ms`)
+| `model_fp16.onnx` (`1.20 GB` FP16) | `ORT_ENABLE_BASIC` (`threads=0`) | **`120.4 ms`** | `572.4 ms` (`480.5` / `661.4 ms`) | `0.22 ms` | `693.0 ms` | **FAIL** (FP16 CPU kernel trap)
+| `model_fp16.onnx` (`1.20 GB` FP16) | `ORT_ENABLE_ALL` (`threads=8`) | `2,830.8 ms` | `94.6 ms` (`85.4` / `99.1 ms`) | `0.22 ms` | `2,925.6 ms` | **FAIL** (`2.83 s` graph cast init)
+| `model_quantized.onnx` (`706 MB` INT8) | `ORT_ENABLE_BASIC` (`threads=0`) | `184.0 ms` | `267.8 ms` (`264.1` / `374.5 ms`) | `0.22 ms` | `452.0 ms` | **FAIL**
+| `model_quantized.onnx` (`706 MB` INT8) | `ORT_ENABLE_ALL` (`threads=8`) | `395.6 ms` | `270.5 ms` (`267.7` / `320.1 ms`) | `0.22 ms` | `666.3 ms` | **FAIL**
+| `model_q4.onnx` (`398 MB` INT4) | `ORT_DISABLE_ALL` (`threads=0`) | `543.1 ms` | `105.3 ms` (`103.8` / `118.4 ms`) | `0.22 ms` | `648.6 ms` | **FAIL** (+ fails fidelity)
+| `model_q4.onnx` (`398 MB` INT4) | `ORT_ENABLE_ALL` (`threads=8`) | `613.7 ms` | `122.9 ms` (`117.9` / `124.3 ms`) | `0.22 ms` | `736.8 ms` | **FAIL** (+ fails fidelity)
+| **FTS5 BM25 (`DEC-INDEX-FTS-RETRIEVAL-HYGIENE`)** | **Native SQLite C Extension** | **`0.0 ms`** | **`0.8–3.8 ms`** | — | **`<= 3.8 ms`** | **Baseline (`170x–770x` faster)**
+|===
+
+2. **Incremental 1-Spec Sync Latency & Full-Catalog Cold Indexing (`111` Sliceable Living Specifications)**:
+   * Across `111` active Eidos specifications, tokenized document lengths range from **`92` to `3,366` tokens** (`p50 = 307` tokens, `mean = 394.4` tokens, `p90 = 632` tokens).
+   * Benchmarking single-spec incremental re-embedding across 12 representative specifications (`137` to `1,097` tokens, `median = 355` tokens) and full-catalog cold indexing (`111` specs):
+
+[cols="2,1,2,2,2,1", options="header"]
+|===
+| ONNX Variant (`ORT_ENABLE_ALL`) | Optimal `threads` | 1-Spec Re-Embed `p50` (`mean`) | 1-Spec Re-Embed Range (`min` – `max`) | Cold Full-Catalog Sync (`111` specs) | Target (`<= 150 ms` / spec)
+
+| `model.onnx` (`2.40 GB` FP32) | `threads=6` (`threads=8`) | **`642.1 ms`** (`784.1 ms`) | `218.3 ms` – `2,484.3 ms` | **`89.09 s`** (`threads=8`) / `202.54 s` (`threads=0`) | **FAIL** (`4.3x` over `150 ms`)
+| `model_q4.onnx` (`398 MB` INT4) | `threads=8` | **`674.6 ms`** (`792.0 ms`) | `198.5 ms` – `2,563.4 ms` | `114.03 s` (`threads=0`) | **FAIL** (`4.5x` over `150 ms`)
+| `model_fp16.onnx` (`1.20 GB` FP16) | `threads=8` | **`732.9 ms`** (`882.1 ms`) | `240.5 ms` – `2,812.7 ms` | > `95 s` (`threads=8`) | **FAIL** (`4.9x` over `150 ms`)
+| `model_quantized.onnx` (`706 MB` INT8) | `threads=8` | **`772.8 ms`** (`940.3 ms`) | `332.1 ms` – `3,104.6 ms` | `220.61 s` (`threads=0`) | **FAIL** (`5.2x` over `150 ms`)
+|===
+
+3. **SQLite `BLOB` + NumPy BLAS Scan & Spec-Only SHA-256 Cache Verification**:
+   * Reading `spec_embeddings` from SQLite and computing exact cosine similarity in `float32` via NumPy BLAS takes **`0.223 ms` p50** at `N = 111` sliceable specs, **`0.335 ms` p50** at `N = 162` total specs, and **`12.017 ms` p50** at `N = 2,000` synthetic specs.
+   * Spec-only `content_sha256` hashing (excluding post-sync AST `code_symbols`) verified `0.0 ms` neural re-embedding on code-only edits and `100%` retention across `sync_index(force=True)`.
+
+=== 4.3 Spike 3 (`spike-hybrid-rrf-retrieval-ablation`): Retrieval Quality, Prompt Ablation & Unbound Test-to-`INV-*` Matching
+
+Spike 3 evaluated pure FTS5 BM25, pure Harrier dense cosine similarity (across 3 prompt configurations), and a 108-point Hybrid RRF hyperparameter grid ($k_0 \in \{20, 40, 60\}$, $w_{\text{sem}} \in \{0.35, 0.50, 0.60, 0.70, 0.85, 1.0, 1.2, 1.5\}$, $\tau_{\min} \in \{0.0, 0.35, 0.40, 0.45, 0.50, 0.55\}$) across:
+
+* **`DEV` (`6` queries, `18` targets)** & **`HOLD` (`12` queries, `28` targets)** from `EXP-2026-006` *(note: on the current 40-component post-`DLT-2026-052` repository corpus, pure FTS5 baseline is `16/18 = 88.9%` on `DEV` and `25/28 = 89.3%` raw / `26/28 = 92.9%` `guardrails` slice on `HOLD`)*.
+* **`HOLD_V2` (`32` conceptual/zero-keyword-overlap queries, `64` targets)** covering vocabulary mismatch across all Eidos domains, containers, components, policies, contracts, and invariants.
+* **Blinded Unbound Test -> `INV-*` Recommendation (`N = 45` bound tests)** with all explicit `INV-*` strings masked from test source/docstrings.
+
+[cols="3,1,1,1,1,1,1,2", options="header"]
+|===
+| Retriever / Configuration | `DEV` Raw@8 (`18`) | `DEV` Slice (`18`) | `HOLD` Raw@8 (`28`) | `HOLD` Slice (`28`) | `HOLD_V2` Raw@8 (`64`) | `HOLD_V2` Slice (`64`) | `HOLD_V2` Lift vs. FTS5 & Regression Verdict
+
+| **1. Pure FTS5 BM25 (Shipped Baseline, `<= 3.8 ms`)** | **`16/18` (`88.9%`)** | **`16/18` (`88.9%`)** | **`25/28` (`89.3%`)** | **`26/28` (`92.9%`)** | `44/64` (`68.8%`) | `44/64` (`68.8%`) | Baseline (`0.0%`)
+| **2. Pure Harrier Dense (`No Instruct Prefix`)** | `12/18` (`66.7%`) | `13/18` (`72.2%`) | `26/28` (`92.9%`) | `25/28` (`89.3%`) | `49/64` (`76.6%`) | `46/64` (`71.9%`) | `+7.8%` raw / `+3.1%` slice (`-16.7%` DEV slice)
+| **3. Pure Harrier Dense (`Option A: web_search_query`)** | `13/18` (`72.2%`) | `14/18` (`77.8%`) | **`27/28` (`96.4%`)** | **`26/28` (`92.9%`)** | `50/64` (`78.1%`) | `49/64` (`76.6%`) | `+9.3%` raw / `+7.8%` slice (`-11.1%` DEV slice)
+| **4. Pure Harrier Dense (`Option B: arch_custom`)** | `12/18` (`66.7%`) | `14/18` (`77.8%`) | `25/28` (`89.3%`) | `24/28` (`85.7%`) | `49/64` (`76.6%`) | `45/64` (`70.3%`) | `+7.8%` raw / `+1.5%` slice (`-7.2%` HOLD slice)
+| **5. Default Hybrid RRF (`Option A`, $k_0=20, w_{\text{sem}}=1.2, \tau_{\min}=0.35$)** | `14/18` (`77.8%`) | `15/18` (`83.3%`) | `25/28` (`89.3%`) | `25/28` (`89.3%`) | `51/64` (`79.7%`) | `50/64` (`78.1%`) | `+10.9%` raw / `+9.3%` slice (**Regresses DEV & HOLD**)
+| **6. Optimal Zero-Regression Hybrid RRF (`Option A`, $k_0=20, w_{\text{sem}}=0.50, \tau_{\min}=0.50$)** | **`16/18` (`88.9%`)** | **`16/18` (`88.9%`)** | **`25/28` (`89.3%`)** | **`26/28` (`92.9%`)** | **`51/64` (`79.7%`)** | **`52/64` (`81.2%`)** | **`+10.9%` raw / `+12.5%` slice (FAIL `< +15.0%`)**
+| **7. Max-Lift Hybrid RRF (`Option B`, $k_0=60, w_{\text{sem}}=1.0, \tau_{\min}=0.40$)** | `14/18` (`77.8%`) | `16/18` (`88.9%`) | `25/28` (`89.3%`) | `24/28` (`85.7%`) | **`54/64` (`84.4%`)** | `51/64` (`79.7%`) | `+15.6%` raw / `+10.9%` slice (**Regresses DEV `-11.1%` & HOLD `-7.2%`**)
+|===
+
+* **Blinded Unbound Test -> `INV-*` Recommendation (`N = 45` bound tests)**:
+  - **FTS5 BM25 Lexical Baseline**: Top-1 = **`30/45` (`66.7%`)**, Top-3 = **`35/45` (`77.8%`)**.
+  - **Pure Harrier Dense Cosine (`model.onnx` / `model_fp16.onnx` / `model_quantized.onnx`)**: Top-1 = **`30/45` (`66.7%`, `+0.0%`)**, Top-3 = **`34/45` (`75.6%`, `-2.2%`)**.
+  - **Hybrid RRF (`FTS5 + Harrier`, $k_0 = 20, w_{\text{lex}} = 1.0, w_{\text{sem}} = 1.0$)**: Top-1 = **`32/45` (`71.1%`, `+4.4%` lift)**, Top-3 = **`36/45` (`80.0%`, `+2.2%` lift)** — **FAIL** vs. `>= +15.0%` target.
+
+---
+
+== 5. Exit Criteria Evaluation & Final Verdict
+
+This exploration could graduate to **`adopted`** (via a formal SpecDelta `DLT-*`) if and only if empirical benchmarking across the three spikes satisfied all six Exit Criteria below:
+
+[cols="2,2,3,1", options="header"]
+|===
+| Criterion | Target Threshold | Measured Empirical Result (Spikes 1–3) | Verdict
+
+| **1. CPU Kernel Compatibility & Numerical Parity** | `cosine_similarity >= 0.9999` (FP16/FP32) or `>= 0.995` (INT8) | `model_fp16.onnx` achieves **`0.999999`** (`min = 0.999999`) and `model_quantized.onnx` (INT8) achieves **`0.999931`** (`min = 0.999916`) vs. `model.onnx` (FP32) with right-padded (`direction="right"`) in-graph `sentence_embedding`. (`model_q4.onnx` INT4 drops to `0.983595`.) | **PASS**
+| **2. CLI Session Load & Single-Query Latency (CPU)** | Forward pass `<= 75 ms` (p50); warm process total `<= 250 ms` | Fastest valid-fidelity warm CLI total is **`452.0 ms`** (`model_quantized.onnx` INT8: `184.0 ms` init + `267.8 ms` query) or **`1,070.1 ms`** (`model.onnx` FP32 `ORT_ENABLE_ALL`, `threads=8`: `995.0 ms` init + `74.9 ms` query). `model_fp16.onnx` takes **`693.0 ms`** (`ORT_ENABLE_BASIC`, `572.4 ms` query due to x86_64 FP16 emulation) or **`2,925.6 ms`** (`ORT_ENABLE_ALL`, `2,830.8 ms` init). Exceeds `<= 250 ms` warm process target by **`1.8x–11.7x`**. | **FAIL**
+| **3. Incremental 1-Spec Sync Latency** | `<= 150 ms` per modified spec (`0 ms` on code-only edits or clean sync) | Code-only/clean sync overhead is `0.0 ms` via spec-only SHA-256 caching, **but** re-embedding 1 modified `.adoc` spec (`median = 307` tokens, `mean = 394.4` tokens) takes **`642.1 ms` p50 (`784.1 ms` mean, up to `2,484.3 ms` max)** on `model.onnx` (`threads=6`) and **`674.6 ms` p50** on `model_q4.onnx` (`threads=8`), exceeding `<= 150 ms` by **`4.3x–5.2x`**. Cold full-catalog sync (`111` specs) takes **`89.09 s–220.61 s`** vs. `0.47 s` baseline. | **FAIL**
+| **4. Regression Guard (`DEV` + `HOLD`)** | Zero regression vs. FTS5 baseline (`16/18` DEV, `26/28` HOLD slice on current corpus) | With explicit ID pinning, `AND` match boost, cosine floor $\tau_{\min} = 0.50$, and $w_{\text{sem}} \in [0.50, 0.70]$, Hybrid RRF preserves **`16/18` (`88.9%`) DEV** and **`26/28` (`92.9%`) HOLD** `guardrails` slice recall (`0.0%` regression). | **PASS**
+| **5. Conceptual Retrieval Lift (`HOLD_V2` & Unbound Tests)** | `>= +15.0%` Recall@8 lift over pure FTS5 | Under zero `DEV`/`HOLD` regression (`Criterion 4`), `HOLD_V2` Recall@8 lift is **`+10.9%` raw (`44/64 -> 51/64`)** and **`+12.5%` `guardrails` slice (`44/64 -> 52/64`)** (`< +15.0%`), and blinded unbound test-to-`INV-*` matching lift is **`+4.4%` Top-1 (`30/45 -> 32/45`)** and **`+2.2%` Top-3 (`35/45 -> 36/45`)** (`< +15.0%`). | **FAIL**
+| **6. Zero-Overhead Fallback** | `0.0 ms` overhead when `[semantic]` absent | Lazy optional import design incurs `0.0 ms` overhead when absent, though `onnxruntime 1.31.1` has no `cp315` (`Python 3.15`) binary wheels. | **PASS**
+|===
+
+**Final Decision (`adopted` via `DLT-2026-115-HYBRID-SEMANTIC-8B5F` / `DEC-INDEX-HYBRID-SEMANTIC-RRF`)**:
+Rather than forcing synchronous ONNX transformer initialization onto default CLI calls or adopting `model_fp16.onnx` (which suffers CPU FP16 kernel emulation overhead on non-`AVX-512 FP16` x86_64 CPUs), `EXP-2026-009` graduates into **`DLT-2026-115-HYBRID-SEMANTIC-8B5F`** with a **Combined Two-Tier Retrieval Architecture**:
+1. **Tier 1 (Deterministic Baseline in `CNT-EIDOS-INDEX`)**: Fixes direct-over-1-hop container slot prioritization in `build_tiered_context_slice` (restoring `DEV` recall to `17/18 = 94.4%`), adds deterministic architectural synonym expansion to `specs_fts`/`query.py` (`< 4 ms`, zero dependencies), and adds IDF-weighted sub-token unbound test-to-`INV-*` matching in `invariants.py`.
+2. **Tier 2 (Opt-In Local Harrier ONNX Hybrid RRF in `CMP-SEMANTIC-EMBEDDING-ENGINE`, `eidos-ai[semantic]`)**: Uses `model_quantized.onnx` (INT8 `MatMulNBits` `bits=8`, `0.999931` parity) / `model.onnx` (FP32 `ORT_ENABLE_ALL`, `threads=8`, `74.9 ms` query forward pass), mandatory right-padding (`direction="right"`, `1.000000` batch parity) on in-graph `sentence_embedding`, canonical `Option A` (`web_search_query`) query formatting, spec-only `content_sha256` `spec_embeddings` SQLite `BLOB` + NumPy BLAS scanning (`0.223 ms`), and gated zero-regression Hybrid RRF ($k_0 = 20, w_{\text{lex}} = 1.0, w_{\text{sem}} = 0.50, \tau_{\min} = 0.50$) with `100%` automatic fallback to FTS5 BM25.

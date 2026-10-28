@@ -140,6 +140,11 @@ def index_search_cmd(
         "-l",
         help="Maximum number of matches to display.",
     ),
+    semantic: bool = typer.Option(
+        True,
+        "--semantic/--no-semantic",
+        help="Enable or disable opt-in Hybrid RRF semantic fusion when spec_embeddings are available.",
+    ),
     path: Path | None = typer.Option(
         None,
         "--path",
@@ -152,16 +157,16 @@ def index_search_cmd(
         help="Output search results as machine-readable JSON.",
     ),
 ):
-    """Execute BM25 ranked full-text search (FTS5) across all specifications, capabilities, and invariants."""
+    """Execute BM25 ranked full-text search (FTS5) with optional Harrier Hybrid RRF across specifications, capabilities, and invariants."""
     eidos_dir = path or Path("eidos")
     idx = get_architectural_index(eidos_dir=eidos_dir)
-    results = idx.query_fts(query, limit=limit)
+    results = idx.query_fts(query, limit=limit, use_semantic=semantic)
 
     if json_output:
         typer.echo(
-            orjson.dumps({"query": query, "count": len(results), "results": results}, option=orjson.OPT_INDENT_2).decode(
-                "utf-8"
-            )
+            orjson.dumps(
+                {"query": query, "count": len(results), "results": results}, option=orjson.OPT_INDENT_2
+            ).decode("utf-8")
         )
         return
 
@@ -184,9 +189,10 @@ def index_search_cmd(
 
 @index_app.command("blast-radius")
 def index_blast_radius_cmd(
-    entity_id: str = typer.Argument(
+    symbol_or_path: str = typer.Argument(
         ...,
-        help="Target architectural entity ID (e.g. 'CNT-CORE', 'CAP-BILLING-001').",
+        metavar="SYMBOL_OR_PATH",
+        help="Target architectural entity ID, AST symbol, or file path (e.g. 'CNT-CORE', 'detect_drift', 'src/vcs/drift.py').",
     ),
     depth: int = typer.Option(
         2,
@@ -206,15 +212,19 @@ def index_blast_radius_cmd(
         help="Output results as machine-readable JSON.",
     ),
 ):
-    """Display recursive CTE graph walk / blast radius for an architectural entity."""
+    """Display recursive CTE graph walk / blast radius for an architectural entity, symbol, or file path."""
     eidos_dir = path or Path("eidos")
     idx = get_architectural_index(eidos_dir=eidos_dir)
-    neighbors = idx.get_k_hop_neighborhood(entity_id, max_depth=depth)
+    resolved_ids = idx.resolve_blast_radius_targets(symbol_or_path)
+    neighbors = idx.get_k_hop_neighborhood(resolved_ids, max_depth=depth) if resolved_ids else []
+    primary_entity_id = resolved_ids[0] if resolved_ids else symbol_or_path
 
     if json_output:
         console.print_json(
             data={
-                "entity_id": entity_id,
+                "entity_id": primary_entity_id,
+                "query": symbol_or_path,
+                "resolved_entities": resolved_ids,
                 "depth": depth,
                 "count": len(neighbors),
                 "neighbors": neighbors,
@@ -223,10 +233,16 @@ def index_blast_radius_cmd(
         return
 
     if not neighbors:
-        console.print(f"[yellow]Entity '{entity_id}' not found in architectural graph.[/yellow]")
+        console.print(f"[yellow]Entity '{symbol_or_path}' not found in architectural graph.[/yellow]")
         return
 
-    table = Table(title=f"Blast Radius for '{entity_id}' (Depth: {depth})", show_header=True)
+    resolved_str = ", ".join(resolved_ids)
+    title_target = (
+        f"'{symbol_or_path}' -> {resolved_str}"
+        if resolved_ids and symbol_or_path.upper() != resolved_str.upper()
+        else f"'{primary_entity_id}'"
+    )
+    table = Table(title=f"Blast Radius for {title_target} (Depth: {depth})", show_header=True)
     table.add_column("Hop", justify="center", style="bold magenta")
     table.add_column("Entity ID", style="bold cyan")
     table.add_column("Type", style="yellow")
@@ -322,3 +338,115 @@ def index_find_symbol_cmd(
         table.add_row(m["symbol"], m["kind"], m["entity_id"], location, m.get("file_path", "") or "—")
 
     console.print(table)
+
+
+@index_app.command("semantic")
+def index_semantic_cmd(
+    action: str = typer.Argument(
+        "status",
+        metavar="ACTION",
+        help="Semantic index action: 'status', 'setup', or 'sync'.",
+    ),
+    model: str = typer.Option(
+        "quantized",
+        "--model",
+        "-m",
+        help="Harrier ONNX model variant to provision ('quantized', 'fp32', or 'fp16').",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Force re-download or full re-embedding of all specifications.",
+    ),
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Path to eidos directory (defaults to ./eidos).",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output semantic index telemetry as machine-readable JSON.",
+    ),
+):
+    """Manage and inspect the optional Harrier-OSS-v1-0.6B ONNX semantic embedding index (status, setup, sync)."""
+    eidos_dir = path or Path("eidos")
+    idx = get_architectural_index(eidos_dir=eidos_dir)
+    act = (action or "status").strip().lower()
+
+    if act == "status":
+        status = idx.get_semantic_status()
+        if json_output:
+            console.print_json(data=status)
+            return
+        grid = Table.grid(padding=(0, 2))
+        grid.add_column(style="bold cyan", justify="right")
+        grid.add_column(style="white")
+        grid.add_row("Model ID:", f"[bold white]{status['model_id']}[/bold white]")
+        grid.add_row("Model Directory:", f"[dim]{status['model_dir']}[/dim]")
+        grid.add_row(
+            "Runtime Ready:",
+            "[bold green]YES[/bold green]"
+            if status["runtime_available"]
+            else "[bold yellow]NO (Install eidos-ai[semantic])[/bold yellow]",
+        )
+        grid.add_row(
+            "Model Provisioned:",
+            f"[bold green]YES ({status['active_variant']})[/bold green]"
+            if status["model_ready"]
+            else "[bold yellow]NO (Run eidos index semantic setup)[/bold yellow]",
+        )
+        grid.add_row(
+            "Cached Embeddings:",
+            f"[bold white]{status['embedded_entities']}[/bold white] / {status['total_sliceable_entities']} "
+            f"[dim]({status['fresh_embeddings']} fresh, {status['stale_or_missing_embeddings']} pending)[/dim]",
+        )
+        console.print(
+            Panel(grid, title="[bold blue]Eidos Semantic Embedding Index (Harrier ONNX)[/bold blue]", expand=False)
+        )
+        return
+
+    if act == "setup":
+        try:
+            res = idx.setup_semantic(variant=model, force=force)
+        except Exception as exc:
+            if json_output:
+                console.print_json(data={"error": str(exc)})
+            else:
+                console.print(f"[bold red]Error:[/bold red] {exc}")
+            raise typer.Exit(code=1) from exc
+        if json_output:
+            console.print_json(data=res)
+        else:
+            console.print(
+                f"[bold green]✓ Provisioned Harrier ONNX ({res['variant']}) in {res['model_dir']}.[/bold green] "
+                f"[dim](Downloaded {len(res['downloaded'])}, skipped {len(res['skipped'])})[/dim]"
+            )
+        return
+
+    if act == "sync":
+        try:
+            res = idx.sync_semantic(force=force)
+        except Exception as exc:
+            if json_output:
+                console.print_json(data={"error": str(exc)})
+            else:
+                console.print(f"[bold red]Error:[/bold red] {exc}")
+            raise typer.Exit(code=1) from exc
+        if json_output:
+            console.print_json(data=res)
+        else:
+            console.print(
+                f"[bold green]✓ Synchronized semantic embeddings in {res['duration_ms']:.2f}ms.[/bold green] "
+                f"[dim](Encoded {res['encoded_entities']}, reused {res['reused_entities']} cached, pruned {res['pruned_orphans']})[/dim]"
+            )
+        return
+
+    msg = f"Unknown semantic action '{action}'. Expected one of: status, setup, sync."
+    if json_output:
+        console.print_json(data={"error": msg})
+    else:
+        console.print(f"[bold red]Error:[/bold red] {msg}")
+    raise typer.Exit(code=1)

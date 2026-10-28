@@ -37,9 +37,9 @@ The index enables sub-3ms architectural queries, intelligent full-text specifica
 The architectural index requires **zero external database daemons** and **zero third-party vector stores**:
 
 * Built on Python's standard library **`sqlite3`** in WAL (Write-Ahead Logging) mode, utilizing native SQLite 3.x FTS5 and recursive Common Table Expressions (CTEs).
-* Decomposed across 5 focused internal modules in `src/eidos/core/index/`: `storage.py` (`CMP-GRAPH-STORAGE`), `sync.py` (`CMP-INCREMENTAL-SYNC-ENGINE`), `query.py` (`CMP-FTS-QUERY-ENGINE` & `CMP-GRAPH-TRAVERSAL-ENGINE`), `context.py` (`CMP-TIERED-CONTEXT-COMPRESSOR`), and `ast_indexer.py` (`CMP-AST-SYMBOL-INDEXER`).
-* Stores all relational graph data, AST symbol coordinates, inverted file token FTS tables, and validation/test caches inside a single self-contained, 100% stateless derived file: `eidos/.cache/index.db` (canonical `SCHEMA_VERSION = "2.17.0"`).
-* Automatically performs drop-and-rebuild migration on schema version upgrades and self-heals on database corruption.
+* Decomposed across 6 focused internal modules in `src/eidos/core/index/`: `storage.py` (`CMP-GRAPH-STORAGE`), `sync.py` (`CMP-INCREMENTAL-SYNC-ENGINE`), `query.py` (`CMP-FTS-QUERY-ENGINE` & `CMP-GRAPH-TRAVERSAL-ENGINE`), `context.py` (`CMP-TIERED-CONTEXT-COMPRESSOR`), `semantic.py` (`CMP-SEMANTIC-EMBEDDING-ENGINE`), and `ast_indexer.py` (`CMP-AST-SYMBOL-INDEXER`).
+* Stores all relational graph data, AST symbol coordinates, inverted file token FTS tables, optional ONNX semantic embeddings, and validation/test caches inside a single self-contained, 100% stateless derived file: `eidos/.cache/index.db` (canonical `SCHEMA_VERSION = "2.18.0"`).
+* Automatically performs drop-and-rebuild migration on schema version upgrades (preserving content-addressed `spec_embeddings` across `eidos index sync --force`) and self-heals on database corruption.
 * The `eidos/.cache/` directory is isolated via `eidos/.gitignore`, keeping Git repositories pristine.
 
 ---
@@ -51,7 +51,7 @@ You never need to remember to run a manual build command before querying.
 ### 1. Automatic On-Demand Bootstrapping
 The first time any command requiring architectural context is invoked (`eidos context`, `eidos index`, `eidos spec list`, or agent skills), Eidos automatically:
 1. Creates `eidos/.cache/` if it does not exist.
-2. Initializes the 10 SQLite tables (`entities`, `edges`, `indexed_files`, `symbol_mappings`, `code_symbols`, `spec_validation_cache`, `test_binding_cache`, `specs_fts`, `file_tokens_fts`, and `metadata`).
+2. Initializes the 11 SQLite tables (`entities`, `edges`, `indexed_files`, `symbol_mappings`, `code_symbols`, `spec_validation_cache`, `test_binding_cache`, `spec_embeddings`, `specs_fts`, `file_tokens_fts`, and `metadata`).
 3. Indexes all living specifications, AST code symbols, governed file tokens, and test bindings in ~100ms.
 
 ### 2. Zero-Drift Freshness (`_ensure_synced`)
@@ -180,16 +180,20 @@ How lexical retrieval works (`INV-AGENT-TASK-RETRIEVAL-COVERAGE`):
 * **Every entity & code symbol is searchable (`DLT-2026-078`, `DLT-2026-106`)**: child invariants (`INV-*`) across capabilities (`CAP-*`), policies (`POL-*`), containers (`CNT-*`), and standalone components (`CMP-*`) get their own `specs_fts` row (rule text, parent title, test binding), embedded `DEC-*` decisions are indexed alongside their owning container or component, and primary AST `code_symbols` (`class`, `function`, `interface`, `struct`, `enum`) are projected directly into `specs_fts.symbols` (while archived SpecDeltas under `eidos/deltas/archive/` are excluded from `specs_fts` to keep search results focused on active architecture and recent changes).
 * **Identifier de-compounding & Two-Tier FTS Precision (`DLT-2026-083`)**: `camelCase` / `snake_case` identifiers are split on both index and query sides — `ArchitecturalIndex` is indexed as `architectural index` too, and multi-word queries prioritize high-precision multi-term `AND` conjunction matches before falling back to `OR` expansion.
 * **Column-weighted BM25**: Positional weights `(0, 4, 2, 1, 2, 2)` rank `title` (4) > `jtbd_or_rule` / `keywords` / `symbols` (2) > `body_text` (1), with `0` assigned to the `UNINDEXED` `entity_id` placeholder column.
-* **Slice-scoped candidates, Calibrated Token Budgets & Honest Empty Slices**: `eidos context --task` filters sliceable types (containers, components, contracts, capabilities, policies, invariants, domains, design systems) *inside SQL before `LIMIT`*, so historical SpecDeltas and explorations never consume top-k slots. Matched domains, design systems, and container/component invariants expand to their owning containers, components, and capabilities. Token budgets are enforced using structure-calibrated token estimation (`~3` chars/token for YAML/JSON/code/paths vs `~4` chars/token for prose). If an explicit query matches zero entities, Eidos returns an honest empty slice rather than injecting unrelated alphabetical fallbacks.
+* **Deterministic Architectural Synonym Expansion & Opt-In Hybrid RRF (`DLT-2026-115`)**: Zero-keyword-overlap conceptual queries expand through deterministic architectural synonyms (`expand_architectural_synonyms`) and, when the optional local Harrier-OSS-v1-0.6B ONNX semantic index (`eidos-ai[semantic]`, provisioned via `eidos index semantic setup` and `eidos index semantic sync`) is present, fuse FTS5 BM25 with cosine-gated (`tau_min = 0.35`) semantic similarity via Weighted Reciprocal Rank Fusion (`w_lex = 1.0`, `w_sem = 0.85`, `k_0 = 60`) using the `sts_query` prompt prefix (`"Instruct: Retrieve semantically similar text\nQuery: "`). Exact entity ID pinning and 100% deterministic fallback to FTS5 BM25 (`--no-semantic` or when `spec_embeddings` is empty) are preserved (`INV-AGENT-HYBRID-SEMANTIC-FALLBACK`).
+* **Slice-scoped candidates, Calibrated Token Budgets & Honest Empty Slices**: `eidos context --task` filters sliceable types (containers, components, contracts, capabilities, policies, invariants, domains, design systems) *inside SQL before `LIMIT`*, so historical SpecDeltas and explorations never consume top-k slots. Direct container hits are prioritized ahead of 1-hop domain/design-system container expansions (`INV-AGENT-TASK-RETRIEVAL-COVERAGE`). Token budgets are enforced using structure-calibrated token estimation (`~3` chars/token for YAML/JSON/code/paths vs `~4` chars/token for prose). If an explicit query matches zero entities, Eidos returns an honest empty slice rather than injecting unrelated alphabetical fallbacks.
 
 ### Blast-Radius Impact Analysis
-Before modifying an interface, container, component, or domain, compute the transitive blast radius using delimiter-anchored, hub-scoped recursive CTE graph traversals:
+Before modifying an interface, container, component, symbol, or file, compute the transitive blast radius using delimiter-anchored, hub-scoped recursive CTE graph traversals (`DLT-2026-114`):
 
 ```bash
 eidos index blast-radius CNT-EIDOS-CORE --depth 2
+# Or pass an AST code symbol, specification path, or source file path directly:
+eidos index blast-radius detect_drift --depth 2
+eidos index blast-radius src/eidos/vcs/drift.py --depth 2
 ```
 
-This recursively traces all forward and reverse dependencies (`realizes`, `provides`, `consumes`, `consumes_api`, `depends_on`, `governed_by`, `implemented_by`), owning domains, and bound capabilities up to `N` hops away (while preventing hop-2 sibling fan-out through organizational hub nodes like `DOM-*`, `DS-*`, `ARCH-*`, and `SYS-*`), alerting engineers and AI agents to downstream components that could be impacted.
+`resolve_blast_radius_targets` resolves canonical entity IDs, `.adoc` specification paths, source file paths, and AST code symbols (`class`, `function`, `method`, `interface`, `struct`, `enum`), filtering multi-match symbol/path resolutions to `tech/component` (`CMP-*`) seeds at `depth = 0` so ancestor `CNT-*` containers and shared `CTR-*` contracts appear at their true 1-hop distance. This recursively traces all forward and reverse dependencies (`realizes`, `provides`, `consumes`, `consumes_api`, `depends_on`, `governed_by`, `implemented_by`), owning domains, and bound capabilities up to `N` hops away (while preventing hop-2 sibling fan-out through organizational hub nodes like `DOM-*`, `DS-*`, `ARCH-*`, and `SYS-*`).
 
 ---
 

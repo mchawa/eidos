@@ -22,13 +22,7 @@ if [ -d "src/eidos/portal/frontend" ] && command -v pnpm &>/dev/null; then
   (cd src/eidos/portal/frontend && pnpm install)
 fi
 
-# 4. Configure persistent AI tool directories
-echo "==> Configuring persistent volumes (~/.gemini)..."
-sudo mkdir -p "${HOME}/.gemini"
-sudo chown -R vscode:vscode "${HOME}/.gemini"
-chmod 700 "${HOME}/.gemini"
-
-# 5. Validate Eidos specifications
+# 4. Validate Eidos specifications
 if [ -f ".venv/bin/eidos" ]; then
   echo "==> Validating Eidos living specifications..."
   .venv/bin/eidos validate eidos || true

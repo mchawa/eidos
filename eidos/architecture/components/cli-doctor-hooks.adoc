@@ -18,8 +18,8 @@ Exposes `eidos doctor` for workspace environment, Git, SQLite index, and agent p
 
 == Public Surface
 * `register(app: typer.Typer) -> None`
-* `doctor_command(path: Path, json_output: bool) -> None`
-* `hook_command(path: Path | None) -> None`
+* `doctor_cmd(path: Path, json_output: bool) -> None`
+* `hook_cmd(path: Path | None) -> None`
 
 == Design Constraints & Operational Notes
 * **Non-Blocking Hook Protocol (`DEC-PLUGIN-STATELESS-SINGLE-STOP-HOOK`)**: `eidos hook` always exits `0` with a valid JSON `decision` payload so agent harnesses never crash or enter retry loops.

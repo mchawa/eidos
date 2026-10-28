@@ -18,8 +18,8 @@ import orjson
 if TYPE_CHECKING:
     from eidos.core.spec.models import SpecDocument
 
-# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-112-REMOVE-INLINE-4CE1).
-SCHEMA_VERSION = "2.17.0"
+# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-115-HYBRID-SEMANTIC-8B5F).
+SCHEMA_VERSION = "2.18.0"
 
 # In-process parsed SpecDocument cache keyed by resolved Path -> (mtime_ns, st_size, sha256, SpecDocument)
 _PARSED_SPEC_MEM_CACHE: dict[Path, tuple[int, int, str, SpecDocument]] = {}
@@ -33,6 +33,7 @@ _MANAGED_TABLES = (
     "indexed_files",
     "spec_validation_cache",
     "test_binding_cache",
+    "spec_embeddings",
     "specs_fts",
     "file_tokens_fts",
     "metadata",
@@ -66,6 +67,13 @@ CREATE TABLE IF NOT EXISTS test_binding_cache (
     sha256 TEXT NOT NULL,
     functions_json TEXT NOT NULL,
     file_tokens_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS spec_embeddings (
+    entity_id TEXT PRIMARY KEY,
+    content_sha256 TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    embedding BLOB NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS entities (

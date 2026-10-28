@@ -19,8 +19,8 @@ Root Typer CLI application (`src/eidos/cli/main.py`) and shared workspace resolu
 * **Shared Workspace Resolution (`_shared.py`)**: Resolves `--path` arguments and auto-discovers the nearest `eidos/` specification directory (`resolve_cli_eidos_dir`, `has_eidos_markers`) for all CLI command components.
 
 == Public Surface
-* `app: typer.Typer`, `cli_entrypoint() -> None`
-* `info_command() -> None`, `version_callback(value: bool) -> None`
+* `app: typer.Typer`, `main() -> None`
+* `info() -> None`, `version_callback(value: bool) -> None`
 * `resolve_cli_eidos_dir(path: Path | None) -> Path`, `has_eidos_markers(candidate: Path) -> bool`
 
 == Design Constraints & Operational Notes

@@ -3883,3 +3883,166 @@ def test_dlt_2026_110_batch_git_slug_ids_and_unified_test_binding_cache(tmp_path
         cache_map = _load_or_update_test_binding_cache(repo, eidos_dir)
     assert "INV-SYS-001" in cache_map["tests/test_batch.py"].file_tokens
     assert "INV-SYS-001" in cache_map["tests/test_batch.py"].functions["test_batch_behavior"]
+
+
+def test_dlt_2026_113_body_only_attribution_strict_mode_and_stale_removed_symbols(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Verify DLT-2026-113-HARDEN-SPEC-B4EE:
+    1. touched_components, structural_code_files, and body_only_code_files on body-only edits.
+    2. detect_drift(..., strict=True) and `eidos drift --strict --json` gating on body-only edits.
+    3. stale_removed_symbol rejection when a deleted public symbol remains referenced in the owning spec.
+    """  # eidos:fixture
+    import subprocess
+
+    import orjson
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.vcs.drift import detect_drift
+
+    repo = tmp_path / "harden_drift_repo"
+    init_repository(repo, title="harden-drift")
+    eidos_dir = repo / "eidos"
+
+    src_dir = repo / "src" / "app"
+    src_dir.mkdir(parents=True, exist_ok=True)
+    svc_file = src_dir / "service.py"
+    svc_file.write_text(
+        "def keep_public(x: int) -> int:\n"
+        "    return x + 1\n\n"
+        "def legacy_helper(y: str) -> str:\n"
+        "    return y.strip()\n",
+        encoding="utf-8",
+    )
+
+    cnt_dir = eidos_dir / "architecture" / "containers"
+    cmp_dir = eidos_dir / "architecture" / "components"
+    cnt_dir.mkdir(parents=True, exist_ok=True)
+    cmp_dir.mkdir(parents=True, exist_ok=True)
+
+    (cnt_dir / "app.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-APP\n"
+        "title: App Container\n"
+        "status: active\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "source_path: src/app\n"
+        "---\n"
+        "= Container: App\n",
+        encoding="utf-8",
+    )
+    cmp_file = cmp_dir / "service.adoc"
+    cmp_file.write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-SERVICE\n"
+        "title: Service Component\n"
+        "container: CNT-APP\n"
+        "status: active\n"
+        "source_path: src/app/service.py\n"
+        "---\n"
+        "= Component: Service\n\n"
+        "== Public Surface\n"
+        "* `keep_public(x: int) -> int`\n"
+        "* `legacy_helper(y: str) -> str`\n",
+        encoding="utf-8",
+    )
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "dev@eidos.dev"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Dev"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Initial baseline"], cwd=repo, check=True, capture_output=True)
+
+    # 1. Body-only edit populates touched_components and body_only_code_files, and is clean in default mode
+    svc_file.write_text(
+        "def keep_public(x: int) -> int:\n"
+        "    return x + 42\n\n"
+        "def legacy_helper(y: str) -> str:\n"
+        "    return y.strip()\n",
+        encoding="utf-8",
+    )
+    res_default = detect_drift(repo, uncommitted=True, eidos_dir=eidos_dir, strict=False)
+    assert res_default.is_clean is True
+    assert res_default.classification.code_files == ["src/app/service.py"]
+    assert res_default.structural_code_files == []
+    assert res_default.body_only_code_files == ["src/app/service.py"]
+    assert "CMP-SERVICE" in res_default.touched_components
+
+    # 2. Strict mode flags uncovered body-only edit as drift (both Python API and CLI --strict --json)
+    res_strict = detect_drift(repo, uncommitted=True, eidos_dir=eidos_dir, strict=True)
+    assert res_strict.is_clean is False
+    assert res_strict.drift_detected is True
+    assert any("--strict" in step for step in res_strict.remediation_suggestions)
+
+    runner = CliRunner()
+    with monkeypatch.context() as m:
+        m.chdir(repo)
+        cli_res = runner.invoke(app, ["drift", "--uncommitted", "--strict", "--json"])
+        cli_rich = runner.invoke(app, ["drift", "--uncommitted", "--strict"])
+    assert cli_res.exit_code == 1
+    assert cli_rich.exit_code == 1
+    assert "0 structural, 1 body-only" in cli_rich.stdout
+    payload = orjson.loads(cli_res.stdout)
+    assert payload["is_clean"] is False
+    assert payload["structural_code_files"] == []
+    assert payload["body_only_code_files"] == ["src/app/service.py"]
+    assert "CMP-SERVICE" in payload["touched_components"]
+
+    # 3. Renaming/removing a public symbol while leaving it in the owning spec fails with stale_removed_symbol
+    svc_file.write_text(
+        "def keep_public(x: int) -> int:\n"
+        "    return x + 1\n\n"
+        "def replacement_helper(y: str) -> str:\n"
+        "    return y.strip()\n",
+        encoding="utf-8",
+    )
+    cmp_file.write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-SERVICE\n"
+        "title: Service Component\n"
+        "container: CNT-APP\n"
+        "status: active\n"
+        "source_path: src/app/service.py\n"
+        "---\n"
+        "= Component: Service\n\n"
+        "Updated prose in owning spec without removing deleted symbol.\n\n"
+        "== Public Surface\n"
+        "* `keep_public(x: int) -> int`\n"
+        "* `replacement_helper(y: str) -> str`\n"
+        "* `legacy_helper(y: str) -> str`\n",
+        encoding="utf-8",
+    )
+    res_stale = detect_drift(repo, uncommitted=True, eidos_dir=eidos_dir)
+    assert res_stale.is_clean is False
+    assert any(
+        tc.get("file") == "src/app/service.py"
+        and tc.get("rule") == "stale_removed_symbol"
+        and tc.get("additions") == ["removed 'legacy_helper'"]
+        for tc in res_stale.trivially_covered_files
+    )
+
+    # Removing the deleted symbol from the owning spec resolves both drift and SpecValidator Public Surface check
+    cmp_file.write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-SERVICE\n"
+        "title: Service Component\n"
+        "container: CNT-APP\n"
+        "status: active\n"
+        "source_path: src/app/service.py\n"
+        "---\n"
+        "= Component: Service\n\n"
+        "== Public Surface\n"
+        "* `keep_public(x: int) -> int`\n"
+        "* `replacement_helper(y: str) -> str`\n",
+        encoding="utf-8",
+    )
+    res_cleaned = detect_drift(repo, uncommitted=True, eidos_dir=eidos_dir)
+    assert res_cleaned.is_clean is True
+

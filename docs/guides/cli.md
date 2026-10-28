@@ -118,8 +118,10 @@ Options:
 * `--base, -b REF`: Base git reference to compare against (defaults to `origin/main` or `main`; fails closed if an explicit ref cannot be resolved).
 * `--head REF`: Head git reference (defaults to `HEAD`).
 * `--uncommitted, -u`: Analyze uncommitted working tree and staged changes instead of branch diff.
+* `--path, -p PATH`: Path to eidos specifications directory (defaults to `./eidos`).
 * `--markdown, -m FILE`: Path to write the markdown summary comment.
-* `--json`: Output raw JSON verification result (including `trivially_covered_files` flagging whitespace/comment-only spec edits).
+* `--json`: Output raw JSON verification result (including `structural_code_files`, `body_only_code_files`, and `trivially_covered_files`).
+* `--strict`: Treat body-only code changes as drift unless accompanied by a 1-hop spec, active SpecDelta, or test update.
 * `--warn-only`: Do not exit with code 1 when drift is detected.
 
 Exit Codes:
@@ -161,6 +163,7 @@ Options:
   * `anchor`: Container/component metadata, direct contract signatures, and 1-line `DEC-*` summaries (`<= 300 tokens`).
   * `guardrails`: Adds domain capabilities, active invariants with `test_binding`, policies, and full `DEC-*` rationale (`<= 1,000 tokens`).
   * `deep`: Adds standalone C4 component details, contract schemas, and downstream dependents (`<= 2,500 tokens`).
+* `--semantic / --no-semantic`: Enable or disable opt-in Harrier Hybrid RRF semantic fusion when `spec_embeddings` are available (default: `--semantic`).
 * `--json`: Output context slice as machine-readable JSON instead of Markdown.
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
@@ -172,7 +175,7 @@ Manage and query the embedded SQLite architectural knowledge graph and FTS5 lexi
 The index initializes automatically on first use and lazily resynchronizes before every query via sub-5ms `mtime_ns` and `SHA-256` dirty checking, guaranteeing zero drift.
 
 #### `eidos index status`
-Display database cache size, schema version (`2.17.0`), clean/drift synchronization state across specs and code, check latency, entity/edge counts, active AST parser engine (`ast-grep`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
+Display database cache size, schema version (`2.18.0`), clean/drift synchronization state across specs and code, check latency, entity/edge counts, active AST parser engine (`ast-grep`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
 
 ```bash
 # Display rich visual status and AST telemetry:
@@ -212,6 +215,7 @@ eidos index search "authentication" --json
 Options:
 * `QUERY`: Search query or keywords.
 * `-l, --limit INTEGER`: Maximum number of search results to return (default: `10`).
+* `--semantic / --no-semantic`: Enable or disable opt-in Harrier Hybrid RRF semantic fusion when `spec_embeddings` are available (default: `--semantic`).
 * `--json`: Output search results as machine-readable JSON.
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
@@ -220,6 +224,9 @@ Traverse the architectural knowledge graph using delimiter-anchored, hub-scoped 
 
 ```bash
 eidos index blast-radius CNT-EIDOS-CORE --depth 2
+# Or resolve directly from an AST symbol or file path:
+eidos index blast-radius detect_drift --depth 2
+eidos index blast-radius src/eidos/vcs/drift.py --depth 2
 # Machine-readable JSON output:
 eidos index blast-radius CNT-EIDOS-CORE --depth 2 --json
 ```
@@ -267,6 +274,27 @@ Options:
 * `QUERY`: Exact or partial symbol name (class, method, function, or route).
 * `-l, --limit INTEGER`: Maximum number of symbol results to return (default: `20`).
 * `--json`: Output results as machine-readable JSON.
+* `-p, --path PATH`: Path to specifications directory (default: `eidos`).
+
+#### `eidos index semantic`
+Manage and inspect the optional local Harrier-OSS-v1-0.6B ONNX semantic embedding index (`eidos-ai[semantic]`, stored in `spec_embeddings`).
+
+```bash
+# Inspect semantic runtime, provisioned ONNX model variant, and cached spec_embeddings status:
+eidos index semantic status --json
+
+# Provision Harrier-OSS-v1-0.6B ONNX artifacts into eidos/.cache/models/harrier-oss-v1-0.6b/:
+eidos index semantic setup --model quantized
+
+# Synchronize content-addressed spec_embeddings for all sliceable specifications and invariants:
+eidos index semantic sync
+```
+
+Options:
+* `ACTION`: Action to execute (`status`, `setup`, or `sync`; default: `status`).
+* `-m, --model TEXT`: Harrier ONNX model variant to provision (`quantized`, `fp32`, or `fp16`; default: `quantized`).
+* `-f, --force`: Force re-download or full re-embedding of all specifications.
+* `--json`: Output semantic index telemetry as machine-readable JSON.
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
 ---

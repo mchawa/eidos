@@ -43,7 +43,7 @@ Whenever you need to orient in the codebase, locate a symbol, search specificati
 | Grepping across source files for a class, function, method, or route | `eidos index find-symbol "<SymbolName>" --json` | Resolves exact `file:line` coordinates, syntax kind, and the owning `CNT-*` / `CMP-*` spec. |
 | Grepping `eidos/` for domain concepts, rules, capabilities, or prior spikes | `eidos index search "<keywords>" --json` | BM25-ranked FTS5 search across all living spec titles, bodies, decisions (`DEC-*`), and invariants (`INV-*`). |
 | Editing or reviewing a file (including user-attached `@[file]` paths) without knowing its governance rules | `eidos context -f <path/to/file> --json` *(or `-t "<task>"` / `-c <ID>`)* | Extracts the owning `CNT-*`/`CMP-*`, active `INV-*` test bindings, `DEC-*` rationale, and `CTR-*` contracts in one call. |
-| Guessing what breaks when modifying a container, component, contract, or capability | `eidos index blast-radius <ENTITY-ID> --depth 2 --json` | Recursive CTE k-hop graph walk revealing upstream/downstream dependents across domains and containers. |
+| Guessing what breaks when modifying a container, component, contract, symbol, or file | `eidos index blast-radius <SYMBOL_OR_PATH> --depth 2 --json` | Recursive CTE k-hop graph walk resolving entity IDs, AST code symbols, spec paths, or source file paths to upstream/downstream dependents. |
 
 ### 2.2 Context Slicing Tiers (`eidos context`)
 
@@ -136,8 +136,8 @@ eidos validate eidos --json
 eidos drift --uncommitted --json
 ```
 
-* **`eidos validate`** checks v1 JSON Schemas, `x-eidos-ref` cross-references, `source_path`/`specification_file` paths on disk, and **bidirectional multi-protocol contract parity** (`cli_args`, `openapi`, `protobuf`, `graphql`, `python_protocol`).
-* **`eidos drift`** runs `eidos validate` internally plus Git diff ownership mapping, workflow mode verification (Direct vs. Planned `mutations[].target`), substantive spec diff checks, and polyglot `INV-*` `test_binding` verification.
+* **`eidos validate`** checks v1 JSON Schemas, `x-eidos-ref` cross-references, `source_path`/`specification_file` paths on disk, `== Public Surface` AST symbol existence, and **bidirectional multi-protocol contract parity** (`cli_args`, `openapi`, `protobuf`, `graphql`, `python_protocol`).
+* **`eidos drift`** runs `eidos validate` internally plus Git diff ownership mapping, workflow mode verification (Direct vs. Planned `mutations[].target`), substantive spec diff checks, stale removed-symbol rejection (`stale_removed_symbol`), `--strict` body-level drift enforcement, and polyglot `INV-*` `test_binding` verification.
 * **If `is_clean: false` or `drift_detected: true`**: Follow the `remediation_suggestions` array in the JSON output and re-run until exit code is `0`.
 
 ### Stage 2: Mandatory Autonomous Adversarial Gap Review

@@ -1033,25 +1033,33 @@ class SpecValidator:
 
             if has_source_tree:
                 if doc.doc_type == "tech/container":
+                    missing_sp = False
                     for raw_p in model.source_paths():
                         if (
                             raw_p.strip().upper() not in ("N/A", "TBD", "NONE")
                             and self._resolve_source_path(repo_root, root_dir, raw_p) is None
                         ):
+                            missing_sp = True
                             report.broken_references.append(
                                 f"Broken source_path in {doc.file_path.name}: "
                                 f"Container '{doc.doc_id}' references '{raw_p}' which does not exist on disk"
                             )
+                    if not missing_sp:
+                        self._verify_entity_public_surface(doc, repo_root, root_dir, report)
                 elif doc.doc_type == "tech/component":
+                    missing_sp = False
                     for raw_sp in model.source_paths():
                         if (
                             raw_sp.strip().upper() not in ("N/A", "TBD", "NONE")
                             and self._resolve_source_path(repo_root, root_dir, raw_sp) is None
                         ):
+                            missing_sp = True
                             report.broken_references.append(
                                 f"Broken source_path in {doc.file_path.name}: "
                                 f"Component '{doc.doc_id}' references '{raw_sp}' which does not exist on disk"
                             )
+                    if not missing_sp:
+                        self._verify_entity_public_surface(doc, repo_root, root_dir, report)
                 elif doc.doc_type == "tech/contract":
                     sf = model.specification_file
                     if (
@@ -1363,6 +1371,9 @@ class SpecValidator:
 
         commands: set[str] = set()
         subcommands_by_group: dict[str, set[str]] = {}
+        nested_subcommands_by_group: dict[tuple[str, str], set[str]] = {}
+        cmd_pos_args: dict[str, list[tuple[str, str | None, bool]]] = {}
+        sub_pos_args: dict[tuple[str, ...], list[tuple[str, str | None, bool]]] = {}
 
         sibling_module_aliases: dict[str, str] = {}
         imported_symbol_modules: dict[str, tuple[str, str]] = {}  # local_name -> (module_leaf, orig_name)
@@ -1486,21 +1497,117 @@ class SpecValidator:
                 {"app"} if "app" in typer_app_vars else typer_app_vars
             )
 
+            def _find_typer_param_call(node: ast.AST | None, attr_name: str = "Argument") -> ast.Call | None:
+                if node is None:
+                    return None
+                for child in ast.walk(node):
+                    if isinstance(child, ast.Call):
+                        func_node = child.func
+                        if (isinstance(func_node, ast.Attribute) and func_node.attr == attr_name) or (
+                            isinstance(func_node, ast.Name) and func_node.id == attr_name
+                        ):
+                            return child
+                return None
+
+            def _is_typer_context_annotation(node: ast.AST | None) -> bool:
+                if node is None:
+                    return False
+                for child in ast.walk(node):
+                    if isinstance(child, ast.Name) and child.id == "Context":
+                        return True
+                    if isinstance(child, ast.Attribute) and child.attr == "Context":
+                        return True
+                return False
+
+            def _extract_typer_positional_args(
+                fn_node: ast.FunctionDef | ast.AsyncFunctionDef,
+            ) -> list[tuple[str, str | None, bool]]:
+                pos_out: list[tuple[str, str | None, bool]] = []
+                args_list = list(fn_node.args.args)
+                defaults_list = list(fn_node.args.defaults)
+                default_offset = len(args_list) - len(defaults_list)
+                for idx_a, arg_node in enumerate(args_list):
+                    if arg_node.arg in ("self", "cls") or _is_typer_context_annotation(arg_node.annotation):
+                        continue
+                    def_idx = idx_a - default_offset
+                    def_val = defaults_list[def_idx] if def_idx >= 0 else None
+                    arg_call = (
+                        _find_typer_param_call(def_val, "Argument") if isinstance(def_val, ast.Call) else None
+                    )
+                    from_annotation = False
+                    if arg_call is None:
+                        arg_call = _find_typer_param_call(arg_node.annotation, "Argument")
+                        from_annotation = arg_call is not None
+                    if arg_call is None:
+                        opt_call = (
+                            _find_typer_param_call(def_val, "Option") if isinstance(def_val, ast.Call) else None
+                        ) or _find_typer_param_call(arg_node.annotation, "Option")
+                        if opt_call is None and def_idx < 0:
+                            pos_out.append((arg_node.arg, None, True))
+                        continue
+                    call_has_default = bool(
+                        (
+                            arg_call.args
+                            and not (
+                                isinstance(arg_call.args[0], ast.Constant)
+                                and arg_call.args[0].value is Ellipsis
+                            )
+                        )
+                        or any(
+                            kw.arg == "default"
+                            and not (isinstance(kw.value, ast.Constant) and kw.value.value is Ellipsis)
+                            for kw in arg_call.keywords
+                        )
+                    )
+                    if from_annotation:
+                        param_has_default = def_val is not None and not (
+                            isinstance(def_val, ast.Constant) and def_val.value is Ellipsis
+                        )
+                        is_req = not (param_has_default or call_has_default)
+                    else:
+                        is_req = not call_has_default
+                    metavar_val = next(
+                        (
+                            kw.value.value
+                            for kw in arg_call.keywords
+                            if kw.arg == "metavar"
+                            and isinstance(kw.value, ast.Constant)
+                            and isinstance(kw.value.value, str)
+                        ),
+                        None,
+                    )
+                    pos_out.append((arg_node.arg, metavar_val, is_req))
+                return pos_out
+
             def _collect_commands_from_ast(
                 scope_node: ast.AST,
                 target_vars: set[str],
                 full_module_node: ast.AST | None = None,
                 local_imports: dict[str, tuple[str, str]] | None = None,
                 _visited: set[tuple[int, str]] | None = None,
-            ) -> tuple[set[str], dict[str, set[str]]]:
+            ) -> tuple[
+                set[str],
+                dict[str, set[str]],
+                dict[str, list[tuple[str, str | None, bool]]],
+                dict[tuple[str, ...], list[tuple[str, str | None, bool]]],
+                dict[tuple[str, str], set[str]],
+            ]:
                 found: set[str] = set()
                 sub_found: dict[str, set[str]] = {}
+                found_pos: dict[str, list[tuple[str, str | None, bool]]] = {}
+                sub_found_pos: dict[tuple[str, ...], list[tuple[str, str | None, bool]]] = {}
+                nested_sub_found: dict[tuple[str, str], set[str]] = {}
                 search_root = full_module_node or scope_node
                 imp_map = local_imports if local_imports is not None else imported_symbol_modules
                 visited = set(_visited) if _visited is not None else set()
                 for tv in target_vars:
                     visited.add((id(search_root), tv))
                 _, scope_ctor_names = _collect_typer_vars(search_root)
+                fn_defs_in_scope = {
+                    n.name: n
+                    for n in ast.walk(search_root)
+                    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                }
                 for node in ast.walk(scope_node):
                     if (
                         isinstance(node, ast.Call)
@@ -1513,9 +1620,11 @@ class SpecValidator:
                         sub_name = _resolve_sub_typer_name(node, child_var, scope_ctor_names, imp_map)
                         child_cmds: set[str] = set()
                         grandchild_map: dict[str, set[str]] = {}
+                        child_pos: dict[str, list[tuple[str, str | None, bool]]] = {}
+                        grandchild_pos: dict[tuple[str, ...], list[tuple[str, str | None, bool]]] = {}
                         if child_var:
                             if (id(search_root), child_var) not in visited:
-                                c_cmds, gc_map = _collect_commands_from_ast(
+                                c_cmds, gc_map, c_pos, gc_pos, _ = _collect_commands_from_ast(
                                     search_root,
                                     {child_var},
                                     search_root,
@@ -1523,6 +1632,8 @@ class SpecValidator:
                                     _visited=visited,
                                 )
                                 child_cmds.update(c_cmds)
+                                child_pos.update(c_pos)
+                                grandchild_pos.update(gc_pos)
                                 for gk, gv in gc_map.items():
                                     grandchild_map.setdefault(gk, set()).update(gv)
                             if child_var in imp_map:
@@ -1535,7 +1646,7 @@ class SpecValidator:
                                             sm_leaf = sn.module.rsplit(".", 1)[-1]
                                             for sal in sn.names:
                                                 sib_imp[sal.asname or sal.name] = (sm_leaf, sal.name)
-                                    ext_cmds, ext_gc = _collect_commands_from_ast(
+                                    ext_cmds, ext_gc, ext_pos, ext_gc_pos, _ = _collect_commands_from_ast(
                                         sib_ast,
                                         {orig_var},
                                         sib_ast,
@@ -1543,19 +1654,30 @@ class SpecValidator:
                                         _visited=visited,
                                     )
                                     child_cmds.update(ext_cmds)
+                                    child_pos.update(ext_pos)
+                                    grandchild_pos.update(ext_gc_pos)
                                     for gk, gv in ext_gc.items():
                                         grandchild_map.setdefault(gk, set()).update(gv)
                         if sub_name:
                             found.add(sub_name)
                             grp_set = sub_found.setdefault(sub_name, set())
                             grp_set.update(child_cmds)
-                            for gc_set in grandchild_map.values():
+                            for c_name, p_list in child_pos.items():
+                                sub_found_pos[(sub_name, c_name)] = p_list
+                            for gc_grp, gc_set in grandchild_map.items():
                                 grp_set.update(gc_set)
+                                nested_sub_found.setdefault((sub_name, gc_grp), set()).update(gc_set)
+                            for gc_key, p_list in grandchild_pos.items():
+                                sub_found_pos[(sub_name, *gc_key)] = p_list
+                                if (sub_name, gc_key[-1]) not in sub_found_pos:
+                                    sub_found_pos[(sub_name, gc_key[-1])] = p_list
                         else:
                             # Unnamed add_typer(sub_app) mounts sub_app's commands at the parent level
                             found.update(child_cmds)
+                            found_pos.update(child_pos)
                             for gk, gv in grandchild_map.items():
                                 sub_found.setdefault(gk, set()).update(gv)
+                            sub_found_pos.update(grandchild_pos)
                     elif (
                         isinstance(node, ast.Call)
                         and isinstance(node.func, ast.Call)
@@ -1568,6 +1690,8 @@ class SpecValidator:
                         cmd_name = _extract_command_name_from_call(node.func, fn_arg_name)
                         if cmd_name:
                             found.add(cmd_name)
+                            if fn_arg_name and fn_arg_name in fn_defs_in_scope:
+                                found_pos[cmd_name] = _extract_typer_positional_args(fn_defs_in_scope[fn_arg_name])
                     elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         for dec in node.decorator_list:
                             if (
@@ -1580,16 +1704,25 @@ class SpecValidator:
                                 cmd_name = _extract_command_name_from_call(dec, node.name)
                                 if cmd_name:
                                     found.add(cmd_name)
+                                    found_pos[cmd_name] = _extract_typer_positional_args(node)
                             elif (
                                 isinstance(dec, ast.Attribute)
                                 and isinstance(dec.value, ast.Name)
                                 and dec.value.id in target_vars
                                 and dec.attr == "command"
                             ):
-                                found.add(node.name.replace("_", "-"))
-                return found, sub_found
+                                c_name = node.name.replace("_", "-")
+                                found.add(c_name)
+                                found_pos[c_name] = _extract_typer_positional_args(node)
+                return found, sub_found, found_pos, sub_found_pos, nested_sub_found
 
-            commands, subcommands_by_group = _collect_commands_from_ast(tree, root_app_vars, tree)
+            (
+                commands,
+                subcommands_by_group,
+                cmd_pos_args,
+                sub_pos_args,
+                nested_subcommands_by_group,
+            ) = _collect_commands_from_ast(tree, root_app_vars, tree)
 
             for node in ast.walk(tree):
                 if (
@@ -1617,12 +1750,16 @@ class SpecValidator:
                                 and sib_node.args.args
                             ):
                                 app_param = sib_node.args.args[0].arg
-                                sib_cmds, sib_subs = _collect_commands_from_ast(
+                                sib_cmds, sib_subs, sib_c_pos, sib_s_pos, sib_nested = _collect_commands_from_ast(
                                     sib_node, {app_param}, sib_tree, sib_imp_map
                                 )
                                 commands.update(sib_cmds)
+                                cmd_pos_args.update(sib_c_pos)
+                                sub_pos_args.update(sib_s_pos)
                                 for g_name, g_cmds in sib_subs.items():
                                     subcommands_by_group.setdefault(g_name, set()).update(g_cmds)
+                                for nk, nv in sib_nested.items():
+                                    nested_subcommands_by_group.setdefault(nk, set()).update(nv)
                                 # Also check if sibling register() mounts subcommands onto an imported sub-typer (e.g. spec_app.add_typer(component_app, ...))
                                 for sub_call in ast.walk(sib_node):
                                     if (
@@ -1634,13 +1771,20 @@ class SpecValidator:
                                         parent_var = sub_call.func.value.id
                                         parent_group = mounted_sub_apps.get(parent_var)
                                         if parent_group:
-                                            extra_c, extra_sub = _collect_commands_from_ast(
+                                            extra_c, extra_sub, extra_c_pos, extra_s_pos, _ = _collect_commands_from_ast(
                                                 sib_node, {parent_var}, sib_tree, sib_imp_map
                                             )
                                             grp_s = subcommands_by_group.setdefault(parent_group, set())
                                             grp_s.update(extra_c)
-                                            for gc_s in extra_sub.values():
+                                            for ec_name, ec_pos in extra_c_pos.items():
+                                                sub_pos_args[(parent_group, ec_name)] = ec_pos
+                                            for es_key, es_pos in extra_s_pos.items():
+                                                sub_pos_args[(parent_group, *es_key)] = es_pos
+                                                if (parent_group, es_key[-1]) not in sub_pos_args:
+                                                    sub_pos_args[(parent_group, es_key[-1])] = es_pos
+                                            for gc_grp, gc_s in extra_sub.items():
                                                 grp_s.update(gc_s)
+                                                nested_subcommands_by_group.setdefault((parent_group, gc_grp), set()).update(gc_s)
 
         # Click CLI extraction (@click.group / @click.command / @<group>.group / @<group>.command / <group>.add_command)
         if not commands and (click_module_aliases or click_group_decorators or click_cmd_decorators):
@@ -1863,7 +2007,77 @@ class SpecValidator:
                     f"Contract drift in {doc.file_path.name}: CLI command '{cmd_name}' defined in '{cli_file.name}' is not documented in contract '{doc.doc_id}'"
                 )
 
-        # 2. Reverse verification (Spec -> Code) & Subcommand verification (DLT-2026-082)
+        def _parse_doc_positional_placeholders(sig_expr: str, cmd_token: str) -> list[tuple[str, bool]]:
+            """Extract (placeholder_name, is_required) after cmd_token, stripping [--opt ...] and --opt <val>."""
+            cleaned = re.sub(r"\[-[^\]]*\]", " ", sig_expr)
+            toks = cleaned.strip().split()
+            if cmd_token in toks:
+                toks = toks[toks.index(cmd_token) + 1 :]
+            out: list[tuple[str, bool]] = []
+            idx_t = 0
+            while idx_t < len(toks):
+                t = toks[idx_t]
+                if t.startswith("-"):
+                    if (
+                        idx_t + 1 < len(toks)
+                        and not toks[idx_t + 1].startswith("-")
+                        and (toks[idx_t + 1].startswith("<") or toks[idx_t + 1].isupper())
+                    ):
+                        idx_t += 2
+                        continue
+                    idx_t += 1
+                    continue
+                t_clean = t.rstrip(".")
+                if t_clean.startswith("<") and t_clean.endswith(">") and len(t_clean) > 2:
+                    inner = t_clean[1:-1].rstrip(".").strip()
+                    if inner:
+                        out.append((inner, True))
+                elif (
+                    t_clean.startswith("[")
+                    and t_clean.endswith("]")
+                    and len(t_clean) > 2
+                    and not t_clean[1:-1].startswith("-")
+                ):
+                    inner = t_clean[1:-1].rstrip(".").strip()
+                    if inner:
+                        out.append((inner, False))
+                idx_t += 1
+            return out
+
+        def _verify_positional_parity(
+            cmd_label: str,
+            doc_pos: list[tuple[str, bool]],
+            code_pos: list[tuple[str, str | None, bool]],
+        ) -> None:
+            if not doc_pos and not code_pos:
+                return
+            doc_req_cnt = sum(1 for _, r in doc_pos if r)
+            code_req_cnt = sum(1 for _, _, r in code_pos if r)
+            if len(doc_pos) != len(code_pos) or doc_req_cnt != code_req_cnt:
+                report.broken_references.append(
+                    f"Contract drift in {doc.file_path.name}: CLI command '{cmd_label}' in contract '{doc.doc_id}' documents "
+                    f"{len(doc_pos)} positional argument(s) ({doc_req_cnt} required) but '{cli_file.name}' defines {len(code_pos)} ({code_req_cnt} required)"
+                )
+                return
+            for (doc_ph, _), (param_name, metavar, _) in zip(doc_pos, code_pos, strict=False):
+                doc_norm = doc_ph.lower().replace("-", "_").strip()
+                param_norm = param_name.lower().replace("-", "_").strip()
+                meta_norm = (metavar or "").lower().replace("-", "_").strip()
+                doc_parts = {p for p in doc_norm.split("_") if p and p not in ("or", "and")}
+                param_parts = {p for p in param_norm.split("_") if p and p not in ("or", "and")}
+                meta_parts = {p for p in meta_norm.split("_") if p and p not in ("or", "and")}
+                aligned = (
+                    doc_norm in (param_norm, meta_norm)
+                    or bool(doc_parts & (param_parts | meta_parts))
+                    or (param_norm == "target" and doc_norm in ("id_or_path", "target"))
+                )
+                if not aligned:
+                    report.broken_references.append(
+                        f"Contract drift in {doc.file_path.name}: CLI command '{cmd_label}' positional placeholder '{doc_ph}' "
+                        f"in contract '{doc.doc_id}' does not align with parameter '{param_name}' in '{cli_file.name}'"
+                    )
+
+        # 2. Reverse verification (Spec -> Code) & Subcommand verification (DLT-2026-082, DLT-2026-114)
         heading_matches = list(re.finditer(r"^===\s+`([^`]+)`(?:\s*/\s*`([^`]+)`)?", clean_body, re.MULTILINE))
         for idx, hm in enumerate(heading_matches):
             sec_start = hm.end()
@@ -1877,6 +2091,7 @@ class SpecValidator:
             if hm.group(2):
                 candidates.append(hm.group(2))
             resolved_cmd: str | None = None
+            matched_cand_expr = candidates[0]
             for cand_expr in candidates:
                 tokens = cand_expr.strip().split()
                 if not tokens:
@@ -1887,6 +2102,7 @@ class SpecValidator:
                 if tok.startswith(("-", "[", "<", "{")) or any(ch in tok for ch in ("*", "|", ".", "/")):
                     continue
                 resolved_cmd = tok
+                matched_cand_expr = cand_expr
                 if tok in commands:
                     break
 
@@ -1894,6 +2110,9 @@ class SpecValidator:
                 report.broken_references.append(
                     f"Contract drift in {doc.file_path.name}: documented CLI command '{resolved_cmd}' in contract '{doc.doc_id}' does not exist in '{cli_file.name}'"
                 )
+            elif resolved_cmd and resolved_cmd in cmd_pos_args and resolved_cmd not in subcommands_by_group:
+                doc_pos_top = _parse_doc_positional_placeholders(matched_cand_expr, resolved_cmd)
+                _verify_positional_parity(resolved_cmd, doc_pos_top, cmd_pos_args[resolved_cmd])
             elif resolved_cmd and resolved_cmd in subcommands_by_group and "Sub-commands" in sec_body:
                 expected_subs = subcommands_by_group[resolved_cmd]
                 for sub_cmd in sorted(expected_subs):
@@ -1912,9 +2131,10 @@ class SpecValidator:
                     sub_bullets_text,
                     re.MULTILINE,
                 ):
+                    raw_bullet_sig = bullet_m.group(1).strip()
                     bullet_tokens = [
                         t
-                        for t in bullet_m.group(1).strip().split()
+                        for t in raw_bullet_sig.split()
                         if not t.startswith(("-", "[", "<", "{")) and not any(ch in t for ch in ("*", "|", ".", "/"))
                     ]
                     if not bullet_tokens:
@@ -1926,12 +2146,40 @@ class SpecValidator:
                         else:
                             continue
                     else:
+                        rc_idx = -1
                         doc_sub = bullet_tokens[0]
                     if not re.match(r"^[a-zA-Z][a-zA-Z0-9_-]*$", doc_sub):
                         continue
+                    nested_leaf: str | None = None
+                    if (
+                        (resolved_cmd, doc_sub) in nested_subcommands_by_group
+                        and rc_idx >= 0
+                        and rc_idx + 2 < len(bullet_tokens)
+                        and re.match(r"^[a-zA-Z][a-zA-Z0-9_-]*$", bullet_tokens[rc_idx + 2])
+                    ):
+                        nested_leaf = bullet_tokens[rc_idx + 2]
                     if doc_sub not in expected_subs:
                         report.broken_references.append(
                             f"Contract drift in {doc.file_path.name}: documented CLI subcommand '{resolved_cmd} {doc_sub}' in contract '{doc.doc_id}' does not exist in '{cli_file.name}'"
+                        )
+                    elif nested_leaf is not None:
+                        if nested_leaf not in nested_subcommands_by_group[(resolved_cmd, doc_sub)]:
+                            report.broken_references.append(
+                                f"Contract drift in {doc.file_path.name}: documented CLI subcommand '{resolved_cmd} {doc_sub} {nested_leaf}' in contract '{doc.doc_id}' does not exist in '{cli_file.name}'"
+                            )
+                        elif (resolved_cmd, doc_sub, nested_leaf) in sub_pos_args:
+                            doc_pos_nested = _parse_doc_positional_placeholders(raw_bullet_sig, nested_leaf)
+                            _verify_positional_parity(
+                                f"{resolved_cmd} {doc_sub} {nested_leaf}",
+                                doc_pos_nested,
+                                sub_pos_args[(resolved_cmd, doc_sub, nested_leaf)],
+                            )
+                    elif (resolved_cmd, doc_sub) in sub_pos_args:
+                        doc_pos_sub = _parse_doc_positional_placeholders(raw_bullet_sig, doc_sub)
+                        _verify_positional_parity(
+                            f"{resolved_cmd} {doc_sub}",
+                            doc_pos_sub,
+                            sub_pos_args[(resolved_cmd, doc_sub)],
                         )
 
     @staticmethod
@@ -2162,3 +2410,181 @@ class SpecValidator:
         verifier = getattr(self, method_name, None)
         if callable(verifier):
             verifier(doc, spec_file, report)
+
+    _PUBLIC_SURFACE_SYMBOL_CACHE: ClassVar[dict[tuple[str, int, str], tuple[set[str], set[str], set[str]]]] = {}
+
+    @classmethod
+    def _extract_cached_public_surface_symbols(cls, code_file: Path) -> tuple[set[str], set[str], set[str]]:
+        """Return cached (defined_symbols, defined_classes, defined_methods) for a source file."""
+        try:
+            raw_bytes = code_file.read_bytes()
+            source = raw_bytes.decode("utf-8", errors="replace")
+        except OSError:
+            return set(), set(), set()
+
+        digest = hashlib.sha256(raw_bytes).hexdigest()
+        cache_key = (str(code_file), len(raw_bytes), digest)
+        cached = cls._PUBLIC_SURFACE_SYMBOL_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+
+        indexer = get_ast_indexer()
+        defined_symbols: set[str] = set()
+        defined_classes: set[str] = set()
+        defined_methods: set[str] = set()
+
+        for sym in indexer.extract_symbols(code_file, content=source):
+            if sym.name:
+                defined_symbols.add(sym.name)
+            if sym.kind in ("class", "struct", "interface", "trait") and sym.name:
+                defined_classes.add(sym.name)
+            if sym.parent_symbol and sym.name:
+                p_leaf = sym.parent_symbol.split("::")[-1].split(".")[-1]
+                defined_symbols.add(f"{p_leaf}.{sym.name}")
+                defined_methods.add(f".{sym.name}")
+
+        if code_file.suffix.lower() == ".py":
+            with contextlib.suppress(SyntaxError, ValueError):
+                tree = ast.parse(source)
+                for node in ast.walk(tree):
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        defined_symbols.add(node.name)
+                    elif isinstance(node, ast.ClassDef):
+                        defined_symbols.add(node.name)
+                        defined_classes.add(node.name)
+                        for item in node.body:
+                            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                                defined_symbols.add(f"{node.name}.{item.name}")
+                                defined_methods.add(f".{item.name}")
+                                for sub in ast.walk(item):
+                                    if isinstance(sub, (ast.Assign, ast.AnnAssign)):
+                                        targets = sub.targets if isinstance(sub, ast.Assign) else [sub.target]
+                                        for tgt in targets:
+                                            if (
+                                                isinstance(tgt, ast.Attribute)
+                                                and isinstance(tgt.value, ast.Name)
+                                                and tgt.value.id in ("self", "cls")
+                                            ):
+                                                defined_symbols.add(f"{node.name}.{tgt.attr}")
+                                                defined_methods.add(f".{tgt.attr}")
+                            elif isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                                defined_symbols.add(f"{node.name}.{item.target.id}")
+                                defined_methods.add(f".{item.target.id}")
+                            elif isinstance(item, ast.Assign):
+                                for t in item.targets:
+                                    if isinstance(t, ast.Name):
+                                        defined_symbols.add(f"{node.name}.{t.id}")
+                                        defined_methods.add(f".{t.id}")
+                    elif isinstance(node, ast.Assign):
+                        for t in node.targets:
+                            if isinstance(t, ast.Name):
+                                defined_symbols.add(t.id)
+                                if t.id == "__all__" and isinstance(node.value, (ast.List, ast.Tuple, ast.Set)):
+                                    for elt in node.value.elts:
+                                        if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                                            defined_symbols.add(elt.value)
+                    elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                        defined_symbols.add(node.target.id)
+                    elif hasattr(ast, "TypeAlias") and isinstance(node, ast.TypeAlias) and isinstance(node.name, ast.Name):
+                        defined_symbols.add(node.name.id)
+                    elif isinstance(node, ast.ImportFrom):
+                        for al in node.names:
+                            defined_symbols.add(al.asname or al.name)
+                    elif isinstance(node, ast.Import):
+                        for al in node.names:
+                            defined_symbols.add(al.asname or al.name.split(".")[0])
+
+        if len(cls._PUBLIC_SURFACE_SYMBOL_CACHE) >= 512:
+            cls._PUBLIC_SURFACE_SYMBOL_CACHE.clear()
+        cls._PUBLIC_SURFACE_SYMBOL_CACHE[cache_key] = (defined_symbols, defined_classes, defined_methods)
+        return defined_symbols, defined_classes, defined_methods
+
+    def _verify_entity_public_surface(
+        self,
+        doc: SpecDocument,
+        repo_root: Path,
+        root_dir: Path,
+        report: ValidationReport,
+    ) -> None:
+        """Verify that backticked code symbols under '== Public Surface' in CMP-*/CNT-* specs exist in their source_path."""
+        clean_body = self._strip_asciidoc_comments(doc.body or "")
+        sec_m = re.search(
+            r"^==\s+Public Surface\b[^\r\n]*\r?\n(.*?)(?=^==\s+|\Z)",
+            clean_body,
+            re.MULTILINE | re.DOTALL,
+        )
+        if not sec_m:
+            return
+
+        code_files: list[Path] = []
+        for raw_sp in doc.model.source_paths():
+            p = raw_sp.strip()
+            if not p or p.upper() in ("N/A", "TBD", "NONE") or p.endswith((".adoc", ".md", ".toml", ".yaml", ".yml", ".json")):
+                continue
+            if any(ch in p for ch in ("*", "?", "[")):
+                matches = list(repo_root.glob(p)) or list(root_dir.glob(p))
+                for m_path in matches:
+                    if m_path.is_file() and m_path.suffix.lower() in AST_DIFF_EXTS:
+                        code_files.append(m_path)
+                    elif m_path.is_dir():
+                        code_files.extend(
+                            f
+                            for f in m_path.rglob("*")
+                            if f.is_file() and f.suffix.lower() in AST_DIFF_EXTS and "__pycache__" not in f.parts
+                        )
+                continue
+            resolved = self._resolve_source_path(repo_root, root_dir, p)
+            if resolved is None:
+                continue
+            if resolved.is_file() and resolved.suffix.lower() in AST_DIFF_EXTS:
+                code_files.append(resolved)
+            elif resolved.is_dir():
+                code_files.extend(
+                    f
+                    for f in resolved.rglob("*")
+                    if f.is_file() and f.suffix.lower() in AST_DIFF_EXTS and "__pycache__" not in f.parts
+                )
+
+        if not code_files:
+            return
+
+        defined_symbols: set[str] = set()
+        defined_classes: set[str] = set()
+        defined_methods: set[str] = set()
+        for cf in code_files:
+            f_syms, f_clss, f_meths = self._extract_cached_public_surface_symbols(cf)
+            defined_symbols.update(f_syms)
+            defined_classes.update(f_clss)
+            defined_methods.update(f_meths)
+
+        seen_missing: set[str] = set()
+        for span in re.findall(r"`([^`]+)`", sec_m.group(1)):
+            s = span.strip()
+            if (
+                not s
+                or "/" in s
+                or s.startswith(("[", "-", '"', "'", "$", "@", "<"))
+                or s.endswith((".md", ".toml", ".adoc", ".json", ".yaml", ".yml", ".py", ".ts", ".js"))
+            ):
+                continue
+            s = re.sub(
+                r"^(?:async\s+def|def|class|export|const|let|var|type|interface|fn|func|struct|enum)\s+",
+                "",
+                s,
+            )
+            ms = re.match(r"^([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?)\s*(?:\(|:|=|$)", s)
+            if not ms:
+                continue
+            ident = ms.group(1)
+            if ident in seen_missing:
+                continue
+            exists = ident in defined_symbols
+            if not exists and "." in ident:
+                c_part, m_part = ident.split(".", 1)
+                exists = c_part in defined_classes and f".{m_part}" in defined_methods
+            if not exists:
+                seen_missing.add(ident)
+                kind_label = "Component" if doc.doc_type == "tech/component" else "Container"
+                report.broken_references.append(
+                    f"Public surface drift in {doc.file_path.name}: {kind_label} '{doc.doc_id}' documents symbol '{ident}' under '== Public Surface' which does not exist in its source_path"
+                )

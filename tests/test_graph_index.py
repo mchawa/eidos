@@ -1213,10 +1213,26 @@ def test_task_retrieval_indexes_invariants_and_filters_types(tmp_path):
         ranked = [m["id"] for m in idx.query_fts("quasar", include_types=("product/domain", "tech/container"))]
         assert ranked[:2] == ["DOM-WIDGET", "CNT-WIDGET"]
 
-        # 5. A matched domain resolves to its member container and capability instead of being dropped.
-        dom_slice = idx.get_tiered_context_slice(task="quasar lifecycle")
+        # 5. A matched domain resolves to its member container and capability instead of being dropped,
+        #    while prioritizing direct container/component matches ahead of 1-hop domain expansions.
+        _write_retrieval_spec(
+            eidos_dir / "architecture" / "containers" / "aaa_member.adoc",
+            "---\ntype: tech/container\nid: CNT-AAA-MEMBER\ntitle: Alphabetical Member Service\ndomain: DOM-WIDGET\n"
+            "source_path: src/aaa\n---\n= Alphabetical Member Service\n",
+        )
+        _write_retrieval_spec(
+            eidos_dir / "architecture" / "components" / "widget_comp.adoc",
+            "---\ntype: tech/component\nid: CMP-WIDGET-CORE\ntitle: Widget Core Engine\ncontainer: CNT-WIDGET\n"
+            "status: active\nsource_path: src/widget/core.py\n---\n= Widget Core Engine\n\n"
+            "Quasar lifecycle orchestration component.\n",
+        )
+        idx.sync(force=False)
+        dom_slice = idx.get_tiered_context_slice(task="quasar lifecycle widget core")
         assert "DOM-WIDGET" in dom_slice.matched_reasons
-        assert "CNT-WIDGET" in [c["id"] for c in dom_slice.components]
+        comp_ids_in_order = [c["id"] for c in dom_slice.components]
+        assert "CNT-WIDGET" in comp_ids_in_order
+        if "CNT-AAA-MEMBER" in comp_ids_in_order:
+            assert comp_ids_in_order.index("CNT-WIDGET") < comp_ids_in_order.index("CNT-AAA-MEMBER")
         assert "CAP-WIDGET-001" in [c["id"] for c in dom_slice.capabilities]
 
         # 6. Removing the invariant purges its FTS row on incremental sync (no stale search hits).
@@ -1269,7 +1285,7 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
     db_path = eidos_dir / ".cache" / "index.db"
     with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
-        assert ver == SCHEMA_VERSION == "2.17.0"
+        assert ver == SCHEMA_VERSION == "2.18.0"
         val_rows_before = conn.execute("SELECT COUNT(*) FROM spec_validation_cache;").fetchone()[0]
         assert val_rows_before == 1
 
@@ -2319,7 +2335,7 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
     from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 
-    assert SCHEMA_VERSION == "2.17.0"
+    assert SCHEMA_VERSION == "2.18.0"
     assert set(AstGrepIndexer.LANGUAGE_MAP.keys()) | {".proto", ".adoc"} <= _FILE_QUERY_EXTS
 
     # 1. Verify _ENTITY_ID_TOKEN_RE recognizes SYS-*, ARCH-*, PER-*, and underscore IDs
@@ -2494,7 +2510,7 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
     from eidos.portal.generator import get_portal_data
 
-    assert SCHEMA_VERSION == "2.17.0"
+    assert SCHEMA_VERSION == "2.18.0"
     assert _build_spec_catalog_with_invariants(tmp_path / "nonexistent_eidos") == ({}, {})
 
     init_repository(tmp_path, title="dlt-104-repo")
@@ -2626,11 +2642,11 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
     try:
         conn = idx._get_connection()
-        # Simulate upgrading from schema_version 2.11.0 -> 2.17.0
+        # Simulate upgrading from schema_version 2.11.0 -> 2.18.0
         conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '2.11.0');")
         conn.commit()
         ensure_cache_schema(conn)
-        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.17.0"
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.18.0"
 
         idx.sync(force=True)
 
@@ -2840,3 +2856,294 @@ def test_dlt_2026_105_c4_level_1_and_exploration_edges(tmp_path: Path) -> None:
         assert "CNT-GAMMA-105" in {n["id"] for n in arch_br_after if n["depth"] == 1}
     finally:
         idx.close()
+
+
+def test_hybrid_semantic_rrf_and_deterministic_fallback(tmp_path: Path) -> None:
+    """Verify INV-AGENT-HYBRID-SEMANTIC-FALLBACK: spec-only SHA-256 caching in spec_embeddings across sync --force,
+    right-padded Harrier sts_query formatting, tau_min=0.50 cosine gating, exact entity ID pinning,
+    recommend_invariants_for_unbound_tests, and 100% deterministic fallback to FTS5 BM25 when spec_embeddings are absent."""
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.core.index.query import build_fts_match_query, expand_architectural_synonyms
+    from eidos.core.index.semantic import (
+        HARRIER_EMBEDDING_DIM,
+        HARRIER_QUERY_INSTRUCTION,
+        HARRIER_STS_INSTRUCTION,
+        compute_spec_embedding_sha256,
+        format_harrier_query,
+        pack_embedding_f32,
+        unpack_embedding_f32,
+    )
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
+    from eidos.core.spec.parser import dump_spec_document, parse_spec_file
+    from eidos.vcs.invariants import recommend_invariants_for_unbound_tests
+
+    # 1. Verify Harrier sts_query formatting, spec-only SHA-256 isolation, and float32 packing
+    assert HARRIER_QUERY_INSTRUCTION == HARRIER_STS_INSTRUCTION
+    q_fmt = format_harrier_query("prevent airgapped external calls")
+    assert q_fmt.startswith(HARRIER_QUERY_INSTRUCTION)
+    assert "Retrieve semantically similar text" in q_fmt
+    assert "airgapped" in expand_architectural_synonyms("offline")
+    assert '"zero"*' in build_fts_match_query("airgapped", operator="OR", expand_synonyms=True)
+
+    sha_a = compute_spec_embedding_sha256(
+        entity_id="CMP-ALPHA",
+        entity_type="tech/component",
+        title="Alpha Engine",
+        domain="DOM-CORE",
+        jtbd_or_rule="Deterministic rule",
+        body_text="Handles local execution.",
+        spec_symbols="alpha engine",
+    )
+    # Spec-only SHA-256 depends solely on spec fields, never on AST code_symbols
+    sha_b = compute_spec_embedding_sha256(
+        entity_id="CMP-ALPHA",
+        entity_type="tech/component",
+        title="Alpha Engine",
+        domain="DOM-CORE",
+        jtbd_or_rule="Deterministic rule",
+        body_text="Handles local execution.",
+        spec_symbols="alpha engine",
+    )
+    assert sha_a == sha_b
+
+    unit_vec = [1.0] + [0.0] * (HARRIER_EMBEDDING_DIM - 1)
+    blob = pack_embedding_f32(unit_vec)
+    assert len(blob) == HARRIER_EMBEDDING_DIM * 4
+    unpacked = unpack_embedding_f32(blob)
+    assert abs(unpacked[0] - 1.0) < 1e-6
+
+    # 2. Scaffold repository with containers, components, policies, and unbound test function
+    init_repository(tmp_path, title="hybrid-semantic-repo")
+    eidos_dir = tmp_path / "eidos"
+    create_spec(eidos_dir, "domain", "DOM-SECURITY", title="Security Governance Domain")
+    cnt_sec_path = create_spec(eidos_dir, "container", "CNT-SEC-VAULT", title="Hermetic Vault Service")
+    cmp_sec_path = create_spec(eidos_dir, "component", "CMP-HERMETIC-GUARD", title="Hermetic Guard")
+    pol_path = create_spec(eidos_dir, "policy", "POL-HERMETIC-001", title="Hermetic Execution Policy")
+
+    cnt_doc = parse_spec_file(cnt_sec_path)
+    cnt_doc.frontmatter["domain"] = "DOM-SECURITY"
+    cnt_doc.frontmatter["source_path"] = "src/vault"
+    cnt_sec_path.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_doc.body), encoding="utf-8")
+
+    cmp_doc = parse_spec_file(cmp_sec_path)
+    cmp_doc.frontmatter["container"] = "CNT-SEC-VAULT"
+    cmp_doc.frontmatter["source_path"] = "src/vault/guard.py"
+    cmp_sec_path.write_text(
+        dump_spec_document(
+            cmp_doc.frontmatter,
+            "= Hermetic Guard\n\n== Responsibility\nBlocks outbound sockets in airgapped execution.\n",
+        ),
+        encoding="utf-8",
+    )
+
+    pol_doc = parse_spec_file(pol_path)
+    pol_doc.frontmatter["invariants"] = [
+        {
+            "id": "INV-HERMETIC-SOCKET-BAN",  # eidos:fixture
+            "rule": "Outbound network sockets must be blocked during hermetic airgapped execution.",
+            "test_binding": "tests/test_vault.py::test_hermetic_socket_ban",
+        }
+    ]
+    pol_path.write_text(dump_spec_document(pol_doc.frontmatter, pol_doc.body), encoding="utf-8")
+
+    (tmp_path / "src" / "vault").mkdir(parents=True, exist_ok=True)
+    guard_py = tmp_path / "src" / "vault" / "guard.py"
+    guard_py.write_text("def block_sockets() -> bool:\n    return True\n", encoding="utf-8")
+
+    (tmp_path / "tests").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "tests" / "test_vault.py").write_text(
+        "def test_hermetic_socket_ban():\n    # Verifies INV-HERMETIC-SOCKET-BAN\n    assert True\n\n"  # eidos:fixture
+        "def test_outbound_network_socket_blocked():\n    assert True\n",
+        encoding="utf-8",
+    )
+
+    idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=True)
+
+        # 3. Verify 100% deterministic FTS5 BM25 fallback when spec_embeddings is empty
+        status_empty = idx.get_semantic_status()
+        assert status_empty["embedded_entities"] == 0
+        fallback_hits = idx.query_fts("Hermetic Guard", limit=5)
+        assert any(h["id"] == "CMP-HERMETIC-GUARD" for h in fallback_hits)
+        assert all("match_source" not in h for h in fallback_hits)
+
+        # 4. Populate spec_embeddings with a deterministic encoder and verify caching across code edits and sync(force=True)
+        def _deterministic_encoder(texts: list[str]) -> list[bytes]:
+            blobs: list[bytes] = []
+            for t in texts:
+                vec = [0.0] * HARRIER_EMBEDDING_DIM
+                t_low = t.lower()
+                if any(k in t_low for k in ("hermetic", "airgapped", "outbound", "egress", "firewall")):
+                    vec[0] = 0.92
+                    vec[1] = 0.39
+                elif "vault" in t_low:
+                    vec[0] = 0.75
+                    vec[1] = 0.66
+                else:
+                    vec[2] = 1.0
+                blobs.append(pack_embedding_f32(vec))
+            return blobs
+
+        sync_res1 = idx.sync_semantic(force=False, encode_fn=_deterministic_encoder)
+        assert sync_res1["encoded_entities"] > 0
+        assert sync_res1["reused_entities"] == 0
+
+        # Editing Python source code does NOT invalidate spec-only content_sha256 embeddings (0 re-encoded)
+        guard_py.write_text("def block_sockets() -> bool:\n    return True\n\ndef extra_helper() -> int:\n    return 2\n", encoding="utf-8")
+        _touch_later(guard_py, offset=10)
+        idx.sync(force=False)
+        sync_res2 = idx.sync_semantic(force=False, encode_fn=_deterministic_encoder)
+        assert sync_res2["encoded_entities"] == 0
+        assert sync_res2["reused_entities"] == sync_res1["encoded_entities"]
+
+        # sync(force=True) preserves spec_embeddings in index.db
+        idx.sync(force=True)
+        status_after_force = idx.get_semantic_status()
+        assert status_after_force["embedded_entities"] == sync_res1["encoded_entities"]
+        assert status_after_force["stale_or_missing_embeddings"] == 0
+
+        # 5. Conceptual zero-keyword query ("egress firewall") retrieves CMP-HERMETIC-GUARD via Hybrid RRF (cos >= 0.50)
+        sem_hits = idx.query_fts("egress firewall", limit=5, use_semantic=True)
+        assert any(h["id"] == "CMP-HERMETIC-GUARD" for h in sem_hits)
+        guard_hit = next(h for h in sem_hits if h["id"] == "CMP-HERMETIC-GUARD")
+        assert guard_hit["match_source"] in ("semantic", "hybrid")
+        assert guard_hit["semantic_score"] >= 0.50
+
+        # Disabling semantic (--no-semantic / use_semantic=False) returns pure FTS5 results (empty for "egress firewall")
+        assert idx.query_fts("egress firewall", limit=5, use_semantic=False) == []
+
+        # Exact entity ID pinning always ranks explicit ID #1 even under Hybrid RRF
+        pinned_hits = idx.query_fts("CNT-SEC-VAULT egress firewall", limit=5, use_semantic=True)
+        assert pinned_hits[0]["id"] == "CNT-SEC-VAULT"
+
+        # Context slice records Semantic/Hybrid task match provenance in matched_reasons
+        ctx_slice = idx.get_tiered_context_slice(task="egress firewall", tier="guardrails", use_semantic=True)
+        assert any(c["id"] == "CMP-HERMETIC-GUARD" for c in ctx_slice.components)
+        assert any(
+            "Semantic task match" in r or "Hybrid task match" in r
+            for r in ctx_slice.matched_reasons.get("CMP-HERMETIC-GUARD", [])
+        )
+        # Hybrid task match formats 1-based BM25 rank (never BM25 #0)
+        hyb_slice = idx.get_tiered_context_slice(task="hermetic egress", tier="guardrails", use_semantic=True)
+        guard_reasons = hyb_slice.matched_reasons.get("CMP-HERMETIC-GUARD", [])
+        assert any("Hybrid task match" in r and "BM25 #" in r and "BM25 #0" not in r for r in guard_reasons)
+
+        # Index-time synonym enrichment in specs_fts.keywords resolves "offline" to airgapped spec without semantic
+        offline_hits = idx.query_fts("offline", limit=5, use_semantic=False)
+        assert any(h["id"] in ("CMP-HERMETIC-GUARD", "INV-HERMETIC-SOCKET-BAN") for h in offline_hits)  # eidos:fixture
+
+        # 6. Verify recommend_invariants_for_unbound_tests suggests INV-HERMETIC-SOCKET-BAN for test_outbound_network_socket_blocked  # eidos:fixture
+        recs = recommend_invariants_for_unbound_tests(idx, top_k=3)
+        unbound_key = "tests/test_vault.py::test_outbound_network_socket_blocked"
+        assert unbound_key in recs
+        assert recs[unbound_key]
+        assert recs[unbound_key][0]["id"] == "INV-HERMETIC-SOCKET-BAN"  # eidos:fixture
+    finally:
+        idx.close()
+
+    # 7. Verify CLI 'eidos index semantic status', 'eidos index search --no-semantic', and 'eidos context --no-semantic'
+    runner = CliRunner()
+    res_sem = runner.invoke(app, ["index", "semantic", "status", "--path", str(eidos_dir), "--json"])
+    assert res_sem.exit_code == 0
+    sem_payload = orjson.loads(res_sem.output)
+    assert sem_payload["embedded_entities"] > 0
+
+    res_sem_rich = runner.invoke(app, ["index", "semantic", "status", "--path", str(eidos_dir)])
+    assert res_sem_rich.exit_code == 0
+    assert "Harrier ONNX" in res_sem_rich.output
+
+    res_sem_unknown = runner.invoke(app, ["index", "semantic", "invalid-action", "--path", str(eidos_dir), "--json"])
+    assert res_sem_unknown.exit_code == 1
+    assert "Unknown semantic action" in orjson.loads(res_sem_unknown.output)["error"]
+
+    res_search = runner.invoke(
+        app, ["index", "search", "Hermetic Guard", "--no-semantic", "--path", str(eidos_dir), "--json"]
+    )
+    assert res_search.exit_code == 0
+    search_payload = orjson.loads(res_search.output)
+    assert search_payload["count"] >= 1
+
+    res_ctx = runner.invoke(
+        app, ["context", "-t", "egress firewall", "--no-semantic", "--path", str(eidos_dir), "--json"]
+    )
+    assert res_ctx.exit_code == 0
+    assert "tier" in orjson.loads(res_ctx.output)
+
+
+def test_dlt_2026_114_blast_radius_symbol_and_path_resolution() -> None:
+    """Verify DLT-2026-114-RESOLVE-SYMBOLS-0327:
+    resolve_blast_radius_targets, get_k_hop_neighborhood, and `eidos index blast-radius`
+    resolve canonical entity IDs, source file paths, specification file paths, and AST code symbols.
+    """
+    import orjson
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.core.index.graph_index import get_architectural_index
+
+    repo_root = Path(__file__).resolve().parent.parent
+    eidos_dir = repo_root / "eidos"
+    idx = get_architectural_index(repo_root=repo_root, eidos_dir=eidos_dir)
+
+    # 1. Canonical entity ID resolution
+    assert idx.resolve_blast_radius_targets("CNT-EIDOS-VCS") == ["CNT-EIDOS-VCS"]
+    cnt_walk = idx.get_k_hop_neighborhood("CNT-EIDOS-VCS", max_depth=1)
+    assert cnt_walk and cnt_walk[0]["id"] == "CNT-EIDOS-VCS" and cnt_walk[0]["depth"] == 0
+
+    # 2. Source file path resolution (filters to CMP-* seed at depth=0; parent CNT-* at depth=1)
+    assert idx.resolve_blast_radius_targets("src/eidos/vcs/drift.py") == ["CMP-DRIFT-DETECTOR"]
+    src_walk = idx.get_k_hop_neighborhood("src/eidos/vcs/drift.py", max_depth=1)
+    assert src_walk[0]["id"] == "CMP-DRIFT-DETECTOR" and src_walk[0]["depth"] == 0
+    assert any(n["id"] == "CNT-EIDOS-VCS" and n["depth"] == 1 for n in src_walk)
+
+    # Shared contract specification_file source path (`src/eidos/cli/main.py`) seeds CMP-CLI-APP, not CTR-EIDOS-CLI
+    assert idx.resolve_blast_radius_targets("src/eidos/cli/main.py") == ["CMP-CLI-APP"]
+
+    # 3. Specification file path resolution (including exact vs suffix disambiguation on system.adoc)
+    assert idx.resolve_blast_radius_targets("eidos/architecture/containers/vcs.adoc") == ["CNT-EIDOS-VCS"]
+    assert idx.resolve_blast_radius_targets("architecture/containers/vcs.adoc") == ["CNT-EIDOS-VCS"]
+    assert idx.resolve_blast_radius_targets("system.adoc") == ["SYS-EIDOS-001"]
+    assert idx.resolve_blast_radius_targets("eidos/system.adoc") == ["SYS-EIDOS-001"]
+
+    # Co-owned source file (`src/eidos/core/index/query.py`) resolves all co-owning CMP-* seeds at depth=0
+    co_owned = idx.resolve_blast_radius_targets("src/eidos/core/index/query.py")
+    assert "CMP-FTS-QUERY-ENGINE" in co_owned and "CMP-GRAPH-TRAVERSAL-ENGINE" in co_owned
+    assert "CNT-EIDOS-INDEX" not in co_owned
+
+    # 4. AST code symbol resolution
+    assert idx.resolve_blast_radius_targets("detect_drift") == ["CMP-DRIFT-DETECTOR"]
+    sym_walk = idx.get_k_hop_neighborhood("detect_drift", max_depth=1)
+    assert sym_walk[0]["id"] == "CMP-DRIFT-DETECTOR" and sym_walk[0]["depth"] == 0
+
+    # 5. CLI `--json` and Rich output include query, resolved_entities, entity_id, and neighbors
+    runner = CliRunner()
+    cli_res = runner.invoke(
+        app,
+        ["index", "blast-radius", "src/eidos/vcs/drift.py", "--depth", "1", "--path", str(eidos_dir), "--json"],
+    )
+    assert cli_res.exit_code == 0
+    payload = orjson.loads(cli_res.stdout)
+    assert payload["query"] == "src/eidos/vcs/drift.py"
+    assert payload["resolved_entities"] == ["CMP-DRIFT-DETECTOR"]
+    assert payload["entity_id"] == "CMP-DRIFT-DETECTOR"
+    assert payload["count"] > 0
+
+    cli_rich = runner.invoke(
+        app,
+        ["index", "blast-radius", "src/eidos/vcs/drift.py", "--depth", "1", "--path", str(eidos_dir)],
+    )
+    assert cli_rich.exit_code == 0
+    assert "CMP-DRIFT-DETECTOR" in cli_rich.stdout
+
+    cli_missing = runner.invoke(
+        app,
+        ["index", "blast-radius", "NONEXISTENT_SYMBOL_9999", "--depth", "1", "--path", str(eidos_dir)],
+    )
+    assert cli_missing.exit_code == 0
+    assert "not found in architectural graph" in cli_missing.stdout
+
+

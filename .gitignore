@@ -15,6 +15,8 @@ ENV/
 htmlcov/
 
 # Node & Frontend dependencies
+.pnpm-store/
+**/.pnpm-store/
 node_modules/
 **/node_modules/
 

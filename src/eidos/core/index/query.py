@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -157,13 +158,54 @@ def compound_identifier_subtokens(text: str) -> str:
     return " ".join(seen)
 
 
-def build_fts_match_query(text: str, operator: str = "OR") -> str:
+_ARCHITECTURAL_SYNONYM_MAP: dict[str, tuple[str, ...]] = {
+    "adr": ("decision", "decisions", "pol", "002"),
+    "adrs": ("decision", "decisions", "pol", "002"),
+    "airgapped": ("offline", "local", "zero", "ai", "call", "dependency", "pol", "004"),
+    "offline": ("airgapped", "local", "zero", "ai", "call", "dependency", "pol", "004"),
+    "llm": ("ai", "call", "dependency", "pol", "004"),
+    "neural": ("semantic", "embedding", "onnx", "harrier"),
+    "vector": ("semantic", "embedding", "onnx", "cosine"),
+    "embeddings": ("semantic", "embedding", "onnx", "harrier"),
+    "cyclic": ("circular", "cycle", "dag", "acyclic"),
+    "circular": ("cyclic", "cycle", "dag", "acyclic"),
+    "cycle": ("cyclic", "circular", "dag", "acyclic"),
+    "acyclic": ("cyclic", "circular", "cycle", "dag"),
+    "dag": ("cyclic", "circular", "cycle", "acyclic"),
+    "orphan": ("unmapped", "untracked", "tombstone", "drift", "deletion"),
+    "orphaned": ("unmapped", "untracked", "tombstone", "drift", "deletion"),
+    "dangling": ("orphan", "tombstone", "broken", "reference"),
+    "tombstone": ("orphan", "orphaned", "dangling", "deletion"),
+    "stale": ("outdated", "dirty", "mtime", "sha256", "sync"),
+    "invalidation": ("stale", "dirty", "mtime", "sha256", "cache"),
+    "mtime": ("stale", "invalidation", "dirty", "cache"),
+    "truncation": ("budget", "token", "guardrails", "trim", "evict"),
+    "eviction": ("budget", "token", "guardrails", "trim", "pop"),
+    "breaking": ("contract", "compatibility", "version", "interface"),
+    "semver": ("version", "contract", "compatibility"),
+}
+
+
+def expand_architectural_synonyms(text: str) -> str:
+    """Return deterministic Eidos architectural synonym tokens for conceptual query or keyword terms."""
+    seen: dict[str, None] = {}
+    for tok in re.findall(r"\w+", text or ""):
+        for part in split_identifier(tok):
+            for syn in _ARCHITECTURAL_SYNONYM_MAP.get(part, ()):
+                seen.setdefault(syn, None)
+        lowered = tok.lower()
+        for syn in _ARCHITECTURAL_SYNONYM_MAP.get(lowered, ()):
+            seen.setdefault(syn, None)
+    return " ".join(seen)
+
+
+def build_fts_match_query(text: str, operator: str = "OR", expand_synonyms: bool = False) -> str:
     """Translate a free-text prompt into a deterministic FTS5 prefix query with stop-word filtering.
 
     Supports ``operator="OR"`` (default) or ``operator="AND"``. Each ``\\w+`` token contributes its identifier
     sub-tokens plus, for non-snake_case tokens in ``OR`` mode, the whole lowercased token.
-    Common English stop words and single-character noise tokens are filtered out unless the entire query consists of
-    stop words or single-character tokens.
+    When ``expand_synonyms=True`` and ``operator="OR"``, deterministic architectural synonym tokens from
+    ``_ARCHITECTURAL_SYNONYM_MAP`` are appended so zero-keyword-overlap conceptual queries resolve cleanly.
     """
     op_norm = operator.strip().upper()
     if op_norm not in ("OR", "AND"):
@@ -181,6 +223,11 @@ def build_fts_match_query(text: str, operator: str = "OR") -> str:
             raw_terms.setdefault(lowered, None)
             if len(lowered) > 1 and lowered not in _FTS_STOP_WORDS:
                 filtered_terms.setdefault(lowered, None)
+    if expand_synonyms and op_norm == "OR":
+        for syn in expand_architectural_synonyms(text).split():
+            if len(syn) > 1 and syn not in _FTS_STOP_WORDS:
+                filtered_terms.setdefault(syn, None)
+                raw_terms.setdefault(syn, None)
     active_terms = filtered_terms if filtered_terms else raw_terms
     joiner = f" {op_norm} "
     return joiner.join(f'"{term}"*' for term in active_terms)
@@ -192,15 +239,19 @@ def execute_fts_query(
     limit: int = 10,
     include_types: tuple[str, ...] | list[str] | None = None,
     exclude_types: tuple[str, ...] | list[str] = (),
+    use_semantic: bool = True,
+    eidos_dir: Path | None = None,
+    query_embedding: Any | None = None,
 ) -> list[dict[str, Any]]:
-    """Execute a column-weighted BM25 ranked full-text query using FTS5 with exact entity ID and multi-term AND boosting."""
+    """Execute a column-weighted BM25 ranked full-text query using FTS5 with exact entity ID, multi-term AND boosting, and optional gated Hybrid RRF."""
     if not text or not text.strip():
         return []
 
-    fts_query = build_fts_match_query(text, operator="OR")
+    fts_query = build_fts_match_query(text, operator="OR", expand_synonyms=False)
     if not fts_query:
         return []
-    and_query = build_fts_match_query(text, operator="AND")
+    and_query = build_fts_match_query(text, operator="AND", expand_synonyms=False)
+    syn_query = build_fts_match_query(text, operator="OR", expand_synonyms=True)
 
     explicit_ids = list(dict.fromkeys(m.upper() for m in _ENTITY_ID_TOKEN_RE.findall(text)))
 
@@ -224,16 +275,21 @@ def execute_fts_query(
     if explicit_ids:
         ph = ",".join("?" for _ in explicit_ids)
         kw_clauses = " OR ".join("(' ' || UPPER(f.keywords) || ' ') LIKE '% ' || ? || ' %'" for _ in explicit_ids)
-        id_boost_sql = (
-            f"(CASE WHEN UPPER(e.id) IN ({ph}) "
-            f"OR ({kw_clauses}) "
-            f"THEN -1000.0 ELSE 0.0 END) + "
-        )
+        id_boost_sql = f"(CASE WHEN UPPER(e.id) IN ({ph}) OR ({kw_clauses}) THEN -1000.0 ELSE 0.0 END) + "
         id_boost_params.extend(explicit_ids)
         id_boost_params.extend(explicit_ids)
 
     cursor = conn.cursor()
     try:
+        has_embeddings = False
+        if use_semantic:
+            try:
+                has_embeddings = conn.execute("SELECT 1 FROM spec_embeddings LIMIT 1;").fetchone() is not None
+            except sqlite3.OperationalError:
+                has_embeddings = False
+
+        lex_fetch_limit = max(limit * 3, 24) if has_embeddings else limit
+
         and_matched_ids: set[str] = set()
         if and_query and and_query != fts_query:
             cursor.execute(
@@ -255,55 +311,220 @@ def execute_fts_query(
             and_boost_sql = f"(CASE WHEN e.id IN ({ph_and}) THEN -50.0 ELSE 0.0 END) + "
             and_boost_params.extend(sorted_and_ids)
 
-        cursor.execute(
-            f"""
-            SELECT
-                e.id, e.type, e.title, e.domain, e.file_path, e.data_json,
-                {id_boost_sql}{and_boost_sql}bm25(specs_fts, {weights_sql}) as rank
-            FROM specs_fts f
-            JOIN entities e ON e.id = f.entity_id
-            WHERE specs_fts MATCH ?{type_sql}
-            ORDER BY rank, e.id
-            LIMIT ?;
-            """,
-            (*id_boost_params, *and_boost_params, fts_query, *type_params, limit),
-        )
-        results = []
-        for row in cursor.fetchall():
-            data = orjson.loads(row["data_json"])
-            raw_sp = data.get("source_path") or ""
-            source_path = (
-                raw_sp[0] if isinstance(raw_sp, list) and raw_sp else (raw_sp if isinstance(raw_sp, str) else "")
+        def _fetch_fts_rows(match_expr: str, row_limit: int) -> list[dict[str, Any]]:
+            cursor.execute(
+                f"""
+                SELECT
+                    e.id, e.type, e.title, e.domain, e.file_path, e.data_json,
+                    {id_boost_sql}{and_boost_sql}bm25(specs_fts, {weights_sql}) as rank
+                FROM specs_fts f
+                JOIN entities e ON e.id = f.entity_id
+                WHERE specs_fts MATCH ?{type_sql}
+                ORDER BY rank, e.id
+                LIMIT ?;
+                """,
+                (*id_boost_params, *and_boost_params, match_expr, *type_params, row_limit),
             )
-            results.append(
-                {
-                    "id": row["id"],
-                    "type": row["type"],
-                    "title": row["title"],
-                    "domain": row["domain"],
-                    "source_path": source_path,
-                    "file_path": row["file_path"],
-                    "rank": row["rank"],
-                    "data": data,
-                }
+            rows_out: list[dict[str, Any]] = []
+            for row in cursor.fetchall():
+                data = orjson.loads(row["data_json"])
+                raw_sp = data.get("source_path") or ""
+                source_path = (
+                    raw_sp[0] if isinstance(raw_sp, list) and raw_sp else (raw_sp if isinstance(raw_sp, str) else "")
+                )
+                rows_out.append(
+                    {
+                        "id": row["id"],
+                        "type": row["type"],
+                        "title": row["title"],
+                        "domain": row["domain"],
+                        "source_path": source_path,
+                        "file_path": row["file_path"],
+                        "rank": row["rank"],
+                        "data": data,
+                    }
+                )
+            return rows_out
+
+        results = _fetch_fts_rows(fts_query, lex_fetch_limit)
+
+        if len(results) < limit and syn_query and syn_query != fts_query:
+            seen_ids = {r["id"] for r in results}
+            for syn_row in _fetch_fts_rows(syn_query, lex_fetch_limit):
+                if syn_row["id"] not in seen_ids:
+                    results.append(syn_row)
+                    seen_ids.add(syn_row["id"])
+                    if len(results) >= lex_fetch_limit:
+                        break
+
+        if has_embeddings:
+            from eidos.core.index.semantic import (
+                DEFAULT_RRF_K0,
+                DEFAULT_RRF_W_LEX,
+                DEFAULT_RRF_W_SEM,
+                DEFAULT_SEMANTIC_MIN_COSINE,
+                encode_semantic_query,
+                fuse_hybrid_rrf,
+                query_semantic_embeddings,
             )
-        return results
+
+            q_vec = query_embedding if query_embedding is not None else encode_semantic_query(text, eidos_dir)
+            if q_vec is not None:
+                sem_hits = query_semantic_embeddings(
+                    conn,
+                    query_embedding=q_vec,
+                    limit=max(limit * 3, 24),
+                    include_types=include_types,
+                    exclude_types=exclude_types,
+                    tau_min=DEFAULT_SEMANTIC_MIN_COSINE,
+                )
+                if sem_hits:
+                    return fuse_hybrid_rrf(
+                        results,
+                        sem_hits,
+                        explicit_ids=explicit_ids,
+                        and_matched_ids=and_matched_ids,
+                        limit=limit,
+                        k0=DEFAULT_RRF_K0,
+                        w_lex=DEFAULT_RRF_W_LEX,
+                        w_sem=DEFAULT_RRF_W_SEM,
+                        tau_min=DEFAULT_SEMANTIC_MIN_COSINE,
+                    )
+
+        return results[:limit]
     except sqlite3.OperationalError:
         return []
 
 
+def resolve_blast_radius_targets(
+    conn: sqlite3.Connection,
+    symbol_or_path: str,
+) -> list[str]:
+    """Resolve an entity ID, specification path, source file path, or AST symbol to target entity ID(s)."""
+    raw_q = (symbol_or_path or "").strip()
+    if not raw_q:
+        return []
+
+    row = conn.execute(
+        "SELECT id FROM entities WHERE UPPER(id) = UPPER(?) LIMIT 1;",
+        (raw_q,),
+    ).fetchone()
+    if row and row["id"]:
+        return [str(row["id"])]
+
+    clean_path = raw_q.replace("\\", "/")
+    while clean_path.startswith("./"):
+        clean_path = clean_path[2:]
+    clean_path = clean_path.strip("/")
+    if clean_path and clean_path.lower().endswith(".adoc"):
+        spec_rows = conn.execute(
+            """
+            SELECT doc_id,
+                   CASE
+                       WHEN LOWER(rel_path) = LOWER(?)
+                         OR LOWER('eidos/' || rel_path) = LOWER(?)
+                         OR LOWER(rel_path) = LOWER('eidos/' || ?)
+                       THEN 1
+                       ELSE 0
+                   END AS is_exact
+            FROM indexed_files
+            WHERE (
+                LOWER(rel_path) = LOWER(?)
+                OR LOWER('eidos/' || rel_path) = LOWER(?)
+                OR LOWER(rel_path) = LOWER('eidos/' || ?)
+                OR LOWER(rel_path) LIKE '%/' || LOWER(?)
+            )
+              AND doc_type NOT IN ('code/source', 'code/test')
+              AND doc_id IS NOT NULL AND doc_id != ''
+            ORDER BY is_exact DESC, length(rel_path) ASC;
+            """,
+            (clean_path, clean_path, clean_path, clean_path, clean_path, clean_path, clean_path),
+        ).fetchall()
+        if spec_rows:
+            if any(r["is_exact"] for r in spec_rows):
+                spec_rows = [r for r in spec_rows if r["is_exact"]]
+            return list(dict.fromkeys(str(r["doc_id"]) for r in spec_rows if r["doc_id"]))
+
+        ent_rows = conn.execute(
+            """
+            SELECT id,
+                   CASE
+                       WHEN LOWER(replace(file_path, '\\', '/')) = LOWER(?)
+                         OR LOWER('eidos/' || replace(file_path, '\\', '/')) = LOWER(?)
+                         OR LOWER(replace(file_path, '\\', '/')) = LOWER('eidos/' || ?)
+                       THEN 1
+                       ELSE 0
+                   END AS is_exact
+            FROM entities
+            WHERE type != 'invariant'
+              AND file_path IS NOT NULL AND file_path != ''
+              AND (
+                  LOWER(replace(file_path, '\\', '/')) = LOWER(?)
+                  OR LOWER('eidos/' || replace(file_path, '\\', '/')) = LOWER(?)
+                  OR LOWER(replace(file_path, '\\', '/')) = LOWER('eidos/' || ?)
+                  OR LOWER(replace(file_path, '\\', '/')) LIKE '%/' || LOWER(?)
+              )
+            ORDER BY is_exact DESC, length(file_path) ASC, id ASC;
+            """,
+            (clean_path, clean_path, clean_path, clean_path, clean_path, clean_path, clean_path),
+        ).fetchall()
+        if ent_rows:
+            if any(r["is_exact"] for r in ent_rows):
+                ent_rows = [r for r in ent_rows if r["is_exact"]]
+            return list(dict.fromkeys(str(r["id"]) for r in ent_rows if r["id"]))
+
+    matches = resolve_symbol_or_path_in_db(conn, clean_path or raw_q)
+    if not matches:
+        return []
+    non_path_kinds = {"class", "function", "method", "interface", "struct", "enum", "type", "constant", "variable"}
+    has_exact_symbol = any(
+        m.get("kind") in non_path_kinds and str(m.get("symbol") or "") == clean_path for m in matches
+    )
+    if has_exact_symbol:
+        matches = [
+            m for m in matches if m.get("kind") not in non_path_kinds or str(m.get("symbol") or "") == clean_path
+        ]
+    has_component = any(m.get("type") == "tech/component" for m in matches)
+    if has_component:
+        matches = [m for m in matches if m.get("type") == "tech/component"]
+        has_exact_comp_path = any(
+            m.get("kind") in ("source_path", "owned_path", "inferred_path")
+            and str(m.get("symbol") or "").rstrip("/") == clean_path
+            for m in matches
+        )
+        if has_exact_comp_path:
+            matches = [m for m in matches if str(m.get("symbol") or "").rstrip("/") == clean_path]
+    return list(dict.fromkeys(str(m["entity_id"]) for m in matches if m.get("entity_id")))
+
+
 def execute_k_hop_traversal(
     conn: sqlite3.Connection,
-    entity_id: str,
+    entity_id: str | Sequence[str],
     max_depth: int = 2,
 ) -> list[dict[str, Any]]:
     """Traverse graph up to k hops in both directions using recursive CTE while preventing organizational hub fan-out at hop >= 2."""
+    if isinstance(entity_id, str):
+        seed_ids = resolve_blast_radius_targets(conn, entity_id)
+    else:
+        seed_ids = []
+        for item in entity_id:
+            for r_id in resolve_blast_radius_targets(conn, str(item)):
+                if r_id not in seed_ids:
+                    seed_ids.append(r_id)
+    if not seed_ids:
+        return []
+
+    seed_select_sql = " UNION ALL ".join("SELECT ?, 0, ?" for _ in seed_ids)
+    seed_params: list[Any] = []
+    for sid in seed_ids:
+        seed_params.extend((sid, sid))
+
     cursor = conn.cursor()
     cursor.execute(
-        """
+        f"""
         WITH RECURSIVE
         graph_walk(node_id, depth, path) AS (
-            SELECT ?, 0, ?
+            {seed_select_sql}
             UNION
             SELECT
                 CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END,
@@ -329,7 +550,7 @@ def execute_k_hop_traversal(
         GROUP BY gw.node_id
         ORDER BY depth ASC, gw.node_id ASC;
         """,
-        (entity_id, entity_id, max_depth),
+        (*seed_params, max_depth),
     )
 
     results = []

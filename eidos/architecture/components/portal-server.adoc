@@ -16,7 +16,7 @@ Hosts the local multi-threaded HTTP preview server (`eidos portal serve`) exposi
 * **Live API & Progressive Mtime Polling (`DEC-PORTAL-PROGRESSIVE-MTIME-POLLING`)**: Serves pre-compiled SPA assets from `CMP-PORTAL-ASSETS`, caches `CMP-PORTAL-GENERATOR` payloads keyed by `eidos/` file mtime snapshots under a thread lock (`_cache_lock`), and exposes `/api/version` for 3-second browser live reload and `/api/drift` for uncommitted drift status via `CMP-DRIFT-DETECTOR`.
 
 == Public Surface
-* `serve_portal(eidos_dir: Path, host: str = "127.0.0.1", port: int = 8080, open_browser: bool = True) -> None`
+* `run_portal_server(eidos_dir: Path, host: str = "127.0.0.1", port: int = 8080, open_browser: bool = True) -> None`
 * `EidosPortalHandler`
 
 == Design Constraints & Operational Notes

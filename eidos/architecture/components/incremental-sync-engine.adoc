@@ -24,5 +24,5 @@ Synchronizes living specifications (`eidos/`), governed source files (`source_pa
 * `build_spec_path_resolver(conn: sqlite3.Connection) -> Callable[[str], str]`
 
 == Design Constraints & Operational Notes
-* **Rename & Tombstone Eviction**: Evicts stale entities and child invariants keyed by `file_path` whenever a specification ID is renamed or a file is deleted from disk.
+* **Rename & Tombstone Eviction**: Evicts stale entities and child invariants keyed by `file_path` whenever a specification ID is renamed or a file is deleted from disk, and garbage-collects orphaned `spec_embeddings` rows (`DELETE FROM spec_embeddings WHERE entity_id NOT IN (SELECT id FROM entities)`) while preserving spec-only `content_sha256` embeddings across `sync_index(force=True)`.
 * **Incremental Edge Scoping**: Single-spec incremental updates rebuild only edges touching modified documents, their child invariants, and 1-hop graph neighbors.

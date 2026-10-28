@@ -19,14 +19,14 @@ Detects specification-to-code and design drift across Git commit ranges and unco
 
 == Key Responsibilities & Collaborators
 * **Batched Git Diff & Blob Extraction (`diff.py`)**: Resolves commit ranges (`--base`, merge-base, or uncommitted working tree), classifies modified files via `CMP-PROJECT-RESOLVER`, and reads baseline/head file blobs through a single batched `git cat-file --batch` pipe (`batch_read_git_blobs`).
-* **Structural AST & 1-Hop Neighborhood Reconciliation (`structural.py`, `drift.py`)**: Uses `CMP-AST-SYMBOL-INDEXER` to detect public/boundary symbol changes across 17 languages and verifies whether the owning `CMP-*`/`CNT-*` specification (or a 1-hop graph neighbor via `CMP-GRAPH-STORAGE` or an active `DLT-*` SpecDelta) was substantively updated.
-* **Static Invariant Traceability & Reporting (`invariants.py`, `report.py`)**: Verifies `INV-*` `test_binding` (`file::func` or `file::Class::method`) coverage and orphan test tokens using `test_binding_cache` in `CMP-GRAPH-STORAGE`, and formats CLI remediation prompts (`generate_remediation_prompt`) and PR Markdown summaries (`generate_verification_markdown`).
+* **Structural AST & 1-Hop Neighborhood Reconciliation (`structural.py`, `drift.py`)**: Uses `CMP-AST-SYMBOL-INDEXER` to detect public/boundary symbol changes across 17 languages, maps all modified `code_files` (`structural_code_files` and `body_only_code_files`) to `touched_components`, verifies whether the owning `CMP-*`/`CNT-*` specification (or a 1-hop graph neighbor via `CMP-GRAPH-STORAGE` or an active `DLT-*` SpecDelta) was substantively updated and cleaned of removed public symbols (`stale_removed_symbol`), and enforces optional `strict=True` co-evolution for body-only code changes.
+* **Static Invariant Traceability & Reporting (`invariants.py`, `report.py`)**: Verifies `INV-*` `test_binding` (`file::func` or `file::Class::method`) coverage and orphan test tokens using `test_binding_cache` in `CMP-GRAPH-STORAGE`, and formats CLI remediation prompts (`generate_remediation_prompt`) and PR Markdown summaries (`build_drift_remediation_and_summary`).
 
 == Public Surface
-* `detect_drift(repo_root: Path, base_ref: str = "HEAD", head_ref: str = "HEAD", uncommitted: bool = False, eidos_dir: Path | None = None) -> DriftCheckResult`
-* `DriftCheckResult`, `DriftError`
-* `generate_remediation_prompt(result: DriftCheckResult) -> str`, `generate_verification_markdown(result: DriftCheckResult) -> str`
+* `detect_drift(repo_root: Path, base_ref: str = "HEAD", head_ref: str = "HEAD", uncommitted: bool = False, eidos_dir: Path | None = None, strict: bool = False) -> DriftCheckResult`
+* `DriftCheckResult`, `GitResolutionError`, `recommend_invariants_for_unbound_tests(...) -> dict[str, list[dict[str, Any]]]`
+* `generate_remediation_prompt(result: DriftCheckResult) -> str`, `build_drift_remediation_and_summary(...) -> tuple[list[str], str]`
 
 == Design Constraints & Operational Notes
-* **Fail-Closed Git Ref Resolution (`INV-DRIFT-FAIL-CLOSED-ON-GIT-ERROR`)**: Raises `DriftError` immediately when an explicit or shallow-clone `--base` Git reference cannot be resolved.
+* **Fail-Closed Git Ref Resolution (`INV-DRIFT-FAIL-CLOSED-ON-GIT-ERROR`)**: Raises `GitResolutionError` immediately when an explicit or shallow-clone `--base` Git reference cannot be resolved.
 * **Deterministic Spec Diff & AST Inspection**: Evaluates baseline/head blob versions (`_get_files_versions_batch` and `_SpecDiffInspector`) purely from resolved version tuples without test-mocking sentinel heuristics; whitespace-only, comment-only, or identity (`old == new`) edits do not satisfy structural code or design token drift.

@@ -10,14 +10,14 @@ source_path: src/eidos/cli/index_commands.py
 :toc: left
 
 == Responsibility
-Implements the `eidos index` subcommand group (`status`, `sync`, `search`, `blast-radius`, `repo-map`, `find-symbol`) for inspecting and querying the embedded SQLite knowledge graph and polyglot AST symbol index.
+Implements the `eidos index` subcommand group (`status`, `sync`, `search`, `blast-radius`, `repo-map`, `find-symbol`, `semantic`) for inspecting and querying the embedded SQLite knowledge graph, polyglot AST symbol index, and optional Harrier ONNX semantic embedding index.
 
 == Key Responsibilities & Collaborators
-* **Knowledge Graph CLI Adapter**: Delegates index synchronization and status telemetry to `CMP-GRAPH-STORAGE` and `CMP-INCREMENTAL-SYNC-ENGINE`, BM25 lexical search, symbol resolution, and repo-map generation to `CMP-FTS-QUERY-ENGINE`, and recursive `k`-hop impact analysis to `CMP-GRAPH-TRAVERSAL-ENGINE`.
+* **Knowledge Graph CLI Adapter**: Delegates index synchronization and status telemetry to `CMP-GRAPH-STORAGE` and `CMP-INCREMENTAL-SYNC-ENGINE`, BM25 lexical and Hybrid RRF search (`--semantic/--no-semantic`), symbol resolution, and repo-map generation to `CMP-FTS-QUERY-ENGINE` and `CMP-SEMANTIC-EMBEDDING-ENGINE`, and target-resolved recursive `k`-hop impact analysis (`resolve_blast_radius_targets`, `symbol_or_path`) to `CMP-GRAPH-TRAVERSAL-ENGINE`.
 
 == Public Surface
 * `index_app: typer.Typer`
-* `index_status(...)`, `index_sync(...)`, `index_search(...)`, `index_blast_radius(...)`, `index_repo_map(...)`, `index_find_symbol(...)`
+* `index_status_cmd(...)`, `index_sync_cmd(...)`, `index_search_cmd(...)`, `index_blast_radius_cmd(symbol_or_path: str, ...)`, `index_repo_map_cmd(...)`, `index_find_symbol_cmd(...)`, `index_semantic_cmd(...)`
 
 == Design Constraints & Operational Notes
 * **Deterministic Agent Telemetry**: Supports `--json` (`orjson`) across `status`, `search`, `blast-radius`, `repo-map`, and `find-symbol` (including `file:line` AST symbol coordinates).

@@ -1,0 +1,29 @@
+---
+type: tech/component
+id: CMP-SEMANTIC-EMBEDDING-ENGINE
+title: SemanticEmbeddingEngine
+container: CNT-EIDOS-INDEX
+status: active
+source_path: src/eidos/core/index/semantic.py
+---
+= Component: SemanticEmbeddingEngine
+:toc: left
+
+== Responsibility
+Encapsulates the opt-in local Harrier-OSS-v1-0.6B ONNX semantic embedding engine (`eidos-ai[semantic]`), content-addressed `spec_embeddings` persistence, sub-millisecond SQLite `BLOB` + NumPy BLAS cosine similarity scanning, and zero-regression gated Hybrid Reciprocal Rank Fusion (`DEC-INDEX-HYBRID-SEMANTIC-RRF`).
+
+== Key Responsibilities & Collaborators
+* **Opt-In ONNX Session & Right-Padding Invariant**: Lazily loads `onnxruntime` and `tokenizers` from `eidos/.cache/models/harrier-oss-v1-0.6b/` (`onnx/model_quantized.onnx` INT8 `MatMulNBits` `bits=8` by default or `onnx/model.onnx` FP32 with `ORT_ENABLE_ALL`), enforces `direction="right"` padding (`pad_id=151643`, `<|endoftext|>`) so `/model/st/pool_0/lasttoken_gather` gathers the trailing EOS state at `ReduceSum(attention_mask) - 1`, and requests only the fused `sentence_embedding` `(batch_size, 1024)` output tensor followed by `float32` $L_2$ normalization.
+* **Canonical Asymmetric Prompt Formatting & Spec-Only Hashing**: Formats search and similarity queries with Harrier's pre-trained `sts_query` instruction prefix (`Instruct: Retrieve semantically similar text\nQuery: `) while encoding specification passages without an instruction prefix over spec-only fields (`content_sha256` isolated from post-sync AST `code_symbols`).
+* **Sub-Millisecond BLAS Scan & Gated Hybrid RRF**: Scans `spec_embeddings` (`4,096`-byte `float32` `BLOB` rows) via `np.frombuffer` + BLAS matrix-vector multiplication (`~0.22 ms` for `111` specs) and fuses lexical FTS5 BM25 ranks with semantic ranks via `fuse_hybrid_rrf` ($k_0 = 20, w_{\text{lex}} = 1.0, w_{\text{sem}} = 0.50, \tau_{\min} = 0.50$).
+
+== Public Surface
+* `SemanticEmbeddingEngine`, `get_semantic_engine(eidos_dir: Path) -> SemanticEmbeddingEngine | None`, `encode_semantic_query(text: str, eidos_dir: Path | None = None) -> bytes | None`
+* `format_harrier_query(query: str) -> str`, `format_spec_embedding_document(...) -> str`, `compute_spec_embedding_sha256(...) -> str`
+* `get_semantic_index_status(conn: sqlite3.Connection, eidos_dir: Path) -> dict[str, Any]`, `setup_semantic_model(eidos_dir: Path, variant: str = "quantized", force: bool = False) -> dict[str, Any]`
+* `sync_spec_embeddings(conn: sqlite3.Connection, eidos_dir: Path, force: bool = False, batch_size: int = 8, encode_fn: Callable | None = None) -> dict[str, Any]`
+* `query_semantic_embeddings(conn: sqlite3.Connection, query_embedding: bytes | Sequence[float], top_k: int = 24, ...) -> list[dict[str, Any]]`, `fuse_hybrid_rrf(...) -> list[dict[str, Any]]`
+
+== Design Constraints & Operational Notes
+* **100% Deterministic Fallback (`POL-004`, `INV-AGENT-HYBRID-SEMANTIC-FALLBACK`)**: When `onnxruntime`/`tokenizers` are not installed or `spec_embeddings` is empty, all retrieval operations bypass `SemanticEmbeddingEngine` in `< 0.01 ms` and fall back deterministically to FTS5 BM25.
+

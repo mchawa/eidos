@@ -17,8 +17,8 @@ Implements the `eidos portal` subcommand group (`serve`, `build`) for launching 
 
 == Public Surface
 * `portal_app: typer.Typer`
-* `portal_serve(path: Path, host: str, port: int, open_browser: bool) -> None`
-* `portal_build(path: Path, out: Path) -> None`
+* `serve_cmd(path: Path, host: str, port: int, open_browser: bool) -> None`
+* `build_site_cmd(path: Path, out: Path) -> None`
 
 == Design Constraints & Operational Notes
 * **Zero-Node Runtime Execution (`INV-PORTAL-ZERO-NODE-DEP`)**: Both `serve` and `build` run strictly from pre-compiled assets via `CMP-PORTAL-ASSETS` without requiring Node.js at runtime.

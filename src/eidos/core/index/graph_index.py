@@ -13,6 +13,7 @@ import atexit
 import contextlib
 import sqlite3
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,7 @@ from eidos.core.index.query import (
     find_symbol_in_db,
     generate_repo_map_from_db,
     query_spec_catalog_in_db,
+    resolve_blast_radius_targets,
     resolve_symbol_or_path_in_db,
     split_identifier,
 )
@@ -181,8 +183,10 @@ class ArchitecturalIndex:
         limit: int = 10,
         include_types: tuple[str, ...] | list[str] | None = None,
         exclude_types: tuple[str, ...] | list[str] = (),
+        use_semantic: bool = True,
+        query_embedding: Any | None = None,
     ) -> list[dict[str, Any]]:
-        """Execute a column-weighted BM25 ranked full-text query using FTS5."""
+        """Execute a column-weighted BM25 ranked full-text query using FTS5 with optional Hybrid RRF."""
         if not text or not text.strip():
             return []
         self._ensure_synced()
@@ -192,12 +196,20 @@ class ArchitecturalIndex:
             limit=limit,
             include_types=include_types,
             exclude_types=exclude_types,
+            use_semantic=use_semantic,
+            eidos_dir=self.eidos_dir,
+            query_embedding=query_embedding,
         )
 
-    def get_k_hop_neighborhood(self, entity_id: str, max_depth: int = 2) -> list[dict[str, Any]]:
+    def get_k_hop_neighborhood(self, entity_id: str | Sequence[str], max_depth: int = 2) -> list[dict[str, Any]]:
         """Traverse graph up to k hops in both directions using recursive CTE."""
         self._ensure_synced()
         return execute_k_hop_traversal(self._get_connection(), entity_id=entity_id, max_depth=max_depth)
+
+    def resolve_blast_radius_targets(self, symbol_or_path: str) -> list[str]:
+        """Resolve an entity ID, specification path, source file path, or AST symbol to target entity ID(s)."""
+        self._ensure_synced()
+        return resolve_blast_radius_targets(self._get_connection(), symbol_or_path)
 
     def resolve_symbol_or_path(self, query: str) -> list[dict[str, Any]]:
         """Find entity IDs matching source path or symbol."""
@@ -220,6 +232,7 @@ class ArchitecturalIndex:
         component: str | None = None,
         task: str | None = None,
         tier: str = "guardrails",
+        use_semantic: bool = True,
     ) -> TieredContextSlice:
         """Extract a token-budgeted architectural context slice using hybrid indexed retrieval."""
         return build_tiered_context_slice(
@@ -228,6 +241,38 @@ class ArchitecturalIndex:
             component=component,
             task=task,
             tier=tier,
+            use_semantic=use_semantic,
+        )
+
+    def get_semantic_status(self) -> dict[str, Any]:
+        """Return telemetry for the optional semantic embedding index (`eidos index semantic status`)."""
+        from eidos.core.index.semantic import get_semantic_index_status
+
+        self._ensure_synced()
+        return get_semantic_index_status(self._get_connection(), self.eidos_dir)
+
+    def setup_semantic(self, variant: str = "quantized", force: bool = False) -> dict[str, Any]:
+        """Provision Harrier-OSS-v1-0.6B ONNX artifacts into ``eidos/.cache/models/harrier-oss-v1-0.6b/``."""
+        from eidos.core.index.semantic import setup_semantic_model
+
+        return setup_semantic_model(self.eidos_dir, variant=variant, force=force)
+
+    def sync_semantic(
+        self,
+        force: bool = False,
+        batch_size: int = 8,
+        encode_fn: Any | None = None,
+    ) -> dict[str, Any]:
+        """Synchronize ``spec_embeddings`` using spec-only ``content_sha256`` caching."""
+        from eidos.core.index.semantic import sync_spec_embeddings
+
+        self._ensure_synced()
+        return sync_spec_embeddings(
+            self._get_connection(),
+            self.eidos_dir,
+            force=force,
+            batch_size=batch_size,
+            encode_fn=encode_fn,
         )
 
     def get_incoming_references(self, target_id_or_path: str) -> list[dict[str, Any]]:

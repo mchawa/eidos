@@ -88,6 +88,7 @@ class DriftCheckResult:
     touched_components: list[str] = field(default_factory=list)
     invariants: list[InvariantTrace] = field(default_factory=list)
     orphan_invariants: list[tuple[str, str]] = field(default_factory=list)
+    structural_code_files: list[str] = field(default_factory=list)
     body_only_code_files: list[str] = field(default_factory=list)
     uncovered_design_files: list[str] = field(default_factory=list)
     unmapped_code_files: list[str] = field(default_factory=list)
@@ -128,6 +129,7 @@ def detect_drift(
     head_ref: str = "HEAD",
     eidos_dir: Path | None = None,
     uncommitted: bool = False,
+    strict: bool = False,
 ) -> DriftCheckResult:
     """Run drift detection: evaluate spec-code synchronization, schema validation, and invariant check."""
     from eidos.core.index.ast_indexer import STYLE_EXTS, classify_design_changes, has_structural_changes
@@ -237,9 +239,12 @@ def detect_drift(
         else:
             body_only_code_files.append(cf)
 
-    # 1. Component Mapping (for structural code changes)
-    comp_mappings = map_code_to_components(target_eidos, structural_code_files, repo_root=root)
-    touched_components = sorted({cid for _, cid, _ in comp_mappings})
+    # 1. Component Mapping across all modified code files (structural + body-only)
+    all_comp_mappings = map_code_to_components(target_eidos, classification.code_files, repo_root=root)
+    touched_components = sorted({cid for _, cid, _ in all_comp_mappings})
+    structural_set = set(structural_code_files)
+    comp_mappings = [m for m in all_comp_mappings if m[0] in structural_set]
+    body_comp_mappings = [m for m in all_comp_mappings if m[0] not in structural_set]
     idx = get_architectural_index(repo_root=root, eidos_dir=target_eidos) if target_eidos.exists() else None
 
     # 2. Extract declared targets from active deltas (excluding rejected or pre-existing applied deltas)
@@ -410,9 +415,12 @@ def detect_drift(
             )
             if rejected_rule and not any(r["file"] == cf for r in trivial_records):
                 addition = structural_additions.get(cf)
-                additions_list = (
-                    list(addition.reasons) if addition is not None else ["modified signature or public symbols"]
-                )
+                if rejected_rule == "stale_removed_symbol" and addition is not None and addition.removed_symbol_names:
+                    additions_list = [f"removed '{s}'" for s in addition.removed_symbol_names]
+                else:
+                    additions_list = (
+                        list(addition.reasons) if addition is not None else ["modified signature or public symbols"]
+                    )
                 trivial_records.append(
                     {
                         "file": cf,
@@ -425,10 +433,48 @@ def detect_drift(
             if not covered_by_spec:
                 (uncovered_components if has_deltas else uncovered_direct_components).append((cf, cid, spath))
 
+    if strict and body_only_code_files and not classification.test_files:
+        for cf, cid, spath in body_comp_mappings:
+            allowed_paths, allowed_ids = _collect_1hop_spec_targets(
+                idx, cf, cid, spath, system_spec_paths=system_spec_paths
+            )
+            if has_deltas and (
+                (declared_delta_targets & allowed_ids)
+                or (declared_delta_paths & allowed_paths)
+                or any(_path_in(dp, allowed_paths) for dp in declared_delta_paths)
+            ):
+                continue
+            covered_by_spec, rejected_rule, rejected_specs = _spec_coverage_verdict(
+                classification.spec_files,
+                allowed_paths,
+                allowed_ids,
+                addition=None,
+                owner_spec=str(spath),
+                inspector=spec_inspector,
+                system_spec_paths=system_spec_paths,
+            )
+            if rejected_rule and not any(r["file"] == cf for r in trivial_records):
+                trivial_records.append(
+                    {
+                        "file": cf,
+                        "owner": str(spath),
+                        "additions": ["modified implementation body (--strict)"],
+                        "spec_files": sorted(rejected_specs),
+                        "rule": rejected_rule,
+                    }
+                )
+            if not covered_by_spec:
+                (uncovered_components if has_deltas else uncovered_direct_components).append((cf, cid, spath))
+
     # Unmapped structural code (no CNT-*/CMP-* owner): triggers drift in both Direct and Planned
     # modes unless covered by a substantive update to system-level specs (DLT-2026-051).
-    mapped_files = {c for c, _, _ in comp_mappings}
-    unmapped_code_files = [cf for cf in structural_code_files if cf not in mapped_files]
+    mapped_files = {c for c, _, _ in all_comp_mappings}
+    unmapped_candidates = (
+        [*structural_code_files, *(body_only_code_files if not classification.test_files else ())]
+        if strict
+        else structural_code_files
+    )
+    unmapped_code_files = [cf for cf in unmapped_candidates if cf not in mapped_files]
 
     changed_sys_specs = [s for s in classification.spec_files if _is_system_level_spec(s, system_spec_paths)]
     system_spec_substantively_updated = any(spec_inspector.is_substantive(s) for s in changed_sys_specs)
@@ -497,7 +543,8 @@ def detect_drift(
     design_drift = bool(uncovered_design)
     frontend_code_files = [cf for cf, _, _, _ in uncovered_design]
 
-    base_direct_drift = (code_changed and not specs_changed and not has_deltas) or (
+    strict_body_changed = strict and bool(body_only_code_files) and not classification.test_files
+    base_direct_drift = ((code_changed or strict_body_changed) and not specs_changed and not has_deltas) or (
         not has_deltas and bool(uncovered_direct_components)
     )
     uncovered_delta_drift = bool(uncovered_components)
@@ -539,7 +586,9 @@ def detect_drift(
         has_deltas=has_deltas,
         classification=classification,
         structural_code_files=structural_code_files,
-        comp_mappings=comp_mappings,
+        body_only_code_files=body_only_code_files,
+        strict=strict,
+        comp_mappings=comp_mappings or body_comp_mappings,
         uncovered_direct_components=uncovered_direct_components,
         uncovered_components=uncovered_components,
         uncovered_unmapped_code=uncovered_unmapped_code,
@@ -562,6 +611,7 @@ def detect_drift(
         touched_components=touched_components,
         invariants=invariants,
         orphan_invariants=orphan_invariants,
+        structural_code_files=structural_code_files,
         body_only_code_files=body_only_code_files,
         uncovered_design_files=frontend_code_files,
         unmapped_code_files=uncovered_unmapped_code,

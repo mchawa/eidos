@@ -47,21 +47,35 @@ decisions:
       - option: "Retain delta_baselines in eidos/.cache/index.db as a fallback beside Git baselines"
         reason_rejected: "Preserves non-portable local state in a gitignored cache, requires special-case table retention during schema migrations, and incurs unnecessary full-catalog disk I/O during create_delta."
     graduated_from: DLT-2026-095
+  - id: DEC-INDEX-HYBRID-SEMANTIC-RRF
+    title: "Two-Tier Lexical + Opt-In Harrier ONNX Hybrid RRF Retrieval"
+    decision: "Combine FTS5 BM25 and direct-over-1-hop slice prioritization with an opt-in Harrier ONNX semantic index (CMP-SEMANTIC-EMBEDDING-ENGINE, right-padded sentence_embedding, sts_query prefix, spec_embeddings BLOBs, and gated Hybrid RRF k0=20, w_sem=0.50, tau_min=0.50)."
+    rationale: "Restores 94.4% DEV and 92.9% HOLD recall in <=3.8ms with zero dependencies, while opt-in Harrier ONNX + gated Hybrid RRF adds +12.5% conceptual slice recall (HOLD_V2) and +4.4% Top-1 unbound test-to-INV-* accuracy with 0.0% DEV/HOLD regression and 0.22ms SQLite BLOB + NumPy BLAS scanning."
+    rejected_alternatives:
+      - option: "Defaulting to onnx/model_fp16.onnx on x86_64 CPUExecutionProvider"
+        reason_rejected: "Incurs 572.4ms p50 query emulation overhead under ORT_ENABLE_BASIC or 2,830.8ms session init latency under ORT_ENABLE_ALL on CPUs without AVX-512 FP16."
+      - option: "4-bit Quantized ONNX (onnx/model_q4.onnx / model_q4f16.onnx)"
+        reason_rejected: "Drops embedding cosine parity against FP32 reference to 0.983595 (min 0.981123), failing the >=0.995 numerical fidelity threshold."
+      - option: "Custom Software-Architecture Query Instruction Prefix (Option B)"
+        reason_rejected: "Causes instruction distribution shift against Harrier's pre-trained instruction prompts, regressing HOLD slice recall by -7.2% (92.9% -> 85.7%)."
+      - option: "Ungated High-Weight Semantic RRF (w_sem >= 1.0) or Mandatory Synchronous Embedding"
+        reason_rejected: "Crowds out exact identifier matches under the 1,000-token guardrails budget (-11.1% DEV regression) and adds 452-1,070ms session init overhead per CLI call."
+    graduated_from: EXP-2026-009
 ---
 = Container: Architectural Knowledge Graph & Retrieval Index (C4 Level 2 Container)
 :toc: left
 
 == Architectural Boundary
-This container represents the embedded relational and lexical indexing engine under `src/eidos/core/index/`. `ArchitecturalIndex` in `graph_index.py` acts as a thin facade delegating persistence, schema versioning, incremental sync, FTS5/CTE graph queries, and tiered context slicing to focused submodules (`storage.py`, `sync.py`, `query.py`, `context.py`, and `ast_indexer.py`). It persists and manages the local SQLite knowledge graph (`eidos/.cache/index.db`), providing sub-millisecond catalog lookups, incremental zero-drift synchronization, AST-derived component and container dependency graphs, FTS5 BM25 search, recursive CTE blast-radius traversal, and tiered context slicing for AI coding agents and CLI commands.
+This container represents the embedded relational, lexical, and optional semantic indexing engine under `src/eidos/core/index/`. `ArchitecturalIndex` in `graph_index.py` acts as a thin facade delegating persistence, schema versioning, incremental sync, FTS5/CTE graph queries, optional ONNX semantic embedding fusion, and tiered context slicing to focused submodules (`storage.py`, `sync.py`, `query.py`, `context.py`, `semantic.py`, and `ast_indexer.py`). It persists and manages the local SQLite knowledge graph (`eidos/.cache/index.db`), providing sub-millisecond catalog lookups, incremental zero-drift synchronization, AST-derived component and container dependency graphs, FTS5 BM25 + optional Harrier Hybrid RRF search, recursive CTE blast-radius traversal, and tiered context slicing for AI coding agents and CLI commands.
 
 == Internal Structure & Key Mechanisms
-* **Embedded SQLite WAL + FTS5 Knowledge Graph (`DEC-INDEX-SQLITE-WAL`)**: Persists living specification entities (`entities`), typed directed relationships (`edges`), governed file digests (`indexed_files`), ownership rules (`symbol_mappings`), polyglot AST symbols (`code_symbols`), weighted lexical search (`specs_fts`), inverted token index (`file_tokens_fts`), and validation/test caches (`spec_validation_cache`, `test_binding_cache`) in a single local SQLite database at `SCHEMA_VERSION` `2.17.0`.
-* **Incremental Synchronization & Polyglot AST Extraction**: Performs single-pass `os.scandir` mtime and SHA-256 dirty checks across `eidos/`, governed `source_path` trees, and test suites, extracting polyglot symbols and cross-file imports across 17 languages via `ast-grep-py` (`SgRoot`) and automatically deriving component `consumes_api` and container `depends_on` edges.
-* **Hybrid Retrieval & Tiered Context Slicing (`DEC-INDEX-FTS-RETRIEVAL-HYGIENE`)**: Combines column-weighted FTS5 BM25 ranking with 1-hop graph neighborhood expansion and calibrated token-budget compression (`anchor` <=300, `guardrails` <=1000, `deep` <=2500 tokens).
+* **Embedded SQLite WAL + FTS5 Knowledge Graph (`DEC-INDEX-SQLITE-WAL`)**: Persists living specification entities (`entities`), typed directed relationships (`edges`), governed file digests (`indexed_files`), ownership rules (`symbol_mappings`), polyglot AST symbols (`code_symbols`), weighted lexical search (`specs_fts`), inverted token index (`file_tokens_fts`), validation/test caches (`spec_validation_cache`, `test_binding_cache`), and content-addressed dense embeddings (`spec_embeddings`) in a single local SQLite database at `SCHEMA_VERSION` `2.18.0`.
+* **Incremental Synchronization & Polyglot AST Extraction**: Performs single-pass `os.scandir` mtime and SHA-256 dirty checks across `eidos/`, governed `source_path` trees, and test suites, extracting polyglot symbols and cross-file imports across 17 languages via `ast-grep-py` (`SgRoot`) and automatically deriving component `consumes_api` and container `depends_on` edges while preserving `spec_embeddings` across `sync --force`.
+* **Two-Tier Retrieval & Tiered Context Slicing (`DEC-INDEX-FTS-RETRIEVAL-HYGIENE`, `DEC-INDEX-HYBRID-SEMANTIC-RRF`)**: Combines column-weighted FTS5 BM25 ranking, deterministic architectural synonym expansion, direct-over-1-hop container prioritization, and optional gated Harrier-OSS-v1-0.6B ONNX Hybrid RRF ($k_0 = 20, w_{\text{lex}} = 1.0, w_{\text{sem}} = 0.50, \tau_{\min} = 0.50$) with calibrated token-budget compression (`anchor` <=300, `guardrails` <=1000, `deep` <=2500 tokens).
 
 == Quality Attributes & Operational Policies
-* **Sub-10ms Query & Sync Latency (`INV-AGENT-GRAPH-INDEX-FRESHNESS`)**: Warm dirty checks and incremental single-file syncs complete in <5ms; recursive CTE blast-radius and FTS5 queries execute in <2ms.
+* **Sub-10ms Query & Sync Latency (`INV-AGENT-GRAPH-INDEX-FRESHNESS`)**: Warm dirty checks and incremental single-file syncs complete in <5ms; recursive CTE blast-radius, FTS5 queries, and `spec_embeddings` BLAS cosine scans (`0.22ms`) execute in sub-millisecond to <4ms latency.
 * **Stateless Derived Cache (`DEC-INDEX-STATELESS-DERIVED-CACHE`, `POL-001`)**: `eidos/.cache/index.db` contains zero unrecoverable state and automatically drops and rebuilds whenever `SCHEMA_VERSION` changes.
-* **Offline Determinism (`POL-004`)**: Uses stdlib `sqlite3` and deterministic AST/BM25 algorithms with zero vector embedding models or external network dependencies.
+* **Offline Determinism & Opt-In Local Semantic Indexing (`POL-004`, `INV-AGENT-HYBRID-SEMANTIC-FALLBACK`)**: Core CLI workflows use stdlib `sqlite3` and deterministic AST/BM25 algorithms with zero required model weights, while optional `eidos-ai[semantic]` runs 100% locally on CPU with zero remote API calls and 100% deterministic fallback to FTS5 BM25.
 
 

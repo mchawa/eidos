@@ -18,7 +18,7 @@ Implements the `eidos delta` subcommand group (`status`, `list`, `create`, `veri
 
 == Public Surface
 * `delta_app: typer.Typer`
-* `delta_status(...)`, `delta_list(...)`, `delta_create(...)`, `delta_verify(...)`, `delta_audit(...)`, `delta_apply(...)`, `delta_delete(...)`, `delta_archive(...)`, `delta_changelog(...)`
+* `delta_status_cmd(...)`, `delta_list_cmd(...)`, `delta_create_cmd(...)`, `delta_verify_cmd(...)`, `delta_audit_cmd(...)`, `delta_apply_cmd(...)`, `delta_delete_cmd(...)`, `delta_archive_cmd(...)`, `delta_changelog_cmd(...)`
 
 == Design Constraints & Operational Notes
 * **Verify-Gated Application**: `eidos delta apply` runs post-condition verification by default (`--verify/--no-verify`) and exits with code `1` if any declared mutation is unverified.

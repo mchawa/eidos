@@ -12,15 +12,15 @@ source_path:
 :toc: left
 
 == Responsibility
-Owns the embedded SQLite knowledge graph lifecycle (`eidos/.cache/index.db`), canonical `SCHEMA_VERSION` (`2.17.0`) DDL initialization, corruption recovery, `orjson`-backed validation/test-binding caches, and the `ArchitecturalIndex` facade.
+Owns the embedded SQLite knowledge graph lifecycle (`eidos/.cache/index.db`), canonical `SCHEMA_VERSION` (`2.18.0`) DDL initialization, corruption recovery, `orjson`-backed validation/test-binding and semantic embedding caches (`spec_embeddings`), and the `ArchitecturalIndex` facade.
 
 == Key Responsibilities & Collaborators
-* **SQLite Schema & Connection Management (`storage.py`)**: Initializes the 10-table SQLite WAL schema (`entities`, `edges`, `indexed_files`, `symbol_mappings`, `code_symbols`, `specs_fts`, `file_tokens_fts`, `spec_validation_cache`, `test_binding_cache`, `metadata`), performs stateless drop-and-rebuild migrations on `SCHEMA_VERSION` upgrades, and recovers automatically from corrupt database files.
+* **SQLite Schema & Connection Management (`storage.py`)**: Initializes the 11-table SQLite WAL schema (`entities`, `edges`, `indexed_files`, `symbol_mappings`, `code_symbols`, `specs_fts`, `file_tokens_fts`, `spec_validation_cache`, `test_binding_cache`, `spec_embeddings`, `metadata`), performs stateless drop-and-rebuild migrations on `SCHEMA_VERSION` upgrades, and recovers automatically from corrupt database files.
 * **Unified Validation & Test Cache Helpers**: Provides shared `get_cached_spec_document`, `load_spec_validation_cache` / `save_spec_validation_cache`, and `load_test_binding_cache` / `save_test_binding_cache` helpers consumed by `CMP-SPEC-VALIDATOR`, `CMP-INCREMENTAL-SYNC-ENGINE`, and `CMP-DRIFT-DETECTOR`.
-* **`ArchitecturalIndex` Facade (`graph_index.py`)**: Coordinates lazy synchronization (`_ensure_synced`) and delegates graph queries, FTS search, blast-radius traversal, and context slicing to `CMP-INCREMENTAL-SYNC-ENGINE`, `CMP-FTS-QUERY-ENGINE`, `CMP-GRAPH-TRAVERSAL-ENGINE`, and `CMP-TIERED-CONTEXT-COMPRESSOR`.
+* **`ArchitecturalIndex` Facade (`graph_index.py`)**: Coordinates lazy synchronization (`_ensure_synced`) and delegates graph queries, FTS/Hybrid RRF search, semantic model provisioning/sync (`get_semantic_status`, `setup_semantic`, `sync_semantic`), target resolution (`resolve_blast_radius_targets`), blast-radius traversal (`get_k_hop_neighborhood`), and context slicing to `CMP-INCREMENTAL-SYNC-ENGINE`, `CMP-FTS-QUERY-ENGINE`, `CMP-SEMANTIC-EMBEDDING-ENGINE`, `CMP-GRAPH-TRAVERSAL-ENGINE`, and `CMP-TIERED-CONTEXT-COMPRESSOR`.
 
 == Public Surface
-* `SCHEMA_VERSION: str` (`"2.17.0"`), `open_cache_connection(db_path: Path) -> sqlite3.Connection`, `ensure_cache_schema(conn: sqlite3.Connection)`
+* `SCHEMA_VERSION: str` (`"2.18.0"`), `open_cache_connection(db_path: Path) -> sqlite3.Connection`, `ensure_cache_schema(conn: sqlite3.Connection)`
 * `get_cached_spec_document(...)`, `load_spec_validation_cache(...)`, `save_spec_validation_cache(...)`, `load_test_binding_cache(...)`, `save_test_binding_cache(...)`
 * `ArchitecturalIndex`, `get_architectural_index(eidos_dir: Path | None = None, repo_root: Path | None = None) -> ArchitecturalIndex`
 

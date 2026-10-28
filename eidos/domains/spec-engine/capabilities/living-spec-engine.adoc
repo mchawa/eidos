@@ -4,7 +4,7 @@ id: CAP-PROD-001
 title: "Living Baseline Specification Engine"
 domain: DOM-SPEC-ENGINE
 status: active
-version: "1.7.0"
+version: "1.8.0"
 
 business:
   personas:
@@ -48,6 +48,8 @@ technical:
     - "CMP-AST-SYMBOL-INDEXER"
     - "CMP-GRAPH-STORAGE"
     - "CMP-INCREMENTAL-SYNC-ENGINE"
+    - "CMP-FTS-QUERY-ENGINE"
+    - "CMP-GRAPH-TRAVERSAL-ENGINE"
     - "CMP-LIFECYCLE-SCAFFOLDER"
     - "CMP-DOMAIN-MODELS"
   contracts:
@@ -57,10 +59,10 @@ technical:
       rule: "Every .adoc file with a YAML frontmatter across all 16 living specification types must extract frontmatter cleanly across YAML block scalars containing embedded horizontal rules ('---'), serialize safely via safe_dump_yaml, and validate against its type-derived JSON/YAML schema (requiring top-level status and validating optional version against #/$defs/semver)."
       test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
     - id: INV-SPEC-GRAPH-INTEGRITY
-      rule: "All cross-document references and entity IDs (containers, components, contracts, policies, domains, deltas, decisions) must resolve to valid catalog entity IDs with zero collisions, strictly match the target entity prefix and type declared by x-eidos-ref, resolve declared container and component source_path, optional contract specification_file, UI component invariants[].test_binding, and invariant test_binding (file::func) file and AST-backed polyglot test symbol references on disk (including parameterized TS/JS test.each/it.each/describe.each and Deno.test, Go t.Run subtests, and Rust #[tokio::test]/#[rstest]/#[test_case]/#[async_std::test] attributes while rejecting comment or string-literal false positives), and enforce bidirectional multi-protocol contract parity across CTR-* specifications."
+      rule: "All cross-document references and entity IDs (containers, components, contracts, policies, domains, deltas, decisions) must resolve to valid catalog entity IDs with zero collisions, strictly match the target entity prefix and type declared by x-eidos-ref, resolve declared container and component source_path, optional contract specification_file, UI component invariants[].test_binding, and invariant test_binding (file::func) file and AST-backed polyglot test symbol references on disk (including parameterized TS/JS test.each/it.each/describe.each and Deno.test, Go t.Run subtests, and Rust #[tokio::test]/#[rstest]/#[test_case]/#[async_std::test] attributes while rejecting comment or string-literal false positives), verify backticked Public Surface code symbols in active CMP-* and CNT-* specifications against AST symbols in their declared source_path, and enforce bidirectional multi-protocol contract parity across CTR-* specifications."
       test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
     - id: INV-KNOWLEDGE-GRAPH-CATALOG
-      rule: "The core engine must maintain an embedded SQLite knowledge graph indexing all living specifications (including C4 Level 1 ARCH-*/SYS-* and exploration EXP-* relational edges), schemas, relational edges, recursively indexed AST code symbols, AST-derived component and container dependency edges, and AST test-to-invariant assertion edges with sub-2ms dirty checking and query resolution."
+      rule: "The core engine must maintain an embedded SQLite knowledge graph indexing all living specifications (including C4 Level 1 ARCH-*/SYS-* and exploration EXP-* relational edges), schemas, relational edges, recursively indexed AST code symbols, AST-derived component and container dependency edges, and AST test-to-invariant assertion edges with sub-2ms dirty checking and query resolution (resolving canonical entity IDs, specification paths, source file paths, and AST code symbols in k-hop blast-radius traversals)."
       test_binding: "tests/test_graph_index.py::test_spike_a_schema_initialization_and_sync"
     - id: INV-LIVING-PORTAL-VISUALIZATION
       rule: "The system must generate an interactive web portal and static site visualizing C4 architecture, domains, and SpecDeltas without external Node.js dependencies."

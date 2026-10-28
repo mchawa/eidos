@@ -1,0 +1,109 @@
+---
+type: delta/mutation
+id: DLT-2026-114-RESOLVE-SYMBOLS-0327
+title: "Resolve Symbols, Source File Paths, and Spec Paths in Blast Radius Queries"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Wire symbol, source file path, and specification path resolution into eidos index blast-radius and ArchitecturalIndex.get_k_hop_neighborhood so passing a source file path, AST symbol, or spec path resolves to its owning architectural entity ID(s) before executing the k-hop recursive CTE traversal, matching CTR-EIDOS-CLI and docs/guides/cli.md."
+vcs:
+  branch: main
+  base_commit: abbfedb2b1264eeebe60b6048ed1529514807ffd
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+    details: "Add resolve_blast_radius_targets in src/eidos/core/index/query.py (preferring exact symbol matches over suffix fallbacks, and filtering to tech/component CMP-* seeds when component matches resolve so ancestor CNT-* containers and shared CTR-* specification_file contracts do not inflate depth = 0 while preserving all co-owning CMP-* seeds at depth = 0), update execute_k_hop_traversal to accept entity_id: str | Sequence[str] and return [] when no target resolves, and align == Public Surface signatures in eidos/architecture/components/graph-traversal-engine.adoc."
+    expect:
+      body:
+        contains:
+          - "resolve_blast_radius_targets"
+          - "entity_id: str | Sequence[str]"
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    details: "Update ArchitecturalIndex.get_k_hop_neighborhood in src/eidos/core/index/graph_index.py to accept entity_id: str | Sequence[str] (entity ID, code symbol, file path, or pre-resolved seed IDs) and expose resolve_blast_radius_targets on the ArchitecturalIndex facade."
+    expect:
+      body:
+        contains:
+          - "resolve_blast_radius_targets"
+  - operation: modify
+    target: CMP-CLI-INDEX-COMMANDS
+    details: "Update index_blast_radius_cmd in src/eidos/cli/index_commands.py (and tests/fixtures/cli_command_tree.json) to accept symbol_or_path (SYMBOL_OR_PATH), guard empty resolution with resolved_ids[0] if resolved_ids else symbol_or_path, include query and resolved_entities in --json and Rich terminal output, and document symbol_or_path and resolve_blast_radius_targets in eidos/architecture/components/cli-index-commands.adoc."
+    expect:
+      body:
+        contains:
+          - "symbol_or_path"
+          - "index_blast_radius_cmd"
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: "Extend SpecValidator._verify_cli_contract_commands in src/eidos/core/spec/validator.py to strip option-value placeholders ([--opt <val>] and --opt <val>) and verify both positional argument count parity (required <arg> and total <arg> + [arg]) and placeholder-to-parameter/metavar alignment across top-level commands and subcommands in CTR-EIDOS-CLI."
+    expect:
+      body:
+        contains:
+          - "positional"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Clarify eidos index blast-radius <symbol_or_path> contract in eidos/architecture/contracts/cli.adoc to document resolution of entity IDs, AST symbols, spec paths, and source file paths as well as query and resolved_entities in --json output."
+    expect:
+      body:
+        contains:
+          - "resolved_entities"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Bump CAP-PROD-001 to 1.8.0 and register CMP-GRAPH-TRAVERSAL-ENGINE and CMP-FTS-QUERY-ENGINE under technical.components in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc."
+    expect:
+      frontmatter:
+        version: "1.8.0"
+  - operation: modify
+    target: INV-KNOWLEDGE-GRAPH-CATALOG
+    details: "Extend INV-KNOWLEDGE-GRAPH-CATALOG in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc and tests/test_graph_index.py to verify that k-hop blast-radius queries resolve source file paths, specification file paths, and AST code symbols in addition to canonical entity IDs."
+    expect:
+      frontmatter:
+        rule: "source file paths"
+---
+= SpecDelta: Resolve Symbols, Source File Paths, and Spec Paths in Blast Radius Queries
+:toc: left
+
+== Problem Statement
+Both `CTR-EIDOS-CLI` (`eidos/architecture/contracts/cli.adoc`) and `docs/guides/cli.md` specify that `eidos index blast-radius` accepts `SYMBOL_OR_PATH` (*"Container ID, component ID, contract ID, domain ID, symbol, or file path"*).
+
+However, passing a source file path (e.g. `src/eidos/vcs/drift.py`), specification path (`eidos/architecture/containers/vcs.adoc`), or code symbol (`detect_drift`) fails with `Entity '<input>' not found in architectural graph.`:
+
+1. **Direct join against `entities.id` without resolution**:
+   * `index_blast_radius_cmd()` in `src/eidos/cli/index_commands.py` declares its argument as `entity_id: str` and passes the raw string directly to `idx.get_k_hop_neighborhood(entity_id, max_depth=depth)`.
+   * `execute_k_hop_traversal()` in `src/eidos/core/index/query.py` seeds the recursive CTE `graph_walk` with `(entity_id, 0, entity_id)` and immediately runs `JOIN entities ent ON ent.id = gw.node_id`.
+   * Because `entities.id` only stores canonical entity IDs (`CNT-*`, `CMP-*`, `CAP-*`, `CTR-*`, etc.) and never invokes `resolve_symbol_or_path_in_db()` or `indexed_files` lookup, any file path or symbol produces zero rows.
+2. **CLI contract verifier ignores positional argument placeholders**:
+   * `SpecValidator._verify_cli_contract_commands()` in `src/eidos/core/spec/validator.py` strips tokens starting with `<` or `[`, so it verified the subcommand name `blast-radius` while missing both positional argument count parity and placeholder-to-parameter/metavar alignment (such as `<symbol_or_path>` in `CTR-EIDOS-CLI` vs. `entity_id` in `index_commands.py`).
+
+== Proposed Specification Changes
+* **Update `CMP-GRAPH-TRAVERSAL-ENGINE` (`eidos/architecture/components/graph-traversal-engine.adoc`)**:
+  - Add `resolve_blast_radius_targets(conn: sqlite3.Connection, symbol_or_path: str) -> list[str]` in `src/eidos/core/index/query.py`:
+    1. Exact (case-insensitive) match against `entities.id`.
+    2. Specification file path match against `indexed_files` (`doc_id`) and `entities.file_path` (normalizing leading `./`, backslashes, and `eidos/` prefixes, plus suffix path matching for relative spec subpaths).
+    3. Source file path, `source_path` glob, `test_binding`, or AST code symbol resolution via `resolve_symbol_or_path_in_db(conn, symbol_or_path)`:
+       * When exact AST/symbol matches (`m["symbol"] == clean`) exist among non-path symbol matches, prefer exact matches over `.method` / `::func` suffix fallbacks.
+       * When one or more `tech/component` (`CMP-*`) matches resolve, filter to `tech/component` seeds so ancestor `tech/container` (`CNT-*`) matches and shared `specification_file` (`CTR-*`) contracts (e.g. `src/eidos/cli/main.py` on `CTR-EIDOS-CLI`) are reached naturally at `depth >= 1` rather than inflating the walk at `depth = 0`, while seeding all co-owning `CMP-*` entities at `depth = 0` (and preserving `CNT-*` or `CTR-*` seeds when no `CMP-*` match exists).
+  - Update `execute_k_hop_traversal(conn, entity_id: str | Sequence[str], max_depth: int = 2)` to resolve string queries via `resolve_blast_radius_targets()`, seed `graph_walk` with all resolved target entity IDs at `depth = 0`, and return `[]` when no target resolves; reconcile `== Public Surface` signatures in `graph-traversal-engine.adoc` (`entity_id: str | Sequence[str]`, `target_id_or_path: str`, `query: str`).
+* **Update `CMP-GRAPH-STORAGE` (`eidos/architecture/components/graph-storage.adoc`) & `CMP-CLI-INDEX-COMMANDS` (`eidos/architecture/components/cli-index-commands.adoc`)**:
+  - Expose `resolve_blast_radius_targets()` on `ArchitecturalIndex` and accept `entity_id: str | Sequence[str]` on `ArchitecturalIndex.get_k_hop_neighborhood()` in `src/eidos/core/index/graph_index.py`.
+  - Rename the CLI argument in `index_blast_radius_cmd()` (`src/eidos/cli/index_commands.py` and `tests/fixtures/cli_command_tree.json`) to `symbol_or_path` (`metavar="SYMBOL_OR_PATH"`), guard empty resolution via `"entity_id": resolved_ids[0] if resolved_ids else symbol_or_path`, include `"query"` and `"resolved_entities"` alongside `"entity_id"` in `--json` output, display resolved entity IDs in Rich terminal output when queried by path or symbol, and document `symbol_or_path` in `cli-index-commands.adoc`.
+* **Update `CMP-SPEC-VALIDATOR` (`eidos/architecture/components/spec-validator.adoc`) & `CTR-EIDOS-CLI` (`eidos/architecture/contracts/cli.adoc`)**:
+  - Extend `_verify_cli_contract_commands()` to strip bracketed `[--opt ...]` blocks and unbracketed `--opt <val>` option-value pairs before extracting positional `<arg>` (required) and `[arg]` (optional) placeholders across both top-level commands and subcommands, verifying positional argument count parity and placeholder-to-parameter/metavar alignment (matching `<placeholder>` / `[placeholder]` against explicit `metavar`, parameter name, or shared identifier sub-token/generic target aliases like `target` for `<id_or_path>`/`[TARGET]`, `doc_type` for `<type>`, `doc_id`/`delta_id` for `<id>`, and `plugin_path` for `[PATH]`).
+  - Document `query` and `resolved_entities` in `CTR-EIDOS-CLI`.
+* **Update `CAP-PROD-001` (`1.8.0`) & `INV-KNOWLEDGE-GRAPH-CATALOG` (`eidos/domains/spec-engine/capabilities/living-spec-engine.adoc`)**:
+  - Bump `CAP-PROD-001` version to `1.8.0` and register `CMP-GRAPH-TRAVERSAL-ENGINE` and `CMP-FTS-QUERY-ENGINE` under `technical.components`.
+  - Require `k`-hop blast-radius traversal to resolve canonical entity IDs, specification paths, source file paths, and AST symbols.
+
+== Implementation Plan
+1. **Target Resolution & Multi-Seed CTE (`src/eidos/core/index/query.py`, `src/eidos/core/index/graph_index.py`)**:
+   * Implement `resolve_blast_radius_targets(conn, symbol_or_path)` combining case-insensitive `entities.id` lookup, `indexed_files` / `entities.file_path` spec path lookup, and `resolve_symbol_or_path_in_db()` source/symbol resolution (preferring exact symbol matches over suffix fallbacks and filtering to `CMP-*` seeds when `CMP-*` matches exist).
+   * Update `execute_k_hop_traversal()` and `ArchitecturalIndex.get_k_hop_neighborhood()` to accept `entity_id: str | Sequence[str]`, seed `graph_walk` at `depth = 0` for all resolved IDs, and return `[]` when `resolved_ids` is empty.
+2. **CLI Command & Output (`src/eidos/cli/index_commands.py`, `tests/fixtures/cli_command_tree.json`)**:
+   * Rename `entity_id` parameter in `index_blast_radius_cmd()` to `symbol_or_path: str = typer.Argument(..., metavar="SYMBOL_OR_PATH", help=...)` and synchronize `tests/fixtures/cli_command_tree.json`.
+   * Resolve `resolved_ids = idx.resolve_blast_radius_targets(symbol_or_path)` and pass `resolved_ids` to `idx.get_k_hop_neighborhood()`, returning `"entity_id": resolved_ids[0] if resolved_ids else symbol_or_path`, `"query": symbol_or_path`, and `"resolved_entities": resolved_ids` in `--json` mode.
+3. **Validator, Specs & Tests (`src/eidos/core/spec/validator.py`, `eidos/`, `tests/test_graph_index.py`, `tests/test_validator.py`)**:
+   * Add positional argument count and placeholder/metavar alignment checks (stripping option-value placeholders first) to `_verify_cli_contract_commands()`.
+   * Update `CMP-GRAPH-TRAVERSAL-ENGINE`, `CMP-GRAPH-STORAGE`, `CMP-CLI-INDEX-COMMANDS`, `CMP-SPEC-VALIDATOR`, `CTR-EIDOS-CLI`, `CAP-PROD-001` (`1.8.0`), and `INV-KNOWLEDGE-GRAPH-CATALOG`.
+   * Add unit and CLI tests in `tests/test_graph_index.py` and `tests/test_validator.py` verifying `eidos index blast-radius` with an entity ID (`CNT-EIDOS-VCS`), a source file path (`src/eidos/vcs/drift.py`), a spec file path (`eidos/architecture/containers/vcs.adoc`), and an AST symbol (`detect_drift`), plus CLI positional placeholder drift detection in `SpecValidator`, then run `eidos delta verify DLT-2026-114-RESOLVE-SYMBOLS-0327 --json`.

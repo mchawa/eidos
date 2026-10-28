@@ -39,6 +39,11 @@ def drift_cmd(
         "--warn-only",
         help="Do not exit with code 1 on drift or validation failures.",
     ),
+    strict: bool = typer.Option(
+        False,
+        "--strict",
+        help="Treat body-only code changes as drift unless accompanied by a 1-hop spec, active SpecDelta, or test update.",
+    ),
     markdown_out: Path | None = typer.Option(
         None,
         "--markdown",
@@ -80,6 +85,7 @@ def drift_cmd(
             head_ref=head,
             eidos_dir=eidos_dir,
             uncommitted=uncommitted,
+            strict=strict,
         )
     except GitResolutionError as err:
         if json_output:
@@ -96,6 +102,8 @@ def drift_cmd(
             "drift_detected": result.drift_detected,
             "workflow_mode": result.workflow_mode,
             "code_files": result.classification.code_files,
+            "structural_code_files": result.structural_code_files,
+            "body_only_code_files": result.body_only_code_files,
             "spec_files": result.classification.spec_files,
             "delta_files": result.classification.delta_files,
             "test_files": result.classification.test_files,
@@ -125,6 +133,8 @@ def drift_cmd(
         table.add_column("Status", justify="center")
 
         code_count = len(result.classification.code_files)
+        struct_count = len(result.structural_code_files)
+        body_count = len(result.body_only_code_files)
         spec_count = len(result.classification.spec_files)
         delta_count = len(result.classification.delta_files)
 
@@ -136,7 +146,8 @@ def drift_cmd(
         spec_status = "[bold green]Updated[/bold green]" if spec_count else "[dim]Unchanged[/dim]"
         delta_status = "[bold cyan]Active[/bold cyan]" if delta_count else "[dim]None (Direct)[/dim]"
 
-        table.add_row("Modified Code Files", str(code_count), code_status)
+        code_count_str = f"{code_count} ({struct_count} structural, {body_count} body-only)" if code_count > 0 else "0"
+        table.add_row("Modified Code Files", code_count_str, code_status)
         table.add_row("Modified Living Specs", str(spec_count), spec_status)
         table.add_row("Modified SpecDeltas", str(delta_count), delta_status)
         table.add_row(

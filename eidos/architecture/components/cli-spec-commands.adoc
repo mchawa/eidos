@@ -18,8 +18,8 @@ Implements `eidos validate` and the `eidos spec` subcommand group (`list`, `show
 
 == Public Surface
 * `register(app: typer.Typer) -> None`, `spec_app: typer.Typer`
-* `validate_command(path: Path, json_output: bool) -> None`
-* `spec_list(...)`, `spec_show(...)`, `spec_schema(...)`, `spec_create(...)`, `spec_delete(...)`
+* `validate(path: Path, json_output: bool) -> None`
+* `spec_list_cmd(...)`, `spec_show_cmd(...)`, `spec_schema_cmd(...)`, `spec_create_cmd(...)`, `spec_delete_cmd(...)`
 
 == Design Constraints & Operational Notes
 * **Disjoint Delta Rejection**: Rejects `delta/mutation` (`DLT-*`) in `eidos spec list --type delta`, `show`, `create`, and `delete`, directing callers to `eidos delta`.

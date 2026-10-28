@@ -9,7 +9,7 @@
       "installOhMyZshConfig": true,
       "upgradePackages": true,
       "nonFreePackages": true,
-      "username": "vscode",
+      "username": "automatic",
       "userUid": "automatic",
       "userGid": "automatic"
     },
@@ -27,7 +27,12 @@
       "pnpmVersion": "latest"
     }
   },
-  "forwardPorts": [3000, 5173, 8000, 8080],
+  "forwardPorts": [
+    3000,
+    5173,
+    8000,
+    8080
+  ],
   "portsAttributes": {
     "3000": {
       "label": "Eidos Portal Server (CLI)",
@@ -52,10 +57,9 @@
     "UV_LINK_MODE": "copy"
   },
   "mounts": [
-    "source=eidos-gemini,target=/home/vscode/.gemini,type=volume"
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.gemini,target=/home/ubuntu/.gemini,type=bind"
   ],
-  "containerUser": "vscode",
-  "remoteUser": "vscode",
+  "remoteUser": "ubuntu",
   "updateRemoteUserUID": true,
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   "customizations": {
@@ -67,29 +71,22 @@
         "ms-python.vscode-python-envs",
         "charliermarsh.ruff",
         "astral-sh.ty",
-
         // --- Containers & Virtualization ---
         "ms-azuretools.vscode-containers",
-
         // --- Living Architecture & Specifications ---
         "asciidoctor.asciidoctor-vscode",
         "mathematic.vscode-pdf",
-
         // --- Configuration & Schemas ---
         "tamasfe.even-better-toml",
         "redhat.vscode-yaml",
-
         // --- Living Architecture Portal & Frontend ---
         "bradlc.vscode-tailwindcss",
         "dbaeumer.vscode-eslint",
-
         // --- Productivity & Spell Checking ---
         "streetsidesoftware.code-spell-checker",
-
         // --- Git & Source Control ---
         "mhutchie.git-graph",
         "donjayamanne.githistory",
-
         // --- AI Agents & Harness ---
         "google.google-antigravity"
       ],

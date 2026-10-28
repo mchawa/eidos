@@ -1,0 +1,214 @@
+---
+type: delta/mutation
+id: DLT-2026-115-HYBRID-SEMANTIC-8B5F
+title: "Hybrid Semantic Retrieval and Context-Slice Prioritization with Opt-In Harrier ONNX"
+status: applied
+graduated_from: EXP-2026-009
+
+intent:
+  kind: feature
+  motivation: "Graduated from EXP-2026-009 to deliver the combined two-tier retrieval architecture: (1) fix direct-vs-1-hop container slot starvation in build_tiered_context_slice (restoring DEV recall to 17/18 = 94.4%), add deterministic architectural vocabulary/synonym expansion to FTS5 BM25 (<4ms, zero dependencies), and add IDF-weighted sub-token test-to-INV-* recommendations in drift detection; and (2) introduce the opt-in local Harrier-OSS-v1-0.6B ONNX semantic engine (CMP-SEMANTIC-EMBEDDING-ENGINE, eidos-ai[semantic]) using right-padded in-graph sentence_embedding, canonical sts_query instruction formatting, content-addressed spec_embeddings SQLite BLOB + NumPy BLAS cosine scanning (0.22ms), and zero-regression Hybrid RRF (k0=20, w_lex=1.0, w_sem=0.50, tau_min=0.50) with 100% deterministic fallback to FTS5 BM25."
+
+vcs:
+  branch: main
+  base_commit: abbfedb2b1264eeebe60b6048ed1529514807ffd
+
+mutations:
+  - operation: add
+    target: CMP-SEMANTIC-EMBEDDING-ENGINE
+    title: "SemanticEmbeddingEngine"
+    details: "Introduce standalone component specification eidos/architecture/components/semantic-embedding-engine.adoc (container: CNT-EIDOS-INDEX, INV-COMPONENT-CENTRALIZATION-MANDATE) backed by src/eidos/core/index/semantic.py encapsulating optional onnxruntime + tokenizers + numpy loading, right-padded (<|endoftext|> id=151643) batch encoding via in-graph sentence_embedding, canonical sts_query query prefix formatting, spec-only SHA-256 content addressing, and sub-millisecond SQLite BLOB + NumPy BLAS cosine similarity scanning."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/semantic.py"
+        status: "active"
+      body:
+        contains:
+          - "sentence_embedding"
+          - "sts_query"
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+    details: "Embed DEC-INDEX-HYBRID-SEMANTIC-RRF (graduated_from: EXP-2026-009) in CNT-EIDOS-INDEX and document the two-tier retrieval architecture (baseline FTS5 BM25 + optional spec_embeddings Harrier ONNX Hybrid RRF at SCHEMA_VERSION 2.18.0)."
+    expect:
+      body:
+        contains:
+          - "2.18.0"
+          - "spec_embeddings"
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    details: "Bump SCHEMA_VERSION to 2.18.0 in src/eidos/core/index/storage.py, add the spec_embeddings table (entity_id, content_sha256, model_id, embedding BLOB) to the 11-table SQLite WAL schema and _MANAGED_TABLES, and expose semantic status/search helpers on ArchitecturalIndex in src/eidos/core/index/graph_index.py."
+    expect:
+      body:
+        contains:
+          - "2.18.0"
+          - "spec_embeddings"
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    details: "Preserve spec_embeddings across sync_index(force=True) while garbage-collecting orphaned entity_id rows in src/eidos/core/index/sync.py, compute spec-only content_sha256 isolated from post-sync AST code_symbols so source-code edits incur 0ms neural re-embedding, and enrich specs_fts.keywords with deterministic architectural synonyms."
+    expect:
+      body:
+        contains:
+          - "spec_embeddings"
+          - "content_sha256"
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+    details: "Implement deterministic architectural synonym query expansion and zero-regression Hybrid RRF fusion (explicit entity ID pinning +1.0, multi-term AND boost, k0=20, w_lex=1.0, w_sem=0.50, cosine threshold tau_min=0.50) in execute_fts_query in src/eidos/core/index/query.py."
+    expect:
+      body:
+        contains:
+          - "Reciprocal Rank Fusion"
+          - "tau_min"
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+    details: "Prioritize direct FTS/hybrid container and component matches ahead of 1-hop domain_member/realizes/styles_container expansions in build_tiered_context_slice (fixing CNT-EIDOS-PORTAL slot starvation on DEV) and emit hybrid/semantic provenance in matched_reasons in src/eidos/core/index/context.py."
+    expect:
+      body:
+        contains:
+          - "expanded_cnt_ids"
+          - "Hybrid task match"
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    details: "Add recommend_invariants_for_unbound_tests in src/eidos/vcs/invariants.py combining de-compounded test identifier/docstring/assertion BM25 scoring with optional Harrier Hybrid RRF (k0=20, w_lex=1.0, w_sem=1.0) to suggest candidate INV-* bindings for unbound test functions."
+    expect:
+      body:
+        contains:
+          - "recommend_invariants_for_unbound_tests"
+  - operation: modify
+    target: CMP-CLI-INDEX-COMMANDS
+    details: "Add @index_app.command('semantic') (index_semantic_cmd with action: status, setup, or sync) and --semantic/--no-semantic options on eidos index search in src/eidos/cli/index_commands.py."
+    expect:
+      body:
+        contains:
+          - "index_semantic"
+  - operation: modify
+    target: CMP-CLI-CONTEXT-COMMAND
+    details: "Add --semantic/--no-semantic option on context_command in src/eidos/cli/context_command.py and forward use_semantic to ArchitecturalIndex.get_tiered_context_slice."
+    expect:
+      body:
+        contains:
+          - "--semantic"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Document 'semantic [action] [--model <variant>] [--force] [--path <path>] [--json]' under 'eidos index' and optional '--semantic/--no-semantic' flags on 'eidos index search' and 'eidos context' in eidos/architecture/contracts/cli.adoc."
+    expect:
+      body:
+        contains:
+          - "semantic [action]"
+  - operation: modify
+    target: POL-004-ZERO-AI-CALL-DEPENDENCY
+    details: "Clarify in POL-004-ZERO-AI-CALL-DEPENDENCY that core Eidos CLI gates (validate, drift, default index/context) execute with zero AI/LLM calls and zero required model weights, while permitting opt-in local deterministic CPU ONNX embedding indexing (eidos-ai[semantic]) with zero remote API calls and 100% FTS5 fallback."
+    expect:
+      body:
+        contains:
+          - "eidos-ai[semantic]"
+  - operation: modify
+    target: CAP-AGENT-001
+    details: "Bump CAP-AGENT-001 to version 1.8.0 in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc, register CMP-SEMANTIC-EMBEDDING-ENGINE under technical.components and in the AsciiDoc body, and extend INV-AGENT-TASK-RETRIEVAL-COVERAGE plus add INV-AGENT-HYBRID-SEMANTIC-FALLBACK."
+    expect:
+      frontmatter:
+        version: "1.8.0"
+      body:
+        contains:
+          - "CMP-SEMANTIC-EMBEDDING-ENGINE"
+  - operation: modify
+    target: INV-AGENT-TASK-RETRIEVAL-COVERAGE
+    details: "Extend INV-AGENT-TASK-RETRIEVAL-COVERAGE in CAP-AGENT-001 to require prioritizing direct container matches ahead of 1-hop domain/design-system expansions in build_tiered_context_slice so 1-hop expansions never crowd out direct FTS container hits."
+    expect:
+      frontmatter:
+        rule: "direct container matches ahead of 1-hop"
+        test_binding: "tests/test_graph_index.py::test_task_retrieval_indexes_invariants_and_filters_types"
+  - operation: add
+    target: INV-AGENT-HYBRID-SEMANTIC-FALLBACK
+    details: "Add INV-AGENT-HYBRID-SEMANTIC-FALLBACK under CAP-AGENT-001 verifying that opt-in Hybrid RRF preserves exact entity ID pinning, spec-only content_sha256 caching across sync --force, and 100% deterministic fallback to FTS5 BM25 when onnxruntime or spec_embeddings are absent."
+    expect:
+      frontmatter:
+        rule: "spec_embeddings"
+        test_binding: "tests/test_graph_index.py::test_hybrid_semantic_rrf_and_deterministic_fallback"
+---
+= SpecDelta: Hybrid Semantic Retrieval and Context-Slice Prioritization with Opt-In Harrier ONNX
+:toc: left
+:icons: font
+:sectnums:
+
+== 1. Problem Statement & Empirical Motivation (`EXP-2026-009`)
+
+In `EXP-2026-009` (*"Hybrid Semantic Retrieval with Harrier-OSS-v1-0.6B FP16 ONNX"*), we executed three empirical spikes across all five ONNX exports of `onnx-community/harrier-oss-v1-0.6b-ONNX` (`model.onnx` FP32, `model_fp16.onnx` FP16, `model_quantized.onnx` INT8, `model_q4.onnx` INT4, and `model_q4f16.onnx` INT4/FP16) on an Intel Core Ultra 9 285H (`16` cores, Linux `x86_64`) over Eidos's `162` indexed entities (`111` sliceable active specifications), uncovering four decisive architectural findings:
+
+1. **Direct-vs-1-Hop Container Slot Starvation in `build_tiered_context_slice` (`src/eidos/core/index/context.py`)**:
+   On `DEV` query `"shadcn tailwind material design tokens portal"` (expecting `DS-PORTAL-SHADCN`, `CNT-EIDOS-PORTAL`, `DOM-EXPERIENCE-PORTAL`), raw FTS5 BM25 ranks all three targets in the top 8 (`#1 DS-PORTAL-SHADCN`, `#2 DOM-EXPERIENCE-PORTAL`, `#8 CNT-EIDOS-PORTAL` — `17/18 = 94.4%` raw Recall@8). However, in `build_tiered_context_slice`, step 2 expands `#1 DS-PORTAL-SHADCN` and `#2 DOM-EXPERIENCE-PORTAL` via 1-hop `styles_container` / `domain_member` / `realizes` edges directly into `direct_cnt_ids` in SQL order (`CNT-EIDOS-CLI`, `CNT-EIDOS-CORE`, `CNT-EIDOS-DOCS`) *before* step 4b processes direct FTS hit `#8 CNT-EIDOS-PORTAL`, starving `CNT-EIDOS-PORTAL` from the `direct_cnt_ids[:3]` `guardrails` budget and dropping `DEV` slice recall from `94.4%` (`17/18`) to `88.9%` (`16/18`).
+2. **Conceptual Vocabulary Mismatch on Pure Lexical Search (`HOLD_V2`)**:
+   On the 32-query / 64-target held-out conceptual benchmark (`HOLD_V2`, where prompts describe architectural concerns without using exact specification title keywords), pure FTS5 BM25 achieves `44/64` (`68.8%`) Recall@8. Adding deterministic architectural synonym expansion to `specs_fts.keywords` / `build_fts_match_query` resolves common terminology gaps in `< 4 ms` with zero dependencies, while fusing FTS5 with Harrier-OSS-v1-0.6B dense embeddings via gated Reciprocal Rank Fusion (RRF) lifts `HOLD_V2` `guardrails` slice recall by **`+12.5%` (`52/64 = 81.2%`)** on top of the lexical baseline.
+3. **ONNX CPU Variant Selection, Right-Padding Invariant & Prompt Sensitivity (`Spikes 1–3`)**:
+   * **Right-Padding Mandate**: The fused ONNX graph output `sentence_embedding` `(batch_size, 1024)` gathers the last token at `ReduceSum(attention_mask, axis=1) - 1` (`/model/st/pool_0/lasttoken_gather`). Batched inference with `direction="right"` (`pad_id=151643`, `<|endoftext|>`) yields **`cosine_similarity = 1.000000`** vs. `batch_size=1`, whereas `direction="left"` gathers a leading pad token on shorter sequences (`cosine_similarity = 0.004129`).
+   * **FP16 CPU Emulation Trap vs. INT8 / FP32**: On x86_64 CPUs without `AVX-512 FP16`, `model_fp16.onnx` (`1.20 GB`) takes `572.4 ms` per query under `ORT_ENABLE_BASIC` (`3.6x` slower than FP32) or `2,830.8 ms` to initialize `ort.InferenceSession` under `ORT_ENABLE_ALL`. By contrast, **`model_quantized.onnx` (`706 MB` INT8 `MatMulNBits` `bits=8`)** preserves **`0.999931` cosine parity** vs. FP32 with a `184.0 ms` session init + `267.8 ms` query forward pass, and **`model.onnx` (`2.40 GB` FP32, `ORT_ENABLE_ALL`, `threads=8`)** achieves a **`74.9 ms` p50 query forward pass** (`0.223 ms` SQLite `BLOB` + NumPy BLAS cosine scan across `111` specs).
+   * **Canonical `sts_query` Instruction Prefix**: Harrier's pre-trained `Instruct: Retrieve semantically similar text\nQuery: ` (`sts_query` in `config_sentence_transformers.json`) projects queries into the semantic equivalence subspace for matching declarative specification statements and `INV-*` rules, avoiding the instruction distribution shift caused by custom software-architecture instructions (`Option B`, which regressed `HOLD` slice recall by `-7.2%`).
+   * **Gated Zero-Regression Hybrid RRF**: Preserving `0.0%` regression on `DEV` and `HOLD` under the 1,000-token `guardrails` budget requires explicit entity ID pinning (`+1.0`), multi-term `AND` match boosting, a minimum cosine similarity threshold $\tau_{\min} = 0.50$, $k_0 = 20$, $w_{\text{lex}} = 1.0$, and $w_{\text{sem}} = 0.50$.
+4. **Opt-In Lifecycle Isolation (`POL-004` & `INV-AGENT-GRAPH-INDEX-FRESHNESS`)**:
+   Because initializing a 0.6B transformer `InferenceSession` in a one-shot CLI process takes `184–995 ms` and encoding a modified specification (`median = 307` tokens) takes `642–773 ms` on CPU (plus `onnxruntime 1.31.1` only ships wheels up to `cp314`), neural embedding must be **strictly opt-in** (`eidos-ai[semantic]`, populated via `eidos index semantic sync` and cached by spec-only `content_sha256` in `spec_embeddings`) so standard `eidos validate`, `eidos drift`, and `eidos index sync` gates maintain `< 5 ms` incremental latency and `100%` `POL-004` compliance.
+
+---
+
+== 2. Proposed Architectural & Specification Changes
+
+=== 2.1 Part I: Deterministic Baseline Retrieval & Context-Slice Prioritization (`0 ms` AI Overhead)
+
+1. **Direct-Over-1-Hop Container & Component Prioritization (`CMP-TIERED-CONTEXT-COMPRESSOR`, `src/eidos/core/index/context.py`)**:
+   * In `build_tiered_context_slice()`, separate directly matched containers (`direct_cnt_ids`) from 1-hop expanded containers (`expanded_cnt_ids`) derived from matched `DOM-*` (`domain_member` / `realizes`) and `DS-*` (`styles_container` / `styles_client`) hits.
+   * When expanding a matched `DOM-*` or `DS-*` node, sort its member containers/capabilities by `(is_direct_fts_hit DESC, fts_rank ASC, entity_id ASC)` rather than raw SQL row order, and append non-direct containers to `expanded_cnt_ids`.
+   * Admit all `direct_cnt_ids` before `expanded_cnt_ids` when slicing the container budget (`max_cnts = 3` in `guardrails`) and evict `expanded_cnt_ids` before `direct_cnt_ids` in `_enforce_token_budget()`, restoring `DEV` `guardrails` slice recall to **`17/18` (`94.4%`)**.
+2. **Deterministic Architectural Vocabulary & Synonym Expansion (`CMP-INCREMENTAL-SYNC-ENGINE`, `CMP-FTS-QUERY-ENGINE`, `src/eidos/core/index/sync.py`, `src/eidos/core/index/query.py`)**:
+   * Add a deterministic, zero-dependency `_ARCHITECTURAL_SYNONYM_MAP` in `src/eidos/core/index/query.py` (and index-time keyword enrichment in `sync.py`) mapping high-frequency conceptual engineering terms to Eidos canonical terminology (e.g., `airgapped`/`offline`/`llm`/`neural`/` external api` -> `zero ai call dependency pol 004`, `breaking`/`compatibility`/`semver` -> `contract version interface`, `cycle`/`circular` -> `dag acyclic dependency`, `stale`/`invalidation` -> `mtime sha256 dirty sync`, `orphan`/`dangling` -> `tombstone deletion audit`, `truncation`/`eviction` -> `token budget guardrails`).
+   * In `build_fts_match_query()`, keep the high-precision Tier-1 `AND` query strictly on the user's primary query tokens, and include deterministic synonym expansions in the Tier-2 `OR` query so exact multi-term precision is never diluted while conceptual queries with zero title keyword overlap match their target specifications in `< 4 ms`.
+3. **Unbound Test-to-Invariant Recommendation (`CMP-DRIFT-DETECTOR`, `src/eidos/vcs/invariants.py`)**:
+   * Implement `recommend_invariants_for_unbound_tests(index: ArchitecturalIndex, unbound_tests: list[dict], top_k: int = 3) -> dict[str, list[dict]]` in `src/eidos/vcs/invariants.py`.
+   * Extract de-compounded `snake_case`/`camelCase` tokens from each unbound test function's name, docstring, assertion targets, and file path, query `specs_fts` scoped to `include_types={"invariant"}` (plus optional Hybrid RRF when `spec_embeddings` is populated), and boost candidate `INV-*` rules whose owning `CAP-*`/`POL-*`/`CMP-*` shares `source_path` or `test_binding` file proximity.
+
+=== 2.2 Part II: Opt-In Harrier-OSS-v1-0.6B ONNX Semantic Engine & Zero-Regression Hybrid RRF
+
+1. **New Component `CMP-SEMANTIC-EMBEDDING-ENGINE` (`src/eidos/core/index/semantic.py`)**:
+   * Encapsulates optional local ONNX embedding inference using `onnxruntime`, `tokenizers`, and `numpy` (`pip install "eidos-ai[semantic]"`).
+   * **Model Provisioning & Variant Selection**: Stores artifacts under `eidos/.cache/models/harrier-oss-v1-0.6b/`, selecting `onnx/model_quantized.onnx` (`706 MB` INT8 `MatMulNBits` `bits=8`, `cos_sim = 0.999931`, `184 ms` init) by default on CPU or `onnx/model.onnx` (`FP32`, `ORT_ENABLE_ALL`, `intra_op_num_threads=min(8, os.cpu_count())`, `74.9 ms` query forward pass) when present, while avoiding `model_fp16.onnx` on non-`AVX-512 FP16` CPUs and rejecting `model_q4.onnx`.
+   * **Right-Padding & In-Graph Pooling**: Configures `tokenizer.enable_padding(direction="right", pad_id=151643, pad_token="<|endoftext|>")` and `tokenizer.enable_truncation(max_length=32768)` and requests only `["sentence_embedding"]` from `session.run(...)`, followed by `float32` $L_2$ normalization.
+   * **Asymmetric Prompt Formatting (`sts_query`)**: Formats queries with `Instruct: Retrieve semantically similar text\nQuery: {query}` and encodes documents without an `Instruct:` prefix using deterministic spec fields (`[{entity_id}] ({entity_type}) {title}\nDomain: {domain} | Symbols: {spec_symbols}\nRule/JTBD: {jtbd_or_rule}\n{body_text}`).
+   * **Sub-Millisecond SQLite `BLOB` + NumPy BLAS Scan**: Loads `(entity_id, embedding)` rows from `spec_embeddings` (pre-filtered by `include_types` / `exclude_types` and excluding `deltas/archive/%`), constructs a contiguous `(N, 1024)` `float32` matrix via `np.frombuffer`, and computes exact cosine similarity (`matrix @ query_vec`) in **`~0.22 ms`**.
+2. **Schema `2.18.0` & Spec-Only Content-Addressed Persistence (`CMP-GRAPH-STORAGE`, `CMP-INCREMENTAL-SYNC-ENGINE`)**:
+   * Bump `SCHEMA_VERSION` in `src/eidos/core/index/storage.py` from `"2.17.0"` to `"2.18.0"` and add `spec_embeddings` to `_MANAGED_TABLES` and `_SCHEMA_DDL`:
+     ```sql
+     CREATE TABLE IF NOT EXISTS spec_embeddings (
+         entity_id TEXT PRIMARY KEY,
+         content_sha256 TEXT NOT NULL,
+         model_id TEXT NOT NULL,
+         embedding BLOB NOT NULL
+     );
+     ```
+   * In `src/eidos/core/index/sync.py`, preserve `spec_embeddings` across `sync_index(force=True)` (alongside `spec_validation_cache` and `test_binding_cache`) and delete orphaned embeddings via `DELETE FROM spec_embeddings WHERE entity_id NOT IN (SELECT id FROM entities);`.
+   * Compute `content_sha256` strictly from `.adoc` specification fields (excluding post-sync AST `code_symbols`) so code edits never invalidate spec embeddings.
+3. **Gated Zero-Regression Hybrid RRF (`CMP-FTS-QUERY-ENGINE`, `src/eidos/core/index/query.py`)**:
+   * When `spec_embeddings` is populated and semantic search is enabled (`use_semantic=True`), `execute_fts_query` fuses lexical BM25 ranks and semantic cosine ranks (for candidates with $\text{cos}(e, q) \ge \tau_{\min} = 0.50$) using:
+     $$\text{Score}_{\text{Hybrid}}(e) = \mathbb{I}_{\text{explicit\_id}}(e) \cdot 1.0 + \mathbb{I}_{\text{and\_match}}(e) \cdot 0.25 + \frac{w_{\text{lex}}}{k_0 + \text{rank}_{\text{BM25}}(e)} + \frac{w_{\text{sem}}}{k_0 + \text{rank}_{\text{Harrier}}(e)}$$
+     with calibrated parameters $k_0 = 20$, $w_{\text{lex}} = 1.0$, $w_{\text{sem}} = 0.50$, and $\tau_{\min} = 0.50$.
+   * Each returned match records optional `semantic_score` and `rrf_score` telemetry so `build_tiered_context_slice` formats provenance in `matched_reasons` (`"Hybrid task match (BM25 #2, cos: 0.68)"` or `"Semantic task match (cos: 0.64)"`).
+4. **CLI Subcommands & `POL-004` Governance (`CMP-CLI-INDEX-COMMANDS`, `CMP-CLI-CONTEXT-COMMAND`, `CTR-EIDOS-CLI`, `POL-004-ZERO-AI-CALL-DEPENDENCY`, `CAP-AGENT-001`)**:
+   * Implement `@index_app.command("semantic")` (`index_semantic_cmd(action: str = typer.Argument("status", metavar="ACTION"), ...)` supporting `status`, `setup`, and `sync` as a single `eidos index` subcommand so `SpecValidator._verify_cli_contract_commands` verifies `semantic [action]` cleanly without flattening nested sub-Typer commands) plus `--semantic/--no-semantic` flags on `eidos index search` (`index_commands.py`) and `eidos context` (`context_command.py`).
+   * Declare `semantic = ["onnxruntime>=1.20.0; python_version < '3.15'", "tokenizers>=0.20.0", "numpy>=1.26.0"]` under `[project.optional-dependencies]` in `pyproject.toml` so `cp315` environments never fail PEP 508 dependency resolution when `onnxruntime` wheels lag.
+   * Document the optional `eidos-ai[semantic]` boundary in `POL-004-ZERO-AI-CALL-DEPENDENCY` and add `INV-AGENT-HYBRID-SEMANTIC-FALLBACK` to `CAP-AGENT-001` (`1.8.0`).
+
+---
+
+== 3. Implementation Plan
+
+1. **SQLite Schema `2.18.0` & `spec_embeddings` Persistence (`src/eidos/core/index/storage.py`, `src/eidos/core/index/sync.py`)**:
+   * Bump `SCHEMA_VERSION = "2.18.0"`, add `"spec_embeddings"` to `_MANAGED_TABLES`, and add `CREATE TABLE IF NOT EXISTS spec_embeddings (...)` to `_SCHEMA_DDL`.
+   * In `sync.py`, preserve `spec_embeddings` during `sync_index(force=True)`, prune orphaned `entity_id` rows at the end of `sync_index`, and expose `compute_spec_embedding_sha256(...)` over spec-only fields.
+2. **Deterministic Synonym Expansion & Direct-Over-1-Hop Context Slicing (`src/eidos/core/index/query.py`, `src/eidos/core/index/context.py`)**:
+   * Add deterministic architectural synonym expansion to `build_fts_match_query()` (`operator="OR"`) and `sync.py` keyword indexing.
+   * Separate `direct_cnt_ids` from `expanded_cnt_ids` in `build_tiered_context_slice()` so 1-hop domain/design-system container expansions never crowd out direct FTS container hits or survive token-budget eviction ahead of direct hits.
+3. **Opt-In Semantic Embedding Engine & Gated Hybrid RRF (`src/eidos/core/index/semantic.py`, `src/eidos/core/index/query.py`, `src/eidos/core/index/graph_index.py`)**:
+   * Create `src/eidos/core/index/semantic.py` implementing `SemanticEmbeddingEngine`, `compute_spec_embedding_sha256`, `sync_spec_embeddings`, `query_semantic_embeddings`, and `fuse_hybrid_rrf` ($k_0 = 20, w_{\text{lex}} = 1.0, w_{\text{sem}} = 0.50, \tau_{\min} = 0.50$, `sts_query` instruction prefix, right-padded `sentence_embedding`).
+   * Wire optional Hybrid RRF into `execute_fts_query()` and `ArchitecturalIndex` when `spec_embeddings` contains rows and `use_semantic` is enabled, with `0.0 ms` overhead and `100%` deterministic fallback when absent.
+4. **Unbound Test-to-Invariant Recommender & CLI Integration (`src/eidos/vcs/invariants.py`, `src/eidos/cli/index_commands.py`, `src/eidos/cli/context_command.py`, `pyproject.toml`)**:
+   * Implement `recommend_invariants_for_unbound_tests()` in `src/eidos/vcs/invariants.py`.
+   * Add `@index_app.command("semantic")` (`status`, `setup`, `sync`) and `--semantic/--no-semantic` on `eidos index search` (`src/eidos/cli/index_commands.py`) and `eidos context` (`src/eidos/cli/context_command.py`), and declare the optional `[project.optional-dependencies] semantic` group (`onnxruntime>=1.20.0; python_version < '3.15'`, `tokenizers>=0.20.0`, `numpy>=1.26.0`) in `pyproject.toml`.
+5. **Living Specifications & Invariant Test Verification (`eidos/`, `tests/test_graph_index.py`, `tests/test_delta_engine.py`, `tests/test_context.py`)**:
+   * Create `eidos/architecture/components/semantic-embedding-engine.adoc` (`CMP-SEMANTIC-EMBEDDING-ENGINE`) and update `CNT-EIDOS-INDEX`, `CMP-GRAPH-STORAGE`, `CMP-INCREMENTAL-SYNC-ENGINE`, `CMP-FTS-QUERY-ENGINE`, `CMP-TIERED-CONTEXT-COMPRESSOR`, `CMP-DRIFT-DETECTOR`, `CMP-CLI-INDEX-COMMANDS`, `CMP-CLI-CONTEXT-COMMAND`, `CTR-EIDOS-CLI`, `POL-004-ZERO-AI-CALL-DEPENDENCY`, and `CAP-AGENT-001` (`1.8.0`).
+   * Update `SCHEMA_VERSION == "2.18.0"` assertions in `tests/test_graph_index.py` and `tests/test_delta_engine.py`, add `tests/test_graph_index.py::test_hybrid_semantic_rrf_and_deterministic_fallback`, and extend `test_task_retrieval_indexes_invariants_and_filters_types`, then run `eidos delta verify DLT-2026-115-HYBRID-SEMANTIC-8B5F --json` and `eidos validate eidos --json`.

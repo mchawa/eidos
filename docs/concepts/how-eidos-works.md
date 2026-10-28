@@ -109,9 +109,9 @@ After individual documents validate against their JSON Schema, `SpecValidator` v
 
 #### Pass 3: Physical Binding Verification & Bidirectional Multi-Protocol Contract Parity
 When executed within a repository containing a source tree (`src/`), `SpecValidator` verifies that declared living specification bindings exist in the filesystem:
-* **Container Source Path Resolution**: Verifies that every directory or file declared in `source_path` on active C4 containers (`CNT-*`) and components (`CMP-*`) exists on disk.
+* **Container Source Path & Public Surface Verification (`DLT-2026-113`)**: Verifies that every directory or file declared in `source_path` on active C4 containers (`CNT-*`) and components (`CMP-*`) exists on disk, and statically verifies via AST that every backticked code symbol declared under `== Public Surface` resolves in the entity's mapped Python source files (`INV-SPEC-GRAPH-INTEGRITY`).
 * **Contract Specification File Resolution**: Verifies that external specifications (e.g., OpenAPI schemas, protobufs, or CLI entrypoint files) referenced in `specification_file` on active contracts (`CTR-*`) exist on disk.
-* **Bidirectional Multi-Protocol Contract Parity (`DLT-2026-082`)**: Across `cli_args` (supporting recursive Typer `add_typer` sub-apps, Click, and `argparse`), `openapi`, `protobuf`, `graphql`, and `python_protocol` contracts, Eidos verifies parity in both directions—flagging both undocumented operations added in `specification_file` and stale/phantom operations left in `CTR-*` specifications after removal from code.
+* **Bidirectional Multi-Protocol Contract Parity (`DLT-2026-082`, `DLT-2026-114`)**: Across `cli_args` (supporting recursive Typer `add_typer` sub-apps, 3-level nested subcommands, Click, `argparse`, and positional `<arg>` / `[arg]` count and placeholder-to-parameter/metavar alignment), `openapi`, `protobuf`, `graphql`, and `python_protocol` contracts, Eidos verifies parity in both directions—flagging both undocumented operations added in `specification_file` and stale/phantom operations left in `CTR-*` specifications after removal from code.
 * **Applied SpecDelta Fast-Path (`DLT-2026-080`)**: Historical `status: applied` SpecDeltas are cached against both their file SHA-256 and the `delta.schema.yaml` SHA-256 digest so validation remains O(1) for unchanged historical deltas.
 
 > [!NOTE]
@@ -121,20 +121,21 @@ When executed within a repository containing a source tree (`src/`), `SpecValida
 
 ### 3.2 Embedded SQLite Knowledge Graph & Context Slicer (`CNT-EIDOS-INDEX`)
 
-To provide sub-millisecond retrieval without external databases or embedding APIs, `CNT-EIDOS-INDEX` maintains an embedded SQLite 3 database in WAL (Write-Ahead Logging) mode at `eidos/.cache/index.db`.
+To provide sub-millisecond retrieval without external databases or remote embedding APIs, `CNT-EIDOS-INDEX` maintains an embedded SQLite 3 database in WAL (Write-Ahead Logging) mode at `eidos/.cache/index.db`.
 
-The index engine is decomposed into 5 focused modules under `src/eidos/core/index/`:
+The index engine is decomposed into 6 focused modules under `src/eidos/core/index/`:
 
 | Module | Component ID | Responsibility |
 | :--- | :--- | :--- |
-| `storage.py` | `CMP-GRAPH-STORAGE` | Canonical authority for `SCHEMA_VERSION` (`2.17.0`), DDL initialization, WAL pragmas, stateless drop-and-rebuild migration on version mismatch, corruption recovery, and unified `orjson`-backed `SpecDocument` / test-binding cache helpers. |
+| `storage.py` | `CMP-GRAPH-STORAGE` | Canonical authority for `SCHEMA_VERSION` (`2.18.0`), DDL initialization, WAL pragmas, stateless drop-and-rebuild migration on version mismatch (preserving `spec_embeddings` across `sync --force`), corruption recovery, and unified `orjson`-backed `SpecDocument` / test-binding cache helpers. |
 | `sync.py` | `CMP-INCREMENTAL-SYNC-ENGINE` | Two-tier `mtime_ns` + `SHA-256` dirty detection across `_GOVERNED_TEXT_EXTS`, path-keyed entity eviction on ID rename, canonical unidirectional edge reconstruction (including C4 Level 1 `ARCH-*`/`SYS-*`, exploration `graduated_to`, and AST-derived `consumes_api`/`depends_on` edges), `file_tokens_fts` inverted token indexing, AST symbol FTS projection, and source ownership reconciliation. |
-| `query.py` | `CMP-FTS-QUERY-ENGINE` & `CMP-GRAPH-TRAVERSAL-ENGINE` | Two-tier (`AND` conjunction before `OR` fallback) positional column-weighted FTS5 BM25 search, identifier de-compounding, symbol lookup via unified `all_mappings` CTE, indexed catalog reconstruction (`query_spec_catalog_in_db`), and hub-scoped recursive CTE `k`-hop blast-radius and SpecDelta impact (`compute_delta_impact_in_db`) traversal. |
-| `context.py` | `CMP-TIERED-CONTEXT-COMPRESSOR` | Rank-ordered, token-budgeted context slicing across `anchor` (`<=300` tokens), `guardrails` (`<=1000` tokens), and `deep` (`<=2500` tokens) tiers with YAML/code-calibrated token estimation. |
+| `query.py` | `CMP-FTS-QUERY-ENGINE` & `CMP-GRAPH-TRAVERSAL-ENGINE` | Two-tier (`AND` conjunction before `OR` fallback) positional column-weighted FTS5 BM25 search with deterministic architectural synonym expansion and opt-in Hybrid RRF fusion, identifier de-compounding, symbol lookup via unified `all_mappings` CTE, indexed catalog reconstruction (`query_spec_catalog_in_db`), and hub-scoped recursive CTE `k`-hop blast-radius (`resolve_blast_radius_targets`) and SpecDelta impact (`compute_delta_impact_in_db`) traversal. |
+| `context.py` | `CMP-TIERED-CONTEXT-COMPRESSOR` | Rank-ordered, token-budgeted context slicing across `anchor` (`<=300` tokens), `guardrails` (`<=1000` tokens), and `deep` (`<=2500` tokens) tiers with direct-container priority and YAML/code-calibrated token estimation. |
+| `semantic.py` | `CMP-SEMANTIC-EMBEDDING-ENGINE` | Opt-in local CPU ONNX embedding engine (`microsoft/harrier-oss-v1-0.6b` INT8 quantized ONNX, 1024-dim L2-normalized Float32 vectors using the `sts_query` prompt prefix), content-addressed `spec_embeddings` caching, and Gated Weighted Reciprocal Rank Fusion (`fuse_hybrid_rrf`). |
 | `ast_indexer.py` | `CMP-AST-SYMBOL-INDEXER` | Unified polyglot AST symbol, import, and test-binding extraction via `AstGrepIndexer` (`ast-grep-py` `SgRoot`) across all 17 supported languages (Python, TS, TSX, JS, JSX, Go, Rust, Java, Kotlin, C, C++, C#, Ruby, PHP, Swift, Vue, and Svelte). |
 
-#### Relational & Lexical Schema (`eidos/.cache/index.db`)
-The SQLite database is a **100% stateless, derived cache (`DEC-INDEX-STATELESS-DERIVED-CACHE`)** managing 10 coordinated tables (9 domain/FTS/cache tables plus schema `metadata`):
+#### Relational, Lexical & Semantic Schema (`eidos/.cache/index.db`)
+The SQLite database is a **100% stateless, derived cache (`DEC-INDEX-STATELESS-DERIVED-CACHE`)** managing 11 coordinated tables (10 domain/FTS/semantic/cache tables plus schema `metadata`):
 1. **`entities`**: All parsed specification nodes (`SYS-*`, `DOM-*`, `CAP-*`, `POL-*`, `PER-*`, `EXP-*`, `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DS-*`, `UIC-*`, `SCR-*`, `CLT-*`, `FLOW-*`, `DLT-*`, plus child `INV-*` nodes across capabilities, policies, containers, and components) with `orjson`-serialized metadata and body prose.
 2. **`edges`**: Canonical unidirectional architectural relationships (`realizes`, `provides`, `consumes`, `owned_by`, `implemented_by`, `styled_by`, `extends`, `governed_by`, `serves_persona`, `describes_system`, `contains_container`, `graduated_from`, `graduated_to`, `delivered_by`, `has_screen`, `has_flow`, `uses_screen`, `implements`, `contains_component`, `part_of`, `asserts`, `affects`, plus AST-derived `consumes_api` and `depends_on`).
 3. **`indexed_files`**: Tracks `rel_path`, `mtime`, `sha256`, `doc_id`, and `doc_type` across governed specifications, source files, and test suites for incremental synchronization.
@@ -144,7 +145,8 @@ The SQLite database is a **100% stateless, derived cache (`DEC-INDEX-STATELESS-D
 7. **`file_tokens_fts`**: SQLite FTS5 virtual table (`unicode61` with `tokenchars '-_'`) indexing unique `[A-Za-z0-9_-]{3,}` identifier and entity tokens per governed file (`rel_path`, `doc_type`) for sub-millisecond SpecDelta deletion auditing (`DLT-2026-107`).
 8. **`spec_validation_cache`**: Content-addressed cache of parsed `SpecDocument` payloads and JSON Schema validation verdicts keyed by `mtime_ns`, file SHA-256, and schema SHA-256.
 9. **`test_binding_cache`**: Content-addressed cache of AST-extracted test functions (`func` and `Class::method`) and referenced `INV-*` / `POL-*` tokens per test file.
-10. **`metadata`**: Canonical `SCHEMA_VERSION` (`2.17.0`) and cache lifecycle state.
+10. **`spec_embeddings`**: Content-addressed cache of 1024-dim L2-normalized Float32 Harrier ONNX embeddings keyed by `entity_id`, `content_sha256` (computed strictly over specification text), and `model_id`.
+11. **`metadata`**: Canonical `SCHEMA_VERSION` (`2.18.0`) and cache lifecycle state.
 
 #### How Lazy Incremental Sync Works (`<5ms`)
 Before every CLI query (`eidos context`, `eidos index`, `eidos spec list`), `_ensure_synced()` runs `check_index_dirty()`:
@@ -185,13 +187,14 @@ flowchart LR
 3. **Content-Based Move Pairing & Polyglot Structural AST Diffing (`structural.py`, `DLT-2026-083`)**:
    * Deleted and added files are paired by content and public symbol overlap to recognize file moves/renames without relying on Git rename heuristics.
    * For modified code files across Python, TS/JS, Go, Rust, Java, Kotlin, C/C++, C#, Ruby, PHP, Swift, Vue, and Svelte, `AstSymbolIndexer` compares public AST declarations and signatures between the baseline version and current working tree.
-   * If a code change only touches internal implementation comments, docstrings, or function-body-local logic without adding/modifying/removing public symbols or files, Eidos classifies it as a non-structural edit.
+   * If a code change only touches internal implementation comments, docstrings, or function-body-local logic without adding/modifying/removing public symbols or files, Eidos classifies it as a non-structural (`body_only_code_files`) edit by default—while still mapping all modified `code_files` into `touched_components` and supporting `--strict` (`detect_drift(..., strict=True)`) to enforce 1-hop spec or bound test co-evolution on body-only edits (`DLT-2026-113`).
 4. **Strict Path-Boundary Ownership Mapping**:
    * Every modified source file is mapped to its owning C4 component (`CMP-*` via `source_path`) and C4 container (`CNT-*` via `source_path`).
    * **Unowned Code Detection**: If a structural code file is added or modified outside any declared `source_path`, `eidos drift` flags it as **unowned code drift** unless claimed by a container/component or covered by a substantive root `system.adoc` / `system-architecture.adoc` update.
-5. **Substantive Spec Diff & Boundary-Aware Anchoring (`DLT-2026-081`)**:
+5. **Substantive Spec Diff & Boundary-Aware Anchoring (`DLT-2026-081`, `DLT-2026-113`)**:
    * To prevent agents or developers from bypassing drift checks by adding a blank line or comment to a `.adoc` file, `StructuralChangeInspector.is_substantive()` normalizes specification diffs by stripping AsciiDoc comments (`//`), YAML comments (`#`), and whitespace.
    * Structural code changes whose only accompanying spec edit is whitespace or comments are flagged under `trivially_covered_files` (`rule: trivial_spec_diff`) and fail the drift check.
+   * **Stale Removed-Symbol Rejection (`rule: stale_removed_symbol`, `DLT-2026-113`)**: When a public symbol is removed or renamed in code, `evaluate_spec_diff_coverage` rejects owning-spec coverage if the removed symbol identifier remains referenced in the owning specification body.
    * **Boundary-Aware Symbol Anchoring (`DLT-2026-081`)**: New unclaimed files and package/contract boundary exports (`__init__.py`, `index.ts`, `mod.rs`, `lib.rs`, `__all__`, or contract `specification_file`) require explicit file or symbol anchoring when covered via a 1-hop neighbor spec (`rule: missing_anchor`), whereas intra-package helper functions are covered by substantive updates to their owning `CNT-*`/`CMP-*` specification without polluting C4 prose with low-level helper identifiers.
 6. **Workflow Mode & 1-Hop Neighborhood Evaluation (`DLT-2026-085`, `DLT-2026-090`)**:
    * **Planned Mode** (when an active `DLT-*` SpecDelta is modified in the diff): Verifies that all touched containers and components are authorized strictly by the active SpecDelta's composable `mutations[].target` (and its 1-hop graph ownership neighborhood).

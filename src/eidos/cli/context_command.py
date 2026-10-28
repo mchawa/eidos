@@ -35,6 +35,11 @@ def context_cmd(
         "-T",
         help="Context slice verbosity tier: 'anchor' (~140 tokens), 'guardrails' (~260 tokens), 'deep' (~500 tokens). Defaults to 'guardrails'.",
     ),
+    semantic: bool = typer.Option(
+        True,
+        "--semantic/--no-semantic",
+        help="Enable or disable opt-in Hybrid RRF semantic fusion when spec_embeddings are available.",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -65,6 +70,7 @@ def context_cmd(
         component=component,
         task=task,
         tier=tier,
+        use_semantic=semantic,
     )
 
     if json_output:

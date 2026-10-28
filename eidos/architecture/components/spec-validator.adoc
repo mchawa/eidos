@@ -10,12 +10,12 @@ source_path: src/eidos/core/spec/validator.py
 :toc: left
 
 == Responsibility
-Validates all 16 living specification types against Draft 2020-12 JSON Schemas (`assets/schemas/v1/`), verifies `x-eidos-ref` graph cross-references, checks disk and AST `test_binding` existence, validates W3C DTCG token manifests, and enforces bidirectional multi-protocol `CTR-*` contract parity.
+Validates all 16 living specification types against Draft 2020-12 JSON Schemas (`assets/schemas/v1/`), verifies `x-eidos-ref` graph cross-references, checks disk and AST `test_binding` existence, validates W3C DTCG token manifests, verifies static `== Public Surface` AST symbols in active `CMP-*` / `CNT-*` specifications, and enforces bidirectional multi-protocol `CTR-*` contract parity.
 
 == Key Responsibilities & Collaborators
 * **Schema & Invariant Validation**: Resolves v1 schemas and shared `$defs` (`common/defs.yaml`), enforces `additionalProperties: false`, and caches per-document schema verdicts via `CMP-GRAPH-STORAGE` (`spec_validation_cache`).
 * **Cross-Reference & Graph Integrity**: Verifies all schema-declared `x-eidos-ref` fields, SpecDelta `mutations[].target` references, global `CMP-*` / `INV-*` / `DEC-*` ID uniqueness, and centralized component placement (`INV-COMPONENT-CENTRALIZATION-MANDATE`, `INV-COMPONENT-CONTAINER-AFFINITY`).
-* **AST Test-Binding & Bidirectional Contract Parity**: Uses `CMP-AST-SYMBOL-INDEXER` to verify polyglot `file::func` test bindings on disk and checks bidirectional `CTR-*` parity across `cli_args`, `python_protocol`, `openapi`, `protobuf`, `graphql`, and `json_schema`.
+* **AST Test-Binding, Public Surface & Bidirectional Contract Parity**: Uses `CMP-AST-SYMBOL-INDEXER` to verify polyglot `file::func` test bindings and backticked `== Public Surface` symbols on disk, and checks bidirectional `CTR-*` parity across `cli_args` (including positional argument count parity and `<placeholder>` / `[placeholder]` parameter/metavar alignment), `python_protocol`, `openapi`, `protobuf`, `graphql`, and `json_schema`.
 
 == Public Surface
 * `SpecValidator.validate_directory(eidos_dir: Path) -> ValidationReport`

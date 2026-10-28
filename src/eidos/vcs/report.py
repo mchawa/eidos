@@ -39,14 +39,30 @@ def build_drift_remediation_and_summary(
     orphan_invariants: list[tuple[str, str]],
     touched_components: list[str],
     eidos_rel_prefix: str = "eidos",
+    body_only_code_files: list[str] | None = None,
+    strict: bool = False,
 ) -> tuple[list[str], str]:
     """Build actionable remediation suggestions and Markdown summary report for drift detection."""
     remediation: list[str] = []
     if base_direct_drift:
         target_list = uncovered_direct_components or comp_mappings
-        remediation.append(
-            f"Drift Detected: {len(structural_code_files)} structural code file(s) changed without corresponding living specification updates in {eidos_rel_prefix}/ (within 1-hop graph neighborhood)."
-        )
+        structural_set = set(structural_code_files)
+        uncovered_struct = [cf for cf, _, _ in uncovered_direct_components if cf in structural_set]
+        uncovered_body = [cf for cf, _, _ in uncovered_direct_components if cf not in structural_set]
+        if uncovered_struct or (structural_code_files and not uncovered_body):
+            cnt = len({cf for cf in uncovered_struct}) if uncovered_struct else len(structural_code_files)
+            remediation.append(
+                f"Drift Detected: {cnt} structural code file(s) changed without corresponding living specification updates in {eidos_rel_prefix}/ (within 1-hop graph neighborhood)."
+            )
+        elif strict and (uncovered_body or body_only_code_files):
+            cnt = len({cf for cf in uncovered_body}) if uncovered_body else len(body_only_code_files or ())
+            remediation.append(
+                f"Strict Drift Detected: {cnt} body-only code file(s) changed under --strict without a corresponding 1-hop living specification or test update in {eidos_rel_prefix}/."
+            )
+        else:
+            remediation.append(
+                f"Drift Detected: {len(classification.code_files)} code file(s) changed without corresponding living specification updates in {eidos_rel_prefix}/."
+            )
         for cf, cid, spath in target_list[:5]:
             remediation.append(f"• '{cf}' relates to {cid} -> Update '{spath}' (or a 1-hop linked capability/contract)")
         if not target_list:
@@ -98,6 +114,15 @@ def build_drift_remediation_and_summary(
             remediation.append(
                 f"• '{rec['file']}' -> mention it (path, name, or a new public symbol) in {rec['owner']} or declare it under 'source_path'."
             )
+    stale_removed_records = [r for r in trivial_records if r["rule"] == "stale_removed_symbol"]
+    if stale_removed_records:
+        remediation.append(
+            f"Stale Removed Symbol: {len(stale_removed_records)} source file(s) removed public symbols that remain referenced in their owning specification."
+        )
+        for rec in stale_removed_records[:5]:
+            remediation.append(
+                f"• '{rec['file']}' ({'; '.join(rec['additions'][:3])}) -> remove or update stale symbol references in {', '.join(rec['spec_files']) or rec['owner']}."
+            )
 
     if not validation_report.is_clean:
         remediation.append(
@@ -142,12 +167,23 @@ def build_drift_remediation_and_summary(
     else:
         summary_lines.append("### ❌ Status: VALIDATION FAILED")
 
+    eff_body_count = (
+        len(body_only_code_files)
+        if body_only_code_files is not None
+        else max(0, len(classification.code_files) - len(structural_code_files))
+    )
+    code_count_cell = (
+        f"`{len(classification.code_files)}` (`{len(structural_code_files)}` structural, `{eff_body_count}` body-only)"
+        if eff_body_count > 0
+        else f"`{len(classification.code_files)}` (`{len(structural_code_files)}` structural)"
+    )
+
     summary_lines.extend(
         [
             "",
             "| Metric | Count | Status |",
             "|---|---|---|",
-            f"| Modified Code Files | `{len(classification.code_files)}` (`{len(structural_code_files)}` structural) | {'⚠️ Needs Spec Update' if (drift_detected and classification.code_files) else '✓'} |",
+            f"| Modified Code Files | {code_count_cell} | {'⚠️ Needs Spec Update' if (drift_detected and classification.code_files) else '✓'} |",
             f"| Modified Living Specs | `{len(classification.spec_files)}` | {'✓ In Sync' if specs_changed else '—'} |",
             f"| Modified SpecDeltas | `{len(classification.delta_files)}` | {'✓ Planned' if has_deltas else '— (Direct Mode)'} |",
             f"| Modified Test Files | `{len(classification.test_files)}` | {'✓' if classification.test_files else '—'} |",

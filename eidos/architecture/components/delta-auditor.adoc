@@ -18,8 +18,8 @@ Audits the reverse-dependency blast radius and residual token leaks for entities
 
 == Public Surface
 * `AuditEngine(repo_root: Path, eidos_dir: Path | None = None)`
-* `AuditEngine.audit_delta(delta_id_or_path: str, strict: bool = False) -> AuditReport`
-* `AuditReport.to_dict() -> dict[str, Any]`, `AuditReport.to_json() -> str`
+* `AuditEngine.audit_delta(delta_id_or_path: str, strict: bool = False) -> DeltaAuditResult`
+* `DeltaAuditResult`, `DeltaAuditResult.to_dict() -> dict[str, Any]`, `DeltaAuditResult.to_json() -> str`
 
 == Design Constraints & Operational Notes
 * **Strictly Governed Boundary (`POL-001`)**: Scans only files governed by `eidos/` specifications (`indexed_files` in `index.db`), avoiding Git subprocesses and unowned repository directories.

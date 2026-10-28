@@ -552,3 +552,149 @@ def get_living_specs_catalog(eidos_dir: Path, repo_root: Path | None = None) -> 
             )
 
     return catalog
+
+
+def recommend_invariants_for_unbound_tests(
+    index_or_repo_root: Any,
+    unbound_tests: list[str | dict[str, Any]] | None = None,
+    *,
+    eidos_dir: Path | None = None,
+    top_k: int = 3,
+    use_semantic: bool = True,
+) -> dict[str, list[dict[str, Any]]]:
+    """Recommend candidate ``INV-*`` bindings for unbound test functions using de-compounded BM25 + optional Hybrid RRF."""
+    from eidos.core.index.ast_indexer import INVARIANT_PATTERN
+    from eidos.core.index.graph_index import ArchitecturalIndex, get_architectural_index
+    from eidos.core.index.query import split_identifier
+
+    if isinstance(index_or_repo_root, ArchitecturalIndex):
+        idx = index_or_repo_root
+        repo_root = idx.root
+        resolved_eidos = idx.eidos_dir
+    else:
+        repo_root = Path(index_or_repo_root).resolve()
+        resolved_eidos = (
+            (repo_root / eidos_dir).resolve()
+            if eidos_dir is not None and not eidos_dir.is_absolute()
+            else (eidos_dir.resolve() if eidos_dir is not None else (repo_root / "eidos").resolve())
+        )
+        idx = get_architectural_index(repo_root=repo_root, eidos_dir=resolved_eidos)
+
+    test_targets: list[tuple[str, str, str, str]] = []
+    if unbound_tests is None:
+        from eidos.core.index.ast_indexer import get_ast_indexer
+
+        idx._ensure_synced()
+        conn = idx._get_connection()
+        ast_idx = get_ast_indexer()
+        rows = conn.execute("SELECT file_path, functions_json FROM test_binding_cache ORDER BY file_path;").fetchall()
+        if rows:
+            for r in rows:
+                tpath = str(r[0] or "")
+                if not tpath:
+                    continue
+                try:
+                    funcs_map = orjson.loads(r[1] or "{}")
+                except (TypeError, ValueError):
+                    funcs_map = {}
+                abs_test = repo_root / tpath
+                raw_funcs: dict[str, str] = {}
+                if abs_test.is_file():
+                    try:
+                        raw_funcs = ast_idx.list_test_functions(
+                            tpath, abs_test.read_text(encoding="utf-8", errors="replace")
+                        )
+                    except OSError:
+                        raw_funcs = {}
+                candidate_names = sorted(set(raw_funcs.keys()) | set(funcs_map.keys()))
+                for fname in candidate_names:
+                    if "::" in fname:
+                        continue
+                    fn_tokens = funcs_map.get(fname, [])
+                    if any(INVARIANT_PATTERN.fullmatch(t) for t in fn_tokens):
+                        continue
+                    test_targets.append((f"{tpath}::{fname}", tpath, fname, ""))
+        else:
+            cached_tests = _load_or_update_test_binding_cache(repo_root, eidos_dir=resolved_eidos)
+            for tpath, entry in sorted(cached_tests.items()):
+                abs_test = repo_root / tpath
+                raw_funcs = {}
+                if abs_test.is_file():
+                    try:
+                        raw_funcs = ast_idx.list_test_functions(
+                            tpath, abs_test.read_text(encoding="utf-8", errors="replace")
+                        )
+                    except OSError:
+                        raw_funcs = {}
+                candidate_names = sorted(set(raw_funcs.keys()) | set(entry.functions.keys()))
+                for fname in candidate_names:
+                    if "::" in fname:
+                        continue
+                    fn_tokens = entry.functions.get(fname, [])
+                    if any(INVARIANT_PATTERN.fullmatch(t) for t in fn_tokens):
+                        continue
+                    test_targets.append((f"{tpath}::{fname}", tpath, fname, ""))
+    else:
+        for item in unbound_tests:
+            if isinstance(item, str):
+                ref = item.strip()
+                if "::" in ref:
+                    tpath, fname = ref.split("::", 1)
+                else:
+                    tpath, fname = "", ref
+                test_targets.append((ref, tpath, fname, ""))
+            elif isinstance(item, dict):
+                ref = str(item.get("test_ref") or item.get("id") or item.get("function") or "").strip()
+                tpath = str(item.get("file_path") or (ref.split("::", 1)[0] if "::" in ref else "")).strip()
+                fname = str(item.get("function") or (ref.split("::", 1)[-1] if "::" in ref else ref)).strip()
+                extra = str(item.get("docstring") or item.get("description") or item.get("query") or "").strip()
+                if not ref:
+                    ref = f"{tpath}::{fname}" if tpath else fname
+                test_targets.append((ref, tpath, fname, extra))
+
+    recommendations: dict[str, list[dict[str, Any]]] = {}
+    noise_tokens = {"test", "tests", "verify", "check", "assert", "should", "must", "py", "ts", "js"}
+    for ref, tpath, fname, extra in test_targets:
+        stem = Path(tpath).stem if tpath else ""
+        sub_tokens = [
+            tok
+            for tok in [*split_identifier(fname), *split_identifier(stem), *split_identifier(extra)]
+            if tok and tok not in noise_tokens and len(tok) > 1
+        ]
+        query_text = " ".join(dict.fromkeys([*sub_tokens, *(extra.split() if extra else [])]))
+        if not query_text:
+            recommendations[ref] = []
+            continue
+
+        hits = idx.query_fts(
+            query_text,
+            limit=max(top_k * 4, 12),
+            include_types=("invariant",),
+            use_semantic=use_semantic,
+        )
+        scored: list[tuple[float, dict[str, Any]]] = []
+        for rank_idx, hit in enumerate(hits):
+            inv_data = hit.get("data") if isinstance(hit.get("data"), dict) else {}
+            tb_str = str(inv_data.get("test_binding") or "")
+            tb_file = tb_str.split("::", 1)[0] if tb_str else ""
+            rrf_val = hit.get("rrf_score")
+            base_score = float(rrf_val) if rrf_val is not None else (1.0 / (20.0 + rank_idx + 1))
+            if tpath and tb_file and tb_file == tpath:
+                base_score += 0.02
+            scored.append(
+                (
+                    base_score,
+                    {
+                        "id": hit["id"],
+                        "rule": hit["title"],
+                        "source_id": inv_data.get("source_id", ""),
+                        "test_binding": tb_str,
+                        "score": round(base_score, 6),
+                        "match_source": hit.get("match_source", "lexical"),
+                    },
+                )
+            )
+        scored.sort(key=lambda item: (-item[0], item[1]["id"]))
+        recommendations[ref] = [entry for _, entry in scored[:top_k]]
+
+    return recommendations
