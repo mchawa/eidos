@@ -19,6 +19,9 @@ This repository dogfoods the **Eidos Specification Standard** to define Eidos it
 # Install globally as a standalone CLI tool with uv (recommended)
 uv tool install eidos-ai
 
+# Or install with optional local Harrier ONNX Hybrid RRF semantic search support
+uv tool install "eidos-ai[semantic]"
+
 # Or install with pipx
 pipx install eidos-ai
 
@@ -28,7 +31,10 @@ uvx --from eidos-ai eidos --help
 # Initialize Eidos in your repository
 eidos init
 
-# Synchronize SQLite + FTS5 + AST knowledge graph index
+# (Optional) Provision local Harrier-OSS-v1-0.6B ONNX model for Hybrid RRF semantic search
+eidos index semantic setup
+
+# Synchronize SQLite + FTS5 + AST knowledge graph (and semantic embeddings when provisioned)
 eidos index sync
 
 # Inspect structural repo map or find code symbols and their owning specs
@@ -53,6 +59,24 @@ eidos portal serve --path eidos --port 8080
 # Install AI agent plugin (4 skills for Antigravity, Claude, Cursor, Copilot, Aider, Cline, OpenCode, Codex)
 eidos plugin install all
 ```
+
+### Optional Local Semantic Search (Hybrid RRF)
+
+By default, Eidos runs with zero model weights using SQLite FTS5 BM25, architectural synonym expansion, and recursive CTE graph traversal (`< 4ms`). To enable **Hybrid Reciprocal Rank Fusion (RRF)** combining lexical BM25 with local dense embeddings (`microsoft/harrier-oss-v1-0.6b` ONNX, 100% offline under `POL-004`):
+
+```bash
+# 1. Install optional ONNX Runtime + Tokenizers + NumPy extra
+uv tool install "eidos-ai[semantic]"   # or: uv sync --extra semantic
+
+# 2. Download Harrier ONNX artifacts into eidos/.cache/models/harrier-oss-v1-0.6b/
+eidos index semantic setup             # --model quantized (default INT8, 706 MB) | fp16 | fp32
+
+# 3. Sync the index (automatically builds & refreshes spec_embeddings whenever Harrier is provisioned)
+eidos index sync
+eidos index semantic status
+```
+
+Once provisioned, `eidos context -t "<task>"`, `eidos index search "<query>"`, and `eidos drift` automatically fuse FTS5 BM25 and Harrier cosine similarity (or pass `--no-semantic` for pure lexical retrieval).
 
 ---
 

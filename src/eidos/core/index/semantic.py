@@ -894,9 +894,10 @@ def _refresh_stale_embeddings_for_query(
             return 0
         resolved_eidos = Path(eidos_dir).resolve()
         custom_fn = _CUSTOM_ENCODE_FNS.get(str(resolved_eidos))
-        if custom_fn is None:
-            if _is_semantic_sync_locked_by_other(resolved_eidos) or get_semantic_engine(resolved_eidos) is None:
-                return 0
+        if custom_fn is None and (
+            _is_semantic_sync_locked_by_other(resolved_eidos) or get_semantic_engine(resolved_eidos) is None
+        ):
+            return 0
         records = _collect_embeddable_spec_records(conn)
         existing = {
             str(r[0]): str(r[1])
