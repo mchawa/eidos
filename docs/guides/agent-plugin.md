@@ -470,7 +470,7 @@ Output:
 ```text
 ╭──────────────────────── Eidos Agent Plugin Manifest ─────────────────────────╮
 │ Plugin Identifier:  eidos                                                    │
-│           Version:  0.18.0                                                   │
+│           Version:  0.19.0                                                   │
 │       Description:  Git-native, agent-agnostic development AI ecosystem and  │
 │                     lifecycle orchestration framework.                       │
 │           License:  MIT                                                      │
@@ -514,7 +514,7 @@ Output:
 ┃ Property               ┃ Value                                               ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
 │ Plugin Name            │ eidos                                               │
-│ Plugin Version         │ 0.18.0                                              │
+│ Plugin Version         │ 0.19.0                                              │
 │ Overall Status         │ CONFORMANT                                          │
 │ Discovered Skills      │ eidos, eidos-ops, eidos-plan, eidos-spec            │
 │ Configured MCP Servers │ None                                                │
