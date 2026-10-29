@@ -32,6 +32,8 @@ HARRIER_EMBEDDING_DIM = 1024
 HARRIER_PAD_TOKEN_ID = 151643
 HARRIER_PAD_TOKEN = "<|endoftext|>"
 HARRIER_MAX_LENGTH = 32768
+HARRIER_DOC_MAX_LENGTH = 4096
+HARRIER_MAX_BATCH_TOKENS = 2048
 
 # Pre-trained canonical MTEB sts_query instruction prefix (config_sentence_transformers.json)
 HARRIER_STS_INSTRUCTION = "Instruct: Retrieve semantically similar text\nQuery: "
@@ -161,6 +163,154 @@ def is_semantic_runtime_available() -> dict[str, bool]:
     }
 
 
+def _read_varint(buf: bytes, pos: int) -> tuple[int, int]:
+    """Read a base-128 protobuf varint from ``buf`` starting at ``pos``."""
+    val = 0
+    shift = 0
+    while True:
+        b = buf[pos]
+        pos += 1
+        val |= (b & 0x7F) << shift
+        if not (b & 0x80):
+            return val, pos
+        shift += 7
+
+
+def _encode_varint(val: int) -> bytes:
+    """Encode a non-negative integer as a base-128 protobuf varint."""
+    out = bytearray()
+    while val > 0x7F:
+        out.append((val & 0x7F) | 0x80)
+        val >>= 7
+    out.append(val & 0x7F)
+    return bytes(out)
+
+
+def _strip_unused_gqa_outputs(onnx_bytes: bytes) -> bytes:
+    """Replace unconsumed GroupQueryAttention ``present_k_dummy`` / ``present_v_dummy`` output names with ``""``.
+
+    In ``onnx-community/harrier-oss-v1-0.6b-ONNX``, each of the 28 ``com.microsoft::GroupQueryAttention``
+    nodes declares 3 outputs (``output_0``, ``present_k_dummy``, ``present_v_dummy``). Because the 56
+    dummy KV-cache outputs have zero downstream consumers and are not graph outputs, ONNX Runtime's
+    ``AllocationPlanner`` never schedules post-consumer release actions for them, retaining all 56
+    ``[B, 8, S, 128]`` float32 tensors (``224 KB`` per padded token) across all 28 layers. Replacing
+    those optional output slots with ``""`` prevents ONNX Runtime from allocating the dead KV-cache buffers.
+    """
+    if b"present_k_dummy" not in onnx_bytes and b"present_v_dummy" not in onnx_bytes:
+        return onnx_bytes
+
+    def _skip_field(buf: bytes, pos: int, wire_type: int) -> int:
+        if wire_type == 0:
+            _, pos = _read_varint(buf, pos)
+            return pos
+        if wire_type == 1:
+            return pos + 8
+        if wire_type == 2:
+            length, pos = _read_varint(buf, pos)
+            return pos + length
+        if wire_type == 5:
+            return pos + 4
+        raise ValueError(f"Unsupported protobuf wire_type={wire_type}")
+
+    def _rewrite_node(node_buf: bytes) -> bytes:
+        if b"present_k_dummy" not in node_buf and b"present_v_dummy" not in node_buf:
+            return node_buf
+        pos = 0
+        end = len(node_buf)
+        out = bytearray()
+        while pos < end:
+            tag_start = pos
+            tag, pos = _read_varint(node_buf, pos)
+            field_num = tag >> 3
+            wire_type = tag & 0x07
+            if field_num == 2 and wire_type == 2:
+                length, val_start = _read_varint(node_buf, pos)
+                val_end = val_start + length
+                val = node_buf[val_start:val_end]
+                if val.endswith((b"/present_k_dummy", b"/present_v_dummy")):
+                    out.extend(_encode_varint(tag))
+                    out.extend(_encode_varint(0))
+                else:
+                    out.extend(node_buf[tag_start:val_end])
+                pos = val_end
+            else:
+                pos = _skip_field(node_buf, pos, wire_type)
+                out.extend(node_buf[tag_start:pos])
+        return bytes(out)
+
+    def _rewrite_graph(graph_buf: bytes) -> bytes:
+        pos = 0
+        end = len(graph_buf)
+        out = bytearray()
+        while pos < end:
+            tag_start = pos
+            tag, pos = _read_varint(graph_buf, pos)
+            field_num = tag >> 3
+            wire_type = tag & 0x07
+            if field_num == 1 and wire_type == 2:
+                length, val_start = _read_varint(graph_buf, pos)
+                val_end = val_start + length
+                new_node = _rewrite_node(graph_buf[val_start:val_end])
+                out.extend(_encode_varint(tag))
+                out.extend(_encode_varint(len(new_node)))
+                out.extend(new_node)
+                pos = val_end
+            else:
+                pos = _skip_field(graph_buf, pos, wire_type)
+                out.extend(graph_buf[tag_start:pos])
+        return bytes(out)
+
+    pos = 0
+    end = len(onnx_bytes)
+    out = bytearray()
+    while pos < end:
+        tag_start = pos
+        tag, pos = _read_varint(onnx_bytes, pos)
+        field_num = tag >> 3
+        wire_type = tag & 0x07
+        if field_num == 7 and wire_type == 2:
+            length, val_start = _read_varint(onnx_bytes, pos)
+            val_end = val_start + length
+            new_graph = _rewrite_graph(onnx_bytes[val_start:val_end])
+            out.extend(_encode_varint(tag))
+            out.extend(_encode_varint(len(new_graph)))
+            out.extend(new_graph)
+            pos = val_end
+        else:
+            pos = _skip_field(onnx_bytes, pos, wire_type)
+            out.extend(onnx_bytes[tag_start:pos])
+    return bytes(out)
+
+
+def _ensure_pruned_onnx_graph(onnx_path: Path) -> Path:
+    """Write a sibling ``*.pruned.onnx`` graph header inside ``onnx_path.parent`` with dead GQA outputs stripped.
+
+    Keeping the pruned ``.onnx`` file inside ``onnx_path.parent`` ensures ONNX Runtime's
+    ``ValidateExternalDataPathFromDir`` resolves external weight files (``model_quantized.onnx_data``)
+    relative to the model directory regardless of the caller's current working directory.
+    """
+    onnx_path = Path(onnx_path).resolve()
+    if onnx_path.name.endswith(".pruned.onnx"):
+        return onnx_path
+    pruned_path = onnx_path.with_name(f"{onnx_path.stem}.pruned.onnx")
+    try:
+        src_stat = onnx_path.stat()
+        if pruned_path.is_file():
+            pruned_stat = pruned_path.stat()
+            if pruned_stat.st_size > 0 and pruned_stat.st_mtime >= src_stat.st_mtime:
+                return pruned_path
+        raw_bytes = onnx_path.read_bytes()
+        pruned_bytes = _strip_unused_gqa_outputs(raw_bytes)
+        if pruned_bytes == raw_bytes:
+            return onnx_path
+        tmp_path = pruned_path.with_suffix(f".{os.getpid()}.tmp")
+        tmp_path.write_bytes(pruned_bytes)
+        tmp_path.replace(pruned_path)
+        return pruned_path
+    except Exception:
+        return onnx_path
+
+
 class SemanticEmbeddingEngine:
     """Zero-PyTorch ONNX Runtime wrapper for ``microsoft/harrier-oss-v1-0.6b`` (`CMP-SEMANTIC-EMBEDDING-ENGINE`)."""
 
@@ -191,18 +341,23 @@ class SemanticEmbeddingEngine:
             pad_id=HARRIER_PAD_TOKEN_ID,
             pad_token=HARRIER_PAD_TOKEN,
         )
-        tokenizer.enable_truncation(max_length=HARRIER_MAX_LENGTH)
+        # Bound document tokenization to HARRIER_DOC_MAX_LENGTH (4096), covering 100% of sliceable specs losslessly
+        # while capping multi-spike exploration logs (DLT-2026-116-BOUND-SEMANTIC-893D).
+        tokenizer.enable_truncation(max_length=HARRIER_DOC_MAX_LENGTH)
 
         sess_opts = ort.SessionOptions()
         cpu_threads = min(8, max(1, (os.cpu_count() or 4) // 2))
         sess_opts.intra_op_num_threads = cpu_threads
-        if self.onnx_rel_path.endswith("model.onnx"):
+        sess_opts.enable_cpu_mem_arena = False
+        sess_opts.enable_mem_pattern = False
+        if onnx_path.name == "model.onnx":
             sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         else:
             sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
 
+        pruned_onnx_path = _ensure_pruned_onnx_graph(onnx_path)
         self._session = ort.InferenceSession(
-            str(onnx_path),
+            str(pruned_onnx_path),
             sess_options=sess_opts,
             providers=["CPUExecutionProvider"],
         )
@@ -332,6 +487,148 @@ class _nullcontext:
         return None
 
 
+_ACTIVE_PROGRESS_CALLBACK: Callable[[dict[str, Any]], None] | None = None
+_SUPPRESS_AUTO_SEMANTIC_REFRESH: int = 0
+
+
+def _is_semantic_sync_locked_by_other(eidos_dir: Path) -> bool:
+    """Return True if another live process currently holds ``eidos/.cache/semantic_sync.lock``."""
+    lock_path = Path(eidos_dir).resolve() / ".cache" / "semantic_sync.lock"
+    if not lock_path.is_file():
+        return False
+    try:
+        pid_val = int(lock_path.read_text(encoding="utf-8").strip())
+        if pid_val == os.getpid():
+            return False
+        os.kill(pid_val, 0)
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+class _semantic_cli_progress:
+    """Rich progress bar context manager for ``eidos index semantic setup`` and ``eidos index semantic sync``."""
+
+    def __init__(self, console: Any, mode: str, enabled: bool = True) -> None:
+        self.console = console
+        self.mode = mode
+        self.enabled = enabled
+        self._progress: Any = None
+        self._task_id: Any = None
+        self._prev_cb: Callable[[dict[str, Any]], None] | None = None
+
+    def __enter__(self) -> _semantic_cli_progress:
+        global _ACTIVE_PROGRESS_CALLBACK, _SUPPRESS_AUTO_SEMANTIC_REFRESH
+        _SUPPRESS_AUTO_SEMANTIC_REFRESH += 1
+        self._prev_cb = _ACTIVE_PROGRESS_CALLBACK
+        if self.enabled:
+            _ACTIVE_PROGRESS_CALLBACK = self._on_event
+        return self
+
+    def _ensure_progress_started(self, event: dict[str, Any]) -> None:
+        if self._progress is not None:
+            return
+        from rich.progress import (
+            BarColumn,
+            DownloadColumn,
+            MofNCompleteColumn,
+            Progress,
+            SpinnerColumn,
+            TaskProgressColumn,
+            TextColumn,
+            TimeElapsedColumn,
+            TransferSpeedColumn,
+        )
+
+        if self.mode == "setup":
+            self._progress = Progress(
+                SpinnerColumn(),
+                TextColumn("[bold blue]{task.description}"),
+                BarColumn(),
+                DownloadColumn(),
+                TransferSpeedColumn(),
+                TimeElapsedColumn(),
+                console=self.console,
+                transient=True,
+            )
+            self._progress.start()
+            self._task_id = self._progress.add_task(
+                "Provisioning Harrier ONNX artifacts...",
+                total=event.get("total_bytes") or None,
+            )
+        else:
+            self._progress = Progress(
+                SpinnerColumn(),
+                TextColumn("[bold blue]{task.description}"),
+                BarColumn(),
+                MofNCompleteColumn(),
+                TaskProgressColumn(),
+                TimeElapsedColumn(),
+                console=self.console,
+                transient=True,
+            )
+            self._progress.start()
+            self._task_id = self._progress.add_task(
+                "Synchronizing semantic embeddings...",
+                total=max(1, int(event.get("total") or 1)),
+            )
+
+    def _on_event(self, event: dict[str, Any]) -> None:
+        phase = event.get("phase")
+        if self.mode == "setup":
+            if phase == "file_start":
+                self._ensure_progress_started(event)
+                rel_path = event.get("file", "")
+                idx = event.get("file_index", 1)
+                total_files = event.get("total_files", 1)
+                total_bytes = event.get("total_bytes")
+                self._progress.reset(
+                    self._task_id,
+                    total=total_bytes if total_bytes and total_bytes > 0 else None,
+                    completed=0,
+                    description=f"Downloading {rel_path} ({idx}/{total_files})",
+                )
+            elif phase == "file_chunk" and self._progress is not None and self._task_id is not None:
+                self._progress.update(self._task_id, advance=int(event.get("bytes", 0)))
+        elif self.mode == "sync":
+            total = int(event.get("total") or 0)
+            if total <= 0:
+                return
+            self._ensure_progress_started(event)
+            if phase == "sync_start":
+                self._progress.update(
+                    self._task_id,
+                    total=total,
+                    completed=0,
+                    description=f"Loading Harrier ONNX & encoding {total} specs...",
+                )
+            elif phase == "batch_start":
+                batch_ids = event.get("batch_ids") or []
+                label = (
+                    f"{batch_ids[0]} .. {batch_ids[-1]}"
+                    if len(batch_ids) > 1
+                    else (batch_ids[0] if batch_ids else "batch")
+                )
+                self._progress.update(
+                    self._task_id,
+                    description=f"Encoding [{label}]",
+                )
+            elif phase == "batch_done":
+                self._progress.update(
+                    self._task_id,
+                    advance=int(event.get("batch_size", 0)),
+                )
+
+    def __exit__(self, *_: Any) -> None:
+        global _ACTIVE_PROGRESS_CALLBACK, _SUPPRESS_AUTO_SEMANTIC_REFRESH
+        _SUPPRESS_AUTO_SEMANTIC_REFRESH = max(0, _SUPPRESS_AUTO_SEMANTIC_REFRESH - 1)
+        _ACTIVE_PROGRESS_CALLBACK = self._prev_cb
+        if self._progress is not None:
+            self._progress.stop()
+            self._progress = None
+            self._task_id = None
+
+
 def setup_semantic_model(
     eidos_dir: Path,
     variant: str = "quantized",
@@ -350,8 +647,9 @@ def setup_semantic_model(
     rel_files = (*_METADATA_FILES, *_VARIANT_FILES[norm_variant])
     downloaded: list[str] = []
     skipped: list[str] = []
+    progress_cb = _ACTIVE_PROGRESS_CALLBACK
 
-    for rel_path in rel_files:
+    for idx, rel_path in enumerate(rel_files, start=1):
         dest = model_dir / rel_path
         dest.parent.mkdir(parents=True, exist_ok=True)
         if dest.is_file() and dest.stat().st_size > 0 and not force:
@@ -361,11 +659,25 @@ def setup_semantic_model(
         tmp_dest = dest.with_suffix(dest.suffix + ".part")
         req = urllib.request.Request(url, headers={"User-Agent": "eidos-ai/semantic-setup"})
         with urllib.request.urlopen(req, timeout=60) as resp, open(tmp_dest, "wb") as out_f:
+            content_len_hdr = getattr(resp, "headers", {}).get("Content-Length") if hasattr(resp, "headers") else None
+            total_bytes = int(content_len_hdr) if content_len_hdr and str(content_len_hdr).isdigit() else None
+            if progress_cb is not None:
+                progress_cb(
+                    {
+                        "phase": "file_start",
+                        "file": rel_path,
+                        "file_index": idx,
+                        "total_files": len(rel_files),
+                        "total_bytes": total_bytes,
+                    }
+                )
             while True:
                 chunk = resp.read(1024 * 1024)
                 if not chunk:
                     break
                 out_f.write(chunk)
+                if progress_cb is not None:
+                    progress_cb({"phase": "file_chunk", "file": rel_path, "bytes": len(chunk)})
         tmp_dest.replace(dest)
         downloaded.append(rel_path)
 
@@ -379,7 +691,7 @@ def setup_semantic_model(
 
 
 def _collect_embeddable_spec_records(conn: sqlite3.Connection) -> list[dict[str, str]]:
-    """Collect active specification and invariant records with their spec-only ``content_sha256``."""
+    """Collect active living specification and invariant records (excluding ``delta/mutation`` and ``product/exploration``)."""
     from eidos.core.index.query import compound_identifier_subtokens
 
     rows = conn.execute(
@@ -387,7 +699,7 @@ def _collect_embeddable_spec_records(conn: sqlite3.Connection) -> list[dict[str,
         SELECT f.entity_id, e.type, e.title, e.domain, e.file_path, f.jtbd_or_rule, f.body_text
         FROM specs_fts f
         JOIN entities e ON e.id = f.entity_id
-        WHERE NOT (e.type = 'delta/mutation' AND e.file_path LIKE '%deltas/archive/%')
+        WHERE e.type NOT IN ('delta/mutation', 'product/exploration')
         ORDER BY f.entity_id;
         """
     ).fetchall()
@@ -421,6 +733,50 @@ def _collect_embeddable_spec_records(conn: sqlite3.Connection) -> list[dict[str,
     return records
 
 
+def _build_semantic_sync_batches(
+    records: Sequence[dict[str, str]],
+    batch_size: int = 8,
+    max_batch_tokens: int = HARRIER_MAX_BATCH_TOKENS,
+) -> list[list[dict[str, str]]]:
+    """Sort records by ascending estimated token count and group under a bounded padded token budget.
+
+    Uses a deterministic character-to-token estimate ``min(HARRIER_DOC_MAX_LENGTH, max(1, len(doc_text) // 4))``
+    so length-sorted dynamic batching works identically in unit tests (custom ``encode_fn`` without
+    ``tokenizer.json``) and production ONNX runs. Any document with ``>= 1024`` estimated tokens is
+    encoded solo (``batch_size = 1``) so long specifications never multiply quadratic attention buffers
+    across batch peers.
+    """
+    if not records:
+        return []
+
+    def _est_tokens(rec: dict[str, str]) -> int:
+        return min(HARRIER_DOC_MAX_LENGTH, max(1, len(rec.get("doc_text", "")) // 4))
+
+    sorted_records = sorted(records, key=lambda rec: (_est_tokens(rec), rec.get("entity_id", "")))
+    max_items = min(max(1, int(batch_size)), 4)
+    budget = max(1, int(max_batch_tokens))
+
+    batches: list[list[dict[str, str]]] = []
+    current_batch: list[dict[str, str]] = []
+    for rec in sorted_records:
+        tok = _est_tokens(rec)
+        if tok >= 1024 or max_items == 1:
+            if current_batch:
+                batches.append(current_batch)
+                current_batch = []
+            batches.append([rec])
+            continue
+        new_len = len(current_batch) + 1
+        if current_batch and (new_len > max_items or new_len * tok > budget):
+            batches.append(current_batch)
+            current_batch = [rec]
+        else:
+            current_batch.append(rec)
+    if current_batch:
+        batches.append(current_batch)
+    return batches
+
+
 def sync_spec_embeddings(
     conn: sqlite3.Connection,
     eidos_dir: Path,
@@ -429,7 +785,7 @@ def sync_spec_embeddings(
     encode_fn: Callable[[list[str]], list[bytes]] | None = None,
     model_id: str = HARRIER_MODEL_ID,
 ) -> dict[str, Any]:
-    """Synchronize ``spec_embeddings`` using spec-only ``content_sha256`` caching."""
+    """Synchronize ``spec_embeddings`` using spec-only ``content_sha256`` caching and length-sorted dynamic batching."""
     t0 = time.perf_counter()
     if encode_fn is None:
         engine = get_semantic_engine(eidos_dir)
@@ -459,9 +815,19 @@ def sync_spec_embeddings(
             to_encode.append(rec)
 
     upserted = 0
-    step = max(1, int(batch_size))
-    for start in range(0, len(to_encode), step):
-        batch = to_encode[start : start + step]
+    progress_cb = _ACTIVE_PROGRESS_CALLBACK
+    total_to_encode = len(to_encode)
+    if progress_cb is not None and total_to_encode > 0:
+        progress_cb({"phase": "sync_start", "total": total_to_encode})
+    for batch in _build_semantic_sync_batches(to_encode, batch_size=batch_size):
+        if progress_cb is not None and total_to_encode > 0:
+            progress_cb(
+                {
+                    "phase": "batch_start",
+                    "total": total_to_encode,
+                    "batch_ids": [item["entity_id"] for item in batch],
+                }
+            )
         blobs = encode_fn([item["doc_text"] for item in batch])
         with conn:
             conn.executemany(
@@ -475,12 +841,23 @@ def sync_spec_embeddings(
                 ],
             )
         upserted += len(batch)
+        if progress_cb is not None and total_to_encode > 0:
+            progress_cb(
+                {
+                    "phase": "batch_done",
+                    "total": total_to_encode,
+                    "batch_size": len(batch),
+                    "completed": upserted,
+                }
+            )
 
     with conn:
         cur = conn.execute(
             """
             DELETE FROM spec_embeddings
-            WHERE entity_id NOT IN (SELECT id FROM entities)
+            WHERE entity_id NOT IN (
+                SELECT id FROM entities WHERE type NOT IN ('delta/mutation', 'product/exploration')
+            )
                OR entity_id NOT IN (SELECT entity_id FROM specs_fts);
             """
         )
@@ -498,6 +875,108 @@ def sync_spec_embeddings(
     }
 
 
+def _refresh_stale_embeddings_for_query(
+    conn: sqlite3.Connection,
+    eidos_dir: Path | None,
+    max_stale: int = 4,
+) -> int:
+    """Incrementally re-embed up to ``max_stale`` modified specifications before a semantic query.
+
+    Because the subsequent ``encode_semantic_query`` call reuses the same ``_SESSION_CACHE``
+    ``SemanticEmbeddingEngine`` singleton, refreshing modified specs here incurs 0.0ms of
+    additional ONNX session initialization overhead.
+    """
+    if eidos_dir is None:
+        return 0
+    try:
+        has_any = conn.execute("SELECT 1 FROM spec_embeddings LIMIT 1;").fetchone() is not None
+        if not has_any:
+            return 0
+        resolved_eidos = Path(eidos_dir).resolve()
+        custom_fn = _CUSTOM_ENCODE_FNS.get(str(resolved_eidos))
+        if custom_fn is None:
+            if _is_semantic_sync_locked_by_other(resolved_eidos) or get_semantic_engine(resolved_eidos) is None:
+                return 0
+        records = _collect_embeddable_spec_records(conn)
+        existing = {
+            str(r[0]): str(r[1])
+            for r in conn.execute("SELECT entity_id, content_sha256 FROM spec_embeddings;").fetchall()
+        }
+        stale_count = sum(1 for rec in records if existing.get(rec["entity_id"]) != rec["content_sha256"])
+        if 1 <= stale_count <= max_stale:
+            res = sync_spec_embeddings(conn, resolved_eidos, force=False, encode_fn=custom_fn)
+            return int(res.get("encoded_entities", 0))
+    except Exception:
+        return 0
+    return 0
+
+
+def _trigger_auto_semantic_refresh(
+    conn: sqlite3.Connection,
+    eidos_dir: Path,
+    db_path: Path,
+) -> None:
+    """Auto-refresh ``spec_embeddings`` when living specifications are modified during ``sync_index``."""
+    try:
+        has_any = conn.execute("SELECT 1 FROM spec_embeddings LIMIT 1;").fetchone() is not None
+        if not has_any:
+            return
+        resolved_eidos = Path(eidos_dir).resolve()
+        records = _collect_embeddable_spec_records(conn)
+        existing = {
+            str(r[0]): str(r[1])
+            for r in conn.execute("SELECT entity_id, content_sha256 FROM spec_embeddings;").fetchall()
+        }
+        stale_count = sum(1 for rec in records if existing.get(rec["entity_id"]) != rec["content_sha256"])
+        if stale_count == 0:
+            return
+        custom_fn = _CUSTOM_ENCODE_FNS.get(str(resolved_eidos))
+        if custom_fn is not None:
+            sync_spec_embeddings(conn, resolved_eidos, force=False, encode_fn=custom_fn)
+            return
+        if _SUPPRESS_AUTO_SEMANTIC_REFRESH > 0 or "PYTEST_CURRENT_TEST" in os.environ:
+            return
+        runtime = is_semantic_runtime_available()
+        if not runtime["available"]:
+            return
+        model_dir = resolve_semantic_model_dir(resolved_eidos)
+        if _detect_installed_variant(model_dir) is None or not (model_dir / "tokenizer.json").is_file():
+            return
+        if _is_semantic_sync_locked_by_other(resolved_eidos):
+            return
+
+        lock_path = resolved_eidos / ".cache" / "semantic_sync.lock"
+        import subprocess
+        import sys
+
+        worker_code = (
+            "import os, pathlib, sqlite3; "
+            "from eidos.core.index.semantic import sync_spec_embeddings; "
+            f"lock = pathlib.Path({str(lock_path)!r}); "
+            "lock.parent.mkdir(parents=True, exist_ok=True); "
+            "lock.write_text(str(os.getpid()), encoding='utf-8'); "
+            "conn = sqlite3.connect("
+            f"{str(Path(db_path).resolve())!r}, timeout=30.0"
+            "); "
+            "conn.execute('PRAGMA journal_mode=WAL;'); "
+            "conn.execute('PRAGMA busy_timeout=30000;'); "
+            "try:\n"
+            f"    sync_spec_embeddings(conn, pathlib.Path({str(resolved_eidos)!r}), force=False)\n"
+            "finally:\n"
+            "    conn.close()\n"
+            "    lock.unlink(missing_ok=True)\n"
+        )
+        subprocess.Popen(
+            [sys.executable, "-c", worker_code],
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        return
+
+
 def query_semantic_embeddings(
     conn: sqlite3.Connection,
     query_embedding: bytes | Sequence[float],
@@ -511,7 +990,7 @@ def query_semantic_embeddings(
     if not q_blob:
         return []
 
-    type_clauses: list[str] = ["NOT (e.type = 'delta/mutation' AND e.file_path LIKE '%deltas/archive/%')"]
+    type_clauses: list[str] = ["e.type NOT IN ('delta/mutation', 'product/exploration')"]
     type_params: list[str] = []
     if include_types is not None:
         inc = list(include_types)

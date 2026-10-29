@@ -2147,12 +2147,19 @@ def sync_index(
         conn.execute(
             """
             DELETE FROM spec_embeddings
-            WHERE entity_id NOT IN (SELECT id FROM entities)
+            WHERE entity_id NOT IN (
+                SELECT id FROM entities WHERE type NOT IN ('delta/mutation', 'product/exploration')
+            )
                OR entity_id NOT IN (SELECT entity_id FROM specs_fts);
             """
         )
         prune_stale_test_binding_edges(conn)
         _reconcile_invariant_coverage(index, conn, ast_idx)
+
+    if spec_updates:
+        from eidos.core.index.semantic import _trigger_auto_semantic_refresh
+
+        _trigger_auto_semantic_refresh(conn, index.eidos_dir, index.db_path)
 
     stats.duration_ms = (time.perf_counter() - t0) * 1000
     index._last_synced_check = time.monotonic()

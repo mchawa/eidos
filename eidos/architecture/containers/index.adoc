@@ -49,8 +49,8 @@ decisions:
     graduated_from: DLT-2026-095
   - id: DEC-INDEX-HYBRID-SEMANTIC-RRF
     title: "Two-Tier Lexical + Opt-In Harrier ONNX Hybrid RRF Retrieval"
-    decision: "Combine FTS5 BM25 and direct-over-1-hop slice prioritization with an opt-in Harrier ONNX semantic index (CMP-SEMANTIC-EMBEDDING-ENGINE, right-padded sentence_embedding, sts_query prefix, spec_embeddings BLOBs, and gated Hybrid RRF k0=20, w_sem=0.50, tau_min=0.50)."
-    rationale: "Restores 94.4% DEV and 92.9% HOLD recall in <=3.8ms with zero dependencies, while opt-in Harrier ONNX + gated Hybrid RRF adds +12.5% conceptual slice recall (HOLD_V2) and +4.4% Top-1 unbound test-to-INV-* accuracy with 0.0% DEV/HOLD regression and 0.22ms SQLite BLOB + NumPy BLAS scanning."
+    decision: "Combine FTS5 BM25 and direct-over-1-hop slice prioritization with an opt-in Harrier ONNX semantic index (CMP-SEMANTIC-EMBEDDING-ENGINE, right-padded sentence_embedding, HARRIER_DOC_MAX_LENGTH=4096, disk-backed pruning of dead GQA present_k_dummy/present_v_dummy outputs, enable_cpu_mem_arena=False, length-sorted dynamic batching, sts_query prefix, spec_embeddings BLOBs, and gated Hybrid RRF k0=20, w_sem=0.50, tau_min=0.50)."
+    rationale: "Restores 94.4% DEV and 92.9% HOLD recall in <=3.8ms with zero dependencies, while opt-in Harrier ONNX + gated Hybrid RRF adds +12.5% conceptual slice recall (HOLD_V2) and +4.4% Top-1 unbound test-to-INV-* accuracy with 0.0% DEV/HOLD regression, 100% lossless full-text coverage across all sliceable specs, bounded ~556-585MB sync RSS, and 0.22ms SQLite BLOB + NumPy BLAS scanning."
     rejected_alternatives:
       - option: "Defaulting to onnx/model_fp16.onnx on x86_64 CPUExecutionProvider"
         reason_rejected: "Incurs 572.4ms p50 query emulation overhead under ORT_ENABLE_BASIC or 2,830.8ms session init latency under ORT_ENABLE_ALL on CPUs without AVX-512 FP16."
@@ -60,6 +60,8 @@ decisions:
         reason_rejected: "Causes instruction distribution shift against Harrier's pre-trained instruction prompts, regressing HOLD slice recall by -7.2% (92.9% -> 85.7%)."
       - option: "Ungated High-Weight Semantic RRF (w_sem >= 1.0) or Mandatory Synchronous Embedding"
         reason_rejected: "Crowds out exact identifier matches under the 1,000-token guardrails budget (-11.1% DEV regression) and adds 452-1,070ms session init overhead per CLI call."
+      - option: "Unbounded 32,768-token document encoding with fixed alphabetical batch_size=8 and unpruned GQA present_k/v outputs"
+        reason_rejected: "Causes 6.5-42+ GB RAM spikes during eidos index semantic sync by padding 8 items to 2,665-17,326 tokens and retaining 56 dead present_k_dummy/present_v_dummy KV-cache outputs across all 28 layers."
     graduated_from: EXP-2026-009
 ---
 = Container: Architectural Knowledge Graph & Retrieval Index (C4 Level 2 Container)
@@ -71,7 +73,7 @@ This container represents the embedded relational, lexical, and optional semanti
 == Internal Structure & Key Mechanisms
 * **Embedded SQLite WAL + FTS5 Knowledge Graph (`DEC-INDEX-SQLITE-WAL`)**: Persists living specification entities (`entities`), typed directed relationships (`edges`), governed file digests (`indexed_files`), ownership rules (`symbol_mappings`), polyglot AST symbols (`code_symbols`), weighted lexical search (`specs_fts`), inverted token index (`file_tokens_fts`), validation/test caches (`spec_validation_cache`, `test_binding_cache`), and content-addressed dense embeddings (`spec_embeddings`) in a single local SQLite database at `SCHEMA_VERSION` `2.18.0`.
 * **Incremental Synchronization & Polyglot AST Extraction**: Performs single-pass `os.scandir` mtime and SHA-256 dirty checks across `eidos/`, governed `source_path` trees, and test suites, extracting polyglot symbols and cross-file imports across 17 languages via `ast-grep-py` (`SgRoot`) and automatically deriving component `consumes_api` and container `depends_on` edges while preserving `spec_embeddings` across `sync --force`.
-* **Two-Tier Retrieval & Tiered Context Slicing (`DEC-INDEX-FTS-RETRIEVAL-HYGIENE`, `DEC-INDEX-HYBRID-SEMANTIC-RRF`)**: Combines column-weighted FTS5 BM25 ranking, deterministic architectural synonym expansion, direct-over-1-hop container prioritization, and optional gated Harrier-OSS-v1-0.6B ONNX Hybrid RRF ($k_0 = 20, w_{\text{lex}} = 1.0, w_{\text{sem}} = 0.50, \tau_{\min} = 0.50$) with calibrated token-budget compression (`anchor` <=300, `guardrails` <=1000, `deep` <=2500 tokens).
+* **Two-Tier Retrieval & Tiered Context Slicing (`DEC-INDEX-FTS-RETRIEVAL-HYGIENE`, `DEC-INDEX-HYBRID-SEMANTIC-RRF`)**: Combines column-weighted FTS5 BM25 ranking, deterministic architectural synonym expansion, direct-over-1-hop container prioritization, and optional gated Harrier-OSS-v1-0.6B ONNX Hybrid RRF ($k_0 = 20, w_{\text{lex}} = 1.0, w_{\text{sem}} = 0.50, \tau_{\min} = 0.50$, `HARRIER_DOC_MAX_LENGTH = 4096`, disk-backed `present_k_dummy`/`present_v_dummy` output pruning, length-sorted token-budgeted batching, and automatic `spec_embeddings` refresh on living specification updates) with calibrated token-budget compression (`anchor` <=300, `guardrails` <=1000, `deep` <=2500 tokens).
 
 == Quality Attributes & Operational Policies
 * **Sub-10ms Query & Sync Latency (`INV-AGENT-GRAPH-INDEX-FRESHNESS`)**: Warm dirty checks and incremental single-file syncs complete in <5ms; recursive CTE blast-radius, FTS5 queries, and `spec_embeddings` BLAS cosine scans (`0.22ms`) execute in sub-millisecond to <4ms latency.

@@ -114,18 +114,36 @@ def index_sync_cmd(
     """Synchronize the architectural index with specifications on disk."""
     eidos_dir = path or Path("eidos")
     idx = get_architectural_index(eidos_dir=eidos_dir)
-    stats = idx.sync(force=force)
+    from eidos.core.index.semantic import _semantic_cli_progress
 
-    if stats.was_clean and not force:
-        console.print(
-            f"[bold green]✓ Index is up to date.[/bold green] Verified in [dim]{stats.duration_ms:.2f}ms[/dim]."
-        )
-    else:
-        mode = "Rebuilt" if force else "Synchronized"
-        console.print(
-            f"[bold green]✓ {mode} index in {stats.duration_ms:.2f}ms.[/bold green] "
-            f"[dim](Indexed {stats.indexed_new} new, updated {stats.updated_modified} modified, pruned {stats.pruned_deleted} deleted)[/dim]"
-        )
+    with _semantic_cli_progress(console=console, mode="sync", enabled=True):
+        stats = idx.sync(force=force)
+
+        if stats.was_clean and not force:
+            console.print(
+                f"[bold green]✓ Index is up to date.[/bold green] Verified in [dim]{stats.duration_ms:.2f}ms[/dim]."
+            )
+        else:
+            mode = "Rebuilt" if force else "Synchronized"
+            console.print(
+                f"[bold green]✓ {mode} index in {stats.duration_ms:.2f}ms.[/bold green] "
+                f"[dim](Indexed {stats.indexed_new} new, updated {stats.updated_modified} modified, pruned {stats.pruned_deleted} deleted)[/dim]"
+            )
+
+        try:
+            sem_status = idx.get_semantic_status()
+            if (
+                sem_status.get("runtime_available")
+                and sem_status.get("model_ready")
+                and int(sem_status.get("stale_or_missing_embeddings") or 0) > 0
+            ):
+                sem_res = idx.sync_semantic(force=False)
+                console.print(
+                    f"[bold green]✓ Synchronized semantic embeddings in {sem_res['duration_ms']:.2f}ms.[/bold green] "
+                    f"[dim](Encoded {sem_res['encoded_entities']}, reused {sem_res['reused_entities']} cached, pruned {sem_res['pruned_orphans']})[/dim]"
+                )
+        except Exception:
+            pass
 
 
 @index_app.command("search")
@@ -409,8 +427,11 @@ def index_semantic_cmd(
         return
 
     if act == "setup":
+        from eidos.core.index.semantic import _semantic_cli_progress
+
         try:
-            res = idx.setup_semantic(variant=model, force=force)
+            with _semantic_cli_progress(console=console, mode="setup", enabled=not json_output):
+                res = idx.setup_semantic(variant=model, force=force)
         except Exception as exc:
             if json_output:
                 console.print_json(data={"error": str(exc)})
@@ -427,8 +448,11 @@ def index_semantic_cmd(
         return
 
     if act == "sync":
+        from eidos.core.index.semantic import _semantic_cli_progress
+
         try:
-            res = idx.sync_semantic(force=force)
+            with _semantic_cli_progress(console=console, mode="sync", enabled=not json_output):
+                res = idx.sync_semantic(force=force)
         except Exception as exc:
             if json_output:
                 console.print_json(data={"error": str(exc)})

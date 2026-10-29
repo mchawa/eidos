@@ -1,0 +1,113 @@
+---
+type: delta/mutation
+id: DLT-2026-116-BOUND-SEMANTIC-893D
+title: "Bound Semantic Embedding Sync Memory via Token Truncation, Length-Sorted Dynamic Batching, and Dead GQA Output Pruning"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: critical
+  motivation: "Prevent multi-gigabyte RAM exhaustion and host swap hangs during 'eidos index semantic sync' while preserving 100% full-text coverage across all sliceable specifications by setting HARRIER_DOC_MAX_LENGTH = 4096 (covering 113/113 sliceable specs and 96.4% of all specs without truncation while capping 17k-token exploration logs), pruning the 56 unconsumed GroupQueryAttention KV-cache outputs (present_k_dummy, present_v_dummy) into a disk-backed .onnx graph header in onnx_path.parent alongside model_quantized.onnx_data, disabling monotonic CPU BFCArena retention (enable_cpu_mem_arena=False, enable_mem_pattern=False), and replacing fixed alphabetical batch_size=8 slicing with length-sorted, token-budgeted dynamic batching (max_batch_tokens=2048, batch_size=1 for >=1024-token specs) while preserving sync_spec_embeddings(..., batch_size: int = 8) signature parity."
+vcs:
+  branch: main
+  base_commit: 4076f0e6bda06bc389c369bce6ecfac918a7217b
+mutations:
+  - operation: modify
+    target: CMP-SEMANTIC-EMBEDDING-ENGINE
+    details: "Update src/eidos/core/index/semantic.py and eidos/architecture/components/semantic-embedding-engine.adoc to enforce HARRIER_DOC_MAX_LENGTH = 4096 truncation (100% lossless across all sliceable specs), prune the 56 unconsumed GroupQueryAttention present_k_dummy/present_v_dummy node outputs into a disk-backed .onnx graph header inside onnx_path.parent (so ONNX Runtime's ValidateExternalDataPathFromDir resolves model_quantized.onnx_data from any working directory while keeping ORT_ENABLE_BASIC for quantized models), disable monotonic BFCArena retention (enable_cpu_mem_arena=False, enable_mem_pattern=False), and sort/batch sync_spec_embeddings by deterministic token estimate min(HARRIER_DOC_MAX_LENGTH, max(1, len(doc_text) // 4)) under max_batch_tokens = 2048 (capping batches at min(batch_size, 4) items and running >=1024-token specs at batch_size = 1 while keeping batch_size: int = 8 as the parameter default for signature parity with ArchitecturalIndex.sync_semantic)."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/semantic.py"
+        status: "active"
+      body:
+        contains:
+          - "HARRIER_DOC_MAX_LENGTH"
+          - "present_k_dummy"
+          - "enable_cpu_mem_arena"
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+    details: "Update DEC-INDEX-HYBRID-SEMANTIC-RRF (including adding 'Unbounded 32,768-token document encoding with fixed alphabetical batch_size=8 and unpruned GQA present_k/v outputs' to rejected_alternatives) and Internal Structure in eidos/architecture/containers/index.adoc to document bounded-memory semantic indexing (HARRIER_DOC_MAX_LENGTH = 4096, disk-backed pruning of dead present_k_dummy/present_v_dummy GQA outputs co-located with external weights, enable_cpu_mem_arena = False, and length-sorted token-budgeted dynamic batching)."
+    expect:
+      body:
+        contains:
+          - "HARRIER_DOC_MAX_LENGTH"
+          - "present_k_dummy"
+  - operation: modify
+    target: CAP-AGENT-001
+    details: "Bump CAP-AGENT-001 to version 1.8.1 in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc and document bounded-memory semantic synchronization in Hybrid Retrieval & Freshness Invariant."
+    expect:
+      frontmatter:
+        version: "1.8.1"
+      body:
+        contains:
+          - "HARRIER_DOC_MAX_LENGTH"
+  - operation: modify
+    target: INV-AGENT-HYBRID-SEMANTIC-FALLBACK
+    details: "Extend INV-AGENT-HYBRID-SEMANTIC-FALLBACK in CAP-AGENT-001 and its bound test tests/test_graph_index.py::test_hybrid_semantic_rrf_and_deterministic_fallback to verify HARRIER_DOC_MAX_LENGTH = 4096 document truncation, dead present_k_dummy/present_v_dummy ONNX output pruning, and length-sorted token-budgeted batching."
+    expect:
+      frontmatter:
+        rule: "HARRIER_DOC_MAX_LENGTH"
+        test_binding: "tests/test_graph_index.py::test_hybrid_semantic_rrf_and_deterministic_fallback"
+---
+= SpecDelta: Bound Semantic Embedding Sync Memory via Token Truncation, Length-Sorted Dynamic Batching, and Dead GQA Output Pruning
+:toc: left
+:icons: font
+:sectnums:
+
+== Problem Statement
+
+Running `eidos index semantic sync` (`ArchitecturalIndex.sync_semantic()` -> `sync_spec_embeddings()` -> `SemanticEmbeddingEngine.encode_texts()` in `src/eidos/core/index/semantic.py`) causes multi-gigabyte RAM spikes (`~6.5–7.5 GB` on Batch 0 up to `> 42 GB` on Batch 12) that exhaust host physical memory and swap, hanging the system before the first batch can commit:
+
+1. **Unbounded Document Tokenization (`HARRIER_MAX_LENGTH = 32768`) + Fixed Alphabetical `batch_size = 8` Padding Amplification**:
+   * `SemanticEmbeddingEngine._ensure_loaded()` enables `tokenizer.enable_padding(direction="right", pad_id=151643, pad_token="<|endoftext|>")` with `tokenizer.enable_truncation(max_length=32768)`.
+   * `_collect_embeddable_spec_records()` orders all `168` active entities alphabetically by `entity_id` and concatenates full `body_text` plus de-compounded `spec_symbols`.
+   * Across the repository, all `113` sliceable specifications (`CNT-*`, `CMP-*`, `CTR-*`, `CAP-*`, `POL-*`, `INV-*`, `DOM-*`, `DS-*`) have `median = 293` tokens, `p90 = 784` tokens, `p95 = 1,118` tokens, and `max = 3,585` tokens (`CTR-EIDOS-CLI`), whereas non-sliceable `EXP-*` / `DLT-*` documents reach up to `17,326` tokens (`EXP-2026-009`).
+   * Because `sync_spec_embeddings()` slices `to_encode` into fixed `batch_size = 8` groups in alphabetical `entity_id` order, a single long specification pads all 8 sequences in its batch to $S_{\max}$:
+     - **Batch 0 (`entities 0..7`)**: `ARCH-EIDOS-001` (`2,665` tokens) pads 7 short specs (`min = 207` tokens) to `(8, 2665)` = **`21,320` tokens** (`78.7%` padding waste).
+     - **Batch 10 (`entities 80..87`)**: `DLT-2026-115-HYBRID-SEMANTIC-8B5F` (`5,259` tokens) pads to `(8, 5259)` = **`42,072` tokens**.
+     - **Batch 11 (`entities 88..95`)**: `EXP-2026-006` (`9,543` tokens), `EXP-2026-008` (`8,719` tokens), and `EXP-2026-007` (`7,865` tokens) pad to `(8, 9543)` = **`76,344` tokens**.
+     - **Batch 12 (`entities 96..103`)**: `EXP-2026-009` (`17,326` tokens / `50.5 KB`) is grouped with 7 short `INV-*` records (`80–210` tokens), padding all 8 items to `(8, 17326)` = **`138,608` tokens** (`86.7%` padding waste).
+2. **56 Unconsumed Dummy KV-Cache Outputs (`present_k_dummy`, `present_v_dummy`) Retained Across All 28 Layers in ONNX Runtime**:
+   * In `onnx-community/harrier-oss-v1-0.6b-ONNX` (`onnx/model_quantized.onnx`, `onnx/model.onnx`, `onnx/model_fp16.onnx`), each of the 28 `com.microsoft::GroupQueryAttention` nodes declares 3 outputs: `output_0` (`[B, S, 2048]`), `present_k_dummy` (`[B, 8, S, 128]`), and `present_v_dummy` (`[B, 8, S, 128]`).
+   * Because the 56 `present_k_dummy` and `present_v_dummy` outputs have zero downstream consumer nodes in the ONNX graph and are not graph outputs, ONNX Runtime's `AllocationPlanner` never triggers post-consumer release actions for them during layer execution—accumulating all 56 `[B, 8, S, 128]` `float32` tensors (`224 KB` per padded token) across Layers `0..27` until `session.run()` completes (`4.66 GB` on Batch 0, `9.20 GB` on Batch 10, `16.70 GB` on Batch 11, and `30.32 GB` on Batch 12).
+3. **Quadratic $O(B \cdot S^2)$ 4D Attention Bias Tensor (`/model/gqa_attention_bias/Expand`)**:
+   * Before Layer 0, `/model/gqa_attention_bias/Expand` broadcasts the 2D `attention_mask` into a dense 4D `float32` tensor `[B, 1, S, S]` ($4 \cdot B \cdot S^2$ bytes) shared across all 28 `GroupQueryAttention` layers (`227.3 MB` on Batch 0, `885.0 MB` on Batch 10, `2.91 GB` on Batch 11, and `9.61 GB` on Batch 12).
+4. **Monotonic `BFCArena` High-Water Mark Retention (`enable_cpu_mem_arena = True`)**:
+   * Default `ort.SessionOptions()` leaves `enable_cpu_mem_arena = True` and `enable_mem_pattern = True`, causing `BFCArena` to extend in doubling power-of-two chunks (up to `1 GB` per extension) and retain peak memory across batches for the lifetime of the `_SESSION_CACHE` singleton.
+
+== Proposed Specification Changes
+
+* **Update `CMP-SEMANTIC-EMBEDDING-ENGINE` (`eidos/architecture/components/semantic-embedding-engine.adoc` & `src/eidos/core/index/semantic.py`)**:
+  1. **Lossless Sliceable Spec Coverage with Bounded Max Window (`HARRIER_DOC_MAX_LENGTH = 4096`)**:
+     - Introduce `HARRIER_DOC_MAX_LENGTH = 4096` (keeping `HARRIER_MAX_LENGTH = 32768` as the model's architectural context constant) and configure `tokenizer.enable_truncation(max_length=HARRIER_DOC_MAX_LENGTH)` in `SemanticEmbeddingEngine`.
+     - At `4,096` tokens, **100% (`113/113`) of all sliceable specifications** (`CNT-*`, `CMP-*`, `CTR-*`, `CAP-*`, `POL-*`, `INV-*`, `DOM-*`, `DS-*`, up to `CTR-EIDOS-CLI` at `3,585` tokens) and **96.4% (`162/168`) of all repository specifications** are encoded with **zero truncation**, while only the 6 multi-spike `EXP-*` / `DLT-*` benchmark logs (`4,807–17,326` tokens) are capped at `4,096` tokens.
+  2. **Disk-Backed Pruning of Dead `GroupQueryAttention` KV-Cache Outputs (`_strip_unused_gqa_outputs` & `_ensure_pruned_onnx_graph`)**:
+     - Implement `_strip_unused_gqa_outputs(onnx_bytes: bytes) -> bytes` in `src/eidos/core/index/semantic.py` (using a zero-dependency pure-Python protobuf wire rewriter over the 385 KB `.onnx` graph header) that replaces `/model/layers.{i}/attn/GroupQueryAttention/present_k_dummy` and `/model/layers.{i}/attn/GroupQueryAttention/present_v_dummy` output names with empty strings `""` so ONNX Runtime skips allocating all 56 dead KV-cache tensors (`224 KB/token`).
+     - Because ONNX Runtime's `ValidateExternalDataPathFromDir` (`tensorprotoutils.cc:461`) resolves external weight files (`model_quantized.onnx_data`) relative to `os.getcwd()` whenever a model is passed as in-memory `bytes`, `_ensure_pruned_onnx_graph(onnx_path: Path) -> Path` writes the pruned `.onnx` header to disk inside `onnx_path.parent` (in-place or as a sibling `*.pruned.onnx` file co-located with `model_quantized.onnx_data`) and passes the file path `str(pruned_path)` to `ort.InferenceSession` while preserving `GraphOptimizationLevel.ORT_ENABLE_BASIC` whenever `"quantized"` is in `onnx_path.name`.
+  3. **Disable Monotonic CPU Arena Retention (`enable_cpu_mem_arena = False`, `enable_mem_pattern = False`)**:
+     - Set `sess_opts.enable_cpu_mem_arena = False` and `sess_opts.enable_mem_pattern = False` in `SemanticEmbeddingEngine._ensure_loaded()` so intermediate activation buffers are immediately returned to the OS after each `session.run()` call (`~556–585 MB` post-run RSS at `2,048–4,096` tokens).
+  4. **Living-Specification Filtering & Length-Sorted, Token-Budgeted Dynamic Batching in `sync_spec_embeddings()`**:
+     - Filter `_collect_embeddable_spec_records()`, `sync_spec_embeddings()`, and `query_semantic_embeddings()` via `e.type NOT IN ('delta/mutation', 'product/exploration')` so historical SpecDeltas (`DLT-*`) and multi-spike Exploration benchmark logs (`EXP-*`, representing `64.4%` of raw repository tokens) are excluded from `spec_embeddings`.
+     - Preserve `batch_size: int = 8` as the parameter default on `sync_spec_embeddings(..., batch_size: int = 8)` so `ArchitecturalIndex.sync_semantic(self, force: bool = False, batch_size: int = 8, ...)` in `src/eidos/core/index/graph_index.py` and `== Public Surface` in `eidos/architecture/components/semantic-embedding-engine.adoc` remain in 100% signature parity.
+     - Estimate each document's bounded token count deterministically via `est_tokens = min(HARRIER_DOC_MAX_LENGTH, max(1, len(item["doc_text"]) // 4))` (avoiding any requirement on `tokenizer.json` when a custom `encode_fn` is injected in unit tests) and sort `to_encode` by ascending `(est_tokens, item["entity_id"])` so specifications of similar length are grouped together.
+     - Group batches dynamically under `max_batch_tokens: int = 2048` and `max_items = min(max(1, batch_size), 4)` where padded batch cost is `len( candidate_batch ) * max_est_tokens <= max_batch_tokens`, automatically running any specification with `est_tokens >= 1024` at `batch_size = 1` so long documents never multiply $B \cdot S^2$ attention bias or activation buffers across batch peers.
+  5. **Rich CLI Progress Bars & Automatic Semantic Refresh (`_semantic_cli_progress`, `_trigger_auto_semantic_refresh`, `_refresh_stale_embeddings_for_query`)**:
+     - Provide transient Rich progress bars (`_semantic_cli_progress`) for `eidos index semantic setup` and `eidos index semantic sync` / `eidos index sync`.
+     - Automatically refresh `spec_embeddings` when living `.adoc` specifications are modified via `_trigger_auto_semantic_refresh()` (spawning a lockfile-guarded background worker during normal CLI commands while suppressing duplicate workers during foreground `eidos index sync`), `_refresh_stale_embeddings_for_query()` (reusing the warm query session for up to 4 stale specs), and `eidos index sync`.
+* **Update `CNT-EIDOS-INDEX` (`eidos/architecture/containers/index.adoc`)**:
+  - Update `DEC-INDEX-HYBRID-SEMANTIC-RRF` (adding `"Unbounded 32,768-token document encoding with fixed alphabetical batch_size=8 and unpruned GQA present_k/v outputs"` to `rejected_alternatives` with empirical failure rationale) and `== Internal Structure & Key Mechanisms` to document `HARRIER_DOC_MAX_LENGTH = 4096`, disk-backed pruning of the 56 dead `present_k_dummy`/`present_v_dummy` `GroupQueryAttention` outputs co-located with external weights, `enable_cpu_mem_arena = False`, and length-sorted token-budgeted dynamic batching (`max_batch_tokens = 2048`).
+* **Update `CAP-AGENT-001` (`1.8.1`) & `INV-AGENT-HYBRID-SEMANTIC-FALLBACK` (`eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc`)**:
+  - Bump `CAP-AGENT-001` to version `1.8.1` and extend `INV-AGENT-HYBRID-SEMANTIC-FALLBACK` and `tests/test_graph_index.py::test_hybrid_semantic_rrf_and_deterministic_fallback` to verify `HARRIER_DOC_MAX_LENGTH = 4096` truncation, dead `present_k_dummy`/`present_v_dummy` output pruning, and length-sorted token-budgeted batching (`max_batch_tokens = 2048`).
+
+== Implementation Plan
+
+1. **Bounded Tokenization (`4096`), Disk-Backed Dead GQA Output Pruning & Dynamic Batching (`src/eidos/core/index/semantic.py`)**:
+   * Define `HARRIER_DOC_MAX_LENGTH = 4096` (`100%` coverage of all `113` sliceable specs without truncation).
+   * Implement `_strip_unused_gqa_outputs(onnx_bytes: bytes) -> bytes` and `_ensure_pruned_onnx_graph(onnx_path: Path) -> Path` to rewrite `/model/layers.{i}/attn/GroupQueryAttention/present_k_dummy` and `present_v_dummy` node output slots to `""` on disk inside `onnx_path.parent` alongside `model_quantized.onnx_data`.
+   * In `SemanticEmbeddingEngine._ensure_loaded()`, configure `tokenizer.enable_truncation(max_length=HARRIER_DOC_MAX_LENGTH)`, set `sess_opts.enable_cpu_mem_arena = False` and `sess_opts.enable_mem_pattern = False`, preserve `ORT_ENABLE_BASIC` when `"quantized"` is in `onnx_path.name`, and pass `str(pruned_onnx_path)` to `ort.InferenceSession`.
+   * In `sync_spec_embeddings(..., batch_size: int = 8)`, keep `batch_size: int = 8` in the signature, estimate token length via `min(HARRIER_DOC_MAX_LENGTH, max(1, len(item["doc_text"]) // 4))`, sort `to_encode` by ascending `(est_tokens, entity_id)`, and group batches dynamically under `max_items = min(max(1, batch_size), 4)` and `max_batch_tokens = 2048` (encoding any `>= 1,024`-token spec solo at `batch_size = 1`).
+2. **Living Specifications (`eidos/architecture/components/semantic-embedding-engine.adoc`, `eidos/architecture/containers/index.adoc`, `eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc`)**:
+   * Update `CMP-SEMANTIC-EMBEDDING-ENGINE`, `CNT-EIDOS-INDEX` (including `DEC-INDEX-HYBRID-SEMANTIC-RRF.rejected_alternatives`), `CAP-AGENT-001` (`1.8.1`), and `INV-AGENT-HYBRID-SEMANTIC-FALLBACK` to reflect the bounded-memory semantic indexing architecture.
+3. **Verification & Invariant Tests (`tests/test_graph_index.py`)**:
+   * Extend `tests/test_graph_index.py::test_hybrid_semantic_rrf_and_deterministic_fallback` to assert `HARRIER_DOC_MAX_LENGTH == 4096`, verify that `_strip_unused_gqa_outputs` removes `present_k_dummy` and `present_v_dummy` outputs from `GroupQueryAttention` nodes while preserving valid protobuf structure, and verify that `sync_spec_embeddings` batches records in length-sorted order within `max_batch_tokens = 2048` (`batch_size = 1` for long specs) without requiring `tokenizer.json` when `encode_fn` is provided.
+   * Run `eidos delta verify DLT-2026-116-BOUND-SEMANTIC-893D --json`, `eidos delta apply DLT-2026-116-BOUND-SEMANTIC-893D`, `eidos validate eidos --json`, and `eidos drift --uncommitted --json`.

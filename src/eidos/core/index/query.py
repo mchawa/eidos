@@ -363,11 +363,14 @@ def execute_fts_query(
                 DEFAULT_RRF_W_LEX,
                 DEFAULT_RRF_W_SEM,
                 DEFAULT_SEMANTIC_MIN_COSINE,
+                _refresh_stale_embeddings_for_query,
                 encode_semantic_query,
                 fuse_hybrid_rrf,
                 query_semantic_embeddings,
             )
 
+            if query_embedding is None:
+                _refresh_stale_embeddings_for_query(conn, eidos_dir)
             q_vec = query_embedding if query_embedding is not None else encode_semantic_query(text, eidos_dir)
             if q_vec is not None:
                 sem_hits = query_semantic_embeddings(

@@ -2867,9 +2867,15 @@ def test_hybrid_semantic_rrf_and_deterministic_fallback(tmp_path: Path) -> None:
     from eidos.cli.main import app
     from eidos.core.index.query import build_fts_match_query, expand_architectural_synonyms
     from eidos.core.index.semantic import (
+        HARRIER_DOC_MAX_LENGTH,
         HARRIER_EMBEDDING_DIM,
+        HARRIER_MAX_BATCH_TOKENS,
         HARRIER_QUERY_INSTRUCTION,
         HARRIER_STS_INSTRUCTION,
+        _build_semantic_sync_batches,
+        _encode_varint,
+        _ensure_pruned_onnx_graph,
+        _strip_unused_gqa_outputs,
         compute_spec_embedding_sha256,
         format_harrier_query,
         pack_embedding_f32,
@@ -2880,13 +2886,55 @@ def test_hybrid_semantic_rrf_and_deterministic_fallback(tmp_path: Path) -> None:
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
     from eidos.vcs.invariants import recommend_invariants_for_unbound_tests
 
-    # 1. Verify Harrier sts_query formatting, spec-only SHA-256 isolation, and float32 packing
+    # 1. Verify Harrier sts_query formatting, bounded context/batching, GQA output pruning, spec-only SHA-256, and float32 packing
+    assert HARRIER_DOC_MAX_LENGTH == 4096
+    assert HARRIER_MAX_BATCH_TOKENS == 2048
     assert HARRIER_QUERY_INSTRUCTION == HARRIER_STS_INSTRUCTION
     q_fmt = format_harrier_query("prevent airgapped external calls")
     assert q_fmt.startswith(HARRIER_QUERY_INSTRUCTION)
     assert "Retrieve semantically similar text" in q_fmt
     assert "airgapped" in expand_architectural_synonyms("offline")
     assert '"zero"*' in build_fts_match_query("airgapped", operator="OR", expand_synonyms=True)
+
+    # Verify _strip_unused_gqa_outputs and _ensure_pruned_onnx_graph strip dead present_k_dummy/present_v_dummy outputs
+    def _len_field(field_num: int, payload: bytes) -> bytes:
+        return _encode_varint((field_num << 3) | 2) + _encode_varint(len(payload)) + payload
+
+    node_proto = (
+        _len_field(2, b"/model/layers.0/attn/GroupQueryAttention/output_0")
+        + _len_field(2, b"/model/layers.0/attn/GroupQueryAttention/present_k_dummy")
+        + _len_field(2, b"/model/layers.0/attn/GroupQueryAttention/present_v_dummy")
+    )
+    graph_proto = _len_field(1, node_proto)
+    model_proto = _len_field(7, graph_proto)
+    stripped_proto = _strip_unused_gqa_outputs(model_proto)
+    assert b"output_0" in stripped_proto
+    assert b"present_k_dummy" not in stripped_proto
+    assert b"present_v_dummy" not in stripped_proto
+    dummy_onnx_path = tmp_path / "dummy_onnx" / "model_quantized.onnx"
+    dummy_onnx_path.parent.mkdir(parents=True, exist_ok=True)
+    dummy_onnx_path.write_bytes(model_proto)
+    pruned_onnx_path = _ensure_pruned_onnx_graph(dummy_onnx_path)
+    assert pruned_onnx_path.parent == dummy_onnx_path.parent
+    assert pruned_onnx_path.name == "model_quantized.pruned.onnx"
+    assert b"present_k_dummy" not in pruned_onnx_path.read_bytes()
+
+    # Verify length-sorted, token-budgeted dynamic batching isolates long specs (batch_size=1 for >=1024 est tokens)
+    synth_records = [
+        {"entity_id": "EXP-HUGE", "doc_text": "x" * 6000},  # 1,500 est tokens -> solo batch
+        {"entity_id": "CMP-SHORT-1", "doc_text": "a" * 200},  # 50 est tokens
+        {"entity_id": "CMP-SHORT-2", "doc_text": "b" * 240},  # 60 est tokens
+        {"entity_id": "CMP-MED-1", "doc_text": "c" * 3200},  # 800 est tokens
+        {"entity_id": "CMP-MED-2", "doc_text": "d" * 3400},  # 850 est tokens
+        {"entity_id": "CMP-MED-3", "doc_text": "e" * 3600},  # 900 est tokens (3 * 900 > 2048 -> split)
+    ]
+    dyn_batches = _build_semantic_sync_batches(synth_records, batch_size=8, max_batch_tokens=2048)
+    assert [[r["entity_id"] for r in b] for b in dyn_batches] == [
+        ["CMP-SHORT-1", "CMP-SHORT-2"],
+        ["CMP-MED-1", "CMP-MED-2"],
+        ["CMP-MED-3"],
+        ["EXP-HUGE"],
+    ]
 
     sha_a = compute_spec_embedding_sha256(
         entity_id="CMP-ALPHA",
@@ -2959,6 +3007,16 @@ def test_hybrid_semantic_rrf_and_deterministic_fallback(tmp_path: Path) -> None:
         "def test_outbound_network_socket_blocked():\n    assert True\n",
         encoding="utf-8",
     )
+    (eidos_dir / "deltas").mkdir(parents=True, exist_ok=True)
+    (eidos_dir / "deltas" / "dlt-2026-001.adoc").write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-001\ntitle: Historical Delta\nstatus: applied\n---\n= Historical Delta\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "explorations").mkdir(parents=True, exist_ok=True)
+    (eidos_dir / "explorations" / "exp-2026-001.adoc").write_text(
+        "---\ntype: product/exploration\nid: EXP-2026-001\ntitle: Historical Spike\nstatus: concluded\n---\n= Historical Spike\n",
+        encoding="utf-8",
+    )
 
     idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
     try:
@@ -2988,9 +3046,20 @@ def test_hybrid_semantic_rrf_and_deterministic_fallback(tmp_path: Path) -> None:
                 blobs.append(pack_embedding_f32(vec))
             return blobs
 
-        sync_res1 = idx.sync_semantic(force=False, encode_fn=_deterministic_encoder)
+        from rich.console import Console
+
+        from eidos.core.index.semantic import _semantic_cli_progress
+
+        with _semantic_cli_progress(console=Console(quiet=True), mode="sync", enabled=True):
+            sync_res1 = idx.sync_semantic(force=False, encode_fn=_deterministic_encoder)
         assert sync_res1["encoded_entities"] > 0
         assert sync_res1["reused_entities"] == 0
+        embedded_ids = {
+            r[0] for r in idx._get_connection().execute("SELECT entity_id FROM spec_embeddings;").fetchall()
+        }
+        assert "CMP-HERMETIC-GUARD" in embedded_ids
+        assert "DLT-2026-001" not in embedded_ids
+        assert "EXP-2026-001" not in embedded_ids
 
         # Editing Python source code does NOT invalidate spec-only content_sha256 embeddings (0 re-encoded)
         guard_py.write_text("def block_sockets() -> bool:\n    return True\n\ndef extra_helper() -> int:\n    return 2\n", encoding="utf-8")
@@ -3005,6 +3074,29 @@ def test_hybrid_semantic_rrf_and_deterministic_fallback(tmp_path: Path) -> None:
         status_after_force = idx.get_semantic_status()
         assert status_after_force["embedded_entities"] == sync_res1["encoded_entities"]
         assert status_after_force["stale_or_missing_embeddings"] == 0
+
+        # Editing a living specification (.adoc) automatically refreshes its embedding during idx.sync(force=False)
+        old_guard_sha = (
+            idx._get_connection()
+            .execute("SELECT content_sha256 FROM spec_embeddings WHERE entity_id = 'CMP-HERMETIC-GUARD';")
+            .fetchone()[0]
+        )
+        cmp_sec_path.write_text(
+            dump_spec_document(
+                cmp_doc.frontmatter,
+                "= Hermetic Guard\n\n== Responsibility\nBlocks outbound network sockets in airgapped execution.\n",
+            ),
+            encoding="utf-8",
+        )
+        _touch_later(cmp_sec_path, offset=20)
+        idx.sync(force=False)
+        new_guard_sha = (
+            idx._get_connection()
+            .execute("SELECT content_sha256 FROM spec_embeddings WHERE entity_id = 'CMP-HERMETIC-GUARD';")
+            .fetchone()[0]
+        )
+        assert new_guard_sha != old_guard_sha
+        assert idx.get_semantic_status()["stale_or_missing_embeddings"] == 0
 
         # 5. Conceptual zero-keyword query ("egress firewall") retrieves CMP-HERMETIC-GUARD via Hybrid RRF (cos >= 0.50)
         sem_hits = idx.query_fts("egress firewall", limit=5, use_semantic=True)
