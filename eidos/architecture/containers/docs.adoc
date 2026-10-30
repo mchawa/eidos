@@ -22,7 +22,7 @@ contracts:
 This container represents the public documentation site under `docs/` and its build pipeline configured by `zensical.toml`. It publishes comprehensive guides, conceptual frameworks, under-the-hood engine mechanics, 16-schema glossaries, and live-validated CLI references to GitHub Pages (`https://mchawa.github.io/eidos/`), while embedding the Eidos Living Portal (`site/portal/`).
 
 == Internal Structure & Key Mechanisms
-* **Getting Started (`docs/getting-started/`)**: Installation prerequisites, workspace initialization (`eidos init`), and a 5-minute end-to-end onboarding walkthrough.
+* **Getting Started (`docs/getting-started/`)**: Installation prerequisites (including `uv tool install`, `pipx`, and the `ghcr.io/mchawa/eidos/eidos` Dev Container Feature), workspace initialization (`eidos init`), and a 5-minute end-to-end onboarding walkthrough.
 * **Core Concepts (`docs/concepts/`)**: Architectural deep-dives into How Eidos Works, Living Specifications (Arc42 + C4 + DDD), the SQLite/FTS5 Architectural Knowledge Graph, SpecDelta mutations, Test-Bound Invariants (`POL-002`), Technical Explorations (`EXP-*`), Multi-Design Systems (W3C DTCG tokens), and the 16-schema glossary.
 * **Operational Guides (`docs/guides/`)**: Full CLI command reference (`docs/guides/cli.md`), AI Agent Plugin integration across 8 coding harnesses including project-native Claude Code skills and `Stop` hook setup (`docs/guides/agent-plugin.md`), and Living Web Portal operations (`docs/guides/living-portal.md`).
 

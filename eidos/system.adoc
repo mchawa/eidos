@@ -33,7 +33,7 @@ decisions:
 
 * **Primary Languages**: YAML / AsciiDoc (Spec Layer), Python 3.11+ (CLI & Governance Engine), TypeScript / React 19 (Portal SPA)
 * **Runtimes & Frameworks**: Python 3.11+ (Typer, Rich, jsonschema, ast-grep-py, SQLite FTS5), Vite / React 19 (Living Web Portal)
-* **Deployment Targets**: Local Workstation (Developer CLI), CI/CD Pipeline Runners
+* **Deployment Targets**: Local Workstation (Developer CLI), Dev Containers & GitHub Codespaces (`ghcr.io/mchawa/eidos/eidos` OCI Dev Container Feature), CI/CD Pipeline Runners
 * **VCS Platforms**: Git (Local & Remote Repositories)
 * **Agent Support**: Antigravity (`agy`), Claude Code, Cursor / Cline / OpenCode / Aider, OpenAI Codex, GitHub Copilot
 

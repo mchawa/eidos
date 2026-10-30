@@ -1,0 +1,13 @@
+{
+  "with_semantic": {
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "features": {
+      "eidos": {
+        "version": "latest",
+        "semantic": true,
+        "pythonVersion": "3.14"
+      }
+    }
+  }
+}
+

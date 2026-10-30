@@ -27,6 +27,16 @@ decisions:
       - option: "Standalone Chronological ADR Directory"
         reason_rejected: "Decouples architectural rationale from the living components it governs, decaying into a write-only graveyard (POL-001)."
     graduated_from: EXP-2026-004
+  - id: DEC-ARCH-DEVCONTAINER-FEATURE
+    title: "Distribute Eidos as an OCI Dev Container Feature Backed by System-Wide uv Tool Installation"
+    decision: "Package and publish an official Dev Container Feature under devcontainer-features/src/eidos/ to ghcr.io/mchawa/eidos/eidos via devcontainers/action@v1, installing eidos-ai (and optional [semantic] extras) into /usr/local/bin and /usr/local/share/uv using uv."
+    rationale: "Installing into system-wide paths (/usr/local/bin and /usr/local/share/uv) during container image build ensures the eidos binary is immediately available on PATH for all container users (root, vscode, ubuntu, codespace) without per-user postCreateCommand delays or polluting the project's application Python environment."
+    rejected_alternatives:
+      - option: "Install eidos-ai into the system Python via pip install --break-system-packages"
+        reason_rejected: "Conflicts with PEP 668 externally-managed base images (Ubuntu 24.04+/Debian 12+) and risks dependency collisions with the workspace's own Python packages."
+      - option: "Rely solely on postCreateCommand shell scripts in consumer repositories"
+        reason_rejected: "Requires manual script duplication across repositories and delays first container startup instead of caching the Eidos CLI layer in the prebuilt devcontainer image."
+    graduated_from: DLT-2026-118-PUBLISH-OFFICIAL-B0B3
 ---
 = Eidos Global System Architecture (Arc42 & C4 Blueprint)
 :doctype: book
@@ -133,7 +143,8 @@ Runtime execution choreographies are defined in:
 
 == 7. Deployment View (Infrastructure & Delivery)
 * **Local Workstation**: Developers and AI agents install the standalone CLI tool (`uv tool install eidos-ai` / `pipx install eidos-ai` / `uvx --from eidos-ai eidos`).
-* **CI/CD Automation**: CI runners execute `eidos validate` and `eidos drift` gates on every PR.
+* **Dev Containers & Cloud IDEs**: Containerized development environments (VS Code Dev Containers, GitHub Codespaces, DevPod) provision Eidos declaratively via the published OCI Dev Container Feature (`ghcr.io/mchawa/eidos/eidos:1`) backed by system-wide `uv tool install` (`DEC-ARCH-DEVCONTAINER-FEATURE`).
+* **CI/CD Automation**: CI runners execute `eidos validate` and `eidos drift` gates on every PR, and release pipelines publish both the PyPI distributions (`eidos-ai`) and the OCI Dev Container Feature (`ghcr.io/mchawa/eidos/eidos`).
 
 == 8. Cross-Cutting Concepts
 * **Interface Contracts**:

@@ -1,0 +1,59 @@
+{
+  "id": "eidos",
+  "version": "1.0.0",
+  "name": "Eidos CLI (eidos-ai)",
+  "documentationURL": "https://mchawa.github.io/eidos/getting-started/installation/",
+  "licenseURL": "https://github.com/mchawa/eidos/blob/main/LICENSE",
+  "description": "Installs the Eidos Git-native living specification & AI architecture orchestrator CLI (eidos-ai) via uv.",
+  "keywords": [
+    "eidos",
+    "eidos-ai",
+    "architecture",
+    "c4-model",
+    "arc42",
+    "asciidoc",
+    "ai-agents",
+    "living-documentation"
+  ],
+  "options": {
+    "version": {
+      "type": "string",
+      "proposals": [
+        "latest"
+      ],
+      "default": "latest",
+      "description": "Version of eidos-ai to install from PyPI (or 'latest')."
+    },
+    "semantic": {
+      "type": "boolean",
+      "default": false,
+      "description": "Install optional local Harrier ONNX Hybrid RRF semantic search dependencies (eidos-ai[semantic])."
+    },
+    "pythonVersion": {
+      "type": "string",
+      "proposals": [
+        "3.14",
+        "3.13",
+        "3.12",
+        "3.11"
+      ],
+      "default": "3.14",
+      "description": "Python version for uv to use when provisioning the isolated Eidos tool environment (3.11-3.14 required when semantic=true)."
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "asciidoctor.asciidoctor-vscode",
+        "redhat.vscode-yaml"
+      ]
+    }
+  },
+  "installsAfter": [
+    "ghcr.io/devcontainers/features/common-utils",
+    "ghcr.io/devcontainers/features/git",
+    "ghcr.io/devcontainers/features/python",
+    "ghcr.io/devcontainer-community/devcontainer-features/astral.sh-uv"
+  ]
+}
+

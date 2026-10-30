@@ -40,6 +40,31 @@ pipx install eidos-ai
 
 ---
 
+## Installing via Dev Container Feature (VS Code Dev Containers / Codespaces)
+
+To provision `eidos` declaratively in a [Development Container](https://containers.dev/) or GitHub Codespace, add the official Eidos Dev Container Feature (`ghcr.io/mchawa/eidos/eidos:1`) to your `.devcontainer/devcontainer.json`:
+
+```json
+{
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/mchawa/eidos/eidos:1": {
+      "version": "latest",
+      "semantic": false,
+      "pythonVersion": "3.14"
+    }
+  }
+}
+```
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `version` | `string` | `"latest"` | Version of `eidos-ai` to install from PyPI (or `"latest"`). |
+| `semantic` | `boolean` | `false` | Install optional local Harrier ONNX Hybrid RRF semantic search dependencies (`eidos-ai[semantic]`). |
+| `pythonVersion` | `string` | `"3.14"` | Python version for `uv` to use when provisioning the isolated Eidos tool environment (`3.11`–`3.14` required when `semantic=true`). |
+
+---
+
 ## Bundled Polyglot AST Engine & Optional Extras
 
 `eidos-ai` bundles **`ast-grep-py` (`SgRoot`), `fastyaml-rs`, and `orjson` by default** as core dependencies, enabling out-of-the-box structural code indexing across 17 languages (Python, TypeScript, TSX, JavaScript, JSX, Go, Rust, Java, Kotlin, C, C++, C#, Ruby, PHP, Swift, Vue, and Svelte) and static test-binding verification across **Python, TypeScript, JavaScript, Go, Rust, Java, and Kotlin**.

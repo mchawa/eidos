@@ -301,3 +301,32 @@ jobs:
         with:
           files: dist/*
           body_path: release-notes/RELEASE_NOTES.md
+
+  publish-devcontainer-feature:
+    name: Publish Dev Container Feature 🐳
+    needs: [validate, test, build-site, publish-to-pypi]
+    runs-on: ubuntu-latest
+    if: |
+      always() &&
+      needs.validate.result == 'success' &&
+      needs.test.result == 'success' &&
+      needs.build-site.result == 'success' &&
+      (
+        (startsWith(github.ref, 'refs/tags/v') && needs.publish-to-pypi.result == 'success') ||
+        (github.event_name == 'workflow_dispatch' && needs.publish-to-pypi.result == 'skipped')
+      )
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Publish Dev Container Feature to GHCR
+        uses: devcontainers/action@v1
+        with:
+          publish-features: "true"
+          base-path-to-features: "./devcontainer-features/src"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

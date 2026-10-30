@@ -1,0 +1,131 @@
+---
+type: delta/mutation
+id: DLT-2026-118-PUBLISH-OFFICIAL-B0B3
+title: Publish Official Eidos Dev Container Feature to GHCR
+status: proposed
+intent:
+  kind: feature
+  motivation: "Provide a self-contained, OCI-compliant Dev Container Feature (ghcr.io/mchawa/eidos/eidos) so developers and cloud coding environments (GitHub Codespaces, VS Code Dev Containers, DevPod) can declaratively provision the Eidos CLI (eidos-ai) and optional local Harrier ONNX Hybrid RRF semantic search dependencies in any container image with zero manual bootstrap scripts."
+mutations:
+  - operation: modify
+    target: ARCH-EIDOS-001
+    details: "Update Section 7 (Deployment View) and decisions in eidos/architecture/system-architecture.adoc to document the OCI Dev Container Feature distribution target (ghcr.io/mchawa/eidos/eidos) alongside PyPI/uv and CI/CD runners, and record DEC-ARCH-DEVCONTAINER-FEATURE."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-ARCH-DEVCONTAINER-FEATURE"
+      body:
+        contains:
+          - "ghcr.io/mchawa/eidos/eidos"
+          - "Dev Container Feature"
+  - operation: modify
+    target: SYS-EIDOS-001
+    details: "Update Technical Profile Deployment Targets in eidos/system.adoc to include Dev Containers / GitHub Codespaces via the published OCI Dev Container Feature."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "Dev Container"
+          - "ghcr.io/mchawa/eidos/eidos"
+  - operation: modify
+    target: CMP-DOCS-GETTING-STARTED
+    details: "Update docs/getting-started/installation.md and eidos/architecture/components/docs-getting-started.adoc to document declarative installation via the ghcr.io/mchawa/eidos/eidos Dev Container Feature (including version, semantic, and pythonVersion options)."
+    expect:
+      frontmatter:
+        source_path:
+          - "docs/index.md"
+          - "docs/getting-started"
+        status: "active"
+      body:
+        contains:
+          - "Dev Container Feature"
+          - "ghcr.io/mchawa/eidos/eidos"
+  - operation: modify
+    target: CNT-EIDOS-DOCS
+    details: "Update eidos/architecture/containers/docs.adoc to reflect Dev Container Feature installation documentation under Getting Started."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "Dev Container Feature"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Bump CAP-PROD-001 to version 1.9.0 in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc and add INV-DEVCONTAINER-FEATURE-CONFORMANCE verifying devcontainer-feature.json schema and install.sh contract integrity."
+    expect:
+      frontmatter:
+        version: "1.9.0"
+        status: "active"
+        technical.invariants.id:
+          - "INV-DEVCONTAINER-FEATURE-CONFORMANCE"
+      body:
+        contains:
+          - "ghcr.io/mchawa/eidos/eidos"
+  - operation: add
+    target: INV-DEVCONTAINER-FEATURE-CONFORMANCE
+    details: "Add INV-DEVCONTAINER-FEATURE-CONFORMANCE bound to tests/test_devcontainer_feature.py::test_devcontainer_feature_manifest_and_installer_conformance."
+    expect:
+      frontmatter:
+        rule: "The OCI Dev Container Feature under devcontainer-features/src/eidos/ must maintain a schema-valid devcontainer-feature.json"
+        test_binding: "tests/test_devcontainer_feature.py::test_devcontainer_feature_manifest_and_installer_conformance"
+vcs:
+  branch: main
+  base_commit: d40aa52d317e10b65fde0f419171234f751f4b1a
+---
+= SpecDelta: Publish Official Eidos Dev Container Feature to GHCR
+:toc: left
+:icons: font
+:sectnums:
+
+== Problem Statement
+
+Adopting Eidos inside containerized development environments (VS Code Dev Containers, GitHub Codespaces, DevPod, or JetBrains Gateway) currently requires users to write custom `postCreateCommand` shell scripts to install `uv`, provision a compatible Python interpreter (`3.11`–`3.14` when using `[semantic]`), and run `uv tool install eidos-ai`.
+
+Publishing an official, OCI-compliant **Dev Container Feature** (`ghcr.io/mchawa/eidos/eidos`) allows any repository to declaratively add Eidos in `.devcontainer/devcontainer.json`:
+
+[source,json]
+----
+{
+  "features": {
+    "ghcr.io/mchawa/eidos/eidos:1": {
+      "version": "latest",
+      "semantic": true,
+      "pythonVersion": "3.14"
+    }
+  }
+}
+----
+
+== Proposed Specification Changes
+
+1. **Dev Container Feature Definition (`devcontainer-features/src/eidos/`)**:
+   * `devcontainer-feature.json`: Declares Feature ID `eidos`, semantic version `1.0.0`, options (`version`, `semantic`, `pythonVersion`), recommended VS Code extensions (`asciidoctor.asciidoctor-vscode`, `redhat.vscode-yaml`), and `installsAfter` ordering (`common-utils`, `git`, `python`, `astral.sh-uv`).
+   * `install.sh`: Executes as `root` during container build, detects the host package manager (`apt-get`, `apk`, `dnf`, `microdnf`, `yum`) to ensure `curl`, `ca-certificates`, and `git` are present, ensures `uv` is installed, validates/clamps `PYTHONVERSION` to `3.14` when `SEMANTIC="true"` and `PYTHONVERSION` is `>= 3.15` (since `onnxruntime` wheels require Python `3.11`–`3.14`), installs `eidos-ai` (or `eidos-ai[semantic]`) with `uv tool install --no-cache` into system-wide locations (`UV_TOOL_BIN_DIR=/usr/local/bin`, `UV_TOOL_DIR=/usr/local/share/uv/tools`, `UV_PYTHON_INSTALL_DIR=/usr/local/share/uv/python`), and applies `chmod -R a+rX` so any non-root `remoteUser` can invoke `eidos` directly without bloating the OCI image layer.
+   * `devcontainer-features/test/eidos/`: Automated `devcontainer features test` scenarios (`test.sh`, `with_semantic.sh`, and `scenarios.json`) verifying default installation and `[semantic]` extra provisioning.
+   * Exclude `"/devcontainer-features"` and `"/.devcontainer"` from `[tool.hatch.build.targets.sdist].exclude` in `pyproject.toml` so the PyPI source distribution remains isolated from Dev Container Feature artifacts.
+2. **CI/CD Publishing Pipeline (`.github/workflows/ci.yml`)**:
+   * Add a `publish-devcontainer-feature` job using `devcontainers/action@v1` (`publish-features: "true"`, `base-path-to-features: "./devcontainer-features/src"`) sequenced after validation, test, site build, and PyPI release (`needs: [validate, test, build-site, publish-to-pypi]` with `if: always() && ...`) and granted `permissions: { contents: write, packages: write }` to publish `ghcr.io/mchawa/eidos/eidos`.
+3. **Architecture & System Specifications (`ARCH-EIDOS-001`, `SYS-EIDOS-001`)**:
+   * Record `DEC-ARCH-DEVCONTAINER-FEATURE` (`graduated_from: DLT-2026-118-PUBLISH-OFFICIAL-B0B3`) and document the OCI Dev Container Feature distribution channel in `eidos/architecture/system-architecture.adoc` (Section 7: Deployment View) and `eidos/system.adoc`.
+4. **Documentation & Onboarding (`CMP-DOCS-GETTING-STARTED`, `CNT-EIDOS-DOCS`)**:
+   * Document the `ghcr.io/mchawa/eidos/eidos` Dev Container Feature and its configuration options (`version`, `semantic`, `pythonVersion`) in `docs/getting-started/installation.md`, `README.md`, and `eidos/architecture/components/docs-getting-started.adoc`.
+5. **Capability & Invariant Governance (`CAP-PROD-001`, `INV-DEVCONTAINER-FEATURE-CONFORMANCE`)**:
+   * Bump `CAP-PROD-001` to `1.9.0` and add `INV-DEVCONTAINER-FEATURE-CONFORMANCE` bound to `tests/test_devcontainer_feature.py::test_devcontainer_feature_manifest_and_installer_conformance`:
+     _"The OCI Dev Container Feature under devcontainer-features/src/eidos/ must maintain a schema-valid devcontainer-feature.json (exposing version, semantic, and pythonVersion options), an executable syntax-valid install.sh provisioning eidos-ai system-wide via uv with multi-distro prerequisite checks and Python <3.15 semantic guardrails, automated test scenarios under devcontainer-features/test/eidos/, sdist exclusion in pyproject.toml, and GHCR release automation in .github/workflows/ci.yml."_
+
+== Implementation Plan
+
+1. **Scaffold Feature Artifacts (`devcontainer-features/` & `pyproject.toml`)**:
+   * Create `devcontainer-features/src/eidos/devcontainer-feature.json`, `devcontainer-features/src/eidos/install.sh` (`chmod +x`), and `devcontainer-features/src/eidos/README.md`.
+   * Create `devcontainer-features/test/eidos/test.sh` (`chmod +x`), `devcontainer-features/test/eidos/with_semantic.sh` (`chmod +x`), and `devcontainer-features/test/eidos/scenarios.json`.
+   * Add `"/.devcontainer"` and `"/devcontainer-features"` to `[tool.hatch.build.targets.sdist].exclude` in `pyproject.toml`.
+2. **Wire GHCR Publishing in `.github/workflows/ci.yml`**:
+   * Add a `publish-devcontainer-feature` job in `.github/workflows/ci.yml` sequenced after `validate`, `test`, `build-site`, and `publish-to-pypi` (running on `refs/tags/v*` after PyPI publish succeeds, or on `workflow_dispatch`) with `permissions: { contents: write, packages: write }` using `devcontainers/action@v1` to publish `./devcontainer-features/src` to `ghcr.io/mchawa/eidos/eidos`.
+3. **Update Living Specifications & User Documentation**:
+   * Update `eidos/architecture/system-architecture.adoc` (`ARCH-EIDOS-001`), `eidos/system.adoc` (`SYS-EIDOS-001`), `eidos/architecture/components/docs-getting-started.adoc` (`CMP-DOCS-GETTING-STARTED`), `eidos/architecture/containers/docs.adoc` (`CNT-EIDOS-DOCS`), `eidos/domains/spec-engine/capabilities/living-spec-engine.adoc` (`CAP-PROD-001`), `docs/getting-started/installation.md`, and `README.md`.
+4. **Add Invariant Test Suite, Verify & Apply**:
+   * Add `tests/test_devcontainer_feature.py::test_devcontainer_feature_manifest_and_installer_conformance` verifying `INV-DEVCONTAINER-FEATURE-CONFORMANCE`.
+   * Run `eidos validate eidos --json`, `eidos delta verify DLT-2026-118-PUBLISH-OFFICIAL-B0B3 --json`, `eidos delta apply DLT-2026-118-PUBLISH-OFFICIAL-B0B3`, `eidos drift --uncommitted --json`, and `pytest`.
+

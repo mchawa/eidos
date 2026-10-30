@@ -66,6 +66,8 @@ path = "src/eidos/portal/frontend/scripts/hatch_build.py"
 skip-excluded-dirs = true
 exclude = [
     "/.agents",
+    "/.devcontainer",
+    "/devcontainer-features",
     "/plugins",
 ]
 

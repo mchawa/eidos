@@ -60,6 +60,22 @@ eidos portal serve --path eidos --port 8080
 eidos plugin install all
 ```
 
+### Dev Container Feature (VS Code Dev Containers & GitHub Codespaces)
+
+Add the official Eidos Dev Container Feature (`ghcr.io/mchawa/eidos/eidos:1`) to `.devcontainer/devcontainer.json`:
+
+```json
+{
+  "features": {
+    "ghcr.io/mchawa/eidos/eidos:1": {
+      "version": "latest",
+      "semantic": true,
+      "pythonVersion": "3.14"
+    }
+  }
+}
+```
+
 ### Optional Local Semantic Search (Hybrid RRF)
 
 By default, Eidos runs with zero model weights using SQLite FTS5 BM25, architectural synonym expansion, and recursive CTE graph traversal (`< 4ms`). To enable **Hybrid Reciprocal Rank Fusion (RRF)** combining lexical BM25 with local dense embeddings (`microsoft/harrier-oss-v1-0.6b` ONNX, 100% offline under `POL-004`):

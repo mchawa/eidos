@@ -4,7 +4,7 @@ id: CAP-PROD-001
 title: "Living Baseline Specification Engine"
 domain: DOM-SPEC-ENGINE
 status: active
-version: "1.8.0"
+version: "1.9.0"
 
 business:
   personas:
@@ -85,6 +85,9 @@ technical:
     - id: INV-FOREIGN-REPO-E2E
       rule: "Any external polyglot repository initialized with eidos init must support the complete Eidos lifecycle (spec create, validate, index sync, context, drift, and portal build) with clean validation and drift detection regardless of parent checkout path (e.g. ~/src/repo) or custom spec root directory (--path)."
       test_binding: "tests/test_scaffolder.py::test_foreign_repo_end_to_end_workflow"
+    - id: INV-DEVCONTAINER-FEATURE-CONFORMANCE
+      rule: "The OCI Dev Container Feature under devcontainer-features/src/eidos/ must maintain a schema-valid devcontainer-feature.json (exposing version, semantic, and pythonVersion options), an executable syntax-valid install.sh provisioning eidos-ai system-wide via uv with multi-distro prerequisite checks and Python <3.15 semantic guardrails, automated test scenarios under devcontainer-features/test/eidos/, sdist exclusion in pyproject.toml, and GHCR release automation in .github/workflows/ci.yml."
+      test_binding: "tests/test_devcontainer_feature.py::test_devcontainer_feature_manifest_and_installer_conformance"
 ---
 = Capability: Living Baseline Specification Engine
 :toc: left
@@ -105,5 +108,6 @@ Through an embedded SQLite Knowledge Graph (`eidos/.cache/index.db`), Eidos brid
 * **Zero-Drift Incremental Sync**: Single-pass recursive `os.scandir` mtime and SHA-256 dirty checking (`check_index_dirty`) with pre-filtered `top_code_dirs` boundary checks that keeps the SQLite graph continuously synchronized with the working tree in under 2ms.
 * **Sub-Millisecond Catalog Resolution**: Powering `eidos spec list`, `eidos spec show`, and CLI inspection commands with instant relational queries rather than linear disk scans.
 * **Recursive Blast-Radius & Search**: SQLite recursive Common Table Expressions (CTEs) traversing k-hop impact boundaries and FTS5 full-text search over titles, descriptions, and keywords.
+* **OCI Dev Container Feature Distribution (`ghcr.io/mchawa/eidos/eidos`, `INV-DEVCONTAINER-FEATURE-CONFORMANCE`)**: Declarative Dev Container Feature provisioning `eidos-ai` (and optional `[semantic]` extras) system-wide via `uv` across containerized development environments (VS Code Dev Containers, GitHub Codespaces, DevPod).
 
 
