@@ -19,8 +19,8 @@ This repository dogfoods the **Eidos Specification Standard** to define Eidos it
 # Install globally as a standalone CLI tool with uv (recommended)
 uv tool install eidos-ai
 
-# Or install with optional local Harrier ONNX Hybrid RRF semantic search support
-uv tool install "eidos-ai[semantic]"
+# Or install with optional local Harrier ONNX Hybrid RRF semantic search support (Python 3.11–3.14)
+uv tool install --python 3.14 "eidos-ai[semantic]"
 
 # Or install with pipx
 pipx install eidos-ai
@@ -64,9 +64,11 @@ eidos plugin install all
 
 By default, Eidos runs with zero model weights using SQLite FTS5 BM25, architectural synonym expansion, and recursive CTE graph traversal (`< 4ms`). To enable **Hybrid Reciprocal Rank Fusion (RRF)** combining lexical BM25 with local dense embeddings (`microsoft/harrier-oss-v1-0.6b` ONNX, 100% offline under `POL-004`):
 
+> **Note (Python Version):** `onnxruntime` currently publishes prebuilt wheels only for **Python 3.11–3.14** (`python_version < '3.15'`). If your default interpreter is Python 3.15, pass `--python 3.14` when installing or syncing the `[semantic]` extra; on Python 3.15, Eidos automatically falls back to lexical FTS5 BM25 retrieval.
+
 ```bash
-# 1. Install optional ONNX Runtime + Tokenizers + NumPy extra
-uv tool install "eidos-ai[semantic]"   # or: uv sync --extra semantic
+# 1. Install optional ONNX Runtime + Tokenizers + NumPy extra (Python 3.11–3.14)
+uv tool install --python 3.14 "eidos-ai[semantic]"   # or: uv sync --python 3.14 --extra semantic
 
 # 2. Download Harrier ONNX artifacts into eidos/.cache/models/harrier-oss-v1-0.6b/
 eidos index semantic setup             # --model quantized (default INT8, 706 MB) | fp16 | fp32

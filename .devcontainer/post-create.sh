@@ -7,14 +7,14 @@ echo "========================================================"
 
 export PATH="$HOME/.local/bin:$PATH"
 
-# 1. Install Python 3.15 via uv
-echo "==> Ensuring Python 3.15 via uv..."
-uv python install --default 3.15
+# 1. Install Python 3.14 via uv (3.14 is the latest release with prebuilt onnxruntime wheels for [semantic])
+echo "==> Ensuring Python 3.14 via uv..."
+uv python install --default 3.14
 
-# 2. Set up Python virtual environment and install Eidos CLI tool
-echo "==> Setting up Eidos environment with Python 3.15..."
+# 2. Set up Python virtual environment and install Eidos CLI tool (with [semantic] extra)
+echo "==> Setting up Eidos environment with Python 3.14..."
 uv sync --all-extras --dev
-uv tool install --force --editable .
+uv tool install --force --editable ".[semantic]"
 
 # 3. Install Living Portal frontend dependencies
 if [ -d "src/eidos/portal/frontend" ] && command -v pnpm &>/dev/null; then
