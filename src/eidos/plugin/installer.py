@@ -24,7 +24,7 @@ from eidos.plugin.version import (
 class PluginInstallTarget(enum.StrEnum):
     PROJECT = "project"  # Installs .agents/plugins/eidos (agent-plugins.org v1.0.0) and client configurations
     ANTIGRAVITY = "antigravity"  # Installs .agents/plugins/eidos (strict agent-plugins.org v1.0.0)
-    CLAUDE = "claude"  # Installs Claude Code plugin (.claude/plugins/eidos & .claude/skills)
+    CLAUDE = "claude"  # Configures Claude Code skills (.claude/skills) and Stop hook (.claude/settings.json)
     CURSOR = "cursor"  # Configures Cursor rules (.cursor/rules/eidos.mdc) and skills (.cursor/skills)
     AIDER = "aider"  # Configures .aider.conf.yml and .aider.conventions.md
     CLINE = "cline"  # Configures .cline/plugins/eidos and .cline/skills
@@ -144,6 +144,8 @@ def _write_installation_manifest(target_dir: Path, created_files: list[Path] | N
         try:
             rel = str(f.relative_to(target_dir))
         except ValueError:
+            continue
+        if rel == "settings.json":
             continue
         manifest_data["files"][rel] = _compute_sha256(f)
 
@@ -310,199 +312,159 @@ def _remove_skills_flat(source_dir: Path | None, target_skills_dir: Path) -> boo
     return removed_any
 
 
-def _ensure_claude_plugin_manifest(target_dir: Path, force: bool = False) -> list[Path] | None:
-    """Ensure plugin.json exists at root and in .claude-plugin/ of target plugin directory."""
-    _check_not_symlink(target_dir)
-    target_dir.mkdir(parents=True, exist_ok=True)
-    manifest_file = target_dir / "plugin.json"
-    _check_not_symlink(manifest_file, root=target_dir)
+def _is_eidos_hook_command(cmd: Any) -> bool:
+    """Return True if a hook command string invokes 'eidos hook' directly or via uvx."""
+    if not isinstance(cmd, str):
+        return False
+    return bool(re.search(r"(?:^|\s)eidos\s+hook(?:\s|$)", cmd.strip()))
 
-    if manifest_file.exists() and not force:
-        try:
-            existing_root = orjson.loads(manifest_file.read_bytes())
-            if not isinstance(existing_root, dict) or existing_root.get("name") != "eidos":
-                return None
-        except (OSError, orjson.JSONDecodeError, ValueError):
-            return None
 
-    claude_meta_dir = target_dir / ".claude-plugin"
-    _check_not_symlink(claude_meta_dir, root=target_dir)
-    claude_meta_dir.mkdir(parents=True, exist_ok=True)
-    legacy_manifest_file = claude_meta_dir / "plugin.json"
-    _check_not_symlink(legacy_manifest_file, root=target_dir)
-    bundled_ver = get_bundled_plugin_version()
+def _is_eidos_stop_hook_entry(entry: Any) -> bool:
+    """Return True if a Claude Code Stop hook entry contains only or any Eidos hook handler."""
+    if not isinstance(entry, dict):
+        return False
+    if _is_eidos_hook_command(entry.get("command")):
+        return True
+    sub_hooks = entry.get("hooks")
+    if isinstance(sub_hooks, list):
+        return any(isinstance(h, dict) and _is_eidos_hook_command(h.get("command")) for h in sub_hooks)
+    return False
 
-    manifest_data = {
-        "name": "eidos",
-        "displayName": "Eidos AI Lifecycle Ecosystem",
-        "version": bundled_ver,
-        "description": "Git-native, agent-agnostic development AI ecosystem and lifecycle orchestration framework for Claude Code.",
-        "author": {
-            "name": "Eidos Contributors",
-            "url": "https://github.com/eidos-ai/eidos",
-        },
-        "homepage": "https://github.com/eidos-ai/eidos",
-        "repository": "https://github.com/eidos-ai/eidos",
-        "license": "MIT",
-        "keywords": [
-            "eidos",
-            "agent-plugins",
-            "arc42",
-            "c4-model",
-            "specs",
-            "ai-orchestration",
-        ],
-    }
 
-    created: list[Path] = []
-    for mfile in (manifest_file, legacy_manifest_file):
-        _check_not_symlink(mfile, root=target_dir)
-        if mfile.exists():
-            try:
-                existing = orjson.loads(mfile.read_bytes())
-                if not isinstance(existing, dict) or existing.get("name") != "eidos":
-                    if not force:
-                        continue
-                    manifest_data_to_write = manifest_data
-                else:
-                    manifest_data_to_write = {**existing, **manifest_data}
-            except (OSError, orjson.JSONDecodeError, ValueError):
-                if not force:
-                    continue
-                manifest_data_to_write = manifest_data
+def _cleanup_legacy_claude_plugin_keys(data: dict[str, Any]) -> bool:
+    """Remove legacy Eidos 'plugins' and 'enabledPlugins' keys from a Claude settings dict."""
+    changed = False
+    enabled = data.get("enabledPlugins")
+    if isinstance(enabled, dict):
+        for k in ("eidos", "eidos@plugins-dir", "eidos@local", "eidos@skills-dir"):
+            if k in enabled:
+                del enabled[k]
+                changed = True
+        if not enabled:
+            data.pop("enabledPlugins", None)
+            changed = True
+
+    plugins_list = data.get("plugins")
+    if isinstance(plugins_list, list):
+        filtered = [
+            p
+            for p in plugins_list
+            if not (isinstance(p, dict) and p.get("path") in (".claude/plugins/eidos", "./.claude/plugins/eidos"))
+        ]
+        if len(filtered) != len(plugins_list):
+            changed = True
+        if filtered:
+            data["plugins"] = filtered
         else:
-            manifest_data_to_write = manifest_data
+            data.pop("plugins", None)
+            changed = True
 
-        mfile.write_bytes(orjson.dumps(manifest_data_to_write, option=orjson.OPT_INDENT_2))
-        created.append(mfile)
-
-    return created if created else None
+    return changed
 
 
-def _write_claude_commands(target_dir: Path, launcher: str = "eidos", force: bool = False) -> list[Path]:
-    """Write Claude Code slash commands to target_dir/commands/ (Layer 2: Commands)."""
-    _check_not_symlink(target_dir)
-    commands_dir = target_dir / "commands"
-    _check_not_symlink(commands_dir, root=target_dir)
-    commands_dir.mkdir(parents=True, exist_ok=True)
-    created = []
-    bundled_ver = get_bundled_plugin_version()
-    cmd_prefix = f"uvx --from eidos-ai=={bundled_ver} eidos" if launcher == "uvx" else "eidos"
-
-    commands = {
-        "validate.md": (
-            "---\n"
-            "description: Validate all Eidos living specifications against canonical JSON schemas\n"
-            "---\n\n"
-            "Run specification validation:\n"
-            "```bash\n"
-            f"{cmd_prefix} validate eidos\n"
-            "```\n"
-        ),
-        "drift.md": (
-            "---\n"
-            "description: Detect spec-to-code drift and uncommitted changes against living specs\n"
-            "---\n\n"
-            "Run drift detection:\n"
-            "```bash\n"
-            f"{cmd_prefix} drift --uncommitted\n"
-            "```\n"
-        ),
-        "context.md": (
-            "---\n"
-            "description: Extract a token-efficient architectural context slice for current task\n"
-            "---\n\n"
-            "Extract architectural context:\n"
-            "```bash\n"
-            f"{cmd_prefix} context\n"
-            "```\n"
-        ),
-    }
-
-    for filename, content in commands.items():
-        cmd_file = commands_dir / filename
-        _check_not_symlink(cmd_file, root=target_dir)
-        if cmd_file.exists() and not force:
-            continue
-        cmd_file.write_text(content, encoding="utf-8")
-        created.append(cmd_file)
-
-    return created
-
-
-def _update_project_claude_settings(file_path: Path, plugin_id: str = "eidos") -> bool:
-    """Safely update project-level .claude/settings.json to enable the Eidos plugin."""
+def _update_project_claude_settings(file_path: Path, launcher: str = "eidos") -> Path:
+    """Safely update project-level .claude/settings.json to register the Eidos Stop hook."""
     _check_not_symlink(file_path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
-    data = {}
+    data: dict[str, Any] = {}
     if file_path.exists():
         try:
-            data = orjson.loads(file_path.read_bytes())
+            loaded = orjson.loads(file_path.read_bytes())
+            if isinstance(loaded, dict):
+                data = loaded
         except (OSError, orjson.JSONDecodeError, ValueError):
             data = {}
 
-    if "plugins" not in data or not isinstance(data["plugins"], list):
-        data["plugins"] = []
+    _cleanup_legacy_claude_plugin_keys(data)
 
-    has_plugin_entry = any(
-        isinstance(p, dict) and p.get("path") in (".claude/plugins/eidos", "./.claude/plugins/eidos")
-        for p in data["plugins"]
-    )
-    if not has_plugin_entry:
-        data["plugins"].append({"path": ".claude/plugins/eidos"})
+    bundled_ver = get_bundled_plugin_version()
+    hook_cmd = f"uvx --from eidos-ai=={bundled_ver} eidos hook" if launcher == "uvx" else "eidos hook"
+    eidos_sub_hook = {
+        "type": "command",
+        "command": hook_cmd,
+        "timeout": 30,
+    }
 
-    if "enabledPlugins" not in data or not isinstance(data["enabledPlugins"], dict):
-        data["enabledPlugins"] = {}
+    if not isinstance(data.get("hooks"), dict):
+        data["hooks"] = {}
+    hooks_dict: dict[str, Any] = data["hooks"]
 
-    data["enabledPlugins"]["eidos"] = True
-    data["enabledPlugins"]["eidos@plugins-dir"] = True
-    data["enabledPlugins"]["eidos@local"] = True
-    if plugin_id:
-        data["enabledPlugins"][plugin_id] = True
+    stop_list = hooks_dict.get("Stop")
+    if not isinstance(stop_list, list):
+        stop_list = []
 
+    new_stop_list: list[Any] = []
+    replaced = False
+    for entry in stop_list:
+        if _is_eidos_stop_hook_entry(entry) and isinstance(entry, dict) and isinstance(entry.get("hooks"), list):
+            new_sub_hooks: list[Any] = []
+            for h in entry["hooks"]:
+                if isinstance(h, dict) and _is_eidos_hook_command(h.get("command")):
+                    if not replaced:
+                        new_sub_hooks.append(eidos_sub_hook)
+                        replaced = True
+                else:
+                    new_sub_hooks.append(h)
+            if new_sub_hooks:
+                new_stop_list.append({**entry, "hooks": new_sub_hooks})
+        else:
+            new_stop_list.append(entry)
+
+    if not replaced:
+        new_stop_list.append({"hooks": [eidos_sub_hook]})
+
+    hooks_dict["Stop"] = new_stop_list
     file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
-    return True
+    return file_path
 
 
-def _remove_project_claude_settings(file_path: Path, plugin_id: str = "eidos") -> bool:
-    """Safely remove a plugin from project-level .claude/settings.json."""
+def _remove_project_claude_settings(file_path: Path) -> bool:
+    """Safely remove Eidos Stop hook and legacy keys from project-level .claude/settings.json."""
     if not file_path.exists():
         return False
     try:
         data = orjson.loads(file_path.read_bytes())
+        if not isinstance(data, dict):
+            return False
     except (OSError, orjson.JSONDecodeError, ValueError):
         return False
 
-    changed = False
-    plugins = data.get("enabledPlugins", {})
-    keys_to_remove = ["eidos", "eidos@plugins-dir", "eidos@local", "eidos@skills-dir"]
-    if plugin_id:
-        keys_to_remove.append(plugin_id)
+    changed = _cleanup_legacy_claude_plugin_keys(data)
 
-    for k in keys_to_remove:
-        if k in plugins:
-            del plugins[k]
-            changed = True
-    data["enabledPlugins"] = plugins
+    hooks_dict = data.get("hooks")
+    if isinstance(hooks_dict, dict):
+        stop_list = hooks_dict.get("Stop")
+        if isinstance(stop_list, list):
+            new_stop_list: list[Any] = []
+            for entry in stop_list:
+                if isinstance(entry, dict) and isinstance(entry.get("hooks"), list):
+                    kept_sub = [
+                        h
+                        for h in entry["hooks"]
+                        if not (isinstance(h, dict) and _is_eidos_hook_command(h.get("command")))
+                    ]
+                    if len(kept_sub) != len(entry["hooks"]):
+                        changed = True
+                    if kept_sub:
+                        new_stop_list.append({**entry, "hooks": kept_sub})
+                elif _is_eidos_stop_hook_entry(entry):
+                    changed = True
+                else:
+                    new_stop_list.append(entry)
 
-    if "plugins" in data and isinstance(data["plugins"], list):
-        orig_len = len(data["plugins"])
-        data["plugins"] = [
-            p
-            for p in data["plugins"]
-            if not (isinstance(p, dict) and p.get("path") in (".claude/plugins/eidos", "./.claude/plugins/eidos"))
-        ]
-        if len(data["plugins"]) != orig_len:
-            changed = True
+            if new_stop_list:
+                hooks_dict["Stop"] = new_stop_list
+            else:
+                hooks_dict.pop("Stop", None)
+                changed = True
+
+        if not hooks_dict:
+            data.pop("hooks", None)
 
     if not changed:
         return False
 
-    has_other_plugins = bool(data.get("plugins"))
-    has_other_enabled = bool(data.get("enabledPlugins"))
-    has_other_keys = any(k for k in data if k not in ("plugins", "enabledPlugins"))
-
-    if not has_other_plugins and not has_other_enabled and not has_other_keys:
+    if not data:
         file_path.unlink()
         parent = file_path.parent
         if parent.exists() and not any(parent.iterdir()):
@@ -896,11 +858,18 @@ def _uninstall_from_manifest(target_dir: Path) -> bool:
     removed_any = False
     try:
         data = orjson.loads(manifest_file.read_bytes())
-        files_dict = data.get("files", {})
+        files_entry = data.get("files", {})
     except (OSError, orjson.JSONDecodeError, ValueError):
-        files_dict = {}
+        files_entry = {}
 
-    for rel_path in sorted(files_dict.keys(), reverse=True):
+    rel_paths = (
+        list(files_entry.keys())
+        if isinstance(files_entry, dict)
+        else ([str(p) for p in files_entry] if isinstance(files_entry, list) else [])
+    )
+    for rel_path in sorted(rel_paths, reverse=True):
+        if rel_path == "settings.json":
+            continue
         f_path = target_dir / rel_path
         if f_path.is_symlink() or f_path.is_file():
             with contextlib.suppress(OSError):
@@ -939,16 +908,28 @@ def _prune_empty_dirs_list(root: Path, rel_dirs: tuple[str, ...]) -> None:
                 d.rmdir()
 
 
-def _claude_pre_manifest_hook(root: Path, plugin_dir: Path, force: bool, launcher: str) -> list[Path]:
-    extra: list[Path] = []
-    manifests = _ensure_claude_plugin_manifest(plugin_dir, force=force)
-    if manifests is not None:
-        extra.extend(m for m in manifests if m is not None)
-    extra.extend(_write_claude_commands(plugin_dir, launcher=launcher, force=force))
+def _claude_post_install_hook(root: Path, launcher: str) -> list[Path]:
+    legacy_plugin_dir = root / ".claude" / "plugins" / "eidos"
+    if legacy_plugin_dir.exists():
+        _uninstall_from_manifest(legacy_plugin_dir)
+        if legacy_plugin_dir.exists() and (legacy_plugin_dir / "plugin.json").exists():
+            shutil.rmtree(legacy_plugin_dir, ignore_errors=True)
+        _prune_empty_dirs_list(root, (".claude/plugins/eidos", ".claude/plugins"))
     claude_settings = root / ".claude" / "settings.json"
-    _update_project_claude_settings(claude_settings, "eidos@plugins-dir")
-    extra.append(claude_settings)
-    return extra
+    _update_project_claude_settings(claude_settings, launcher=launcher)
+    return [claude_settings]
+
+
+def _claude_extra_uninstall(root: Path) -> bool:
+    removed_legacy = False
+    legacy_plugin_dir = root / ".claude" / "plugins" / "eidos"
+    if legacy_plugin_dir.exists():
+        removed_legacy = _uninstall_from_manifest(legacy_plugin_dir)
+        if legacy_plugin_dir.exists() and (legacy_plugin_dir / "plugin.json").exists():
+            shutil.rmtree(legacy_plugin_dir, ignore_errors=True)
+            removed_legacy = True
+    removed_settings = _remove_project_claude_settings(root / ".claude" / "settings.json")
+    return removed_legacy or removed_settings
 
 
 def _codex_pre_manifest_hook(root: Path, source_dir: Path, plugin_dir: Path, force: bool) -> list[Path]:
@@ -1114,18 +1095,15 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
     PluginInstallTarget.CLAUDE: TargetAdapter(
         target=PluginInstallTarget.CLAUDE,
         name="claude",
-        plugin_subdir=".claude/plugins/eidos",
+        plugin_subdir=".claude",
         skills_subdir=".claude/skills",
-        install_message="Installed Claude Code plugin at .claude/plugins/eidos, 4 skills in .claude/skills/, commands in .claude/plugins/eidos/commands/, and configured .claude/settings.json.",
-        uninstall_removed_message="Removed Claude Code plugin from .claude/plugins/eidos, skills from .claude/skills/, and cleaned up .claude configuration.",
-        uninstall_clean_message="No Claude Code plugin found (already removed).",
-        prune_dirs=(".claude/plugins", ".claude"),
-        pre_manifest_hook=lambda root, _src, plugin_dir, force, launcher: _claude_pre_manifest_hook(
-            root, plugin_dir, force, launcher
-        ),
-        extra_uninstall_hook=lambda root: _remove_project_claude_settings(
-            root / ".claude" / "settings.json", "eidos@plugins-dir"
-        ),
+        copy_plugin_tree=False,
+        install_message="Installed 4 Claude Code skills in .claude/skills/ and configured Stop hook in .claude/settings.json.",
+        uninstall_removed_message="Removed Claude Code skills from .claude/skills/ and cleaned up .claude/settings.json.",
+        uninstall_clean_message="No Claude Code configuration found (already removed).",
+        prune_dirs=(".claude/skills", ".claude/plugins", ".claude"),
+        post_install_hook=lambda root, _src, _force, launcher: _claude_post_install_hook(root, launcher),
+        extra_uninstall_hook=_claude_extra_uninstall,
     ),
     PluginInstallTarget.AIDER: TargetAdapter(
         target=PluginInstallTarget.AIDER,

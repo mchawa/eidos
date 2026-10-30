@@ -13,7 +13,7 @@ source_path: docs/guides
 Provides operational reference manuals for the Eidos CLI (`docs/guides/cli.md`), AI Agent Plugin integration across 8 coding harnesses (`docs/guides/agent-plugin.md`), and Living Web Portal deployment (`docs/guides/living-portal.md`).
 
 == Key Responsibilities & Collaborators
-* **CLI, Agent Plugin & Portal Manuals**: Documents every top-level command, subcommand, and flag exposed by `CTR-EIDOS-CLI`, the 4 bundled workflow skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`), and interactive/static Living Portal workflows.
+* **CLI, Agent Plugin & Portal Manuals**: Documents every top-level command, subcommand, and flag exposed by `CTR-EIDOS-CLI`, the 4 bundled workflow skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`), project-native Claude Code integration (`.claude/skills/` and `.claude/settings.json` `hooks.Stop`), and interactive/static Living Portal workflows.
 
 == Public Surface
 * `docs/guides/cli.md`

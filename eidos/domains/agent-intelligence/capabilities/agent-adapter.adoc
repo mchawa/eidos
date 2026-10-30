@@ -4,7 +4,7 @@ id: CAP-AGENT-001
 title: "Universal Agent Adapter & Context Slicing Engine"
 domain: DOM-AGENT-INTELLIGENCE
 status: active
-version: "1.8.1"
+version: "1.8.2"
 
 business:
   personas:
@@ -68,7 +68,7 @@ In strict adherence to *POL-004*, Eidos never initiates AI/LLM calls itself. Ins
 * **Hybrid Lexical-Relational Retrieval**: Combining FTS5 BM25 search with graph-neighborhood traversals to resolve engineering prompts to architectural entities.
 * **Architectural Blast-Radius Analysis**: Recursive CTE impact mapping allowing agents to assess blast radius before proposing code changes.
 * **Stateless Stop Lifecycle Hook**: Single unified `Stop` hook (`eidos hook`) verifying specification schemas, cross-references, invariant test bindings, and spec-to-code synchronization via `detect_drift` and emitting non-blocking `systemMessage` warnings when drift or validation errors are detected.
-* **Non-Destructive Plugin Ecosystem Management**: Installing and removing agent plugins via `eidos plugin` with deterministic `.eidos-manifest.json` tracking (preventing destruction of shared parent directories), non-destructive `force=False` overwrite semantics, symlink guards, and version-pinned `uvx` hook execution.
+* **Non-Destructive Plugin Ecosystem Management**: Installing and removing agent plugins via `eidos plugin` (including project-native Claude Code `.claude/skills/` and `.claude/settings.json` `hooks.Stop` registration) with deterministic `.eidos-manifest.json` tracking (preventing destruction of shared parent directories and shared host settings files), non-destructive `force=False` overwrite semantics, symlink guards, and version-pinned `uvx` hook execution.
 
 == Tiered Context Slicing Architecture
 

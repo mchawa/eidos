@@ -64,7 +64,7 @@ Manages the interactive Living Web Portal and documentation site export.
 === `eidos plugin`
 Manages, validates, installs, updates, and uninstalls Eidos Agent Plugins across supported AI agent environments (Antigravity, Claude Code, Cursor, Aider, Cline, OpenCode, OpenAI Codex, and GitHub Copilot).
 * **Sub-commands**:
-  - `install [TARGET] [--project-dir <path>] [--dest <path>] [--force] [--launcher <launcher>]`: Installs the plugin into `.agents/plugins/eidos` (strict `agent-plugins.org` v1.0.0), `.claude/plugins/eidos/` & `.claude/skills/` (Claude Code 6-Layer Plugin Architecture), `.github/plugin/` & `.github/skills/` (Copilot Agent Plugins 1.0), `.cursor/skills/`, `.cline/skills/`, `.opencode/skills/`, `.codex/skills/`, `.aider/skills/`, and configures client settings and Agent Skills.
+  - `install [TARGET] [--project-dir <path>] [--dest <path>] [--force] [--launcher <launcher>]`: Installs the plugin into `.agents/plugins/eidos` (strict `agent-plugins.org` v1.0.0), `.claude/skills/` & `.claude/settings.json` (Claude Code project-native skills and `Stop` hook), `.github/plugin/` & `.github/skills/` (Copilot Agent Plugins 1.0), `.cursor/skills/`, `.cline/skills/`, `.opencode/skills/`, `.codex/skills/`, `.aider/skills/`, and configures client settings and Agent Skills.
   - `uninstall [TARGET] [--project-dir <path>] [--dest <path>]`: Uninstalls and cleans up the plugin and tool configurations from project scope.
   - `version [--project-dir <path>] [--dest <path>]`: Displays and compares bundled vs installed plugin version and reports SemVer sync status.
   - `update [TARGET] [--project-dir <path>] [--dest <path>] [--launcher <launcher>]`: Updates project-scoped plugin to the latest bundled version and syncs configurations.

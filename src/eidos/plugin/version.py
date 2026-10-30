@@ -145,15 +145,15 @@ def _resolve_installed_plugin_manifest(
     else:
         target_dir = root / ".agents" / "plugins" / "eidos"
 
-    manifest_path = target_dir / "plugin.json"
-    if manifest_path.exists():
-        return target_dir, manifest_path
+    for cand_name in ("plugin.json", ".eidos-manifest.json", "plugins/eidos/plugin.json"):
+        manifest_path = target_dir / cand_name
+        if manifest_path.exists():
+            return manifest_path.parent, manifest_path
 
     if dest_path is None:
         fallbacks = [
+            root / ".claude" / ".eidos-manifest.json",
             root / ".claude" / "plugins" / "eidos" / "plugin.json",
-            root / ".claude" / "plugins" / "eidos" / ".claude-plugin" / "plugin.json",
-            root / ".claude" / "skills" / "eidos" / ".claude-plugin" / "plugin.json",
             root / ".github" / "plugin" / "plugin.json",
             root / ".codex" / "plugin.json",
             root / ".opencode" / "plugins" / "eidos" / "plugin.json",
@@ -162,8 +162,7 @@ def _resolve_installed_plugin_manifest(
         ]
         for fb in fallbacks:
             if fb.exists():
-                matched_dir = fb.parent.parent if fb.parent.name == ".claude-plugin" else fb.parent
-                return matched_dir, fb
+                return fb.parent, fb
 
     return target_dir, None
 

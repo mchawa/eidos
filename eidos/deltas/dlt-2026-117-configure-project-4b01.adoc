@@ -1,0 +1,177 @@
+---
+type: delta/mutation
+id: DLT-2026-117-CONFIGURE-PROJECT-4B01
+title: "Configure Project-Native Claude Code Skills and Stop Hook Integration"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Replace the broken hybrid Claude Code plugin + flat skills installation (.claude/plugins/eidos/, duplicate plugin.json manifests, unreachable commands/*.md, and non-existent 'plugins: [{\"path\": ...}]' / 'enabledPlugins: {\"eidos@plugins-dir\": true}' keys in .claude/settings.json) with Claude Code's official project-native configuration (.claude/skills/<skill>/SKILL.md + Stop hook registration in .claude/settings.json under hooks.Stop + .claude/.eidos-manifest.json tracking), while safely migrating legacy .claude/plugins/eidos installations and preserving shared .claude/settings.json user configurations on uninstall."
+vcs:
+  branch: main
+  base_commit: 7abba9be23aae5b5976decd520155a82c4dbbcc2
+tombstone:
+  search_tokens:
+    - "_ensure_claude_plugin_manifest"
+    - "_write_claude_commands"
+    - "_claude_pre_manifest_hook"
+    - "eidos@plugins-dir"
+  allowed_reasons:
+    - path: "src/eidos/plugin/installer.py"
+      reason: "Legacy settings.json key migration cleanup in _cleanup_legacy_claude_plugin_keys."
+    - path: "tests/test_plugin.py"
+      reason: "Regression test verifying legacy eidos@plugins-dir key is stripped during Claude Code installation."
+    - path: "CHANGELOG.md"
+      reason: "Historical release notes referencing pre-DLT-2026-117 Claude plugin manifest and command helpers."
+    - path: "eidos/deltas/"
+      reason: "Historical SpecDeltas predating DLT-2026-117."
+    - path: "eidos/explorations/"
+      reason: "Historical exploration documents."
+mutations:
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    details: "Update PluginInstallTarget.CLAUDE in src/eidos/plugin/installer.py, src/eidos/plugin/version.py, and eidos/architecture/components/plugin-installer.adoc to install the 4 Eidos skills into .claude/skills/, register the Eidos Stop hook ('eidos hook' or 'uvx --from eidos-ai==<ver> eidos hook') non-destructively in .claude/settings.json under hooks.Stop, exclude shared .claude/settings.json from .claude/.eidos-manifest.json full-file unlinking so user settings survive uninstall, clean up any legacy .claude/plugins/eidos installation during install/uninstall, resolve .eidos-manifest.json in _resolve_installed_plugin_manifest (both for explicit dest_path and default fallbacks), and remove _ensure_claude_plugin_manifest, _write_claude_commands, and _claude_pre_manifest_hook."
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/plugin/installer.py"
+          - "src/eidos/plugin/version.py"
+        status: "active"
+      body:
+        contains:
+          - ".claude/skills/"
+          - ".claude/settings.json"
+        not_contains:
+          - ".claude/plugins/eidos"
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Update CNT-EIDOS-PLUGIN in eidos/architecture/containers/plugin.adoc to record DEC-PLUGIN-CLAUDE-PROJECT-NATIVE and replace .claude/plugins/ references with project-native .claude/skills/ and .claude/settings.json Stop hook configuration."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - ".claude/skills/"
+          - ".claude/settings.json"
+        not_contains:
+          - ".claude/plugins/"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Update the 'eidos plugin install' specification in eidos/architecture/contracts/cli.adoc to reflect project-native Claude Code configuration (.claude/skills/ and .claude/settings.json) rather than .claude/plugins/eidos/."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - ".claude/skills/"
+          - ".claude/settings.json"
+        not_contains:
+          - ".claude/plugins/eidos/"
+  - operation: modify
+    target: CAP-AGENT-001
+    details: "Bump CAP-AGENT-001 to version 1.8.2 in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc and document project-native Claude Code integration (.claude/skills/ and .claude/settings.json Stop hook)."
+    expect:
+      frontmatter:
+        version: "1.8.2"
+        status: "active"
+      body:
+        contains:
+          - ".claude/skills/"
+          - ".claude/settings.json"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Update docs/guides/agent-plugin.md and eidos/architecture/components/docs-user-guides.adoc to document the project-native Claude Code installation (.claude/skills/ + .claude/settings.json Stop hook without .claude/plugins/eidos/ or slash commands)."
+    expect:
+      frontmatter:
+        source_path: "docs/guides"
+        status: "active"
+      body:
+        contains:
+          - "docs/guides/agent-plugin.md"
+          - ".claude/skills/"
+  - operation: modify
+    target: CNT-EIDOS-DOCS
+    details: "Update eidos/architecture/containers/docs.adoc to reflect the updated Claude Code integration guide in docs/guides/agent-plugin.md."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "docs/guides/agent-plugin.md"
+          - "Claude Code"
+---
+= SpecDelta: Configure Project-Native Claude Code Skills and Stop Hook Integration
+:toc: left
+:icons: font
+:sectnums:
+
+== Problem Statement
+
+The current `eidos plugin install claude` target (`PluginInstallTarget.CLAUDE` in `src/eidos/plugin/installer.py`) mixes incompatible plugin and standalone skill conventions and writes invalid configuration keys that Claude Code does not recognize:
+
+1. **Redundant Split Between `.claude/plugins/eidos/` and `.claude/skills/`**:
+   * `TARGET_ADAPTERS[PluginInstallTarget.CLAUDE]` sets both `plugin_subdir=".claude/plugins/eidos"` and `skills_subdir=".claude/skills"`.
+   * Because `TargetAdapter.install()` passes `include_skills=(self.skills_subdir is None)`, `.claude/plugins/eidos/` is stripped of its `skills/` directory while the 4 Eidos skills are copied flat into `.claude/skills/`.
+   * Claude Code does **not** automatically discover or load `.claude/plugins/eidos/` unless launched with `claude --plugin-dir` or configured via a `.claude-plugin/marketplace.json` catalog under `extraKnownMarketplaces`.
+2. **Non-Existent `.claude/settings.json` Schema Keys (`plugins` and `enabledPlugins`)**:
+   * `_update_project_claude_settings()` writes `"plugins": [{"path": ".claude/plugins/eidos"}]` and `"enabledPlugins": {"eidos": true, "eidos@plugins-dir": true, "eidos@local": true}` into `.claude/settings.json`.
+   * Official Claude Code settings schemas do not support a `"plugins"` path array or built-in `@plugins-dir` / `@local` marketplace identifiers.
+3. **Unwired Stop Hook and Redundant Slash Commands**:
+   * `_copy_plugin_tree()` copies Antigravity's `hooks.json` (`{"eidos-drift-gate": {"Stop": [...]}}`) into `.claude/plugins/eidos/hooks.json`, which is neither in Claude Code's `hooks/hooks.json` path nor formatted with Claude Code's `{"hooks": {"Stop": [{"hooks": [...]}]}}` schema, and is never loaded in project scope.
+   * `_write_claude_commands()` generates `validate.md`, `drift.md`, and `context.md` inside `.claude/plugins/eidos/commands/`, which are never discovered by Claude Code and are unnecessary given the 4 Eidos skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`).
+
+== Proposed Specification Changes
+
+* **Update `CMP-PLUGIN-INSTALLER` (`src/eidos/plugin/installer.py`, `src/eidos/plugin/version.py`, `eidos/architecture/components/plugin-installer.adoc`)**:
+  1. **Pure Project-Native `.claude/` Layout (`DEC-PLUGIN-CLAUDE-PROJECT-NATIVE`)**:
+     - Configure `TARGET_ADAPTERS[PluginInstallTarget.CLAUDE]` with `plugin_subdir=".claude"`, `skills_subdir=".claude/skills"`, `copy_plugin_tree=False`, and `prune_dirs=(".claude/skills", ".claude/plugins", ".claude")`.
+     - Install the 4 Eidos skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`) directly into `.claude/skills/<skill-name>/SKILL.md`, where Claude Code discovers them natively on startup with progressive disclosure.
+     - Remove `_ensure_claude_plugin_manifest()`, `_write_claude_commands()`, and `_claude_pre_manifest_hook()`, and automatically clean up any legacy `.claude/plugins/eidos` directory during `install`/`update` and `uninstall`.
+  2. **Native `Stop` Hook Registration & Shared Settings Safety in `.claude/settings.json`**:
+     - Update `_update_project_claude_settings(file_path: Path, launcher: str = "eidos") -> Path` to register the Eidos `Stop` hook in `.claude/settings.json` using Claude Code's official `hooks.Stop` schema:
+       ```json
+       {
+         "hooks": {
+           "Stop": [
+             {
+               "hooks": [
+                 {
+                   "type": "command",
+                   "command": "eidos hook",
+                   "timeout": 30
+                 }
+               ]
+             }
+           ]
+         }
+       }
+       ```
+       (When `launcher == "uvx"`, rewrite `"command"` to `"uvx --from eidos-ai==<bundled_version> eidos hook"`.)
+     - Preserve all existing user keys, permissions, and non-Eidos hooks in `.claude/settings.json` during both `install` (idempotently updating or appending the Eidos `Stop` hook entry and stripping any legacy `plugins` / `enabledPlugins` Eidos entries) and `uninstall` (`_remove_project_claude_settings` removes only the Eidos `Stop` hook entry and deletes `.claude/settings.json` only if no other settings remain).
+     - Exclude shared host settings files (`.claude/settings.json`) from `.claude/.eidos-manifest.json` full-file deletion in `_write_installation_manifest` / `_uninstall_from_manifest` so `_uninstall_from_manifest(root / ".claude")` never unlinks `.claude/settings.json` before `_remove_project_claude_settings` runs.
+  3. **Manifest Tracking & Version Resolution (`version.py`)**:
+     - Track installed `.claude/skills/*` files and `"version": get_bundled_plugin_version()` in `.claude/.eidos-manifest.json`.
+     - Update `_resolve_installed_plugin_manifest()` in `src/eidos/plugin/version.py` to check `target_dir / ".eidos-manifest.json"` when `target_dir / "plugin.json"` is absent (supporting both `update_plugin(target=PluginInstallTarget.CLAUDE)` with explicit `dest_path=Path(".claude")` and default fallback resolution via `root / ".claude" / ".eidos-manifest.json"`).
+* **Update `CNT-EIDOS-PLUGIN` (`eidos/architecture/containers/plugin.adoc`)**:
+  - Add `DEC-PLUGIN-CLAUDE-PROJECT-NATIVE` recording the decision and rejected alternatives, and update `== Internal Structure & Key Mechanisms` to reference `.claude/skills/` and `.claude/settings.json`.
+* **Update `CTR-EIDOS-CLI` (`eidos/architecture/contracts/cli.adoc`) & `CAP-AGENT-001` (`eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc`)**:
+  - Update the `eidos plugin install` contract description in `CTR-EIDOS-CLI` and bump `CAP-AGENT-001` to `1.8.2`.
+* **Update `CMP-DOCS-USER-GUIDES` & `CNT-EIDOS-DOCS` (`docs/guides/agent-plugin.md`, `eidos/architecture/components/docs-user-guides.adoc`, `eidos/architecture/containers/docs.adoc`)**:
+  - Update the Claude Code section and target summary table in `docs/guides/agent-plugin.md` (and component/container spec prose) to document `.claude/skills/` and `.claude/settings.json` (`hooks.Stop`).
+
+== Implementation Plan
+
+1. **Refactor Claude Adapter & Settings Hook in `src/eidos/plugin/installer.py`**:
+   * Remove `_ensure_claude_plugin_manifest`, `_write_claude_commands`, and `_claude_pre_manifest_hook`.
+   * Update `_update_project_claude_settings(file_path: Path, launcher: str = "eidos") -> Path` to merge the Eidos `Stop` hook (`eidos hook` or `uvx --from eidos-ai==<ver> eidos hook`) into `data["hooks"]["Stop"]` without duplicating entries across repeated installs, while stripping any legacy Eidos `plugins` / `enabledPlugins` entries.
+   * Update `_remove_project_claude_settings(file_path: Path) -> bool` to remove Eidos `Stop` hook entries (and legacy `plugins` / `enabledPlugins` keys if present), clean up empty `Stop` / `hooks` objects, and unlink `.claude/settings.json` only when empty.
+   * Ensure `.claude/settings.json` is excluded from `.claude/.eidos-manifest.json` file unlinking so `_uninstall_from_manifest(root / ".claude")` never deletes coexisting user settings in `.claude/settings.json`.
+   * Clean up any legacy `.claude/plugins/eidos` installation directory during Claude `install`/`update` and `uninstall`.
+2. **Update Version Resolution in `src/eidos/plugin/version.py`**:
+   * Update `_resolve_installed_plugin_manifest()` to check `target_dir / ".eidos-manifest.json"` when `target_dir / "plugin.json"` is absent, and update the fallback list to check `root / ".claude" / ".eidos-manifest.json"`.
+3. **Update Living Specifications & User Guides**:
+   * Update `eidos/architecture/components/plugin-installer.adoc`, `eidos/architecture/containers/plugin.adoc`, `eidos/architecture/contracts/cli.adoc`, `eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc`, `eidos/architecture/components/docs-user-guides.adoc`, `eidos/architecture/containers/docs.adoc`, and `docs/guides/agent-plugin.md`.
+4. **Update Automated Tests & Verify**:
+   * Update `tests/test_plugin.py` and `tests/test_portal.py` to verify project-native `.claude/skills/` installation, `.claude/settings.json` `hooks.Stop` configuration (`eidos` and `uvx` launchers), legacy `.claude/plugins/eidos` migration cleanup, non-destructive preservation of user settings and custom hooks on uninstall, `update_plugin(target=PluginInstallTarget.CLAUDE)` version detection, and absence of `.claude/plugins/eidos/` and `commands/`.
+   * Run `eidos validate eidos --json`, `eidos delta verify DLT-2026-117-CONFIGURE-PROJECT-4B01 --json`, `eidos delta audit DLT-2026-117-CONFIGURE-PROJECT-4B01 --strict --json`, and `pytest`.

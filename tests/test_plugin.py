@@ -173,7 +173,25 @@ def test_cli_plugin_remove_alias(tmp_path):
 
 
 def test_plugin_install_to_claude_plugin(tmp_path):
-    """Verify installing plugin specifically as Claude Code plugin into .claude/plugins/eidos."""
+    """Verify installing Claude Code integration into project-native .claude/skills/ and .claude/settings.json."""
+    # Seed legacy .claude/plugins/eidos directory (with untracked commands/) and legacy keys in .claude/settings.json
+    legacy_dir = tmp_path / ".claude" / "plugins" / "eidos"
+    (legacy_dir / "commands").mkdir(parents=True)
+    (legacy_dir / "plugin.json").write_text('{"name": "eidos", "version": "1.0.0"}', encoding="utf-8")
+    (legacy_dir / "commands" / "validate.md").write_text("# Legacy validate\n", encoding="utf-8")
+    settings_file = tmp_path / ".claude" / "settings.json"
+    settings_file.write_bytes(
+        orjson.dumps(
+            {
+                "plugins": [{"path": "./.claude/plugins/eidos"}],
+                "enabledPlugins": {"eidos": True, "eidos@plugins-dir": True, "custom-plugin": True},
+            }
+        )
+    )
+
+    # Verify legacy version is still detected before migration
+    assert get_installed_plugin_version(project_dir=tmp_path) == "1.0.0"
+
     results = install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=tmp_path, force=True)
 
     assert len(results) == 1
@@ -181,57 +199,83 @@ def test_plugin_install_to_claude_plugin(tmp_path):
     assert results[0].target == "claude"
 
     claude_plugin_dir = tmp_path / ".claude" / "plugins" / "eidos"
-    assert (claude_plugin_dir / "plugin.json").exists()
-    assert (claude_plugin_dir / ".claude-plugin" / "plugin.json").exists()
-    assert not (claude_plugin_dir / ".mcp.json").exists()
-    assert not (claude_plugin_dir / "mcp.json").exists()
-    assert (claude_plugin_dir / "commands" / "validate.md").exists()
-    assert (claude_plugin_dir / "commands" / "drift.md").exists()
-    assert not (claude_plugin_dir / "skills").exists()
+    assert not claude_plugin_dir.exists()
+    assert not (tmp_path / ".claude" / "plugins").exists()
+    assert not (tmp_path / ".claude" / "commands").exists()
+
     # Direct flat skills in .claude/skills/
     assert (tmp_path / ".claude" / "skills" / "eidos" / "SKILL.md").exists()
     assert (tmp_path / ".claude" / "skills" / "eidos-spec" / "SKILL.md").exists()
+    assert (tmp_path / ".claude" / "skills" / "eidos-plan" / "SKILL.md").exists()
+    assert (tmp_path / ".claude" / "skills" / "eidos-ops" / "SKILL.md").exists()
     assert len([d for d in (tmp_path / ".claude" / "skills").iterdir() if d.is_dir()]) == 4
 
-    manifest = orjson.loads((claude_plugin_dir / "plugin.json").read_bytes())
-    assert manifest["name"] == "eidos"
+    # Verify .claude/.eidos-manifest.json tracks skills but NOT settings.json
+    manifest_file = tmp_path / ".claude" / ".eidos-manifest.json"
+    assert manifest_file.exists()
+    manifest = orjson.loads(manifest_file.read_bytes())
+    assert manifest["version"] == get_bundled_plugin_version()
+    assert "settings.json" not in manifest["files"]
+    assert "skills/eidos/SKILL.md" in manifest["files"]
 
-    # Verify settings.json
-    settings_file = tmp_path / ".claude" / "settings.json"
+    # Verify settings.json registers Stop hook and cleans legacy Eidos plugin keys while preserving user keys
     assert settings_file.exists()
     settings = orjson.loads(settings_file.read_bytes())
-    assert settings["enabledPlugins"].get("eidos@plugins-dir") is True
-    assert any(
-        p.get("path") in (".claude/plugins/eidos", "./.claude/plugins/eidos") for p in settings.get("plugins", [])
-    )
+    assert "plugins" not in settings
+    assert settings.get("enabledPlugins") == {"custom-plugin": True}
+    stop_hooks = settings.get("hooks", {}).get("Stop", [])
+    assert len(stop_hooks) == 1
+    assert stop_hooks[0] == {"hooks": [{"type": "command", "command": "eidos hook", "timeout": 30}]}
+
+    # Re-installing with launcher="uvx" updates the Stop hook in-place without duplicating entries
+    install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=tmp_path, force=True, launcher="uvx")
+    settings_uvx = orjson.loads(settings_file.read_bytes())
+    stop_hooks_uvx = settings_uvx.get("hooks", {}).get("Stop", [])
+    assert len(stop_hooks_uvx) == 1
+    assert stop_hooks_uvx[0]["hooks"][0]["command"] == f"uvx --from eidos-ai=={get_bundled_plugin_version()} eidos hook"
 
     # Verify project-level .claude/mcp.json is NOT created
     claude_mcp = tmp_path / ".claude" / "mcp.json"
     assert not claude_mcp.exists()
 
-    # Verify get_installed_plugin_version detects Claude plugin
+    # Verify get_installed_plugin_version detects Claude installation via .claude/.eidos-manifest.json
     installed_ver = get_installed_plugin_version(project_dir=tmp_path)
     assert installed_ver == get_bundled_plugin_version()
 
 
 def test_plugin_uninstall_claude_plugin(tmp_path):
-    """Verify uninstalling Claude Code plugin cleans .claude/plugins/eidos, skills, and settings.json."""
+    """Verify uninstalling Claude Code cleans .claude/skills/ and .claude/settings.json."""
     # Install first
     install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=tmp_path, force=True)
-    claude_plugin_dir = tmp_path / ".claude" / "plugins" / "eidos"
     settings_file = tmp_path / ".claude" / "settings.json"
-    assert claude_plugin_dir.exists()
+    assert (tmp_path / ".claude" / "skills" / "eidos" / "SKILL.md").exists()
+    assert settings_file.exists()
 
-    # Uninstall
+    # Uninstall when no custom user settings exist -> removes .claude completely
     results = uninstall_plugin(target=PluginInstallTarget.CLAUDE, project_dir=tmp_path)
     assert len(results) == 1
     assert results[0].success
 
-    assert not claude_plugin_dir.exists()
     assert not (tmp_path / ".claude" / "skills" / "eidos-spec").exists()
-    if settings_file.exists():
-        settings = orjson.loads(settings_file.read_bytes())
-        assert "eidos@plugins-dir" not in settings.get("enabledPlugins", {})
+    assert not settings_file.exists()
+    assert not (tmp_path / ".claude").exists()
+
+    # Install again with a coexisting user Stop sub-hook in the same matcher block
+    install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=tmp_path, force=True)
+    settings_data = orjson.loads(settings_file.read_bytes())
+    settings_data["hooks"]["Stop"][0]["hooks"].append({"type": "command", "command": "echo user-stop"})
+    settings_file.write_bytes(orjson.dumps(settings_data))
+
+    # Re-installing updates Eidos Stop hook in-place without dropping the coexisting user Stop sub-hook
+    install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=tmp_path, force=True, launcher="uvx")
+    reinstalled_data = orjson.loads(settings_file.read_bytes())
+    assert len(reinstalled_data["hooks"]["Stop"][0]["hooks"]) == 2
+    assert any(h.get("command") == "echo user-stop" for h in reinstalled_data["hooks"]["Stop"][0]["hooks"])
+
+    uninstall_plugin(target=PluginInstallTarget.CLAUDE, project_dir=tmp_path)
+    assert settings_file.exists()
+    preserved = orjson.loads(settings_file.read_bytes())
+    assert preserved["hooks"]["Stop"] == [{"hooks": [{"type": "command", "command": "echo user-stop"}]}]
 
 
 def test_cli_install_and_uninstall_shortcut_claude(tmp_path):
@@ -244,13 +288,16 @@ def test_cli_install_and_uninstall_shortcut_claude(tmp_path):
     res = runner.invoke(app, ["plugin", "install", "claude", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert "Success!" in res.stdout
-    assert (tmp_path / ".claude" / "plugins" / "eidos" / "plugin.json").exists()
+    assert (tmp_path / ".claude" / "skills" / "eidos" / "SKILL.md").exists()
+    assert (tmp_path / ".claude" / "settings.json").exists()
+    assert not (tmp_path / ".claude" / "plugins" / "eidos").exists()
 
     # Uninstall with positional argument under 'plugin'
     res = runner.invoke(app, ["plugin", "uninstall", "claude", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert "Success!" in res.stdout
-    assert not (tmp_path / ".claude" / "plugins" / "eidos").exists()
+    assert not (tmp_path / ".claude" / "skills" / "eidos").exists()
+    assert not (tmp_path / ".claude").exists()
 
 
 def test_cli_install_rejects_workspace_target(tmp_path):
@@ -1286,11 +1333,12 @@ invariants:
 
 
 def test_dlt_2026_071_plugin_installer_and_validator_fixes(tmp_path):
-    """Verify DLT-2026-071: no reconcile.md for Claude, Path-typed AIDER created_files, accurate fallback plugin_dir, and line-anchored SKILL.md frontmatter."""
-    # 1. Claude install does not create reconcile.md and creates drift.md
+    """Verify DLT-2026-071 & DLT-2026-117: project-native Claude skills/Stop hook without commands, Path-typed AIDER created_files, accurate fallback plugin_dir, and line-anchored SKILL.md frontmatter."""
+    # 1. Claude install configures .claude/skills/ and .claude/settings.json Stop hook without .claude/plugins/eidos or commands
     install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=tmp_path, force=True)
-    assert not (tmp_path / ".claude" / "plugins" / "eidos" / "commands" / "reconcile.md").exists()
-    assert (tmp_path / ".claude" / "plugins" / "eidos" / "commands" / "drift.md").exists()
+    assert not (tmp_path / ".claude" / "plugins").exists()
+    assert not (tmp_path / ".claude" / "commands").exists()
+    assert (tmp_path / ".claude" / "skills" / "eidos" / "SKILL.md").exists()
 
     # 2. Aider created_files contains only Path instances (no bool)
     aider_res = install_plugin(target=PluginInstallTarget.AIDER, project_dir=tmp_path, force=True)
@@ -1400,10 +1448,11 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     )
     from eidos.plugin.installer import (
         _copy_plugin_tree,
-        _ensure_claude_plugin_manifest,
         _remove_copilot_instructions,
         _remove_project_aider_conf,
+        _remove_project_claude_settings,
         _uninstall_from_manifest,
+        _update_project_claude_settings,
         _write_copilot_instructions,
         locate_plugin_bundle,
     )
@@ -1653,17 +1702,15 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     subprocess.run(["git", "commit", "-m", "clean init"], cwd=hook_ws, check=True, capture_output=True)
     assert execute_hook(path=hook_ws, stdin_data="") == 0
 
-    # 6e. plugin/installer.py: _remove_project_aider_conf / _ensure_claude_plugin_manifest branches
-    c_dir = tmp_path / "claude_manifest_edge"
-    c_dir.mkdir()
-    (c_dir / "plugin.json").write_bytes(orjson.dumps({"name": "not-eidos"}))
-    assert _ensure_claude_plugin_manifest(c_dir, force=False) is None
-    (c_dir / "plugin.json").write_text("{bad", encoding="utf-8")
-    assert _ensure_claude_plugin_manifest(c_dir, force=False) is None
-    (c_dir / "plugin.json").write_bytes(orjson.dumps({"name": "eidos", "version": "0.1.0"}))
-    (c_dir / ".claude-plugin").mkdir(exist_ok=True)
-    (c_dir / ".claude-plugin" / "plugin.json").write_text("{bad", encoding="utf-8")
-    assert _ensure_claude_plugin_manifest(c_dir, force=True) is not None
+    # 6e. plugin/installer.py: _remove_project_aider_conf / _update_project_claude_settings / _remove_project_claude_settings branches
+    c_settings = tmp_path / "claude_settings_edge" / "settings.json"
+    assert _remove_project_claude_settings(c_settings) is False
+    c_settings.parent.mkdir(parents=True, exist_ok=True)
+    c_settings.write_text("{bad", encoding="utf-8")
+    assert _remove_project_claude_settings(c_settings) is False
+    _update_project_claude_settings(c_settings, launcher="eidos")
+    assert _remove_project_claude_settings(c_settings) is True
+    assert not c_settings.exists()
 
     # _remove_project_aider_conf with missing file, invalid YAML, non-dict YAML, and remaining key
     aider_f = tmp_path / ".aider.conf.yml"
@@ -1765,8 +1812,9 @@ def test_hook_schema_validation_and_non_duplicate_skills(tmp_path):
     inst_root = tmp_path / "no_dup_skills"
     inst_root.mkdir()
     install_plugin(target=PluginInstallTarget.ALL, project_dir=inst_root, force=True)
+    assert not (inst_root / ".claude" / "plugins").exists()
+    assert (inst_root / ".claude" / "skills" / "eidos" / "SKILL.md").exists()
     for p_sub, s_sub in (
-        (".claude/plugins/eidos", ".claude/skills"),
         (".cline/plugins/eidos", ".cline/skills"),
         (".opencode/plugins/eidos", ".opencode/skills"),
         (".github/plugin", ".github/skills"),

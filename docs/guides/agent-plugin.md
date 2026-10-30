@@ -63,7 +63,7 @@ eidos plugin install copilot
 | `all` | All environments below | Installs plugins and configs for Antigravity, Claude, Cursor, Aider, Cline, OpenCode, Codex, and GitHub Copilot |
 | `project` | `.agents/plugins/eidos/` | Standard project-scope installation conforming strictly to `agent-plugins.org v1.0.0` |
 | `antigravity` | `.agents/plugins/eidos/` | Installs plugin bundle with rules, 4 skills, hooks, and extensions (agent-plugins.org v1.0.0) |
-| `claude` | `.claude/plugins/eidos/`, `.claude/skills/` | Installs Claude Code plugin, 4 flat skills, slash commands (`/validate`, `/drift`), and configures `.claude/settings.json` |
+| `claude` | `.claude/skills/`, `.claude/settings.json` | Installs 4 Claude Code skills and configures the Eidos `Stop` hook in `.claude/settings.json` |
 | `cursor` | `.cursor/skills/`, `.cursor/rules/eidos.mdc` | Installs 4 flat skills and Cursor rules (`.mdc`) for CLI execution |
 | `copilot` | `.github/plugin/`, `.github/skills/`, `.github/copilot/` | Installs GitHub Copilot plugin (Agent Plugins 1.0), 4 skills, settings, and instructions |
 | `aider` | `.aider/skills/`, `.aider.conventions.md`, `.aider.conf.yml` | Installs 4 skills, conventions index, and auto-read configuration |
@@ -110,29 +110,25 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
 === "Claude Code"
 
-    Claude Code (Anthropic's agentic CLI) communicates with Eidos via native Agent Skills and direct CLI execution.
+    Claude Code (Anthropic's agentic CLI) communicates with Eidos via project-native Agent Skills (`.claude/skills/`), the stateless `Stop` lifecycle hook in `.claude/settings.json`, and direct CLI execution.
 
     ### Claude Code (CLI)
 
-    Claude Code natively supports a standardized, file-based plugin architecture:
-    1. **Manifest (`plugin.json`)**: Plugin namespace, versioning, and metadata.
-    2. **Commands (`commands/*.md`)**: Native slash commands (`/validate`, `/drift`, `/context`).
-    3. **Skills (`skills/*/SKILL.md`)**: Domain expertise triggerable by user tasks.
-    4. **Subagents**: Specialized roles dynamically forked by Claude.
-    5. **Hooks (`hooks.json`)**: Lifecycle event handlers (pre-tool checks, lint gates).
+    Claude Code natively discovers project-scoped skills and lifecycle hooks inside `.claude/`:
+    1. **Skills (`.claude/skills/*/SKILL.md`)**: Domain expertise and orchestration workflows automatically discovered via progressive disclosure and directly invokable as `/eidos`, `/eidos-spec`, `/eidos-plan`, and `/eidos-ops`.
+    2. **Hooks (`.claude/settings.json`)**: Deterministic `Stop` lifecycle hook (`eidos hook`) that checks specification validity, invariant test bindings, and spec-to-code drift when Claude finishes a turn.
 
     #### 1. Automatic Installation
-    Install the Eidos Claude Code plugin into your project:
+    Configure Eidos for Claude Code in your project:
 
     ```bash
     eidos plugin install claude
     ```
 
     This automatically:
-    - Installs the full plugin bundle into `.claude/plugins/eidos/` (following Claude Code's Method 2: Project Root Injection) with `plugin.json`, `.claude-plugin/plugin.json`, and `hooks.json`.
-    - Generates Claude Code interactive slash commands in `.claude/plugins/eidos/commands/` (`/validate`, `/drift`, `/context`).
-    - Installs all 4 cohesive Eidos skills into `.claude/skills/<skill-name>/` so they are immediately discoverable by Claude Code's native `/skills` registry and direct command invocations (`/eidos`, `/eidos-spec`, `/eidos-plan`, `/eidos-ops`).
-    - Registers and enables the plugin in `.claude/settings.json` (`plugins: [{"path": ".claude/plugins/eidos"}]`, `enabledPlugins: {"eidos": true, "eidos@plugins-dir": true}`).
+    - Installs all 4 cohesive Eidos skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`) into `.claude/skills/<skill-name>/SKILL.md` so they are immediately discovered by Claude Code on startup.
+    - Non-destructively registers the Eidos `Stop` hook (`eidos hook`, or `uvx --from eidos-ai==<ver> eidos hook` when `--launcher uvx` is passed) under `hooks.Stop` in `.claude/settings.json` while preserving your existing settings and custom hooks.
+    - Tracks managed skill files in `.claude/.eidos-manifest.json` for clean updates and uninstallation (`eidos plugin uninstall claude`).
 
     #### 2. Enforcing Rules in `CLAUDE.md`
     To ensure Claude Code adheres to Eidos architectural governance, reference the Eidos rules in your project's `CLAUDE.md`:

@@ -1511,7 +1511,6 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
     from eidos.plugin.hooks import handle_stop_hook
     from eidos.plugin.installer import (
         PluginInstallTarget,
-        _ensure_claude_plugin_manifest,
         _ensure_copilot_plugin_manifest,
         install_plugin,
         update_plugin,
@@ -1620,15 +1619,15 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
     install_plugin(target=PluginInstallTarget.PROJECT, project_dir=proj_dir, force=False)
     assert orjson.loads(foreign_manifest.read_bytes())["name"] == "foreign-plugin"
 
-    claude_dir = tmp_path / "claude_test"
-    claude_dir.mkdir()
-    (claude_dir / "plugin.json").write_bytes(
-        orjson.dumps({"name": "eidos", "version": "0.0.1", "skills": "skills", "agents": "agents"})
-    )
-    _ensure_claude_plugin_manifest(claude_dir, force=False)
-    merged_claude = orjson.loads((claude_dir / "plugin.json").read_bytes())
-    assert merged_claude["skills"] == "skills"
-    assert merged_claude["agents"] == "agents"
+    claude_proj = tmp_path / "claude_proj"
+    claude_proj.mkdir()
+    install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=claude_proj, force=True)
+    claude_manifest = claude_proj / ".claude" / ".eidos-manifest.json"
+    claude_data = orjson.loads(claude_manifest.read_bytes())
+    claude_data["version"] = "0.0.8"
+    claude_manifest.write_bytes(orjson.dumps(claude_data))
+    prev_claude_ver, _, _ = update_plugin(target=PluginInstallTarget.CLAUDE, project_dir=claude_proj)
+    assert prev_claude_ver == "0.0.8"
 
     copilot_dir = tmp_path / "copilot_test"
     copilot_dir.mkdir()
