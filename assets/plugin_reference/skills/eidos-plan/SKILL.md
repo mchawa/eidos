@@ -65,7 +65,7 @@ decision:
 
 ## 2. SpecDelta Mutation Lifecycle (`DLT-*`)
 
-In **Planned Mode**, any change that adds/removes a container (`CNT-*`) or component (`CMP-*`), alters a contract (`CTR-*`), adds/extends a capability (`CAP-*`), or modifies a policy (`POL-*`) is governed by a **SpecDelta** (`eidos/deltas/dlt-yyyy-nnn.adoc`).
+In **Planned Mode**, any change that adds/removes a container (`CNT-*`) or component (`CMP-*`), alters a contract (`CTR-*`), adds/extends a capability (`CAP-*`), or modifies a policy (`POL-*`) is governed by a **SpecDelta** (`eidos/deltas/dlt-*.adoc`).
 
 ### 2.1 End-to-End SpecDelta Workflow
 
@@ -76,27 +76,33 @@ eidos index search "webhook signature" --json
 eidos index find-symbol "WebhookSignatureVerifier" --json
 eidos index blast-radius CNT-BILLING-API --depth 2 --json
 
-# 2. Scaffold a new SpecDelta (ID defaults to collision-free 'auto' across all local/remote Git refs; vcs.branch and vcs.base_commit are auto-detected from Git HEAD)
+# 2. Scaffold a new SpecDelta (automatically generates the collision-free ID, title slug, 4-hex suffix,
+#    and vcs.branch / vcs.base_commit; never hand-craft the ID—all delta commands accept
+#    unambiguous short prefixes like DLT-2026-015)
 eidos delta create \
   --title "Add Webhook Signature Verification Contract" \
-  --slug \
   --kind feature
 
-# 3. Edit the created eidos/deltas/dlt-*.adoc file to declare mutations, structured expect post-conditions,
+# 3. Inspect active SpecDeltas or transition lifecycle status (proposed | in_review | approved | applied | rejected)
+eidos delta list --status active --json
+eidos delta status DLT-2026-015 in_review
+
+# 4. Edit the created eidos/deltas/dlt-*.adoc file to declare mutations, structured expect post-conditions,
 #    and the step-by-step Implementation Plan in the AsciiDoc prose body
 #    (Run `eidos spec schema delta` to inspect exact SpecDelta frontmatter keys and closed sub-schemas)
 
-# 4. Implement code changes, update living specs in eidos/, and bind tests
+# 5. Implement code changes, update living specs in eidos/, and bind tests
 
-# 5. Verify all target entities, baseline modification evidence, and expect: post-conditions
+# 6. Verify all target entities, baseline modification evidence, and expect: post-conditions
 eidos delta verify DLT-2026-015 --json
 
-# 6. Reconcile and apply the SpecDelta (verifies mutations and sets status: applied)
+# 7. Reconcile and apply the SpecDelta (verifies mutations and sets status: applied)
 eidos delta apply DLT-2026-015
 
-# 7. If removing/deprecating entities, audit for dangling references; optionally compile CHANGELOG.md
+# 8. If removing/deprecating entities, audit for dangling references; optionally compile CHANGELOG.md or archive older deltas
 eidos delta audit DLT-2026-015 --strict --json
 eidos delta changelog
+eidos delta archive --keep-recent 15 --dry-run --json
 ```
 
 ### 2.2 SpecDelta Frontmatter & Schema Rules
@@ -192,7 +198,7 @@ For `add` and `modify` mutations, `eidos delta verify` checks both baseline dige
   * `rule: "substring"` — substring match on invariant `rule`.
   * `test_binding: "tests/...::test_..."` — invariant `test_binding` match (`file::func`, `N/A`, or `TBD`).
   * `category: "security"` — policy `category` match.
-  * `custom: { <key>: <expected_value> }` — equality, substring, or list-subset match for any other frontmatter field.
+  * **Any frontmatter key or dot-separated nested path** (e.g., `technical.components: ["CMP-WEBHOOK-VERIFIER"]`, `decisions.id: ["DEC-BILL-002"]`, `invariants.id: ["INV-BILL-WEBHOOK-SIG"]`, or `custom: { <key>: <expected_value> }`) — equality, substring, or list-subset match across top-level keys, nested dicts, and arrays of dicts.
 * **`expect.body`** (evaluated against comment-stripped AsciiDoc body):
   * `contains: "substring"` (or list of strings) — all substrings must appear in the body.
   * `not_contains: "substring"` (or list of strings) — none of the substrings may appear in the body.
@@ -216,10 +222,10 @@ eidos delta audit <DLT-ID> --strict --json
 ```
 
 1. **Blast Radius & Boundary Integrity**: Do all modified code files map to containers/components authorized in `mutations[].target` and its 1-hop ownership neighborhood? Are downstream dependents from `eidos index blast-radius` protected from unintended breakage or circular imports?
-2. **Interface Contract & SemVer Compatibility (`CTR-*`)**: Are added/removed CLI flags, endpoints, or RPCs bidirectionally synchronized in `CTR-*` specs with proper SemVer 2.0.0 bumps?
+2. **Interface Contract & Public Surface Parity (`CTR-*`, `CMP-*`, `CNT-*`)**: Are added/removed CLI flags, endpoints, or RPCs bidirectionally synchronized in `CTR-*` specs with proper SemVer 2.0.0 bumps? Do `== Public Surface` sections in `CMP-*`/`CNT-*` specs match exact AST symbols, with zero stale references to removed symbols (`stale_removed_symbol`)?
 3. **Governance Policies & Invariant Traceability (`POL-*`, `INV-*`)**: Does the change honor all active `POL-*` policies, and does every new/modified capability behavior have a genuine test bound via `test_binding: file::func`?
 4. **SpecDelta Verification Rigor**: Does every `modify` mutation include structured `expect: { frontmatter, body }` post-conditions?
-5. **Living Specification Purity & Decision Capture (`DEC-*`)**: Zero standalone ADRs; non-obvious trade-offs and `rejected_alternatives` recorded in `decisions:`; `CMP-*` components obey `INV-COMPONENT-CENTRALIZATION-MANDATE` (standalone component files reside in `eidos/architecture/components/` and link bottom-up via `container: CNT-*`).
+5. **Living Specification Purity & Decision Capture (`DEC-*`)**: Zero standalone ADRs; non-obvious trade-offs and `rejected_alternatives` recorded in `decisions:`; standalone `CMP-*` component files reside in `eidos/architecture/components/` and link bottom-up via `container: CNT-*`.
 
 ### Review Report Template
 

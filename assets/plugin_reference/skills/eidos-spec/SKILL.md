@@ -6,7 +6,7 @@ description: Author, inspect, and maintain Eidos living specifications across Pr
 
 This skill provides the authoring rules, CLI scaffolding commands, and v1 YAML frontmatter schemas for all **Living Specifications** in `eidos/`.
 
-> **Constitutional Rule (`POL-001`)**: Never create standalone Architecture Decision Records (ADRs). All architectural state, product requirements, contracts, design systems, policies, and embedded design decisions (`decisions:`) live inside `eidos/` specifications.
+> **Constitutional Rule**: Never create standalone Architecture Decision Records (ADRs). All architectural state, product requirements, contracts, design systems, policies, and embedded design decisions (`decisions:`) live inside `eidos/` specifications.
 
 ---
 
@@ -38,7 +38,7 @@ eidos spec create capability CAP-BILL-001 --title "Metered Usage Aggregation"
 eidos spec create container CNT-BILLING-WORKER --title "Billing Aggregation Worker"
 eidos spec create component CMP-USAGE-LEDGER --title "Double-Entry Usage Ledger"
 eidos spec create contract CTR-BILLING-API --title "Billing REST API"
-eidos spec create policy POL-005 --title "Idempotent Webhook Processing"
+eidos spec create policy POL-WEBHOOK-IDEMPOTENCY --title "Idempotent Webhook Processing"
 
 # Safely delete a specification after checking incoming cross-references (run blast-radius first)
 eidos spec delete <ID_OR_PATH>
@@ -54,12 +54,12 @@ All 16 Eidos v1 schemas enforce `additionalProperties: false` at both the top le
 | Pitfall / Construct | Correct Schema Placement & Allowed Keys | What Fails Validation |
 | :--- | :--- | :--- |
 | **`invariants:` placement** | • **`product/capability` (`CAP-*`)**: Nested under `technical.invariants` (`technical: { containers, components, contracts, invariants }`).<br>• **`product/policy` (`POL-*`), `tech/container` (`CNT-*`), `tech/component` (`CMP-*`), `design/ui-component` (`UIC-*`)**: Top-level `invariants:` array. | Putting top-level `invariants:` on `CAP-*`, or putting `invariants:` on `DOM-*`, `SYS-*`, `ARCH-*`, `CTR-*`, or `PER-*`. |
-| **`invariant` item keys** | Exactly `{ id, rule, test_binding }` (`id` matching `^INV-[A-Z0-9_-]+$` and `rule` required; `test_binding` required on `CAP-*` invariants by `POL-002`). | Adding `title`, `description`, `severity`, `category`, or `status` inside an `invariants:` item. |
+| **`invariant` item keys** | Exactly `{ id, rule, test_binding }` (`id` matching `^INV-[A-Z0-9_-]+$` and `rule` required; `test_binding` required on `CAP-*` invariants). | Adding `title`, `description`, `severity`, `category`, or `status` inside an `invariants:` item. |
 | **`decisions:` item keys** | Available on living specs (`product/*`, `tech/*`, `design/*`) and `delta/mutation`. Each item allows **only** `{ id, title, decision, rationale, rejected_alternatives, graduated_from }` where `rejected_alternatives` items allow **only** `{ option, reason_rejected }`. | Adding `status`, `date`, `consequences`, `context`, or `pros`/`cons` inside a `decisions:` item, or using `decisions:` on `product/exploration` (`EXP-*` uses singular `decision: { outcome, resulting_deltas }`). |
 | **`contracts:` shape** | • **`tech/container` (`CNT-*`)**: Object `{ provides: [CTR-*], consumes: [CTR-*] }`.<br>• **`product/capability` (`CAP-*`)**: Flat array under `technical.contracts: [CTR-*]`.<br>• **`tech/component` (`CMP-*`)**: Not a frontmatter key (contracts belong to the container boundary). | Passing a flat array to `CNT-*.contracts`, or adding `contracts:` to `CMP-*`. |
 | **`components:` shape** | • **`product/capability` (`CAP-*`)**: Array of **component ID strings** under `technical.components: [CMP-*]`.<br>• **`tech/component` (`CMP-*`)**: Standalone spec in `eidos/architecture/components/<slug>.adoc` linking bottom-up via `container: CNT-*`. | Adding `components:` to `CNT-*`. |
 | **`status` enum values** | • **Living specs (`SYS-*`, `DOM-*`, `CAP-*`, `POL-*`, `PER-*`, `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DS-*`, `UIC-*`, `SCR-*`, `CLT-*`, `FLOW-*`)**: `draft \| planned \| active \| deprecated \| retired`.<br>• **Explorations (`EXP-*`)**: `proposed \| in_progress \| adopted \| discarded`.<br>• **SpecDeltas (`DLT-*`)**: `proposed \| in_review \| approved \| applied \| rejected`. | Using `proposed` or `applied` on a living spec, or using `active` or `draft` on `EXP-*` / `DLT-*`. |
-| **Prose-only sections** | Jobs-to-be-Done (JTBD), functional requirements, acceptance criteria, ubiquitous language tables, and Arc42 narratives belong in the **AsciiDoc body** (`== ...`), never as custom YAML keys. | Adding `jtbd:`, `requirements:`, `summary:`, `description:`, or `owners:` (only `DOM-*` has `owners:`) to YAML frontmatter. |
+| **Prose-only sections** | Component responsibility (`== Responsibility`), Jobs-to-be-Done (JTBD), functional requirements, acceptance criteria, ubiquitous language tables, and Arc42 narratives belong in the **AsciiDoc body** (`== ...`), never as custom YAML keys. | Adding `responsibility:`, `jtbd:`, `requirements:`, `summary:`, `description:`, or `owners:` (only `DOM-*` has `owners:`) to YAML frontmatter. |
 
 ---
 
@@ -115,7 +115,7 @@ business:
   personas:
     - eidos/personas/finance-admin.adoc
   policies:
-    - eidos/policies/POL-001-git-source-of-truth.adoc
+    - eidos/policies/webhook-idempotency.adoc
 
 technical:
   containers:
@@ -213,7 +213,9 @@ Document runtime characteristics, performance targets, concurrency model, and op
 
 ### 3.3 C4 Level 3 Components (`eidos/architecture/components/<slug>.adoc`)
 
-Every C4 Level 3 component (`CMP-*`) is authored as a standalone `tech/component` specification in `eidos/architecture/components/<slug>.adoc` via `eidos spec create component <CMP-ID> --title "..."` and links bottom-up to its parent container via `container: CNT-*` (`INV-COMPONENT-CONTAINER-AFFINITY`). Intra-container `CMP-*` -> `CMP-*` dependencies are derived automatically via AST import analysis.
+Every C4 Level 3 component (`CMP-*`) is authored as a standalone `tech/component` specification in `eidos/architecture/components/<slug>.adoc` via `eidos spec create component <CMP-ID> --title "..."` and links bottom-up to its parent container via `container: CNT-*`. Intra-container `CMP-*` -> `CMP-*` dependencies are derived automatically via AST import analysis.
+
+> **`== Public Surface` AST Parity (`eidos validate` & `eidos drift`)**: Backticked code symbols declared under `== Public Surface` in active `CMP-*` and `CNT-*` specifications are statically verified by `eidos validate` against AST symbols, module-level assignments, `__all__`, or `TYPE_CHECKING` stubs in `source_path`. Always list exact symbol names from source code and remove or rename entries when refactoring so neither `eidos validate` nor `eidos drift` (`stale_removed_symbol`) fails.
 
 ```yaml
 ---
@@ -284,31 +286,31 @@ For repositories with web, mobile, desktop, or TUI frontends, model UX specifica
 
 ## 5. Governance Policies & Polyglot Invariant Traceability (`POL-*`, `INV-*`)
 
-### 5.1 System Policies (`eidos/policies/POL-NNN-<slug>.adoc`)
+### 5.1 System Policies (`eidos/policies/<slug>.adoc`)
 
 ```yaml
 ---
 type: product/policy
-id: POL-005-WEBHOOK-IDEMPOTENCY
+id: POL-WEBHOOK-IDEMPOTENCY
 title: "Idempotent External Webhook Processing"
 status: active
 category: architectural # governance | architectural | security | compliance | testing | performance | lifecycle
 severity: blocking # blocking | warning | advisory
 invariants:
-  - id: INV-POL-005-WEBHOOK-IDEMPOTENCY
+  - id: INV-WEBHOOK-IDEMPOTENCY
     rule: "All external webhook handlers must deduplicate incoming deliveries by provider event ID before mutating domain state."
     test_binding: "tests/billing/test_webhooks.py::test_webhook_idempotency"
 ---
 = Policy: Idempotent External Webhook Processing
 ```
 
-### 5.2 Polyglot Invariant Test Bindings (`POL-002`)
+### 5.2 Polyglot Invariant Test Bindings
 
 Every capability, policy, container, or component invariant (`INV-[A-Z0-9_-]+`) MUST declare:
 1. `test_binding: "<relative_test_file_path>::<test_function_or_Class::method>"` in YAML frontmatter.
 2. An explicit mention of the `INV-*` ID inside the bound test's docstring, comment, assertion message, or test title/display name.
 
-> **Intentional Design Choice (`DEC-VCS-STATIC-INVARIANT-TRACEABILITY`)**: Eidos verifies `test_binding` strictly via **static bidirectional reference traceability** (`file::func` symbol existence + `INV-*` token presence). Eidos is intentionally **not** responsible for running tests or inspecting AST `assert` statements (that belongs to native CI test runners like `pytest`, `vitest`, `go test`, `cargo test`, and `JUnit`). Never flag static-only test verification as an architectural gap in Eidos.
+> **Intentional Design Choice**: Eidos verifies `test_binding` strictly via **static bidirectional reference traceability** (`file::func` symbol existence + `INV-*` token presence). Eidos is intentionally **not** responsible for running tests or inspecting AST `assert` statements (that belongs to native CI test runners like `pytest`, `vitest`, `go test`, `cargo test`, and `JUnit`). Never flag static-only test verification as an architectural gap in Eidos.
 
 | Language | `test_binding` Format | How to Reference `INV-*` in Test Source |
 | :--- | :--- | :--- |

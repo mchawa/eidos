@@ -11,6 +11,39 @@ Eidos is an open, Git-native, agent-agnostic development framework designed to u
 
 This repository dogfoods the **Eidos Specification Standard** to define Eidos itself.
 
+### Why Eidos?
+
+When working with AI coding agents (Claude Code, Cursor, Antigravity, Copilot, Aider, Cline) on growing codebases, static instruction files like `CLAUDE.md` get large and hard to maintain, traditional ADRs go out of date, and architectural boundaries can silently drift.
+
+Eidos takes an opinionated approach built on **Spec-Driven Development**, **Domain-Driven Design (DDD)**, **Arc42 & the C4 Model**, **TDD**, and a **Kanban SpecDelta lifecycle**—with **Git as the single source of truth** and **100% local execution (zero API keys or external LLM calls required)**:
+
+* **Living Architecture in Git (DDD + Arc42/C4 + Kanban)**: Codifies bounded domains (`DOM-*`), capabilities (`CAP-*`), C4 architecture (`CNT-*`, `CMP-*`, `CTR-*`), and in-place design decisions (`DEC-*`) as AsciiDoc with YAML frontmatter, tracking architectural transitions via **SpecDeltas (`DLT-*`)** across a Kanban lifecycle.
+* **Local SQLite + AST + Hybrid Semantic Knowledge Graph**: Indexes code symbols, spec hierarchies, and `x-eidos-ref` links locally (`eidos/.cache/index.db`)—combining SQLite FTS5 BM25 search, recursive graph traversal, and optional local ONNX semantic embeddings (Hybrid RRF) to serve token-budgeted context slices (`eidos context`), structural repo maps, and transitive blast-radius queries (`eidos index blast-radius`) offline with no API keys.
+* **Test-Bound Invariants (TDD + `eidos drift`)**: Binds capability and policy invariants (`INV-*`) directly to automated tests (`file::func`) across Python, TypeScript/JS, Go, Rust, Java, and Kotlin, checking for spec-to-code drift in CI or via an agent `Stop` hook.
+* **Static C4 Architecture & Kanban Portal**: Generates a self-contained web viewer (`eidos portal serve`) to browse containers, components, contracts, blast radius, and the SpecDelta Kanban board—[View Eidos's Portal](https://mchawa.github.io/eidos/portal/)
+
+```text
+                    ┌───────────────────────────────────┐
+                    │   Living Specifications (eidos/)  │
+                    │  CNT-* │ CMP-* │ CTR-* │ CAP/INV  │
+                    └─────────────────┬─────────────────┘
+                                      │
+                      ┌───────────────┴───────────────┐
+                      ▼ (SQLite + AST Graph)          ▼ (eidos portal)
+            ┌───────────────────┐           ┌───────────────────┐
+            │  AI Coding Agents │           │  Human Engineers  │
+            │ (eidos context &  │           │   (C4 Explorer    │
+            │   Agent Skills)   │           │  & Blast Radius)  │
+            └─────────┬─────────┘           └─────────┬─────────┘
+                      │                               │
+                      └───────────────┬───────────────┘
+                                      ▼
+                    ┌───────────────────────────────────┐
+                    │   Codebase & Polyglot Test Suite  │
+                    │   Checked by: eidos drift / hook  │
+                    └───────────────────────────────────┘
+```
+
 ---
 
 ## Quickstart
@@ -78,7 +111,7 @@ Add the official Eidos Dev Container Feature (`ghcr.io/mchawa/eidos/eidos:1`) to
 
 ### Optional Local Semantic Search (Hybrid RRF)
 
-By default, Eidos runs with zero model weights using SQLite FTS5 BM25, architectural synonym expansion, and recursive CTE graph traversal (`< 4ms`). To enable **Hybrid Reciprocal Rank Fusion (RRF)** combining lexical BM25 with local dense embeddings (`microsoft/harrier-oss-v1-0.6b` ONNX, 100% offline under `POL-004`):
+By default, Eidos runs with zero model weights using SQLite FTS5 BM25, architectural synonym expansion, and recursive CTE graph traversal (`< 4ms`). To enable **Hybrid Reciprocal Rank Fusion (RRF)** combining lexical BM25 with local dense embeddings (`microsoft/harrier-oss-v1-0.6b` ONNX, 100% offline):
 
 > **Note (Python Version):** `onnxruntime` currently publishes prebuilt wheels only for **Python 3.11–3.14** (`python_version < '3.15'`). If your default interpreter is Python 3.15, pass `--python 3.14` when installing or syncing the `[semantic]` extra; on Python 3.15, Eidos automatically falls back to lexical FTS5 BM25 retrieval.
 

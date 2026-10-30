@@ -1,13 +1,14 @@
 ---
 name: eidos-ops
-description: Initialize greenfield repositories with Eidos (eidos init), systematically reverse-engineer and extract living specifications from existing brownfield codebases using AST code graph intelligence (eidos index repo-map, eidos index find-symbol, eidos index search, eidos context), and serve or build the interactive Eidos Living Web Portal and static documentation site (eidos portal serve, eidos portal build).
+description: Initialize greenfield repositories with Eidos (eidos init), systematically reverse-engineer and extract living specifications from existing brownfield codebases using AST code graph intelligence (eidos index repo-map, eidos index find-symbol, eidos index search, eidos index status, eidos index semantic, eidos context), and serve or build the interactive Eidos Living Web Portal and static documentation site (eidos portal serve, eidos portal build).
 ---
-# Eidos Operations: Bootstrap, Brownfield Extraction & Web Portal (`eidos-ops`)
+# Eidos Operations: Bootstrap, Brownfield Extraction, Index & Web Portal (`eidos-ops`)
 
 This skill covers repository-level lifecycle operations in Eidos:
 1. **Greenfield Repository Initialization (`eidos init`)**: Bootstrapping a new repository with the Eidos specification skeleton.
 2. **Brownfield Codebase Extraction**: Reverse-engineering an existing codebase into accurate Arc42/C4 living specifications, domains, capabilities, and test-bound invariants.
-3. **Living Web Portal & Static Site Operations (`eidos portal serve`, `eidos portal build`)**: Launching the interactive architecture portal locally or exporting a static bundle for CI/CD hosting.
+3. **Knowledge Graph & Opt-In Semantic Index Operations (`eidos index`)**: Inspecting index telemetry, force-syncing the SQLite graph, and provisioning/syncing local Harrier ONNX semantic embeddings.
+4. **Living Web Portal & Static Site Operations (`eidos portal serve`, `eidos portal build`)**: Launching the interactive architecture portal locally or exporting a static bundle for CI/CD hosting.
 
 ---
 
@@ -44,15 +45,16 @@ When introducing Eidos into an **existing codebase**, never invent speculative a
 3. **Extract C4 Level 2 Containers (`CNT-*`) & Level 3 Components (`CMP-*`)**:
    * Create a container in `eidos/architecture/containers/<slug>.adoc` for each deployable service, CLI binary, web app, worker, or library package.
    * Set `source_path` to the exact repo-relative source path(s) so `eidos drift`, `eidos context`, and `eidos index repo-map` map every source file accurately.
-   * Run `eidos index repo-map --max-tokens 1500` and `eidos index find-symbol <ClassOrFunction> --json` to inspect major internal classes/modules, creating standalone `eidos/architecture/components/<slug>.adoc` specifications (`id: CMP-*`, `title`, `container: CNT-*`, `responsibility`, `source_path`) via `eidos spec create component <CMP-ID> --title "..."`.
+   * Run `eidos index repo-map --max-tokens 1500` and `eidos index find-symbol <ClassOrFunction> --json` to inspect major internal classes/modules, creating standalone `eidos/architecture/components/<slug>.adoc` specifications (`id: CMP-*`, `title`, `container: CNT-*`, `status`, `source_path` in YAML frontmatter; author `== Responsibility` and `== Public Surface` in the AsciiDoc body) via `eidos spec create component <CMP-ID> --title "..."`.
    * Record non-obvious as-built architectural trade-offs in `decisions:` (`DEC-*`).
 4. **Extract Interface Contracts (`CTR-*`)**: Create contract specs in `eidos/architecture/contracts/<slug>.adoc` for REST/OpenAPI, gRPC/Protobuf, GraphQL, or CLI boundaries (`specification_file`), and link `provides:` / `consumes:` on `CNT-*`.
 5. **Extract Product Domains (`DOM-*`), Personas (`PER-*`) & Capabilities (`CAP-*`)**: Group business logic into bounded contexts (`eidos/domains/<slug>/domain.adoc`), create actor personas (`eidos/personas/<slug>.adoc`), and author capabilities (`eidos/domains/<slug>/capabilities/<cap>.adoc`) linking `business.personas`, `business.policies`, and `technical.containers` in YAML frontmatter (authoring Jobs-to-be-Done in the AsciiDoc prose body).
 6. **Extract Frontend Design Systems & Client Flows (If Applicable)**: For web/mobile/desktop/TUI clients, scaffold `DS-*` (`tokens.json`), `UIC-*`, `CLT-*`, `SCR-*`, and `FLOW-*` under `eidos/design/`.
-7. **Bind Existing Automated Tests to Capability Invariants (`INV-*`)**: Use `eidos index find-symbol "test_" --json` to locate test functions in `tests/`, declare `INV-*` entries with `test_binding: "<test_file>::<test_func>"` on the owning capability, and add the `INV-*` ID to each bound test's docstring or comment (`POL-002`).
+7. **Bind Existing Automated Tests to Capability Invariants (`INV-*`)**: Use `eidos index find-symbol "test_" --json` to locate test functions in `tests/`, declare `INV-*` entries with `test_binding: "<test_file>::<test_func>"` on the owning capability, and add the `INV-*` ID to each bound test's docstring or comment.
 8. **Synchronize, Inspect Graph & Verify Zero Drift**:
    ```bash
    eidos index sync --force
+   eidos index status --json
    eidos index repo-map --max-tokens 1500
    eidos index search "core" --json
    eidos context -c CNT-APP-API --tier guardrails --json
@@ -64,9 +66,27 @@ When introducing Eidos into an **existing codebase**, never invent speculative a
 
 ---
 
-## 3. Living Web Portal & Static Site Operations (`eidos portal`)
+## 3. Knowledge Graph & Opt-In Semantic Index Operations (`eidos index`)
 
-### 3.1 Serve the Interactive Portal Locally
+```bash
+# Inspect SQLite knowledge graph health, AST parser telemetry, entity/edge counts, and dirty status
+eidos index status --json
+
+# Force-rebuild the FTS5 + AST knowledge graph (preserves cached spec_embeddings)
+eidos index sync --force
+
+# Optional: Inspect, provision, and synchronize local Harrier-OSS-v1-0.6B ONNX semantic embeddings
+# (Requires optional dependency group: pip install "eidos-ai[semantic]")
+eidos index semantic status --json
+eidos index semantic setup --model quantized
+eidos index semantic sync
+```
+
+---
+
+## 4. Living Web Portal & Static Site Operations (`eidos portal`)
+
+### 4.1 Serve the Interactive Portal Locally
 
 ```bash
 # Serve the interactive portal locally (defaults to http://127.0.0.1:3000)
@@ -76,7 +96,7 @@ eidos portal serve
 eidos portal serve --host 127.0.0.1 --port 8420 --open
 ```
 
-### 3.2 Build a Self-Contained Static Portal Bundle
+### 4.2 Build a Self-Contained Static Portal Bundle
 
 Export the living specification catalog and interactive topology viewer into a static directory (no backend required) for GitHub Pages, GitLab Pages, Cloudflare Pages, or S3:
 

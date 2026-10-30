@@ -494,7 +494,7 @@ def _write_cursor_rules(file_path: Path, force: bool = False) -> Path:
         "- Preserve bidirectional invariant-test traceability (`POL-*` and `INV-*`).\n"
         "- Verify specification schemas with `eidos validate eidos` (or `eidos validate --json`).\n"
         "- Verify synchronization with `eidos drift --uncommitted` (or `eidos drift --uncommitted --json`) before finalizing tasks.\n"
-        "- Use Eidos CLI commands (`eidos context`, `eidos index search`, `eidos drift`) for real-time inspection.\n"
+        "- Use Eidos Discovery-First CLI commands (`eidos context`, `eidos index repo-map`, `eidos index find-symbol`, `eidos index search`, `eidos index blast-radius`, `eidos spec schema`, `eidos drift`) for real-time inspection.\n"
         "- Consult installed Agent Skills in `.cursor/skills/` for specialized architectural workflows.\n"
     )
     file_path.write_text(content, encoding="utf-8")
@@ -573,7 +573,7 @@ def _write_aider_conventions(file_path: Path, force: bool = False) -> Path:
         "- **Bidirectional Invariant-Test Traceability**: Enforce system policies (`POL-*`) and capability invariants (`INV-*`) across tests.\n"
         "- **Specification Validation**: Run `eidos validate eidos` to ensure schema conformance and cross-reference integrity.\n"
         "- **Zero Spec-to-Code Drift**: Run `eidos drift --uncommitted` to verify code changes are synchronized with living specifications before task completion.\n"
-        '- **Architectural Context**: Use `eidos context --file <path>` or `eidos context --task "<prompt>"` for token-efficient architectural context.\n\n'
+        '- **Discovery-First CLI Context**: Use `eidos context -f <path> --json`, `eidos index repo-map`, `eidos index find-symbol <symbol> --json`, `eidos index search "<query>" --json`, `eidos index blast-radius <target> --json`, and `eidos spec schema <type>` before editing files.\n\n'
         "## Installed Eidos Skills\n"
         "When performing targeted architectural tasks, load the relevant skill using `/read .aider/skills/<skill>/SKILL.md`:\n"
         "- Master Orchestration, Context, Drift & Reconcile: `/read .aider/skills/eidos/SKILL.md`\n"
@@ -606,7 +606,7 @@ def _write_copilot_instructions(file_path: Path, force: bool = False) -> Path:
         "- **Bidirectional Invariant-Test Traceability**: Enforce system policies (`POL-*`) and capability invariants (`INV-*`) across tests.\n"
         "- **Specification Validation**: Run `eidos validate eidos` to ensure schema conformance and cross-reference integrity.\n"
         "- **Zero Spec-to-Code Drift**: Run `eidos drift --uncommitted` to verify code changes are synchronized with living specifications before task completion.\n"
-        '- **Architectural Context**: Use `eidos context --file <path>` or `eidos context --task "<prompt>"` for token-efficient architectural context.\n'
+        '- **Discovery-First CLI Context**: Use `eidos context -f <path> --json`, `eidos index repo-map`, `eidos index find-symbol <symbol> --json`, `eidos index search "<query>" --json`, `eidos index blast-radius <target> --json`, and `eidos spec schema <type>` before editing files.\n'
         "- **Agent Skills**: Consult the 4 installed Eidos skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`) in `.github/skills/` for specialized architectural workflows.\n"
         f"{COPILOT_END_MARKER}\n"
     )
@@ -839,6 +839,7 @@ def _write_codex_rules(file_path: Path, force: bool = False) -> Path | None:
         "This repository is governed by Eidos living specifications (`eidos/`).\n"
         "- Adhere to living specifications as the single source of truth.\n"
         "- Never create ADRs; all architectural changes require SpecDeltas (`eidos/deltas/`).\n"
+        '- Use Discovery-First CLI commands (`eidos context -f <path> --json`, `eidos index repo-map`, `eidos index find-symbol <symbol> --json`, `eidos index search "<query>" --json`, `eidos index blast-radius <target> --json`, `eidos spec schema <type>`) before modifying files.\n'
         "- Validate specifications with `eidos validate eidos` and check drift with `eidos drift --uncommitted`.\n"
     )
     with open(file_path, "w", encoding="utf-8") as f:

@@ -104,7 +104,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     ### 2. How Antigravity Uses Eidos
 
-    * **Master Engineering Skill**: Antigravity indexes `skills/eidos/SKILL.md` to guide agent decision-making, strictly enforcing the 7 Constitutional Guardrails (Single Source of Truth, Zero ADRs, Dual Workflow Mode Selection, Mandatory Invariant-Test Traceability, CLI-First Discovery & Determinism, Zero Unreconciled Drift, and Mandatory Autonomous Pre-Completion Review) alongside `eidos context`, `eidos index`, and `eidos drift`.
+    * **Master Engineering Skill**: Antigravity indexes `skills/eidos/SKILL.md` to guide agent decision-making, strictly enforcing the 8 Constitutional Guardrails (Single Source of Truth, Zero ADRs, Dual Workflow Mode Selection, Mandatory Invariant-Test Traceability, CLI-First Discovery & Determinism, Subagent Context Propagation, Zero Unreconciled Drift, and Mandatory Autonomous Pre-Completion Review) alongside `eidos context`, `eidos index`, and `eidos drift`.
     * **Workflow-Aligned Agent Skills**: Antigravity agents invoke `/eidos-spec` to author or inspect living specs, schemas (`eidos spec schema`), and invariants, `/eidos-plan` for explorations, SpecDeltas, and Staff reviews, and `/eidos-ops` for repository initialization, brownfield extraction, and Web Portal operations.
     * **Stateless Stop Hook**: The `eidos-drift-gate` (`eidos hook`) runs at task completion (`Stop`) to verify AsciiDoc schemas, invariant test bindings, and spec-to-code synchronization.
 
@@ -176,10 +176,10 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     ## Core Principles
     - Consult living specifications before modifying code or proposing architectural changes.
     - Strictly enforce living specifications (NO ADRs). All architectural mutations follow the SpecDelta lifecycle (`eidos/deltas/`).
-    - Preserve bidirectional invariant-test traceability (`POL-002`).
+    - Preserve bidirectional invariant-test traceability (`POL-*` and `INV-*`).
     - Verify specification schemas with `eidos validate eidos` (or `eidos validate --json`).
     - Verify synchronization with `eidos drift --uncommitted` (or `eidos drift --uncommitted --json`) before finalizing tasks.
-    - Use Eidos CLI commands (`eidos context`, `eidos index search`, `eidos drift`) for real-time inspection.
+    - Use Eidos Discovery-First CLI commands (`eidos context`, `eidos index repo-map`, `eidos index find-symbol`, `eidos index search`, `eidos index blast-radius`, `eidos spec schema`, `eidos drift`) for real-time inspection.
     - Consult installed Agent Skills in `.cursor/skills/` for specialized architectural workflows.
     ```
 
@@ -401,29 +401,32 @@ When agents pass `--json`, Eidos outputs structured JSON payloads designed for p
 
 ---
 
-## The 7 Constitutional Guardrails
+## The 8 Constitutional Guardrails
 
-Eidos embeds seven non-negotiable architectural guardrails in its master skill `skills/eidos/SKILL.md`. When working in an Eidos repository, every AI assistant is instructed to obey them:
+Eidos embeds eight non-negotiable architectural guardrails in its master skill `skills/eidos/SKILL.md`. When working in an Eidos repository, every AI assistant is instructed to obey them:
 
-### 1. Single Source of Truth (`POL-001`)
+### 1. Single Source of Truth
 All product domains, capabilities, personas, C4 architecture containers/components, interface contracts, design systems, and policies live inside `eidos/` as structured AsciiDoc (`.adoc`) files with YAML frontmatter.
 
-### 2. Zero ADRs (`POL-001`)
+### 2. Zero ADRs
 Standalone Architecture Decision Records (`docs/adr/`, `eidos/adr/`, or `ADR-*.md`) are strictly prohibited. Current architectural state lives in `eidos/architecture/`, durable design rationale and rejected alternatives are recorded in-place under the `decisions:` (`DEC-*`) frontmatter block of the owning specification, and transitions are governed by **SpecDeltas** (`eidos/deltas/dlt-*.adoc`).
 
-### 3. Dual Workflow Mode Selection (`POL-003`)
+### 3. Dual Workflow Mode Selection
 Every task operates in either **Direct Mode** (fast, in-place co-evolution of code, tests, and owning specs for localized edits) or **Planned Mode** (formal SpecDelta `DLT-*` lifecycle for cross-container or breaking changes). Agents classify the workflow mode *before* writing code.
 
-### 4. Mandatory Invariant-Test Traceability (`POL-002`)
+### 4. Mandatory Invariant-Test Traceability
 Every capability invariant (`INV-*`) must declare a concrete `test_binding` (`path/to/test_file::test_function` or `path/to/test_file::TestClass::test_method`), and the bound test function must explicitly reference the `INV-*` ID.
 
-### 5. CLI-First Discovery & Determinism (`POL-004`)
+### 5. CLI-First Discovery & Determinism
 Eidos CLI commands are 100% deterministic local operations with zero external AI/LLM runtime calls. Agents always run Eidos knowledge graph and context CLI commands (`eidos context`, `eidos index repo-map`, `eidos index find-symbol`, `eidos index search`, `eidos index blast-radius` with `--json`) before falling back to raw file reads or `grep`/`find`, scaffold via `eidos spec create` / `eidos delta create`, and inspect v1 schemas via `eidos spec schema <type> [--json]`.
 
-### 6. Zero Unreconciled Drift
+### 6. Subagent Context Propagation
+Whenever an agent delegates coding, refactoring, or specification work to a worker subagent, it passes the relevant `eidos context --json` slice in the subagent's prompt or instructs the subagent to read `.agents/plugins/eidos/skills/eidos/SKILL.md` before editing files.
+
+### 7. Zero Unreconciled Drift
 No task may conclude with failing specification schemas (`eidos validate eidos`) or unmanaged code-to-spec drift (`eidos drift --uncommitted`).
 
-### 7. Mandatory Autonomous Adversarial Gap Self-Review
+### 8. Mandatory Autonomous Adversarial Gap Self-Review
 Before presenting work or concluding a task, the agent executes an autonomous adversarial review over its own `git diff`—auditing requirements completeness, edge cases, contract SemVer consistency (`CTR-*`), genuine test assertions (`INV-*`), and embedded decision capture (`DEC-*`)—and fixes any gaps immediately.
 
 ---
@@ -466,7 +469,7 @@ Output:
 ```text
 ╭──────────────────────── Eidos Agent Plugin Manifest ─────────────────────────╮
 │ Plugin Identifier:  eidos                                                    │
-│           Version:  0.20.0                                                   │
+│           Version:  0.20.1                                                   │
 │       Description:  Git-native, agent-agnostic development AI ecosystem and  │
 │                     lifecycle orchestration framework.                       │
 │           License:  MIT                                                      │
@@ -510,7 +513,7 @@ Output:
 ┃ Property               ┃ Value                                               ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
 │ Plugin Name            │ eidos                                               │
-│ Plugin Version         │ 0.20.0                                              │
+│ Plugin Version         │ 0.20.1                                              │
 │ Overall Status         │ CONFORMANT                                          │
 │ Discovered Skills      │ eidos, eidos-ops, eidos-plan, eidos-spec            │
 │ Configured MCP Servers │ None                                                │

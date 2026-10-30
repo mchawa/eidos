@@ -828,6 +828,9 @@ def test_engine_genericity_zero_self_references():
     forbidden = re.compile(
         r"\b(SYS-EIDOS-\d+|CNT-EIDOS-[A-Z0-9_-]+|CTR-EIDOS-[A-Z0-9_-]+|DOM-SPEC-ENGINE|DOM-AGENT-INTELLIGENCE|DOM-DEVEX-VCS|CAP-PROD-\d+|CAP-AGENT-\d+|CAP-VCS-\d+)\b|src/eidos"
     )
+    skills_forbidden = re.compile(
+        r"\b(POL-00\d+|INV-COMPONENT-CENTRALIZATION-MANDATE|INV-COMPONENT-CONTAINER-AFFINITY|DEC-VCS-STATIC-INVARIANT-TRACEABILITY)\b"
+    )
     scan_roots = [Path("src/eidos"), Path("assets/plugin_reference/skills")]
     violations: list[str] = []
 
@@ -842,6 +845,9 @@ def test_engine_genericity_zero_self_references():
             text = p.read_text(encoding="utf-8", errors="ignore")
             for m in forbidden.finditer(text):
                 violations.append(f"{p}: matched '{m.group(0)}'")
+            if root == Path("assets/plugin_reference/skills"):
+                for m in skills_forbidden.finditer(text):
+                    violations.append(f"{p}: matched '{m.group(0)}'")
 
     portal_forbidden = re.compile(
         r'\b(CLT-WEB-PORTAL|SCR-PORTAL-HOME|EXT_GIT|EXT_IDE|DS-CORE)\b|systems/core|"web-portal"|text\.includes\("Eidos"\)'
