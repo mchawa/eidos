@@ -25,6 +25,40 @@ INV_OR_POL_TOKEN_RE = re.compile(r"\b(?:INV|POL)-[A-Za-z0-9_-]+\b")
 _RUST_TEST_ATTR_RE = re.compile(r"#\[\s*(?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)*(?:test|rstest|test_case)\b")
 _SCRIPT_BLOCK_RE = re.compile(r"<script\b[^>]*>(.*?)</script>", re.DOTALL | re.IGNORECASE)
 _RUST_LIFETIME_AT_START_RE = re.compile(r"^'[A-Za-z_][A-Za-z0-9_]*(?![A-Za-z0-9_'-])")
+_CPP_EXPORT_MACRO_TOKEN_RE = re.compile(
+    r"\b(?:"
+    r"[A-Z_][A-Z0-9_]*_(?:API|EXPORT|EXPORTS|IMPORT|PUBLIC|LOCAL|DLL|VISIBLE|HIDDEN|CALL|CDECL|STDCALL|FASTCALL|VECTORCALL|FORCEINLINE|NOINLINE|INLINE|DEPRECATED|NODISCARD|NORETURN|ATTR)"
+    r"|(?:API|EXPORT|DLL|VKAPI)_[A-Z0-9_]+"
+    r"|DLL(?:EXPORT|IMPORT)|APIENTRY|WINGDIAPI|CALLBACK|WINAPI|FORCEINLINE|NOINLINE"
+    r")\b(?:[ \t]*\([^()\n]*\))?(?=\s+[A-Za-z_~*:&\[])"
+)
+_CPP_TYPE_MACRO_HEADER_RE = re.compile(
+    r"\b(?P<kw>class|struct|union|enum(?:\s+(?:class|struct))?)"
+    r"(?P<mid>(?:\s+(?:[A-Z_][A-Z0-9_]*(?:[ \t]*\([^()\n]*\))?|\[\[[^\]\n]*\]\]|__declspec[ \t]*\([^()\n]*\)|alignas[ \t]*\([^()\n]*\)))+)"
+    r"(?P<tail>\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:final\b|<|:|\{|;))"
+)
+_CPP_UPPER_MACRO_IN_MID_RE = re.compile(r"\b[A-Z_][A-Z0-9_]*\b(?:[ \t]*\([^()\n]*\))?")
+
+
+def _blank_span_preserving_newlines(m: re.Match[str]) -> str:
+    txt = m.group(0)
+    if "\n" not in txt and "\r" not in txt:
+        return " " * (m.end() - m.start())
+    return "".join(ch if ch in ("\n", "\r") else " " for ch in txt)
+
+
+def _blank_cpp_export_macros(content: str) -> str:
+    """Blank C/C++ declaration export/visibility macros with equal-length spaces to preserve AST line/column offsets."""
+    res = _CPP_EXPORT_MACRO_TOKEN_RE.sub(_blank_span_preserving_newlines, content)
+
+    def _replace_type_hdr(m: re.Match[str]) -> str:
+        kw = m.group("kw")
+        mid = m.group("mid")
+        tail = m.group("tail")
+        blanked_mid = _CPP_UPPER_MACRO_IN_MID_RE.sub(_blank_span_preserving_newlines, mid)
+        return f"{kw}{blanked_mid}{tail}"
+
+    return _CPP_TYPE_MACRO_HEADER_RE.sub(_replace_type_hdr, res)
 
 
 def _extract_sfc_script_blocks(content: str) -> list[tuple[str, int]]:
@@ -732,14 +766,16 @@ class AstGrepIndexer(BaseAstIndexer):
         line_offset: int = 0,
         sfc_lang: str | None = None,
     ) -> list[CodeSymbol]:
+        parse_content = _blank_cpp_export_macros(content) if lang in ("c", "cpp") else content
         try:
-            root = SgRoot(content, lang)
+            root = SgRoot(parse_content, lang)
             node = root.root()
         except (RuntimeError, ValueError):
             return []
 
         symbols: list[CodeSymbol] = []
         content_lines = content.splitlines()
+        parse_lines = parse_content.splitlines() if parse_content is not content else content_lines
         py_dunder_all = _extract_python_dunder_all_from_source(content, py_root=node) if lang == "python" else None
         ts_exports = (
             _extract_ts_exported_names(content, ts_root=node)
@@ -750,6 +786,21 @@ class AstGrepIndexer(BaseAstIndexer):
         def _node_header_sig(ast_node: Any, rng_obj: Any) -> str:
             s_ln = rng_obj.start.line
             s_col = rng_obj.start.column
+            if (
+                parse_lines is not content_lines
+                and s_ln < len(content_lines)
+                and s_ln < len(parse_lines)
+                and s_col > 0
+            ):
+                p_line = parse_lines[s_ln]
+                c_line = content_lines[s_ln]
+                scan_col = min(s_col, len(p_line), len(c_line))
+                while scan_col > 0 and p_line[scan_col - 1].isspace():
+                    scan_col -= 1
+                if c_line[scan_col:s_col].strip():
+                    while scan_col < s_col and c_line[scan_col].isspace():
+                        scan_col += 1
+                    s_col = scan_col
             body_node = ast_node.field("body")
             if body_node is not None:
                 b_start = body_node.range().start
@@ -764,7 +815,7 @@ class AstGrepIndexer(BaseAstIndexer):
                     return _extract_header_signature("\n".join([first, *mid, *last]))
             e_ln = rng_obj.end.line
             if s_ln == e_ln and s_ln < len(content_lines):
-                return _extract_header_signature(ast_node.text())
+                return _extract_header_signature(content_lines[s_ln][s_col : rng_obj.end.column])
             slice_lines = content_lines[s_ln : min(e_ln + 1, s_ln + 60)]
             if not slice_lines:
                 return _extract_header_signature(ast_node.text())
@@ -932,7 +983,7 @@ class AstGrepIndexer(BaseAstIndexer):
             "java": ["method_declaration"],
             "kotlin": ["function_declaration"],
             "c": ["function_definition", "declaration"],
-            "cpp": ["function_definition", "declaration", "field_declaration"],
+            "cpp": ["field_declaration", "declaration", "function_definition"],
             "csharp": ["method_declaration"],
             "ruby": ["method", "singleton_method"],
             "php": ["function_definition", "method_declaration"],
@@ -942,6 +993,7 @@ class AstGrepIndexer(BaseAstIndexer):
         class_ranges = [
             (cname, cnode.range().start.line, cnode.range().end.line) for cname, cnode in class_nodes.items()
         ]
+        cpp_member_vis: dict[tuple[str, str], bool] = {}
 
         for fk in fn_kinds:
             for m in node.find_all(kind=fk):
@@ -1008,8 +1060,72 @@ class AstGrepIndexer(BaseAstIndexer):
                             break
                         anc_impl = anc_impl.parent()
 
+                elif parent_cls is None and lang == "cpp":
+                    fdecl = m.field("declarator")
+                    while fdecl is not None and fdecl.kind() != "function_declarator":
+                        fdecl = fdecl.field("declarator") or next(
+                            (c for c in fdecl.children() if c.kind() == "function_declarator"),
+                            None,
+                        )
+                    if fdecl is not None:
+                        q_inner = fdecl.field("declarator")
+                        while q_inner is not None and q_inner.kind() not in (
+                            "identifier",
+                            "field_identifier",
+                            "qualified_identifier",
+                            "destructor_name",
+                        ):
+                            q_inner = q_inner.field("declarator") or next(
+                                (
+                                    c
+                                    for c in q_inner.children()
+                                    if c.kind() in ("identifier", "field_identifier", "qualified_identifier")
+                                ),
+                                None,
+                            )
+                        if q_inner is not None and q_inner.kind() == "qualified_identifier" and "::" in q_inner.text():
+                            qual_prefix = q_inner.text().rsplit("::", 1)[0]
+                            qual_prefix_no_tpl = re.sub(r"<[^<>]*>", "", qual_prefix)
+                            qual_tokens = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", qual_prefix_no_tpl)
+                            for qtok in reversed(qual_tokens):
+                                if qtok in class_nodes:
+                                    parent_cls = qtok
+                                    break
+                            if parent_cls is None and qual_tokens and qual_tokens[-1][0].isupper():
+                                parent_cls = qual_tokens[-1]
+
                 kind_label = "method" if parent_cls or "method" in fk else "function"
                 sig = _node_header_sig(m, rng)
+                cpp_member_is_private = False
+                if lang == "cpp" and parent_cls:
+                    member_node = m
+                    while member_node.parent() is not None and member_node.parent().kind() in (
+                        "template_declaration",
+                        "friend_declaration",
+                    ):
+                        member_node = member_node.parent()
+                    flist = member_node.parent()
+                    if flist is not None and flist.kind() == "field_declaration_list":
+                        access_val: str | None = None
+                        prev_sib = member_node.prev()
+                        while prev_sib is not None:
+                            if prev_sib.kind() == "access_specifier":
+                                access_val = prev_sib.text().strip()
+                                break
+                            prev_sib = prev_sib.prev()
+                        if access_val is not None:
+                            cpp_member_is_private = access_val in ("private", "protected")
+                        else:
+                            enc_type = flist.parent()
+                            if (
+                                enc_type is not None
+                                and enc_type.kind() == "class_specifier"
+                                and any(ch.kind() == "access_specifier" for ch in flist.children())
+                            ):
+                                cpp_member_is_private = True
+                        cpp_member_vis[(parent_cls, fname)] = cpp_member_is_private
+                    else:
+                        cpp_member_is_private = cpp_member_vis.get((parent_cls, fname), False)
                 if lang == "ruby":
                     rb_vis = "public"
                     p_node = m.parent()
@@ -1060,6 +1176,7 @@ class AstGrepIndexer(BaseAstIndexer):
                     py_dunder_all=py_dunder_all,
                     ts_exports=ts_exports,
                     class_is_public=class_is_public,
+                    cpp_member_is_private=cpp_member_is_private,
                 )
                 sym.is_boundary_export = _evaluate_boundary_export(sym, py_dunder_all=py_dunder_all)
                 symbols.append(sym)
@@ -1213,8 +1330,9 @@ class AstGrepIndexer(BaseAstIndexer):
         blocks = _extract_sfc_script_blocks(content) if lang in ("vue", "svelte") else [(content, 0)]
 
         for block_text, line_offset in blocks:
+            parse_block = _blank_cpp_export_macros(block_text) if sg_lang in ("c", "cpp") else block_text
             try:
-                root = SgRoot(block_text, sg_lang)
+                root = SgRoot(parse_block, sg_lang)
                 node = root.root()
             except (RuntimeError, ValueError):
                 continue
@@ -1487,6 +1605,7 @@ def _evaluate_symbol_visibility(
     py_dunder_all: set[str] | None = None,
     ts_exports: set[str] | None = None,
     class_is_public: dict[str, bool] | None = None,
+    cpp_member_is_private: bool = False,
 ) -> bool:
     """Evaluate language-native public boundary visibility for a CodeSymbol (DLT-2026-055)."""
     suffix = Path(sym.file_path).suffix.lower()
@@ -1528,6 +1647,12 @@ def _evaluate_symbol_visibility(
         if sym.name.startswith("_"):
             return False
         sig_prefix = sig.split("(", 1)[0] if sig else ""
+        if sym.kind == "method" or sym.parent_symbol:
+            if cpp_member_is_private:
+                return False
+            if sym.parent_symbol and class_is_public is not None and not class_is_public.get(sym.parent_symbol, True):
+                return False
+            return not bool(re.search(r"\b(?:private|protected)\b", sig_prefix))
         return not bool(re.search(r"\bstatic\b", sig_prefix))
 
     if suffix == ".cs":

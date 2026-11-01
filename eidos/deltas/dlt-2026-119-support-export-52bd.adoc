@@ -1,0 +1,144 @@
+---
+type: delta/mutation
+id: DLT-2026-119-SUPPORT-EXPORT-52BD
+title: "Support C++ Export Macros and Static Class Method Visibility in AstGrepIndexer"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: high
+  motivation: "Prevent C/C++ preprocessor export/visibility macros (e.g. class RENDERER_API RenderGraph, struct ENGINE_EXPORT MeshData, enum CORE_API PassType, and RENDERER_API-prefixed functions/methods) from causing Tree-sitter (SgRoot) to misparse exported C++ classes/structs as function definitions and drop their member methods by blanking declaration-site export macros with equal-length spaces prior to AST parsing (preserving exact 1-based line numbers and column offsets), and fix _evaluate_symbol_visibility so C++ static class/struct methods are treated as public class-scoped methods (governed by C++ access specifiers and parent class visibility) rather than translation-unit-local static free functions."
+mutations:
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+    details: "Add length-preserving C/C++ export/attribute macro blanking (_blank_cpp_export_macros) before SgRoot(parse_content, lang) in AstGrepIndexer._extract_sg_symbols_from_block and _iter_test_function_spans in src/eidos/core/index/ast_indexer.py, resolve enclosing C++ access_specifier visibility (public/protected/private, unwrapping template_declaration parents and respecting class default-private vs. struct default-public access when access specifiers are present) without injecting non-C++ 'private ' prefixes into CodeSymbol.signature, update _evaluate_symbol_visibility so static only marks top-level C/C++ free functions (parent_symbol is None and kind == 'function') as file-local while C++ static class/struct methods (kind == 'method' or parent_symbol is not None) retain public visibility unless non-public by access specifier or parent class visibility, and document C++ macro-resilient parsing and static member visibility in eidos/architecture/components/ast-symbol-indexer.adoc."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/ast_indexer.py"
+        status: "active"
+      body:
+        contains:
+          - "_API"
+          - "static"
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+    details: "Record DEC-INDEX-CPP-MACRO-NORMALIZATION and update eidos/architecture/containers/index.adoc to document length-preserving C/C++ export macro normalization and language-native C++ static member method visibility in polyglot AST extraction."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-INDEX-CPP-MACRO-NORMALIZATION"
+      body:
+        contains:
+          - "export macro"
+  - operation: modify
+    target: CAP-AGENT-002
+    details: "Bump CAP-AGENT-002 to version 1.2.0 in eidos/domains/agent-intelligence/capabilities/cap-agent-002.adoc, register CMP-AST-SYMBOL-INDEXER under technical.components, and document C/C++ export macro normalization and static class method extraction."
+    expect:
+      frontmatter:
+        version: "1.2.0"
+        status: "active"
+        technical.components:
+          - "CMP-AST-SYMBOL-INDEXER"
+      body:
+        contains:
+          - "_API"
+  - operation: modify
+    target: INV-INDEX-POLYGLOT-SYMBOL-PRECISION
+    details: "Extend INV-INDEX-POLYGLOT-SYMBOL-PRECISION in eidos/domains/agent-intelligence/capabilities/cap-agent-002.adoc and tests/test_ast_indexer.py::test_inv_index_polyglot_symbol_precision to require length-preserving C/C++ export macro handling on classes, structs, enums, and functions without shifting line numbers."
+    expect:
+      frontmatter:
+        rule: "export macros"
+        test_binding: "tests/test_ast_indexer.py::test_inv_index_polyglot_symbol_precision"
+  - operation: modify
+    target: CAP-VCS-001
+    details: "Bump CAP-VCS-001 to version 1.9.0 in eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc to reflect C++ static class/struct method visibility in structural symbol diffing."
+    expect:
+      frontmatter:
+        version: "1.9.0"
+        status: "active"
+      body:
+        contains:
+          - "static"
+  - operation: modify
+    target: INV-DRIFT-DIFF-AWARE-COVERAGE
+    details: "Extend INV-DRIFT-DIFF-AWARE-COVERAGE in eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc and tests/test_ast_indexer.py::test_polyglot_language_native_visibility_rules to verify that C++ static class/struct methods are treated as public structural symbols whereas file-scope static C/C++ functions remain translation-unit-local."
+    expect:
+      frontmatter:
+        rule: "static class/struct methods"
+        test_binding: "tests/test_drift.py::test_trivial_spec_edit_does_not_cover_structural_addition"
+vcs:
+  branch: main
+  base_commit: 0bc0f43c83c19d5afb79a347a98f24309e78d4b2
+---
+= SpecDelta: Support C++ Export Macros and Static Class Method Visibility in AstGrepIndexer
+:toc: left
+:icons: font
+:sectnums:
+
+== Problem Statement
+
+Testing Eidos (`eidos-ai 0.20.1`) against real-world C++ codebases (such as `VkRad`) exposed two root-cause defects in `AstGrepIndexer` (`src/eidos/core/index/ast_indexer.py`) that prevent Eidos from indexing exported C++ types and detecting structural changes to `static` class methods:
+
+1. **C/C++ `*_API` / DLL Export Macros Misparsed as Function Return Types (`0 of 67 exported classes` indexed)**:
+   * `AstGrepIndexer._extract_sg_symbols_from_block()` (`src/eidos/core/index/ast_indexer.py:726-1066`) and `_iter_test_function_spans()` (`src/eidos/core/index/ast_indexer.py:1196-1293`) pass raw, un-preprocessed C/C++ source directly to `SgRoot(content, lang)`.
+   * While Tree-sitter's C++ grammar natively recognizes `__declspec(...)` (`ms_declspec_modifier`) and C++11 `[[...]]` (`attribute_declaration`), it does not expand project-defined visibility/export macros such as `RENDERER_API`, `VKRAD_API`, or `ENGINE_EXPORT`.
+   * When an export macro appears between `class`/`struct`/`union`/`enum` and the type identifier (e.g., `class RENDERER_API RenderGraph { ... };` or `struct ENGINE_EXPORT MeshData { ... };`), Tree-sitter's C++ parser:
+     1. Consumes the macro (`RENDERER_API`) as the `type_identifier` of an elaborated `class_specifier` (`class RENDERER_API`) with **no** `field_declaration_list` child,
+     2. Parses the actual class identifier (`RenderGraph`) as the `identifier` declarator of a top-level **`function_definition`**, and
+     3. Absorbs the class body `{ ... }` as a `compound_statement` (turning `public:` / `private:` into `goto` `labeled_statement` nodes and member declarations into local statements inside a `function_definition`).
+   * This causes a triple drop in `AstGrepIndexer._extract_sg_symbols_from_block()`:
+     - **Class/Struct/Enum loop (`lines 816-819`)**: Skips `class_specifier` / `struct_specifier` / `enum_specifier` because it has no `field_declaration_list` or `enumerator_list` child (`if lang in ("c", "cpp") and not any(ch.kind() in ("field_declaration_list", "enumerator_list") for ch in m.children()): continue`).
+     - **Function/Method loop (`lines 528-554`, `968-970`)**: `_node_name()` inspects the outer `function_definition`, finds no `function_declarator` child under `declarator` (which is a bare `identifier` `"RenderGraph"`), and returns `None`.
+     - **Nested-function filter (`lines 955-966`)**: Every member declaration/definition inside the class body has the bogus `function_definition` as an ancestor (`anc.kind() in all_fn_kinds`), setting `nested_in_fn = True` and dropping **all** methods of the class as well.
+   * Additionally, when an export macro precedes a function or method returning a pointer, reference, or template type (e.g., `RENDERER_API const RenderGraph& GetGraph();` or `RENDERER_API RenderGraph* CreateGraph();`), Tree-sitter parses `RENDERER_API` as the return `type_identifier` and misparses the real return type + declarator as a variable `declaration` + `pointer_expression` or `qualified_identifier`.
+
+2. **C++ `static` Class/Struct Member Methods Misclassified as File-Local Functions**:
+   * In `_evaluate_symbol_visibility()` (`src/eidos/core/index/ast_indexer.py:1527-1531`):
++
+[source,python]
+----
+if suffix in (".c", ".cpp", ".h", ".hpp"):
+    if sym.name.startswith("_"):
+        return False
+    sig_prefix = sig.split("(", 1)[0] if sig else ""
+    return not bool(re.search(r"\bstatic\b", sig_prefix))
+----
+   * Eidos applies `not bool(re.search(r"\bstatic\b", sig_prefix))` to **all** C/C++ symbols regardless of whether `sym` is a top-level free function (`sym.parent_symbol is None` and `sym.kind == "function"`) or a class/struct member method (`sym.kind == "method"` or `sym.parent_symbol is not None`).
+   * In C/C++, `static` at file/namespace scope gives a free function **internal linkage** (translation-unit local), whereas `static` inside a `class` or `struct` declares a **static member function** (e.g., `static RenderGraph Create();`) whose visibility is governed by C++ access specifiers (`public:`, `protected:`, `private:`) and the enclosing type's visibility.
+   * Because `_evaluate_symbol_visibility()` rejected every `static` symbol unconditionally, all C++ `static` class/struct methods were marked `is_public = False` and excluded from `public_symbol_map()`, `boundary_symbol_map()`, `diff_public_symbols()`, and `has_structural_changes()`, causing `eidos drift` to ignore additions, removals, and signature changes on static class methods.
+
+== Proposed Specification Changes
+
+1. **Length-Preserving C/C++ Export Macro Normalization (`CMP-AST-SYMBOL-INDEXER`, `src/eidos/core/index/ast_indexer.py`)**:
+   * Introduce `_blank_cpp_export_macros(content: str) -> str` in `src/eidos/core/index/ast_indexer.py` and invoke it before constructing `SgRoot(parse_content, lang)` when `lang in ("c", "cpp")` in `_extract_sg_symbols_from_block()` and `_iter_test_function_spans()`:
+     - Blank uppercase macro identifiers between `class`/`struct`/`union`/`enum(?:\s+(?:class|struct))?` and the type name (when followed by `{`, `:`, `;`, or `final`, i.e., not a function declarator `(`) with equal-length spaces (`" " * len(macro)`).
+     - Blank standard C/C++ export/visibility/calling-convention macro tokens (`\b[A-Z][A-Z0-9_]*_(?:API|EXPORT|IMPORT|PUBLIC|LOCAL|DLL|VISIBLE|HIDDEN|CALL|CDECL|STDCALL|FASTCALL|FORCEINLINE|NOINLINE|INLINE|DEPRECATED|NODISCARD)\b` and `\b(?:DLL_EXPORT|DLL_IMPORT|DLLEXPORT|DLLIMPORT|APIENTRY|VKAPI_ATTR|VKAPI_CALL|FORCEINLINE)\b`, including optional single-level parenthesized arguments like `MY_API(void)`) with equal-length spaces while preserving newlines.
+   * Because every blanked macro token is replaced by the exact same number of ASCII spaces (`" " * (end - start)`), `line_start`, `line_end`, and column offsets in `SgRoot` remain 100% identical to the unpatched file, while slicing `content_lines` from the original `content` (including single-line declarations in `_node_header_sig`) preserves the original declaration signature.
+2. **Scope- & Access-Aware C++ `static` Member Visibility (`CMP-AST-SYMBOL-INDEXER`, `src/eidos/core/index/ast_indexer.py`)**:
+   * In `AstGrepIndexer._extract_sg_symbols_from_block()`, resolve the enclosing C++ `access_specifier` (`public`, `protected`, `private`) inside `field_declaration_list` blocks (walking up through any wrapping `template_declaration` node before scanning preceding siblings, and respecting `class_specifier` default-`private` vs. `struct_specifier` default-`public` rules when explicit access specifiers are present in the body) and pass `cpp_member_is_private` to `_evaluate_symbol_visibility()` without injecting non-C++ `private ` / `protected ` prefixes into `CodeSymbol.signature`.
+   * In `_evaluate_symbol_visibility()` for `.c`, `.cpp`, `.h`, `.hpp`:
+     - If `sym.kind == "method"` or `sym.parent_symbol`:
+       * Return `False` if `cpp_member_is_private` is `True`, if `class_is_public` marks `sym.parent_symbol` as non-public, or if `sig_prefix` contains `\b(?:private|protected)\b`.
+       * Otherwise return `True` even when `\bstatic\b` is present in `sig_prefix`, so public `static` class/struct methods are indexed as `is_public = True` and `is_boundary_export = True`.
+     - If `sym.kind == "function"` and `sym.parent_symbol is None` (file/namespace-scope free function):
+       * Continue returning `False` when `\bstatic\b` appears in `sig_prefix` (translation-unit internal linkage).
+3. **Architecture & Capability Specifications (`CMP-AST-SYMBOL-INDEXER`, `CNT-EIDOS-INDEX`, `CAP-AGENT-002`, `CAP-VCS-001`)**:
+   * Update `eidos/architecture/components/ast-symbol-indexer.adoc` and `eidos/architecture/containers/index.adoc` (recording `DEC-INDEX-CPP-MACRO-NORMALIZATION`) to document length-preserving C/C++ export macro normalization and scope-aware `static` member method visibility.
+   * Bump `CAP-AGENT-002` to `1.2.0` (registering `CMP-AST-SYMBOL-INDEXER` under `technical.components` and updating `INV-INDEX-POLYGLOT-SYMBOL-PRECISION`) and `CAP-VCS-001` to `1.9.0` (`INV-DRIFT-DIFF-AWARE-COVERAGE`).
+
+== Implementation Plan
+
+1. **C/C++ Export Macro Normalization & Access Specifier Tracking (`src/eidos/core/index/ast_indexer.py`)**:
+   * Implement `_blank_cpp_export_macros(content: str) -> str` to replace C/C++ declaration export macros (`*_API`, `*_EXPORT`, `*_DLL`, `*_PUBLIC`, `*_CALL`, and uppercase macro tokens between `class`/`struct`/`union`/`enum` keywords and the type identifier) with equal-length spaces.
+   * Apply `_blank_cpp_export_macros(content)` when `lang in ("c", "cpp")` before `SgRoot(parse_content, lang)` in `_extract_sg_symbols_from_block()` and `_iter_test_function_spans()`, and ensure `_node_header_sig()` slices `content_lines` consistently even on single-line declarations (`s_ln == e_ln`).
+   * In `_extract_sg_symbols_from_block()`, unwrap any enclosing `template_declaration` inside C++ `field_declaration_list` blocks before walking preceding siblings to resolve `access_specifier` (`private`, `protected`, `public`) and pass `cpp_member_is_private` into `_evaluate_symbol_visibility()` while keeping `CodeSymbol.signature` valid C++.
+2. **C/C++ `static` Method vs. File-Scope Function Visibility (`src/eidos/core/index/ast_indexer.py`)**:
+   * Update `_evaluate_symbol_visibility()` for `.c`, `.cpp`, `.h`, `.hpp` so `\bstatic\b` only marks top-level free functions (`not sym.parent_symbol and sym.kind != "method"`) as non-public, while class/struct methods (`sym.kind == "method" or bool(sym.parent_symbol)`) check `cpp_member_is_private`, `class_is_public`, and `\b(?:private|protected)\b` rather than `\bstatic\b`.
+3. **Living Specifications & Invariant Regression Tests (`eidos/`, `tests/test_ast_indexer.py`, `tests/test_drift.py`)**:
+   * Update `CMP-AST-SYMBOL-INDEXER`, `CNT-EIDOS-INDEX` (`DEC-INDEX-CPP-MACRO-NORMALIZATION`), `CAP-AGENT-002` (`1.2.0`, `technical.components`, `INV-INDEX-POLYGLOT-SYMBOL-PRECISION`), and `CAP-VCS-001` (`1.9.0`, `INV-DRIFT-DIFF-AWARE-COVERAGE`).
+   * Add regression tests in `tests/test_ast_indexer.py` verifying:
+     - `class RENDERER_API RenderGraph` (including inheritance `final : public Base`), `struct ENGINE_EXPORT MeshData`, `enum CORE_API PassType`, `enum class CORE_API PassKind : uint32_t`, and `RENDERER_API`-prefixed functions/methods are extracted with exact 1-based `line_start` / `line_end` coordinates and parent-linked methods.
+     - Public `static` class/struct methods (`static RenderGraph Create();`) have `is_public is True` and trigger structural symbol diffs (`diff_public_symbols` / `has_structural_changes`) when added, removed, or signature-modified, while `private:` methods (including `private: static`) and top-level `static` free functions remain `is_public is False`.
+   * Run `eidos validate eidos --json`, `eidos delta verify DLT-2026-119-SUPPORT-EXPORT-52BD --json`, `eidos delta apply DLT-2026-119-SUPPORT-EXPORT-52BD`, `eidos drift --uncommitted --json`, and `pytest`.
+

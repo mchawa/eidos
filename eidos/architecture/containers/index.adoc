@@ -63,6 +63,14 @@ decisions:
       - option: "Unbounded 32,768-token document encoding with fixed alphabetical batch_size=8 and unpruned GQA present_k/v outputs"
         reason_rejected: "Causes 6.5-42+ GB RAM spikes during eidos index semantic sync by padding 8 items to 2,665-17,326 tokens and retaining 56 dead present_k_dummy/present_v_dummy KV-cache outputs across all 28 layers."
     graduated_from: EXP-2026-009
+  - id: DEC-INDEX-CPP-MACRO-NORMALIZATION
+    title: "Length-Preserving In-Memory Macro Blanking for C/C++ AST Extraction"
+    decision: "Blank C/C++ declaration-site export and calling-convention macros (e.g. *_API, *_EXPORT, *_DLL, and uppercase macro identifiers between class/struct/union/enum and the type identifier) with equal-length ASCII spaces prior to Tree-sitter SgRoot parsing."
+    rationale: "Preserves 100% exact 1-based line numbers (line_start, line_end) and byte/column offsets in sub-millisecond time with zero external C++ compiler or header dependencies."
+    rejected_alternatives:
+      - option: "Invoke external C preprocessor (clang -E / gcc -E) or libclang before indexing"
+        reason_rejected: "Requires a host C/C++ toolchain and compile_commands.json include paths, fails when third-party SDK headers (e.g. Vulkan, Slang) are absent in CI, and shifts line numbers by expanding #include directives."
+    graduated_from: DLT-2026-119-SUPPORT-EXPORT-52BD
 ---
 = Container: Architectural Knowledge Graph & Retrieval Index (C4 Level 2 Container)
 :toc: left
@@ -72,7 +80,7 @@ This container represents the embedded relational, lexical, and optional semanti
 
 == Internal Structure & Key Mechanisms
 * **Embedded SQLite WAL + FTS5 Knowledge Graph (`DEC-INDEX-SQLITE-WAL`)**: Persists living specification entities (`entities`), typed directed relationships (`edges`), governed file digests (`indexed_files`), ownership rules (`symbol_mappings`), polyglot AST symbols (`code_symbols`), weighted lexical search (`specs_fts`), inverted token index (`file_tokens_fts`), validation/test caches (`spec_validation_cache`, `test_binding_cache`), and content-addressed dense embeddings (`spec_embeddings`) in a single local SQLite database at `SCHEMA_VERSION` `2.18.0`.
-* **Incremental Synchronization & Polyglot AST Extraction**: Performs single-pass `os.scandir` mtime and SHA-256 dirty checks across `eidos/`, governed `source_path` trees, and test suites, extracting polyglot symbols and cross-file imports across 17 languages via `ast-grep-py` (`SgRoot`) and automatically deriving component `consumes_api` and container `depends_on` edges while preserving `spec_embeddings` across `sync --force`.
+* **Incremental Synchronization & Polyglot AST Extraction (`DEC-INDEX-CPP-MACRO-NORMALIZATION`)**: Performs single-pass `os.scandir` mtime and SHA-256 dirty checks across `eidos/`, governed `source_path` trees, and test suites, extracting polyglot symbols and cross-file imports across 17 languages via `ast-grep-py` (`SgRoot`) with length-preserving C/C++ export macro normalization (`_blank_cpp_export_macros`) and scope-aware C++ `static` member method visibility, and automatically deriving component `consumes_api` and container `depends_on` edges while preserving `spec_embeddings` across `sync --force`.
 * **Two-Tier Retrieval & Tiered Context Slicing (`DEC-INDEX-FTS-RETRIEVAL-HYGIENE`, `DEC-INDEX-HYBRID-SEMANTIC-RRF`)**: Combines column-weighted FTS5 BM25 ranking, deterministic architectural synonym expansion, direct-over-1-hop container prioritization, and optional gated Harrier-OSS-v1-0.6B ONNX Hybrid RRF ($k_0 = 20, w_{\text{lex}} = 1.0, w_{\text{sem}} = 0.50, \tau_{\min} = 0.50$, `HARRIER_DOC_MAX_LENGTH = 4096`, disk-backed `present_k_dummy`/`present_v_dummy` output pruning, length-sorted token-budgeted batching, and automatic `spec_embeddings` refresh on living specification updates) with calibrated token-budget compression (`anchor` <=300, `guardrails` <=1000, `deep` <=2500 tokens).
 
 == Quality Attributes & Operational Policies

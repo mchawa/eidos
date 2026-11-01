@@ -106,6 +106,59 @@ def test_inv_index_polyglot_symbol_precision():
     assert "Reader" in go_by_name and go_by_name["Reader"].kind == "interface"
     assert "Append" in go_by_name and go_by_name["Append"].parent_symbol == "LedgerStore"
 
+    # 4. C++ export/calling-convention macro normalization (*_API, *_EXPORT) with exact line preservation
+    cpp_code = (
+        "class RENDERER_API RenderGraph final : public BaseGraph {\n"
+        "public:\n"
+        "    static RenderGraph Create(int passes) {\n"
+        "        return RenderGraph();\n"
+        "    }\n"
+        "    RENDERER_API void Execute(bool async) {\n"
+        "    }\n"
+        "private:\n"
+        "    static void InternalReset() {\n"
+        "    }\n"
+        "};\n"
+        "struct ENGINE_EXPORT MeshData {\n"
+        "    static int CountVertices() {\n"
+        "        return 0;\n"
+        "    }\n"
+        "};\n"
+        "enum CORE_API PassType {\n"
+        "    Opaque,\n"
+        "    Transparent\n"
+        "};\n"
+        "enum class CORE_API PassKind : int {\n"
+        "    Compute\n"
+        "};\n"
+        "RENDERER_API void GlobalInit() {\n"
+        "}\n"
+        "RenderGraph RenderGraph::Build(int flags) {\n"
+        "    return RenderGraph();\n"
+        "}\n"
+    )
+    cpp_syms = idx.extract_symbols("include/RenderGraph.hpp", cpp_code)
+    cpp_by_name = {s.name: s for s in cpp_syms}
+    assert cpp_by_name["RenderGraph"].kind == "class"
+    assert cpp_by_name["RenderGraph"].line_start == 1
+    assert cpp_by_name["RenderGraph"].line_end == 11
+    assert "RENDERER_API" in cpp_by_name["RenderGraph"].signature
+    assert cpp_by_name["Create"].kind == "method"
+    assert cpp_by_name["Create"].parent_symbol == "RenderGraph"
+    assert cpp_by_name["Create"].line_start == 3
+    assert cpp_by_name["Execute"].kind == "method"
+    assert cpp_by_name["Execute"].parent_symbol == "RenderGraph"
+    assert "RENDERER_API" in cpp_by_name["Execute"].signature
+    assert cpp_by_name["MeshData"].kind == "struct"
+    assert cpp_by_name["MeshData"].line_start == 12
+    assert cpp_by_name["CountVertices"].parent_symbol == "MeshData"
+    assert cpp_by_name["PassType"].kind == "enum"
+    assert cpp_by_name["PassKind"].kind == "enum"
+    assert cpp_by_name["GlobalInit"].kind == "function"
+    assert "RENDERER_API" in cpp_by_name["GlobalInit"].signature
+    assert cpp_by_name["Build"].kind == "method"
+    assert cpp_by_name["Build"].parent_symbol == "RenderGraph"
+
 
 def test_polyglot_kotlin_and_qualified_class_test_methods():
     """Verify Kotlin symbol/test extraction and Class::method test qualification without overwriting."""  # eidos:fixture
@@ -375,6 +428,49 @@ def test_polyglot_language_native_visibility_rules():
     py_pub = public_symbol_map(py_all, "mod.py")
     assert ("function", "", "exported_fn") in py_pub
     assert ("function", "", "internal_but_no_underscore") not in py_pub
+
+    # 6. C++: static class/struct methods in public scope are public; private/protected members and file-scope static functions are private
+    cpp_base = (
+        "class RENDERER_API RenderGraph {\n"
+        "    void ImplicitPrivateHelper() {}\n"
+        "    friend void SwapGraphs(RenderGraph& a, RenderGraph& b) {}\n"
+        "public:\n"
+        "    static RenderGraph Create(int passes) { return RenderGraph(); }\n"
+        "    template <typename T>\n"
+        "    static void RegisterPass(T pass) {}\n"
+        "private:\n"
+        "    static void InternalReset() {}\n"
+        "    static void OutOfLineSecret();\n"
+        "protected:\n"
+        "    void OnFrameEnd() {}\n"
+        "};\n"
+        "inline void RenderGraph::OutOfLineSecret() {}\n"
+        "static void FileLocalHelper() {}\n"
+    )
+    cpp_pub = public_symbol_map(cpp_base, "RenderGraph.hpp")
+    assert ("class", "", "RenderGraph") in cpp_pub
+    assert ("method", "RenderGraph", "Create") in cpp_pub
+    assert ("method", "RenderGraph", "RegisterPass") in cpp_pub
+    assert ("method", "RenderGraph", "ImplicitPrivateHelper") not in cpp_pub
+    assert ("method", "RenderGraph", "SwapGraphs") not in cpp_pub
+    assert ("method", "RenderGraph", "InternalReset") not in cpp_pub
+    assert ("method", "RenderGraph", "OutOfLineSecret") not in cpp_pub
+    assert ("method", "RenderGraph", "OnFrameEnd") not in cpp_pub
+    assert ("function", "", "FileLocalHelper") not in cpp_pub
+
+    cpp_private_change = cpp_base.replace(
+        "static void InternalReset() {}",
+        "static void InternalReset(int mode) {}",
+    )
+    assert has_structural_changes(cpp_base, cpp_private_change, "RenderGraph.hpp") == (False, [])
+
+    cpp_static_method_change = cpp_base.replace(
+        "static RenderGraph Create(int passes)",
+        "static RenderGraph Create(int passes, bool async)",
+    )
+    changed, reasons = has_structural_changes(cpp_base, cpp_static_method_change, "RenderGraph.hpp")
+    assert changed is True
+    assert any("RenderGraph.Create" in r for r in reasons)
 
 
 def test_polyglot_rust_java_ts_bindings_and_fallback_delegation(tmp_path):
