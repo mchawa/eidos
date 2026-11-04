@@ -3885,9 +3885,7 @@ def test_dlt_2026_110_batch_git_slug_ids_and_unified_test_binding_cache(tmp_path
     assert "INV-SYS-001" in cache_map["tests/test_batch.py"].functions["test_batch_behavior"]
 
 
-def test_dlt_2026_113_body_only_attribution_strict_mode_and_stale_removed_symbols(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_dlt_2026_113_body_only_attribution_strict_mode_and_stale_removed_symbols(tmp_path: Path, monkeypatch) -> None:
     """Verify DLT-2026-113-HARDEN-SPEC-B4EE:
     1. touched_components, structural_code_files, and body_only_code_files on body-only edits.
     2. detect_drift(..., strict=True) and `eidos drift --strict --json` gating on body-only edits.
@@ -4046,3 +4044,142 @@ def test_dlt_2026_113_body_only_attribution_strict_mode_and_stale_removed_symbol
     res_cleaned = detect_drift(repo, uncommitted=True, eidos_dir=eidos_dir)
     assert res_cleaned.is_clean is True
 
+
+def test_invariants_catalog_recommendations_and_uncached_branches(tmp_path: Path, monkeypatch) -> None:
+    """Cover get_living_specs_catalog, recommend_invariants_for_unbound_tests input forms,
+    and uncached / file-level / unanchored _verify_single_invariant branches."""  # eidos:fixture
+    from eidos.core.index.graph_index import ArchitecturalIndex
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
+    from eidos.core.spec.parser import dump_spec_document, parse_spec_file
+    from eidos.vcs.invariants import (
+        _CachedTestFile,
+        _load_or_update_test_binding_cache,
+        _verify_single_invariant,
+        get_living_specs_catalog,
+        recommend_invariants_for_unbound_tests,
+    )
+
+    # 1. Nonexistent repo_root and eidos_dir guards
+    assert _load_or_update_test_binding_cache(tmp_path / "does_not_exist") == {}
+    empty_cat = get_living_specs_catalog(tmp_path / "no_eidos", repo_root=tmp_path)
+    assert empty_cat == {"capabilities": [], "components": [], "contracts": [], "policies": []}
+
+    # 2. Scaffold repo with capability, container, component, contract, policy, and test file
+    repo = tmp_path / "inv_cov_repo"
+    init_repository(repo, title="inv-cov")
+    eidos_dir = repo / "eidos"
+
+    create_spec(eidos_dir, "domain", "DOM-COV", title="Coverage Domain")
+    cnt_path = create_spec(eidos_dir, "container", "CNT-COV", title="Coverage Container")
+    cmp_path = create_spec(eidos_dir, "component", "CMP-COV", title="Coverage Component")
+    ctr_path = create_spec(eidos_dir, "contract", "CTR-COV", title="Coverage Contract")
+    pol_path = create_spec(eidos_dir, "policy", "POL-COV-001", title="Coverage Policy")
+    cap_path = create_spec(eidos_dir, "capability", "CAP-COV-001", title="Coverage Capability")
+
+    cmp_doc = parse_spec_file(cmp_path)
+    cmp_doc.frontmatter["container"] = "CNT-COV"
+    cmp_doc.frontmatter["source_path"] = "src/cov.py"
+    cmp_path.write_text(dump_spec_document(cmp_doc.frontmatter, cmp_doc.body), encoding="utf-8")
+
+    ctr_doc = parse_spec_file(ctr_path)
+    ctr_doc.frontmatter["container"] = "CNT-COV"
+    ctr_path.write_text(dump_spec_document(ctr_doc.frontmatter, ctr_doc.body), encoding="utf-8")
+
+    pol_doc = parse_spec_file(pol_path)
+    pol_doc.frontmatter["invariants"] = [
+        {
+            "id": "INV-COV-FILE-ONLY",  # eidos:fixture
+            "rule": "File-level invariant binding coverage rule.",
+            "test_binding": "tests/test_cov.py",
+        }
+    ]
+    pol_path.write_text(dump_spec_document(pol_doc.frontmatter, pol_doc.body), encoding="utf-8")
+    _ = cnt_path, cap_path
+
+    tests_dir = repo / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    test_cov = tests_dir / "test_cov.py"
+    test_cov.write_text(
+        "# Module token INV-COV-FILE-ONLY\n"
+        "class TestCovSuite:\n"
+        "    def test_method_bound(self):\n"
+        "        # INV-COV-METHOD\n"
+        "        assert True\n\n"
+        "def test_unbound_coverage_rule():\n"
+        "    assert True\n",
+        encoding="utf-8",
+    )
+
+    # 3. _verify_single_invariant across uncached raw-string dict, lazy file loading, class suffix, and tb=None
+    raw_tests: dict[str, str] = {"tests/other.py": "# unrelated\n"}
+    assert _verify_single_invariant("INV-COV-METHOD", "tests/missing.py::test_x", repo, raw_tests, {}) == []
+    assert _verify_single_invariant("INV-COV-METHOD", "tests/test_cov.py::test_method_bound", repo, raw_tests, {}) == [
+        "tests/test_cov.py::test_method_bound"
+    ]
+    assert _verify_single_invariant(
+        "INV-COV-METHOD", "tests/test_cov.py::TestCovSuite::test_method_bound", repo, raw_tests, {}
+    ) == ["tests/test_cov.py::TestCovSuite::test_method_bound"]
+    assert _verify_single_invariant("INV-COV-METHOD", "tests/test_cov.py::test_nonexistent", repo, raw_tests, {}) == []
+    assert (
+        _verify_single_invariant("INV-NOT-PRESENT", "tests/test_cov.py::test_method_bound", repo, raw_tests, {}) == []
+    )
+    assert _verify_single_invariant("INV-COV-FILE-ONLY", "tests/test_cov.py", repo, raw_tests, {}) == [
+        "tests/test_cov.py"
+    ]
+    assert _verify_single_invariant("INV-NOT-PRESENT", "tests/test_cov.py", repo, raw_tests, {}) == []
+    assert _verify_single_invariant("INV-COV-FILE-ONLY", None, repo, raw_tests, {}) == ["tests/test_cov.py"]
+
+    # Lazy file load when uses_cached_entries=True (empty dict) + file-level miss + tb=None on _CachedTestFile
+    cached_lazy: dict[str, _CachedTestFile] = {}
+    assert _verify_single_invariant("INV-COV-FILE-ONLY", "tests/test_cov.py", repo, cached_lazy, {}) == [
+        "tests/test_cov.py"
+    ]
+    assert _verify_single_invariant("INV-NOT-PRESENT", "tests/test_cov.py", repo, cached_lazy, {}) == []
+    assert _verify_single_invariant("INV-COV-FILE-ONLY", None, repo, cached_lazy, {}) == ["tests/test_cov.py"]
+
+    # 4. get_living_specs_catalog populates capabilities, components, contracts, and policies
+    idx = ArchitecturalIndex(repo_root=repo, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=True)
+        catalog = get_living_specs_catalog(eidos_dir, repo_root=repo)
+        assert any(c["id"] == "CAP-COV-001" for c in catalog["capabilities"])
+        assert {c["id"] for c in catalog["components"]} >= {"CNT-COV", "CMP-COV"}
+        assert any(c["id"] == "CTR-COV" for c in catalog["contracts"])
+        assert any(p["id"] == "POL-COV-001" for p in catalog["policies"])
+
+        # 5. recommend_invariants_for_unbound_tests with Path repo_root, empty test_binding_cache, and explicit list forms
+        conn = idx._get_connection()
+        conn.execute("DELETE FROM test_binding_cache;")
+        conn.commit()
+        recs_from_empty_cache = recommend_invariants_for_unbound_tests(
+            repo, eidos_dir=Path("eidos"), top_k=2, use_semantic=False
+        )
+        assert "tests/test_cov.py::test_unbound_coverage_rule" in recs_from_empty_cache
+
+        recs_explicit = recommend_invariants_for_unbound_tests(
+            idx,
+            unbound_tests=[
+                "tests/test_cov.py::test_unbound_coverage_rule",
+                "test_unbound_coverage_rule",
+                {
+                    "test_ref": "tests/test_cov.py::test_custom_dict_target",
+                    "docstring": "invariant binding coverage rule",
+                },
+                {
+                    "file_path": "tests/test_cov.py",
+                    "docstring": "invariant binding coverage rule",
+                },
+                "test_verify_check",  # noise-only tokens -> empty query_text -> []
+            ],
+            top_k=2,
+            use_semantic=False,
+        )
+        assert recs_explicit["tests/test_cov.py::test_unbound_coverage_rule"]
+        assert recs_explicit["test_unbound_coverage_rule"]
+        assert recs_explicit["tests/test_cov.py::test_custom_dict_target"]
+        assert recs_explicit["tests/test_cov.py::"]
+        assert recs_explicit["test_verify_check"] == []
+    finally:
+        idx.close()
+        _ = monkeypatch

@@ -3062,7 +3062,10 @@ def test_hybrid_semantic_rrf_and_deterministic_fallback(tmp_path: Path) -> None:
         assert "EXP-2026-001" not in embedded_ids
 
         # Editing Python source code does NOT invalidate spec-only content_sha256 embeddings (0 re-encoded)
-        guard_py.write_text("def block_sockets() -> bool:\n    return True\n\ndef extra_helper() -> int:\n    return 2\n", encoding="utf-8")
+        guard_py.write_text(
+            "def block_sockets() -> bool:\n    return True\n\ndef extra_helper() -> int:\n    return 2\n",
+            encoding="utf-8",
+        )
         _touch_later(guard_py, offset=10)
         idx.sync(force=False)
         sync_res2 = idx.sync_semantic(force=False, encode_fn=_deterministic_encoder)
@@ -3239,3 +3242,318 @@ def test_dlt_2026_114_blast_radius_symbol_and_path_resolution() -> None:
     assert "not found in architectural graph" in cli_missing.stdout
 
 
+def test_semantic_engine_setup_onnx_protobuf_and_auto_refresh_coverage(tmp_path: Path, monkeypatch) -> None:
+    """Cover ONNX protobuf wire types, model setup/progress, SemanticEmbeddingEngine session/tokenizer,
+    lock detection, auto-refresh subprocess, NumPy BLAS cosine scan, and RRF edge cases."""  # eidos:fixture
+    import builtins
+    import importlib.util
+    import io
+    import os
+    import struct
+    import subprocess
+    import sys
+    import types
+    import urllib.request
+
+    import pytest
+    from rich.console import Console
+
+    import eidos.core.index.semantic as sem_mod
+    from eidos.core.index.graph_index import ArchitecturalIndex
+    from eidos.core.index.semantic import (
+        _CUSTOM_ENCODE_FNS,
+        _SESSION_CACHE,
+        HARRIER_EMBEDDING_DIM,
+        SemanticEmbeddingEngine,
+        _detect_installed_variant,
+        _encode_varint,
+        _ensure_pruned_onnx_graph,
+        _is_semantic_sync_locked_by_other,
+        _nullcontext,
+        _refresh_stale_embeddings_for_query,
+        _semantic_cli_progress,
+        _strip_unused_gqa_outputs,
+        _trigger_auto_semantic_refresh,
+        encode_semantic_query,
+        format_harrier_query,
+        fuse_hybrid_rrf,
+        get_semantic_engine,
+        pack_embedding_f32,
+        query_semantic_embeddings,
+        resolve_semantic_model_dir,
+        setup_semantic_model,
+        sync_spec_embeddings,
+    )
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
+
+    # 1. Already-prefixed query and _nullcontext
+    assert format_harrier_query("Instruct: custom\nQuery: hello") == "Instruct: custom\nQuery: hello"
+    with _nullcontext("ctx_val") as v:
+        assert v == "ctx_val"
+
+    # 2. _detect_installed_variant across fp16, fp32, and quantized precedence
+    m_dir = resolve_semantic_model_dir(tmp_path / "eidos")
+    (m_dir / "onnx").mkdir(parents=True, exist_ok=True)
+    assert _detect_installed_variant(m_dir) is None
+    (m_dir / "onnx" / "model_fp16.onnx").write_bytes(b"fp16")
+    (m_dir / "onnx" / "model_fp16.onnx_data").write_bytes(b"data")
+    assert _detect_installed_variant(m_dir) == "onnx/model_fp16.onnx"
+    (m_dir / "onnx" / "model.onnx").write_bytes(b"fp32")
+    (m_dir / "onnx" / "model.onnx_data").write_bytes(b"data")
+    assert _detect_installed_variant(m_dir) == "onnx/model.onnx"
+    (m_dir / "onnx" / "model_quantized.onnx").write_bytes(b"quant")
+    (m_dir / "onnx" / "model_quantized.onnx_data").write_bytes(b"data")
+    assert _detect_installed_variant(m_dir) == "onnx/model_quantized.onnx"
+
+    # 3. _strip_unused_gqa_outputs and _ensure_pruned_onnx_graph across all protobuf wire types and edge cases
+    assert _strip_unused_gqa_outputs(b"plain_bytes_without_dummy") == b"plain_bytes_without_dummy"
+
+    def _len_field(field_num: int, payload: bytes) -> bytes:
+        return _encode_varint((field_num << 3) | 2) + _encode_varint(len(payload)) + payload
+
+    varint_field = _encode_varint((1 << 3) | 0) + _encode_varint(300)  # wire_type 0, multi-byte varint
+    fixed64_field = _encode_varint((3 << 3) | 1) + b"\x00" * 8  # wire_type 1
+    fixed32_field = _encode_varint((4 << 3) | 5) + b"\x00" * 4  # wire_type 5
+    clean_node = _len_field(2, b"/model/layers.0/output_0")
+    dummy_node = (
+        varint_field
+        + fixed64_field
+        + fixed32_field
+        + _len_field(2, b"/model/layers.0/output_0")
+        + _len_field(2, b"/model/layers.0/present_k_dummy")
+    )
+    graph_buf = varint_field + _len_field(1, clean_node) + _len_field(1, dummy_node)
+    model_buf = varint_field + _len_field(7, graph_buf)
+    pruned_buf = _strip_unused_gqa_outputs(model_buf)
+    assert b"present_k_dummy" not in pruned_buf and b"output_0" in pruned_buf
+
+    bad_wire = _encode_varint((1 << 3) | 3) + b"present_k_dummy"
+    with pytest.raises(ValueError, match="Unsupported protobuf wire_type"):
+        _strip_unused_gqa_outputs(bad_wire)
+
+    already_pruned = m_dir / "onnx" / "x.pruned.onnx"
+    assert _ensure_pruned_onnx_graph(already_pruned) == already_pruned.resolve()
+    missing_onnx = m_dir / "onnx" / "does_not_exist.onnx"
+    assert _ensure_pruned_onnx_graph(missing_onnx) == missing_onnx.resolve()
+    no_dummy_onnx = m_dir / "onnx" / "model_fp16.onnx"
+    assert _ensure_pruned_onnx_graph(no_dummy_onnx) == no_dummy_onnx.resolve()
+
+    quant_onnx = m_dir / "onnx" / "model_quantized.onnx"
+    quant_onnx.write_bytes(model_buf)
+    pruned_1 = _ensure_pruned_onnx_graph(quant_onnx)
+    assert pruned_1.name == "model_quantized.pruned.onnx"
+    # Second call hits warm mtime/size check without rewriting
+    assert _ensure_pruned_onnx_graph(quant_onnx) == pruned_1
+
+    # 4. _is_semantic_sync_locked_by_other
+    eidos_dir = tmp_path / "eidos"
+    lock_path = eidos_dir / ".cache" / "semantic_sync.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    assert _is_semantic_sync_locked_by_other(eidos_dir) is False
+    lock_path.write_text(str(os.getpid()), encoding="utf-8")
+    assert _is_semantic_sync_locked_by_other(eidos_dir) is False
+    lock_path.write_text("not-a-pid", encoding="utf-8")
+    assert _is_semantic_sync_locked_by_other(eidos_dir) is False
+    lock_path.write_text(str(os.getppid()), encoding="utf-8")
+    assert _is_semantic_sync_locked_by_other(eidos_dir) is True
+    lock_path.unlink()
+
+    # 5. setup_semantic_model + _semantic_cli_progress(mode="setup") and (mode="sync", total=0)
+    with pytest.raises(ValueError, match="Unsupported Harrier ONNX variant"):
+        setup_semantic_model(eidos_dir, variant="invalid-variant")
+
+    class _FakeResp:
+        def __init__(self, data: bytes) -> None:
+            self._buf = io.BytesIO(data)
+            self.headers = {"Content-Length": str(len(data))}
+
+        def read(self, n: int = -1) -> bytes:
+            return self._buf.read(n)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=60: _FakeResp(b"artifact-bytes"))
+    setup_dir = tmp_path / "setup_eidos"
+    with _semantic_cli_progress(Console(quiet=True), mode="setup", enabled=True):
+        res_dl = setup_semantic_model(setup_dir, variant="quantized", force=False)
+    assert len(res_dl["downloaded"]) == 5 and res_dl["skipped"] == []
+    res_skip = setup_semantic_model(setup_dir, variant="quantized", force=False)
+    assert res_skip["downloaded"] == [] and len(res_skip["skipped"]) == 5
+
+    with _semantic_cli_progress(Console(quiet=True), mode="sync", enabled=True) as sync_prog:
+        sync_prog._on_event({"phase": "sync_start", "total": 0})
+        sync_prog._on_event({"phase": "batch_start", "total": 2, "batch_ids": ["A", "B"]})
+
+    # 6. Stub onnxruntime, tokenizers, and numpy to exercise SemanticEmbeddingEngine, get_semantic_engine,
+    #    encode_semantic_query, and NumPy BLAS path in query_semantic_embeddings
+    class _FakeEncoding:
+        def __init__(self) -> None:
+            self.ids = [1, 2, 151643]
+            self.attention_mask = [1, 1, 0]
+
+    class _FakeTokenizer:
+        @classmethod
+        def from_file(cls, path: str):
+            return cls()
+
+        def enable_padding(self, **kwargs) -> None:
+            pass
+
+        def enable_truncation(self, **kwargs) -> None:
+            pass
+
+        def encode_batch(self, texts):
+            return [_FakeEncoding() for _ in texts]
+
+    class _FakeSessionOptions:
+        def __init__(self) -> None:
+            self.intra_op_num_threads = 1
+            self.enable_cpu_mem_arena = True
+            self.enable_mem_pattern = True
+            self.graph_optimization_level = None
+
+    class _FakeInferenceSession:
+        def __init__(self, path: str, sess_options=None, providers=None) -> None:
+            self.path = path
+
+        def run(self, output_names, feeds):
+            batch_n = len(feeds["input_ids"])
+            return ([[1.0] + [0.0] * (HARRIER_EMBEDDING_DIM - 1) for _ in range(batch_n)],)
+
+    class _FakeVec:
+        def __init__(self, rows: list[list[float]]) -> None:
+            self.rows = rows
+            self.shape = (len(rows), len(rows[0]) if rows else 0)
+
+        def __truediv__(self, other):
+            return self
+
+        def __getitem__(self, idx: int):
+            row = self.rows[idx]
+            return types.SimpleNamespace(tobytes=lambda: pack_embedding_f32(row))
+
+        def __matmul__(self, q_vec):
+            return [sum(a * b for a, b in zip(r, q_vec.rows[0], strict=False)) for r in self.rows]
+
+        def reshape(self, n: int, d: int):
+            flat = self.rows[0]
+            return _FakeVec([flat[i * d : (i + 1) * d] for i in range(n)])
+
+    fake_ort = types.ModuleType("onnxruntime")
+    fake_ort.SessionOptions = _FakeSessionOptions
+    fake_ort.GraphOptimizationLevel = types.SimpleNamespace(ORT_ENABLE_ALL=99, ORT_ENABLE_BASIC=1)
+    fake_ort.InferenceSession = _FakeInferenceSession
+
+    fake_tok = types.ModuleType("tokenizers")
+    fake_tok.Tokenizer = _FakeTokenizer
+
+    fake_np = types.ModuleType("numpy")
+    fake_np.int64 = "int64"
+    fake_np.float32 = "float32"
+    fake_np.array = lambda seq, dtype=None: list(seq)
+    fake_np.asarray = lambda arr, dtype=None: _FakeVec(arr)
+    fake_np.ascontiguousarray = lambda v, dtype=None: v
+    fake_np.clip = lambda norms, a_min=None, a_max=None: norms
+    fake_np.frombuffer = lambda buf, dtype=None: _FakeVec([list(struct.unpack(f"<{len(buf) // 4}f", buf))])
+    fake_np.linalg = types.SimpleNamespace(
+        norm=lambda v, axis=None, keepdims=False: 1.0 if axis is None else [[1.0] for _ in v.rows]
+    )
+
+    monkeypatch.setitem(sys.modules, "onnxruntime", fake_ort)
+    monkeypatch.setitem(sys.modules, "tokenizers", fake_tok)
+    monkeypatch.setitem(sys.modules, "numpy", fake_np)
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
+    _SESSION_CACHE.clear()
+
+    # Missing tokenizer.json raises FileNotFoundError
+    empty_eng = SemanticEmbeddingEngine(tmp_path / "missing_model_dir")
+    with pytest.raises(FileNotFoundError, match="Harrier ONNX artifacts not found"):
+        empty_eng._ensure_loaded()
+    assert get_semantic_engine(tmp_path / "missing_eidos") is None
+
+    # Populate tokenizer.json in m_dir and test both quantized and fp32 engines
+    (m_dir / "tokenizer.json").write_text("{}", encoding="utf-8")
+    eng_fp32 = SemanticEmbeddingEngine(m_dir, onnx_rel_path="onnx/model.onnx")
+    assert eng_fp32.encode_texts([]) == []
+    blobs_fp32 = eng_fp32.encode_texts(["hello world"], is_query=True)
+    assert len(blobs_fp32) == 1 and len(blobs_fp32[0]) == HARRIER_EMBEDDING_DIM * 4
+    eng_fp32._ensure_loaded()  # already loaded no-op
+
+    eng_cached = get_semantic_engine(eidos_dir)
+    assert eng_cached is not None
+    assert get_semantic_engine(eidos_dir) is eng_cached
+
+    # encode_semantic_query edge cases
+    assert encode_semantic_query("", eidos_dir) is None
+    assert encode_semantic_query("query text", None) is None
+    _CUSTOM_ENCODE_FNS[str(eidos_dir.resolve())] = lambda _t: (_ for _ in ()).throw(RuntimeError("boom"))
+    assert encode_semantic_query("query text", eidos_dir) is None
+    _CUSTOM_ENCODE_FNS.pop(str(eidos_dir.resolve()), None)
+    q_blob = encode_semantic_query("query text", eidos_dir)
+    assert q_blob is not None and len(q_blob) == HARRIER_EMBEDDING_DIM * 4
+
+    # 7. sync_spec_embeddings with encode_fn=None, _refresh_stale_embeddings_for_query, _trigger_auto_semantic_refresh,
+    #    query_semantic_embeddings (NumPy BLAS + filters), and fuse_hybrid_rrf edge cases
+    init_repository(tmp_path, title="sem-cov-repo")
+    create_spec(eidos_dir, "domain", "DOM-SEM", title="Semantic Domain")
+    cnt_p = create_spec(eidos_dir, "container", "CNT-SEM", title="Semantic Container")
+    idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=True)
+        conn = idx._get_connection()
+
+        assert _refresh_stale_embeddings_for_query(conn, None) == 0
+        assert _refresh_stale_embeddings_for_query(conn, eidos_dir) == 0  # spec_embeddings is empty
+
+        # sync_spec_embeddings with encode_fn=None uses get_semantic_engine
+        sync_out = sync_spec_embeddings(conn, eidos_dir, force=True, encode_fn=None)
+        assert sync_out["encoded_entities"] >= 2
+
+        # Mark one row stale and test _refresh_stale_embeddings_for_query + _trigger_auto_semantic_refresh subprocess
+        conn.execute("UPDATE spec_embeddings SET content_sha256 = 'stale' WHERE entity_id = 'CNT-SEM';")
+        conn.commit()
+        lock_path.write_text(str(os.getppid()), encoding="utf-8")
+        assert _refresh_stale_embeddings_for_query(conn, eidos_dir) == 0
+        lock_path.unlink()
+        assert _refresh_stale_embeddings_for_query(conn, eidos_dir) == 1
+
+        conn.execute("UPDATE spec_embeddings SET content_sha256 = 'stale' WHERE entity_id = 'CNT-SEM';")
+        conn.commit()
+        spawned: list[list[str]] = []
+        monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+        monkeypatch.setattr(subprocess, "Popen", lambda args, **kw: spawned.append(list(args)))
+        sem_mod._SUPPRESS_AUTO_SEMANTIC_REFRESH = 0
+        _trigger_auto_semantic_refresh(conn, eidos_dir, eidos_dir / ".cache" / "index.db")
+        assert len(spawned) == 1 and "sync_spec_embeddings" in spawned[0][2]
+
+        # query_semantic_embeddings edge cases + NumPy BLAS path
+        assert query_semantic_embeddings(conn, b"") == []
+        assert query_semantic_embeddings(conn, q_blob, include_types=[]) == []
+        assert query_semantic_embeddings(conn, b"\x00" * 8) == []  # dimension mismatch
+        blas_hits = query_semantic_embeddings(
+            conn,
+            [1.0] + [0.0] * (HARRIER_EMBEDDING_DIM - 1),
+            include_types=("tech/container", "product/domain"),
+            exclude_types=("product/domain",),
+        )
+        assert [h["id"] for h in blas_hits] == ["CNT-SEM"]
+
+        # fuse_hybrid_rrf edge cases
+        lex_only = [{"id": "CNT-SEM", "rank": -1.0}]
+        assert fuse_hybrid_rrf(lex_only, []) == lex_only
+        assert fuse_hybrid_rrf(lex_only, [{"id": "DOM-SEM", "semantic_score": 0.10}], tau_min=0.50) == lex_only
+
+        # Runtime unavailable branch in sync_spec_embeddings(encode_fn=None)
+        monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+        with pytest.raises(RuntimeError, match="Harrier ONNX runtime or model artifacts are not available"):
+            sync_spec_embeddings(conn, eidos_dir, force=True, encode_fn=None)
+    finally:
+        idx.close()
+        _SESSION_CACHE.clear()
+        _CUSTOM_ENCODE_FNS.clear()
+        _ = cnt_p, builtins
