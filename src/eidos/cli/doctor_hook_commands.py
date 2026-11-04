@@ -16,6 +16,7 @@ from eidos.core.spec.validator import SpecValidator
 from eidos.core.workspace.project import find_repo_root
 from eidos.plugin.hooks import execute_hook
 from eidos.plugin.version import (
+    check_cli_update_status,
     check_plugin_version_status,
 )
 
@@ -91,6 +92,7 @@ def doctor_cmd(
     plugin_status = check_plugin_version_status(project_dir=repo_root)
     plugin_installed = plugin_status.get("status") != "not_installed"
     plugin_up_to_date = plugin_status.get("status") == "up_to_date"
+    cli_update = check_cli_update_status()
 
     checks = {
         "cli_binary": {
@@ -98,6 +100,14 @@ def doctor_cmd(
             "on_path": cli_on_path,
             "eidos_bin": eidos_bin,
             "version": eidos.__version__,
+        },
+        "cli_update": {
+            "ok": True,
+            "status": cli_update.get("status"),
+            "installed_version": cli_update.get("installed_version"),
+            "latest_version": cli_update.get("latest_version"),
+            "update_available": bool(cli_update.get("update_available")),
+            "upgrade_command": cli_update.get("upgrade_command"),
         },
         "git_repository": {
             "ok": git_ok,
@@ -143,6 +153,14 @@ def doctor_cmd(
         f"{eidos_bin} (v{eidos.__version__})"
         if cli_on_path
         else f"Active via virtualenv/interpreter ({eidos_bin}); not on global PATH (v{eidos.__version__})",
+    )
+    update_status = cli_update.get("status")
+    table.add_row(
+        "CLI Update Check",
+        "[bold green]PASS[/bold green]"
+        if update_status in ("up_to_date", "newer")
+        else ("[bold yellow]WARN[/bold yellow]" if update_status == "update_available" else "[dim]SKIPPED[/dim]"),
+        str(cli_update.get("status_text") or f"Installed: v{eidos.__version__}"),
     )
     table.add_row(
         "Git Repository",

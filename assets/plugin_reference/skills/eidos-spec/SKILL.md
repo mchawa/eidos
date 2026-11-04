@@ -1,6 +1,6 @@
 ---
 name: eidos-spec
-description: Author, inspect, and maintain Eidos living specifications across Product (domains DOM-*, capabilities CAP-*, personas PER-*), Arc42/C4 Architecture (containers CNT-*, standalone components CMP-*, contracts CTR-*, embedded decisions DEC-*), Multi-Design Systems (DS-*, W3C tokens, UI components UIC-*, clients CLT-*, screens SCR-*, flows FLOW-*), and Policies/Invariants (POL-*, INV-* with polyglot file::func test bindings), grounded by eidos index search, find-symbol, blast-radius, and eidos context. Strictly enforces NO ADRs.
+description: "Author and edit Eidos living specs: domains, capabilities, personas, C4 containers, components and contracts, decisions, design systems, policies, and INV-* test bindings. Load when creating or changing any .adoc file under eidos/ or binding invariants to tests."
 ---
 # Eidos Specification & Invariant Authoring (`eidos-spec`)
 

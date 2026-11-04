@@ -1,12 +1,18 @@
-"""Semantic Versioning (SemVer 2.0.0) validation, parsing, and status inspection for Eidos Agent Plugins."""
+"""Semantic Versioning (SemVer 2.0.0) validation, parsing, and status inspection for Eidos CLI and Agent Plugins."""
 
+import os
 import re
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 
 import orjson
 
 import eidos
+
+PYPI_PACKAGE_JSON_URL = "https://pypi.org/pypi/eidos-ai/json"
+_DEFAULT_URLOPEN = urllib.request.urlopen
 
 # Official SemVer 2.0.0 Regular Expression (RFC 3986 / semver.org)
 SEMVER_PATTERN = re.compile(
@@ -90,6 +96,10 @@ def compare_semver(v1: str, v2: str) -> int:
 
 
 _PEP440_BASE_SEMVER_PATTERN = re.compile(r"^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)")
+_PEP440_PRERELEASE_PATTERN = re.compile(
+    r"^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\.?((?:dev|a|alpha|b|beta|rc)\d+)$",
+    re.IGNORECASE,
+)
 
 
 def normalize_to_semver(version: str) -> str | None:
@@ -105,6 +115,24 @@ def normalize_to_semver(version: str) -> str | None:
     if m:
         return f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
     return None
+
+
+def _to_comparable_semver(version: str) -> str | None:
+    """Convert SemVer 2.0.0 or PEP 440 pre-release/dev strings (e.g. '0.20.2.dev3') into pre-release-preserving SemVer."""
+    if not isinstance(version, str):
+        return None
+    cleaned = version.strip()
+    if is_valid_semver(cleaned):
+        return cleaned
+    if cleaned.startswith(("v", "V")) and is_valid_semver(cleaned[1:]):
+        return cleaned[1:]
+    m_pre = _PEP440_PRERELEASE_PATTERN.match(cleaned)
+    if m_pre:
+        tag = re.sub(r"([a-zA-Z]+)(\d+)", lambda m: f"{m.group(1).lower()}.{m.group(2)}", m_pre.group(4))
+        cand = f"{m_pre.group(1)}.{m_pre.group(2)}.{m_pre.group(3)}-{tag}"
+        if is_valid_semver(cand):
+            return cand
+    return normalize_to_semver(cleaned)
 
 
 def get_bundled_plugin_version() -> str:
@@ -214,3 +242,122 @@ def check_plugin_version_status(project_dir: Path | None = None, dest_path: Path
         "status": status,
         "status_text": status_text,
     }
+
+
+def check_cli_update_status(
+    current_version: str | None = None,
+    pypi_url: str = PYPI_PACKAGE_JSON_URL,
+    timeout: float = 2.0,
+) -> dict[str, Any]:
+    """Check PyPI for newer releases of eidos-ai using stdlib urllib.request and SemVer 2.0.0 comparison."""
+    raw_ver = current_version if current_version is not None else getattr(eidos, "__version__", "0.2.0")
+    installed_raw = str(raw_ver).strip() or "0.2.0"
+    installed_semver = _to_comparable_semver(installed_raw)
+
+    if os.environ.get("EIDOS_NO_UPDATE_CHECK", "").strip().lower() in ("1", "true", "yes"):
+        return {
+            "ok": True,
+            "status": "offline",
+            "installed_version": installed_raw,
+            "latest_version": None,
+            "update_available": False,
+            "upgrade_command": None,
+            "status_text": f"Update check skipped (v{installed_raw} installed)",
+        }
+
+    if (
+        "PYTEST_CURRENT_TEST" in os.environ
+        and urllib.request.urlopen is _DEFAULT_URLOPEN
+        and current_version is None
+        and pypi_url == PYPI_PACKAGE_JSON_URL
+        and not os.environ.get("EIDOS_FORCE_UPDATE_CHECK")
+    ):
+        return {
+            "ok": True,
+            "status": "offline",
+            "installed_version": installed_raw,
+            "latest_version": None,
+            "update_available": False,
+            "upgrade_command": None,
+            "status_text": f"Unable to reach PyPI (v{installed_raw} installed)",
+        }
+
+    if not isinstance(pypi_url, str) or not pypi_url.strip().startswith(("https://", "http://")):
+        return {
+            "ok": True,
+            "status": "offline",
+            "installed_version": installed_raw,
+            "latest_version": None,
+            "update_available": False,
+            "upgrade_command": None,
+            "status_text": f"Invalid update URL scheme (v{installed_raw} installed)",
+        }
+
+    try:
+        req = urllib.request.Request(
+            pypi_url.strip(),
+            headers={
+                "Accept": "application/json",
+                "User-Agent": f"eidos-ai/{installed_raw}",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw_body = resp.read(2 * 1024 * 1024)
+        payload = orjson.loads(raw_body)
+        info = payload.get("info") if isinstance(payload, dict) else None
+        latest_raw = str(info.get("version", "")).strip() if isinstance(info, dict) else ""
+        latest_semver = _to_comparable_semver(latest_raw)
+        if not latest_raw or not latest_semver or not installed_semver:
+            return {
+                "ok": True,
+                "status": "offline",
+                "installed_version": installed_raw,
+                "latest_version": latest_raw or None,
+                "update_available": False,
+                "upgrade_command": None,
+                "status_text": f"Unable to parse latest PyPI version (v{installed_raw} installed)",
+            }
+
+        cmp = compare_semver(installed_semver, latest_semver)
+        if cmp < 0:
+            return {
+                "ok": True,
+                "status": "update_available",
+                "installed_version": installed_raw,
+                "latest_version": latest_raw,
+                "update_available": True,
+                "upgrade_command": "uv tool upgrade eidos-ai",
+                "status_text": (
+                    f"Update available: v{installed_raw} -> v{latest_raw} "
+                    "(Run 'uv tool upgrade eidos-ai' or 'pip install -U eidos-ai')"
+                ),
+            }
+        if cmp == 0:
+            return {
+                "ok": True,
+                "status": "up_to_date",
+                "installed_version": installed_raw,
+                "latest_version": latest_raw,
+                "update_available": False,
+                "upgrade_command": None,
+                "status_text": f"Up to date (v{installed_raw})",
+            }
+        return {
+            "ok": True,
+            "status": "newer",
+            "installed_version": installed_raw,
+            "latest_version": latest_raw,
+            "update_available": False,
+            "upgrade_command": None,
+            "status_text": f"Ahead of latest PyPI release (v{installed_raw} > v{latest_raw})",
+        }
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError, orjson.JSONDecodeError):
+        return {
+            "ok": True,
+            "status": "offline",
+            "installed_version": installed_raw,
+            "latest_version": None,
+            "update_available": False,
+            "upgrade_command": None,
+            "status_text": f"Unable to reach PyPI (v{installed_raw} installed)",
+        }

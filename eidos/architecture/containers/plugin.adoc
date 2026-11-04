@@ -35,7 +35,7 @@ decisions:
     graduated_from: DLT-2026-094
   - id: DEC-PLUGIN-CLAUDE-PROJECT-NATIVE
     title: "Use Project-Native .claude/skills/ and .claude/settings.json Instead of .claude/plugins/eidos/"
-    decision: "Configure PluginInstallTarget.CLAUDE to install the 4 Eidos skills directly into .claude/skills/<skill>/SKILL.md, register the stateless Eidos Stop hook in .claude/settings.json under hooks.Stop, and track managed files in .claude/.eidos-manifest.json without creating .claude/plugins/eidos/ or extra slash commands."
+    decision: "Configure PluginInstallTarget.CLAUDE to install the 4 Eidos skills directly into .claude/skills/<skill>/SKILL.md, register the stateless Eidos Stop hook in .claude/settings.json under hooks.Stop, import the shared root AGENTS.md block through a one-line '@AGENTS.md' claude-import managed block in root CLAUDE.md (skipped when the user's CLAUDE.md already imports it), and track managed files in .claude/.eidos-manifest.json without creating .claude/plugins/eidos/ or extra slash commands."
     rationale: "Claude Code automatically discovers project-scoped skills in .claude/skills/ with progressive disclosure and executes lifecycle hooks registered in .claude/settings.json under hooks.Stop with zero extra CLI flags or workspace marketplace trust prompts. Conversely, Claude Code does not auto-load .claude/plugins/eidos/ or recognize 'plugins: [{\"path\": ...}]' in .claude/settings.json."
     rejected_alternatives:
       - option: "Hybrid .claude/plugins/eidos/ bundle plus flat .claude/skills/ copies"
@@ -45,6 +45,34 @@ decisions:
       - option: "Duplicate slash commands (.claude/commands/eidos/*.md) alongside .claude/skills/"
         reason_rejected: "Claude Code unifies slash commands and skills where .claude/skills/<name>/SKILL.md is already invokable and auto-discovered via progressive disclosure, making extra wrapper commands redundant."
     graduated_from: DLT-2026-117-CONFIGURE-PROJECT-4B01
+  - id: DEC-PLUGIN-AGENTS-MD-MANAGED-BLOCK
+    title: "Project One Canonical Eidos Block into Root AGENTS.md Instead of Per-Harness Rule Files"
+    decision: "Every install target upserts a single named, hash-stamped, target-owned, marker-delimited 'agents-md' block into the repository's root AGENTS.md through one shared helper (managed_block.upsert_managed_block). Claude Code is bridged with a CLAUDE.md '@AGENTS.md' import block and Aider with an AGENTS.md read: entry. No per-harness rule or instruction files are written, and no migration or uninstall cleanup is performed for files written by earlier releases."
+    rationale: "AGENTS.md is the one instruction channel loaded by every supported harness (Copilot, Cursor, and Codex verified natively; Antigravity, Cline, and OpenCode natively; Claude Code via import; Aider via read:), so it replaces 4 divergent hand-maintained copies with 1. Marker blocks let Eidos coexist with user-authored content, the LF-normalized hash makes hand edits detectable instead of silently clobbered, and sorted targets=<target>:<skills-dir> pairs let several harnesses share one deterministic block that also serves as Aider's skill index."
+    rejected_alternatives:
+      - option: "Eidos owns the whole AGENTS.md"
+        reason_rejected: "Users keep their own build commands, conventions, and team notes in AGENTS.md."
+      - option: "Separate AGENTS.eidos.md included from AGENTS.md"
+        reason_rejected: "AGENTS.md has no cross-harness include syntax, so most harnesses would never load it."
+      - option: "Keep per-harness rule files (Cursor .mdc, Codex rules, Aider conventions, Copilot instructions)"
+        reason_rejected: "4 hand-maintained copies with refresh bugs and no coverage for Antigravity, Cline, or OpenCode."
+      - option: "Version stamp in the begin marker"
+        reason_rejected: "Would rewrite every user repository on every Eidos release even when the block content is unchanged."
+      - option: "Migrate and clean up legacy bridges, and remove blocks on uninstall"
+        reason_rejected: "Backward compatibility is not a goal and leftover files are acceptable; fresh-install correctness is the only requirement."
+    graduated_from: DLT-2026-121-SLIM-AGENT-791B
+  - id: DEC-PLUGIN-SKILLS-SELF-CONTAINED
+    title: "Keep the 4 Bundled Skills Self-Contained and Optimize Only In Place"
+    decision: "Each bundled SKILL.md carries its full instructions, templates, and examples. Optimization is limited to in-place tightening (trigger-focused descriptions of at most 400 characters, no intra-skill restatements, compact tables), guarded by no-growth word ceilings (INV-PLUGIN-SKILL-SIZE-CEILING) and skill-to-CLI parity (INV-PLUGIN-SKILL-CLI-PARITY)."
+    rationale: "Only skill descriptions are loaded in every session, so body size is a minor per-session cost, and EXP-2026-007 linked the self-contained 4-skill topology to Regime 2 compliance (100% SKILL.md discovery, 90.5% eidos drift, 87.5% eidos context). Splitting content out would trade a small token saving for a new pull-based failure mode."
+    rejected_alternatives:
+      - option: "Progressive disclosure via references/*.md files"
+        reason_rejected: "Agents would have to decide to open another file (the same pull-based weakness behind the eidos context gap); skipped templates raise schema-error rates; some harnesses need an explicit /read per file; no measured problem justifies the risk."
+      - option: "Split into more micro-skills"
+        reason_rejected: "Regime 1 (14 skills) measured 26.2% pre-edit eidos context compliance."
+      - option: "Single mega-skill"
+        reason_rejected: "Increases the activated payload for every task."
+    graduated_from: DLT-2026-121-SLIM-AGENT-791B
 
 contracts:
   provides: []
@@ -58,7 +86,9 @@ This container represents the plugin distribution, hook execution, and validatio
 
 == Internal Structure & Key Mechanisms
 * **Declarative Target Adapter Pipeline**: Synchronizes the 4 bundled workflow skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`), `plugin.json` manifests, and `hooks.json` / `.claude/settings.json` lifecycle configurations across `.agents/plugins/eidos`, `.github/plugin/`, `.github/skills/`, `.claude/skills/`, `.claude/settings.json`, `.cursor/skills/`, `.cline/skills/`, `.opencode/skills/`, `.codex/`, and `.aider/skills/`.
-* **Manifest-Tracked Installation & Safe Uninstallation**: Records installed file relative paths and SHA-256 digests in `.eidos-manifest.json` so `eidos plugin uninstall` removes only Eidos-managed artifacts without disturbing user-authored skills or shared parent directories.
+* **Canonical `AGENTS.md` Block (`DEC-PLUGIN-AGENTS-MD-MANAGED-BLOCK`)**: Every target projects one marker-delimited Eidos block, rendered from `assets/plugin_reference/agents-md/block.md`, into the repository's root `AGENTS.md`; user content outside the markers is never modified. Claude Code imports it from root `CLAUDE.md` (`@AGENTS.md`), and Aider loads it via `.aider.conf.yml` `read:`.
+* **Self-Contained Skills (`DEC-PLUGIN-SKILLS-SELF-CONTAINED`)**: The 4 bundled skills stay complete in their `SKILL.md` files; no `references/` split. No-growth word ceilings and skill-to-CLI parity are enforced in tests.
+* **Manifest-Tracked Installation & Safe Uninstallation**: Records installed file relative paths and SHA-256 digests in `.eidos-manifest.json` so `eidos plugin uninstall` removes only Eidos-managed artifacts without disturbing user-authored skills, shared parent directories, or shared user files (`AGENTS.md`, `CLAUDE.md`, `.aider.conf.yml`).
 * **Stateless Single Stop Hook (`DEC-PLUGIN-STATELESS-SINGLE-STOP-HOOK`)**: Executes `detect_drift(uncommitted=True)` once at the end of an agent turn (`Stop`) via `eidos hook` and emits a non-blocking `{"decision": "allow", "systemMessage": "..."}` diagnostic payload when validation or drift issues are present.
 
 == Quality Attributes & Operational Policies

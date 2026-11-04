@@ -15,6 +15,7 @@ import orjson
 
 from eidos.core.spec.parser import YamlError, safe_dump_yaml, safe_load_yaml
 from eidos.core.workspace.assets import get_plugin_reference_dir
+from eidos.plugin.managed_block import BlockResult, BlockStatus, is_valid_skills_dir, upsert_managed_block
 from eidos.plugin.version import (
     get_bundled_plugin_version,
     get_installed_plugin_version,
@@ -22,15 +23,16 @@ from eidos.plugin.version import (
 
 
 class PluginInstallTarget(enum.StrEnum):
+    # Every target also projects the shared Eidos block into the root AGENTS.md (DEC-PLUGIN-AGENTS-MD-MANAGED-BLOCK).
     PROJECT = "project"  # Installs .agents/plugins/eidos (agent-plugins.org v1.0.0) and client configurations
     ANTIGRAVITY = "antigravity"  # Installs .agents/plugins/eidos (strict agent-plugins.org v1.0.0)
-    CLAUDE = "claude"  # Configures Claude Code skills (.claude/skills) and Stop hook (.claude/settings.json)
-    CURSOR = "cursor"  # Configures Cursor rules (.cursor/rules/eidos.mdc) and skills (.cursor/skills)
-    AIDER = "aider"  # Configures .aider.conf.yml and .aider.conventions.md
+    CLAUDE = "claude"  # Claude Code skills (.claude/skills), Stop hook (.claude/settings.json), CLAUDE.md @AGENTS.md
+    CURSOR = "cursor"  # Configures Cursor skills (.cursor/skills); Cursor reads root AGENTS.md natively
+    AIDER = "aider"  # Configures .aider/skills and adds AGENTS.md to .aider.conf.yml read:
     CLINE = "cline"  # Configures .cline/plugins/eidos and .cline/skills
     OPEN_CODE = "open-code"  # Configures .opencode/plugins/eidos and .opencode/skills
     CODEX = "codex"  # Installs OpenAI Codex plugin bundle (.codex/)
-    COPILOT = "copilot"  # Configures GitHub Copilot (.github/plugin, .github/skills, .github/copilot-instructions.md)
+    COPILOT = "copilot"  # Configures GitHub Copilot (.github/plugin, .github/skills, .github/copilot/settings.json)
     ALL = "all"  # Installs all agent plugins and configurations
 
 
@@ -81,6 +83,17 @@ ACTIVE_EIDOS_SKILLS: frozenset[str] = frozenset(
 
 
 MANIFEST_FILENAME = ".eidos-manifest.json"
+
+# Shared, user-owned root files that Eidos edits only through managed blocks or merges; they are never recorded in
+# (or unlinked from) an installation manifest, even when a custom --dest points at the repository root.
+SHARED_USER_FILES: frozenset[str] = frozenset({"AGENTS.md", "CLAUDE.md", ".aider.conf.yml", "settings.json"})
+
+AGENTS_MD_FILENAME = "AGENTS.md"
+AGENTS_MD_BLOCK = "agents-md"
+CLAUDE_MD_FILENAME = "CLAUDE.md"
+CLAUDE_IMPORT_BLOCK = "claude-import"
+AGENTS_MD_TEMPLATE_REL = Path("agents-md") / "block.md"
+_CLAUDE_AGENTS_IMPORT_RE = re.compile(r"^[ \t]*@(?:\./)?AGENTS\.md[ \t]*\r?$", re.M)
 
 
 def _check_not_symlink(path: Path, root: Path | None = None) -> None:
@@ -145,7 +158,7 @@ def _write_installation_manifest(target_dir: Path, created_files: list[Path] | N
             rel = str(f.relative_to(target_dir))
         except ValueError:
             continue
-        if rel == "settings.json":
+        if rel in SHARED_USER_FILES:
             continue
         manifest_data["files"][rel] = _compute_sha256(f)
 
@@ -210,8 +223,10 @@ def _copy_plugin_tree(
             rel = item.relative_to(source_dir)
             if not include_skills and rel.parts and rel.parts[0] == "skills":
                 continue
-            # Never copy internal cache or assistant-specific directories into plugins
+            # Never copy internal cache, assistant-specific, or installer-only template directories into plugins
             if any(part in (".claude-plugin", ".eidos", ".cache", ".git") for part in rel.parts):
+                continue
+            if rel.parts and rel.parts[0] == AGENTS_MD_TEMPLATE_REL.parts[0]:
                 continue
             if rel.name == MANIFEST_FILENAME:
                 continue
@@ -475,34 +490,8 @@ def _remove_project_claude_settings(file_path: Path) -> bool:
     return True
 
 
-def _write_cursor_rules(file_path: Path, force: bool = False) -> Path:
-    """Write native Cursor .mdc rule (Cursor Rules standard with YAML frontmatter)."""
-    _check_not_symlink(file_path)
-    if file_path.exists() and not force:
-        return file_path
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    content = (
-        "---\n"
-        'description: "Eidos living specifications and architectural governance"\n'
-        "alwaysApply: true\n"
-        "---\n\n"
-        "# Eidos Living Specifications\n\n"
-        "This repository is governed by Eidos living specifications under `eidos/`.\n\n"
-        "## Core Principles\n"
-        "- Consult living specifications before modifying code or proposing architectural changes.\n"
-        "- Strictly enforce living specifications (NO ADRs). All architectural mutations follow the SpecDelta lifecycle (`eidos/deltas/`).\n"
-        "- Preserve bidirectional invariant-test traceability (`POL-*` and `INV-*`).\n"
-        "- Verify specification schemas with `eidos validate eidos` (or `eidos validate --json`).\n"
-        "- Verify synchronization with `eidos drift --uncommitted` (or `eidos drift --uncommitted --json`) before finalizing tasks.\n"
-        "- Use Eidos Discovery-First CLI commands (`eidos context`, `eidos index repo-map`, `eidos index find-symbol`, `eidos index search`, `eidos index blast-radius`, `eidos spec schema`, `eidos drift`) for real-time inspection.\n"
-        "- Consult installed Agent Skills in `.cursor/skills/` for specialized architectural workflows.\n"
-    )
-    file_path.write_text(content, encoding="utf-8")
-    return file_path
-
-
-def _update_project_aider_conf(file_path: Path, conventions_path: str = ".aider.conventions.md") -> Path:
-    """Ensure conventions file is listed under 'read' in .aider.conf.yml."""
+def _update_project_aider_conf(file_path: Path, conventions_path: str = AGENTS_MD_FILENAME) -> Path:
+    """Ensure an instructions file (default: the root AGENTS.md) is listed under 'read' in .aider.conf.yml."""
     _check_not_symlink(file_path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     data = {}
@@ -527,132 +516,6 @@ def _update_project_aider_conf(file_path: Path, conventions_path: str = ".aider.
     with open(file_path, "w", encoding="utf-8") as f:
         safe_dump_yaml(data, f)
     return file_path
-
-
-def _remove_project_aider_conf(file_path: Path, conventions_path: str = ".aider.conventions.md") -> bool:
-    """Safely remove conventions file from .aider.conf.yml."""
-    if not file_path.exists():
-        return False
-
-    try:
-        with open(file_path, encoding="utf-8") as f:
-            data = safe_load_yaml(f)
-        if not isinstance(data, dict):
-            return False
-    except (OSError, YamlError):
-        return False
-
-    read_list = data.get("read", [])
-    if isinstance(read_list, list) and conventions_path in read_list:
-        read_list.remove(conventions_path)
-        data["read"] = read_list
-
-    if not data.get("read") and len(data) == 1:
-        file_path.unlink()
-        return True
-    elif not data.get("read"):
-        data.pop("read", None)
-
-    with open(file_path, "w", encoding="utf-8") as f:
-        safe_dump_yaml(data, f)
-    return True
-
-
-def _write_aider_conventions(file_path: Path, force: bool = False) -> Path:
-    """Write .aider.conventions.md guidelines with installed skill mappings."""
-    _check_not_symlink(file_path)
-    if file_path.exists() and not force:
-        return file_path
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    content = (
-        "# Eidos Living Specifications & Architectural Conventions\n\n"
-        "This repository's architecture and product capabilities are governed by Eidos living specifications under `eidos/`.\n\n"
-        "## Core Conventions\n"
-        "- **Single Source of Truth**: All architectural truths live in `eidos/` living specifications (Arc42/C4 model, system policies, capability contracts).\n"
-        "- **No ADRs**: Never author static Architecture Decision Records. Mutate living specs via SpecDeltas (`eidos/deltas/`).\n"
-        "- **Bidirectional Invariant-Test Traceability**: Enforce system policies (`POL-*`) and capability invariants (`INV-*`) across tests.\n"
-        "- **Specification Validation**: Run `eidos validate eidos` to ensure schema conformance and cross-reference integrity.\n"
-        "- **Zero Spec-to-Code Drift**: Run `eidos drift --uncommitted` to verify code changes are synchronized with living specifications before task completion.\n"
-        '- **Discovery-First CLI Context**: Use `eidos context -f <path> --json`, `eidos index repo-map`, `eidos index find-symbol <symbol> --json`, `eidos index search "<query>" --json`, `eidos index blast-radius <target> --json`, and `eidos spec schema <type>` before editing files.\n\n'
-        "## Installed Eidos Skills\n"
-        "When performing targeted architectural tasks, load the relevant skill using `/read .aider/skills/<skill>/SKILL.md`:\n"
-        "- Master Orchestration, Context, Drift & Reconcile: `/read .aider/skills/eidos/SKILL.md`\n"
-        "- Living Specs, C4 Architecture, Design Systems & Invariants: `/read .aider/skills/eidos-spec/SKILL.md`\n"
-        "- Explorations, SpecDeltas & Staff Architectural Review: `/read .aider/skills/eidos-plan/SKILL.md`\n"
-        "- Bootstrap, Brownfield Extraction & Web Portal: `/read .aider/skills/eidos-ops/SKILL.md`\n"
-    )
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(content)
-    return file_path
-
-
-COPILOT_START_MARKER = "<!-- EIDOS_COPILOT_START -->"
-COPILOT_END_MARKER = "<!-- EIDOS_COPILOT_END -->"
-
-
-def _write_copilot_instructions(file_path: Path, force: bool = False) -> Path:
-    """Safely write or update Eidos instructions in .github/copilot-instructions.md."""
-    _check_not_symlink(file_path)
-    if file_path.exists() and not force and COPILOT_START_MARKER in file_path.read_text(encoding="utf-8"):
-        return file_path
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    eidos_block = (
-        f"{COPILOT_START_MARKER}\n"
-        "# Eidos Living Specifications & Architectural Conventions\n\n"
-        "This repository's architecture and product capabilities are governed by Eidos living specifications under `eidos/`.\n\n"
-        "## Core Conventions\n"
-        "- **Single Source of Truth**: All architectural truths live in `eidos/` living specifications (Arc42/C4 model, system policies, capability contracts).\n"
-        "- **No ADRs**: Never author static Architecture Decision Records. Mutate living specs via SpecDeltas (`eidos/deltas/`).\n"
-        "- **Bidirectional Invariant-Test Traceability**: Enforce system policies (`POL-*`) and capability invariants (`INV-*`) across tests.\n"
-        "- **Specification Validation**: Run `eidos validate eidos` to ensure schema conformance and cross-reference integrity.\n"
-        "- **Zero Spec-to-Code Drift**: Run `eidos drift --uncommitted` to verify code changes are synchronized with living specifications before task completion.\n"
-        '- **Discovery-First CLI Context**: Use `eidos context -f <path> --json`, `eidos index repo-map`, `eidos index find-symbol <symbol> --json`, `eidos index search "<query>" --json`, `eidos index blast-radius <target> --json`, and `eidos spec schema <type>` before editing files.\n'
-        "- **Agent Skills**: Consult the 4 installed Eidos skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`) in `.github/skills/` for specialized architectural workflows.\n"
-        f"{COPILOT_END_MARKER}\n"
-    )
-
-    if file_path.exists():
-        content = file_path.read_text(encoding="utf-8")
-        if COPILOT_START_MARKER in content and COPILOT_END_MARKER in content:
-            before = content.split(COPILOT_START_MARKER)[0]
-            after = content.split(COPILOT_END_MARKER)[1]
-            content = before.rstrip() + ("\n\n" if before.strip() else "") + eidos_block + after.lstrip()
-        else:
-            sep = "\n\n" if content.strip() else ""
-            content = content.rstrip() + sep + eidos_block
-    else:
-        content = eidos_block
-
-    file_path.write_text(content, encoding="utf-8")
-    return file_path
-
-
-def _remove_copilot_instructions(file_path: Path) -> bool:
-    """Safely remove Eidos instructions from .github/copilot-instructions.md."""
-    if not file_path.exists():
-        return False
-
-    content = file_path.read_text(encoding="utf-8")
-    if COPILOT_START_MARKER not in content:
-        return False
-
-    if COPILOT_START_MARKER in content and COPILOT_END_MARKER in content:
-        before = content.split(COPILOT_START_MARKER)[0]
-        after = content.split(COPILOT_END_MARKER)[1]
-        remaining = (before.rstrip() + "\n" + after.lstrip()).strip()
-    else:
-        remaining = content.split(COPILOT_START_MARKER)[0].strip()
-
-    if not remaining:
-        file_path.unlink()
-        parent = file_path.parent
-        if parent.exists() and not any(parent.iterdir()):
-            with contextlib.suppress(OSError):
-                parent.rmdir()
-    else:
-        file_path.write_text(remaining + "\n", encoding="utf-8")
-
-    return True
 
 
 def _ensure_copilot_plugin_manifest(target_dir: Path, force: bool = False) -> Path | None:
@@ -828,25 +691,6 @@ def _ensure_codex_plugin_manifest(target_dir: Path, force: bool = False) -> Path
     return manifest_file
 
 
-def _write_codex_rules(file_path: Path, force: bool = False) -> Path | None:
-    """Write .codex/rules.md."""
-    _check_not_symlink(file_path)
-    if file_path.exists() and not force:
-        return None
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    content = (
-        "# Eidos Architectural Governance for OpenAI Codex\n\n"
-        "This repository is governed by Eidos living specifications (`eidos/`).\n"
-        "- Adhere to living specifications as the single source of truth.\n"
-        "- Never create ADRs; all architectural changes require SpecDeltas (`eidos/deltas/`).\n"
-        '- Use Discovery-First CLI commands (`eidos context -f <path> --json`, `eidos index repo-map`, `eidos index find-symbol <symbol> --json`, `eidos index search "<query>" --json`, `eidos index blast-radius <target> --json`, `eidos spec schema <type>`) before modifying files.\n'
-        "- Validate specifications with `eidos validate eidos` and check drift with `eidos drift --uncommitted`.\n"
-    )
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(content)
-    return file_path
-
-
 def _uninstall_from_manifest(target_dir: Path) -> bool:
     """Remove manifest-tracked files without wiping shared parent."""
     if not target_dir.exists():
@@ -869,7 +713,7 @@ def _uninstall_from_manifest(target_dir: Path) -> bool:
         else ([str(p) for p in files_entry] if isinstance(files_entry, list) else [])
     )
     for rel_path in sorted(rel_paths, reverse=True):
-        if rel_path == "settings.json":
+        if rel_path in SHARED_USER_FILES:
             continue
         f_path = target_dir / rel_path
         if f_path.is_symlink() or f_path.is_file():
@@ -938,10 +782,6 @@ def _codex_pre_manifest_hook(root: Path, source_dir: Path, plugin_dir: Path, for
     manifest = _ensure_codex_plugin_manifest(plugin_dir, force=force)
     if manifest is not None:
         extra.append(manifest)
-    codex_rules = plugin_dir / "rules.md"
-    written_rules = _write_codex_rules(codex_rules, force=force)
-    if written_rules is not None:
-        extra.append(written_rules)
     extra.extend(_copy_skills_flat(source_dir, plugin_dir / "skills", force=force))
     return extra
 
@@ -957,15 +797,95 @@ def _copilot_pre_manifest_hook(root: Path, plugin_dir: Path, force: bool) -> lis
 def _copilot_post_install_hook(root: Path, force: bool) -> list[Path]:
     copilot_settings = root / ".github" / "copilot" / "settings.json"
     _update_project_copilot_settings(copilot_settings)
-    copilot_instructions = root / ".github" / "copilot-instructions.md"
-    _write_copilot_instructions(copilot_instructions, force=force)
-    return [copilot_settings, copilot_instructions]
+    return [copilot_settings]
 
 
 def _copilot_extra_uninstall(root: Path) -> bool:
-    removed_settings = _remove_project_copilot_settings(root / ".github" / "copilot" / "settings.json")
-    removed_instructions = _remove_copilot_instructions(root / ".github" / "copilot-instructions.md")
-    return removed_settings or removed_instructions
+    return _remove_project_copilot_settings(root / ".github" / "copilot" / "settings.json")
+
+
+# ---------------------------------------------------------------------------
+# Canonical AGENTS.md managed block (DEC-PLUGIN-AGENTS-MD-MANAGED-BLOCK)
+# ---------------------------------------------------------------------------
+
+
+def _load_agents_md_template(source_dir: Path) -> str | None:
+    """Load the canonical AGENTS.md block template bundled with the plugin reference (None if absent)."""
+    template = source_dir / AGENTS_MD_TEMPLATE_REL
+    try:
+        return template.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def render_agents_md_block(template: str, targets: dict[str, str]) -> str:
+    """Render the AGENTS.md block body, listing each unique recorded skill location (in sorted target order)."""
+    if targets:
+        unique_dirs = dict.fromkeys(skills_dir for _t, skills_dir in sorted(targets.items()))
+        locations = "\n".join(f"- `{skills_dir}/<skill>/SKILL.md`" for skills_dir in unique_dirs)
+    else:
+        locations = "- (no skill locations recorded)"
+    return template.replace("{{skill_locations}}", locations)
+
+
+def _relative_skills_dir(root: Path, skills_path: Path) -> str | None:
+    """Return a repository-relative POSIX skills directory, or None if it lies outside the repository root."""
+    try:
+        rel = skills_path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return None
+    rel_str = rel.as_posix()
+    return rel_str if is_valid_skills_dir(rel_str) else None
+
+
+def project_agents_md_block(
+    root: Path, source_dir: Path, target_name: str, skills_dir: str, force: bool = False
+) -> BlockResult | None:
+    """Upsert the shared 'agents-md' block into the root AGENTS.md for one install target."""
+    template = _load_agents_md_template(source_dir)
+    if template is None:
+        return None
+    agents_md = root / AGENTS_MD_FILENAME
+    try:
+        return upsert_managed_block(
+            agents_md,
+            AGENTS_MD_BLOCK,
+            lambda targets: render_agents_md_block(template, dict(targets)),
+            target=target_name,
+            skills_dir=skills_dir,
+            keep_target=lambda _t, d: (root / d / "eidos" / "SKILL.md").is_file(),
+            force=force,
+            root=root,
+        )
+    except FileExistsError as exc:  # symlinked AGENTS.md (or parent): never write through it, never abort install
+        return BlockResult(BlockStatus.SKIPPED, agents_md, detail=str(exc))
+
+
+def project_claude_import_block(root: Path, force: bool = False) -> BlockResult | None:
+    """Upsert a one-line '@AGENTS.md' import block into the root CLAUDE.md (skipped if the user already imports it)."""
+    claude_md = root / CLAUDE_MD_FILENAME
+    if claude_md.is_symlink():
+        # A common layout symlinks CLAUDE.md to AGENTS.md: Claude Code then already loads the AGENTS.md block.
+        with contextlib.suppress(OSError):
+            if claude_md.resolve() == (root / AGENTS_MD_FILENAME).resolve():
+                return None
+        return BlockResult(
+            BlockStatus.SKIPPED, claude_md, detail="CLAUDE.md is a symlink; refusing to write through it"
+        )
+    if claude_md.is_file():
+        text = claude_md.read_text(encoding="utf-8", errors="replace")
+        if CLAUDE_IMPORT_BLOCK not in text and _CLAUDE_AGENTS_IMPORT_RE.search(text):
+            return None
+    try:
+        return upsert_managed_block(claude_md, CLAUDE_IMPORT_BLOCK, "@AGENTS.md\n", force=force, root=root)
+    except FileExistsError as exc:
+        return BlockResult(BlockStatus.SKIPPED, claude_md, detail=str(exc))
+
+
+def _block_warning(label: str, result: BlockResult | None) -> str:
+    if result is None or result.status.written or result.status is BlockStatus.OPTED_OUT:
+        return ""
+    return f" Warning: {label} block not updated ({result.status.value}: {result.detail})."
 
 
 @dataclass(frozen=True)
@@ -987,9 +907,30 @@ class TargetAdapter:
     pre_manifest_hook: Callable[[Path, Path, Path, bool, str], list[Path]] | None = None
     post_install_hook: Callable[[Path, Path, bool, str], list[Path]] | None = None
     extra_uninstall_hook: Callable[[Path], bool] | None = None
+    claude_import: bool = False
 
-    def install(self, root: Path, source_dir: Path, force: bool = False, launcher: str = "eidos") -> InstallResult:
-        """Execute declarative installation pipeline for this target."""
+    def skills_dir(self) -> str | None:
+        """Return the repository-relative directory where this target installs the Eidos skills."""
+        if self.skills_subdir is not None:
+            return self.skills_subdir
+        if self.plugin_subdir is not None:
+            return f"{self.plugin_subdir}/skills"
+        return None
+
+    def install(
+        self,
+        root: Path,
+        source_dir: Path,
+        force: bool = False,
+        launcher: str = "eidos",
+        force_blocks: bool | None = None,
+    ) -> InstallResult:
+        """Execute declarative installation pipeline for this target.
+
+        ``force_blocks`` controls whether hand-edited managed blocks (AGENTS.md / CLAUDE.md) may be overwritten;
+        it defaults to ``force`` but ``update_plugin`` always passes False.
+        """
+        overwrite_blocks = force if force_blocks is None else force_blocks
         created: list[Path] = []
         plugin_dir = (root / self.plugin_subdir) if self.plugin_subdir else None
 
@@ -1018,13 +959,26 @@ class TargetAdapter:
             manifest = _write_installation_manifest(plugin_dir, created)
             created.append(manifest)
 
+        message = self.install_message
+        skills_dir = self.skills_dir()
+        if skills_dir is not None:
+            agents_result = project_agents_md_block(root, source_dir, self.name, skills_dir, force=overwrite_blocks)
+            if agents_result is not None and agents_result.status.written:
+                created.append(agents_result.path)
+            message += _block_warning("AGENTS.md", agents_result)
+        if self.claude_import:
+            claude_result = project_claude_import_block(root, force=overwrite_blocks)
+            if claude_result is not None and claude_result.status.written:
+                created.append(claude_result.path)
+            message += _block_warning("CLAUDE.md", claude_result)
+
         dest_rel = self.install_destination_subdir or self.plugin_subdir or ""
         destination = (root / dest_rel) if dest_rel else root
         return InstallResult(
             target=self.name,
             destination=destination,
             success=True,
-            message=self.install_message,
+            message=message,
             created_files=created,
         )
 
@@ -1068,7 +1022,7 @@ def _make_project_adapter(target: PluginInstallTarget, name: str) -> TargetAdapt
         target=target,
         name=name,
         plugin_subdir=".agents/plugins/eidos",
-        install_message="Installed to project scope .agents/plugins/eidos (agent-plugins.org v1.0.0).",
+        install_message="Installed to project scope .agents/plugins/eidos (agent-plugins.org v1.0.0) and the root AGENTS.md block.",
         uninstall_removed_message="Removed plugin directory at {rel}.",
         uninstall_clean_message="No plugin found at {rel} (already removed).",
         prune_dirs=(".agents/plugins", ".agents"),
@@ -1082,16 +1036,12 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
         target=PluginInstallTarget.CURSOR,
         name="cursor",
         skills_subdir=".cursor/skills",
-        install_destination_subdir=".cursor/rules/eidos.mdc",
-        uninstall_destination_subdir=".cursor/rules/eidos.mdc",
-        install_message="Configured rules in .cursor/rules/eidos.mdc and 4 skills in .cursor/skills/.",
-        uninstall_removed_message="Removed .cursor/rules/eidos.mdc and .cursor/skills/.",
+        install_destination_subdir=".cursor/skills",
+        uninstall_destination_subdir=".cursor/skills",
+        install_message="Installed 4 skills in .cursor/skills/ and the root AGENTS.md block (read natively by Cursor).",
+        uninstall_removed_message="Removed .cursor/skills/.",
         uninstall_clean_message="No Cursor configuration found (already removed).",
-        extra_cleanup_files=(".cursor/rules/eidos.mdc",),
-        prune_dirs=(".cursor/rules", ".cursor"),
-        post_install_hook=lambda root, _src, force, _l: [
-            _write_cursor_rules(root / ".cursor" / "rules" / "eidos.mdc", force=force)
-        ],
+        prune_dirs=(".cursor",),
     ),
     PluginInstallTarget.CLAUDE: TargetAdapter(
         target=PluginInstallTarget.CLAUDE,
@@ -1099,12 +1049,13 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
         plugin_subdir=".claude",
         skills_subdir=".claude/skills",
         copy_plugin_tree=False,
-        install_message="Installed 4 Claude Code skills in .claude/skills/ and configured Stop hook in .claude/settings.json.",
+        install_message="Installed 4 Claude Code skills in .claude/skills/, configured Stop hook in .claude/settings.json, and imported the root AGENTS.md block from CLAUDE.md.",
         uninstall_removed_message="Removed Claude Code skills from .claude/skills/ and cleaned up .claude/settings.json.",
         uninstall_clean_message="No Claude Code configuration found (already removed).",
         prune_dirs=(".claude/skills", ".claude/plugins", ".claude"),
         post_install_hook=lambda root, _src, _force, launcher: _claude_post_install_hook(root, launcher),
         extra_uninstall_hook=_claude_extra_uninstall,
+        claude_import=True,
     ),
     PluginInstallTarget.AIDER: TargetAdapter(
         target=PluginInstallTarget.AIDER,
@@ -1112,15 +1063,12 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
         skills_subdir=".aider/skills",
         install_destination_subdir=".aider.conf.yml",
         uninstall_destination_subdir=".aider.conf.yml",
-        install_message="Configured .aider.conf.yml, generated .aider.conventions.md, and installed 4 skills into .aider/skills/.",
-        uninstall_removed_message="Removed .aider.conventions.md, .aider/skills/, and updated .aider.conf.yml.",
+        install_message="Installed 4 skills into .aider/skills/, the root AGENTS.md block, and AGENTS.md under read: in .aider.conf.yml.",
+        uninstall_removed_message="Removed .aider/skills/.",
         uninstall_clean_message="No Aider configuration found (already removed).",
-        extra_cleanup_files=(".aider.conventions.md",),
-        post_install_hook=lambda root, _src, force, _l: [
-            _write_aider_conventions(root / ".aider.conventions.md", force=force),
-            _update_project_aider_conf(root / ".aider.conf.yml", ".aider.conventions.md"),
+        post_install_hook=lambda root, _src, _force, _l: [
+            _update_project_aider_conf(root / ".aider.conf.yml", AGENTS_MD_FILENAME),
         ],
-        extra_uninstall_hook=lambda root: _remove_project_aider_conf(root / ".aider.conf.yml", ".aider.conventions.md"),
     ),
     PluginInstallTarget.CLINE: TargetAdapter(
         target=PluginInstallTarget.CLINE,
@@ -1128,7 +1076,7 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
         plugin_subdir=".cline/plugins/eidos",
         skills_subdir=".cline/skills",
         uninstall_destination_subdir=".cline",
-        install_message="Configured plugin bundle in .cline/plugins/eidos and 4 skills in .cline/skills/.",
+        install_message="Configured plugin bundle in .cline/plugins/eidos, 4 skills in .cline/skills/, and the root AGENTS.md block.",
         uninstall_removed_message="Removed plugin bundle in .cline/plugins/eidos and .cline/skills/.",
         uninstall_clean_message="No Cline configurations found (already removed).",
         prune_dirs=(".cline/plugins", ".cline"),
@@ -1139,7 +1087,7 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
         plugin_subdir=".opencode/plugins/eidos",
         skills_subdir=".opencode/skills",
         uninstall_destination_subdir=".opencode/plugins/eidos",
-        install_message="Configured plugin bundle in .opencode/plugins/eidos and 4 skills in .opencode/skills/.",
+        install_message="Configured plugin bundle in .opencode/plugins/eidos, 4 skills in .opencode/skills/, and the root AGENTS.md block.",
         uninstall_removed_message="Removed .opencode/plugins/eidos and .opencode/skills/.",
         uninstall_clean_message="No OpenCode configuration found (already removed).",
         prune_dirs=(".opencode/plugins", ".opencode"),
@@ -1149,7 +1097,7 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
         name="codex",
         plugin_subdir=".codex",
         copy_plugin_tree=False,
-        install_message="Installed OpenAI Codex plugin bundle (.codex/plugin.json, 4 skills, rules.md).",
+        install_message="Installed OpenAI Codex plugin bundle (.codex/plugin.json, 4 skills) and the root AGENTS.md block.",
         uninstall_removed_message="Removed OpenAI Codex plugin bundle (.codex/).",
         uninstall_clean_message="No Codex plugin bundle found (already removed).",
         pre_manifest_hook=lambda root, src, plugin_dir, force, _l: _codex_pre_manifest_hook(
@@ -1161,7 +1109,7 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
         name="copilot",
         plugin_subdir=".github/plugin",
         skills_subdir=".github/skills",
-        install_message="Installed GitHub Copilot plugin (.github/plugin/), 4 skills (.github/skills/), settings (.github/copilot/settings.json), and instructions.",
+        install_message="Installed GitHub Copilot plugin (.github/plugin/), 4 skills (.github/skills/), settings (.github/copilot/settings.json), and the root AGENTS.md block.",
         uninstall_removed_message="Removed GitHub Copilot plugin (.github/plugin/), skills (.github/skills/), and configuration.",
         uninstall_clean_message="No GitHub Copilot configuration found (already removed).",
         prune_dirs=(".github/plugin", ".github/copilot"),
@@ -1178,10 +1126,15 @@ def install_plugin(
     dest_path: Path | None = None,
     force: bool = False,
     launcher: str = "eidos",
+    force_blocks: bool | None = None,
 ) -> list[InstallResult]:
-    """Install the Eidos agent plugin strictly inside project scope (.agents/plugins/eidos)."""
+    """Install the Eidos agent plugin strictly inside project scope (.agents/plugins/eidos).
+
+    ``force_blocks`` (default: ``force``) controls overwriting hand-edited AGENTS.md / CLAUDE.md managed blocks.
+    """
     source_dir = locate_plugin_bundle()
     root = (project_dir or Path.cwd()).resolve()
+    overwrite_blocks = force if force_blocks is None else force_blocks
     results = []
 
     # If explicit destination provided, install there directly
@@ -1191,12 +1144,23 @@ def install_plugin(
         created = _copy_plugin_tree(source_dir, target_path, force=force, launcher=launcher)
         manifest = _write_installation_manifest(target_path, created)
         created.append(manifest)
+        message = f"Installed plugin bundle to custom project path: {target_path}"
+        custom_skills_dir = _relative_skills_dir(root, target_path / "skills")
+        if custom_skills_dir is None:
+            message += " (outside the repository: root AGENTS.md block not updated)."
+        else:
+            agents_result = project_agents_md_block(
+                root, source_dir, "custom", custom_skills_dir, force=overwrite_blocks
+            )
+            if agents_result is not None and agents_result.status.written:
+                created.append(agents_result.path)
+            message += _block_warning("AGENTS.md", agents_result)
         results.append(
             InstallResult(
                 target="custom",
                 destination=target_path,
                 success=True,
-                message=f"Installed plugin bundle to custom project path: {target_path}",
+                message=message,
                 created_files=created,
             )
         )
@@ -1221,7 +1185,7 @@ def install_plugin(
     for t in targets_to_run:
         adapter = TARGET_ADAPTERS.get(t)
         if adapter is not None:
-            results.append(adapter.install(root, source_dir, force, launcher))
+            results.append(adapter.install(root, source_dir, force, launcher, force_blocks=overwrite_blocks))
 
     return results
 
@@ -1313,5 +1277,13 @@ def update_plugin(
     if prev_version is None and lookup_dest is not dest_path:
         prev_version = get_installed_plugin_version(project_dir=project_dir, dest_path=dest_path)
     bundled_version = get_bundled_plugin_version()
-    results = install_plugin(target=target, project_dir=project_dir, dest_path=dest_path, force=True, launcher=launcher)
+    # Plugin files are refreshed with force=True, but hand-edited AGENTS.md / CLAUDE.md blocks are never forced.
+    results = install_plugin(
+        target=target,
+        project_dir=project_dir,
+        dest_path=dest_path,
+        force=True,
+        launcher=launcher,
+        force_blocks=False,
+    )
     return prev_version, bundled_version, results

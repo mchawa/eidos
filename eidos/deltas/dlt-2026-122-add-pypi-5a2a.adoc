@@ -1,0 +1,171 @@
+---
+type: delta/mutation
+id: DLT-2026-122-ADD-PYPI-5A2A
+title: "Add PyPI CLI Update Check to eidos doctor"
+status: applied
+intent:
+  kind: feature
+  motivation: "Enable 'eidos doctor' to query the PyPI JSON API (https://pypi.org/pypi/eidos-ai/json) via Python stdlib urllib.request with a bounded 2-second timeout and SemVer 2.0.0 comparison, informing users when a newer eidos-ai release is available (with upgrade instructions) while remaining non-blocking (advisory WARN/SKIPPED, preserving healthy=True and exit code 0) when an update is available or when running in offline/air-gapped environments."
+mutations:
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    details: "Add PYPI_PACKAGE_JSON_URL and check_cli_update_status(current_version, pypi_url, timeout) in src/eidos/plugin/version.py using stdlib urllib.request (restricted to http/https schemes), orjson, normalize_to_semver, and compare_semver, and document both symbols under Public Surface in eidos/architecture/components/plugin-installer.adoc."
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/plugin/installer.py"
+          - "src/eidos/plugin/version.py"
+        status: "active"
+      body:
+        contains:
+          - "PYPI_PACKAGE_JSON_URL"
+          - "check_cli_update_status"
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+    details: "Invoke check_cli_update_status() in doctor_cmd in src/eidos/cli/doctor_hook_commands.py, add the 'cli_update' diagnostic entry to --json output and a 'CLI Update Check' row (PASS / WARN / SKIPPED) to the Rich terminal table without failing overall_ok, and update eidos/architecture/components/cli-doctor-hooks.adoc."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/doctor_hook_commands.py"
+        status: "active"
+      body:
+        contains:
+          - "check_cli_update_status"
+          - "PyPI"
+  - operation: modify
+    target: CNT-EIDOS-CLI
+    details: "Record DEC-CLI-DOCTOR-UPDATE-CHECK in eidos/architecture/containers/cli.adoc documenting the stdlib urllib.request PyPI version check with a 2-second timeout and non-blocking advisory status semantics."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-CLI-DOCTOR-UPDATE-CHECK"
+      body:
+        contains:
+          - "PyPI"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Update the 'eidos doctor [--path PATH] [--json]' contract specification in eidos/architecture/contracts/cli.adoc (bumping version to 1.1.0) to document the PyPI CLI update check (checks.cli_update) and non-blocking exit code semantics."
+    expect:
+      frontmatter:
+        version: "1.1.0"
+        status: "active"
+      body:
+        contains:
+          - "cli_update"
+          - "PyPI"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Update docs/guides/cli.md and eidos/architecture/components/docs-user-guides.adoc to document the PyPI release update check in 'eidos doctor'."
+    expect:
+      frontmatter:
+        source_path: "docs/guides"
+        status: "active"
+      body:
+        contains:
+          - "PyPI"
+  - operation: modify
+    target: CNT-EIDOS-DOCS
+    details: "Update eidos/architecture/containers/docs.adoc to reflect the updated 'eidos doctor' PyPI update check documentation in docs/guides/cli.md."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "eidos doctor"
+          - "PyPI"
+  - operation: modify
+    target: CAP-AGENT-001
+    details: "Bump CAP-AGENT-001 to version 1.9.0 in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc, register CMP-CLI-DOCTOR-HOOKS and CMP-PLUGIN-INSTALLER under technical.components, and add INV-DOCTOR-UPDATE-CHECK."
+    expect:
+      frontmatter:
+        version: "1.9.0"
+        status: "active"
+        technical.components:
+          - "CMP-CLI-DOCTOR-HOOKS"
+          - "CMP-PLUGIN-INSTALLER"
+        technical.invariants.id:
+          - "INV-DOCTOR-UPDATE-CHECK"
+      body:
+        contains:
+          - "INV-DOCTOR-UPDATE-CHECK"
+          - "check_cli_update_status"
+  - operation: add
+    target: INV-DOCTOR-UPDATE-CHECK
+    details: "Add INV-DOCTOR-UPDATE-CHECK bound to tests/test_plugin.py::test_cli_doctor_update_check."
+    expect:
+      frontmatter:
+        rule: "eidos doctor must check for newer eidos-ai releases on PyPI via check_cli_update_status with a bounded timeout, report update availability and upgrade instructions in both Rich table and --json (checks.cli_update) outputs, and remain non-blocking (healthy=True, exit code 0) when an update is available or when PyPI is unreachable."
+        test_binding: "tests/test_plugin.py::test_cli_doctor_update_check"
+vcs:
+  branch: main
+  base_commit: ba167840467b12e059111c3869dade9d83b63583
+---
+= SpecDelta: Add PyPI CLI Update Check to eidos doctor
+:toc: left
+:icons: font
+:sectnums:
+
+== Problem Statement
+
+`eidos doctor` (`src/eidos/cli/doctor_hook_commands.py`) currently verifies five local workspace and installation dimensions:
+
+1. **CLI Binary on `PATH`** (`checks.cli_binary`)
+2. **Git Repository** (`checks.git_repository`)
+3. **Living Specifications** (`checks.living_specs`)
+4. **SQLite Knowledge Graph** (`checks.knowledge_graph_index`)
+5. **Agent Plugin Status** (`checks.agent_plugin` — comparing installed `.agents/plugins/eidos` manifest version against the locally bundled `eidos` package version)
+
+However, `eidos doctor` only checks whether the project's installed agent plugin matches the *currently installed* `eidos-ai` CLI package; it never checks whether the installed `eidos-ai` CLI package itself is outdated relative to the latest published release on PyPI (`https://pypi.org/pypi/eidos-ai/json`). As a result, developers running an older global `uv tool` or `pip` installation of `eidos-ai` are not informed when a newer release of Eidos is available.
+
+== Proposed Specification Changes
+
+1. **PyPI CLI Version Check Helper (`CMP-PLUGIN-INSTALLER`, `src/eidos/plugin/version.py`)**:
+   * Define `PYPI_PACKAGE_JSON_URL = "https://pypi.org/pypi/eidos-ai/json"`.
+   * Introduce `check_cli_update_status(current_version: str | None = None, pypi_url: str = PYPI_PACKAGE_JSON_URL, timeout: float = 2.0) -> dict[str, Any]` in `src/eidos/plugin/version.py`:
+     - Resolves `installed_raw = (current_version or getattr(eidos, "__version__", "0.2.0")).strip()` and normalizes it via `normalize_to_semver(installed_raw)`.
+     - Validates `pypi_url.startswith(("https://", "http://"))` (rejecting non-HTTP schemes like `file://`), queries `pypi_url` using Python stdlib `urllib.request.urlopen` (`urllib.request.Request(pypi_url, headers={"Accept": "application/json", "User-Agent": f"eidos-ai/{installed_raw}"})`, `timeout=timeout`), and parses the JSON response via `orjson.loads` to extract `data["info"]["version"]`.
+     - Compares normalized `installed_semver` and `latest_semver` using `compare_semver(installed_semver, latest_semver)`:
+       * `cmp < 0`: `status = "update_available"`, `update_available = True`, `upgrade_command = "uv tool upgrade eidos-ai"`, `status_text = f"Update available: v{installed_raw} -> v{latest_version} (Run 'uv tool upgrade eidos-ai' or 'pip install -U eidos-ai')"`.
+       * `cmp == 0`: `status = "up_to_date"`, `update_available = False`, `upgrade_command = None`, `status_text = f"Up to date (v{installed_raw})"`.
+       * `cmp > 0`: `status = "newer"`, `update_available = False`, `upgrade_command = None`, `status_text = f"Ahead of latest PyPI release (v{installed_raw} > v{latest_version})"`.
+     - Gracefully catches `(urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError, orjson.JSONDecodeError)` (and skips live network I/O when `EIDOS_NO_UPDATE_CHECK=1` is set or during unmocked `PYTEST_CURRENT_TEST` runs) and returns `status = "offline"`, `latest_version = None`, `update_available = False`, `upgrade_command = None`, `ok = True`, `status_text = f"Unable to reach PyPI (v{installed_raw} installed)"`.
+
+2. **Non-Blocking Diagnostic Integration in `eidos doctor` (`CMP-CLI-DOCTOR-HOOKS`, `src/eidos/cli/doctor_hook_commands.py`)**:
+   * Call `cli_update = check_cli_update_status()` in `doctor_cmd`.
+   * Populate `checks["cli_update"]` in the `--json` payload:
++
+[source,json]
+----
+{
+  "ok": true,
+  "status": "update_available",
+  "installed_version": "0.20.0",
+  "latest_version": "0.20.1",
+  "update_available": true,
+  "upgrade_command": "uv tool upgrade eidos-ai"
+}
+----
+   * Render a `"CLI Update Check"` row in the Rich terminal table (`Eidos Environment & Workspace Doctor`):
+     - `status in ("up_to_date", "newer")`: Status `[bold green]PASS[/bold green]`, Details `cli_update["status_text"]`.
+     - `status == "update_available"`: Status `[bold yellow]WARN[/bold yellow]`, Details `cli_update["status_text"]`.
+     - `status == "offline"`: Status `[dim]SKIPPED[/dim]`, Details `cli_update["status_text"]`.
+   * Preserve non-blocking advisory behavior: `checks["cli_update"]["ok"]` is always `True` and `overall_ok` is not gated on `cli_update`, ensuring `eidos doctor` exits with code `0` when all workspace health checks pass—even when a newer PyPI release exists or when running in an offline/air-gapped CI environment.
+
+3. **Architecture, Contract, Documentation & Capability Governance (`CNT-EIDOS-CLI`, `CTR-EIDOS-CLI`, `CMP-DOCS-USER-GUIDES`, `CNT-EIDOS-DOCS`, `CAP-AGENT-001`)**:
+   * Record `DEC-CLI-DOCTOR-UPDATE-CHECK` in `CNT-EIDOS-CLI` (`eidos/architecture/containers/cli.adoc`) documenting the stdlib `urllib.request` PyPI query, 2-second timeout, and non-blocking advisory `WARN`/`SKIPPED` design.
+   * Update `CTR-EIDOS-CLI` (`eidos/architecture/contracts/cli.adoc`, version `1.1.0`) and `docs/guides/cli.md` (`CMP-DOCS-USER-GUIDES`, `CNT-EIDOS-DOCS`) to document `checks.cli_update` and the PyPI update notification in `eidos doctor`.
+   * Bump `CAP-AGENT-001` (`eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc`) to `1.9.0`, add `CMP-CLI-DOCTOR-HOOKS` and `CMP-PLUGIN-INSTALLER` to `technical.components`, and bind `INV-DOCTOR-UPDATE-CHECK` to `tests/test_plugin.py::test_cli_doctor_update_check`.
+
+== Implementation Plan
+
+1. **Implement PyPI Version Check in `src/eidos/plugin/version.py` (`CMP-PLUGIN-INSTALLER`)**:
+   * Add `PYPI_PACKAGE_JSON_URL = "https://pypi.org/pypi/eidos-ai/json"` and `check_cli_update_status(current_version: str | None = None, pypi_url: str = PYPI_PACKAGE_JSON_URL, timeout: float = 2.0) -> dict[str, Any]`.
+   * Use `urllib.request.Request` + `urllib.request.urlopen` with `timeout=timeout` and `orjson.loads` to fetch `info.version`, compare via `normalize_to_semver` and `compare_semver`, and return structured status metadata (`up_to_date`, `update_available`, `newer`, or `offline` on network/timeout errors).
+2. **Wire Update Check into `eidos doctor` (`src/eidos/cli/doctor_hook_commands.py`, `CMP-CLI-DOCTOR-HOOKS`)**:
+   * Import and call `check_cli_update_status()` in `doctor_cmd`.
+   * Include `checks["cli_update"]` in the JSON diagnostics output and add the `"CLI Update Check"` row (`PASS` / `WARN` / `SKIPPED`) to the Rich table while keeping `overall_ok` non-blocking.
+3. **Update Living Specifications & Documentation (`eidos/`, `docs/guides/cli.md`)**:
+   * Update `eidos/architecture/components/plugin-installer.adoc` (`CMP-PLUGIN-INSTALLER`), `eidos/architecture/components/cli-doctor-hooks.adoc` (`CMP-CLI-DOCTOR-HOOKS`), `eidos/architecture/containers/cli.adoc` (`CNT-EIDOS-CLI` with `DEC-CLI-DOCTOR-UPDATE-CHECK`), `eidos/architecture/contracts/cli.adoc` (`CTR-EIDOS-CLI` `1.1.0`), `eidos/architecture/components/docs-user-guides.adoc` (`CMP-DOCS-USER-GUIDES`), `eidos/architecture/containers/docs.adoc` (`CNT-EIDOS-DOCS`), `docs/guides/cli.md`, and `eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc` (`CAP-AGENT-001` `1.9.0` with `INV-DOCTOR-UPDATE-CHECK`).
+4. **Add Invariant Unit Tests & Verify (`tests/test_plugin.py`)**:
+   * Add `tests/test_plugin.py::test_cli_doctor_update_check` referencing `INV-DOCTOR-UPDATE-CHECK` to test `up_to_date`, `update_available` (verifying `WARN` + upgrade command in Rich table, `checks.cli_update.update_available is True` in `--json`, and exit code `0`), `newer`, and `offline` (`URLError` / `TimeoutError` graceful fallback with exit code `0`).
+   * Run `eidos validate eidos --json`, `eidos delta verify DLT-2026-122-ADD-PYPI-5A2A --json`, `eidos delta apply DLT-2026-122-ADD-PYPI-5A2A`, `eidos drift --uncommitted --json`, and `pytest`.

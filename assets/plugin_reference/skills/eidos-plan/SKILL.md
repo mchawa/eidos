@@ -1,6 +1,6 @@
 ---
 name: eidos-plan
-description: Orchestrate technical discovery spikes (EXP-*), the SpecDelta architectural mutation lifecycle (DLT-*), and Staff Systems Architect 5-dimension reviews in Planned Mode. Use when formulating hypotheses, running pre-mutation impact analysis (eidos context, eidos index search, eidos index blast-radius, eidos index find-symbol), proposing or applying SpecDeltas (create, verify, audit, apply, changelog), or reviewing PRs and architectural changes.
+description: "Planned-mode workflows: technical explorations (EXP-*), the SpecDelta lifecycle (DLT-*: create, verify, audit, apply), expect: post-conditions, and architectural reviews. Load for new or removed containers/components, breaking contract changes, cross-domain features, spikes, or PR and delta reviews."
 ---
 # Eidos Planning, SpecDeltas & Architectural Review (`eidos-plan`)
 
@@ -109,7 +109,7 @@ eidos delta archive --keep-recent 15 --dry-run --json
 
 > **Critical Schema Rules (`delta.schema.yaml`)**:
 > 1. **Composable `operation` + `target` is the Sole Mutation Contract**: Declare each mutation with `operation: add | modify | remove | deprecate` and `target: <ENTITY-ID>`. Never add `parent:`, `affects:`, or `blast_radius:` blocks to SpecDelta YAML frontmatter (`additionalProperties: false` rejects them).
-> 2. **Closed `expect:` Schema**: `expect:` only permits `body:` (`contains`, `not_contains`) and `frontmatter:` (`source_path`, `rule`, `test_binding`, `status`, `severity`, `version`, `category`, plus nested dot-path keys). Flat top-level keys under `expect:` are rejected.
+> 2. **Closed `expect:` Schema**: `expect:` only permits `body:` and `frontmatter:` sub-blocks (allowed keys in §2.4). Flat top-level keys under `expect:` are rejected.
 
 ```yaml
 ---
@@ -168,24 +168,11 @@ Prevent spoofed billing webhooks by enforcing HMAC-SHA256 timestamped signature 
 3. **Invariant & Test Verification**: Add `tests/billing/test_webhooks.py::test_webhook_hmac_signature` referencing `INV-BILL-WEBHOOK-SIG`, then run `eidos delta verify` and `eidos delta apply`.
 ```
 
-### 2.3 Composable `operation` + `target` Matrix
+### 2.3 Composable `operation` + `target` Rules
 
-| Entity Category (`target` Prefix) | Supported `operation` Values |
-| :--- | :--- |
-| **System (`SYS-*`) & Architecture (`ARCH-*`)** | `add`, `modify` |
-| **Containers (`CNT-*`)** | `add`, `modify`, `deprecate`, `remove` |
-| **Components (`CMP-*`)** | `add`, `modify`, `deprecate`, `remove` |
-| **Contracts (`CTR-*`)** | `add`, `modify`, `deprecate`, `remove` |
-| **Domains (`DOM-*`)** | `add`, `modify`, `deprecate`, `remove` |
-| **Capabilities (`CAP-*`)** | `add`, `modify`, `deprecate`, `remove` |
-| **Invariants (`INV-*`)** | `add`, `modify`, `remove` |
-| **Personas (`PER-*`)** | `add`, `modify`, `deprecate`, `remove` |
-| **Policies (`POL-*`)** | `add`, `modify`, `deprecate`, `remove` |
-| **Design Systems (`DS-*`)** | `add`, `modify`, `deprecate`, `remove` |
-| **UI Components (`UIC-*`)** | `add`, `modify`, `deprecate`, `remove` |
-| **Clients (`CLT-*`)** | `add`, `modify`, `deprecate`, `remove` |
-| **Screens (`SCR-*`)** | `add`, `modify`, `deprecate`, `remove` |
-| **Flows (`FLOW-*`)** | `add`, `modify`, `deprecate`, `remove` |
+Every entity type supports `operation: add | modify | deprecate | remove`, with two exceptions:
+* **System (`SYS-*`) & Architecture (`ARCH-*`)**: `add`, `modify` only.
+* **Invariants (`INV-*`)**: `add`, `modify`, `remove` (no `deprecate`).
 
 ### 2.4 Structured `expect:` Post-Conditions & `tombstone:` Audit Exemptions
 

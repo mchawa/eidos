@@ -9,7 +9,7 @@ Eidos is **agent-agnostic** and **model-agnostic**. It provides a standardized p
                     └────────────────────┬────────────────────┘
                                          │
                     Direct CLI / Skills  │   Rules & Guidelines
-                    (eidos validate, …)  │   (AGENTS.md, .mdc)
+                    (eidos validate, …)  │   (root AGENTS.md block)
                                          ▼
                     ┌─────────────────────────────────────────┐
                     │           Eidos Agent Plugin            │
@@ -61,15 +61,41 @@ eidos plugin install copilot
 | Target Argument | Target Path / Config | Description |
 | :--- | :--- | :--- |
 | `all` | All environments below | Installs plugins and configs for Antigravity, Claude, Cursor, Aider, Cline, OpenCode, Codex, and GitHub Copilot |
-| `project` | `.agents/plugins/eidos/` | Standard project-scope installation conforming strictly to `agent-plugins.org v1.0.0` |
-| `antigravity` | `.agents/plugins/eidos/` | Installs plugin bundle with rules, 4 skills, hooks, and extensions (agent-plugins.org v1.0.0) |
-| `claude` | `.claude/skills/`, `.claude/settings.json` | Installs 4 Claude Code skills and configures the Eidos `Stop` hook in `.claude/settings.json` |
-| `cursor` | `.cursor/skills/`, `.cursor/rules/eidos.mdc` | Installs 4 flat skills and Cursor rules (`.mdc`) for CLI execution |
-| `copilot` | `.github/plugin/`, `.github/skills/`, `.github/copilot/` | Installs GitHub Copilot plugin (Agent Plugins 1.0), 4 skills, settings, and instructions |
-| `aider` | `.aider/skills/`, `.aider.conventions.md`, `.aider.conf.yml` | Installs 4 skills, conventions index, and auto-read configuration |
-| `cline` | `.cline/plugins/`, `.cline/skills/` | Installs plugin bundle, 4 flat skills, and AGENTS.md conventions |
-| `open-code` | `.opencode/plugins/`, `.opencode/skills/` | Installs plugin bundle, 4 flat skills, and AGENTS.md instructions |
-| `codex` | `.codex/plugin.json`, `.codex/skills/`, `.codex/rules.md` | Installs OpenAI Codex plugin bundle with 4 skills and rules |
+| `project` | `.agents/plugins/eidos/`, `AGENTS.md` | Standard project-scope installation conforming strictly to `agent-plugins.org v1.0.0` |
+| `antigravity` | `.agents/plugins/eidos/`, `AGENTS.md` | Installs plugin bundle with 4 skills, hooks, and extensions (agent-plugins.org v1.0.0) |
+| `claude` | `.claude/skills/`, `.claude/settings.json`, `CLAUDE.md`, `AGENTS.md` | Installs 4 Claude Code skills, configures the Eidos `Stop` hook, and imports `AGENTS.md` from `CLAUDE.md` |
+| `cursor` | `.cursor/skills/`, `AGENTS.md` | Installs 4 flat skills; Cursor reads the root `AGENTS.md` natively |
+| `copilot` | `.github/plugin/`, `.github/skills/`, `.github/copilot/`, `AGENTS.md` | Installs GitHub Copilot plugin (Agent Plugins 1.0), 4 skills, and settings; Copilot reads the root `AGENTS.md` natively |
+| `aider` | `.aider/skills/`, `.aider.conf.yml`, `AGENTS.md` | Installs 4 skills and adds `AGENTS.md` under `read:` in `.aider.conf.yml` |
+| `cline` | `.cline/plugins/`, `.cline/skills/`, `AGENTS.md` | Installs plugin bundle and 4 flat skills; Cline reads the root `AGENTS.md` natively |
+| `open-code` | `.opencode/plugins/`, `.opencode/skills/`, `AGENTS.md` | Installs plugin bundle and 4 flat skills; OpenCode reads the root `AGENTS.md` natively |
+| `codex` | `.codex/plugin.json`, `.codex/skills/`, `AGENTS.md` | Installs OpenAI Codex plugin bundle with 4 skills; Codex reads the root `AGENTS.md` natively |
+
+### The Root `AGENTS.md` Block
+
+Every target writes one shared Eidos block into your repository's root `AGENTS.md`, the cross-tool instruction file every supported assistant loads. Eidos owns **only** the text between its markers; everything else in `AGENTS.md` stays yours:
+
+```markdown
+# Acme Billing Service
+Run `pnpm test` before committing.          <- yours, never touched
+
+<!-- eidos:begin agents-md sha256:3f9a1c0b7e2d targets=aider:.aider/skills,claude:.claude/skills · managed by `eidos plugin`; edits inside this block are overwritten -->
+## Eidos Living Specifications
+...short guardrails, key eidos commands, and every installed skill location...
+<!-- eidos:end agents-md -->
+
+## Team notes                                 <- yours, never touched
+```
+
+* **Coexists with your content**: Eidos appends the block if it is missing and afterwards updates it in place, wherever you move it. Line endings and encoding are preserved.
+* **Shared across assistants**: `targets=` records each installed assistant and its skills directory, so installing several assistants yields one block listing every skill location, independent of install order.
+* **Your edits are protected**: the `sha256:` stamp detects hand edits inside the block. Eidos then leaves the block alone (and says so) unless you run `eidos plugin install <target> --force`. `eidos plugin update` never overwrites an edited block.
+* **Opt out**: add `<!-- eidos:agents-md off -->` anywhere in `AGENTS.md` (or `<!-- eidos:claude-import off -->` in `CLAUDE.md`) and Eidos will not write that block.
+* **Symlinks are respected**: Eidos never writes through a symlinked `AGENTS.md` or `CLAUDE.md`; it reports a warning instead. If `CLAUDE.md` is a symlink to `AGENTS.md`, no import block is needed.
+* **Left in place on uninstall**: `eidos plugin uninstall` removes skills and plugin files but leaves the `AGENTS.md` / `CLAUDE.md` blocks and the Aider `read:` entry; delete them by hand if you no longer want them.
+
+> [!NOTE]
+> **Upgrading from earlier releases**: per-assistant rule files and instruction blocks written by older Eidos versions are not migrated or removed. The root `AGENTS.md` block replaces them; you can delete the old files by hand.
 
 ---
 
@@ -94,7 +120,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     ```text
     .agents/plugins/eidos/
     ├── plugin.json               # agent-plugins.org v1.0.0 manifest
-    ├── hooks.json                # Document linting & drift gate hooks
+    ├── hooks.json                # Stateless Stop drift gate hook
     └── skills/
         ├── eidos/                # Master orchestrator, context slicing & continuous drift detection
         ├── eidos-spec/           # Product, Arc42/C4 architecture, design systems & invariants (NO ADRs)
@@ -107,6 +133,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     * **Master Engineering Skill**: Antigravity indexes `skills/eidos/SKILL.md` to guide agent decision-making, strictly enforcing the 8 Constitutional Guardrails (Single Source of Truth, Zero ADRs, Dual Workflow Mode Selection, Mandatory Invariant-Test Traceability, CLI-First Discovery & Determinism, Subagent Context Propagation, Zero Unreconciled Drift, and Mandatory Autonomous Pre-Completion Review) alongside `eidos context`, `eidos index`, and `eidos drift`.
     * **Workflow-Aligned Agent Skills**: Antigravity agents invoke `/eidos-spec` to author or inspect living specs, schemas (`eidos spec schema`), and invariants, `/eidos-plan` for explorations, SpecDeltas, and Staff reviews, and `/eidos-ops` for repository initialization, brownfield extraction, and Web Portal operations.
     * **Stateless Stop Hook**: The `eidos-drift-gate` (`eidos hook`) runs at task completion (`Stop`) to verify AsciiDoc schemas, invariant test bindings, and spec-to-code synchronization.
+    * **Root `AGENTS.md`**: The shared Eidos block in the repository's root `AGENTS.md` is loaded as a project rule and lists `.agents/plugins/eidos/skills/` as the skill location.
 
 === "Claude Code"
 
@@ -129,59 +156,28 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     - Installs all 4 cohesive Eidos skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`) into `.claude/skills/<skill-name>/SKILL.md` so they are immediately discovered by Claude Code on startup.
     - Non-destructively registers the Eidos `Stop` hook (`eidos hook`, or `uvx --from eidos-ai==<ver> eidos hook` when `--launcher uvx` is passed) under `hooks.Stop` in `.claude/settings.json` while preserving your existing settings and custom hooks.
     - Tracks managed skill files in `.claude/.eidos-manifest.json` for clean updates and uninstallation (`eidos plugin uninstall claude`).
-
-    #### 2. Enforcing Rules in `CLAUDE.md`
-    To ensure Claude Code adheres to Eidos architectural governance, reference the Eidos rules in your project's `CLAUDE.md`:
+    - Writes the shared Eidos block into the root `AGENTS.md` and a one-line import block into the root `CLAUDE.md` so Claude Code loads it as project memory (skipped if your `CLAUDE.md` already imports `@AGENTS.md`):
 
     ```markdown
-    <!-- CLAUDE.md -->
-    ## Eidos Architectural Guidelines
-    - Adhere strictly to the guidelines in `.agents/plugins/eidos/skills/eidos/SKILL.md`.
-    - Treat `eidos/` living specifications as the single source of truth.
-    - Never create ADRs; all mutations must follow the SpecDelta lifecycle (`eidos delta create`).
-    - Validate specifications with `eidos validate --json` before completing tasks.
-    - Check for spec-to-code drift with `eidos drift --uncommitted --json`.
+    <!-- CLAUDE.md (your own content above/below is preserved) -->
+    <!-- eidos:begin claude-import sha256:336cc4fbf19b · managed by `eidos plugin`; edits inside this block are overwritten -->
+    @AGENTS.md
+    <!-- eidos:end claude-import -->
     ```
 
 === "Cursor"
 
-    Cursor connects to Eidos via native Agent Skills (`.cursor/skills/`) and custom Cursor rules (`.cursor/rules/eidos.mdc`), invoking Eidos CLI commands.
+    Cursor connects to Eidos via native Agent Skills (`.cursor/skills/`) and the root `AGENTS.md`, which Cursor reads natively, invoking Eidos CLI commands.
 
     ### 1. Automatic Configuration
-
-    Generate Cursor rules and 4 native Agent Skills:
 
     ```bash
     eidos plugin install cursor
     ```
 
     This automatically:
-    - Generates `.cursor/rules/eidos.mdc` with `alwaysApply: true`.
     - Installs all 4 skills into `.cursor/skills/<skill-name>/` enabling Cursor's native Agent Skills progressive disclosure engine.
-
-    ### 2. Cursor Rules (`.cursor/rules/eidos.mdc`)
-
-    Cursor Composer and Chat agents follow `.cursor/rules/eidos.mdc`:
-
-    ```markdown
-    ---
-    description: "Eidos living specifications and architectural governance"
-    alwaysApply: true
-    ---
-
-    # Eidos Living Specifications
-
-    This repository is governed by Eidos living specifications under `eidos/`.
-
-    ## Core Principles
-    - Consult living specifications before modifying code or proposing architectural changes.
-    - Strictly enforce living specifications (NO ADRs). All architectural mutations follow the SpecDelta lifecycle (`eidos/deltas/`).
-    - Preserve bidirectional invariant-test traceability (`POL-*` and `INV-*`).
-    - Verify specification schemas with `eidos validate eidos` (or `eidos validate --json`).
-    - Verify synchronization with `eidos drift --uncommitted` (or `eidos drift --uncommitted --json`) before finalizing tasks.
-    - Use Eidos Discovery-First CLI commands (`eidos context`, `eidos index repo-map`, `eidos index find-symbol`, `eidos index search`, `eidos index blast-radius`, `eidos spec schema`, `eidos drift`) for real-time inspection.
-    - Consult installed Agent Skills in `.cursor/skills/` for specialized architectural workflows.
-    ```
+    - Writes the shared Eidos block into the root `AGENTS.md` (see [The Root `AGENTS.md` Block](#the-root-agentsmd-block)), which Cursor Composer and Chat agents load as project instructions.
 
 === "GitHub Copilot"
 
@@ -196,14 +192,14 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     - Installs the native Copilot plugin bundle into `.github/plugin/` with `plugin.json` (declaring `com.github.copilot` extension).
     - Installs all 4 Eidos skills flat into `.github/skills/<skill-name>/SKILL.md` where GitHub Copilot's Agent Skills engine natively scans and indexes them.
     - Configures `.github/copilot/settings.json` enabling the `eidos` plugin (`enabledPlugins: {"eidos": true}`).
-    - Configures `.github/copilot-instructions.md` with Eidos living specification rules, safely demarcated with comment markers (`<!-- EIDOS_COPILOT_START -->` ... `<!-- EIDOS_COPILOT_END -->`) to preserve any custom user instructions.
+    - Writes the shared Eidos block into the root `AGENTS.md`, which GitHub Copilot loads natively. Your own Copilot instruction files are never touched.
 
     ### 2. Using with Copilot
-    GitHub Copilot automatically discovers the installed skills under `.github/skills/`, activates the plugin declared in `.github/copilot/settings.json`, and loads `.github/copilot-instructions.md` in Copilot Chat and Copilot Agent mode—enforcing the single source of truth under `eidos/`, zero spec-to-code drift, and bidirectional invariant-test traceability.
+    GitHub Copilot automatically discovers the installed skills under `.github/skills/`, activates the plugin declared in `.github/copilot/settings.json`, and loads the root `AGENTS.md` in Copilot Chat and Copilot Agent mode—enforcing the single source of truth under `eidos/`, zero spec-to-code drift, and bidirectional invariant-test traceability.
 
 === "Aider"
 
-    Aider pairs with Eidos living specifications by loading persistent conventions via `.aider.conf.yml` and `.aider.conventions.md`.
+    Aider pairs with Eidos living specifications by loading the root `AGENTS.md` as persistent read-only context via `.aider.conf.yml`.
 
     ### 1. Installation
     ```bash
@@ -212,15 +208,15 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     This automatically:
     - Installs all 4 individual Eidos skills into `.aider/skills/<skill-name>/SKILL.md`.
-    - Generates `.aider.conventions.md` in the project root containing core Eidos guidelines (Single Source of Truth, No ADRs, Invariant traceability, spec validation, and drift gate) alongside an interactive index mapping tasks to `/read .aider/skills/<skill>/SKILL.md`.
-    - Configures `.aider.conf.yml` to automatically include `.aider.conventions.md` under `read:`.
+    - Writes the shared Eidos block into the root `AGENTS.md`; the block lists `.aider/skills/<skill>/SKILL.md` as a skill location, serving as Aider's skill index.
+    - Adds `AGENTS.md` under `read:` in `.aider.conf.yml`, preserving your existing keys and entries.
 
     ### 2. Using with Aider
     Run Aider as usual:
     ```bash
     aider
     ```
-    Aider automatically ingests `.aider.conventions.md` as read-only context on launch. You can verify specifications from within Aider using `/run uv run eidos validate --json` and check drift using `/run uv run eidos drift --uncommitted --json`. When working on specific architectural areas, prompt Aider to load the corresponding skill with `/read .aider/skills/<skill-name>/SKILL.md`.
+    Aider automatically ingests `AGENTS.md` as read-only context on launch. You can verify specifications from within Aider using `/run uv run eidos validate --json` and check drift using `/run uv run eidos drift --uncommitted --json`. When working on specific architectural areas, prompt Aider to load the corresponding skill with `/read .aider/skills/<skill-name>/SKILL.md`.
 
 === "Cline"
 
@@ -234,7 +230,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     This automatically:
     - Installs the complete plugin bundle into `.cline/plugins/eidos/`.
     - Installs all 4 individual skills flat into `.cline/skills/<skill-name>/SKILL.md` where Cline's skill discovery engine indexes them for progressive disclosure.
-    - Leverages the root `AGENTS.md` open standard without requiring redundant rule files.
+    - Writes the shared Eidos block into the root `AGENTS.md`, which Cline reads natively, without redundant rule files.
 
 === "OpenCode"
 
@@ -250,11 +246,11 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     This automatically:
     - Installs the Eidos plugin bundle into `.opencode/plugins/eidos`.
     - Installs all 4 individual skills flat into `.opencode/skills/<skill-name>/SKILL.md`.
-    - Leverages the root `AGENTS.md` open standard without requiring redundant rule files.
+    - Writes the shared Eidos block into the root `AGENTS.md`, which OpenCode reads natively, without redundant rule files.
 
 === "OpenAI Codex"
 
-    OpenAI Codex utilizes portable agent plugin packages containing `plugin.json`, skills, and rules.
+    OpenAI Codex utilizes portable agent plugin packages containing `plugin.json` and skills, and reads project instructions from the root `AGENTS.md` natively.
 
     ### 1. Installation
     ```bash
@@ -264,7 +260,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     This automatically:
     - Scaffolds `.codex/plugin.json` declaring `com.openai` agent plugin extension and metadata.
     - Installs all 4 individual skills flat into `.codex/skills/<skill-name>/SKILL.md`.
-    - Generates `.codex/rules.md` governing living spec workflows.
+    - Writes the shared Eidos block into the root `AGENTS.md`, which Codex loads as project instructions.
 
 === "Generic AI Agents (Windsurf, Roo Code, etc.)"
 

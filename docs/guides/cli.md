@@ -39,7 +39,7 @@ eidos info
 ---
 
 ### `eidos doctor`
-Verify Eidos tool installation, AST engine status, specification directory health, knowledge graph index freshness, and installed agent plugin hooks:
+Verify Eidos tool installation, non-blocking PyPI release update availability (`checks.cli_update`), Git repository status, specification directory health, knowledge graph index freshness, and installed agent plugin currency:
 
 ```bash
 eidos doctor
@@ -49,7 +49,7 @@ eidos doctor --json
 
 Options:
 * `--path, -p PATH`: Path to the project or specifications directory (default: current directory).
-* `--json`: Output diagnostic report in JSON format.
+* `--json`: Output diagnostic report in JSON format (including `checks.cli_update` with `status`, `installed_version`, `latest_version`, `update_available`, and `upgrade_command`).
 
 ---
 

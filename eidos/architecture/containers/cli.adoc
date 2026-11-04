@@ -14,12 +14,24 @@ contracts:
   provides:
     - "CTR-EIDOS-CLI"
   consumes: []
+
+decisions:
+  - id: DEC-CLI-DOCTOR-UPDATE-CHECK
+    title: "Non-Blocking Stdlib PyPI Release Check in eidos doctor"
+    decision: "Query https://pypi.org/pypi/eidos-ai/json in 'eidos doctor' via Python stdlib urllib.request with a bounded 2-second timeout and SemVer 2.0.0 comparison, surfacing available updates as an advisory WARN row and checks.cli_update JSON entry without failing overall_ok or exit code 0."
+    rationale: "Checking PyPI during 'eidos doctor' proactively notifies developers when a newer eidos-ai release is available (along with 'uv tool upgrade eidos-ai' / 'pip install -U eidos-ai' instructions) while stdlib urllib.request avoids adding third-party HTTP client dependencies (such as httpx or requests) and non-blocking status semantics prevent CI or air-gapped workspaces from failing health checks."
+    rejected_alternatives:
+      - option: "Add httpx or requests as a core runtime dependency in pyproject.toml"
+        reason_rejected: "Pulls in 5-6 additional transitive runtime packages for a single JSON GET endpoint that stdlib urllib.request and orjson handle natively."
+      - option: "Fail eidos doctor (exit code 1, healthy=False) when a newer PyPI release exists"
+        reason_rejected: "Causes previously healthy repositories and CI pipelines to fail unpredictably the moment a new eidos-ai release is published to PyPI."
+    graduated_from: DLT-2026-122-ADD-PYPI-5A2A
 ---
 = Container: Eidos Command-Line Interface (C4 Level 2 Container)
 :toc: left
 
 == Architectural Boundary
-This container represents the developer and AI-agent CLI entrypoint under `src/eidos/cli/`. It exposes the `CTR-EIDOS-CLI` interface contract via Typer, providing a single canonical command path per operation for bootstrapping repositories (`eidos init`), authoring and validating living specifications (`eidos validate`, `eidos spec`), querying the knowledge graph and context slices (`eidos index`, `eidos context`), executing drift detection (`eidos drift`), managing SpecDelta lifecycles (`eidos delta`), serving or building the web portal (`eidos portal`), and managing agent plugins and hooks (`eidos plugin`, `eidos hook`, `eidos doctor`). It contains zero domain validation, graph persistence, or Git diff logic of its own, acting strictly as an adapter over `CNT-EIDOS-CORE`, `CNT-EIDOS-INDEX`, `CNT-EIDOS-VCS`, `CNT-EIDOS-PORTAL`, and `CNT-EIDOS-PLUGIN`.
+This container represents the developer and AI-agent CLI entrypoint under `src/eidos/cli/`. It exposes the `CTR-EIDOS-CLI` interface contract via Typer, providing a single canonical command path per operation for bootstrapping repositories (`eidos init`), authoring and validating living specifications (`eidos validate`, `eidos spec`), querying the knowledge graph and context slices (`eidos index`, `eidos context`), executing drift detection (`eidos drift`), managing SpecDelta lifecycles (`eidos delta`), serving or building the web portal (`eidos portal`), and managing agent plugins, lifecycle hooks, and PyPI-aware workspace diagnostics (`eidos plugin`, `eidos hook`, `eidos doctor`). It contains zero domain validation, graph persistence, or Git diff logic of its own, acting strictly as an adapter over `CNT-EIDOS-CORE`, `CNT-EIDOS-INDEX`, `CNT-EIDOS-VCS`, `CNT-EIDOS-PORTAL`, and `CNT-EIDOS-PLUGIN`.
 
 == Internal Structure & Key Mechanisms
 * **Thin Presentation Adapter**: Modular Typer command groups parse CLI options, resolve the target `eidos/` workspace via shared `resolve_cli_eidos_dir`, invoke underlying container services, and translate domain outcomes into exit codes.

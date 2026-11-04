@@ -309,28 +309,31 @@ def test_cli_install_rejects_workspace_target(tmp_path):
 
 
 def test_plugin_install_and_uninstall_aider(tmp_path):
-    """Verify Aider installation creates .aider.conventions.md, skills, and updates .aider.conf.yml."""
+    """Verify Aider installation installs skills, the root AGENTS.md block, and AGENTS.md under read: (DLT-2026-121)."""
     results = install_plugin(target=PluginInstallTarget.AIDER, project_dir=tmp_path, force=True)
     assert len(results) == 1
     assert results[0].success
     assert results[0].target == "aider"
 
-    conventions = tmp_path / ".aider.conventions.md"
     aider_conf = tmp_path / ".aider.conf.yml"
     aider_skills = tmp_path / ".aider" / "skills"
-    assert conventions.exists()
+    agents_md = tmp_path / "AGENTS.md"
+    assert not (tmp_path / ".aider.conventions.md").exists()
     assert aider_conf.exists()
+    assert "AGENTS.md" in aider_conf.read_text(encoding="utf-8")
     assert (aider_skills / "eidos" / "SKILL.md").exists()
     assert len([d for d in aider_skills.iterdir() if d.is_dir()]) == 4
-    assert "Single Source of Truth" in conventions.read_text(encoding="utf-8")
+    agents_text = agents_md.read_text(encoding="utf-8")
+    assert "targets=aider:.aider/skills" in agents_text
+    assert "`.aider/skills/<skill>/SKILL.md`" in agents_text
 
-    # Uninstall
+    # Uninstall removes skills only; shared AGENTS.md / .aider.conf.yml are intentionally left in place.
     uninst = uninstall_plugin(target=PluginInstallTarget.AIDER, project_dir=tmp_path)
     assert len(uninst) == 1
     assert uninst[0].success
-    assert not conventions.exists()
-    assert not aider_conf.exists()
     assert not (aider_skills / "eidos").exists()
+    assert agents_md.read_text(encoding="utf-8") == agents_text
+    assert aider_conf.exists()
 
 
 def test_plugin_install_and_uninstall_cline(tmp_path):
@@ -388,7 +391,7 @@ def test_plugin_install_and_uninstall_opencode(tmp_path):
 
 
 def test_plugin_install_and_uninstall_codex(tmp_path):
-    """Verify OpenAI Codex installation creates .codex/plugin.json, rules, and skills."""
+    """Verify OpenAI Codex installation creates .codex/plugin.json, skills, and the root AGENTS.md block (no rules file)."""
     results = install_plugin(target=PluginInstallTarget.CODEX, project_dir=tmp_path, force=True)
     assert len(results) == 1
     assert results[0].success
@@ -397,8 +400,9 @@ def test_plugin_install_and_uninstall_codex(tmp_path):
     codex_dir = tmp_path / ".codex"
     assert (codex_dir / "plugin.json").exists()
     assert not (codex_dir / "mcp.json").exists()
-    assert (codex_dir / "rules.md").exists()
+    assert not (codex_dir / "rules.md").exists()
     assert (codex_dir / "skills" / "eidos" / "SKILL.md").exists()
+    assert "targets=codex:.codex/skills" in (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
     assert len([d for d in (codex_dir / "skills").iterdir() if d.is_dir()]) == 4
 
     manifest = orjson.loads((codex_dir / "plugin.json").read_bytes())
@@ -417,7 +421,7 @@ def test_plugin_install_and_uninstall_codex(tmp_path):
 
 
 def test_plugin_install_and_uninstall_copilot(tmp_path):
-    """Verify GitHub Copilot installation creates native plugin (.github/plugin/), skills (.github/skills/), settings, and instructions."""
+    """Verify GitHub Copilot installation creates plugin (.github/plugin/), skills, settings, and the root AGENTS.md block."""
     results = install_plugin(target=PluginInstallTarget.COPILOT, project_dir=tmp_path, force=True)
     assert len(results) == 1
     assert results[0].success
@@ -448,12 +452,10 @@ def test_plugin_install_and_uninstall_copilot(tmp_path):
     assert not (tmp_path / ".github" / "copilot" / "mcp.json").exists()
     assert not (tmp_path / ".vscode" / "mcp.json").exists()
 
-    # 5. Instructions bridge
+    # 5. Copilot loads root AGENTS.md natively: no copilot-instructions.md bridge (DLT-2026-121)
     instructions = tmp_path / ".github" / "copilot-instructions.md"
-    assert instructions.exists()
-    text = instructions.read_text(encoding="utf-8")
-    assert "<!-- EIDOS_COPILOT_START -->" in text
-    assert "Single Source of Truth" in text
+    assert not instructions.exists()
+    assert "targets=copilot:.github/skills" in (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
 
     # Verify get_installed_plugin_version detects Copilot plugin
     installed_ver = get_installed_plugin_version(project_dir=tmp_path)
@@ -466,23 +468,15 @@ def test_plugin_install_and_uninstall_copilot(tmp_path):
     assert not copilot_plugin.exists()
     assert not (copilot_skills / "eidos").exists()
     assert not copilot_settings.exists()
-    assert not instructions.exists()
 
-    # Test preserving custom instructions
+    # A user-authored copilot-instructions.md is never touched by install or uninstall
     custom_header = "# Team Instructions\nFollow our team rules.\n"
     instructions.parent.mkdir(parents=True, exist_ok=True)
     instructions.write_text(custom_header, encoding="utf-8")
-
     install_plugin(target=PluginInstallTarget.COPILOT, project_dir=tmp_path, force=True)
-    content = instructions.read_text(encoding="utf-8")
-    assert "Follow our team rules." in content
-    assert "<!-- EIDOS_COPILOT_START -->" in content
-
+    assert instructions.read_text(encoding="utf-8") == custom_header
     uninstall_plugin(target=PluginInstallTarget.COPILOT, project_dir=tmp_path)
-    assert instructions.exists()
-    clean_content = instructions.read_text(encoding="utf-8")
-    assert "Follow our team rules." in clean_content
-    assert "<!-- EIDOS_COPILOT_START -->" not in clean_content
+    assert instructions.read_text(encoding="utf-8") == custom_header
 
 
 def test_plugin_install_and_uninstall_all_targets(tmp_path):
@@ -511,7 +505,8 @@ def test_cli_install_new_agent_shortcuts(tmp_path):
     # Aider
     res = runner.invoke(app, ["plugin", "install", "aider", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
-    assert (tmp_path / ".aider.conventions.md").exists()
+    assert (tmp_path / ".aider" / "skills" / "eidos" / "SKILL.md").exists()
+    assert "targets=aider:.aider/skills" in (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
 
     # Cline
     res = runner.invoke(app, ["plugin", "install", "cline", "--project-dir", str(tmp_path)])
@@ -532,7 +527,7 @@ def test_cli_install_new_agent_shortcuts(tmp_path):
     # Copilot
     res = runner.invoke(app, ["plugin", "install", "copilot", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
-    assert (tmp_path / ".github" / "copilot-instructions.md").exists()
+    assert not (tmp_path / ".github" / "copilot-instructions.md").exists()
     assert (tmp_path / ".github" / "skills" / "eidos" / "SKILL.md").exists()
 
     # Uninstall all
@@ -928,6 +923,99 @@ archetypes:
     assert custom_data["checks"]["living_specs"]["valid_docs"] == 1
 
 
+def test_cli_doctor_update_check(monkeypatch):
+    """Verify INV-DOCTOR-UPDATE-CHECK: eidos doctor checks PyPI via check_cli_update_status and reports updates non-blockingly."""
+    import io
+    import urllib.error
+
+    import eidos
+    from eidos.plugin.version import check_cli_update_status
+
+    class _FakeResp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self.close()
+
+    # 1. Update available: warns user in Rich table and --json while keeping healthy=True and exit_code=0
+    monkeypatch.setattr(
+        "eidos.plugin.version.urllib.request.urlopen",
+        lambda req, timeout=2.0: _FakeResp(orjson.dumps({"info": {"version": "99.0.0"}})),
+    )
+    res_table = runner.invoke(app, ["doctor"])
+    assert res_table.exit_code == 0
+    assert "CLI Update Check" in res_table.stdout
+    assert "WARN" in res_table.stdout
+    assert "99.0.0" in res_table.stdout
+    assert "uv tool upgrade eidos-ai" in res_table.stdout
+
+    res_json = runner.invoke(app, ["doctor", "--json"])
+    assert res_json.exit_code == 0
+    payload = orjson.loads(res_json.stdout)
+    assert payload["healthy"] is True
+    cli_update = payload["checks"]["cli_update"]
+    assert cli_update["ok"] is True
+    assert cli_update["status"] == "update_available"
+    assert cli_update["latest_version"] == "99.0.0"
+    assert cli_update["update_available"] is True
+    assert cli_update["upgrade_command"] == "uv tool upgrade eidos-ai"
+
+    # 2. Up to date: PASS in Rich table and status == "up_to_date" in --json
+    current_norm = check_cli_update_status(current_version=eidos.__version__, pypi_url="invalid://")
+    assert current_norm["status"] == "offline"
+    monkeypatch.setattr(
+        "eidos.plugin.version.urllib.request.urlopen",
+        lambda req, timeout=2.0: _FakeResp(orjson.dumps({"info": {"version": eidos.__version__}})),
+    )
+    res_uptodate = runner.invoke(app, ["doctor", "--json"])
+    assert res_uptodate.exit_code == 0
+    uptodate_data = orjson.loads(res_uptodate.stdout)["checks"]["cli_update"]
+    assert uptodate_data["status"] == "up_to_date"
+    assert uptodate_data["update_available"] is False
+    assert uptodate_data["upgrade_command"] is None
+
+    # 3. Newer local build ahead of PyPI release, and PEP 440 .devN build older than final release of same X.Y.Z
+    newer_status = check_cli_update_status(current_version="99.9.9")
+    assert newer_status["status"] == "newer"
+    assert newer_status["update_available"] is False
+
+    monkeypatch.setattr(
+        "eidos.plugin.version.urllib.request.urlopen",
+        lambda req, timeout=2.0: _FakeResp(orjson.dumps({"info": {"version": "0.20.2"}})),
+    )
+    dev_outdated = check_cli_update_status(current_version="0.20.2.dev3")
+    assert dev_outdated["status"] == "update_available"
+    assert dev_outdated["update_available"] is True
+
+    # 4. Offline / URLError / TimeoutError / malformed payload / EIDOS_NO_UPDATE_CHECK fallback
+    def _raise_url_error(req, timeout=2.0):
+        raise urllib.error.URLError("network unreachable")
+
+    monkeypatch.setattr("eidos.plugin.version.urllib.request.urlopen", _raise_url_error)
+    res_offline_table = runner.invoke(app, ["doctor"])
+    assert res_offline_table.exit_code == 0
+    assert "SKIPPED" in res_offline_table.stdout
+
+    res_offline_json = runner.invoke(app, ["doctor", "--json"])
+    assert res_offline_json.exit_code == 0
+    offline_payload = orjson.loads(res_offline_json.stdout)
+    assert offline_payload["healthy"] is True
+    assert offline_payload["checks"]["cli_update"]["status"] == "offline"
+    assert offline_payload["checks"]["cli_update"]["update_available"] is False
+
+    monkeypatch.setattr(
+        "eidos.plugin.version.urllib.request.urlopen",
+        lambda req, timeout=2.0: _FakeResp(b'{"info": {"version": "not-a-semver"}}'),
+    )
+    assert check_cli_update_status(current_version="1.0.0")["status"] == "offline"
+
+    monkeypatch.setenv("EIDOS_NO_UPDATE_CHECK", "1")
+    skipped = check_cli_update_status(current_version="1.0.0")
+    assert skipped["status"] == "offline"
+    assert "skipped" in skipped["status_text"].lower()
+
+
 def test_hooks_are_cli_native():
     """Verify INV-HOOK-CLI-NATIVE: all hooks in hooks.json invoke 'eidos hook' directly with zero wrapper scripts."""
     ref_plugin = Path("assets/plugin_reference")
@@ -1036,7 +1124,7 @@ def test_plugin_install_creates_manifest_with_hashes(tmp_path):
     assert codex_manifest_file.exists()
     codex_manifest = orjson.loads(codex_manifest_file.read_bytes())
     assert "plugin.json" in codex_manifest["files"]
-    assert "rules.md" in codex_manifest["files"]
+    assert "rules.md" not in codex_manifest["files"]
     assert "skills/eidos/SKILL.md" in codex_manifest["files"]
 
     # 3. Test COPILOT target manifest
@@ -1064,7 +1152,7 @@ def test_plugin_uninstall_preserves_unmanifested_user_files(tmp_path):
 
     install_plugin(target=PluginInstallTarget.CODEX, project_dir=tmp_path, force=True)
     assert (codex_dir / MANIFEST_FILENAME).exists()
-    assert (codex_dir / "rules.md").exists()
+    assert (codex_dir / "plugin.json").exists()
     assert user_file.exists()
     assert user_skill_file.exists()
 
@@ -1074,7 +1162,6 @@ def test_plugin_uninstall_preserves_unmanifested_user_files(tmp_path):
 
     # Manifest-tracked files removed
     assert not (codex_dir / MANIFEST_FILENAME).exists()
-    assert not (codex_dir / "rules.md").exists()
     assert not (codex_dir / "plugin.json").exists()
     assert not (codex_dir / "skills" / "eidos").exists()
 
@@ -1106,50 +1193,44 @@ def test_plugin_uninstall_preserves_unmanifested_user_files(tmp_path):
 
 
 def test_plugin_install_force_false_prevents_overwriting(tmp_path):
-    """Verify force=False (default) prevents overwriting pre-existing user files without --force (DLT-2026-046)."""
-    # 1. Pre-existing .codex/rules.md
-    codex_dir = tmp_path / ".codex"
-    codex_dir.mkdir(parents=True, exist_ok=True)
-    rules_file = codex_dir / "rules.md"
-    rules_file.write_text("# Custom User Rules\n", encoding="utf-8")
+    """Verify force=False (default) prevents overwriting pre-existing user files without --force (DLT-2026-046, DLT-2026-121)."""
+    # 1. Pre-existing, user-modified Codex skill file
+    codex_skill = tmp_path / ".codex" / "skills" / "eidos" / "SKILL.md"
+    codex_skill.parent.mkdir(parents=True, exist_ok=True)
+    codex_skill.write_text("# Custom User Skill\n", encoding="utf-8")
 
-    # Install without force (default force=False)
     install_plugin(target=PluginInstallTarget.CODEX, project_dir=tmp_path, force=False)
-    assert rules_file.read_text(encoding="utf-8") == "# Custom User Rules\n", (
-        "rules.md should NOT be overwritten when force=False"
+    assert codex_skill.read_text(encoding="utf-8") == "# Custom User Skill\n", (
+        "SKILL.md should NOT be overwritten when force=False"
     )
 
-    # Install with force=True
     install_plugin(target=PluginInstallTarget.CODEX, project_dir=tmp_path, force=True)
-    assert "Eidos Architectural Governance" in rules_file.read_text(encoding="utf-8"), (
-        "rules.md SHOULD be overwritten when force=True"
-    )
+    assert "name: eidos" in codex_skill.read_text(encoding="utf-8"), "SKILL.md SHOULD be overwritten when force=True"
 
-    # 2. Pre-existing .aider.conventions.md
+    # 2. User-authored legacy-named files are never written by install, with or without force
+    rules_file = tmp_path / ".codex" / "rules.md"
+    rules_file.write_text("# Custom User Rules\n", encoding="utf-8")
     conv_file = tmp_path / ".aider.conventions.md"
     conv_file.write_text("# Custom User Aider Conventions\n", encoding="utf-8")
-
-    install_plugin(target=PluginInstallTarget.AIDER, project_dir=tmp_path, force=False)
-    assert conv_file.read_text(encoding="utf-8") == "# Custom User Aider Conventions\n", (
-        ".aider.conventions.md should NOT be overwritten when force=False"
-    )
-
-    install_plugin(target=PluginInstallTarget.AIDER, project_dir=tmp_path, force=True)
-    assert "Eidos Living Specifications & Architectural Conventions" in conv_file.read_text(encoding="utf-8")
+    for force in (False, True):
+        install_plugin(target=PluginInstallTarget.CODEX, project_dir=tmp_path, force=force)
+        install_plugin(target=PluginInstallTarget.AIDER, project_dir=tmp_path, force=force)
+        assert rules_file.read_text(encoding="utf-8") == "# Custom User Rules\n"
+        assert conv_file.read_text(encoding="utf-8") == "# Custom User Aider Conventions\n"
 
     # 3. CLI default force=False
-    cli_codex = tmp_path / "cli_test"
-    cli_rules = cli_codex / ".codex" / "rules.md"
-    cli_rules.parent.mkdir(parents=True, exist_ok=True)
-    cli_rules.write_text("# User Rules CLI\n", encoding="utf-8")
+    cli_root = tmp_path / "cli_test"
+    cli_skill = cli_root / ".codex" / "skills" / "eidos" / "SKILL.md"
+    cli_skill.parent.mkdir(parents=True, exist_ok=True)
+    cli_skill.write_text("# User Skill CLI\n", encoding="utf-8")
 
-    res = runner.invoke(app, ["plugin", "install", "codex", "-p", str(cli_codex)])
+    res = runner.invoke(app, ["plugin", "install", "codex", "-p", str(cli_root)])
     assert res.exit_code == 0
-    assert cli_rules.read_text(encoding="utf-8") == "# User Rules CLI\n"
+    assert cli_skill.read_text(encoding="utf-8") == "# User Skill CLI\n"
 
-    res_force = runner.invoke(app, ["plugin", "install", "codex", "-p", str(cli_codex), "--force"])
+    res_force = runner.invoke(app, ["plugin", "install", "codex", "-p", str(cli_root), "--force"])
     assert res_force.exit_code == 0
-    assert "Eidos Architectural Governance" in cli_rules.read_text(encoding="utf-8")
+    assert "name: eidos" in cli_skill.read_text(encoding="utf-8")
 
 
 def test_plugin_reinstall_force_false_preserves_manifest_and_uninstalls_cleanly(tmp_path):
@@ -1425,7 +1506,9 @@ def test_plugin_stop_hook_validation_uninstall_and_semver(tmp_path):
 
     aider_after = (ws / ".aider.conf.yml").read_text(encoding="utf-8")
     assert "CONVENTIONS.md" in aider_after
-    assert "AGENTS.md" not in aider_after
+    assert "model: sonnet" in aider_after
+    # DLT-2026-121: the AGENTS.md read: entry is intentionally left in place on uninstall
+    assert "AGENTS.md" in aider_after
 
     # 3. compare_semver edge cases
     assert compare_semver("0.8.0", "0.7.9") == 1
@@ -1448,12 +1531,10 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     )
     from eidos.plugin.installer import (
         _copy_plugin_tree,
-        _remove_copilot_instructions,
-        _remove_project_aider_conf,
         _remove_project_claude_settings,
         _uninstall_from_manifest,
+        _update_project_aider_conf,
         _update_project_claude_settings,
-        _write_copilot_instructions,
         locate_plugin_bundle,
     )
     from eidos.plugin.validator import _load_bundled_schema, validate_plugin_package
@@ -1575,14 +1656,7 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     assert handle_stop_hook({}, tmp_path / "missing_eidos_dir") == {"decision": "allow"}
     assert execute_hook(path=tmp_path / "missing_eidos_dir", stdin_data="") == 0
 
-    # 5. plugin/installer.py helper edge cases: _write_copilot_instructions / _remove_copilot_instructions,
-    # and _uninstall_from_manifest when .eidos-manifest.json is absent
-    cop_file = tmp_path / "cop_test" / "copilot-instructions.md"
-    _write_copilot_instructions(cop_file, force=True)
-    _write_copilot_instructions(cop_file, force=True)  # updates existing block in-place
-    assert _remove_copilot_instructions(cop_file) is True
-    assert not cop_file.exists()
-
+    # 5. plugin/installer.py helper edge cases: _uninstall_from_manifest when .eidos-manifest.json is absent
     no_manifest_dir = tmp_path / "no_manifest_dir"
     _copy_plugin_tree(locate_plugin_bundle(), no_manifest_dir, force=True)
     (no_manifest_dir / ".eidos-manifest.json").unlink(missing_ok=True)
@@ -1702,7 +1776,7 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     subprocess.run(["git", "commit", "-m", "clean init"], cwd=hook_ws, check=True, capture_output=True)
     assert execute_hook(path=hook_ws, stdin_data="") == 0
 
-    # 6e. plugin/installer.py: _remove_project_aider_conf / _update_project_claude_settings / _remove_project_claude_settings branches
+    # 6e. plugin/installer.py: _update_project_aider_conf / _update_project_claude_settings / _remove_project_claude_settings branches
     c_settings = tmp_path / "claude_settings_edge" / "settings.json"
     assert _remove_project_claude_settings(c_settings) is False
     c_settings.parent.mkdir(parents=True, exist_ok=True)
@@ -1712,16 +1786,21 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     assert _remove_project_claude_settings(c_settings) is True
     assert not c_settings.exists()
 
-    # _remove_project_aider_conf with missing file, invalid YAML, non-dict YAML, and remaining key
+    # _update_project_aider_conf with missing file, invalid YAML, scalar read:, and an existing AGENTS.md entry
+    from eidos.core.spec.parser import safe_load_yaml
+
     aider_f = tmp_path / ".aider.conf.yml"
-    assert _remove_project_aider_conf(aider_f) is False
+    _update_project_aider_conf(aider_f)
+    assert safe_load_yaml(aider_f.read_text(encoding="utf-8")) == {"read": ["AGENTS.md"]}
     aider_f.write_text(": [broken", encoding="utf-8")
-    assert _remove_project_aider_conf(aider_f) is False
-    aider_f.write_text("- item1\n", encoding="utf-8")
-    assert _remove_project_aider_conf(aider_f) is False
-    aider_f.write_text("read:\n  - .aider.conventions.md\nmodel: sonnet\n", encoding="utf-8")
-    assert _remove_project_aider_conf(aider_f) is True
-    assert aider_f.exists() and "model: sonnet" in aider_f.read_text(encoding="utf-8")
+    _update_project_aider_conf(aider_f)
+    assert safe_load_yaml(aider_f.read_text(encoding="utf-8")) == {"read": ["AGENTS.md"]}
+    aider_f.write_text("read: CONVENTIONS.md\nmodel: sonnet\n", encoding="utf-8")
+    _update_project_aider_conf(aider_f)
+    _update_project_aider_conf(aider_f)  # idempotent: never duplicates the entry
+    loaded_aider = safe_load_yaml(aider_f.read_text(encoding="utf-8"))
+    assert loaded_aider["read"] == ["CONVENTIONS.md", "AGENTS.md"]
+    assert loaded_aider["model"] == "sonnet"
 
     # 6f. Newer installed version in `plugin version` & `plugin update`, execute_hook with drift,
     #     and corrupt manifest in _copy_plugin_tree
@@ -1923,15 +2002,17 @@ def test_group_d1_d2_d3_regressions(tmp_path, monkeypatch):  # eidos:fixture
     assert "DLT-2026-801" in res_dash.stdout
     assert "DLT-2026-802" in res_dash.stdout
 
-    # --- D3.1: _write_copilot_instructions appends Eidos block to existing user copilot-instructions.md when force=False ---
+    # --- D3.1: Copilot install appends the Eidos block to an existing user AGENTS.md and leaves copilot-instructions.md alone ---
     copilot_ws = tmp_path / "copilot_ws"
     (copilot_ws / ".github").mkdir(parents=True)
     copilot_file = copilot_ws / ".github" / "copilot-instructions.md"
     copilot_file.write_text("# Team Custom Instructions\nAlways write tests.\n", encoding="utf-8")
+    (copilot_ws / "AGENTS.md").write_text("# Team Agents\nUse pnpm.\n", encoding="utf-8")
     install_plugin(target=PluginInstallTarget.COPILOT, project_dir=copilot_ws, force=False)
-    merged_copilot = copilot_file.read_text(encoding="utf-8")
-    assert "# Team Custom Instructions" in merged_copilot
-    assert "<!-- EIDOS_COPILOT_START -->" in merged_copilot
+    assert copilot_file.read_text(encoding="utf-8") == "# Team Custom Instructions\nAlways write tests.\n"
+    merged_agents = (copilot_ws / "AGENTS.md").read_text(encoding="utf-8")
+    assert merged_agents.startswith("# Team Agents\nUse pnpm.\n")
+    assert "<!-- eidos:begin agents-md " in merged_agents
 
     # --- D3.2: Re-running install_plugin(force=False) preserves manifest entries so uninstall removes plugin files ---
     reinstall_ws = tmp_path / "reinstall_ws"
@@ -2009,3 +2090,397 @@ def test_sdist_and_multi_root_plugin_reference_resolution(tmp_path, monkeypatch)
     assert ws_assets.get_assets_root() == (valid_cwd / "assets").resolve()
     assert ws_assets.get_plugin_reference_dir() == valid_plugin_ref.resolve()
     assert locate_plugin_bundle() == valid_plugin_ref.resolve()
+
+
+# ---------------------------------------------------------------------------
+# DLT-2026-121: skill guardrails and the canonical AGENTS.md managed block
+# ---------------------------------------------------------------------------
+
+_SKILLS_DIR = Path(__file__).parent.parent / "assets" / "plugin_reference" / "skills"
+_AGENTS_MD_TEMPLATE = Path(__file__).parent.parent / "assets" / "plugin_reference" / "agents-md" / "block.md"
+
+# No-growth word ceilings (post-tightening size rounded up to the next 50; never above the pre-DLT-2026-121 size).
+# Raising a ceiling is a deliberate decision: edit this table in the same change that grows the skill.
+_SKILL_WORD_CEILINGS = {"eidos": 2050, "eidos-spec": 2250, "eidos-plan": 1650, "eidos-ops": 850}
+
+
+def _skill_frontmatter_and_body(skill_md: Path) -> tuple[dict, str]:
+    from eidos.core.spec.parser import safe_load_yaml, split_frontmatter_and_body
+
+    fm_raw, body = split_frontmatter_and_body(skill_md.read_text(encoding="utf-8"))
+    return safe_load_yaml(fm_raw), body
+
+
+def test_bundled_skill_size_ceilings():
+    """Verify INV-PLUGIN-SKILL-SIZE-CEILING: bundled skills, descriptions, and the AGENTS.md block cannot grow unchecked."""
+    from eidos.plugin.installer import TARGET_ADAPTERS, render_agents_md_block
+
+    skill_dirs = sorted(d.name for d in _SKILLS_DIR.iterdir() if d.is_dir())
+    assert skill_dirs == sorted(_SKILL_WORD_CEILINGS), "every bundled skill needs an explicit word ceiling"
+    for name, ceiling in _SKILL_WORD_CEILINGS.items():
+        fm, body = _skill_frontmatter_and_body(_SKILLS_DIR / name / "SKILL.md")
+        words = len(body.split())
+        assert words <= ceiling, f"{name}/SKILL.md body has {words} words (ceiling {ceiling})"
+        assert len(fm["description"]) <= 400, f"{name} description is {len(fm['description'])} chars (max 400)"
+
+    template = _AGENTS_MD_TEMPLATE.read_text(encoding="utf-8")
+    assert len(template.split()) <= 250, "agents-md/block.md template exceeds 250 words"
+    all_targets = {a.name: a.skills_dir() for a in TARGET_ADAPTERS.values() if a.skills_dir()}
+    assert len(all_targets) == len(TARGET_ADAPTERS)
+    assert len(render_agents_md_block(template, all_targets).split()) <= 320
+
+
+def _cli_parity_violations(text: str) -> list[str]:
+    """Return eidos command paths / long options in ``text`` that do not resolve against the live Typer app."""
+    import re
+
+    import typer
+
+    root = typer.main.get_command(app)
+    violations: list[str] = []
+    for line in text.splitlines():
+        for match in re.finditer(r"(?<![\w/.-])eidos ([^`|\n]*)", line):
+            tokens = match.group(1).split()
+            cmd, path = root, []
+            for tok in tokens:
+                subs = getattr(cmd, "commands", None)
+                if subs is not None and tok in subs:
+                    cmd, path = subs[tok], [*path, tok]
+                else:
+                    break
+            if not path:
+                continue  # prose such as "eidos living specs" or "eidos/"
+            rest = tokens[len(path) :]
+            if getattr(cmd, "commands", None) is not None:
+                if rest and re.fullmatch(r"[a-z][a-z0-9-]*", rest[0]):
+                    violations.append(f"unknown subcommand: eidos {' '.join(path)} {rest[0]}")
+                continue
+            valid = {"--help"}
+            for param in cmd.params:
+                valid.update(getattr(param, "opts", []))
+                valid.update(getattr(param, "secondary_opts", []))
+            for tok in rest:
+                opt = tok.split("=", 1)[0].rstrip(",.;:)")
+                if re.fullmatch(r"--[a-z][a-z0-9-]*", opt) and opt not in valid:
+                    violations.append(f"unknown option: eidos {' '.join(path)} {opt}")
+    return violations
+
+
+def test_bundled_skill_cli_parity():
+    """Verify INV-PLUGIN-SKILL-CLI-PARITY: every eidos command and option in skills and the AGENTS.md block exists."""
+    sources = [*sorted(_SKILLS_DIR.glob("*/SKILL.md")), _AGENTS_MD_TEMPLATE]
+    checked = 0
+    for src in sources:
+        text = src.read_text(encoding="utf-8")
+        checked += text.count("eidos ")
+        assert _cli_parity_violations(text) == [], f"stale CLI references in {src}"
+    assert checked > 100, "parity scan unexpectedly found almost no eidos invocations"
+
+    # Negative cases: removed flags and subcommands are caught; prose, placeholders, and other tools are ignored.
+    bad = "Run `eidos context -f x --no-such-flag` then `eidos index frobnicate`."
+    assert _cli_parity_violations(bad) == [
+        "unknown option: eidos context --no-such-flag",
+        "unknown subcommand: eidos index frobnicate",
+    ]
+    ok = "Use `uv run eidos drift --uncommitted --json`, `uv tool install --python 3.14 eidos-ai`, eidos living specs."
+    assert _cli_parity_violations(ok) == []
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "create",
+        "append",
+        "move_and_update",
+        "idempotent",
+        "user_edit",
+        "crlf",
+        "bom",
+        "opt_out",
+        "fenced_example",
+        "malformed",
+        "symlink",
+    ],
+)
+def test_managed_block_preserves_user_content(tmp_path, case):
+    """Verify INV-PLUGIN-MANAGED-BLOCK-SAFETY: Eidos only touches text between its own markers in shared files."""
+    from eidos.plugin.managed_block import BlockStatus, content_hash, read_managed_block, upsert_managed_block
+
+    path = tmp_path / "AGENTS.md"
+
+    def render(targets):
+        return "rules\n" + "".join(f"- {d}\n" for d in targets.values())
+
+    if case == "create":
+        res = upsert_managed_block(path, "agents-md", render, target="claude", skills_dir=".claude/skills")
+        assert res.status is BlockStatus.CREATED
+        text = path.read_text(encoding="utf-8")
+        assert text.startswith("<!-- eidos:begin agents-md sha256:") and text.endswith("<!-- eidos:end agents-md -->\n")
+        assert "targets=claude:.claude/skills" in text
+
+    elif case == "append":
+        user = "# Team\nRun pnpm test.\n\n"
+        path.write_text(user, encoding="utf-8")
+        res = upsert_managed_block(path, "agents-md", render, target="aider", skills_dir=".aider/skills")
+        assert res.status is BlockStatus.APPENDED
+        assert path.read_text(encoding="utf-8").startswith(user)
+
+    elif case == "move_and_update":
+        upsert_managed_block(path, "agents-md", render, target="aider", skills_dir=".aider/skills")
+        block = path.read_text(encoding="utf-8")
+        before, after = "# Intro\nuser line 1\n\n", "\n## Team notes\nuser line 2\n"
+        path.write_text(before + block + after, encoding="utf-8")
+        res = upsert_managed_block(path, "agents-md", render, target="claude", skills_dir=".claude/skills")
+        assert res.status is BlockStatus.UPDATED
+        text = path.read_text(encoding="utf-8")
+        assert text.startswith(before) and text.endswith(after)
+        assert "targets=aider:.aider/skills,claude:.claude/skills" in text
+        assert res.targets == {"aider": ".aider/skills", "claude": ".claude/skills"}
+
+    elif case == "idempotent":
+        upsert_managed_block(path, "agents-md", render, target="claude", skills_dir=".claude/skills")
+        first = path.read_bytes()
+        mtime = path.stat().st_mtime_ns
+        res = upsert_managed_block(path, "agents-md", render, target="claude", skills_dir=".claude/skills")
+        assert res.status is BlockStatus.UNCHANGED
+        assert path.read_bytes() == first and path.stat().st_mtime_ns == mtime
+
+    elif case == "user_edit":
+        upsert_managed_block(path, "agents-md", render, target="claude", skills_dir=".claude/skills")
+        edited = path.read_text(encoding="utf-8").replace("rules\n", "rules (team tweak)\n")
+        path.write_text(edited, encoding="utf-8")
+        res = upsert_managed_block(path, "agents-md", render, target="claude", skills_dir=".claude/skills")
+        assert res.status is BlockStatus.MODIFIED
+        assert path.read_text(encoding="utf-8") == edited
+        res = upsert_managed_block(path, "agents-md", render, target="claude", skills_dir=".claude/skills", force=True)
+        assert res.status is BlockStatus.UPDATED
+        assert "team tweak" not in path.read_text(encoding="utf-8")
+
+    elif case == "crlf":
+        upsert_managed_block(path, "agents-md", render, target="claude", skills_dir=".claude/skills")
+        crlf = ("# Team\r\n\r\n" + path.read_text(encoding="utf-8")).replace("\n", "\r\n").replace("\r\r\n", "\r\n")
+        path.write_bytes(crlf.encode("utf-8"))
+        res = upsert_managed_block(path, "agents-md", render, target="claude", skills_dir=".claude/skills")
+        assert res.status is BlockStatus.UNCHANGED, "a CRLF conversion must not be mistaken for a user edit"
+        res = upsert_managed_block(path, "agents-md", render, target="cline", skills_dir=".cline/skills")
+        assert res.status is BlockStatus.UPDATED
+        out = path.read_bytes().decode("utf-8")
+        assert out.startswith("# Team\r\n\r\n") and "\n" not in out.replace("\r\n", "")
+        block = read_managed_block(path, "agents-md")
+        assert block is not None and block.sha == content_hash(block.inner)
+
+    elif case == "bom":
+        path.write_bytes(b"\xef\xbb\xbf# Team\n")
+        upsert_managed_block(path, "agents-md", render, target="claude", skills_dir=".claude/skills")
+        assert path.read_bytes().startswith(b"\xef\xbb\xbf# Team\n\n<!-- eidos:begin agents-md")
+
+    elif case == "opt_out":
+        user = "# Team\n<!-- eidos:agents-md off -->\n"
+        path.write_text(user, encoding="utf-8")
+        res = upsert_managed_block(path, "agents-md", render, target="claude", skills_dir=".claude/skills")
+        assert res.status is BlockStatus.OPTED_OUT
+        assert path.read_text(encoding="utf-8") == user
+
+    elif case == "fenced_example":
+        fenced = (
+            "# Docs\n"
+            "Add `<!-- eidos:agents-md off -->` on its own line to opt out.\n"
+            "```markdown\n"
+            "<!-- eidos:begin agents-md sha256:000000000000 -->\n"
+            "example\n"
+            "<!-- eidos:end agents-md -->\n"
+            "<!-- eidos:agents-md off -->\n"
+            "```\n"
+        )
+        path.write_text(fenced, encoding="utf-8")
+        res = upsert_managed_block(path, "agents-md", render, target="claude", skills_dir=".claude/skills", force=True)
+        assert res.status is BlockStatus.APPENDED
+        out = path.read_text(encoding="utf-8")
+        assert out.startswith(fenced)
+        assert out.count("<!-- eidos:begin agents-md ") == 2
+
+    elif case == "malformed":
+        for user in (
+            "# Team\n<!-- eidos:begin agents-md sha256:000000000000 -->\nno end marker\n",
+            "<!-- eidos:end agents-md -->\n<!-- eidos:begin agents-md -->\n",
+            "<!-- eidos:begin agents-md -->\na\n<!-- eidos:end agents-md -->\n<!-- eidos:begin agents-md -->\n",
+        ):
+            path.write_text(user, encoding="utf-8")
+            res = upsert_managed_block(path, "agents-md", render, target="claude", skills_dir=".claude/skills")
+            assert res.status is BlockStatus.MALFORMED and "line" in res.detail
+            assert path.read_text(encoding="utf-8") == user
+
+    elif case == "symlink":
+        real = tmp_path / "real.md"
+        real.write_text("# Real\n", encoding="utf-8")
+        path.symlink_to(real)
+        with pytest.raises(FileExistsError):
+            upsert_managed_block(path, "agents-md", render, target="claude", skills_dir=".claude/skills")
+        assert real.read_text(encoding="utf-8") == "# Real\n"
+
+
+@pytest.mark.parametrize("target", [t for t in PluginInstallTarget if t is not PluginInstallTarget.ALL])
+def test_agents_md_fresh_install_all_targets(tmp_path, target):
+    """Verify every target's fresh install projects exactly one AGENTS.md block and no retired bridge files."""
+    from eidos.plugin.installer import MANIFEST_FILENAME, TARGET_ADAPTERS
+    from eidos.plugin.managed_block import read_managed_block
+
+    skills_dir = TARGET_ADAPTERS[target].skills_dir()
+    for user_content in (None, "# Team rules\nRun make test.\n"):
+        ws = tmp_path / ("with_user" if user_content else "empty")
+        ws.mkdir()
+        agents_md = ws / "AGENTS.md"
+        if user_content:
+            agents_md.write_text(user_content, encoding="utf-8")
+
+        install_plugin(target=target, project_dir=ws, force=True)
+        text = agents_md.read_text(encoding="utf-8")
+        assert text.count("<!-- eidos:begin agents-md ") == 1
+        if user_content:
+            assert text.startswith(user_content)
+        block = read_managed_block(agents_md, "agents-md")
+        assert block is not None and block.targets == {target.value: skills_dir}
+        assert f"`{skills_dir}/<skill>/SKILL.md`" in block.inner
+        assert (ws / skills_dir / "eidos" / "SKILL.md").exists()
+
+        # Idempotent re-install and update
+        snapshot = agents_md.read_bytes()
+        install_plugin(target=target, project_dir=ws, force=False)
+        runner.invoke(app, ["plugin", "update", target.value, "--project-dir", str(ws)])
+        assert agents_md.read_bytes() == snapshot
+
+        # Retired per-harness bridges are never created
+        for retired in (".cursor/rules/eidos.mdc", ".codex/rules.md", ".aider.conventions.md"):
+            assert not (ws / retired).exists(), retired
+        assert not (ws / ".github" / "copilot-instructions.md").exists()
+
+        # Shared user files are never recorded in any installation manifest
+        for manifest in ws.rglob(MANIFEST_FILENAME):
+            files = orjson.loads(manifest.read_bytes()).get("files", {})
+            assert not {"AGENTS.md", "CLAUDE.md", ".aider.conf.yml"} & set(files)
+
+
+def test_agents_md_shared_across_targets(tmp_path):
+    """Verify several targets share one deterministic AGENTS.md block regardless of install order (DLT-2026-121)."""
+    order_a, order_b = tmp_path / "a", tmp_path / "b"
+    for ws, order in ((order_a, ["aider", "claude"]), (order_b, ["claude", "aider"])):
+        ws.mkdir()
+        for name in order:
+            install_plugin(target=PluginInstallTarget(name), project_dir=ws, force=True)
+    text_a = (order_a / "AGENTS.md").read_text(encoding="utf-8")
+    assert text_a == (order_b / "AGENTS.md").read_text(encoding="utf-8")
+    assert "targets=aider:.aider/skills,claude:.claude/skills" in text_a
+    assert text_a.index("`.aider/skills/") < text_a.index("`.claude/skills/")
+
+    all_ws = tmp_path / "all"
+    all_ws.mkdir()
+    install_plugin(target=PluginInstallTarget.ALL, project_dir=all_ws, force=True)
+    all_text = (all_ws / "AGENTS.md").read_text(encoding="utf-8")
+    for skills_dir in (".agents/plugins/eidos/skills", ".cursor/skills", ".claude/skills", ".aider/skills"):
+        assert f"`{skills_dir}/<skill>/SKILL.md`" in all_text
+    for skills_dir in (".cline/skills", ".opencode/skills", ".codex/skills", ".github/skills"):
+        assert f"`{skills_dir}/<skill>/SKILL.md`" in all_text
+
+    # In-repo --dest participates as custom:<dest>/skills; an out-of-repo --dest leaves AGENTS.md untouched
+    dest_ws = tmp_path / "dest_ws"
+    dest_ws.mkdir()
+    install_plugin(dest_path=Path("tools/eidos"), project_dir=dest_ws, force=True)
+    assert "targets=custom:tools/eidos/skills" in (dest_ws / "AGENTS.md").read_text(encoding="utf-8")
+    outside_ws = tmp_path / "outside_ws"
+    outside_ws.mkdir()
+    res = install_plugin(dest_path=tmp_path / "elsewhere", project_dir=outside_ws, force=True)
+    assert not (outside_ws / "AGENTS.md").exists()
+    assert "outside the repository" in res[0].message
+
+    # Shared skills directory (project + antigravity) is rendered once, and uninstalled targets are pruned on next install
+    install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=all_ws, force=True)
+    shared_text = (all_ws / "AGENTS.md").read_text(encoding="utf-8")
+    assert shared_text.count("`.agents/plugins/eidos/skills/<skill>/SKILL.md`") == 1
+    uninstall_plugin(target=PluginInstallTarget.AIDER, project_dir=order_a)
+    install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=order_a, force=True)
+    pruned_text = (order_a / "AGENTS.md").read_text(encoding="utf-8")
+    assert "targets=claude:.claude/skills " in pruned_text and "aider:" not in pruned_text
+    assert "`.aider/skills/" not in pruned_text
+
+    # Opt-out is a silent user preference (never a Warning in the install message)
+    opt_ws = tmp_path / "opt_ws"
+    opt_ws.mkdir()
+    (opt_ws / "AGENTS.md").write_text("# Team\n<!-- eidos:agents-md off -->\n", encoding="utf-8")
+    opt_res = install_plugin(target=PluginInstallTarget.CURSOR, project_dir=opt_ws, force=True)
+    assert "Warning:" not in opt_res[0].message
+
+    # update_plugin never forces a hand-edited block, while an explicit install --force does
+    all_text = (all_ws / "AGENTS.md").read_text(encoding="utf-8")
+    edited = all_text.replace("## Eidos Living Specifications", "## Eidos Living Specifications (team edit)")
+    (all_ws / "AGENTS.md").write_text(edited, encoding="utf-8")
+    res_update = runner.invoke(app, ["plugin", "update", "claude", "--project-dir", str(all_ws)])
+    assert res_update.exit_code == 0
+    assert (all_ws / "AGENTS.md").read_text(encoding="utf-8") == edited
+    res_force = runner.invoke(app, ["plugin", "install", "claude", "--project-dir", str(all_ws), "--force"])
+    assert res_force.exit_code == 0
+    assert (all_ws / "AGENTS.md").read_text(encoding="utf-8") == all_text
+
+
+def test_claude_import_block(tmp_path):
+    """Verify the Claude target imports @AGENTS.md from CLAUDE.md without clobbering user content (DLT-2026-121)."""
+    fresh = tmp_path / "fresh"
+    fresh.mkdir()
+    install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=fresh, force=True)
+    claude_md = (fresh / "CLAUDE.md").read_text(encoding="utf-8")
+    assert "<!-- eidos:begin claude-import " in claude_md and "\n@AGENTS.md\n" in claude_md
+
+    user_ws = tmp_path / "user"
+    user_ws.mkdir()
+    user_claude = "# Project memory\nPrefer small PRs.\n"
+    (user_ws / "CLAUDE.md").write_text(user_claude, encoding="utf-8")
+    install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=user_ws, force=True)
+    merged = (user_ws / "CLAUDE.md").read_text(encoding="utf-8")
+    assert merged.startswith(user_claude) and "\n@AGENTS.md\n" in merged
+    uninstall_plugin(target=PluginInstallTarget.CLAUDE, project_dir=user_ws)
+    assert (user_ws / "CLAUDE.md").read_text(encoding="utf-8") == merged  # left in place by design
+
+    already = tmp_path / "already"
+    already.mkdir()
+    existing = "# Memory\n@AGENTS.md\n"
+    (already / "CLAUDE.md").write_text(existing, encoding="utf-8")
+    install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=already, force=True)
+    assert (already / "CLAUDE.md").read_text(encoding="utf-8") == existing
+
+
+def test_aider_read_entry(tmp_path):
+    """Verify the Aider target adds AGENTS.md to read: once and preserves user keys and entries (DLT-2026-121)."""
+    from eidos.core.spec.parser import safe_load_yaml
+
+    conf = tmp_path / ".aider.conf.yml"
+    conf.write_text("model: sonnet\nread:\n  - CONVENTIONS.md\n", encoding="utf-8")
+    install_plugin(target=PluginInstallTarget.AIDER, project_dir=tmp_path, force=True)
+    install_plugin(target=PluginInstallTarget.AIDER, project_dir=tmp_path, force=True)
+    data = safe_load_yaml(conf.read_text(encoding="utf-8"))
+    assert data["model"] == "sonnet"
+    assert data["read"] == ["CONVENTIONS.md", "AGENTS.md"]
+
+
+def test_agents_md_symlink_layouts_never_abort_install(tmp_path):
+    """Verify symlinked AGENTS.md / CLAUDE.md layouts are left untouched and never abort an install (DLT-2026-121)."""
+    # CLAUDE.md -> AGENTS.md: the block lands in AGENTS.md and Claude Code already loads it, so no import is needed
+    ws = tmp_path / "claude_link"
+    ws.mkdir()
+    (ws / "AGENTS.md").write_text("# Team\n", encoding="utf-8")
+    (ws / "CLAUDE.md").symlink_to("AGENTS.md")
+    res = install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=ws, force=True)
+    assert res[0].success and "Warning" not in res[0].message
+    assert (ws / "CLAUDE.md").is_symlink()
+    text = (ws / "AGENTS.md").read_text(encoding="utf-8")
+    assert text.startswith("# Team\n") and "claude-import" not in text and "<!-- eidos:begin agents-md " in text
+
+    # AGENTS.md -> elsewhere: never written through; install still succeeds and reports a warning
+    ws2 = tmp_path / "agents_link"
+    ws2.mkdir()
+    real = tmp_path / "shared_agents.md"
+    real.write_text("# Shared\n", encoding="utf-8")
+    (ws2 / "AGENTS.md").symlink_to(real)
+    res2 = install_plugin(target=PluginInstallTarget.CURSOR, project_dir=ws2, force=True)
+    assert res2[0].success
+    assert "Warning: AGENTS.md block not updated (skipped" in res2[0].message
+    assert real.read_text(encoding="utf-8") == "# Shared\n"
+    assert (ws2 / ".cursor" / "skills" / "eidos" / "SKILL.md").exists()

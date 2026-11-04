@@ -4,7 +4,7 @@ id: CAP-AGENT-001
 title: "Universal Agent Adapter & Context Slicing Engine"
 domain: DOM-AGENT-INTELLIGENCE
 status: active
-version: "1.8.2"
+version: "1.10.0"
 
 business:
   personas:
@@ -22,6 +22,8 @@ technical:
     - "CNT-EIDOS-INDEX"
     - "CNT-EIDOS-PLUGIN"
   components:
+    - "CMP-CLI-DOCTOR-HOOKS"
+    - "CMP-PLUGIN-INSTALLER"
     - "CMP-SEMANTIC-EMBEDDING-ENGINE"
   contracts:
     - "CTR-EIDOS-CLI"
@@ -29,6 +31,18 @@ technical:
     - id: INV-AGENT-ZERO-AI-DEPENDENCY
       rule: "Eidos must never initiate calls to AI/LLM APIs directly, functioning strictly as a deterministic substrate for external coding agents."
       test_binding: "tests/test_policy_zero_ai.py::test_pyproject_contains_zero_ai_dependencies"
+    - id: INV-PLUGIN-SKILL-SIZE-CEILING
+      rule: "Bundled skills must not grow: each SKILL.md body stays within its per-skill word ceiling (post-DLT-2026-121 size rounded up to the next 50, never above the pre-delta size), every skill description is at most 400 characters, the AGENTS.md block template is at most 250 words, and the block rendered with every install target's skill location is at most 320 words."
+      test_binding: "tests/test_plugin.py::test_bundled_skill_size_ceilings"
+    - id: INV-PLUGIN-SKILL-CLI-PARITY
+      rule: "Every eidos command path and long option that appears in an eidos invocation in the bundled skills or the AGENTS.md block template must resolve against the live Typer command tree (options checked against the resolved subcommand), so agents are never told to run removed or renamed commands."
+      test_binding: "tests/test_plugin.py::test_bundled_skill_cli_parity"
+    - id: INV-PLUGIN-MANAGED-BLOCK-SAFETY
+      rule: "On install and update, Eidos may only create or replace text between its own named managed block markers in shared instruction files (AGENTS.md, CLAUDE.md): user content outside the markers survives byte-for-byte, malformed markers cause a no-write error, hand-edited blocks (LF-normalized sha256 mismatch) are not overwritten without an explicit install --force, and an unchanged block is never rewritten."
+      test_binding: "tests/test_plugin.py::test_managed_block_preserves_user_content"
+    - id: INV-DOCTOR-UPDATE-CHECK
+      rule: "eidos doctor must check for newer eidos-ai releases on PyPI via check_cli_update_status with a bounded timeout, report update availability and upgrade instructions in both Rich table and --json (checks.cli_update) outputs, and remain non-blocking (healthy=True, exit code 0) when an update is available or when PyPI is unreachable."
+      test_binding: "tests/test_plugin.py::test_cli_doctor_update_check"
     - id: INV-AGENT-DRIFT-HOOK
       rule: "The stateless AI agent plugin Stop hook (eidos hook) must evaluate living specification validity, invariant test bindings, and spec-to-code synchronization via detect_drift and emit a non-blocking systemMessage warning when issues or internal errors occur."
       test_binding: "tests/test_plugin.py::test_drift_hook_stop_event_drift_detected"
@@ -69,6 +83,8 @@ In strict adherence to *POL-004*, Eidos never initiates AI/LLM calls itself. Ins
 * **Architectural Blast-Radius Analysis**: Recursive CTE impact mapping allowing agents to assess blast radius before proposing code changes.
 * **Stateless Stop Lifecycle Hook**: Single unified `Stop` hook (`eidos hook`) verifying specification schemas, cross-references, invariant test bindings, and spec-to-code synchronization via `detect_drift` and emitting non-blocking `systemMessage` warnings when drift or validation errors are detected.
 * **Non-Destructive Plugin Ecosystem Management**: Installing and removing agent plugins via `eidos plugin` (including project-native Claude Code `.claude/skills/` and `.claude/settings.json` `hooks.Stop` registration) with deterministic `.eidos-manifest.json` tracking (preventing destruction of shared parent directories and shared host settings files), non-destructive `force=False` overwrite semantics, symlink guards, and version-pinned `uvx` hook execution.
+* **Canonical `AGENTS.md` Bridge (`INV-PLUGIN-MANAGED-BLOCK-SAFETY`)**: Every install target projects one marker-delimited, hash-stamped Eidos block into the repository's root `AGENTS.md`, the instruction file every supported harness loads (Claude Code via a `CLAUDE.md` `@AGENTS.md` import, Aider via `.aider.conf.yml` `read:`). The block lists every installed skill location and never touches user-authored content outside its markers.
+* **Self-Contained, Guarded Skills (`INV-PLUGIN-SKILL-SIZE-CEILING`, `INV-PLUGIN-SKILL-CLI-PARITY`)**: The 4 bundled skills stay complete in their `SKILL.md` files with trigger-focused descriptions, no-growth word ceilings, and test-enforced parity between every referenced `eidos` command or option and the live CLI.
 
 == Tiered Context Slicing Architecture
 
@@ -88,3 +104,4 @@ Eidos implements a three-tier context compression model:
 * **Zero-Drift Freshness (`INV-AGENT-GRAPH-INDEX-FRESHNESS`)**: Every CLI query lazily checks dirty status via SHA-256 and mtime hashing, synchronizing modified specs in sub-5ms so agents never operate on stale architecture.
 * **Non-Destructive Plugin Management (`INV-PLUGIN-SCHEMA-CONFORMANCE`)**: The `eidos plugin` ecosystem ensures non-destructive installation, manifest-tracked uninstallation (`.eidos-manifest.json`), `force=False` overwrite protection, symlink traversal prevention, and version-pinned `uvx` hook commands.
 * **Stateless Stop Hook (`INV-AGENT-DRIFT-HOOK`)**: The stateless `eidos hook` command runs `detect_drift(uncommitted=True)` once on `Stop` and returns `{"decision": "allow"}` when clean or `{"decision": "allow", "systemMessage": "..."}` when specification validation, invariant, or drift issues exist.
+* **Non-Blocking PyPI Release Update Diagnostics (`INV-DOCTOR-UPDATE-CHECK`)**: `eidos doctor` queries PyPI (`https://pypi.org/pypi/eidos-ai/json`) via `check_cli_update_status` using Python stdlib `urllib.request` with a bounded 2-second timeout, reporting `checks.cli_update` in `--json` and a `CLI Update Check` row (`PASS` / `WARN` / `SKIPPED`) in the Rich table without failing `healthy` or exit code `0`.

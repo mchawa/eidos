@@ -3,6 +3,7 @@ type: tech/contract
 id: CTR-EIDOS-CLI
 title: "Eidos Command-Line Interface Contract"
 status: active
+version: "1.1.0"
 protocol: "cli_args"
 container: "CNT-EIDOS-CLI"
 specification_file: "src/eidos/cli/main.py"
@@ -118,12 +119,12 @@ Bootstraps a repository with an Eidos living specification directory skeleton, a
   - `1`: Directory already initialized without `--force`, or validation failed.
 
 === `eidos doctor [--path PATH] [--json]`
-Runs a comprehensive workspace health and configuration diagnostic across living specifications, knowledge graph index, agent plugin installations, and git hooks.
+Runs a comprehensive workspace health and configuration diagnostic across the CLI binary, non-blocking PyPI release currency (`checks.cli_update`), living specifications, knowledge graph index, and agent plugin installations.
 * **Options**:
   - `--path, -p`: Path to eidos specifications directory (defaults to `./eidos`).
-  - `--json`: Output diagnostic report in JSON format.
+  - `--json`: Output diagnostic report in JSON format (including `checks.cli_update` with `status`, `installed_version`, `latest_version`, `update_available`, and `upgrade_command`).
 * **Exit Codes**:
-  - `0`: All diagnostic checks passed.
+  - `0`: All critical workspace diagnostic checks passed (available PyPI CLI updates or offline network status remain non-blocking advisory warnings).
   - `1`: One or more critical workspace diagnostics failed.
 
 === `eidos hook [--path PATH]`

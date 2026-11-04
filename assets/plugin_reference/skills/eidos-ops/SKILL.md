@@ -1,6 +1,6 @@
 ---
 name: eidos-ops
-description: Initialize greenfield repositories with Eidos (eidos init), systematically reverse-engineer and extract living specifications from existing brownfield codebases using AST code graph intelligence (eidos index repo-map, eidos index find-symbol, eidos index search, eidos index status, eidos index semantic, eidos context), and serve or build the interactive Eidos Living Web Portal and static documentation site (eidos portal serve, eidos portal build).
+description: "Eidos setup and operations: eidos init for new repositories, extracting living specs from existing (brownfield) codebases, index and optional semantic search setup, and serving or building the Living Web Portal. Load when onboarding a repository to Eidos or maintaining the index or portal."
 ---
 # Eidos Operations: Bootstrap, Brownfield Extraction, Index & Web Portal (`eidos-ops`)
 

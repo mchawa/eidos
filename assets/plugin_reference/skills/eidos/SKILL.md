@@ -1,6 +1,6 @@
 ---
 name: eidos
-description: Master architecture and engineering orchestrator for repositories managed by Eidos. Consult before modifying code, proposing architectural changes, adding features, refactoring, or altering living specifications in eidos/. Strictly enforces living specs (NO ADRs), dual workflows (Direct vs. Planned), Discovery-First CLI intelligence (eidos context, eidos index repo-map, eidos index find-symbol, eidos index search, eidos index blast-radius), continuous drift detection (eidos drift), invariant-test traceability, and mandatory autonomous gap self-review.
+description: "Core workflow for repositories governed by Eidos living specs (eidos/). Load before editing code, tests, or specs, refactoring, adding features, or reviewing changes. Covers discovery with eidos context/index, choosing Direct vs. Planned mode, and the eidos drift/validate completion gate."
 ---
 # Eidos: Master Architecture & Engineering Orchestrator
 
@@ -12,22 +12,14 @@ You MUST follow these workflows and guardrails whenever you inspect, plan, imple
 
 ## 1. Constitutional Guardrails (Non-Negotiable)
 
-1. **Single Source of Truth**:
-   All product domains, capabilities, personas, C4 architecture containers/components, interface contracts, design systems, and policies live inside `eidos/` as structured AsciiDoc (`.adoc`) files with YAML frontmatter.
-2. **Zero ADRs**:
-   NEVER create standalone Architecture Decision Records (`docs/adr/`, `eidos/adr/`, or `ADR-*.md`). Architectural state lives in `eidos/architecture/`, durable design rationale and rejected alternatives are recorded inside the `decisions:` frontmatter block of the owning specification (`CNT-*`, `CMP-*`, `CTR-*`, `CAP-*`), and architectural transitions are governed by **SpecDeltas** (`eidos/deltas/dlt-*.adoc`).
-3. **Dual Workflow Mode Selection**:
-   Every task operates in either **Direct Mode** (fast, in-place co-evolution) or **Planned Mode** (formal SpecDelta lifecycle). Select the mode *before* writing code.
-4. **Mandatory Invariant-Test Traceability**:
-   Every capability invariant (`INV-*`) must declare a `test_binding` (`path/to/test_file::test_function`), and the bound test function must explicitly reference the `INV-*` ID in its docstring, comment, or marker.
-5. **CLI-First Discovery & Determinism**:
-   Always run Eidos knowledge graph and context CLI commands (`eidos context`, `eidos index repo-map`, `eidos index find-symbol`, `eidos index search`, `eidos index blast-radius` with `--json`) *before* falling back to raw file reads or `grep`/`find`. Never create `.adoc` specification or SpecDelta files by hand from scratch—always scaffold via `eidos spec create <type> <ID> --title "..."` or `eidos delta create --title "..." --slug --kind <kind>`, and inspect exact required/optional keys and closed sub-schemas via `eidos spec schema <type> [--json]` before adding nested frontmatter blocks.
-6. **Subagent Context Propagation**:
-   Whenever you delegate coding, refactoring, or specification work to a worker subagent, always include the relevant `eidos context --json` slice in the subagent's prompt or instruct the subagent to read `.agents/plugins/eidos/skills/eidos/SKILL.md` before editing files.
-7. **Zero Unreconciled Drift**:
-   Never conclude a task with failing specification schemas or unmanaged code-to-spec drift.
-8. **Mandatory Autonomous Pre-Completion Review**:
-   Never present work or conclude a task without executing an autonomous adversarial review pass over your diffs and requirements. Identify and resolve edge cases, missing tests, spec drift, and gaps *before* responding.
+1. **Single Source of Truth**: Domains, capabilities, personas, C4 containers/components, interface contracts, design systems, and policies live in `eidos/` as AsciiDoc (`.adoc`) files with YAML frontmatter (layout in §6).
+2. **Zero ADRs**: NEVER create standalone ADRs (`docs/adr/`, `eidos/adr/`, `ADR-*.md`). Record design rationale and rejected alternatives in the owning spec's `decisions:` block (`CNT-*`, `CMP-*`, `CTR-*`, `CAP-*`), and govern architectural transitions with SpecDeltas (`eidos/deltas/dlt-*.adoc`).
+3. **Dual Workflow Mode Selection**: Select Direct or Planned Mode *before* writing code (§3).
+4. **Mandatory Invariant-Test Traceability**: Every `INV-*` declares `test_binding: path/to/test_file::test_function`, and the bound test references the `INV-*` ID in its docstring, comment, or marker.
+5. **CLI-First Discovery & Determinism**: Run the Eidos discovery commands (§2, with `--json`) *before* raw file reads or `grep`/`find`. Never hand-write `.adoc` specs or SpecDeltas from scratch: scaffold with `eidos spec create <type> <ID> --title "..."` or `eidos delta create --title "..." --slug --kind <kind>`, and check exact keys with `eidos spec schema <type> [--json]` before adding nested frontmatter.
+6. **Subagent Context Propagation**: When delegating coding, refactoring, or spec work, include the relevant `eidos context --json` slice in the subagent's prompt, or instruct it to read the `eidos` skill (`SKILL.md`; skill locations are listed in the root `AGENTS.md`) before editing files.
+7. **Zero Unreconciled Drift**: Never conclude a task with failing schemas or unmanaged spec-to-code drift (§5, Stage 1).
+8. **Mandatory Autonomous Pre-Completion Review**: Never present work without the adversarial self-review of your diff and requirements, fixing every gap before responding (§5, Stage 2).
 
 ---
 
@@ -41,11 +33,11 @@ Whenever you need to orient in the codebase, locate a symbol, search specificati
 
 | Instead of doing this... | ALWAYS run this Eidos command FIRST | Why |
 | :--- | :--- | :--- |
-| Running `find` / `ls -R` or reading many files to orient in the repository | `eidos index repo-map --max-tokens 1500` | AST-compressed structural outline (`>= 85%` token reduction) across all containers and modules. |
-| Grepping across source files for a class, function, method, or route | `eidos index find-symbol "<SymbolName>" --json` | Resolves exact `file:line` coordinates, syntax kind, and the owning `CNT-*` / `CMP-*` spec. |
-| Grepping `eidos/` for domain concepts, rules, capabilities, or prior spikes | `eidos index search "<keywords>" --json` | BM25 + deterministic synonym search (plus optional Harrier ONNX Hybrid RRF via `--semantic/--no-semantic`) across spec titles, bodies, `DEC-*`, and `INV-*`. |
-| Editing or reviewing a file (including user-attached `@[file]` paths) without knowing its governance rules | `eidos context -f <path/to/file> --json` *(or `-t "<task>"` / `-c <ID>`)* | Extracts the owning `CNT-*`/`CMP-*`, active `INV-*` test bindings, `DEC-*` rationale, and `CTR-*` contracts in one call. |
-| Guessing what breaks when modifying a container, component, contract, symbol, or file | `eidos index blast-radius <SYMBOL_OR_PATH> --depth 2 --json` | Recursive CTE k-hop graph walk resolving entity IDs, AST code symbols, spec paths, or source file paths to upstream/downstream dependents. |
+| Running `find` / `ls -R` or reading many files to orient in the repository | `eidos index repo-map --max-tokens 1500` | AST outline of all containers and modules (~85% fewer tokens). |
+| Grepping across source files for a class, function, method, or route | `eidos index find-symbol "<SymbolName>" --json` | Exact `file:line`, symbol kind, and owning `CNT-*` / `CMP-*`. |
+| Grepping `eidos/` for domain concepts, rules, capabilities, or prior spikes | `eidos index search "<keywords>" --json` | BM25 + synonym search (optional hybrid semantic via `--semantic`) over specs, `DEC-*`, and `INV-*`. |
+| Editing or reviewing a file (including user-attached `@[file]` paths) without knowing its governance rules | `eidos context -f <path/to/file> --json` *(or `-t "<task>"` / `-c <ID>`)* | Owning `CNT-*`/`CMP-*`, `INV-*` test bindings, `DEC-*` rationale, and `CTR-*` contracts in one call. |
+| Guessing what breaks when modifying a container, component, contract, symbol, or file | `eidos index blast-radius <SYMBOL_OR_PATH> --depth 2 --json` | Upstream/downstream k-hop dependents of an entity ID, symbol, spec path, or source path. |
 
 ### 2.2 Context Slicing Tiers (`eidos context`)
 

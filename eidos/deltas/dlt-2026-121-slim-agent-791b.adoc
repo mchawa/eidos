@@ -1,0 +1,380 @@
+---
+type: delta/mutation
+id: DLT-2026-121-SLIM-AGENT-791B
+title: "Canonical AGENTS.md Managed Block, Skill CLI-Parity and Size-Ceiling Guardrails, and In-Place Skill Tightening"
+status: applied
+intent:
+  kind: feature
+  motivation: "Replace 4 divergent per-harness rule bridges with one canonical, marker-delimited Eidos block in the cross-tool AGENTS.md standard that coexists safely with user-authored content. Keep the 4 bundled skills self-contained (no references/ split) but tighten them in place: trigger-focused descriptions of at most 400 characters (the only skill text loaded in every session), removal of intra-skill restatements, and compression of low-information tables, without dropping or relocating any instruction, template, or example. Guard against regressions with skill-to-CLI parity and no-growth size-ceiling tests."
+tombstone:
+  search_tokens:
+    - "EIDOS_COPILOT_START"
+    - "EIDOS_COPILOT_END"
+    - "_write_copilot_instructions"
+    - "_write_cursor_rules"
+    - "_write_codex_rules"
+    - "_write_aider_conventions"
+    - ".aider.conventions.md"
+    - ".cursor/rules/eidos.mdc"
+    - ".codex/rules.md"
+    - "copilot-instructions.md"
+  allowed_reasons:
+    - path: "tests/test_plugin.py"
+      reason: "Regression tests asserting the retired bridge files are never created by a fresh install."
+    - path: "CHANGELOG.md"
+      reason: "Historical release notes describing pre-DLT-2026-121 per-harness bridges."
+    - path: "eidos/deltas/"
+      reason: "Historical SpecDeltas predating DLT-2026-121."
+    - path: "eidos/explorations/"
+      reason: "Historical exploration documents."
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Tighten assets/plugin_reference/skills/<skill>/SKILL.md in place: rewrite the 4 descriptions to at most 400 characters, collapse restated guardrails into one-line pointers, compress the operation x target matrix into a rule plus exceptions, and merge duplicated expect: key lists. No content is relocated and no new skill files are added. Add the canonical AGENTS.md block template at assets/plugin_reference/agents-md/block.md. Record DEC-PLUGIN-SKILLS-SELF-CONTAINED and DEC-PLUGIN-AGENTS-MD-MANAGED-BLOCK in eidos/architecture/containers/plugin.adoc, and extend DEC-PLUGIN-CLAUDE-PROJECT-NATIVE to cover the root CLAUDE.md @AGENTS.md import block."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-PLUGIN-SKILLS-SELF-CONTAINED"
+          - "DEC-PLUGIN-AGENTS-MD-MANAGED-BLOCK"
+          - "DEC-PLUGIN-CLAUDE-PROJECT-NATIVE"
+      body:
+        contains:
+          - "AGENTS.md"
+          - "CLAUDE.md"
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    details: "Introduce src/eidos/plugin/managed_block.py with upsert_managed_block(path, name, content, *, target, skills_dir, force=False) -> BlockResult. On install/update, project the root AGENTS.md 'agents-md' block from every PluginInstallTarget. The block is rendered, sorted by target name, with the skills directory of every target recorded in the marker's targets=<name>:<skills-dir> list (.agents/plugins/eidos/skills for project/antigravity, .codex/skills for codex, otherwise TargetAdapter.skills_subdir). Custom --dest installs inside the repository participate as custom:<dest>/skills; installs outside it skip the block. For the claude target, add a one-line root CLAUDE.md 'claude-import' block containing @AGENTS.md, skipped if the user's CLAUDE.md already imports @AGENTS.md. For the aider target, add AGENTS.md to the .aider.conf.yml read: list if absent. Retire every per-harness bridge, since GitHub Copilot, Cursor, and Codex are verified to load root AGENTS.md natively and Aider loads it via read:. Delete _write_copilot_instructions, _remove_copilot_instructions, _write_cursor_rules, _write_codex_rules, and _write_aider_conventions, and re-point the Cursor, Aider, Codex, and Copilot TargetAdapter entries (destination subdirs, install/uninstall messages, extra_cleanup_files, prune_dirs, and hooks) accordingly. Block overwrites of user-edited content require an explicit 'eidos plugin install --force'; 'eidos plugin update', which installs with force=True, never forces managed blocks. Shared user files (AGENTS.md, CLAUDE.md, .aider.conf.yml) are explicitly skipped when writing .eidos-manifest.json, as settings.json already is, so manifest-based uninstall can never unlink them. No backward-compatibility or uninstall handling is provided: legacy bridge files and blocks from earlier versions, and the AGENTS.md/CLAUDE.md blocks and the Aider read: entry after uninstall, are left in place. Document all of this in eidos/architecture/components/plugin-installer.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/plugin/installer.py"
+          - "src/eidos/plugin/version.py"
+          - "src/eidos/plugin/managed_block.py"
+      body:
+        contains:
+          - "upsert_managed_block"
+          - "AGENTS.md"
+          - "targets="
+        not_contains:
+          - "copilot-instructions.md"
+          - "eidos.mdc"
+          - ".aider.conventions.md"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Rewrite docs/guides/agent-plugin.md for the canonical AGENTS.md managed block. Update the target table (L67-72) and the per-harness sections for Claude Code (replace the manual CLAUDE.md instructions at L133-137 with the generated @AGENTS.md import block), Cursor, Copilot, Aider, and Codex. Remove all references to .cursor/rules/eidos.mdc, .codex/rules.md, .aider.conventions.md, and .github/copilot-instructions.md. Correct the existing Cline/OpenCode claims that Eidos installs AGENTS.md conventions, which are untrue today and true after this delta. Document the marker grammar, user-content preservation, and the <!-- eidos:agents-md off --> opt-out, plus a generic upgrade note that per-harness rule files and instruction blocks written by earlier versions are not migrated or removed and can be deleted by hand. The note must not name the retired files, because the tombstone audit forbids those names in docs/. Update eidos/architecture/components/docs-user-guides.adoc to state that agent-plugin.md documents the AGENTS.md managed block."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "AGENTS.md"
+  - operation: modify
+    target: CAP-AGENT-001
+    details: "Bump CAP-AGENT-001 to 1.10.0 in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc (1.9.0 after DLT-2026-122). Register INV-PLUGIN-SKILL-SIZE-CEILING, INV-PLUGIN-SKILL-CLI-PARITY, and INV-PLUGIN-MANAGED-BLOCK-SAFETY under technical.invariants, and document the canonical AGENTS.md block under Key Responsibilities."
+    expect:
+      frontmatter:
+        version: "1.10.0"
+        technical.invariants.id:
+          - "INV-PLUGIN-SKILL-SIZE-CEILING"
+          - "INV-PLUGIN-SKILL-CLI-PARITY"
+          - "INV-PLUGIN-MANAGED-BLOCK-SAFETY"
+      body:
+        contains:
+          - "AGENTS.md"
+  - operation: add
+    target: INV-PLUGIN-SKILL-SIZE-CEILING
+    details: "Bundled skills must not grow. Each SKILL.md body (frontmatter excluded) must stay within a per-skill word ceiling equal to its size after this delta's tightening, rounded up to the next 50 words and never above the pre-delta size (eidos 2,173; eidos-spec 2,284; eidos-plan 1,783; eidos-ops 913). Raising a ceiling requires an explicit edit to the test. Every skill description must be <= 400 characters, the AGENTS.md block template <= 250 words, and the block rendered with every PluginInstallTarget's skill location <= 320 words. Bound to tests/test_plugin.py::test_bundled_skill_size_ceilings."
+    expect:
+      frontmatter:
+        rule: "ceiling"
+        test_binding: "tests/test_plugin.py::test_bundled_skill_size_ceilings"
+  - operation: add
+    target: INV-PLUGIN-SKILL-CLI-PARITY
+    details: "Every eidos command path (e.g. 'eidos index blast-radius') and long option (e.g. '--tier') that appears in an eidos invocation (including 'uv run eidos ...' and 'uvx ... eidos ...') in bundled SKILL.md files or the AGENTS.md block template must resolve against the live Typer app. Options are checked against the resolved subcommand, while <placeholders>, [optional] markers, and non-eidos tool options (e.g. uv --python) are ignored. Bound to tests/test_plugin.py::test_bundled_skill_cli_parity."
+    expect:
+      frontmatter:
+        rule: "command"
+        test_binding: "tests/test_plugin.py::test_bundled_skill_cli_parity"
+  - operation: add
+    target: INV-PLUGIN-MANAGED-BLOCK-SAFETY
+    details: "On install and update, Eidos may only create or replace text between its own named markers in shared instruction files (AGENTS.md, CLAUDE.md). Byte-for-byte, user content outside the markers must survive. Malformed markers must cause a no-write error rather than a guess. User edits inside a block (detected via the LF-normalized sha256 in the begin marker) must not be overwritten unless the user runs an explicit 'eidos plugin install --force'; 'eidos plugin update' never forces blocks. A block must not be rewritten when neither its rendered content nor its targets changed. Bound to tests/test_plugin.py::test_managed_block_preserves_user_content."
+    expect:
+      frontmatter:
+        rule: "managed block"
+        test_binding: "tests/test_plugin.py::test_managed_block_preserves_user_content"
+---
+= SpecDelta: Canonical AGENTS.md Managed Block, Skill CLI-Parity and Size-Ceiling Guardrails, and In-Place Skill Tightening
+:toc: left
+
+== Problem Statement
+
+=== Bundled skills: small, real inefficiencies and no guardrails
+
+Skills load progressively. Only the 4 *descriptions* sit in the agent's context in every session. A `SKILL.md` body loads only when the skill is activated: the master `eidos` skill in most sessions, the others on demand.
+
+[cols="2,1,1", options="header"]
+|===
+| Skill | Body words | Description chars (always loaded)
+| `eidos` (activated in most sessions) | 2,173 | 571
+| `eidos-spec` | 2,284 | 543
+| `eidos-plan` | 1,783 | 460
+| `eidos-ops` | 913 | 465
+|===
+
+A typical session therefore pays roughly 3-6k tokens for skills, which is not a context-window problem. `EXP-2026-007` also showed that the current self-contained 4-skill topology reaches Regime 2 compliance: `100%` `SKILL.md` discovery, `90.5%` `eidos drift`, `87.5%` `eidos context`. Restructuring is not justified. The real issues are smaller:
+
+1. **Descriptions are long keyword lists.** At 460-571 characters each (2,039 total), they are the only always-loaded skill text and drive skill routing, yet they enumerate subcommands instead of stating *when to load*.
+2. **The master skill restates itself.** `eidos/SKILL.md` §1 "Constitutional Guardrails" (318 words) re-explains material covered in full later:
+** guardrail 3 → §3 mode selection;
+** guardrail 5 → §2.1 tool matrix and `eidos-spec` scaffolding rules;
+** guardrails 7-8 → §5 gate and review.
+3. **Low-information tables.** The `eidos-plan` §2.3 `operation` × `target` matrix (150 words) repeats `add, modify, deprecate, remove` on 12 of 14 rows. The §2.1 tool matrix "Why" column carries marketing phrasing.
+4. **Duplicated key lists.** `eidos-plan` §2.2 "Critical Schema Rules" lists the allowed `expect:` keys, which §2.4 then lists again in full.
+5. **No guardrails.** Nothing prevents skills from growing, or from referencing commands and flags that are later removed.
+
+A scan of all 176 `eidos …` invocations in the current skills against the live Typer app found *zero* stale commands or flags today. The parity test is preventive.
+
+=== Fragmented, unsafe per-harness rule bridges
+
+`CMP-PLUGIN-INSTALLER` writes a different always-on instruction file for each of 4 harnesses, each with its own hand-maintained copy of the guardrails:
+
+[cols="1,2,2", options="header"]
+|===
+| Target | File written today | Write semantics
+| Cursor | `.cursor/rules/eidos.mdc` (`_write_cursor_rules`) | Whole file owned by Eidos; never refreshed unless `force`
+| Codex | `.codex/rules.md` (`_write_codex_rules`) | Whole file owned by Eidos; never refreshed unless `force`. Codex instructions come from `AGENTS.md`, so this file is likely never loaded as guidance.
+| Aider | `.aider.conventions.md` (`_write_aider_conventions`) plus `.aider.conf.yml` `read:` | Whole file owned by Eidos; never refreshed unless `force`. It is also Aider's *only* skill index (`/read .aider/skills/<skill>/SKILL.md`), because Aider has no native skill discovery.
+| Copilot | `.github/copilot-instructions.md` (`_write_copilot_instructions`) | `<!-- EIDOS_COPILOT_START/END -->` block shared with user content
+| Antigravity / Cline / OpenCode / Claude | none (skills only) | n/a
+|===
+
+Every supported harness loads the cross-tool `AGENTS.md` standard. GitHub Copilot, Cursor, and Codex have been verified by the maintainer (2026-11-04). Antigravity, Cline, and OpenCode load it natively, Aider loads it via `read:`, and Claude Code loads it via a `CLAUDE.md` `@` import.
+
+Yet Eidos never writes `AGENTS.md`. `docs/guides/agent-plugin.md` already claims that the Cline and OpenCode targets install "AGENTS.md conventions", which is untrue today. The one shared-file writer Eidos has is also unsafe. These defects disappear with the code that this delta deletes:
+
+* **Upgrade bug**: `_write_copilot_instructions` returns early whenever the start marker exists and `force` is false, so `eidos plugin update` never refreshes stale Eidos instructions. Existing Copilot installs are therefore likely carrying outdated guidance today.
+* **Data-loss bug**: `_remove_copilot_instructions` keeps only the text *before* the start marker when the end marker is missing, deleting every user line after it.
+* **Multiple-block bug**: both functions use `str.split(marker)[0]/[1]`, which silently mishandles duplicated markers.
+
+Users also commonly keep their own `AGENTS.md` (build commands, conventions, team notes). Eidos must coexist with it, not own it.
+
+== Proposed Specification Changes
+
+=== In-place skill tightening
+
+*Rules*:
+
+* Edit the 4 existing `SKILL.md` files only.
+* No content is moved to other files, no `references/` directories are added, and every YAML template, example, and CLI command stays.
+* Compliance-critical *instructions* keep their meaning, even where wording is compressed: the 8 constitutional guardrails, the Discovery-First tool matrix, Direct vs. Planned criteria, Direct-mode co-evolution rules, the pre-completion gate, and the adversarial review checklist.
+
+[cols="2,3,1", options="header"]
+|===
+| Location | Edit | Est. saving
+| All 4 descriptions | Rewrite as *when to load* triggers, at most 400 characters each (drafts below). | ~900 chars, always loaded
+| `eidos` §1 guardrails | Keep all 8 guardrails, but as one-sentence rules with section pointers (e.g. "Select Direct or Planned mode before writing code (§3)"). Detail stays in §2-§5. | ~150 words
+| `eidos` §2.1 tool matrix | Keep every row and command; shorten the "Why" column to factual 5-10 word reasons. | ~60 words
+| `eidos-plan` §2.3 | Replace the 14-row table with a rule: all entity types support `add`, `modify`, `deprecate`, `remove`, except `SYS-*`/`ARCH-*` (`add`, `modify`) and `INV-*` (`add`, `modify`, `remove`). | ~110 words
+| `eidos-plan` §2.2/§2.4 | State the allowed `expect:` keys once (§2.4), with §2.2 pointing to it. | ~70 words
+|===
+
+The expected net saving is about 400 words (~6%) of skill bodies plus ~45% of always-loaded description text. The gain is modest by design; the larger value is the guardrails below.
+
+*Draft descriptions* (final wording may differ, but each must be at most 400 characters):
+
+* `eidos`: "Core workflow for repositories governed by Eidos living specs (eidos/). Load before editing code, tests, or specs, refactoring, adding features, or reviewing changes. Covers discovery with eidos context/index, choosing Direct vs. Planned mode, and the eidos drift/validate completion gate. Never create ADRs."
+* `eidos-spec`: "Author and edit Eidos living specs: domains, capabilities, personas, C4 containers, components and contracts, decisions, design systems, policies, and INV-* test bindings. Load when creating or changing any .adoc file under eidos/ or binding invariants to tests."
+* `eidos-plan`: "Planned-mode workflows: technical explorations (EXP-*), the SpecDelta lifecycle (DLT-*: create, verify, audit, apply), expect: post-conditions, and architectural reviews. Load for new or removed containers/components, breaking contract changes, cross-domain features, spikes, or PR and delta reviews."
+* `eidos-ops`: "Eidos setup and operations: eidos init for new repositories, extracting living specs from existing (brownfield) codebases, index and optional semantic search setup, and serving or building the Living Web Portal. Load when onboarding a repository to Eidos or maintaining the index or portal."
+
+=== Skill guardrails
+
+* *`INV-PLUGIN-SKILL-SIZE-CEILING`*: per-skill no-growth word ceilings, set to the post-tightening size (rounded up to the next 50) and never above today's size. It also caps description length, the AGENTS.md block template, and the rendered block.
+* *`INV-PLUGIN-SKILL-CLI-PARITY`*: every `eidos` command path and option in the skills and in the block template must resolve against the live Typer app.
+
+=== Canonical `AGENTS.md` managed block
+
+Eidos owns only the text between its named markers. Everything outside them belongs to the user:
+
+[source,markdown]
+----
+# Acme Billing Service
+Run `pnpm test` before committing.          <- user-owned
+
+<!-- eidos:begin agents-md sha256:3f9a1c0b7e2d targets=aider:.aider/skills,claude:.claude/skills · managed by `eidos plugin`; edits inside this block are overwritten -->
+## Eidos Living Specifications
+- Architecture lives in `eidos/` living specs. Never write ADRs.
+- Before structural edits: `eidos context -f <file> --json`.
+- Before finishing: `eidos drift --uncommitted --json`.
+- Skills (load on demand): `eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`
+  in `.aider/skills/<skill>/SKILL.md`, `.claude/skills/<skill>/SKILL.md`.
+<!-- eidos:end agents-md -->
+
+## Team notes                                 <- user-owned
+----
+
+*Marker grammar*: `<!-- eidos:begin <name> sha256:<12-hex> targets=<target>:<skills-dir>[,...] ... -->` and `<!-- eidos:end <name> -->`.
+
+* Blocks are *named*, so several kinds can coexist (for example, per-container blocks in the future).
+* `sha256` covers the block's inner content after LF normalization, so `git autocrlf` conversions are never mistaken for user edits.
+* `targets=` accumulates `<target>:<skills-dir>` pairs for every install that has projected the block, so installing a second target adds its skill location without losing the first.
+** Skills dirs are repository-relative POSIX paths, and no manifest discovery is needed.
+** Custom `--dest` installs inside the repository participate as `custom:<dest>/skills`. Installs outside the repository, or with a path containing whitespace or commas, skip the block and say so in the install message.
+* Entries are sorted by target name before rendering and hashing, so install order never changes the bytes. For example, `aider` then `claude` yields the same block as `claude` then `aider`.
+* There is deliberately *no version* in the marker, so Eidos upgrades that do not change content leave user repositories untouched.
+* `{{skill_locations}}` renders the skill directories from `targets=`. This preserves Aider's skill index after `.aider.conventions.md` is retired.
+* Opt-out is per block, via `<!-- eidos:<name> off -->` anywhere in the file: `<!-- eidos:agents-md off -->` in `AGENTS.md`, or `<!-- eidos:claude-import off -->` in `CLAUDE.md`.
+* HTML comments are hidden in rendered Markdown but visible to agents.
+
+*`upsert_managed_block` semantics (install and update)*:
+
+[cols="2,3", options="header"]
+|===
+| File state | Behavior
+| File missing | Create it containing only the block.
+| File exists, no block | Append the block (one blank line separator). The user may move it anywhere afterwards.
+| Exactly one well-formed block, same rendered content and same targets | No write; return `unchanged`.
+| Exactly one well-formed block, content or targets changed | Replace the marker line and inner content in place, wherever the block sits. Bytes outside the markers are unchanged.
+| Inner content hash ≠ marker hash (user edited inside) | Do not write; return `modified`. Overwrite only when the user runs an explicit `eidos plugin install --force`. `eidos plugin update` (`update_plugin`, which calls `install_plugin(force=True)`) passes `force=False` to `upsert_managed_block`.
+| Opt-out marker `<!-- eidos:<name> off -->` present | Do not write; return `opted_out`.
+| Malformed (begin without end, end before begin, duplicate begin for the same name) | Do not write; return `malformed` with line numbers.
+|===
+
+*Always*:
+
+* preserve the existing line endings (LF/CRLF) and UTF-8 BOM;
+* refuse symlinks via `_check_not_symlink`;
+* write atomically (temp file plus `os.replace`).
+
+=== Per-harness projection
+
+[cols="1,3", options="header"]
+|===
+| Target | After this delta
+| All targets | Upsert the root `AGENTS.md` `agents-md` block, adding `<target>:<skills-dir>` to `targets=`, and mention `AGENTS.md` in the install message.
+| Claude Code | Upsert a one-line `claude-import` block containing `@AGENTS.md` in root `CLAUDE.md`. Skip it if the user's `CLAUDE.md` already contains an `@AGENTS.md` import outside any Eidos block. A user-authored `CLAUDE.md` is preserved.
+| Aider | Add `AGENTS.md` to `.aider.conf.yml` `read:` if absent, reusing `_update_project_aider_conf(path, "AGENTS.md")`. Retire `.aider.conventions.md`; the skill index now lives in the block's skill locations. Adapter: drop `extra_cleanup_files` and `extra_uninstall_hook`, and update the messages.
+| Cursor | Retire `.cursor/rules/eidos.mdc` (Cursor loads root `AGENTS.md`; verified 2026-11-04). Adapter: point `install_destination_subdir`/`uninstall_destination_subdir` at `.cursor/skills`, drop `extra_cleanup_files`, drop `.cursor/rules` from `prune_dirs`, and replace `post_install_hook` with the block upsert.
+| Codex | Retire `.codex/rules.md` (Codex loads root `AGENTS.md`; verified 2026-11-04). Adapter: remove the rules write from `_codex_pre_manifest_hook`, and update the install message.
+| Copilot | Retire the `.github/copilot-instructions.md` projection (Copilot loads root `AGENTS.md`; verified 2026-11-04). Adapter: `_copilot_post_install_hook` returns only `settings.json`, `_copilot_extra_uninstall` only removes settings, and the install message drops "instructions". Skills (`.github/skills/`), `.github/plugin/plugin.json`, and `.github/copilot/settings.json` are unchanged.
+| Antigravity / Cline / OpenCode / project | `AGENTS.md` block only.
+|===
+
+*Backward compatibility and uninstall: intentionally none.*
+
+* No migration is performed. Bridge files and blocks written by earlier Eidos versions (`.cursor/rules/eidos.mdc`, `.codex/rules.md`, `.aider.conventions.md`, `EIDOS_COPILOT_START/END` blocks in `.github/copilot-instructions.md`) are left in place. Users may delete them by hand, and the docs guide states this.
+* `uninstall` keeps its current manifest- and skills-based behavior. It gains no new logic and loses only the calls into deleted functions. It does not touch the root `AGENTS.md` block, the `CLAUDE.md` import block, or the `AGENTS.md` entry in `.aider.conf.yml`, all of which may be left over.
+* The one hard requirement is that a fresh install works correctly and never damages user content. This is why shared files are excluded from the manifest `files` list. Plugin-dir manifests already skip paths outside their directory, but `--dest .` would otherwise record a root `AGENTS.md`, and manifest-based uninstall must never unlink it.
+
+=== Decision: `DEC-PLUGIN-SKILLS-SELF-CONTAINED`
+
+* *Decision*: Keep the 4 bundled skills self-contained, with each `SKILL.md` carrying its full instructions, templates, and examples. Optimize only through in-place tightening, and enforce no-growth ceilings and CLI parity in tests.
+* *Rationale*:
+** Only descriptions are always loaded, so body size is a minor per-session cost.
+** The self-contained 4-skill topology is what `EXP-2026-007` linked to Regime 2 compliance.
+** Splitting content out would trade a small token saving for a new pull-based failure mode.
+* *Rejected alternatives*:
+  ** *Progressive disclosure via `references/*.md`*: rejected. Agents would have to *decide* to open another file (the same pull-based weakness behind the `eidos context` gap), skipped templates would raise schema-error rates, some harnesses (e.g. Aider) need an explicit `/read` per file, and no measured problem justifies the risk. It can be revisited only with data from an exploration.
+  ** *Split into more micro-skills*: rejected because Regime 1 (14 skills) measured `26.2%` pre-edit `eidos context` compliance.
+  ** *Single mega-skill*: rejected because it increases the activated payload for every task.
+  ** *MCP tool descriptions instead of skills*: already discarded in `EXP-2026-007` (0/19 adoption, 75.89 MB RSS).
+
+=== Decision: `DEC-PLUGIN-AGENTS-MD-MANAGED-BLOCK`
+
+* *Decision*:
+** Project the always-on Eidos bridge as a single named, hash-stamped, target-owned, marker-delimited block in root `AGENTS.md`, written through one shared helper.
+** Bridge Claude Code via a `@AGENTS.md` import block.
+** Retire all 4 per-harness rule files.
+* *Rationale*:
+** `AGENTS.md` is the one instruction channel shared by every supported harness, so it replaces 4 divergent copies with 1.
+** Marker blocks let Eidos coexist with user-authored content.
+** The hash stamp makes user edits detectable instead of silently clobbered.
+** The targets recorded in the marker let several installed harnesses share one block, each with its own skill location.
+* *Rejected alternatives*:
+  ** *Eidos owns the whole `AGENTS.md`*: rejected because users keep their own build commands and conventions there.
+  ** *Separate `AGENTS.eidos.md` included from `AGENTS.md`*: rejected because `AGENTS.md` has no cross-harness include syntax, so most harnesses would never load it.
+  ** *Keep per-harness rule files*: rejected because of 4 hand-maintained copies, refresh bugs, and no coverage for Antigravity, Cline, or OpenCode.
+  ** *Version stamp in the marker*: rejected because it would rewrite every user repository on every Eidos release even when content is unchanged.
+  ** *Migrate and clean up legacy bridges, and remove blocks on uninstall*: rejected as unnecessary complexity. Backward compatibility is not a goal, and leftover files are acceptable; correctness of fresh installs is the only requirement.
+  ** *Opt-out via new CLI flag or config file*: rejected for this delta because it would change `CTR-EIDOS-CLI` and add a config surface. An in-file opt-out marker is native to the file the user already controls.
+
+== Implementation Plan
+
+Implement as two commits under this delta, so the skill edits and the AGENTS.md projection can be reviewed and bisected independently: (A) in-place skill tightening, ceilings, and parity; (B) the managed block, bridge retirement, and docs. Fresh-install correctness is the only compatibility requirement.
+
+1. **Baseline**: record current per-skill word counts and description lengths in the delta's verification notes, along with the 0-finding parity scan (176 invocations).
+2. **(A) Tighten `assets/plugin_reference/skills/*/SKILL.md` in place** per the edit table and rules above. Reviewers should diff each compliance-critical section and confirm that no instruction, command, template, or example was dropped.
+3. **(A) Set ceilings**: measure the tightened word counts and write them into `test_bundled_skill_size_ceilings`, rounded up to the next 50 and capped at the pre-delta sizes.
+4. **(B) Managed-block helper (`src/eidos/plugin/managed_block.py`)**: implement `upsert_managed_block` with the `BlockResult` statuses `created`, `appended`, `updated`, `unchanged`, `modified`, `opted_out`, and `malformed`, following the semantics table above. Include LF-normalized hashing, sorted `targets=` accumulation, and per-block opt-out.
+5. **(B) Installer projection (`src/eidos/plugin/installer.py`)**:
+   * Add `assets/plugin_reference/agents-md/block.md` with a `{{skill_locations}}` placeholder.
+   * Add a skills-dir resolver per `TargetAdapter`:
+** `skills_subdir` when set;
+** `<plugin_subdir>/skills` for `project`/`antigravity`/`codex`;
+** `<dest>/skills` for in-repo `--dest`.
+   * Upsert the `agents-md` block from `TargetAdapter.install()` and from the custom `--dest` branch of `install_plugin()`. Add the Claude `claude-import` block (with existing-import detection) and the Aider `read:` entry (if absent).
+   * Plumb a separate `force_blocks` flag: `True` only from `eidos plugin install --force`, and always `False` from `update_plugin`.
+   * Delete `_write_copilot_instructions`, `_remove_copilot_instructions`, `_write_cursor_rules`, `_write_codex_rules`, and `_write_aider_conventions`, and re-point the adapter entries as listed in the per-harness table.
+   * Skip `AGENTS.md`, `CLAUDE.md`, and `.aider.conf.yml` in `_write_installation_manifest`, next to the existing `settings.json` skip.
+6. **(B) Docs (`docs/guides/agent-plugin.md`)**: apply the `CMP-DOCS-USER-GUIDES` mutation. The tombstone audit (step 10) must report zero unacknowledged references in `docs/`.
+7. **Tests**
+   * `tests/test_plugin.py::test_bundled_skill_size_ceilings` (`INV-PLUGIN-SKILL-SIZE-CEILING`): per-skill word ceilings, description length, `agents-md/block.md` at most 250 words, and the block rendered with all targets at most 320 words; frontmatter excluded from counts.
+   * `tests/test_plugin.py::test_bundled_skill_cli_parity` (`INV-PLUGIN-SKILL-CLI-PARITY`): parse `eidos` invocations (including `uv run eidos` and `uvx ... eidos`) from fenced and inline code across every `SKILL.md` and `agents-md/block.md`. Resolve command paths, then options against the resolved subcommand, via `typer.main.get_command(app)`. Ignore `<placeholders>`, `[optional]` markers, and non-eidos tool options. Include a negative case proving that a removed flag is caught.
+   * `tests/test_plugin.py::test_managed_block_preserves_user_content` (`INV-PLUGIN-MANAGED-BLOCK-SAFETY`), parametrized:
+** create, append, in-place replace when the block has been moved mid-file, and idempotent re-run (`unchanged`, with file mtime and bytes untouched);
+** user edit inside the block → `modified` without force, overwritten with force; `update_plugin` leaves a user-edited block untouched;
+** a CRLF-converted file with unchanged content → `unchanged`, not `modified`;
+** per-block opt-out markers (`agents-md`, `claude-import`); malformed markers → no write;
+** BOM preserved; symlink refused.
+Every case asserts that the bytes outside the markers are identical.
+   * `test_agents_md_fresh_install_all_targets`, parametrized over every `PluginInstallTarget`:
+** a fresh install into an empty repo and into a repo with a user-authored `AGENTS.md` yields exactly one `agents-md` block with the right `targets=` and skill location, and leaves user lines intact;
+** re-running install or `update` is idempotent (`unchanged`);
+** none of the 4 retired bridge files is created;
+** `AGENTS.md`, `CLAUDE.md`, and `.aider.conf.yml` are absent from the manifest `files` list.
+   * `test_agents_md_shared_across_targets`:
+** installing `aider` then `claude`, and `claude` then `aider`, yields byte-identical blocks with `targets=aider:.aider/skills,claude:.claude/skills` and both locations rendered;
+** `eidos plugin install all` renders every target;
+** an in-repo `--dest` install adds `custom:<dest>/skills`;
+** an out-of-repo `--dest` install leaves `AGENTS.md` untouched.
+   * `test_claude_import_block`: block added when missing; skipped when the user's `CLAUDE.md` already imports `@AGENTS.md`; user `CLAUDE.md` content preserved.
+   * `test_aider_read_entry`: `AGENTS.md` added to `read:` once; the user's pre-existing `read:` entries and other keys are preserved.
+   * Rewrite the existing assertions in `tests/test_plugin.py` so they check that the retired files are *not* created and that root `AGENTS.md` contains the `agents-md` block. Delete assertions on uninstall cleanup of the retired files:
+** Copilot `copilot-instructions.md` / `EIDOS_COPILOT_START` assertions (around lines 452-485 and 535);
+** the `_write_copilot_instructions` / `_remove_copilot_instructions` edge-case coverage (around lines 1544-1549 and 1671+);
+** Cursor `.cursor/rules/eidos.mdc` (around line 132);
+** Aider `.aider.conventions.md` (around lines 311-333, 514, 1221-1227, and the `read:` fixture at 1815);
+** Codex `.codex/rules.md` (around lines 400, 1132, 1160-1170, 1203-1218, and 1235);
+** Aider `.aider.conf.yml` uninstall assertions (around lines 332 and 1494-1521): uninstall now leaves the `AGENTS.md` `read:` entry, so the conf file remains.
+   * `test_plugin_install_force_false_and_uninstall_preserves_preexisting_user_files` (around lines 1263-1276) keeps passing unchanged, because Eidos no longer writes `.codex/rules.md`.
+   * `tests/test_docs_sync.py::test_bundled_skill_yaml_templates_conform_to_v1_schemas` must keep passing unchanged. Templates stay in `SKILL.md`, and the `>= 8` floor still holds.
+8. **Dogfood**: run `eidos plugin update` so `.agents/plugins/eidos/` matches the bundle and this repository gains a root `AGENTS.md` with the Eidos block. Root `AGENTS.md`/`CLAUDE.md` were checked to produce no `eidos drift` findings.
+9. **Compliance regression check (manual, until an `eidos eval` harness exists)**: re-run the `EXP-2026-007` transcript audit on at least 10 new top-level sessions after the change. Acceptance:
+** `eidos drift` before stop `>= 90%`;
+** `drift OR validate` gate `100%`;
+** `eidos context` on discovery-required prompts `>= 85%`.
+If any metric regresses, restore the original wording of the affected section (most likely the compressed §1 guardrails) instead of reverting the whole delta.
++
+NOTE: The `EXP-2026-007` baseline and this check use Antigravity transcripts only. Results do not establish parity for other harnesses, whose compliance should be measured once an `eidos eval` harness exists.
+10. **Gate**: `eidos delta verify DLT-2026-121`, `eidos delta audit DLT-2026-121 --strict` (tombstone: zero unacknowledged references to the retired bridges anywhere in source or docs; only tests and history are exempt), `eidos validate eidos --json`, `eidos drift --uncommitted --json`, then `eidos delta apply DLT-2026-121`.
+
+=== Out of scope (follow-ups)
+
+* Per-container generated `AGENTS.md` blocks and their `eidos drift` freshness check.
+* An `eidos doctor` row reporting `agents-md` block status (`current` / `outdated` / `modified` / `malformed` / `opted_out`): a `CTR-EIDOS-CLI` change for a future delta.
+* Legacy-bridge migration and uninstall cleanup of `AGENTS.md`/`CLAUDE.md`/`.aider.conf.yml`: explicitly not planned.
+* Progressive disclosure (`references/*.md`) or other structural skill splits: rejected here (`DEC-PLUGIN-SKILLS-SELF-CONTAINED`). Revisit only through an exploration that measures schema-error rate and compliance for slim vs. current skills.
+
+=== Ordering
+
+`CAP-AGENT-001` is at `1.9.0` after `DLT-2026-122`; this delta bumps it to `1.10.0`. (The previously planned `DLT-2026-120` was withdrawn, so no ordering constraint remains.)
+
+== Verification Notes
+
+* *Skill tightening (measured, frontmatter excluded)*: `eidos` 2,102 → 2,011 words; `eidos-plan` 1,724 → 1,605; `eidos-spec` 2,215 and `eidos-ops` 849 unchanged (descriptions only). Total body reduction is 210 words (~3%), below the ~400-word estimate because the guardrail and matrix compressions preserved every instruction.
+* *Descriptions*: 557 / 529 / 446 / 451 → 308 / 262 / 300 / 290 characters (1,983 → 1,160 always-loaded characters, -41%).
+* *Ceilings written to `test_bundled_skill_size_ceilings`*: `eidos` 2,050; `eidos-spec` 2,250; `eidos-plan` 1,650; `eidos-ops` 850.
+* *Parity baseline*: 176 `eidos …` invocations scanned before the change with zero stale commands or options; the test also asserts removed flags and subcommands are caught.
+* *Marker note separator*: the begin marker uses `·` rather than `--` before the "managed by" note, because `--` inside an HTML comment is invalid HTML.
