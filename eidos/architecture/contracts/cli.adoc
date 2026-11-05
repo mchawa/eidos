@@ -22,9 +22,11 @@ Displays current Eidos engine version (e.g. `eidos 0.8.0`).
 Displays current engine version, loaded v1 schemas, and available agent plugin targets.
 * **Exit Code**: 0
 
-=== `eidos validate [PATH]`
+=== `eidos validate [PATH] [--json]`
 Validates all specification documents under `PATH` (defaults to `./eidos`) against the bundled JSON/YAML schemas and verifies cross-references.
 * **Arguments**: `PATH` (Optional directory path)
+* **Options**:
+  - `--json`: Output a compact machine-readable JSON validation report (`is_clean`, `total_docs`, `valid_docs`, `broken_references`, `schema_errors`, and any invalid `documents`).
 * **Exit Codes**:
   - `0`: All specifications are valid.
   - `1`: One or more validation errors or broken cross-references found.

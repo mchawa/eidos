@@ -59,10 +59,9 @@ When introducing Eidos into an **existing codebase**, never invent speculative a
    eidos index search "core" --json
    eidos context -c CNT-APP-API --tier guardrails --json
    eidos index blast-radius CNT-APP-API --depth 2 --json
-   eidos validate eidos --json
    eidos drift --uncommitted --json
    ```
-   Extraction is complete only when `eidos validate eidos` and `eidos drift --uncommitted` both exit with `0`.
+   Extraction is complete only when `eidos drift --uncommitted --json` exits with `0` (`is_clean: true`).
 
 ---
 

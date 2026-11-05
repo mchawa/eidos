@@ -8,8 +8,8 @@ from eidos.cli.main import app
 runner = CliRunner()
 
 
-def test_cli_validate_json_output():
-    """Verify 'eidos validate --json' outputs valid machine-readable JSON."""
+def test_cli_validate_json_output(tmp_path):
+    """Verify 'eidos validate --json' outputs compact JSON (omitting passing documents and listing only failing ones)."""
     result = runner.invoke(app, ["validate", "eidos", "--json"])
     assert result.exit_code == 0
     data = orjson.loads(result.output)
@@ -17,10 +17,22 @@ def test_cli_validate_json_output():
     assert data["total_docs"] >= 60
     assert data["valid_docs"] == data["total_docs"]
     assert len(data["broken_references"]) == 0
-    assert isinstance(data["documents"], list)
-    doc_ids = {d["id"] for d in data["documents"]}
-    assert "CNT-EIDOS-CLI" in doc_ids
-    assert "CNT-EIDOS-CORE" in doc_ids
+    assert data["documents"] == []
+
+    # Invalid spec is surfaced in data["documents"]
+    bad_dir = tmp_path / "eidos"
+    bad_dir.mkdir()
+    (bad_dir / "system.adoc").write_text(
+        "---\ntype: product/system\nid: INVALID_ID\ntitle: Bad\nstatus: active\nversion: 1.0.0\n---\n= Bad\n",
+        encoding="utf-8",
+    )
+    bad_res = runner.invoke(app, ["validate", str(bad_dir), "--json"])
+    assert bad_res.exit_code == 1
+    bad_data = orjson.loads(bad_res.output)
+    assert bad_data["is_clean"] is False
+    assert len(bad_data["documents"]) == 1
+    assert bad_data["documents"][0]["id"] == "INVALID_ID"
+    assert bad_data["documents"][0]["is_valid"] is False
 
 
 def test_cli_drift_json_output():
@@ -33,6 +45,45 @@ def test_cli_drift_json_output():
     assert "valid_specs" in data
     assert "total_specs" in data
     assert isinstance(data["code_files"], list)
+
+
+def test_drift_remediation_includes_schema_and_broken_reference_bullets():
+    """Verify build_drift_remediation_and_summary surfaces itemized schema_errors and broken_references bullets."""
+    from eidos.core.spec.validator import ValidationReport
+    from eidos.vcs.diff import ChangedFilesClassification
+    from eidos.vcs.report import build_drift_remediation_and_summary
+
+    val_report = ValidationReport(
+        schema_errors={"eidos/system.adoc": ["'title' is a required property"]},
+        broken_references=["eidos/domains/d/domain.adoc references missing 'PER-MISSING'"],
+        documents=[],
+    )
+    rem, _ = build_drift_remediation_and_summary(
+        workflow_mode="direct",
+        is_clean=False,
+        drift_detected=False,
+        base_direct_drift=False,
+        unmapped_drift=False,
+        design_drift=False,
+        uncovered_delta_drift=False,
+        specs_changed=True,
+        has_deltas=False,
+        classification=ChangedFilesClassification(),
+        structural_code_files=[],
+        comp_mappings=[],
+        uncovered_direct_components=[],
+        uncovered_components=[],
+        uncovered_unmapped_code=[],
+        uncovered_design=[],
+        trivial_records=[],
+        validation_report=val_report,
+        invariants=[],
+        uncovered_invariants=[],
+        orphan_invariants=[],
+        touched_components=[],
+    )
+    assert any("eidos/system.adoc: 'title' is a required property" in r for r in rem)
+    assert any("Broken reference: eidos/domains/d/domain.adoc references missing 'PER-MISSING'" in r for r in rem)
 
 
 def test_cli_context_json_output():

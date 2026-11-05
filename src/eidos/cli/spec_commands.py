@@ -68,6 +68,7 @@ def validate(
                     ),
                 }
                 for doc in report.documents
+                if not doc.is_valid
             ],
         }
         typer.echo(orjson.dumps(payload, option=orjson.OPT_INDENT_2).decode("utf-8"))

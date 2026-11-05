@@ -185,9 +185,14 @@ def drift_cmd(
             )
 
         if not result.validation_report.is_clean:
-            console.print("\n[bold red]✗ Specification Schema Errors:[/bold red]")
-            for p, errs in result.validation_report.schema_errors.items():
-                console.print(f"  [red]• {p}:[/red] {'; '.join(errs)}")
+            if result.validation_report.schema_errors:
+                console.print("\n[bold red]✗ Specification Schema Errors:[/bold red]")
+                for p, errs in result.validation_report.schema_errors.items():
+                    console.print(f"  [red]• {p}:[/red] {'; '.join(errs)}")
+            if result.validation_report.broken_references:
+                console.print("\n[bold red]✗ Broken Cross-References:[/bold red]")
+                for ref in result.validation_report.broken_references:
+                    console.print(f"  [red]•[/red] {ref}")
 
         if result.is_clean:
             console.print(

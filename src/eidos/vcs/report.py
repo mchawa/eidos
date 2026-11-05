@@ -128,6 +128,10 @@ def build_drift_remediation_and_summary(
         remediation.append(
             f"Specification Validation Failed: {len(validation_report.schema_errors)} error(s), {len(validation_report.broken_references)} broken link(s)."
         )
+        for err_path, err_msgs in list(validation_report.schema_errors.items())[:5]:
+            remediation.append(f"• {err_path}: {'; '.join(err_msgs)}")
+        for ref in validation_report.broken_references[:5]:
+            remediation.append(f"• Broken reference: {ref}")
 
     if uncovered_invariants:
         remediation.append(

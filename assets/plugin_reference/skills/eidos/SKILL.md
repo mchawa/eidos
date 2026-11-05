@@ -1,6 +1,6 @@
 ---
 name: eidos
-description: "Core workflow for repositories governed by Eidos living specs (eidos/). Load before editing code, tests, or specs, refactoring, adding features, or reviewing changes. Covers discovery with eidos context/index, choosing Direct vs. Planned mode, and the eidos drift/validate completion gate."
+description: "Core workflow for repositories governed by Eidos living specs (eidos/). Load before editing code, tests, or specs, refactoring, adding features, or reviewing changes. Covers discovery with eidos context/index, choosing Direct vs. Planned mode, and the eidos drift completion gate."
 ---
 # Eidos: Master Architecture & Engineering Orchestrator
 
@@ -124,16 +124,14 @@ When introducing/removing containers or components, making breaking contract cha
 
 Before concluding **any** task or presenting your final response, complete both verification stages:
 
-### Stage 1: Deterministic Engine Gate (`eidos drift` & `eidos validate`)
+### Stage 1: Deterministic Engine Gate (`eidos drift`)
 
 ```bash
-eidos validate eidos --json
 eidos drift --uncommitted --json
 ```
 
-* **`eidos validate`** checks v1 JSON Schemas, `x-eidos-ref` cross-references, `source_path`/`specification_file` paths on disk, `== Public Surface` AST symbol existence, and **bidirectional multi-protocol contract parity** (`cli_args`, `openapi`, `protobuf`, `graphql`, `python_protocol`).
-* **`eidos drift`** runs `eidos validate` internally plus Git diff ownership mapping, workflow mode verification (Direct vs. Planned `mutations[].target`), substantive spec diff checks, stale removed-symbol rejection (`stale_removed_symbol`), `--strict` body-level drift enforcement, and polyglot `INV-*` `test_binding` verification.
-* **If `is_clean: false` or `drift_detected: true`**: Follow the `remediation_suggestions` array in the JSON output and re-run until exit code is `0`.
+* **`eidos drift`** runs `eidos validate` internally (v1 JSON Schemas, `x-eidos-ref` cross-references, `source_path`/`specification_file` paths on disk, `== Public Surface` AST symbol existence, and **bidirectional multi-protocol contract parity** across `cli_args`, `openapi`, `protobuf`, `graphql`, `python_protocol`) plus Git diff ownership mapping, workflow mode verification (Direct vs. Planned `mutations[].target`), substantive spec diff checks, stale removed-symbol rejection (`stale_removed_symbol`), `--strict` body-level drift enforcement, and polyglot `INV-*` `test_binding` verification. (Use standalone `eidos validate eidos --json` only when validating specs outside a Git repository.)
+* **If `is_clean: false` or `drift_detected: true`**: Follow the `remediation_suggestions` and `validation_errors` arrays in the JSON output and re-run until exit code is `0`.
 
 ### Stage 2: Mandatory Autonomous Adversarial Gap Review
 

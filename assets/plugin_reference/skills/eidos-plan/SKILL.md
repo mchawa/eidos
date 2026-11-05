@@ -199,7 +199,6 @@ For `add` and `modify` mutations, `eidos delta verify` checks both baseline dige
 When asked to review a SpecDelta (`DLT-*`), branch/PR diff, or architectural proposal, run the deterministic diagnostics first and audit across 5 dimensions:
 
 ```bash
-eidos validate eidos --json
 eidos drift --uncommitted --json
 eidos context -c <TARGET_ENTITY_ID> --tier deep --json
 eidos index blast-radius <TARGET_ENTITY_ID> --depth 2 --json
