@@ -17,7 +17,7 @@ You MUST follow these workflows and guardrails whenever you inspect, plan, imple
 3. **Dual Workflow Mode Selection**: Select Direct or Planned Mode *before* writing code (§3).
 4. **Mandatory Invariant-Test Traceability**: Every `INV-*` declares `test_binding: path/to/test_file::test_function`, and the bound test references the `INV-*` ID in its docstring, comment, or marker.
 5. **CLI-First Discovery & Determinism**: Run the Eidos discovery commands (§2, with `--json`) *before* raw file reads or `grep`/`find`. Never hand-write `.adoc` specs or SpecDeltas from scratch: scaffold with `eidos spec create <type> <ID> --title "..."` or `eidos delta create --title "..." --slug --kind <kind>`, and check exact keys with `eidos spec schema <type> [--json]` before adding nested frontmatter.
-6. **Subagent Context Propagation**: When delegating coding, refactoring, or spec work, include the relevant `eidos context --json` slice in the subagent's prompt, or instruct it to read the `eidos` skill (`SKILL.md`; skill locations are listed in the root `AGENTS.md`) before editing files.
+6. **Subagent Context Propagation**: When delegating coding, refactoring, or spec work, include the relevant `eidos context --json` slice in the subagent's prompt and instruct it to trust `eidos context` directly (without re-reading the summarized `.adoc` files unless editing them).
 7. **Zero Unreconciled Drift**: Never conclude a task with failing schemas or unmanaged spec-to-code drift (§5, Stage 1).
 8. **Mandatory Autonomous Pre-Completion Review**: Never present work without the adversarial self-review of your diff and requirements, fixing every gap before responding (§5, Stage 2).
 
@@ -34,9 +34,9 @@ Whenever you need to orient in the codebase, locate a symbol, search specificati
 | Instead of doing this... | ALWAYS run this Eidos command FIRST | Why |
 | :--- | :--- | :--- |
 | Running `find` / `ls -R` or reading many files to orient in the repository | `eidos index repo-map --max-tokens 1500` | AST outline of all containers and modules (~85% fewer tokens). |
-| Grepping across source files for a class, function, method, or route | `eidos index find-symbol "<SymbolName>" --json` | Exact `file:line`, symbol kind, and owning `CNT-*` / `CMP-*`. |
+| Grepping across source files for a class, function, method, or route | `eidos index find-symbol "<SymbolName>" --json` | Exact `location.file` and `line_start`..`line_end` (pass to `read_file` instead of reading full files), plus `CNT-*` / `CMP-*`. |
 | Grepping `eidos/` for domain concepts, rules, capabilities, or prior spikes | `eidos index search "<keywords>" --json` | BM25 + synonym search (optional hybrid semantic via `--semantic`) over specs, `DEC-*`, and `INV-*`. |
-| Editing or reviewing a file (including user-attached `@[file]` paths) without knowing its governance rules | `eidos context -f <path/to/file> --json` *(or `-t "<task>"` / `-c <ID>`)* | Owning `CNT-*`/`CMP-*`, `INV-*` test bindings, `DEC-*` rationale, and `CTR-*` contracts in one call. |
+| Editing or reviewing a file (including user-attached `@[file]` paths) without knowing its governance rules | `eidos context -f <path/to/file> --json` *(or `-t "<task>"` / `-c <ID>`)* | Owning `CNT-*`/`CMP-*`, `INV-*` test bindings, `DEC-*` rationale, and `CTR-*` contracts in one call (trust without re-reading `.adoc` files). |
 | Guessing what breaks when modifying a container, component, contract, symbol, or file | `eidos index blast-radius <SYMBOL_OR_PATH> --depth 2 --json` | Upstream/downstream k-hop dependents of an entity ID, symbol, spec path, or source path. |
 
 ### 2.2 Context Slicing Tiers (`eidos context`)
@@ -78,7 +78,7 @@ Using the ownership and dependency insights from Step 1 (`eidos context` and `ei
 | :--- | :--- | :--- |
 | **Typical Tasks** | Bug fixes, localized refactors, adding a helper/flag within an existing container, doc/test updates, UI polish. | New/removed containers (`CNT-*`) or components (`CMP-*`), breaking contract (`CTR-*`) changes, cross-domain features, new policies (`POL-*`). |
 | **Blast Radius** | Confined to 1 existing container/component (`eidos index blast-radius`); no breaking contract changes. | Spans multiple containers/domains or alters public interfaces/schemas. |
-| **Spec Mechanism** | Update affected `.adoc` specs in `eidos/` directly alongside your code and test edits. | Create a SpecDelta (`eidos delta create`), implement code + spec changes, verify (`eidos delta verify`), and reconcile (`eidos delta apply`). |
+| **Spec Mechanism** | Update `.adoc` specs in `eidos/` on structural changes (new/renamed/removed public symbols, files, `INV-*`, or `DEC-*`; skip on body-only fixes). | Create a SpecDelta (`eidos delta create`), implement code + spec changes, verify (`eidos delta verify`), and reconcile (`eidos delta apply`). |
 | **Verification** | `eidos drift --uncommitted --json` | `eidos delta verify <ID>`, `eidos delta apply <ID>`, `eidos drift --uncommitted --json` |
 
 ---
@@ -89,7 +89,7 @@ Using the ownership and dependency insights from Step 1 (`eidos context` and `ei
 
 1. **Slice Context & Locate Symbols**: Run `eidos context -f <touched_file> --json` (and `eidos index find-symbol <symbol> --json` or `eidos index search "<keywords>" --json` as needed) to identify the owning container (`CNT-*`), component (`CMP-*`), and bound invariants (`INV-*`).
 2. **Implement Code & Tests**: Modify source code and update or add automated tests preserving `INV-*` references.
-3. **Co-Evolve Living Specs In-Place** (consult **`eidos-spec`** or run `eidos spec schema <type> [--json]` for exact YAML schemas):
+3. **Co-Evolve Living Specs on Structural Changes** (skip for pure body-only fixes where no public symbol, file, contract, `INV-*`, or `DEC-*` changed; consult **`eidos-spec`** or run `eidos spec schema <type> [--json]` for YAML schemas):
    * **New internal module or file**: Update `source_path` in the owning `CNT-*` / `CMP-*` spec (or create a standalone `CMP-*` spec via `eidos spec create component <ID> --title "..."`).
    * **New package/contract boundary export** (e.g., `__init__.py`, `index.ts`, `mod.rs`, `lib.rs`, `__all__`, or contract `specification_file`): Anchor the new boundary symbol or route in the owning/neighbor spec (`CNT-*`, `CMP-*`, `CTR-*`, or `CAP-*`).
    * **Removed or renamed public symbol**: Remove or update backticked references to the deleted symbol in the owning `CNT-*`, `CMP-*` (`== Public Surface`), or `CTR-*` spec body—leaving stale backticked references to removed symbols fails `eidos drift` (`stale_removed_symbol`) and `eidos validate`.

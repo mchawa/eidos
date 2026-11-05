@@ -1,0 +1,233 @@
+---
+type: product/exploration
+id: EXP-2026-011
+title: "External Brownfield A/B Coding Agent Benchmark on Large Production Python Repositories"
+status: proposed
+---
+= Exploration: External Brownfield A/B Coding Agent Benchmark on Large Production Python Repositories
+:toc: left
+:icons: font
+:sectnums:
+
+== Core Hypothesis
+Executing a controlled, contamination-hardened 2-arm A/B coding agent benchmark in **Antigravity** across **real, existing large pure-Python production repositories** (`>= 120` to `1,000+` source files, `>= 500k` to `5M+` codebase tokens, such as `Textualize/rich`, `encode/starlette` + `encode/httpx`, `pytest-dev/pytest`, or `celery/celery`)—onboarded at a single pinned anchor commit $C_0$ via a **task-blind** `eidos-ops` brownfield extraction subagent—will demonstrate that:
+
+1. **Scale-Amplified Discovery Lift (`Pre-Edit Tokens & Tool Calls at >= 500k–5M Tokens`)**: Whereas in a medium ~60-file repository (`EXP-2026-010`, `290k` tokens) a baseline agent (`Arm A`) can still recover via `grep`/`find` in `~16` pre-edit tool calls, on large multi-package Python repositories (`>= 500k–5M` tokens) where `grep` returns dozens of noisy cross-package matches, **`Arm B` (`eidos index repo-map`, `find-symbol`, `blast-radius`, `eidos context`) reduces pre-edit exploratory tokens by `>= 45%` and pre-edit search/read tool calls by `>= 35%`**.
+2. **Cross-Module Blast-Radius & Contract Survival**: Evaluated against **held-out test suites** plus cross-module caller, `__all__` export, and protocol/contract checks, `Arm B` improves **First-Pass Multi-File Blast-Radius Recall by `>= 30%`** and **Composite Pass Rate (`Pass@1_Composite`) by `>= 25%`** over `Arm A` (100% unmodified upstream repo at $C_0$ with its native `README.md` / `CONTRIBUTING.md` + standard developer `AGENTS.md`).
+3. **Reduced Co-Evolution Tax (Post-`0900898` Unified Gate)**: With the single-command `eidos drift --uncommitted --json` completion gate and compact `eidos validate --json` introduced after `EXP-2026-010` (`0900898`), `Arm B`'s post-edit verification and spec co-evolution overhead drops from `~8–12` tool calls (`EXP-2026-010`) to **`<= 4–6` tool calls** per task.
+4. **Brownfield Onboarding Break-Even (`ROI <= 8 Tasks`)**: The one-time token and tool-call cost of task-blind brownfield specification extraction (`CNT-*`, `CMP-*`, `CTR-*`, `DOM-*`, `CAP-*`, `INV-*`, `DEC-*`) on an existing Python project via `eidos-ops` is amortized within **`<= 5–8` multi-file engineering tasks** through cumulative discovery savings and prevented downstream regressions.
+
+== Questions & Spikes
+* **Questions to Answer**:
+  1. *How does Eidos's Discovery Lift scale with codebase size ($290\text{k} \to 1\text{M} \to 5\text{M}$ tokens)?* At what repository file count and symbol density does `eidos index find-symbol` + `eidos context` + `eidos index blast-radius` transition from a "hidden-decision accelerator" (`T1_4` in `EXP-2026-010`) into a **universal pre-edit token and tool-call reducer** across all task types?
+  2. *Zero-Dogfood Fairness*: When `Arm A` runs on an **unmodified external open-source Python repository** (`0` stripped tests, `0` Eidos internal domain concepts, using the project's real `pytest` suite and existing contributor docs) and `Arm B` runs on the exact same anchor commit $C_0$ augmented only with a task-blind extracted `eidos/` directory + `AGENTS.md` block, how do the two arms compare?
+  3. *What is the true cost and fidelity of task-blind brownfield Eidos onboarding (`eidos-ops`) on a large Python codebase?* How many minutes, tool calls, and `.adoc` specifications are required to onboard a 150–1,000 file Python project to `100%` `source_path` coverage and `is_clean: true` in `eidos drift` without annotating all 2,000+ existing unit tests?
+  4. *Did unifying the `eidos drift` gate (`0900898`) shrink the "Co-Evolution Tax" observed in `EXP-2026-010`?* How many post-edit tool calls and tokens does `Arm B` spend per task now that `eidos validate` is no longer invoked separately and no longer dumps passing document arrays?
+* **Spikes**:
+  - `spike-target-repo-selection-and-task-blind-extraction`: Select 2 real, pure-Python repositories spanning Scale Tiers S1–S2 (`>= 500k` to `3M+` tokens, zero Rust/Cython compilation bottleneck, shared read-only `.venv` per repo to preserve `/tmp` tmpfs disk space), pin canonical anchor commit $C_0$, and execute **task-blind** 8-phase `eidos-ops` brownfield extraction (`eidos drift --uncommitted --json` -> `is_clean: true` at $C_0$).
+  - `spike-anchor-aligned-task-suite-and-anti-memorization-controls`: Construct $N = 16$ benchmark tasks anchored strictly at $C_0$—combining (a) real post-$C_0$ forward PRs whose diffs apply cleanly on $C_0$ and (b) novel cross-module architectural/contract requirements anchored on $C_0$ that never appeared in public GitHub training data—with held-out `pytest` test patches and deterministic AST audits.
+  - `spike-scale-discovery-and-blast-radius-ablation`: Run a deterministic retrieval and blast-radius benchmark across all $N = 16$ tasks on the external Python repositories, measuring `eidos context` slice tokens, `eidos index find-symbol` / `blast-radius` latency, and precision/recall vs. raw `grep` file/token fan-out.
+  - `spike-antigravity-ab-subagent-execution`: Execute paired 1v1 Antigravity subagent runs (`bench-arm-a-baseline` vs. `bench-arm-b-eidos`) on history-stripped orphan worktrees at $C_0$, grading against the held-out `pytest` suites + AST architectural/contract checks and parsing `.system_generated/logs/transcript.jsonl` telemetry.
+* **Exit Criteria**: Max duration `5_days`; automated brownfield benchmark harness evaluating at least 2 real external Python codebases (`>= 100k` LoC / `>= 1M` tokens combined), zero future-commit spec leakage at $C_0$, 100% deterministic grading in `< 10s` per worktree via shared `.venv`, and a complete empirical comparison against `EXP-2026-010`.
+
+== Investigation & Findings
+*Status: `proposed` — Reviewed and hardened against 5 methodological confounds (Anchor-Commit Time-Travel Leakage, Task-Tailored Extraction Bias, LLM Pre-Training Memorization, Native Compilation / `/tmp` Disk Exhaustion, and Brownfield `INV-*` Test-Binding Scalability).*
+
+---
+
+== 1. Motivation: Why Benchmark on Large External Python Projects After `EXP-2026-010`?
+
+`EXP-2026-010` established the foundational 2-arm Antigravity benchmark methodology on Eidos's own codebase (`src/eidos/`, `~60` files, `290,553` tokens), proving:
+* **`100%` (`6/6`) vs. `66.7%` (`4/6`) composite pass rate** (`Pass@1_Composite`) and **`100%` (`2/2`) self-healing drift rescues** on multi-component contract/surface tasks.
+* **`-31%` pre-edit tool calls and `-27%` pre-edit tokens** when an architectural decision (`DEC-*`) was not written in inline Python comments (`T1_4`), and **fewer total tool calls on sequential multi-file refactors (`CHAIN_T2`: `33` vs. `36`)**.
+* **The "Co-Evolution Tax" on Small Edits**: On localized 1-file tasks in a medium ~60-file repo, `Arm A` finished in fewer tool calls because `grep`/`find` is still cheap at `290k` tokens and `Arm A` skips updating specs (`0%` spec parity).
+
+However, benchmarking exclusively on Eidos's own repository leaves three critical questions unanswered:
+
+1. **The Codebase Scale Threshold (`60` Files vs. `300–1,000+` Files)**:
+   * In a 60-file repository with clean module names, a baseline agent (`Arm A`) can run 2–3 `grep` commands and find the target file in `< 15k` tokens.
+   * In a **large production Python repository** (`150–1,000+` files, `500k–5M+` tokens, deep inheritance hierarchies, dynamic plugin registries, and overloaded method names like `validate`, `resolve`, `dispatch`, `compile`, or `render`), a naive `grep` matches 50–200 files. Without an AST-indexed structural map (`eidos index repo-map`), symbol resolver (`find-symbol`), and dependency graph (`blast-radius` / `eidos context`), `Arm A`'s pre-edit search cost grows super-linearly with repository size, whereas `Arm B`'s context slice remains bounded at **`~500–900` tokens (`O(1)` in repo size)**.
+2. **Eliminating Self-Referential & Dogfood Confounds**:
+   * In `EXP-2026-010`, `Arm A` required stripping `eidos/` and skipping 74 dogfood specification tests via `conftest.py`.
+   * On an **external Python repository**, `Arm A` is **100% untouched**: it runs on the exact upstream repository snapshot at $C_0$ with its native `README.md`, `CONTRIBUTING.md`, and complete upstream `pytest` suite (`0` tests skipped). `Arm B` is the exact same upstream snapshot at $C_0$ plus the extracted `eidos/` living specification catalog and `AGENTS.md` block.
+3. **Validating Brownfield Extraction (`eidos-ops`) & the Unified Gate (`0900898`)**:
+   * In real-world adoption, teams do not start from scratch—they run Eidos's **brownfield extraction workflow** (`eidos-ops`) on an existing Python repository. Benchmarking external Python projects tests how well a task-blind extracted `eidos/` catalog guides agents on subsequent engineering tasks, and measures the impact of the unified single-command `eidos drift --uncommitted --json` gate implemented in commit `0900898`.
+
+---
+
+== 2. Candidate Target Repository Matrix & Operational Constraints
+
+To ensure fast, deterministic grading in Antigravity (`POL-004`) without exhausting `/tmp` (`16 GB` tmpfs) or stalling on C/Rust compilation, target Python repositories must satisfy four operational constraints:
+
+1. **Pure-Python Execution (Zero Rust/Cython Rebuild per Worktree)**:
+   * Repositories whose core logic lives in compiled Rust/C++ extensions (e.g., `pydantic-core` in Pydantic v2) cannot have their core edited in Python without a multi-minute `maturin` Rust rebuild. We therefore select **pure-Python** (or optional-C-extension fallback) repositories where `PYTHONPATH=<worktree>/src` (or `<worktree>`) takes effect instantaneously.
+2. **Shared Read-Only Base Virtual Environment per Repository (`/tmp` Disk Hygiene)**:
+   * Rather than duplicating a `300 MB` `.venv` inside every task worktree, Spike 1 provisions **one shared virtual environment per target repository** (`/tmp/eidos-bench/venvs/<repo_slug>/bin/pytest`) with all test dependencies installed once. Individual `arm_a` and `arm_b` worktrees contain only source/test/spec files (`~5–20 MB` each) and run via `PYTHONPATH=<worktree> /tmp/eidos-bench/venvs/<repo_slug>/bin/pytest`.
+3. **Scale & Structural Depth**:
+   * `120–1,000+` Python files (`500k–5M+` tokens) with multiple internal packages, strict public API exports (`__all__`), CLI/ASGI/protocol boundaries (`CTR-*`), and multi-hop internal call graphs.
+4. **Fast, Deterministic Local `pytest` Suite**:
+   * Runs targeted test files in `< 5s` with zero external Docker/PostgreSQL/Redis daemons.
+
+[cols="1,2,1,1,2,1", options="header"]
+|===
+| Scale Tier | Primary Candidate Repositories (Pure Python) | Approx. Scale (Files / Tokens) | Primary Architecture Pattern | Key Blast-Radius & Guardrail Challenges | Targeted `pytest` Runtime
+
+| **Tier S1: Layered Library**
+| **`Textualize/rich`**, **`encode/starlette`**, **`encode/httpx`**
+| `120–220` `.py` files / `500k–1.2M` tokens
+| Console/Segment rendering pipeline; ASGI middleware & routing; sync/async HTTP transport
+| `ConsoleRenderable` / `Measurement` protocol parity; sync/async transport symmetry (`DEC-*`); ASGI middleware/lifespan contract boundaries (`CTR-*`)
+| `< 2.5s`
+
+| **Tier S2: Multi-Subsystem Framework**
+| **`tiangolo/fastapi`**, **`pytest-dev/pytest`**, **`pallets/flask` + `werkzeug`**
+| `250–600` `.py` files / `1.5M–3.5M` tokens
+| Dependency-injection & OpenAPI schema generator; hook/fixture plugin engine; WSGI routing & context locals
+| OpenAPI schema & route parameter blast radius across 4+ modules; fixture/hook resolution invariants (`INV-*`); context-local lifecycle rules (`DEC-*`)
+| `< 4.0s`
+
+| **Tier S3: Large Distributed / ORM Engine**
+| **`celery/celery`**, **`sqlalchemy/sqlalchemy`** *(pure-Python mode `DISABLE_SQLALCHEMY_CEXT=1`)*
+| `600–1,500+` `.py` files / `3.5M–8M+` tokens
+| Canvas/AMQP task execution pipeline; SQL compiler + dialect registry + ORM unit-of-work
+| Massive `grep` fan-out (`compile`, `visit_*`, `delay`, `apply_async` appear in 100–250 files); strict Core vs. ORM import boundary (`POL-*`, `DEC-*`)
+| `< 6.0s`
+|===
+
+---
+
+== 3. Contamination & Fairness Controls (Five Methodological Safeguards)
+
+A naive benchmark on external open-source repositories can be invalidated by five subtle confounds. `EXP-2026-011` enforces explicit controls against each:
+
+[IMPORTANT]
+====
+1. **Single Pinned Anchor Commit ($C_0$) — Zero Time-Travel Spec Leakage**:
+   * *The Trap*: If `eidos/` is extracted at `HEAD` and copied onto an older `base_commit` before a historical PR, the `eidos/` specs either leak future symbols introduced by that PR or fail `eidos validate` at $t = 0$ because those symbols do not exist yet at `base_commit`.
+   * *The Control*: Every target repository is pinned to **one canonical anchor commit $C_0$**. Brownfield extraction (`Phase 1`) runs strictly on the files present at $C_0$, and `eidos drift --uncommitted --json` must report `is_clean: true` at $C_0$. All benchmark tasks start from $C_0$ (either replaying post-$C_0$ upstream PRs whose problem exists at $C_0$, or implementing novel forward requirements on top of $C_0$).
+2. **Task-Blind Brownfield Extraction — Zero "Teaching to the Test"**:
+   * *The Trap*: If the benchmark author hand-authors `DEC-*` and `INV-*` rules in `eidos/` after choosing the 16 benchmark tasks, `Arm B` gains an unfair oracle advantage.
+   * *The Control*: Phase 1 brownfield onboarding at $C_0$ is executed **before task selection** (or by an isolated `eidos-ops` subagent given only the repository at $C_0$ and `.agents/plugins/eidos/skills/eidos-ops/SKILL.md`, with zero visibility into the benchmark tasks). Every `DEC-*`, `INV-*`, `CNT-*`, `CMP-*`, and `CTR-*` must be derived strictly from the repository's existing code, docstrings, `docs/`, and `tests/` at $C_0$.
+3. **Anti-Memorization Split (Historical Post-$C_0$ PRs vs. Novel Architecture-Anchored Tasks)**:
+   * *The Trap*: Frontier LLMs have memorized famous historical issues and file paths in `fastapi`, `rich`, and `pytest` from pre-training.
+   * *The Control*: Each archetype is split **50/50** between:
+     - **Track H (Real Post-$C_0$ Historical Upstream PRs)**: Real upstream issues/PRs merged after $C_0$ (graded with the actual upstream test patch), and
+     - **Track N (Novel Architecture-Anchored Engineering Tasks)**: Realistic multi-module features, flags, or bug fixes on the repository at $C_0$ that **never existed in upstream GitHub history**, ensuring neither `Arm A` nor `Arm B` can rely on pre-training patch memorization.
+4. **Pragmatic Brownfield `INV-*` Binding Policy (`15–30` High-Signal Invariants)**:
+   * *The Trap*: Large Python projects have `1,500–5,000` test functions. Annotating thousands of existing tests with `# INV-*` comments is unrealistic, while leaving `INV-*` unbound fails `eidos drift`.
+   * *The Control*: Following `eidos-ops/SKILL.md` Phase 7, Phase 1 binds **`15–30` core architectural and capability invariants (`INV-*`)** to representative upstream test functions (`test_binding: tests/test_x.py::test_y` with `# INV-*` marker), leaving the remaining thousands of standard unit tests untouched (since `eidos drift` only requires markers on tests explicitly referenced by an `INV-*`).
+5. **Orphan Worktree & Subagent CLI Isolation**:
+   * Both `arm_a` and `arm_b` worktrees at $C_0$ are initialized as single-commit orphan Git repositories (`git init -b main && git add -A && git commit -m "Initial commit"`), preventing `git log` / `git blame` inspection of upstream history. `bench-arm-a-baseline` has zero access to `eidos` CLI commands or `arm_b`.
+====
+
+---
+
+== 4. Experimental Architecture: Two-Phase Brownfield + Head-to-Head Protocol
+
+```
+  PHASE 1: TASK-BLIND BROWNFIELD ONBOARDING AT ANCHOR COMMIT C_0
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ Upstream Python Repo @ Pinned Anchor Commit C_0 (Orphan Git Snapshot)   │
+  └────────────────────────────────────┬────────────────────────────────────┘
+                                       │
+              ┌────────────────────────┴────────────────────────┐
+              ▼                                                 ▼
+  ┌───────────────────────────────┐                 ┌───────────────────────────────┐
+  │     ARM A BASE SNAPSHOT       │                 │     ARM B BASE SNAPSHOT       │
+  │  (100% Unmodified Upstream)   │                 │  (Task-Blind Eidos Onboarded) │
+  ├───────────────────────────────┤                 ├───────────────────────────────┤
+  │ • Native src/, tests/, docs/  │                 │ • Native src/, tests/, docs/  │
+  │ • Native README / CONTRIBUTING│                 │ • Task-blind extracted eidos/:│
+  │   + standard dev AGENTS.md    │                 │   SYS, ARCH, CNT-*, CMP-*,    │
+  │ • 0 tests skipped             │                 │   CTR-*, DOM-*, CAP-*,        │
+  │ • Shared read-only .venv      │                 │   15-30 bound INV-*, DEC-*    │
+  │                               │                 │ • Unified AGENTS.md + skills  │
+  │                               │                 │ • eidos drift == CLEAN at C_0 │
+  └───────────────┬───────────────┘                 └───────────────┬───────────────┘
+                  │                                                 │
+  ================╪=================================================╪================
+  PHASE 2: HEAD-TO-HEAD BENCHMARK EXECUTION (N = 16 Tasks: 8 Track H + 8 Track N)
+                  │                                                 │
+                  ▼                                                 ▼
+  ┌───────────────────────────────┐                 ┌───────────────────────────────┐
+  │   bench-arm-a-baseline        │                 │   bench-arm-b-eidos           │
+  │   Identical Issue/PR Prompt   │                 │   Identical Issue/PR Prompt   │
+  └───────────────┬───────────────┘                 └───────────────┬───────────────┘
+                  │                                                 │
+                  └────────────────────────┬────────────────────────┘
+                                           ▼
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │                 DETERMINISTIC UPSTREAM GRADING ORACLE                   │
+  │ 1. Apply Held-Out Test Patch -> Run Shared-Venv pytest (Pass@1_Func)    │
+  │ 2. Run Affected Package Regression Suite (Downstream Caller Survival)   │
+  │ 3. Run AST Boundary / Public Export (__all__) / DEC-* Audit (Pass@1_Arch│
+  │ 4. Run Post-Hoc eidos drift --uncommitted --json (Spec & Surface Parity)│
+  │ 5. Parse Transcript JSONL: Pre-Edit Tokens, Calls, & Gate Overhead      │
+  └─────────────────────────────────────────────────────────────────────────┘
+```
+
+=== 4.1 Phase 1 Metrics: Brownfield Onboarding Cost (`eidos-ops`)
+For each target repository onboarded at $C_0$, we record:
+* **`Onboarding_Specs_Count`**: Count of `CNT-*`, `CMP-*`, `CTR-*`, `DOM-*`, `CAP-*`, `INV-*`, and `DEC-*` entities authored to achieve `100%` `source_path` coverage and `0` unmapped files.
+* **`Onboarding_Index_Scale`**: Total indexed files, AST symbols (`classes`, `functions`, `methods`), `index.db` size (KB), cold/warm `eidos index sync` latency (ms), and `eidos context` / `find-symbol` query latency (ms).
+* **`Onboarding_Effort`**: Total subagent tool calls, wall-clock time, and token expenditure to complete the 8-phase `eidos-ops` extraction.
+
+=== 4.2 Phase 2 Task Archetypes ($N = 16$ Tasks + 4-Step Chain)
+
+Across the onboarded repositories, $N = 16$ tasks (`4` per archetype, split evenly between **Track H** historical post-$C_0$ PRs and **Track N** novel requirements) plus a 4-step sequential evolution chain ($T_1 \to T_4$) are evaluated:
+
+1. **Archetype 1 — Maintainer Design Decision & Boundary Traps (`4 Tasks`)**:
+   * *Design*: Tasks where a naive implementation violates an architectural boundary or design constraint already present in the repository at $C_0$ (e.g., sync/async transport symmetry, layer import rules, hot-path allocation rules, or protocol immutability).
+2. **Archetype 2 — Multi-Module Blast Radius & Public Export Parity (`4 Tasks`)**:
+   * *Design*: Signature, option, or protocol extensions on a foundational class/function that require synchronized updates across `3–5` internal modules, `__all__` exports, and interface contracts (`CTR-*`).
+3. **Archetype 3 — Invariant-Governed Behavioral Changes (`4 Tasks`)**:
+   * *Design*: Edge-case fixes or behavioral extensions in core modules governed by one of the `15–30` bound `INV-*` invariants at $C_0$, where fixing the target behavior must preserve existing invariant tests and add regression coverage.
+4. **Archetype 4 — Cold-Start Deep-Codebase Localization (`4 Tasks`)**:
+   * *Design*: Symptom-only prompts (zero file paths or internal class names in the prompt) across `150–600+` files, testing whether `eidos index repo-map` + `eidos index search` + `eidos index find-symbol` avoids the 50-file `grep` fan-out trap.
+5. **Longitudinal 4-Step Evolution Chain ($T_1 \to T_4$)**:
+   * *Design*: Four cumulative commits on the same subsystem worktree without resetting between steps, measuring spec-to-code fidelity and multi-PR velocity.
+
+---
+
+== 5. Evaluation Metrics & Break-Even ROI Model
+
+[cols="1,2,3", options="header"]
+|===
+| Metric | Deterministic Formula | Target Threshold
+
+| **1. Scale Discovery Compression (`Grep_Fanout_Ratio`)**
+| $\frac{\text{Tokens in files matched by raw } \texttt{grep} \text{ on task keywords}}{\text{Tokens in } \texttt{eidos context --tier guardrails}}$
+| `>= 25x` on Tier S1 (`500k+` tokens) and `>= 100x` on Tier S2 (`1.5M+` tokens)
+
+| **2. Pre-Edit Discovery Lift (`Pre_Edit_Token_Delta`)**
+| $\frac{\text{Pre\_Edit\_Tokens}(\text{Arm A}) - \text{Pre\_Edit\_Tokens}(\text{Arm B})}{\text{Pre\_Edit\_Tokens}(\text{Arm A})}$
+| **`>= 45%` token reduction** and **`>= 35%` fewer pre-edit tool calls** on repositories `>= 500k` tokens
+
+| **3. Composite Pass Rate (`Pass@1_Composite`)**
+| Held-out `pytest` patch passes (`Pass@1_Func`) AND full package regression + AST boundary/export audit passes (`Pass@1_Arch`)
+| **`>= +25%` absolute lift** (`Arm B` vs. `Arm A`) on multi-module blast-radius & guardrail tasks
+
+| **4. Post-`0900898` Gate Overhead (`Gate_Overhead_Calls`)**
+| Tool calls spent on `.adoc` spec co-evolution + single `eidos drift --uncommitted --json` gate per `Arm B` run
+| Reduced from `~8–12` calls (`EXP-2026-010`) to **`<= 4–6` calls**
+
+| **5. Brownfield Break-Even Task Count ($N_{\text{break-even}}$)**
+| $\frac{\text{Phase 1 Task-Blind Brownfield Extraction Cost (Tokens)}}{\text{Mean Net Token + Defect Rework Savings per Task}}$
+| **`<= 8` multi-file tasks** (or `< 2` prevented broken-PR rework cycles)
+|===
+
+---
+
+== 6. Planned Spikes & Execution Roadmap
+
+=== Spike 1: `spike-target-repo-selection-and-task-blind-extraction`
+* **Deliverable**: Clone 2 external pure-Python repositories (Tier S1 e.g. `encode/starlette` or `Textualize/rich`, and Tier S2 e.g. `tiangolo/fastapi` or `pytest-dev/pytest`) at pinned commit $C_0$, create shared read-only virtual environments under `/tmp/eidos-bench/venvs/`, run **task-blind** `eidos-ops` brownfield extraction to `is_clean: true` (`100%` `source_path` coverage + `15–30` bound `INV-*`), and record Phase 1 scale/onboarding telemetry.
+
+=== Spike 2: `spike-anchor-aligned-task-suite-and-anti-memorization-controls`
+* **Deliverable**: Curate $N = 16$ tasks (`8` Track H post-$C_0$ historical PRs + `8` Track N novel architecture-anchored tasks) + 4-step chain anchored strictly at $C_0$, with automated orphan worktree provisioning and held-out `pytest` + AST grading oracle.
+
+=== Spike 3: `spike-scale-discovery-and-blast-radius-ablation`
+* **Deliverable**: Deterministic benchmark across all $N = 16$ tasks measuring `Grep_Fanout_Ratio`, `eidos context` slice tokens, `find-symbol` / `blast-radius` recall, and query latency on `500k–3.5M` token Python repositories.
+
+=== Spike 4: `spike-antigravity-ab-subagent-execution`
+* **Deliverable**: Live head-to-head execution of `bench-arm-a-baseline` vs. `bench-arm-b-eidos` in Antigravity on the external Python repositories, populating empirical results for `Pass@1_Composite`, `Pre_Edit_Token_Delta`, `Gate_Overhead_Calls`, Track H vs. Track N comparison, and $N_{\text{break-even}}$ under `== Investigation & Findings`.
