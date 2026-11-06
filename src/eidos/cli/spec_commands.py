@@ -146,9 +146,10 @@ def spec_list_cmd(
     ),
 ):
     """List living specifications in the repository (excludes SpecDeltas; use `eidos delta list`)."""
+    eidos_dir = resolve_cli_eidos_dir(path)
     try:
         specs = list_specs(
-            path,
+            eidos_dir,
             type_filter=type_filter,
             status_filter=status_filter,
             include_archived=include_archived,
@@ -181,7 +182,7 @@ def spec_list_cmd(
         return
 
     if not specs:
-        console.print(f"[yellow]No specifications found under '{path}'.[/yellow]")
+        console.print(f"[yellow]No specifications found under '{eidos_dir}'.[/yellow]")
         return
 
     table = Table(title=f"Eidos Living Specifications ({len(specs)} found)", show_header=True)
@@ -216,9 +217,10 @@ def spec_show_cmd(
     ),
 ):
     """Display frontmatter metadata and preview of a living specification document."""
-    file_path = find_spec_by_id_or_path(path, target)
+    eidos_dir = resolve_cli_eidos_dir(path)
+    file_path = find_spec_by_id_or_path(eidos_dir, target)
     if not file_path:
-        console.print(f"[bold red]Error:[/bold red] Specification '{target}' not found under '{path}'.")
+        console.print(f"[bold red]Error:[/bold red] Specification '{target}' not found under '{eidos_dir}'.")
         raise typer.Exit(code=1)
 
     doc = parse_spec_file(file_path)
@@ -269,14 +271,15 @@ def spec_create_cmd(
     ),
 ):
     """Scaffold a minimal, schema-valid draft blueprint (`status: draft`) for any living specification type."""
+    eidos_dir = resolve_cli_eidos_dir(path)
     try:
         dest_file = create_spec(
-            eidos_dir=path,
+            eidos_dir=eidos_dir,
             doc_type_key=doc_type,
             raw_id=doc_id,
             title=title,
         )
-        rel = dest_file.relative_to(path) if dest_file.is_relative_to(path) else dest_file
+        rel = dest_file.relative_to(eidos_dir) if dest_file.is_relative_to(eidos_dir) else dest_file
         parsed_doc = parse_spec_file(dest_file)
         display_id = parsed_doc.doc_id or doc_id
         console.print(
@@ -308,13 +311,14 @@ def spec_delete_cmd(
     ),
 ):
     """Safely delete a living specification with reference checks."""
-    success, msg, refs = delete_spec(path, target, force=force)
+    eidos_dir = resolve_cli_eidos_dir(path)
+    success, msg, refs = delete_spec(eidos_dir, target, force=force)
     if not success:
         console.print(f"[bold red]✗ Deletion Blocked:[/bold red] {msg}")
         if refs:
             console.print("\n[yellow]Referencing specifications:[/yellow]")
             for r in refs:
-                rel = r.relative_to(path) if r.is_relative_to(path) else r
+                rel = r.relative_to(eidos_dir) if r.is_relative_to(eidos_dir) else r
                 console.print(f"  • {rel}")
         raise typer.Exit(code=1)
 

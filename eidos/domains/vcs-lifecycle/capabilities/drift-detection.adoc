@@ -4,7 +4,7 @@ id: CAP-VCS-001
 title: "Git-Native Spec-to-Code Drift Detection"
 domain: DOM-VCS-LIFECYCLE
 status: active
-version: "1.9.0"
+version: "1.10.0"
 
 business:
   personas:
@@ -31,6 +31,9 @@ technical:
     - id: INV-DRIFT-DIFF-AWARE-COVERAGE
       rule: "All structural code and design modifications (language-native public symbol additions including C++ public static class/struct methods while treating file-scope static C/C++ functions as translation-unit-local, decorator/attribute and signature modifications in AstGrepIndexer, public symbol deletions, and design token/contract edits) require substantive (non-comment, non-whitespace) specification diffs and reject specifications that still reference removed public symbols (stale_removed_symbol); new source files not paired as a move by content/symbols outside the owner's declared source_path and new public boundary symbols (package/entrypoint exports, __all__ declarations, and public class/interface contracts) covered only by a 1-hop neighbor spec additionally require a spec edit that changes ownership keys or anchors the file path, file name with extension, or a new symbol."
       test_binding: "tests/test_drift.py::test_trivial_spec_edit_does_not_cover_structural_addition"
+    - id: INV-MONOREPO-SUBPROJECT-ISOLATION
+      rule: "In a Git monorepo containing one or more sub-project eidos/ directories (e.g. packages/<pkg>/eidos/), each sub-project eidos/ MUST operate as a self-contained project whose repo_root is the parent directory of that eidos/ folder, resolving all source_path, specification_file, and test_binding paths strictly relative to the sub-project root, scoping Git diffs, git cat-file blob reads, and SpecDelta baseline lookups to that sub-project without interference from sibling sub-projects, and sharing a single gitignored semantic model cache at <git_root>/eidos/.cache/models/harrier-oss-v1-0.6b and a single Agent Plugin / AGENTS.md installation at <git_root>."
+      test_binding: "tests/test_monorepo_subprojects.py::test_monorepo_subproject_eidos_isolation"
 ---
 = Capability: Git-Native Spec-to-Code Drift Detection
 :toc: left
@@ -44,7 +47,7 @@ Ensures that source code and living specifications never diverge via a determini
 By leveraging the SQLite Knowledge Graph (`eidos/.cache/index.db`), drift detection maps code diffs directly to architectural components, reuses canonical `CMP-GRAPH-STORAGE` cache helpers (`get_cached_spec_document`, `load_test_binding_cache`, `save_test_binding_cache`) without redundant inline DDL, and traverses 1-hop relational neighborhoods to recommend exact specification targets.
 
 == Key Responsibilities
-* **Git Diff Inspection**: Inspecting working trees, staged changes, and branch heads for unmapped architectural modifications via direct canonical `eidos.vcs.diff` and `eidos.vcs.structural` submodule signatures (`merge_base=resolved_mb`) and single-pass batched `git cat-file --batch` blob extraction (`batch_read_git_blobs`, `_get_files_versions_batch`) without runtime `sys.modules` or `inspect.signature` introspection shims.
+* **Git Diff Inspection & Monorepo Sub-Project Isolation (`INV-MONOREPO-SUBPROJECT-ISOLATION`)**: Inspecting working trees, staged changes, and branch heads for unmapped architectural modifications via direct canonical `eidos.vcs.diff` and `eidos.vcs.structural` submodule signatures (`merge_base=resolved_mb`), scoping Git diffs and `git cat-file --batch` blob extraction (`batch_read_git_blobs`, `_get_files_versions_batch`) strictly to the active sub-project root relative to `<git_root>` without cross-project bleed from sibling or nested sub-projects, and avoiding runtime `sys.modules` or `inspect.signature` introspection shims.
 * **Decorator-Aware AST Structural Diffing**: Capturing enclosing `@decorator` and `#[attribute]` lines in `CodeSymbol.line_start`, prefixing normalized decorator/attribute annotations onto `CodeSymbol.signature`, normalizing C/C++ export macros (`*_API`, `*_EXPORT`), and distinguishing public C++ `static` class/struct methods from file-local `static` free functions in `AstGrepIndexer` (`SgRoot`) across all 17 supported languages so CLI route, lifecycle, and visibility changes are detected by `diff_public_symbols`.
 * **Graph-Powered Reverse Symbol Resolution**: Resolving all modified source code file paths (`structural_code_files` and `body_only_code_files`) to internal C4 components (`CMP-*`) and owning container IDs (`CNT-*`) in `touched_components` via sub-millisecond SQLite queries rather than linear disk crawls, with optional `--strict` enforcement requiring 1-hop spec or bound test co-evolution for `body_only_code_files`.
 * **1-Hop Neighborhood Resolution**: Querying the knowledge graph during `eidos drift` to discover bound interface contracts (`CTR-*`), domain capabilities (`CAP-*`), and parent containers affected by code changes.

@@ -166,8 +166,18 @@ def get_bundled_plugin_version() -> str:
 def _resolve_installed_plugin_manifest(
     project_dir: Path | None = None, dest_path: Path | None = None
 ) -> tuple[Path, Path | None]:
-    """Resolve (plugin_dir, manifest_path) for an installed project or fallback agent plugin."""
-    root = (project_dir or Path.cwd()).resolve()
+    """Resolve (plugin_dir, manifest_path) for an installed project or fallback agent plugin at the enclosing Git root."""
+    from eidos.core.workspace.project import _has_eidos_markers, find_git_root, find_repo_root
+
+    base_dir = (project_dir or Path.cwd()).resolve()
+    git_root = find_git_root(base_dir)
+    if project_dir is None:
+        root = git_root or base_dir
+    elif git_root is not None and git_root != base_dir:
+        sub_root = find_repo_root(base_dir)
+        root = git_root if (sub_root != git_root and _has_eidos_markers(sub_root / "eidos")) else base_dir
+    else:
+        root = base_dir
     if dest_path is not None:
         target_dir = dest_path if dest_path.is_absolute() else (root / dest_path)
     else:
@@ -209,11 +219,21 @@ def get_installed_plugin_version(project_dir: Path | None = None, dest_path: Pat
 
 def check_plugin_version_status(project_dir: Path | None = None, dest_path: Path | None = None) -> dict[str, Any]:
     """Check version status between bundled plugin and installed project plugin."""
-    root = (project_dir or Path.cwd()).resolve()
-    target_dir, _manifest_path = _resolve_installed_plugin_manifest(project_dir=project_dir, dest_path=dest_path)
+    from eidos.core.workspace.project import _has_eidos_markers, find_git_root, find_repo_root
+
+    base_dir = (project_dir or Path.cwd()).resolve()
+    git_root = find_git_root(base_dir)
+    if project_dir is None:
+        root = git_root or base_dir
+    elif git_root is not None and git_root != base_dir:
+        sub_root = find_repo_root(base_dir)
+        root = git_root if (sub_root != git_root and _has_eidos_markers(sub_root / "eidos")) else base_dir
+    else:
+        root = base_dir
+    target_dir, _manifest_path = _resolve_installed_plugin_manifest(project_dir=root, dest_path=dest_path)
 
     bundled = get_bundled_plugin_version()
-    installed = get_installed_plugin_version(project_dir=project_dir, dest_path=dest_path)
+    installed = get_installed_plugin_version(project_dir=root, dest_path=dest_path)
 
     if installed is None:
         status = "not_installed"

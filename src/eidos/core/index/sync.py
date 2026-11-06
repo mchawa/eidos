@@ -22,6 +22,7 @@ from eidos.core.index.ast_indexer import AstGrepIndexer, extract_test_file_cache
 from eidos.core.index.storage import get_cached_spec_document
 from eidos.core.workspace.project import (
     STANDARD_EXCLUDED_DIRS,
+    discover_nested_subproject_roots,
     extract_entity_paths,
     is_polyglot_test_file,
     match_path_pattern,
@@ -454,13 +455,25 @@ def reconcile_code_ownership(
     processed: set[str],
 ) -> None:
     """Recursively index every container package directory and re-attribute files whose owners changed."""
+    nested_roots = set(discover_nested_subproject_roots(index.root))
+    nested_prefixes: tuple[str, ...] = tuple(
+        f"{nr.relative_to(index.root).as_posix().strip('/')}/"
+        for nr in nested_roots
+        if nr.is_relative_to(index.root)
+    )
     candidates: dict[str, Path] = {}
     for pkg in sorted(resolver.package_dirs()):
         abs_pkg = (index.root / pkg).resolve()
-        if not abs_pkg.is_dir():
+        if not abs_pkg.is_dir() or abs_pkg in nested_roots:
             continue
         for dirpath, dirnames, filenames in os.walk(str(abs_pkg)):
-            dirnames[:] = sorted(d for d in dirnames if d not in STANDARD_EXCLUDED_DIRS and not d.startswith("."))
+            dirnames[:] = sorted(
+                d
+                for d in dirnames
+                if d not in STANDARD_EXCLUDED_DIRS
+                and not d.startswith(".")
+                and (Path(dirpath) / d).resolve() not in nested_roots
+            )
             for fn in sorted(filenames):
                 p_file = Path(dirpath) / fn
                 if not _is_governed_source_file(fn):
@@ -468,6 +481,8 @@ def reconcile_code_ownership(
                 try:
                     rel_code = str(p_file.relative_to(index.root)).replace("\\", "/")
                 except ValueError:
+                    continue
+                if nested_prefixes and rel_code.startswith(nested_prefixes):
                     continue
                 candidates.setdefault(rel_code, p_file)
 
@@ -481,6 +496,8 @@ def reconcile_code_ownership(
         if r[0] and not any(ch in str(r[0]) for ch in "*?[")
     }
     for rel_code in sorted(set(manifest) | resolver.declared_files() | spec_files):
+        if nested_prefixes and rel_code.startswith(nested_prefixes):
+            continue
         if rel_code not in candidates:
             abs_known = (index.root / rel_code).resolve()
             if abs_known.is_file() and _is_governed_source_file(abs_known.name):
@@ -529,6 +546,13 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
     root_str = str(index.root)
     root_prefix = root_str if root_str.endswith(("/", "\\")) else root_str + os.sep
     root_len = len(root_prefix)
+    nested_roots = set(discover_nested_subproject_roots(index.root))
+    nested_dir_strs = {os.path.normpath(str(nr)) for nr in nested_roots}
+    nested_prefixes: tuple[str, ...] = tuple(
+        f"{nr.relative_to(index.root).as_posix().strip('/')}/"
+        for nr in nested_roots
+        if nr.is_relative_to(index.root)
+    )
 
     def _rel_path(full_str: str) -> str:
         if full_str.startswith(root_prefix):
@@ -590,7 +614,7 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
 
     for std_dir in ("src", "tests", "test"):
         cand = os.path.normpath(os.path.join(root_str, std_dir))
-        if os.path.isdir(cand):
+        if os.path.isdir(cand) and cand not in nested_dir_strs:
             tracked_code_dirs.add(cand)
 
     package_paths: set[str] = set()
@@ -612,6 +636,8 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
             pp = "/".join(prefix_parts)
         if pp:
             full_pp = os.path.normpath(os.path.join(root_str, pp))
+            if full_pp in nested_dir_strs:
+                continue
             if os.path.isdir(full_pp):
                 tracked_code_dirs.add(full_pp)
             else:
@@ -636,6 +662,8 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
         return False
 
     def _scan_code_dir(dir_path: str) -> None:
+        if os.path.normpath(dir_path) in nested_dir_strs:
+            return
         try:
             with os.scandir(dir_path) as it:
                 for entry in it:
@@ -644,6 +672,8 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
                         continue
                     try:
                         if entry.is_dir(follow_symlinks=False):
+                            if os.path.normpath(entry.path) in nested_dir_strs:
+                                continue
                             _scan_code_dir(entry.path)
                             continue
                     except OSError:
@@ -652,6 +682,8 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
                         continue
                     full_file = entry.path
                     rel_code = _rel_path(full_file)
+                    if nested_prefixes and rel_code.startswith(nested_prefixes):
+                        continue
                     if rel_code in disk_files:
                         continue
                     disk_files.add(rel_code)
@@ -669,6 +701,8 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
 
     for full_pp in explicit_code_files:
         rel_code = _rel_path(full_pp)
+        if nested_prefixes and rel_code.startswith(nested_prefixes):
+            continue
         if rel_code in disk_files:
             continue
         if not _is_covered_by_top_code_dirs(full_pp) and _is_governed_source_file(full_pp) and os.path.isfile(full_pp):
@@ -680,6 +714,8 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
             _check_file_str(full_pp, rel_code, stat.st_mtime)
 
     for rel_tracked in db_files:
+        if nested_prefixes and rel_tracked.startswith(nested_prefixes):
+            continue
         if not rel_tracked.endswith(".adoc") and rel_tracked not in disk_files:
             abs_tracked = os.path.normpath(os.path.join(root_str, rel_tracked))
             if _is_covered_by_top_code_dirs(abs_tracked):
@@ -2044,12 +2080,24 @@ def sync_index(
                         needs_unindexed_test_scan = True
                         break
 
+        nested_roots = set(discover_nested_subproject_roots(index.root))
+        nested_prefixes: tuple[str, ...] = tuple(
+            f"{nr.relative_to(index.root).as_posix().strip('/')}/"
+            for nr in nested_roots
+            if nr.is_relative_to(index.root)
+        )
         candidate_test_files: dict[str, Path] = {}
         for std_test_dir in ("tests", "test", *sorted(resolver.package_dirs())):
             tests_dir = (index.root / std_test_dir).resolve()
-            if tests_dir.is_dir():
+            if tests_dir.is_dir() and tests_dir not in nested_roots:
                 for dirpath, dirnames, filenames in os.walk(str(tests_dir)):
-                    dirnames[:] = [d for d in dirnames if d not in STANDARD_EXCLUDED_DIRS and not d.startswith(".")]
+                    dirnames[:] = [
+                        d
+                        for d in dirnames
+                        if d not in STANDARD_EXCLUDED_DIRS
+                        and not d.startswith(".")
+                        and (Path(dirpath) / d).resolve() not in nested_roots
+                    ]
                     for fn in filenames:
                         tp = Path(dirpath) / fn
                         if tp.suffix not in _CODE_EXTS:
@@ -2058,6 +2106,8 @@ def sync_index(
                             rel_t = str(tp.relative_to(index.root)).replace("\\", "/")
                         except ValueError:
                             rel_t = str(tp).replace("\\", "/")
+                        if nested_prefixes and rel_t.startswith(nested_prefixes):
+                            continue
                         if is_polyglot_test_file(rel_t):
                             candidate_test_files.setdefault(rel_t, tp)
 
@@ -2072,6 +2122,8 @@ def sync_index(
                     rel_tb = str(abs_tb.relative_to(index.root)).replace("\\", "/")
                 except ValueError:
                     rel_tb = str(abs_tb).replace("\\", "/")
+                if nested_prefixes and rel_tb.startswith(nested_prefixes):
+                    continue
                 candidate_test_files.setdefault(rel_tb, abs_tb)
 
         for rel_t, tp in sorted(candidate_test_files.items()):

@@ -16,12 +16,12 @@ Root Typer CLI application (`src/eidos/cli/main.py`) and shared workspace resolu
 
 == Key Responsibilities & Collaborators
 * **Root Command Registration**: Mounts `init`, `validate`, `spec`, `delta`, `context`, `index`, `drift`, `portal`, `plugin`, `doctor`, and `hook` subcommand groups onto the root `app` Typer instance (`CTR-EIDOS-CLI`).
-* **Shared Workspace Resolution (`_shared.py`)**: Resolves `--path` arguments and auto-discovers the nearest `eidos/` specification directory (`resolve_cli_eidos_dir`, `has_eidos_markers`) for all CLI command components.
+* **Shared Workspace & Sub-Project Resolution (`_shared.py`)**: Resolves `--path` arguments and auto-discovers the nearest governing sub-project `eidos/` specification directory (`resolve_cli_eidos_dir`, `has_eidos_markers`) walking upward from `CWD`, explicit `--path` (whether pointing to `<subproject>` or `<subproject>/eidos`), or target `hint_files` while ignoring cache-only `eidos/` directories.
 
 == Public Surface
 * `app: typer.Typer`, `main() -> None`
 * `info() -> None`, `version_callback(value: bool) -> None`
-* `resolve_cli_eidos_dir(path: Path | None) -> Path`, `has_eidos_markers(candidate: Path) -> bool`
+* `resolve_cli_eidos_dir(target_path: Path | None = None, hint_files: Sequence[str | Path] | None = None) -> Path`, `has_eidos_markers(candidate: Path) -> bool`
 
 == Design Constraints & Operational Notes
 * **Thin Presentation Boundary**: Contains zero domain business logic; delegates all operations to `CNT-EIDOS-CORE`, `CNT-EIDOS-INDEX`, `CNT-EIDOS-VCS`, `CNT-EIDOS-PORTAL`, and `CNT-EIDOS-PLUGIN`.

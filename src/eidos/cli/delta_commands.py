@@ -7,7 +7,7 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from eidos.cli._shared import console
+from eidos.cli._shared import console, resolve_cli_eidos_dir
 from eidos.core.lifecycle.audit import AuditEngine
 from eidos.core.lifecycle.catalog import find_spec_by_id_or_path
 from eidos.core.lifecycle.changelog import ChangelogGenerator
@@ -56,7 +56,8 @@ def delta_list_cmd(
     ),
 ):
     """List SpecDeltas in active/ and applied/ states."""
-    deltas = list_deltas(path, status_filter=status_filter, include_archived=include_archived)
+    eidos_dir = resolve_cli_eidos_dir(path)
+    deltas = list_deltas(eidos_dir, status_filter=status_filter, include_archived=include_archived)
     if json_output:
         serializable = [
             {
@@ -79,7 +80,7 @@ def delta_list_cmd(
         return
 
     if not deltas:
-        console.print(f"[yellow]No SpecDeltas found under '{path}/deltas'.[/yellow]")
+        console.print(f"[yellow]No SpecDeltas found under '{eidos_dir}/deltas'.[/yellow]")
         return
 
     table = Table(title=f"Eidos SpecDeltas ({len(deltas)} found)", show_header=True)
@@ -140,15 +141,16 @@ def delta_create_cmd(
     ),
 ):
     """Create a new SpecDelta blueprint in flat storage (eidos/deltas/<id>.adoc)."""
+    eidos_dir = resolve_cli_eidos_dir(path)
     try:
         dest_file = create_delta(
-            eidos_dir=path,
+            eidos_dir=eidos_dir,
             raw_id=delta_id,
             title=title,
             kind=kind,
             slug_suffix=slug,
         )
-        rel = dest_file.relative_to(path) if dest_file.is_relative_to(path) else dest_file
+        rel = dest_file.relative_to(eidos_dir) if dest_file.is_relative_to(eidos_dir) else dest_file
         console.print(f"[bold green]✓ Created SpecDelta:[/bold green] [bold]{dest_file.name}[/bold]")
         console.print(f"  [dim]Location: {rel}[/dim]")
         console.print("  [dim]Status: proposed[/dim]")
@@ -177,7 +179,8 @@ def delta_verify_cmd(
     ),
 ):
     """Verify that all semantic mutations declared in a SpecDelta exist in the living specifications."""
-    is_verified, msg, report = verify_delta_mutations(path, target)
+    eidos_dir = resolve_cli_eidos_dir(path)
+    is_verified, msg, report = verify_delta_mutations(eidos_dir, target)
     if json_output:
         if report:
             typer.echo(orjson.dumps(report.to_dict(), option=orjson.OPT_INDENT_2).decode("utf-8"))
@@ -251,7 +254,8 @@ def delta_audit_cmd(
     ),
 ):
     """Audit entities removed or deprecated by a SpecDelta for dangling references and active leaks."""
-    engine = AuditEngine(eidos_dir=path)
+    eidos_dir = resolve_cli_eidos_dir(path)
+    engine = AuditEngine(eidos_dir=eidos_dir)
     result = engine.audit_delta(target)
 
     if json_output:
@@ -377,7 +381,8 @@ def delta_apply_cmd(
     ),
 ):
     """Reconcile a SpecDelta in-place, updating status to 'applied'."""
-    success, msg, applied_file = apply_delta(path, target, verify=verify)
+    eidos_dir = resolve_cli_eidos_dir(path)
+    success, msg, applied_file = apply_delta(eidos_dir, target, verify=verify)
     if json_output:
         payload = {
             "success": success,
@@ -396,7 +401,7 @@ def delta_apply_cmd(
 
     console.print(f"[bold green]✓[/bold green] {msg}")
     if applied_file:
-        rel = applied_file.relative_to(path) if applied_file.is_relative_to(path) else applied_file
+        rel = applied_file.relative_to(eidos_dir) if applied_file.is_relative_to(eidos_dir) else applied_file
         console.print(f"  [dim]Updated in-place: {rel}[/dim]")
 
 
@@ -423,8 +428,9 @@ def delta_status_cmd(
     ),
 ):
     """Display a status summary of all SpecDeltas or transition a specific SpecDelta's lifecycle status."""
+    eidos_dir = resolve_cli_eidos_dir(path)
     if delta_id and new_status:
-        ok, msg, file_path, old_status = set_delta_status(path, delta_id, new_status)
+        ok, msg, file_path, old_status = set_delta_status(eidos_dir, delta_id, new_status)
         if json_output:
             payload = {
                 "success": ok,
@@ -445,7 +451,9 @@ def delta_status_cmd(
         return
 
     if delta_id:
-        file_path = find_spec_by_id_or_path(path / "deltas", delta_id) or find_spec_by_id_or_path(path, delta_id)
+        file_path = find_spec_by_id_or_path(eidos_dir / "deltas", delta_id) or find_spec_by_id_or_path(
+            eidos_dir, delta_id
+        )
         if not file_path or not file_path.exists():
             if json_output:
                 typer.echo(
@@ -474,7 +482,7 @@ def delta_status_cmd(
         console.print(f"[bold cyan]{doc.doc_id}[/bold cyan]: [bold yellow]{current_status}[/bold yellow] — {doc.title}")
         return
 
-    summary = get_delta_status_summary(path)
+    summary = get_delta_status_summary(eidos_dir)
     total = summary["total"]
     active_count = summary["active_count"]
     archived_count = summary.get("archived_count", 0)
@@ -568,7 +576,8 @@ def delta_delete_cmd(
     ),
 ):
     """Delete a SpecDelta file."""
-    success, msg, _ = delete_delta(path, target, force=force)
+    eidos_dir = resolve_cli_eidos_dir(path)
+    success, msg, _ = delete_delta(eidos_dir, target, force=force)
     if not success:
         console.print(f"[bold red]✗ Failed to delete SpecDelta:[/bold red] {msg}")
         raise typer.Exit(code=1)
@@ -608,7 +617,7 @@ def delta_changelog_cmd(
     """Generate an auditable, SpecDelta-backed changelog partitioned by Git release tags."""
     from eidos.core.workspace.project import find_repo_root
 
-    eidos_dir = path or Path("eidos")
+    eidos_dir = resolve_cli_eidos_dir(path)
     resolved_eidos = eidos_dir.resolve()
     repo_root = resolved_eidos.parent if resolved_eidos.name == "eidos" else find_repo_root(resolved_eidos)
     gen = ChangelogGenerator(repo_root=repo_root, eidos_dir=eidos_dir)
@@ -662,8 +671,9 @@ def delta_archive_cmd(
     ),
 ):
     """Partition and slim older terminal SpecDeltas and Explorations into archive/ subdirectories."""
+    eidos_dir = resolve_cli_eidos_dir(path)
     res = archive_deltas(
-        eidos_dir=path,
+        eidos_dir=eidos_dir,
         keep_recent=keep_recent,
         include_explorations=explorations,
         dry_run=dry_run,

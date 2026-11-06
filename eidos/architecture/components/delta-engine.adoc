@@ -13,7 +13,7 @@ source_path: src/eidos/core/lifecycle/delta_engine.py
 Manages the end-to-end SpecDelta (`DLT-*`) lifecycle: collision-free `<SLUG>-<4HEX>` blueprint creation, composable `operation` + `target` mutation normalization, Git-baseline and declarative `expect` post-condition verification, verify-gated status transitions, atomic application, and two-tier archive slimming.
 
 == Key Responsibilities & Collaborators
-* **Blueprint Authoring & Lifecycle State Machine**: Scaffolds `DLT-YYYY-NNN-<SLUG>-<4HEX>` files (`create_delta`) with auto-detected `vcs.branch` / `vcs.base_commit`, lists and summarizes 5-state statuses (`proposed`, `in_review`, `approved`, `applied`, `rejected`), and enforces verify-gated transitions (`set_delta_status`, `apply_delta`).
+* **Blueprint Authoring & Lifecycle State Machine**: Scaffolds `DLT-YYYY-NNN-<SLUG>-<4HEX>` files (`create_delta`) with auto-detected `vcs.branch` / `vcs.base_commit` resolved across arbitrary ancestor depths in monorepo sub-projects (`_resolve_git_repo_root` via `find_git_root`), lists and summarizes 5-state statuses (`proposed`, `in_review`, `approved`, `applied`, `rejected`), and enforces verify-gated transitions (`set_delta_status`, `apply_delta`).
 * **Git-Baseline & Declarative Post-Condition Verification**: Evaluates `mutations[]` (`add`, `modify`, `remove`, `deprecate`) against Git baseline blobs (`_resolve_git_baseline_sha`) and structured `expect.body` / `expect.frontmatter` assertions (`verify_delta_mutations`).
 * **Two-Tier Archive Partitioning**: Moves older terminal (`applied`/`rejected`) SpecDeltas and (`adopted`/`discarded`) Explorations into `eidos/deltas/archive/` and `eidos/explorations/archive/` (`archive_deltas`, `archive_explorations`) while slimming archived `.adoc` bodies.
 

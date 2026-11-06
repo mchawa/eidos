@@ -1120,6 +1120,21 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
 }
 
 
+def _resolve_plugin_project_root(project_dir: Path | None) -> Path:
+    """Resolve the target project root for plugin operations (redirecting monorepo sub-projects to git_root)."""
+    from eidos.core.workspace.project import _has_eidos_markers, find_git_root, find_repo_root
+
+    base_dir = (project_dir or Path.cwd()).resolve()
+    git_root = find_git_root(base_dir)
+    if project_dir is None:
+        return git_root or base_dir
+    if git_root is not None and git_root != base_dir:
+        sub_root = find_repo_root(base_dir)
+        if sub_root != git_root and _has_eidos_markers(sub_root / "eidos"):
+            return git_root
+    return base_dir
+
+
 def install_plugin(
     target: PluginInstallTarget = PluginInstallTarget.PROJECT,
     project_dir: Path | None = None,
@@ -1128,12 +1143,12 @@ def install_plugin(
     launcher: str = "eidos",
     force_blocks: bool | None = None,
 ) -> list[InstallResult]:
-    """Install the Eidos agent plugin strictly inside project scope (.agents/plugins/eidos).
+    """Install the Eidos agent plugin strictly inside project scope (.agents/plugins/eidos at the enclosing Git root).
 
     ``force_blocks`` (default: ``force``) controls overwriting hand-edited AGENTS.md / CLAUDE.md managed blocks.
     """
     source_dir = locate_plugin_bundle()
-    root = (project_dir or Path.cwd()).resolve()
+    root = _resolve_plugin_project_root(project_dir)
     overwrite_blocks = force if force_blocks is None else force_blocks
     results = []
 
@@ -1195,8 +1210,8 @@ def uninstall_plugin(
     project_dir: Path | None = None,
     dest_path: Path | None = None,
 ) -> list[UninstallResult]:
-    """Uninstall / remove the Eidos agent plugin strictly from project scope."""
-    root = (project_dir or Path.cwd()).resolve()
+    """Uninstall / remove the Eidos agent plugin strictly from project scope (at the enclosing Git root)."""
+    root = _resolve_plugin_project_root(project_dir)
     results = []
 
     # If explicit destination provided, remove there directly

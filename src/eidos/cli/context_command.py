@@ -53,7 +53,7 @@ def context_cmd(
     ),
 ):
     """Extract a compact architectural subgraph slice (C4 components, contracts, capabilities, invariants, policies)."""
-    eidos_dir = resolve_cli_eidos_dir(path)
+    eidos_dir = resolve_cli_eidos_dir(path, hint_files=files)
 
     if not eidos_dir.exists():
         if json_output:
@@ -64,9 +64,20 @@ def context_cmd(
 
     resolved_eidos = eidos_dir.resolve()
     repo_root = resolved_eidos.parent if resolved_eidos.name == "eidos" else find_repo_root(resolved_eidos)
+    normalized_files: list[str] | None = None
+    if files:
+        normalized_files = []
+        for raw_f in files:
+            p_f = Path(raw_f)
+            abs_cand = p_f.resolve() if p_f.is_absolute() else (Path.cwd() / p_f).resolve()
+            if abs_cand.is_relative_to(repo_root) and (abs_cand.exists() or not (repo_root / p_f).exists()):
+                normalized_files.append(str(abs_cand.relative_to(repo_root)).replace("\\", "/"))
+            else:
+                normalized_files.append(raw_f)
+
     idx = get_architectural_index(repo_root=repo_root, eidos_dir=eidos_dir)
     slice_result = idx.get_tiered_context_slice(
-        files=files,
+        files=normalized_files,
         component=component,
         task=task,
         tier=tier,

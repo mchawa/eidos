@@ -13,8 +13,8 @@ source_path: src/eidos/cli/spec_commands.py
 Implements `eidos validate` and the `eidos spec` subcommand group (`list`, `show`, `schema`, `create`, `delete`) for inspecting, validating, scaffolding, and deleting living catalog specifications across all 15 non-delta specification types.
 
 == Key Responsibilities & Collaborators
-* **Root Validation (`eidos validate`)**: Invokes `CMP-SPEC-VALIDATOR` (`SpecValidator.validate_directory`) and renders Rich validation tables or compact `orjson` JSON reports (`--json`, listing only failing documents in `documents` alongside `schema_errors` and `broken_references`).
-* **Living Catalog Management (`eidos spec`)**: Delegates `list`, `show`, `schema`, `create`, and `delete` operations to `CMP-LIFECYCLE-SCAFFOLDER` while enforcing a strict disjoint boundary from `eidos delta`.
+* **Root Validation (`eidos validate`)**: Resolves `--path` through `resolve_cli_eidos_dir(path)` (`CMP-CLI-APP`), invokes `CMP-SPEC-VALIDATOR` (`SpecValidator.validate_directory`), and renders Rich validation tables or compact `orjson` JSON reports (`--json`, listing only failing documents in `documents` alongside `schema_errors` and `broken_references`).
+* **Living Catalog Management (`eidos spec`)**: Routes `--path` discovery across `list`, `show`, `create`, and `delete` through `resolve_cli_eidos_dir(path)` and delegates operations to `CMP-LIFECYCLE-SCAFFOLDER` while enforcing a strict disjoint boundary from `eidos delta`.
 
 == Public Surface
 * `register(app: typer.Typer) -> None`, `spec_app: typer.Typer`

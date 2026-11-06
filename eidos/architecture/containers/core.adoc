@@ -41,6 +41,20 @@ decisions:
       - option: "Hardcode docs/ and README.md leak classifications in AuditEngine"
         reason_rejected: "Leaks Eidos's own dogfooded repository structure into the core engine instead of deriving governance from declared container source_path entries."
     graduated_from: DLT-2026-107-INDEX-DRIVEN
+  - id: DEC-CORE-MONOREPO-ISOLATED-SUBPROJECTS
+    title: "Independent Single-Scope Sub-Project Eidos Directories in Monorepos"
+    decision: "Treat each sub-project eidos/ directory in a monorepo (e.g. packages/api/eidos/) as a self-contained Eidos project whose owning project root (repo_root) is the parent directory of that eidos/ directory, while resolving Git operations against the enclosing .git worktree root (find_git_root) scoped to the sub-project's relative path prefix, always sharing a single gitignored Harrier ONNX model cache at <git_root>/eidos/.cache/models/harrier-oss-v1-0.6b, and always installing the Eidos Agent Plugin (.agents/plugins/eidos) and AGENTS.md / CLAUDE.md at <git_root>."
+    rationale: "Keeping each sub eidos/ directory self-contained with strictly sub-project-relative source_path, specification_file, and test_binding paths, its own eidos/.cache/index.db, and its own standalone portal preserves zero-configuration simplicity and fast O(subproject) indexing/drift checks without cross-project coupling, while centralizing the multi-hundred-MB Harrier ONNX model weights at <git_root>/eidos/.cache/models/harrier-oss-v1-0.6b and the Agent Plugin / AGENTS.md at <git_root> eliminates redundant disk/RAM usage and duplicate agent instruction files across sub-projects."
+    rejected_alternatives:
+      - option: "Merge all sub eidos/ folders into a single shared root index.db knowledge graph"
+        reason_rejected: "Couples independent monorepo services/packages into a global namespace, requires cross-project ID disambiguation, and forces full-monorepo re-indexing on localized sub-project edits."
+      - option: "Require source_path and test_binding inside sub eidos/ specs to be relative to the monorepo .git root"
+        reason_rejected: "Breaks sub-project portability, leaks monorepo directory structure into every component/capability spec, and prevents moving or extracting a sub-project without rewriting all specs."
+      - option: "Allow cross-scope entity reference inheritance between root eidos/ and sub eidos/ directories"
+        reason_rejected: "Violates self-contained catalog validation and makes sub-project validation dependent on external parent/sibling directories."
+      - option: "Download a separate Harrier ONNX model copy or install duplicate .agents/plugins/eidos and AGENTS.md into every sub-project"
+        reason_rejected: "Duplicates 600MB-2.4GB of identical read-only ONNX model weights, in-memory ONNX Runtime sessions, and agent plugin/instruction files across every sub-project in the monorepo."
+    graduated_from: DLT-2026-123-SUPPORT-INDEPENDENT-1928
 
 contracts:
   provides: []
@@ -50,14 +64,14 @@ contracts:
 :toc: left
 
 == Architectural Boundary
-This container represents the foundational library under `src/eidos/core/` (`spec/`, `lifecycle/`, and `workspace/` subpackages) and bundled schemas and AsciiDoc prose templates under `assets/schemas/`. It owns all specification parsing, JSON Schema validation, zero-config project path resolution, minimal blueprint scaffolding across all 15 living specification types, W3C token management, SpecDelta lifecycle state machines, and reference checking. It explicitly excludes SQLite persistence and lexical/AST indexing (delegated to `CNT-EIDOS-INDEX`), Git diff and drift evaluation (delegated to `CNT-EIDOS-VCS`), CLI presentation (`CNT-EIDOS-CLI`), and web portal rendering (`CNT-EIDOS-PORTAL`).
+This container represents the foundational library under `src/eidos/core/` (`spec/`, `lifecycle/`, and `workspace/` subpackages) and bundled schemas and AsciiDoc prose templates under `assets/schemas/`. It owns all specification parsing, JSON Schema validation, zero-config project and monorepo sub-project path resolution, minimal blueprint scaffolding across all 15 living specification types, W3C token management, SpecDelta lifecycle state machines, and reference checking. It explicitly excludes SQLite persistence and lexical/AST indexing (delegated to `CNT-EIDOS-INDEX`), Git diff and drift evaluation (delegated to `CNT-EIDOS-VCS`), CLI presentation (`CNT-EIDOS-CLI`), and web portal rendering (`CNT-EIDOS-PORTAL`).
 
 == Internal Structure & Key Mechanisms
 `CNT-EIDOS-CORE` is structured into three internal subpackages plus the packaged `assets/schemas/v1/` schema bundle:
 
 * **Specification Parsing & Validation (`src/eidos/core/spec/`)**: Parses AsciiDoc documents with YAML frontmatter via Rust-backed `fastyaml-rs`, projects frontmatter into typed Pydantic domain models (`FrontmatterModel`), and validates all 16 v1 document types against JSON Schema Draft 2020-12 (`jsonschema`), recursive `x-eidos-ref` cross-references, bidirectional multi-protocol `CTR-*` contract parity, W3C DTCG token manifests, and AST-verified `INV-*` test bindings.
-* **Specification & SpecDelta Lifecycle (`src/eidos/core/lifecycle/`)**: Orchestrates greenfield repository initialization (`init_repository`), minimal draft blueprint generation from externalized `.template.adoc` templates, reference-safe catalog deletion, SpecDelta state transitions (`proposed` -> `in_review` -> `approved` -> `applied` / `rejected`), Git-baseline post-condition verification, index-scoped tombstone deletion auditing, two-tier archiving (`eidos/deltas/archive/`), and Keep a Changelog compilation.
-* **Workspace & Asset Resolution (`src/eidos/core/workspace/`)**: Resolves repository roots (`eidos/`), glob-based `source_path` ownership rules, standard excluded directories, and bundled schema/template assets across editable checkouts and wheel installations.
+* **Specification & SpecDelta Lifecycle (`src/eidos/core/lifecycle/`)**: Orchestrates greenfield repository initialization (`init_repository`), minimal draft blueprint generation from externalized `.template.adoc` templates, reference-safe catalog deletion, SpecDelta state transitions (`proposed` -> `in_review` -> `approved` -> `applied` / `rejected`), Git-baseline post-condition verification across both single-root repos and nested monorepo sub-projects, index-scoped tombstone deletion auditing, two-tier archiving (`eidos/deltas/archive/`), and Keep a Changelog compilation.
+* **Workspace & Asset Resolution (`src/eidos/core/workspace/`)**: Resolves repository roots (`eidos/`), enclosing `.git` worktree roots (`find_git_root`), independent monorepo sub-project boundaries (`discover_nested_subproject_roots`), glob-based `source_path` ownership rules, standard excluded directories, and bundled schema/template assets across editable checkouts and wheel installations.
 
 == Quality Attributes & Operational Policies
 * **Stateless Git-Native Execution (`POL-001`)**: Operates statelessly over the Git working tree and commit graph; `eidos/.cache/index.db` is strictly an ephemeral, disposable acceleration cache.

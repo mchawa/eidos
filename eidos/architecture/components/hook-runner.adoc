@@ -13,7 +13,7 @@ source_path: src/eidos/plugin/hooks.py
 Executes the stateless CLI-native `Stop` lifecycle hook (`eidos hook`), running uncommitted drift and validation checks once at the end of an agent turn and emitting a non-blocking JSON verdict (`DEC-PLUGIN-STATELESS-SINGLE-STOP-HOOK`).
 
 == Key Responsibilities & Collaborators
-* **Stateless Stop Gate Execution**: Invokes `CMP-DRIFT-DETECTOR` (`detect_drift(uncommitted=True)` and `generate_remediation_prompt`) and returns `{"decision": "allow"}` when clean or `{"decision": "allow", "systemMessage": "..."}` when specification validation, invariant, or drift issues exist.
+* **Stateless Stop Gate Execution**: Resolves the nearest governing sub-project `repo_root` and `eidos/` directory (`find_workspace_root`, `find_repo_root`), invokes `CMP-DRIFT-DETECTOR` (`detect_drift(uncommitted=True)` and `generate_remediation_prompt`), and returns `{"decision": "allow"}` when clean or `{"decision": "allow", "systemMessage": "..."}` when specification validation, invariant, or drift issues exist.
 
 == Public Surface
 * `handle_stop_hook(repo_root: Path, eidos_dir: Path | None = None) -> dict[str, Any]`

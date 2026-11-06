@@ -13,7 +13,7 @@ source_path: src/eidos/cli/drift_commands.py
 Exposes the `eidos drift` CLI command for verifying zero specification-to-code drift, schema validity, and static invariant test-binding coverage across uncommitted working trees or Git commit ranges.
 
 == Key Responsibilities & Collaborators
-* **Drift Gate CLI Adapter**: Resolves repository and specification roots via `CMP-PROJECT-RESOLVER`, invokes `CMP-DRIFT-DETECTOR` (`detect_drift` with optional `--strict` enforcement, `generate_remediation_prompt`, `build_drift_remediation_and_summary`), and renders Rich terminal diagnostics (distinguishing `structural_code_files` and `body_only_code_files` and listing both `schema_errors` and `broken_references`), CI Markdown summaries (`--markdown`), or `orjson` JSON payloads (`--json`).
+* **Drift Gate CLI Adapter**: Resolves repository, monorepo sub-project, and specification roots via `CMP-CLI-APP` (`resolve_cli_eidos_dir`) and `CMP-PROJECT-RESOLVER` (`resolve_spec_and_repo_roots`), invokes `CMP-DRIFT-DETECTOR` (`detect_drift` with optional `--strict` enforcement, `generate_remediation_prompt`, `build_drift_remediation_and_summary`), and renders Rich terminal diagnostics (distinguishing `structural_code_files` and `body_only_code_files` and listing both `schema_errors` and `broken_references`), CI Markdown summaries (`--markdown`), or `orjson` JSON payloads (`--json`).
 
 == Public Surface
 * `register(app: typer.Typer) -> None`

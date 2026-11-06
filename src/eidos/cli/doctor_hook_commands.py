@@ -10,10 +10,10 @@ import typer
 from rich.table import Table
 
 import eidos
-from eidos.cli._shared import PANEL_PLUGINS, PANEL_SETUP, console
+from eidos.cli._shared import PANEL_PLUGINS, PANEL_SETUP, console, has_eidos_markers, resolve_cli_eidos_dir
 from eidos.core.index.graph_index import get_architectural_index
 from eidos.core.spec.validator import SpecValidator
-from eidos.core.workspace.project import find_repo_root
+from eidos.core.workspace.project import find_git_root, find_repo_root, resolve_spec_and_repo_roots
 from eidos.plugin.hooks import execute_hook
 from eidos.plugin.version import (
     check_cli_update_status,
@@ -35,18 +35,13 @@ def doctor_cmd(
     ),
 ):
     """Run health checks on the Eidos CLI installation, Git repository, living specs, index, and agent plugin."""
-    start = (path or Path.cwd()).resolve()
-    repo_root = find_repo_root(start)
-    if path is None:
-        eidos_dir = repo_root / "eidos"
-    elif (
-        (start / "system.adoc").exists()
-        or (start != repo_root and not (start / "eidos").is_dir())
-        or any(start.glob("*.adoc"))
-    ):
-        eidos_dir = start
+    eidos_dir = resolve_cli_eidos_dir(path).resolve()
+    if eidos_dir.name == "eidos":
+        repo_root = eidos_dir.parent
+    elif eidos_dir.exists():
+        _, repo_root = resolve_spec_and_repo_roots(eidos_dir)
     else:
-        eidos_dir = start / "eidos"
+        repo_root = find_repo_root((path or Path.cwd()).resolve())
 
     path_bin = shutil.which("eidos")
     venv_bin = Path(sys.executable).resolve().parent / ("eidos.exe" if sys.platform == "win32" else "eidos")
@@ -67,11 +62,11 @@ def doctor_cmd(
     except OSError:
         git_ok = False
 
-    specs_exist = eidos_dir.exists() and ((eidos_dir / "system.adoc").exists() or any(eidos_dir.rglob("*.adoc")))
+    specs_exist = has_eidos_markers(eidos_dir)
     specs_valid = False
     total_specs = 0
     valid_specs = 0
-    if eidos_dir.exists():
+    if specs_exist:
         val_report = SpecValidator().validate_directory(eidos_dir)
         specs_valid = val_report.is_clean
         total_specs = val_report.total_docs
@@ -80,7 +75,7 @@ def doctor_cmd(
     db_path = eidos_dir / ".cache" / "index.db"
     index_ok = False
     index_entities = 0
-    if eidos_dir.exists():
+    if specs_exist:
         try:
             idx = get_architectural_index(repo_root=repo_root, eidos_dir=eidos_dir)
             st = idx.get_index_status()
@@ -89,7 +84,8 @@ def doctor_cmd(
         except (OSError, RuntimeError):
             index_ok = False
 
-    plugin_status = check_plugin_version_status(project_dir=repo_root)
+    plugin_root = find_git_root(repo_root) or repo_root
+    plugin_status = check_plugin_version_status(project_dir=plugin_root)
     plugin_installed = plugin_status.get("status") != "not_installed"
     plugin_up_to_date = plugin_status.get("status") == "up_to_date"
     cli_update = check_cli_update_status()

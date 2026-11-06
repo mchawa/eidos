@@ -16,7 +16,9 @@ from pathlib import Path
 
 from eidos.core.workspace.project import (
     STANDARD_EXCLUDED_DIRS,
+    discover_nested_subproject_roots,
     extract_entity_paths,
+    find_git_root,
     get_tracked_files,
     is_generated_or_vendored,
     is_polyglot_test_file,
@@ -150,6 +152,7 @@ def _resolve_base_and_merge_base(
     head_ref: str = "HEAD",
 ) -> tuple[str | None, str | None, bool]:
     """Resolve (resolved_base, resolved_merge_base, fell_back_to_uncommitted) in a single pass."""
+    git_root = find_git_root(repo) or repo
     if base_ref is not None:
         resolved_base = _resolve_base_ref(repo, base_ref)
         if not resolved_base:
@@ -184,7 +187,7 @@ def _resolve_base_and_merge_base(
 
     candidate = _resolve_base_ref(repo, None)
     if not candidate:
-        if (repo / ".git" / "shallow").exists():
+        if (git_root / ".git" / "shallow").exists():
             raise GitResolutionError(
                 "Cannot resolve base Git reference in a shallow clone (.git/shallow detected). "
                 "Fetch full history (fetch-depth: 0) or pass --uncommitted."
@@ -226,12 +229,40 @@ def _resolve_base_and_merge_base(
             if rem_mb:
                 return rem_cand, rem_mb, False
 
-    if (repo / ".git" / "shallow").exists():
+    if (git_root / ".git" / "shallow").exists():
         raise GitResolutionError(
             "Cannot resolve merge base in a shallow clone (.git/shallow detected). "
             "Fetch full history (fetch-depth: 0) or pass --uncommitted."
         )
     return None, None, True
+
+
+def _scope_git_paths_to_subproject(
+    raw_paths: Iterable[str],
+    repo: Path,
+    git_root: Path | None,
+    nested_prefixes: tuple[str, ...],
+) -> list[str]:
+    """Filter worktree-relative Git paths to ``repo`` and strip the sub-project prefix."""
+    prefix_with_slash = ""
+    if git_root is not None and repo != git_root and repo.is_relative_to(git_root):
+        rel_prefix = str(repo.relative_to(git_root)).replace("\\", "/").strip("/")
+        if rel_prefix:
+            prefix_with_slash = f"{rel_prefix}/"
+
+    scoped: set[str] = set()
+    for raw in raw_paths:
+        norm = raw.strip().replace("\\", "/")
+        if not norm:
+            continue
+        if prefix_with_slash:
+            if not norm.startswith(prefix_with_slash):
+                continue
+            norm = norm[len(prefix_with_slash) :]
+        if not norm or (nested_prefixes and norm.startswith(nested_prefixes)):
+            continue
+        scoped.add(norm)
+    return sorted(scoped)
 
 
 def get_git_diff_files(
@@ -242,8 +273,15 @@ def get_git_diff_files(
     *,
     merge_base: str | None = None,
 ) -> list[str]:
-    """Retrieve list of modified and added files using Git with core.quotePath=false."""
+    """Retrieve list of modified and added files using Git with core.quotePath=false, scoped to repo_root."""
     repo = repo_root.resolve()
+    git_root = find_git_root(repo)
+    nested_roots = discover_nested_subproject_roots(repo)
+    nested_prefixes: tuple[str, ...] = tuple(
+        f"{nr.relative_to(repo).as_posix().strip('/')}/"
+        for nr in nested_roots
+        if nr.is_relative_to(repo)
+    )
 
     if uncommitted:
         # Check uncommitted changes (working tree + staging + untracked)
@@ -286,7 +324,7 @@ def get_git_diff_files(
                         files.add(raw_path)
         except OSError:
             pass
-        return sorted(files)
+        return _scope_git_paths_to_subproject(files, repo, git_root, nested_prefixes)
 
     if merge_base is not None:
         resolved_mb: str | None = merge_base
@@ -314,7 +352,7 @@ def get_git_diff_files(
         res = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=False)
         if res.returncode == 0:
             lines = [line.strip() for line in res.stdout.splitlines() if line.strip()]
-            return sorted(lines)
+            return _scope_git_paths_to_subproject(lines, repo, git_root, nested_prefixes)
 
         if base_ref:
             raise GitResolutionError(f"Failed to execute git diff against '{diff_base}': {res.stderr.strip()}")
@@ -367,7 +405,7 @@ def collect_polyglot_test_files(repo_root: Path) -> dict[str, str]:
     if not root.exists():
         return all_tests_content
 
-    if (root / ".git").exists():
+    if find_git_root(root) is not None:
         tracked_rels = get_tracked_files(root)
         if tracked_rels:
             for rel in tracked_rels:
@@ -381,8 +419,15 @@ def collect_polyglot_test_files(repo_root: Path) -> dict[str, str]:
                         continue
             return all_tests_content
 
+    nested_roots = set(discover_nested_subproject_roots(root))
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in STANDARD_EXCLUDED_DIRS and not d.startswith(".")]
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d not in STANDARD_EXCLUDED_DIRS
+            and not d.startswith(".")
+            and (Path(dirpath) / d).resolve() not in nested_roots
+        ]
 
         for fn in filenames:
             file_path = Path(dirpath) / fn
@@ -593,6 +638,11 @@ def batch_read_git_blobs(
 ) -> dict[tuple[str, str], str | None]:
     """Read multiple (ref, rel_path) blobs in a single `git cat-file --batch` pipe."""
     repo = repo_root.resolve()
+    git_root = find_git_root(repo)
+    rel_prefix = ""
+    if git_root is not None and repo != git_root and repo.is_relative_to(git_root):
+        rel_prefix = str(repo.relative_to(git_root)).replace("\\", "/").strip("/")
+
     unique_specs: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
     for ref, raw_path in object_specs:
@@ -606,11 +656,16 @@ def batch_read_git_blobs(
     if not unique_specs:
         return results
 
-    stdin_bytes = "".join(f"{ref}:{rel}\n" for ref, rel in unique_specs).encode("utf-8")
+    def _to_git_rel(rel: str) -> str:
+        if rel_prefix and not rel.startswith(f"{rel_prefix}/"):
+            return f"{rel_prefix}/{rel.lstrip('/')}"
+        return rel
+
+    stdin_bytes = "".join(f"{ref}:{_to_git_rel(rel)}\n" for ref, rel in unique_specs).encode("utf-8")
     try:
         res = subprocess.run(
             ["git", "-c", "core.quotePath=false", "cat-file", "--batch"],
-            cwd=repo,
+            cwd=git_root or repo,
             input=stdin_bytes,
             capture_output=True,
             check=False,

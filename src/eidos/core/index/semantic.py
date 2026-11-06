@@ -129,8 +129,31 @@ def unpack_embedding_f32(blob: bytes) -> tuple[float, ...]:
 
 
 def resolve_semantic_model_dir(eidos_dir: Path) -> Path:
-    """Return the canonical local cache directory for Harrier ONNX artifacts."""
-    return (Path(eidos_dir).resolve() / ".cache" / "models" / "harrier-oss-v1-0.6b").resolve()
+    """Return the canonical local cache directory for Harrier ONNX artifacts.
+
+    In a Git repository (including monorepos with multiple sub-project ``eidos/`` folders),
+    always resolves to ``<git_root>/eidos/.cache/models/harrier-oss-v1-0.6b`` so all
+    sub-projects share a single gitignored ONNX model cache (with a read fallback to a
+    pre-existing local sub-project cache, or ``<eidos_dir>/.cache/models/harrier-oss-v1-0.6b``
+    outside a Git worktree).
+    """
+    from eidos.core.workspace.project import find_git_root
+
+    resolved_eidos = Path(eidos_dir).resolve()
+    local_model_dir = (resolved_eidos / ".cache" / "models" / "harrier-oss-v1-0.6b").resolve()
+    start_dir = resolved_eidos if resolved_eidos.exists() else resolved_eidos.parent
+    git_root = find_git_root(start_dir)
+    if git_root is not None:
+        shared_model_dir = (git_root.resolve() / "eidos" / ".cache" / "models" / "harrier-oss-v1-0.6b").resolve()
+        if (
+            shared_model_dir != local_model_dir
+            and _detect_installed_variant(local_model_dir) is not None
+            and (local_model_dir / "tokenizer.json").is_file()
+            and _detect_installed_variant(shared_model_dir) is None
+        ):
+            return local_model_dir
+        return shared_model_dir
+    return local_model_dir
 
 
 def _detect_installed_variant(model_dir: Path) -> str | None:
@@ -643,6 +666,17 @@ def setup_semantic_model(
         )
     model_dir = resolve_semantic_model_dir(eidos_dir)
     (model_dir / "onnx").mkdir(parents=True, exist_ok=True)
+    try:
+        from eidos.core.lifecycle.initializer import _ensure_eidos_gitignore
+
+        cache_eidos_dir = model_dir.parents[2]
+        cache_dir = model_dir.parents[1]
+        _ensure_eidos_gitignore(cache_eidos_dir)
+        cache_gitignore = cache_dir / ".gitignore"
+        if not cache_gitignore.exists():
+            cache_gitignore.write_text("# Ignore all cached Eidos index and model artifacts\n*\n", encoding="utf-8")
+    except Exception:
+        pass
 
     rel_files = (*_METADATA_FILES, *_VARIANT_FILES[norm_variant])
     downloaded: list[str] = []

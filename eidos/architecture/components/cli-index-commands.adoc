@@ -13,7 +13,7 @@ source_path: src/eidos/cli/index_commands.py
 Implements the `eidos index` subcommand group (`status`, `sync`, `search`, `blast-radius`, `repo-map`, `find-symbol`, `semantic`) for inspecting and querying the embedded SQLite knowledge graph, polyglot AST symbol index, and optional Harrier ONNX semantic embedding index.
 
 == Key Responsibilities & Collaborators
-* **Knowledge Graph CLI Adapter**: Delegates index synchronization and status telemetry to `CMP-GRAPH-STORAGE` and `CMP-INCREMENTAL-SYNC-ENGINE`, BM25 lexical and Hybrid RRF search (`--semantic/--no-semantic`), symbol resolution, and repo-map generation to `CMP-FTS-QUERY-ENGINE` and `CMP-SEMANTIC-EMBEDDING-ENGINE`, and target-resolved recursive `k`-hop impact analysis (`resolve_blast_radius_targets`, `symbol_or_path`) to `CMP-GRAPH-TRAVERSAL-ENGINE`.
+* **Knowledge Graph CLI Adapter**: Routes `--path` discovery across all `eidos index` subcommands through `resolve_cli_eidos_dir(path)` (`CMP-CLI-APP`), delegates index synchronization and status telemetry to `CMP-GRAPH-STORAGE` and `CMP-INCREMENTAL-SYNC-ENGINE`, BM25 lexical and Hybrid RRF search (`--semantic/--no-semantic`), symbol resolution, and repo-map generation to `CMP-FTS-QUERY-ENGINE` and `CMP-SEMANTIC-EMBEDDING-ENGINE`, and target-resolved recursive `k`-hop impact analysis (`resolve_blast_radius_targets`, `symbol_or_path`) to `CMP-GRAPH-TRAVERSAL-ENGINE`.
 
 == Public Surface
 * `index_app: typer.Typer`

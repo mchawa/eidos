@@ -4,7 +4,7 @@ id: CAP-PROD-001
 title: "Living Baseline Specification Engine"
 domain: DOM-SPEC-ENGINE
 status: active
-version: "1.9.0"
+version: "1.10.0"
 
 business:
   personas:
@@ -24,8 +24,8 @@ experience:
   screens:
     - "eidos/design/clients/web-portal/screens/portal-home.adoc"
     - "eidos/design/clients/web-portal/screens/portal-business.adoc"
-    - "eidos/design/clients/web-portal/screens/portal-design.adoc"
     - "eidos/design/clients/web-portal/screens/portal-architecture.adoc"
+    - "eidos/design/clients/web-portal/screens/portal-design.adoc"
     - "eidos/design/clients/web-portal/screens/portal-deltas.adoc"
     - "eidos/design/clients/web-portal/screens/portal-explorations.adoc"
     - "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
@@ -102,10 +102,10 @@ Through an embedded SQLite Knowledge Graph (`eidos/.cache/index.db`), Eidos brid
 
 == Key Responsibilities
 * **Living Specification Parsing, Blueprint Scaffolding, Schema Introspection & Typed `FrontmatterModel`**: Robust extraction of YAML frontmatter combined with AsciiDoc technical specifications, minimal 4-parameter blueprint scaffolding (`eidos spec create <TYPE> <ID> --title <TITLE> [--path <PATH>]`) across all 15 declarative specification & discovery blueprint types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`), dynamic v1 schema introspection (`eidos spec schema [TYPE] [--json]` via `get_spec_schema_info` loading schemas directly from `assets/schemas/v1/` and synthesizing schema-valid example YAML frontmatter across all 16 types), and Pydantic `FrontmatterModel` (`SpecDocument.model`) normalization across parser, validator, catalog, and indexing pipelines.
-* **Schema Validation, Shared `$defs` (`assets/schemas/v1/common/defs.yaml`), AST-Backed Polyglot `test_binding` Verification & Bidirectional Contract Integrity**: Schema resolution, Draft 2020-12 validation across all 16 specification schemas and shared `$defs` in `assets/schemas/v1/common/defs.yaml`, AST-backed polyglot `test_binding` symbol resolution via `get_ast_indexer().list_test_functions` and `extract_symbols` (supporting parameterized TS/JS `test.each`/`it.each`/`describe.each` and `Deno.test`, Go `t.Run` subtests, and Rust `#[tokio::test]`/`#[rstest]`/`#[test_case]`/`#[async_std::test]` attributes while rejecting comment or string-literal false positives), and bidirectional multi-protocol contract parity verification (`cli_args`, `python_protocol`, `rest_openapi`, `grpc_proto`, `graphql`) detecting both undocumented code operations and phantom contract entries removed from code.
+* **Schema Validation, Shared `$defs` (`assets/schemas/v1/common/defs.yaml`), AST-Backed Polyglot `test_binding` Verification & Bidirectional Contract Integrity**: Schema resolution, Draft 2020-12 validation across all 16 specification schemas and shared `$defs` in `assets/schemas/v1/common/defs.yaml`, independent monorepo sub-project `eidos/` root resolution (`DEC-CORE-MONOREPO-ISOLATED-SUBPROJECTS`) with strictly sub-project-relative `source_path`, `specification_file`, and `test_binding` validation, AST-backed polyglot `test_binding` symbol resolution via `get_ast_indexer().list_test_functions` and `extract_symbols` (supporting parameterized TS/JS `test.each`/`it.each`/`describe.each` and `Deno.test`, Go `t.Run` subtests, and Rust `#[tokio::test]`/`#[rstest]`/`#[test_case]`/`#[async_std::test]` attributes while rejecting comment or string-literal false positives), and bidirectional multi-protocol contract parity verification (`cli_args`, `python_protocol`, `rest_openapi`, `grpc_proto`, `graphql`) detecting both undocumented code operations and phantom contract entries removed from code.
 * **Unified SQLite & In-Memory Cache (`storage.py`)**: Centralized `SCHEMA_VERSION` (`2.17.0`) schema management (`ensure_cache_schema`, `open_cache_connection`) and shared `get_cached_spec_document` / `load_spec_validation_cache` / `load_test_binding_cache` helpers eliminating duplicate inline DDL and redundant multi-pass YAML parsing.
 * **Embedded Knowledge Graph**: Relational indexing linking Personas, Domains, Capabilities, Invariants, Components, Contracts, and SpecDeltas into `eidos/.cache/index.db`.
-* **Zero-Drift Incremental Sync**: Single-pass recursive `os.scandir` mtime and SHA-256 dirty checking (`check_index_dirty`) with pre-filtered `top_code_dirs` boundary checks that keeps the SQLite graph continuously synchronized with the working tree in under 2ms.
+* **Zero-Drift Incremental Sync**: Single-pass recursive `os.scandir` mtime and SHA-256 dirty checking (`check_index_dirty`) with pre-filtered `top_code_dirs` boundary checks and nested child sub-project exclusion (`discover_nested_subproject_roots`) that keeps the SQLite graph continuously synchronized with the working tree in under 2ms.
 * **Sub-Millisecond Catalog Resolution**: Powering `eidos spec list`, `eidos spec show`, and CLI inspection commands with instant relational queries rather than linear disk scans.
 * **Recursive Blast-Radius & Search**: SQLite recursive Common Table Expressions (CTEs) traversing k-hop impact boundaries and FTS5 full-text search over titles, descriptions, and keywords.
 * **OCI Dev Container Feature Distribution (`ghcr.io/mchawa/eidos/eidos`, `INV-DEVCONTAINER-FEATURE-CONFORMANCE`)**: Declarative Dev Container Feature provisioning `eidos-ai` (and optional `[semantic]` extras) system-wide via `uv` across containerized development environments (VS Code Dev Containers, GitHub Codespaces, DevPod).

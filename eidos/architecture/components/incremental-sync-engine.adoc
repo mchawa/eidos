@@ -13,7 +13,7 @@ source_path: src/eidos/core/index/sync.py
 Synchronizes living specifications (`eidos/`), governed source files (`source_path`), and polyglot test suites into the SQLite knowledge graph (`eidos/.cache/index.db`) using two-tier `mtime_ns` + `SHA-256` dirty detection, AST import dependency derivation, and canonical unidirectional edge reconstruction.
 
 == Key Responsibilities & Collaborators
-* **Two-Tier Dirty Detection (`<5ms`)**: Scans `eidos/`, test suites, and governed `source_path` directories via single-pass `os.scandir` (`check_index_dirty`), refreshing unchanged `mtime_ns` timestamps in-place when `SHA-256` digests match and re-parsing only modified files (`sync_index`).
+* **Two-Tier Dirty Detection (`<5ms`)**: Scans `eidos/`, test suites, and governed `source_path` directories via single-pass `os.scandir` (`check_index_dirty`) while excluding nested child sub-project boundaries (`discover_nested_subproject_roots`), refreshing unchanged `mtime_ns` timestamps in-place when `SHA-256` digests match and re-parsing only modified files (`sync_index`).
 * **Entity, FTS & File-Token Indexing**: Populates `entities`, `specs_fts` (including child `INV-*` rows, embedded `DEC-*` decisions, and projected primary AST `code_symbols`), and `file_tokens_fts` (for `CMP-DELTA-AUDITOR` deletion audits), while excluding archived SpecDeltas (`eidos/deltas/archive/`) from `specs_fts`.
 * **Ownership Precedence & AST Dependency Edges**: Prioritizes standalone `tech/component` (`CMP-*`) claims ahead of `tech/container` (`CNT-*`) fallback in `_CodeOwnershipResolver` and derives intra-container `consumes_api` and inter-container `depends_on` edges from AST imports extracted by `CMP-AST-SYMBOL-INDEXER`.
 

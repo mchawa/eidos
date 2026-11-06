@@ -14,31 +14,37 @@ from eidos.vcs.drift import detect_drift
 
 
 def find_workspace_root(payload: dict[str, Any] | None = None) -> Path:
-    """Determine the active workspace root directory from hook payload or current working directory."""
+    """Determine the active project or sub-project workspace root directory from hook payload or current working directory."""
     if payload:
         ws_paths = payload.get("workspacePaths", [])
         if ws_paths and isinstance(ws_paths, list):
             p = Path(ws_paths[0])
             if p.exists():
-                return p.resolve()
+                return find_repo_root(p.resolve())
         for key in ("cwd", "workspaceRoot", "workspace_root"):
             val = payload.get(key)
             if isinstance(val, str) and val.strip():
                 p = Path(val.strip())
                 if p.exists():
-                    return p.resolve()
+                    return find_repo_root(p.resolve())
 
     return find_repo_root()
 
 
 def handle_stop_hook(payload: dict[str, Any], workspace_root: Path) -> dict[str, Any]:
     """Run stateless specification validation, invariant verification, and drift check on agent Stop."""
-    eidos_dir = workspace_root / "eidos"
+    resolved_root = workspace_root.resolve()
+    eidos_dir = resolved_root / "eidos"
+    if not eidos_dir.exists() and resolved_root.exists():
+        cand_root = find_repo_root(resolved_root)
+        if (cand_root / "eidos").exists():
+            resolved_root = cand_root
+            eidos_dir = cand_root / "eidos"
     if not eidos_dir.exists():
         return {"decision": "allow"}
 
     try:
-        drift_res = detect_drift(repo_root=workspace_root, eidos_dir=eidos_dir, uncommitted=True)
+        drift_res = detect_drift(repo_root=resolved_root, eidos_dir=eidos_dir, uncommitted=True)
         has_non_code_failure = (
             not drift_res.validation_passed or bool(drift_res.uncovered_invariants) or bool(drift_res.orphan_invariants)
         )
@@ -104,6 +110,8 @@ def execute_hook(
     ws_root = target_path.resolve() if target_path else find_workspace_root(payload)
     if ws_root.name == "eidos" and ((ws_root / "system.adoc").exists() or not (ws_root / "eidos").exists()):
         ws_root = ws_root.parent
+    elif not (ws_root / "eidos").is_dir() and ws_root.exists():
+        ws_root = find_repo_root(ws_root)
 
     res = handle_stop_hook(payload, ws_root)
     print(orjson.dumps(res).decode("utf-8"))

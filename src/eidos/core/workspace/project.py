@@ -118,44 +118,71 @@ def _is_inside_plugin_or_assets(path: Path) -> bool:
     return False
 
 
-def find_repo_root(start_dir: Path | None = None) -> Path:
-    """Find the repository or workspace root containing .git or eidos/ living specifications."""
+def _has_eidos_markers(cand: Path) -> bool:
+    """Return True if cand is an initialized Eidos specification directory (ignoring cache-only directories)."""
+    if not cand.is_dir():
+        return False
+    if (cand / "system.adoc").is_file() or any((cand / sub).is_dir() for sub in _SPEC_SUBDIRS):
+        return True
+    return any(
+        p.is_file() and not p.name.startswith("_") and p.name.lower() != "readme.adoc"
+        for p in cand.glob("*.adoc")
+    )
+
+
+def find_git_root(start_dir: Path | None = None) -> Path | None:
+    """Find the enclosing Git worktree root (.git) across ancestor directories, or None if not in a Git repo."""
     cwd = (start_dir or Path.cwd()).resolve()
     if cwd.is_file():
         cwd = cwd.parent
 
-    def _has_eidos_markers(cand: Path) -> bool:
-        return (
-            (cand / "system.adoc").is_file()
-            or (cand / "architecture").is_dir()
-            or (cand / "domains").is_dir()
-            or (cand / "policies").is_dir()
-            or (cand / "deltas").is_dir()
-            or (cand / "design").is_dir()
-        )
-
-    for parent in [cwd, *cwd.parents]:
+    for parent in (cwd, *cwd.parents):
         if (parent / ".git").exists():
             return parent
+
+    return None
+
+
+def discover_nested_subproject_roots(repo_root: Path) -> list[Path]:
+    """Return resolved child directories under repo_root that contain their own independent eidos/ specification root."""
+    root = repo_root.resolve()
+    if not root.is_dir():
+        return []
+    nested: list[Path] = []
+    skip_dirs = STANDARD_EXCLUDED_DIRS | {"eidos", "assets", "docs", "tests", "test", "__tests__"}
+    for dirpath, dirnames, _filenames in os.walk(root):
+        cur = Path(dirpath)
+        if cur != root:
+            eidos_cand = cur / "eidos"
+            if _has_eidos_markers(eidos_cand) and not _is_inside_plugin_or_assets(eidos_cand):
+                nested.append(cur.resolve())
+                dirnames[:] = []
+                continue
+        dirnames[:] = [d for d in dirnames if d not in skip_dirs and not d.startswith(".")]
+    return sorted(nested)
+
+
+def find_repo_root(start_dir: Path | None = None) -> Path:
+    """Find the nearest owning project/sub-project root containing eidos/ living specifications, or the enclosing .git root."""
+    cwd = (start_dir or Path.cwd()).resolve()
+    if cwd.is_file():
+        cwd = cwd.parent
+
+    for parent in (cwd, *cwd.parents):
+        if parent.name == "eidos" and not _is_inside_plugin_or_assets(parent) and _has_eidos_markers(parent):
+            return parent.parent
         eidos_cand = parent / "eidos"
         if eidos_cand.is_dir() and not _is_inside_plugin_or_assets(eidos_cand) and _has_eidos_markers(eidos_cand):
+            return parent
+        if (parent / ".git").exists():
             return parent
 
     if not _is_inside_plugin_or_assets(cwd) and (cwd.name == "eidos" or _has_eidos_markers(cwd)):
         return cwd.parent
 
-    try:
-        res = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if res.returncode == 0 and res.stdout.strip():
-            return Path(res.stdout.strip()).resolve()
-    except OSError:
-        pass
+    git_root = find_git_root(cwd)
+    if git_root is not None:
+        return git_root
 
     return cwd
 
@@ -177,20 +204,26 @@ def resolve_spec_and_repo_roots(
     # 1. If base itself is a repo root containing a standard child spec directory ('eidos', '.spec', 'specs')
     for child_name in ("eidos", ".spec", "specs"):
         child = base / child_name
-        if child.is_dir() and (
-            child_name in ("eidos", ".spec")
-            or (child / "system.adoc").is_file()
-            or any((child / s).is_dir() for s in _SPEC_SUBDIRS)
-        ):
+        if child.is_dir() and (child_name == ".spec" or _has_eidos_markers(child)):
             return child.resolve(), base
+
+    if base.name in ("eidos", ".spec", "specs", "spec") and not any(
+        p.name in ("eidos", ".spec", "specs", "spec") for p in base.parents
+    ):
+        return base, base.parent
 
     def _is_spec_root(cand: Path) -> bool:
         if _is_inside_plugin_or_assets(cand):
             return False
-        if (cand / "eidos").is_dir() or (cand / ".spec").is_dir():
+        if any(
+            (cand / sub_name).is_dir() and (sub_name == ".spec" or _has_eidos_markers(cand / sub_name))
+            for sub_name in ("eidos", ".spec")
+        ):
             return False
-        if cand.name in ("eidos", ".spec"):
+        if cand.name == ".spec":
             return True
+        if cand.name == "eidos":
+            return _has_eidos_markers(cand)
         if (cand / "system.adoc").is_file():
             cand_lower = cand.name.lower()
             ancestor_lowers = [p.lower() for p in cand.parts[:-1]]
@@ -230,7 +263,7 @@ def resolve_spec_and_repo_roots(
 
     for start in search_roots:
         for depth, cand in enumerate((start, *start.parents)):
-            if depth > 5:
+            if depth > 8:
                 break
             if cand != start:
                 try:
@@ -239,10 +272,27 @@ def resolve_spec_and_repo_roots(
                     break
                 if rel_first in _SPEC_SUBDIRS and _is_spec_root(cand):
                     return cand, _repo_root_for_spec_root(cand)
+                eidos_child = cand / "eidos"
+                if (
+                    "eidos" not in start.name.lower()
+                    and "spec" not in start.name.lower()
+                    and rel_first not in _SPEC_SUBDIRS
+                    and eidos_child.is_dir()
+                    and not _is_inside_plugin_or_assets(eidos_child)
+                    and _has_eidos_markers(eidos_child)
+                    and (
+                        find_git_root(cand) is not None
+                        or rel_first in ("src", "lib", "app", "tests", "test", "pkg", "cmd", "internal")
+                    )
+                ):
+                    return eidos_child.resolve(), cand
             elif _is_spec_root(cand):
                 return cand, _repo_root_for_spec_root(cand)
-            if any((cand / m).exists() for m in _REPO_MARKERS):
+            if (cand / ".git").exists():
                 break
+
+    if base.name in ("eidos", ".spec", "specs", "spec"):
+        return base, base.parent
 
     # 3. Check if an immediate or ancestor directory is a repo root with markers
     for depth, cand in enumerate((base.parent, *base.parents)):
@@ -259,8 +309,6 @@ def resolve_spec_and_repo_roots(
             break
 
     # 4. Fallback
-    if base.name in ("eidos", ".spec", "specs", "spec"):
-        return base, base.parent
     if (base.parent / "src").is_dir() or (base.parent / ".git").exists():
         return base, base.parent
     return base, base
@@ -313,7 +361,7 @@ def is_generated_or_vendored(repo_root: Path, rel_paths: list[str] | str | Path)
     """Return subset of rel_paths marked linguist-generated or linguist-vendored in .gitattributes."""
     rel_paths = [str(rel_paths)] if isinstance(rel_paths, (str, Path)) else [str(p) for p in rel_paths]
 
-    if not rel_paths or not (repo_root / ".git").exists():
+    if not rel_paths or find_git_root(repo_root) is None:
         return set()
 
     skipped: set[str] = set()
@@ -358,9 +406,18 @@ def _has_excluded_dir_part(rel_path: str) -> bool:
 
 
 def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[str]:
-    """List repository files respecting .gitignore and .gitattributes generated/vendored attributes."""
+    """List repository files respecting .gitignore, .gitattributes generated/vendored attributes, and nested sub-project boundaries."""
     root = repo_root.resolve()
-    if (root / ".git").exists():
+    if not root.exists():
+        return []
+    nested_roots = discover_nested_subproject_roots(root)
+    nested_prefixes: tuple[str, ...] = tuple(
+        f"{nr.relative_to(root).as_posix().strip('/')}/"
+        for nr in nested_roots
+        if nr.is_relative_to(root)
+    )
+
+    if find_git_root(root) is not None:
         files: set[str] = set()
         try:
             cmd = (
@@ -377,8 +434,13 @@ def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[s
             )
             if tracked.returncode == 0:
                 for item in tracked.stdout.split("\0"):
-                    if item and not _has_excluded_dir_part(item) and (root / item).is_file():
-                        files.add(item)
+                    if not item or _has_excluded_dir_part(item):
+                        continue
+                    norm_item = item.replace("\\", "/")
+                    if nested_prefixes and norm_item.startswith(nested_prefixes):
+                        continue
+                    if (root / item).is_file():
+                        files.add(norm_item)
 
                 if not files:
                     return []
@@ -390,14 +452,21 @@ def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[s
 
     # Fallback filesystem walk for non-git directories (e.g., temporary test fixtures)
     collected: list[str] = []
-    if not root.exists():
-        return collected
+    nested_set = set(nested_roots)
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in STANDARD_EXCLUDED_DIRS and not d.startswith(".")]
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d not in STANDARD_EXCLUDED_DIRS
+            and not d.startswith(".")
+            and (Path(dirpath) / d).resolve() not in nested_set
+        ]
         for fn in filenames:
             full = Path(dirpath) / fn
             try:
                 rel = str(full.relative_to(root)).replace("\\", "/")
+                if nested_prefixes and rel.startswith(nested_prefixes):
+                    continue
                 collected.append(rel)
             except ValueError:
                 continue

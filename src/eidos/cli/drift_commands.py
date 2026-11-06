@@ -5,8 +5,8 @@ from pathlib import Path
 import typer
 from rich.table import Table
 
-from eidos.cli._shared import PANEL_GOVERNANCE, console
-from eidos.core.workspace.project import find_repo_root
+from eidos.cli._shared import PANEL_GOVERNANCE, console, resolve_cli_eidos_dir
+from eidos.core.workspace.project import find_repo_root, resolve_spec_and_repo_roots
 from eidos.vcs import GitResolutionError, detect_drift
 
 
@@ -57,26 +57,14 @@ def drift_cmd(
     ),
 ):
     """Detect spec-to-code drift, schema validity, and invariant test coverage."""
-    if path is not None:
-        resolved_path = path.resolve()
-        repo_root = find_repo_root(resolved_path) if resolved_path.exists() else Path.cwd()
-        if (resolved_path / "eidos").is_dir() and (
-            (resolved_path / ".git").exists() or not (resolved_path / "system.adoc").exists()
-        ):
-            repo_root = resolved_path
-            eidos_dir = resolved_path / "eidos"
-        elif resolved_path == repo_root:
-            repo_root = (
-                find_repo_root(resolved_path.parent)
-                if (resolved_path.parent / ".git").exists()
-                else (resolved_path.parent if resolved_path.is_dir() else Path.cwd())
-            )
-            eidos_dir = resolved_path
-        else:
-            eidos_dir = resolved_path
+    eidos_dir = resolve_cli_eidos_dir(path)
+    resolved_eidos = eidos_dir.resolve()
+    if resolved_eidos.name == "eidos":
+        repo_root = resolved_eidos.parent
+    elif resolved_eidos.exists():
+        _, repo_root = resolve_spec_and_repo_roots(resolved_eidos)
     else:
-        repo_root = find_repo_root()
-        eidos_dir = Path("eidos") if Path("eidos").exists() else (repo_root / "eidos")
+        repo_root = find_repo_root(resolved_eidos.parent if resolved_eidos.parent.exists() else None)
 
     try:
         result = detect_drift(

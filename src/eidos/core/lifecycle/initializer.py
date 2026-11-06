@@ -12,6 +12,8 @@ from eidos.core.workspace.assets import render_spec_template
 
 def _ensure_eidos_gitignore(eidos_dir: Path) -> None:
     """Ensure eidos/.gitignore is present and ignores local SQLite cache so host projects remain unpolluted."""
+    with contextlib.suppress(OSError):
+        eidos_dir.mkdir(parents=True, exist_ok=True)
     gitignore_path = eidos_dir / ".gitignore"
     default_content = "# Eidos local index cache\n.cache/\n\n# OS artifacts\n.DS_Store\nThumbs.db\n"
     if not gitignore_path.exists():
@@ -37,7 +39,12 @@ def init_repository(
     eidos_dir = project_dir / eidos_dir_name
     created_files: list[Path] = []
 
-    if eidos_dir.exists() and any(eidos_dir.iterdir()) and not force:
+    non_cache_entries = (
+        [p for p in eidos_dir.iterdir() if p.name not in (".cache", ".gitignore", ".DS_Store", "Thumbs.db")]
+        if eidos_dir.exists()
+        else []
+    )
+    if non_cache_entries and not force:
         return (
             False,
             f"Eidos specifications already exist at '{eidos_dir}'. Use --force to re-initialize.",

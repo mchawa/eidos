@@ -13,7 +13,7 @@ source_path: src/eidos/cli/context_command.py
 Exposes the `eidos context` CLI command for extracting token-budgeted 3-tier architectural subgraph slices (`anchor`, `guardrails`, `deep`) by file path, component/container ID, or natural-language task prompt.
 
 == Key Responsibilities & Collaborators
-* **Context Slice CLI Adapter**: Parses `--file`, `--component`, `--task`, `--tier`, `--semantic/--no-semantic`, `--json`, and `--path` options, resolves the workspace via `CMP-CLI-APP` (`resolve_cli_eidos_dir`), and delegates subgraph extraction to `CMP-TIERED-CONTEXT-COMPRESSOR` via `CMP-GRAPH-STORAGE` (`ArchitecturalIndex`).
+* **Context Slice CLI Adapter**: Parses `--file`, `--component`, `--task`, `--tier`, `--semantic/--no-semantic`, `--json`, and `--path` options, resolves the nearest governing sub-project `eidos/` directory via `CMP-CLI-APP` (`resolve_cli_eidos_dir(path, hint_files=files)`) while normalizing `--file` (`-f`) paths relative to the resolved sub-project root, and delegates subgraph extraction to `CMP-TIERED-CONTEXT-COMPRESSOR` via `CMP-GRAPH-STORAGE` (`ArchitecturalIndex`).
 
 == Public Surface
 * `register(app: typer.Typer) -> None`

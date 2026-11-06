@@ -13,7 +13,7 @@ source_path: src/eidos/cli/delta_commands.py
 Implements the `eidos delta` subcommand group (`status`, `list`, `create`, `verify`, `audit`, `apply`, `delete`, `archive`, `changelog`) for managing the SpecDelta (`DLT-*`) architectural mutation lifecycle.
 
 == Key Responsibilities & Collaborators
-* **SpecDelta Lifecycle Orchestration**: Delegates blueprint creation, status transitions, mutation verification, in-place application, deletion, and two-tier archive slimming to `CMP-DELTA-ENGINE`.
+* **SpecDelta Lifecycle Orchestration**: Routes `--path` discovery across all `eidos delta` subcommands through `resolve_cli_eidos_dir(path)` (`CMP-CLI-APP`) for consistent monorepo sub-project discovery, and delegates blueprint creation, status transitions, mutation verification, in-place application, deletion, and two-tier archive slimming to `CMP-DELTA-ENGINE`.
 * **Deletion Auditing & Changelog Generation**: Delegates reverse-dependency leak auditing (`eidos delta audit`) to `CMP-DELTA-AUDITOR` and Keep a Changelog generation (`eidos delta changelog`) to `CMP-CHANGELOG-GENERATOR`.
 
 == Public Surface

@@ -27,7 +27,13 @@ from eidos.core.index.storage import (
     load_test_binding_cache,
     save_test_binding_cache,
 )
-from eidos.core.workspace.project import STANDARD_EXCLUDED_DIRS, get_tracked_files, is_polyglot_test_file
+from eidos.core.workspace.project import (
+    STANDARD_EXCLUDED_DIRS,
+    discover_nested_subproject_roots,
+    find_git_root,
+    get_tracked_files,
+    is_polyglot_test_file,
+)
 
 
 @dataclass
@@ -98,7 +104,7 @@ def _load_or_update_test_binding_cache(
 
     discovered: list[tuple[str, Path, int]] = []
     used_git_tracked = False
-    if (root / ".git").exists():
+    if find_git_root(root) is not None:
         tracked_rels = get_tracked_files(root)
         if tracked_rels:
             used_git_tracked = True
@@ -116,8 +122,15 @@ def _load_or_update_test_binding_cache(
                     discovered.append((rel_norm, file_path, mtime_ns))
 
     if not used_git_tracked:
+        nested_roots = set(discover_nested_subproject_roots(root))
         for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = [d for d in dirnames if d not in STANDARD_EXCLUDED_DIRS and not d.startswith(".")]
+            dirnames[:] = [
+                d
+                for d in dirnames
+                if d not in STANDARD_EXCLUDED_DIRS
+                and not d.startswith(".")
+                and (Path(dirpath) / d).resolve() not in nested_roots
+            ]
             for fn in filenames:
                 file_path = Path(dirpath) / fn
                 rel = str(file_path.relative_to(root)).replace("\\", "/")

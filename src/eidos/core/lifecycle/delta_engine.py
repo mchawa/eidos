@@ -199,11 +199,12 @@ def _digest_dict(data: dict[str, Any]) -> str:
 
 
 def _resolve_git_repo_root(eidos_dir: Path) -> Path | None:
-    """Return the enclosing Git repository root for eidos_dir if one exists directly on or above eidos_dir."""
-    for candidate in (eidos_dir.resolve(), eidos_dir.resolve().parent):
-        if (candidate / ".git").exists():
-            return candidate
-    return None
+    """Return the enclosing Git repository root for eidos_dir across ancestor directories (including monorepo sub-projects)."""
+    from eidos.core.workspace.project import find_git_root
+
+    resolved = eidos_dir.resolve()
+    start = resolved if resolved.exists() else resolved.parent
+    return find_git_root(start)
 
 
 def _resolve_git_head_sha(eidos_dir: Path) -> str | None:

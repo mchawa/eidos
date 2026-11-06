@@ -7,7 +7,7 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from eidos.cli._shared import console
+from eidos.cli._shared import console, resolve_cli_eidos_dir
 from eidos.core.index.graph_index import get_architectural_index
 
 index_app = typer.Typer(
@@ -32,7 +32,7 @@ def index_status_cmd(
     ),
 ):
     """Display health, schema version, cache size, AST telemetry, and statistics of the architectural index."""
-    eidos_dir = path or Path("eidos")
+    eidos_dir = resolve_cli_eidos_dir(path)
     idx = get_architectural_index(eidos_dir=eidos_dir)
     status = idx.get_index_status()
 
@@ -112,7 +112,7 @@ def index_sync_cmd(
     ),
 ):
     """Synchronize the architectural index with specifications on disk."""
-    eidos_dir = path or Path("eidos")
+    eidos_dir = resolve_cli_eidos_dir(path)
     idx = get_architectural_index(eidos_dir=eidos_dir)
     from eidos.core.index.semantic import _semantic_cli_progress
 
@@ -176,7 +176,7 @@ def index_search_cmd(
     ),
 ):
     """Execute BM25 ranked full-text search (FTS5) with optional Harrier Hybrid RRF across specifications, capabilities, and invariants."""
-    eidos_dir = path or Path("eidos")
+    eidos_dir = resolve_cli_eidos_dir(path)
     idx = get_architectural_index(eidos_dir=eidos_dir)
     results = idx.query_fts(query, limit=limit, use_semantic=semantic)
 
@@ -231,7 +231,7 @@ def index_blast_radius_cmd(
     ),
 ):
     """Display recursive CTE graph walk / blast radius for an architectural entity, symbol, or file path."""
-    eidos_dir = path or Path("eidos")
+    eidos_dir = resolve_cli_eidos_dir(path)
     idx = get_architectural_index(eidos_dir=eidos_dir)
     resolved_ids = idx.resolve_blast_radius_targets(symbol_or_path)
     neighbors = idx.get_k_hop_neighborhood(resolved_ids, max_depth=depth) if resolved_ids else []
@@ -294,7 +294,7 @@ def index_repo_map_cmd(
     ),
 ):
     """Generate a token-budgeted structural repo map outline for AI coding agents."""
-    eidos_dir = path or Path("eidos")
+    eidos_dir = resolve_cli_eidos_dir(path)
     idx = get_architectural_index(eidos_dir=eidos_dir)
     repo_map = idx.get_repo_map(max_tokens=max_tokens)
 
@@ -331,7 +331,7 @@ def index_find_symbol_cmd(
     ),
 ):
     """Locate symbol matches and their associated living component specifications."""
-    eidos_dir = path or Path("eidos")
+    eidos_dir = resolve_cli_eidos_dir(path)
     idx = get_architectural_index(eidos_dir=eidos_dir)
     matches = idx.find_symbol(query=query, limit=limit)
 
@@ -390,7 +390,7 @@ def index_semantic_cmd(
     ),
 ):
     """Manage and inspect the optional Harrier-OSS-v1-0.6B ONNX semantic embedding index (status, setup, sync)."""
-    eidos_dir = path or Path("eidos")
+    eidos_dir = resolve_cli_eidos_dir(path)
     idx = get_architectural_index(eidos_dir=eidos_dir)
     act = (action or "status").strip().lower()
 
