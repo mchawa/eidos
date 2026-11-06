@@ -60,7 +60,7 @@ _SPEC_SUBDIRS = frozenset(
 _REPO_MARKERS = (".git", "pyproject.toml", "package.json", "Cargo.toml", "go.mod")
 
 _NESTED_TEST_DIR_NAMES = {"test", "tests", "__tests__"}
-_ROOT_TEST_DIR_NAMES = {"test", "tests", "__tests__", "spec", "specs"}
+_ROOT_TEST_DIR_NAMES = {"test", "tests", "__tests__", "testing", "spec", "specs"}
 _POLYGLOT_TEST_CODE_EXTS = frozenset(
     {
         ".py",

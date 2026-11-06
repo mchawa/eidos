@@ -2218,25 +2218,37 @@ def test_dlt_2026_074_design_subgraph_inheritance_and_cross_client_flows():
 
 
 def test_nested_spec_subpackage_treated_as_code(tmp_path):
-    """Verify nested src/.../spec/*.py subpackages are classified as code_files while root spec/ and nested tests/ are test_files."""
+    """Verify nested src/.../spec/*.py and src/.../testing/*.py subpackages are classified as code_files while root spec/, testing/, and nested tests/ are test_files."""
     from eidos.core.workspace.project import is_polyglot_test_file
 
     assert is_polyglot_test_file("src/pkg/spec/validator.py", repo_root=tmp_path) is False
     assert is_polyglot_test_file("src/pkg/specs/models.py", repo_root=tmp_path) is False
+    assert is_polyglot_test_file("src/pkg/testing/helpers.py", repo_root=tmp_path) is False
     assert is_polyglot_test_file("spec/auth_helper.py", repo_root=tmp_path) is True
+    assert is_polyglot_test_file("testing/python/approx.py", repo_root=tmp_path) is True
     assert is_polyglot_test_file("src/pkg/tests/test_validator.py", repo_root=tmp_path) is True
 
     classified = classify_changed_files(
         [
             "src/pkg/spec/validator.py",
             "src/pkg/specs/models.py",
+            "src/pkg/testing/helpers.py",
             "spec/auth_helper.py",
+            "testing/python/approx.py",
             "src/pkg/tests/test_validator.py",
         ],
         repo_root=tmp_path,
     )
-    assert set(classified.code_files) == {"src/pkg/spec/validator.py", "src/pkg/specs/models.py"}
-    assert set(classified.test_files) == {"spec/auth_helper.py", "src/pkg/tests/test_validator.py"}
+    assert set(classified.code_files) == {
+        "src/pkg/spec/validator.py",
+        "src/pkg/specs/models.py",
+        "src/pkg/testing/helpers.py",
+    }
+    assert set(classified.test_files) == {
+        "spec/auth_helper.py",
+        "testing/python/approx.py",
+        "src/pkg/tests/test_validator.py",
+    }
 
 
 def test_deep_review_subsystem_4_shallow_clone_deleted_spec_and_json_cli(tmp_path):
