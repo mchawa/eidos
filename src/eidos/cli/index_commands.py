@@ -408,7 +408,7 @@ def index_semantic_cmd(
             "Runtime Ready:",
             "[bold green]YES[/bold green]"
             if status["runtime_available"]
-            else "[bold yellow]NO (Install eidos-ai[semantic])[/bold yellow]",
+            else "[bold yellow]NO (Install eidos-ai\\[semantic])[/bold yellow]",
         )
         grid.add_row(
             "Model Provisioned:",

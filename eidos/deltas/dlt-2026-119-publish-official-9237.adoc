@@ -1,0 +1,117 @@
+---
+type: delta/mutation
+id: DLT-2026-119-PUBLISH-OFFICIAL-9237
+title: Publish Official Eidos Node.js CLI Launcher Package to npm
+status: proposed
+intent:
+  kind: feature
+  motivation: "Provide an official, zero-dependency Node.js CLI package (eidos-ai on npm) so JavaScript/TypeScript developers and polyglot teams can execute Eidos directly via 'npx eidos-ai' or 'npm install -g eidos-ai' with ~200ms warm startup latency (direct cached venv execution) and automatic uv/Python provisioning."
+mutations:
+  - operation: modify
+    target: ARCH-EIDOS-001
+    details: "Update Section 7 (Deployment View) and decisions in eidos/architecture/system-architecture.adoc to document the npm CLI launcher distribution target (npx eidos-ai under npm/eidos-ai/) and record DEC-ARCH-NPM-CLI-LAUNCHER."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-ARCH-NPM-CLI-LAUNCHER"
+      body:
+        contains:
+          - "npx eidos-ai"
+          - "DEC-ARCH-NPM-CLI-LAUNCHER"
+  - operation: modify
+    target: SYS-EIDOS-001
+    details: "Update Technical Profile Deployment Targets in eidos/system.adoc to include Node.js / npx CLI distribution (npx eidos-ai)."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "npx eidos-ai"
+  - operation: modify
+    target: CMP-DOCS-GETTING-STARTED
+    details: "Update docs/getting-started/installation.md and eidos/architecture/components/docs-getting-started.adoc to document npx eidos-ai and npm install -g eidos-ai installation (including EIDOS_SEMANTIC=1)."
+    expect:
+      frontmatter:
+        source_path:
+          - "docs/index.md"
+          - "docs/getting-started"
+        status: "active"
+      body:
+        contains:
+          - "npx eidos-ai"
+  - operation: modify
+    target: CNT-EIDOS-DOCS
+    details: "Update eidos/architecture/containers/docs.adoc to reflect npx eidos-ai installation documentation under Getting Started."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "npx eidos-ai"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Bump CAP-PROD-001 to version 1.10.0 in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc and add INV-NPM-CLI-CONFORMANCE verifying npm/eidos-ai/ package manifest, direct-venv launcher script, pyproject.toml sdist exclusion, and CI workflow publishing."
+    expect:
+      frontmatter:
+        version: "1.10.0"
+        status: "active"
+        technical.invariants.id:
+          - "INV-NPM-CLI-CONFORMANCE"
+      body:
+        contains:
+          - "npx eidos-ai"
+          - "INV-NPM-CLI-CONFORMANCE"
+  - operation: add
+    target: INV-NPM-CLI-CONFORMANCE
+    details: "Add INV-NPM-CLI-CONFORMANCE bound to tests/test_npm_cli.py::test_npm_cli_package_and_launcher_conformance."
+    expect:
+      frontmatter:
+        rule: "The npm CLI launcher package under npm/eidos-ai/ must maintain a valid package.json"
+        test_binding: "tests/test_npm_cli.py::test_npm_cli_package_and_launcher_conformance"
+vcs:
+  branch: main
+  base_commit: 0bc0f43c83c19d5afb79a347a98f24309e78d4b2
+---
+= SpecDelta: Publish Official Eidos Node.js CLI Launcher Package to npm
+:toc: left
+:icons: font
+:sectnums:
+
+== Problem Statement
+
+Frontend, full-stack, and polyglot teams working in Node.js/TypeScript repositories frequently standardize on `npx` / `npm` / `pnpm` for CLI tooling and agent hooks rather than installing standalone Python tool managers (`uv` or `pipx`) manually.
+
+Publishing an official, lightweight **Node.js CLI launcher package** (`eidos-ai` on npm) enables developers and AI coding agents to run Eidos directly via `npx eidos-ai` or install it globally via `npm install -g eidos-ai` without pre-installing Python or `uv`, while avoiding the `+300–800ms` `/tmp` extraction penalty of `PyInstaller --onefile` binaries and the `+40–80ms` per-call resolution overhead of invoking `uvx` on every command.
+
+== Proposed Specification Changes
+
+1. **Node.js CLI Launcher Package (`npm/eidos-ai/`)**:
+   * `npm/eidos-ai/package.json`: Declares package `eidos-ai`, ESM `"type": "module"`, `"engines": { "node": ">=18.0.0" }`, and dual `"bin"` entries (`"eidos": "./bin/eidos.mjs"` and `"eidos-ai": "./bin/eidos.mjs"`) so both `npx eidos-ai <cmd>` and `npm install -g eidos-ai && eidos <cmd>` work seamlessly.
+   * `npm/eidos-ai/bin/eidos.mjs`: Zero-dependency Node.js launcher that:
+     1. Resolves a deterministic versioned cache environment (`~/.cache/eidos/envs/<version>-<mode>` or `EIDOS_CACHE_DIR` / `XDG_CACHE_HOME` / `LOCALAPPDATA` on Windows).
+     2. **Fast Path (Warm Run, `~15–20ms` Node overhead)**: If both the completion marker (`.eidos-ready`) and the provisioned `bin/eidos` (or `Scripts/eidos.exe` on Windows) binary exist inside the cached virtual environment, spawns `eidos` directly via `child_process.spawn` with `stdio: "inherit"` and signal forwarding (`SIGINT`, `SIGTERM`, `SIGHUP`)—bypassing `uv`/`uvx` completely on warm invocations.
+     3. **Atomic Cold Bootstrap Path**: If the cached environment or `.eidos-ready` marker does not yet exist, locates `uv` via `EIDOS_UV_BIN` or `PATH` (or auto-downloads the standalone `uv` binary for the current OS/arch into `~/.cache/eidos/bin`), provisions an isolated virtual environment (`uv venv --python <3.12|3.14>`), installs `eidos-ai==<version>` (or `eidos-ai[semantic]==<version>` with Python `3.14` clamping when `EIDOS_SEMANTIC=1`/`true`/`yes`) with `uv pip install --compile-bytecode`, writes `.eidos-ready` only after installation succeeds, and then executes `eidos`.
+   * Exclude `"/npm"` from `[tool.hatch.build.targets.sdist].exclude` in `pyproject.toml` so the PyPI source distribution remains isolated from npm wrapper artifacts.
+2. **CI/CD Publishing Pipeline (`.github/workflows/ci.yml`)**:
+   * Add a `publish-to-npm` job sequenced after `validate`, `test`, `build-site`, and `publish-to-pypi` (`needs: [validate, test, build-site, publish-to-pypi]`) on release tags (`refs/tags/v*.*.*`) that stamps `npm/eidos-ai/package.json` with the tag version (`${GITHUB_REF_NAME#v}`), copies `README.md` and `LICENSE`, and publishes to npm with provenance (`npm publish --provenance --access public`).
+3. **Architecture & System Specifications (`ARCH-EIDOS-001`, `SYS-EIDOS-001`)**:
+   * Record `DEC-ARCH-NPM-CLI-LAUNCHER` (`graduated_from: DLT-2026-119-PUBLISH-OFFICIAL-9237`) and document the npm distribution channel (`npx eidos-ai` / `npm install -g eidos-ai`) in `eidos/architecture/system-architecture.adoc` (Section 7: Deployment View) and `eidos/system.adoc`.
+4. **Documentation & Onboarding (`CMP-DOCS-GETTING-STARTED`, `CNT-EIDOS-DOCS`)**:
+   * Document `npx eidos-ai` and `npm install -g eidos-ai` (including `EIDOS_SEMANTIC=1`) in `docs/getting-started/installation.md`, `README.md`, `eidos/architecture/components/docs-getting-started.adoc`, and `eidos/architecture/containers/docs.adoc`.
+5. **Capability & Invariant Governance (`CAP-PROD-001`, `INV-NPM-CLI-CONFORMANCE`)**:
+   * Bump `CAP-PROD-001` to `1.10.0` and add `INV-NPM-CLI-CONFORMANCE` bound to `tests/test_npm_cli.py::test_npm_cli_package_and_launcher_conformance`:
+     _"The npm CLI launcher package under npm/eidos-ai/ must maintain a valid package.json exposing both eidos and eidos-ai bin entrypoints, a syntax-valid Node.js launcher (bin/eidos.mjs) that provisions a versioned uv virtual environment with --compile-bytecode (clamping Python to 3.14 when EIDOS_SEMANTIC is enabled) and executes the cached eidos binary directly on warm runs, sdist exclusion in pyproject.toml, and npm release automation in .github/workflows/ci.yml."_
+
+== Implementation Plan
+
+1. **Scaffold npm Package Artifacts (`npm/eidos-ai/` & `pyproject.toml`)**:
+   * Create `npm/eidos-ai/package.json`, `npm/eidos-ai/bin/eidos.mjs` (`chmod +x`), and `npm/eidos-ai/README.md`.
+   * Add `"/npm"` to `[tool.hatch.build.targets.sdist].exclude` in `pyproject.toml`.
+2. **Wire npm Publishing in `.github/workflows/ci.yml`**:
+   * Add a `publish-to-npm` job in `.github/workflows/ci.yml` sequenced after `publish-to-pypi` on `refs/tags/v*` with `permissions: { contents: read, id-token: write }` to stamp the release version and publish `npm/eidos-ai`.
+3. **Update Living Specifications & User Documentation**:
+   * Update `eidos/architecture/system-architecture.adoc` (`ARCH-EIDOS-001`), `eidos/system.adoc` (`SYS-EIDOS-001`), `eidos/architecture/components/docs-getting-started.adoc` (`CMP-DOCS-GETTING-STARTED`), `eidos/architecture/containers/docs.adoc` (`CNT-EIDOS-DOCS`), `eidos/domains/spec-engine/capabilities/living-spec-engine.adoc` (`CAP-PROD-001`), `docs/getting-started/installation.md`, and `README.md`.
+4. **Add Invariant Test Suite, Verify & Apply**:
+   * Add `tests/test_npm_cli.py::test_npm_cli_package_and_launcher_conformance` verifying `INV-NPM-CLI-CONFORMANCE` (manifest structure, `node --check` syntax validation, cold bootstrap with stubbed `uv`, warm direct-exec fast path bypassing `uv`, `EIDOS_SEMANTIC=1` Python 3.14 clamping, `pyproject.toml` sdist exclusion, and `ci.yml` job wiring).
+   * Run `eidos validate eidos --json`, `eidos delta verify DLT-2026-119-PUBLISH-OFFICIAL-9237 --json`, `eidos delta apply DLT-2026-119-PUBLISH-OFFICIAL-9237`, `eidos drift --uncommitted --json`, and `pytest`.

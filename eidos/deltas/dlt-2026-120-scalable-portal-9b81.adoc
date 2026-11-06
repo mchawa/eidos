@@ -1,0 +1,252 @@
+---
+type: delta/mutation
+id: DLT-2026-120-SCALABLE-PORTAL-9B81
+title: "Scalable Portal UX: Scope Lens, Full-Page C4 Stage, and Progressive Hierarchy"
+status: proposed
+intent:
+  kind: feature
+  motivation: "Eliminate information overload and visual clutter in the Eidos Living Web Portal on large codebases by introducing a global Scope Lens, a dedicated almost-full-page C4 diagram canvas, segmented sub-views replacing endless card walls, true C4 container-to-component nesting with progressive collapse in the Catalog, an active-first SpecDeltas view, and in-drawer back-navigation breadcrumbs."
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+    details: "Record architectural decision DEC-PORTAL-PROGRESSIVE-UX-AND-SCOPE-LENS governing global scope filtering, dedicated full-viewport C4 canvas mode, segmented sub-views, and inspector history stack."
+    expect:
+      frontmatter:
+        decisions.id:
+          - DEC-PORTAL-PROGRESSIVE-UX-AND-SCOPE-LENS
+      body:
+        contains:
+          - "DEC-PORTAL-PROGRESSIVE-UX-AND-SCOPE-LENS"
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+    details: "Update PortalAssets frontend SPA views (App.tsx, ArchitectureView.tsx, BusinessView.tsx, DesignView.tsx, CatalogView.tsx, DeltasView.tsx, SpecReader.tsx, command.tsx) to implement the global Scope Lens, almost-full-page C4 canvas, segmented sub-tabs, split Design System vs Screens/Flows workspaces, nested C4 catalog tree, active-first deltas view, and inspector history breadcrumbs."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-PORTAL
+        status: active
+      body:
+        contains:
+          - "Scope Lens"
+          - "almost-full-page"
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+    details: "Eliminate redundant double-pass index/validation work in get_portal_data by syncing ArchitecturalIndex before validation cache lookup, pre-extracting section headings, and caching/reusing graph topology lookups across raw_deltas impact calculations while preserving full affects and blast_radius dictionaries on all active and historical SpecDeltas."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-PORTAL
+        source_path: src/eidos/portal/generator.py
+      body:
+        contains:
+          - "single-pass"
+  - operation: modify
+    target: CMP-PORTAL-SERVER
+    details: "Eliminate duplicate validation runs and duplicate spec body serialization in EidosPortalHandler by reusing cached validation reports from _get_cached_portal_data, deduplicating /api/data payloads via _deduplicate_portal_payload, and caching serialized JSON responses."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-PORTAL
+        source_path: src/eidos/portal/server.py
+      body:
+        contains:
+          - "_deduplicate_portal_payload"
+  - operation: modify
+    target: CTR-EIDOS-PORTAL
+    details: "Update /api/data and /api/validate endpoint contract descriptions to document payload body deduplication (_deduplicate_portal_payload parity with static data.json) and shared validation report caching."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-PORTAL
+        specification_file: src/eidos/portal/server.py
+      body:
+        contains:
+          - "deduplicated"
+          - "/api/validate"
+  - operation: modify
+    target: CAP-EXP-001
+    details: "Extend capability CAP-EXP-001 (bump version to 1.2.0) and add invariant INV-PORTAL-PROGRESSIVE-UX verifying global scope filtering, dedicated full-page C4 canvas mode, nested C4 catalog hierarchy, and inspector back-navigation."
+    expect:
+      frontmatter:
+        version: "1.2.0"
+        technical.invariants.id:
+          - INV-PORTAL-PROGRESSIVE-UX
+      body:
+        contains:
+          - "Scope Lens"
+  - operation: add
+    target: INV-PORTAL-PROGRESSIVE-UX
+    details: "Add invariant INV-PORTAL-PROGRESSIVE-UX bound to tests/test_portal.py::test_portal_progressive_ux_and_fullscreen_c4 enforcing dedicated full-page C4 canvas mode, nested C4 container-to-component catalog hierarchy, global scope lens filtering, and inspector back-navigation."
+    expect:
+      frontmatter:
+        rule: "The Web Portal MUST provide a global Scope Lens filter, a dedicated almost-full-page C4 diagram canvas mode, segmented sub-views for Architecture and split workspaces for Design System vs Screens/Flows, container-nested C4 component hierarchy in the Catalog, and in-drawer navigation history breadcrumbs."
+        test_binding: "tests/test_portal.py::test_portal_progressive_ux_and_fullscreen_c4"
+  - operation: modify
+    target: UIC-PORTAL-SHELL
+    details: "Update Portal Layout Shell to include the global Scope Lens selector in the top header (scope_filtered state), grouped CMD+K spotlight palette with category filter pills, and in-drawer navigation history stack."
+    expect:
+      frontmatter:
+        states:
+          - scope_filtered
+      body:
+        contains:
+          - "Scope Lens"
+          - "navigation history"
+  - operation: modify
+    target: UIC-PORTAL-READER
+    details: "Update Portal Living Specification Reader to support in-drawer back/forward breadcrumb history stack (history_navigating state) when traversing cross-entity references."
+    expect:
+      frontmatter:
+        states:
+          - history_navigating
+      body:
+        contains:
+          - "breadcrumb history"
+  - operation: modify
+    target: SCR-PORTAL-ARCHITECTURE
+    details: "Add dedicated almost-full-page C4 canvas mode state (fullpage_c4_canvas) and segmented sub-view tabs (Topology & Blast Radius, Containers, Contracts, Decisions Ledger) to replace the ungrouped vertical wall of cards."
+    expect:
+      frontmatter:
+        states.name:
+          - fullpage_c4_canvas
+      body:
+        contains:
+          - "almost-full-page"
+          - "Decisions Ledger"
+  - operation: modify
+    target: SCR-PORTAL-BUSINESS
+    details: "Cap inline capability previews per Domain card with an expand/inspect trigger (domain_capabilities_expanded state) and group the Invariants matrix by owning Domain, Policy, and Container."
+    expect:
+      frontmatter:
+        states.name:
+          - domain_capabilities_expanded
+      body:
+        contains:
+          - "bounded capability preview"
+  - operation: modify
+    target: SCR-PORTAL-DESIGN
+    details: "Split SCR-PORTAL-DESIGN into two dedicated workspaces instead of a combined single-page dump: (1) Design Systems & UI Components (design_systems_workspace: DS-*, W3C DTCG tokens, UIC-*) and (2) Client Surfaces, Screens & Flows (screens_flows_workspace: CLT-*, SCR-* state machines, FLOW-* user journeys)."
+    expect:
+      frontmatter:
+        states.name:
+          - design_systems_workspace
+          - screens_flows_workspace
+      body:
+        contains:
+          - "Design Systems & UI Components"
+          - "Screens & Flows"
+  - operation: modify
+    target: SCR-PORTAL-CATALOG
+    details: "Nest C4 Level 3 Components (CMP-*) and Contracts (CTR-*) under their owning C4 Level 2 Container (CNT-*), default Level 2 subgroups to collapsed on large repositories (progressive_collapsed state), and add a toggle for historical/archived SpecDeltas and Explorations."
+    expect:
+      frontmatter:
+        states.name:
+          - progressive_collapsed
+      body:
+        contains:
+          - "owning Container"
+          - "Historical"
+  - operation: modify
+    target: SCR-PORTAL-DELTAS
+    details: "Hide Archived and Rejected columns from the default Kanban board behind a toggle chip and auto-default to the Chronological Timeline view (timeline_default state) when zero active (proposed, in_review, approved) SpecDeltas exist."
+    expect:
+      frontmatter:
+        states.name:
+          - timeline_default
+      body:
+        contains:
+          - "auto-default"
+vcs:
+  branch: main
+  base_commit: 0bc0f43c83c19d5afb79a347a98f24309e78d4b2
+decisions:
+  - id: DEC-PORTAL-PROGRESSIVE-UX-AND-SCOPE-LENS
+    title: "Enforce Progressive Disclosure, Global Scope Lens, and Dedicated Full-Page C4 Stage"
+    decision: "Provide a persistent top-bar Scope Lens (All System, Domain DOM-*, Container CNT-*), a dedicated almost-full-page C4 diagram overlay canvas, segmented sub-tabs in ArchitectureView, bounded Domain cards in BusinessView, container-nested C4 trees with collapsed-by-default subgroups in CatalogView, active-first DeltasView layout selection, and an in-drawer entity navigation history stack."
+    rationale: "Large repositories with dozens of containers and hundreds of components, decisions, invariants, and historical deltas overwhelm flat unscoped grids and inline diagram cards. Progressive disclosure and a dedicated full-viewport C4 canvas preserve visual clarity without sacrificing zero-backend static compatibility."
+    rejected_alternatives:
+      - option: "Keep single-scroll stacked grids across all views and rely solely on browser Ctrl+F"
+        reason_rejected: "Creates multi-thousand-pixel vertical card walls for Containers, Contracts, Decisions, Capabilities, and Invariants that are disorienting to navigate."
+      - option: "Aggressive C4 node/edge pruning inside Mermaid generator"
+        reason_rejected: "Hides real architectural structure; giving architects a dedicated almost-full-page interactive canvas preserves full C4 fidelity with ample screen real estate."
+---
+= SpecDelta: Scalable Portal UX: Scope Lens, Full-Page C4 Stage, and Progressive Hierarchy
+:toc: left
+
+== Problem Statement
+When a repository scales to dozens of C4 containers (`CNT-*`) and hundreds of components (`CMP-*`), capabilities (`CAP-*`), invariants (`INV-*`), decisions (`DEC-*`), and historical SpecDeltas (`DLT-*`), the Eidos Living Web Portal experience becomes visually noisy and disorienting:
+
+1. **No Global Scope Filtering**: Every tab (`Home`, `Architecture`, `Business`, `Deltas`, `Catalog`) renders 100% of the repository simultaneously with no way to focus the portal on a specific Bounded Context (`DOM-*`) or Container (`CNT-*`).
+2. **Cramped C4 Viewport**: The C4 diagram card in `ArchitectureView` is constrained to a `580px` (`800px` expanded) inline card surrounded by headers, legends, and page chrome, which feels cramped when exploring large Level 2 Container topologies or Level 3 Component whiteboxes.
+3. **Endless Vertical Card Walls**:
+   * `ArchitectureView` stacks all Containers, then all Contracts (`CTR-*`), then all Architectural Decisions (`DEC-*`) in ungrouped 3-column grids at the bottom of the page.
+   * `BusinessView` embeds every bound `CAP-*` vertically inside each Domain card, creating uneven multi-thousand-pixel cards followed by a flat list of all invariants.
+4. **Catalog Tree-Grid Overload & Flat `CMP-*` Bucket**: `CatalogView` expands all categories and all subgroups on mount, places all `CMP-*` components into a single flat `Components (C4 L3)` subgroup instead of nesting them under their owning `CNT-*` container, and mixes historical applied/archived deltas with active specifications.
+5. **Empty Kanban Columns in `DeltasView`**: When all or most deltas are `applied` or `archived`, the 6-column Kanban board shows 3–4 empty dashed columns alongside overflowing historical columns.
+6. **Context-Losing Cross-Reference Jumps & Unstructured `⌘K`**: Clicking an entity badge inside an inspector drawer switches the background tab and replaces the drawer with no `← Back` history button, and `⌘K` displays a flat list of 50 items without category grouping or filter pills.
+7. **Redundant Double-Work in Backend Data Synthesis & Live Serving (`CMP-PORTAL-GENERATOR`, `CMP-PORTAL-SERVER`)**:
+   * `get_portal_data()` runs `SpecValidator.validate_directory()` before `arch_idx._ensure_synced()`, and `EidosPortalHandler._get_cached_validation()` runs a second independent `SpecValidator.validate_directory()` pass even when `_get_cached_portal_data()` has already computed `data["validation"]`.
+   * Live server mode (`/api/data`) serializes every specification's AsciiDoc `body` twice (once in `data.specs` and again in `data.components`, `data.domains`, `data.capabilities`, `data.deltas`) because `_deduplicate_portal_payload()` was only wired into `build_static_portal()`, and re-serializes `orjson.dumps()` on every HTTP request.
+   * `get_portal_data()` runs `compute_delta_impact()` multi-hop graph queries for every historical archived/applied SpecDelta on every refresh.
+
+== Proposed Specification Changes
+
+=== 1. Global Scope Lens (`UIC-PORTAL-SHELL`, `App.tsx`)
+* Add a persistent **Scope Lens** selector in the sticky top header bar allowing users to filter the portal by:
+  * **All System** (default)
+  * **Bounded Domain (`DOM-*`)**
+  * **C4 Container (`CNT-*`)**
+* Synchronize the active scope across `HomeView`, `ArchitectureView`, `BusinessView`, `DeltasView`, and `CatalogView` (with a clear active-scope pill and one-click reset).
+
+=== 2. Dedicated Almost-Full-Page C4 Canvas Mode (`SCR-PORTAL-ARCHITECTURE`, `ArchitectureView.tsx`)
+* Add an **"Enlarge C4 Canvas (Full Page)"** control (`fixed inset-3 z-50` / `~96vw × 94vh` elevated stage with backdrop blur) to `ArchitectureView` (and reusable via `MermaidDiagram`):
+  * Provides maximum screen real estate for C4 Level 1, Level 2, and Level 3 diagrams without leaving the portal context.
+  * Retains the full C4 toolbar inside the top bar of the full-page stage: Level 1/2/3 switcher, breadcrumbs, Level 3 container selector dropdown, Tier legend, Blast Radius simulator selector, zoom/pan/auto-fit controls, and `ESC` / close button.
+  * Clicking any container or component node inside the full-page canvas drills down or opens the C4 Inspector Drawer directly over the full-page stage.
+
+=== 3. Segmented Sub-Views & Bounded Domain Cards (`SCR-PORTAL-ARCHITECTURE`, `SCR-PORTAL-BUSINESS`)
+* **`ArchitectureView` Sub-Navigation Tabs**: Replace the long vertical stack below the C4 diagram with clean segmented sub-views:
+  1. **Topology & Blast Radius**: Interactive C4 Explorer and structured Blast Radius Simulator (grouped by `1-Hop Direct` vs. `2-Hop Transitive` and entity category).
+  2. **Containers (`CNT-*`)**: Grouped by Architectural Tier or Domain with instant filter search.
+  3. **Interface Contracts (`CTR-*`)**: Searchable contract cards with provider/consumer badges.
+  4. **Decisions Ledger (`DEC-*`)**: Searchable architectural decisions grouped by owning System / Container / Domain.
+* **`BusinessView` Bounded Cards & Grouped Invariants**:
+  * Cap inline capabilities displayed inside each Domain card to 4 items with a `+N more capabilities →` button that opens the Domain inspector or expands the card in place.
+  * Group the `Invariants (INV-*)` section by owning Domain, Policy, or Container with quick filter pills (`All`, `Policy`, `Capability`, `Architecture`).
+* **`DesignView` Split: Design System vs. Screens & Flows (`SCR-PORTAL-DESIGN`)**:
+  * Remove the combined `"Full Overview"` (`activeTab = "all"`) dump that stacks tokens, clients, UI components, screen state machines, and flow diagrams on one long page.
+  * Split `SCR-PORTAL-DESIGN` into two distinct primary workspaces:
+    1. **Design Systems & UI Components (`DS-*`, W3C Tokens, `UIC-*`)**: Focused exclusively on design system selection (`DS-*`), W3C DTCG token swatches/scales/tree (`tokens.json`), and reusable UI Component contracts (`UIC-*`).
+    2. **Screens & Flows (`CLT-*`, `SCR-*`, `FLOW-*`)**: Focused exclusively on Client Surfaces (`CLT-*`), Screen Architectures & State Machine diagrams (`SCR-*`), and Client/Omnichannel Interaction Flows (`FLOW-*`).
+
+=== 4. True C4 Container Nesting & Progressive Collapse in `CatalogView` (`SCR-PORTAL-CATALOG`)
+* **Container-to-Component Nesting**: Under `Architecture & Technology`, make each `CNT-*` Container a collapsible Level 2 subgroup (`parentSpec: container`) containing its child `CMP-*` (Level 3 Components) and provided `CTR-*` (Contracts), matching how `DOM-*` nests `CAP-*`.
+* **Progressive Disclosure**: Default Level 2 subgroups to collapsed when the repository exceeds 40 specifications (keeping Level 1 pillars visible with aggregate counts and validity badges), while still auto-expanding matching branches during search.
+* **Historical Spec Toggle**: Hide archived/applied `DLT-*` and archived `EXP-*` specs from the default Catalog view behind a `"Show Historical / Archived (N)"` toggle chip in the toolbar.
+
+=== 5. Active-First `DeltasView` (`SCR-PORTAL-DELTAS`)
+* Hide `Archived` and `Rejected` columns from the default Kanban board behind a `"Show Archived & Rejected"` toggle chip.
+* Auto-default `viewLayout` to `"timeline"` (Chronological Changelog) when there are zero active (`proposed`, `in_review`, `approved`) deltas, while preserving one-click switching back to `"kanban"`.
+
+=== 6. In-Drawer Navigation History (`← Back`) & Grouped `⌘K` Palette (`UIC-PORTAL-SHELL`, `UIC-PORTAL-READER`)
+* **Inspector Breadcrumb Trail**: Track an inspection history stack when a user clicks an `xref:` or entity badge inside `SpecReader` or entity inspector drawers, rendering a `← Back to <PREV-ID>` button and breadcrumb trail in the drawer header instead of abruptly losing context.
+* **Grouped `⌘K` Command Dialog**: Group results by category (`Containers & Components`, `Domains & Capabilities`, `Contracts`, `Decisions`, `Invariants`, `Policies`, `Deltas`), add quick category filter chips at the top of the dialog, and surface recently inspected entities when the search query is empty.
+
+=== 7. Single-Pass Backend Synthesis & Deduplicated Live Caching (`CMP-PORTAL-GENERATOR`, `CMP-PORTAL-SERVER`, `CTR-EIDOS-PORTAL`)
+* **Single-Pass Sync & Validation Reuse**: Ensure `arch_idx._ensure_synced()` runs before validation in `get_portal_data()` so warm SQLite spec cache rows are shared, and make `EidosPortalHandler._get_cached_validation()` reuse `_get_cached_portal_data()["validation"]` instead of running `SpecValidator.validate_directory()` a second time.
+* **Batch SpecDelta Impact Lookup Memoization**: Cache/reuse the graph topology lookup context and memoize normalized mutation target tuples across the `raw_deltas` loop in `get_portal_data()` so all active and historical/archived SpecDeltas retain complete `affects` and `blast_radius` dictionaries (`containers`, `impacted_containers`, `invariants_to_enforce`) without repeating full-table SQLite scans per delta.
+* **Deduplicated & Pre-Serialized Live `/api/data` Payload**: Apply `_deduplicate_portal_payload()` to `/api/data` in `EidosPortalHandler` (matching static builds where `App.tsx` runs `hydratePortalData()`) and cache the serialized JSON bytes alongside the mtime snapshot so spec bodies are never serialized twice.
+
+== Implementation Plan
+1. **Living Specifications Update**:
+   * Update `eidos/architecture/containers/portal.adoc` (`CNT-EIDOS-PORTAL`), `eidos/architecture/components/portal-assets.adoc` (`CMP-PORTAL-ASSETS`), `eidos/architecture/components/portal-generator.adoc` (`CMP-PORTAL-GENERATOR`), `eidos/architecture/components/portal-server.adoc` (`CMP-PORTAL-SERVER`), `eidos/architecture/contracts/portal.adoc` (`CTR-EIDOS-PORTAL`), `eidos/domains/experience-portal/capabilities/living-web-portal.adoc` (`CAP-EXP-001` v1.2.0 + `INV-PORTAL-PROGRESSIVE-UX`), `eidos/design/systems/core/components/portal-shell.adoc` (`UIC-PORTAL-SHELL`), `eidos/design/systems/core/components/portal-reader.adoc` (`UIC-PORTAL-READER`), and screen specs (`SCR-PORTAL-ARCHITECTURE`, `SCR-PORTAL-BUSINESS`, `SCR-PORTAL-DESIGN`, `SCR-PORTAL-CATALOG`, `SCR-PORTAL-DELTAS`).
+2. **Backend & Frontend Implementation (`src/eidos/portal/`)**:
+   * Update `src/eidos/portal/generator.py` and `src/eidos/portal/server.py` to eliminate double validation passes, deduplicate `/api/data` payloads via `_deduplicate_portal_payload`, cache serialized JSON bytes, and memoize batch SpecDelta impact resolution.
+   * Implement Global Scope Lens state and In-Drawer Navigation History stack in `App.tsx` and `SpecReader.tsx`.
+   * Implement the Dedicated Almost-Full-Page C4 Canvas overlay (`isFullPage` modal stage with full C4 controls and `Escape` handler) and segmented sub-tabs (`Topology`, `Containers`, `Contracts`, `Decisions`) in `ArchitectureView.tsx`.
+   * Implement bounded capability previews per Domain card and grouped Invariants in `BusinessView.tsx`.
+   * Split `DesignView.tsx` into two dedicated workspaces: **Design System (`DS-*` Tokens & `UIC-*` Components)** vs. **Screens & Flows (`CLT-*` Clients, `SCR-*` Screens, `FLOW-*` Flows)**, eliminating the combined single-page dump.
+   * Implement `CNT-*` -> `CMP-*`/`CTR-*` hierarchical nesting, progressive Level 2 subgroup collapse, and the `"Show Historical / Archived"` filter toggle in `CatalogView.tsx`.
+   * Implement active-first layout selection and `"Show Archived & Rejected"` toggle in `DeltasView.tsx`.
+   * Implement category grouping, filter pills, and recent items in `command.tsx`.
+   * **Preserve Existing Invariant DOM Anchors**: Retain all required DOM IDs and structural markers (`#c4LevelSwitcher`, `#btnC4Level1`–`3`, `#c4Breadcrumbs`, `#c4ContainerSelect`, `#c4DiagramContainer`, `#c4ActiveDiagram`, `#c4InspectorDrawer`, `#architectureContractsSection`, `#architectureDecisionsSection`, `#businessCategoryFilter`, `#businessSearchInput`, `#businessDomainsSection` before `#businessPoliciesSection`, `#businessPersonasSection`, `#tokenSwatchesGrid`, `#designClientSelect`, `#activeClientDetails`, `#clientFlowsPanel`, `#omnichannelFlowsPanel`, `#catalogSearchInput`, `#catalogTypeFilter`, `#specsTreeGridTable`, `"Interactive Blast Radius Simulator"`, `"Boundary Interface Contracts"`, `"Validation & Governance Diagnostics"`, `"Recursive W3C Token Tree"`, and `"Show More Deltas"`).
+   * Rebuild the air-gapped portal asset bundle (`pnpm build:assets`) within the 5 MiB uncompressed budget (`INV-PORTAL-AIR-GAPPED-BUNDLE`).
+3. **Verification & Reconciliation**:
+   * Add `tests/test_portal.py::test_portal_progressive_ux_and_fullscreen_c4` bound to `INV-PORTAL-PROGRESSIVE-UX` and frontend Vitest assertions.
+   * Run `eidos validate eidos --json`, `eidos delta verify DLT-2026-120 --json`, and `eidos drift --uncommitted --json`.

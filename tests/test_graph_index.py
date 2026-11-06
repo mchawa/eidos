@@ -3548,10 +3548,16 @@ def test_semantic_engine_setup_onnx_protobuf_and_auto_refresh_coverage(tmp_path:
         assert fuse_hybrid_rrf(lex_only, []) == lex_only
         assert fuse_hybrid_rrf(lex_only, [{"id": "DOM-SEM", "semantic_score": 0.10}], tau_min=0.50) == lex_only
 
-        # Runtime unavailable branch in sync_spec_embeddings(encode_fn=None)
+        # Runtime unavailable branch in sync_spec_embeddings(encode_fn=None) and Rich CLI status markup
         monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
         with pytest.raises(RuntimeError, match="Harrier ONNX runtime or model artifacts are not available"):
             sync_spec_embeddings(conn, eidos_dir, force=True, encode_fn=None)
+        from typer.testing import CliRunner
+
+        from eidos.cli.main import app
+
+        no_rt_out = CliRunner().invoke(app, ["index", "semantic", "status", "--path", str(eidos_dir)]).output
+        assert "NO (Install eidos-ai[semantic])" in no_rt_out
     finally:
         idx.close()
         _SESSION_CACHE.clear()

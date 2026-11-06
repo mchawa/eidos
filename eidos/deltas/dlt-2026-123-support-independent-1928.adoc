@@ -1,0 +1,315 @@
+---
+type: delta/mutation
+id: DLT-2026-123-SUPPORT-INDEPENDENT-1928
+title: Support Independent Sub-Project Eidos Directories in Monorepos
+status: proposed
+intent:
+  kind: feature
+  motivation: "Enable monorepos to host independent sub-project eidos/ directories (e.g. packages/api/eidos/, services/billing/eidos/) sharing a single enclosing .git root, where each sub-project resolves source_path, specification_file, test_binding, knowledge graph indexing, SpecDelta baselines, drift detection, CLI commands, and portals strictly within its own sub-project directory boundary without cross-project bleed, while sharing a single Git-root Harrier ONNX semantic model cache (<git_root>/eidos/.cache) and a single Git-root Agent Plugin and AGENTS.md installation."
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: "Record architectural decision DEC-CORE-MONOREPO-ISOLATED-SUBPROJECTS establishing isolated single-scope sub-project eidos/ resolution with sub-project-relative paths, shared Git-root semantic model caching, and shared Git-root agent plugin/AGENTS.md governance over a shared Git worktree."
+    expect:
+      frontmatter:
+        decisions.id:
+          - DEC-CORE-MONOREPO-ISOLATED-SUBPROJECTS
+      body:
+        contains:
+          - "sub-project"
+  - operation: modify
+    target: CMP-PROJECT-RESOLVER
+    details: "Add find_git_root(start_dir) to locate the enclosing .git worktree root across arbitrary ancestor depths, prioritize nearest owning eidos/ discovery in find_repo_root and resolve_spec_and_repo_roots (ignoring cache-only eidos/ directories that lack specification markers) without premature package-marker termination, and update get_tracked_files and is_generated_or_vendored to work in sub-projects where .git resides in an ancestor directory."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-CORE
+        source_path: src/eidos/core/workspace/project.py
+      body:
+        contains:
+          - "find_git_root"
+          - "sub-project"
+  - operation: modify
+    target: CMP-REPO-INITIALIZER
+    details: "Update _ensure_eidos_gitignore and init_repository in src/eidos/core/lifecycle/initializer.py so eidos/.gitignore always ignores .cache/ and init_repository allows initializing an eidos/ directory that currently contains only .cache/ and .gitignore (such as a Git-root eidos/.cache provisioned by a sub-project semantic model setup) without requiring --force."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-CORE
+        source_path: src/eidos/core/lifecycle/initializer.py
+      body:
+        contains:
+          - "_ensure_eidos_gitignore"
+          - ".cache/"
+  - operation: modify
+    target: CMP-SEMANTIC-EMBEDDING-ENGINE
+    details: "Update resolve_semantic_model_dir(eidos_dir) and setup_semantic_model(eidos_dir, ...) in src/eidos/core/index/semantic.py to always resolve the Harrier-OSS-v1-0.6B ONNX model cache to <git_root>/eidos/.cache/models/harrier-oss-v1-0.6b when inside a Git repository (falling back to <eidos_dir>/.cache/models/harrier-oss-v1-0.6b outside Git repositories) and automatically configure <git_root>/eidos/.gitignore (and <git_root>/eidos/.cache/.gitignore) so sub-projects share a single gitignored ONNX model installation while keeping spec_embeddings isolated per sub-project index.db."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-INDEX
+        source_path: src/eidos/core/index/semantic.py
+      body:
+        contains:
+          - "resolve_semantic_model_dir"
+          - "eidos/.cache/models/harrier-oss-v1-0.6b"
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    details: "Exclude nested child sub-project directories (child directories containing their own valid eidos/ specification root) during check_index_dirty, _rescan_package_dirs, and sync_index test scanning in src/eidos/core/index/sync.py so parent and child sub-projects remain strictly isolated."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-INDEX
+        source_path: src/eidos/core/index/sync.py
+      body:
+        contains:
+          - "sub-project"
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    details: "Scope get_git_diff_files, batch_read_git_blobs, _get_files_versions_batch, collect_polyglot_test_files, and _load_or_update_test_binding_cache to the active sub-project root relative to the enclosing Git worktree toplevel so changes in sibling sub-projects are excluded and sub-project-relative paths resolve against Git history."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-VCS
+      body:
+        contains:
+          - "sub-project"
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+    details: "Update _resolve_git_repo_root(eidos_dir) to walk all ancestor directories (via find_git_root) rather than only checking eidos_dir and eidos_dir.parent, enabling vcs.branch, vcs.base_commit, and _resolve_git_baseline_sha verification in nested monorepo sub-projects."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-CORE
+        source_path: src/eidos/core/lifecycle/delta_engine.py
+      body:
+        contains:
+          - "monorepo"
+  - operation: modify
+    target: CMP-CLI-APP
+    details: "Enhance resolve_cli_eidos_dir in src/eidos/cli/_shared.py to discover the nearest governing eidos/ directory walking upward from CWD, explicit --path (whether pointing to <subproject> or <subproject>/eidos), or target files."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-CLI
+      body:
+        contains:
+          - "resolve_cli_eidos_dir"
+          - "sub-project"
+  - operation: modify
+    target: CMP-CLI-CONTEXT-COMMAND
+    details: "Support nearest sub-project eidos/ resolution when --file (-f) targets a file inside a monorepo sub-project and normalize file arguments relative to the resolved sub-project root."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-CLI
+        source_path: src/eidos/cli/context_command.py
+      body:
+        contains:
+          - "sub-project"
+  - operation: modify
+    target: CMP-CLI-DRIFT-COMMANDS
+    details: "Unify eidos drift path and sub-project root resolution via resolve_cli_eidos_dir and resolve_spec_and_repo_roots for nested monorepo sub-projects."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-CLI
+        source_path: src/eidos/cli/drift_commands.py
+      body:
+        contains:
+          - "sub-project"
+  - operation: modify
+    target: CMP-CLI-INDEX-COMMANDS
+    details: "Route all eidos index subcommands (status, sync, search, blast-radius, repo-map, find-symbol, semantic) through resolve_cli_eidos_dir(path) so commands executed inside nested sub-project directories discover the enclosing sub-project eidos/."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-CLI
+        source_path: src/eidos/cli/index_commands.py
+      body:
+        contains:
+          - "resolve_cli_eidos_dir"
+  - operation: modify
+    target: CMP-CLI-DELTA-COMMANDS
+    details: "Route all eidos delta subcommands (list, create, verify, audit, apply, status, delete, changelog, archive) through resolve_cli_eidos_dir(path) for consistent monorepo sub-project discovery."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-CLI
+        source_path: src/eidos/cli/delta_commands.py
+      body:
+        contains:
+          - "resolve_cli_eidos_dir"
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+    details: "Route all eidos spec subcommands (list, show, create, delete) and eidos validate through resolve_cli_eidos_dir(path) so nested sub-project working directories resolve their nearest eidos/ catalog."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-CLI
+        source_path: src/eidos/cli/spec_commands.py
+      body:
+        contains:
+          - "resolve_cli_eidos_dir"
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+    details: "Route eidos doctor --path resolution through resolve_cli_eidos_dir(path) in src/eidos/cli/doctor_hook_commands.py and check agent plugin installation status strictly at the enclosing Git monorepo root (find_git_root(repo_root) or repo_root)."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-CLI
+        source_path: src/eidos/cli/doctor_hook_commands.py
+      body:
+        contains:
+          - "resolve_cli_eidos_dir"
+          - "sub-project"
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    details: "Resolve project_dir to the enclosing Git monorepo root (find_git_root) across install_plugin, uninstall_plugin, update_plugin, _resolve_installed_plugin_manifest, get_installed_plugin_version, and check_plugin_version_status in src/eidos/plugin/installer.py and src/eidos/plugin/version.py so .agents/plugins/eidos, harness skill projections, and AGENTS.md / CLAUDE.md are always installed and managed at the main Git root and never inside sub-projects."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-PLUGIN
+      body:
+        contains:
+          - "find_git_root"
+          - "sub-project"
+  - operation: modify
+    target: CMP-HOOK-RUNNER
+    details: "Update find_workspace_root and handle_stop_hook to resolve the nearest governing sub-project eidos/ directory when an agent session operates inside a monorepo sub-project."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-PLUGIN
+        source_path: src/eidos/plugin/hooks.py
+      body:
+        contains:
+          - "sub-project"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Bump capability version to 1.10.0 and document independent monorepo sub-project eidos/ root resolution and sub-project-relative path validation."
+    expect:
+      frontmatter:
+        version: "1.10.0"
+      body:
+        contains:
+          - "monorepo"
+  - operation: modify
+    target: CAP-VCS-001
+    details: "Bump capability version to 1.10.0 and add invariant INV-MONOREPO-SUBPROJECT-ISOLATION verifying isolated sub-project Git diff classification, blob extraction, SpecDelta baseline resolution, and drift detection inside a shared Git monorepo."
+    expect:
+      frontmatter:
+        version: "1.10.0"
+        technical.invariants.id:
+          - INV-MONOREPO-SUBPROJECT-ISOLATION
+      body:
+        contains:
+          - "sub-project"
+  - operation: add
+    target: INV-MONOREPO-SUBPROJECT-ISOLATION
+    details: "Add invariant INV-MONOREPO-SUBPROJECT-ISOLATION bound to tests/test_monorepo_subprojects.py::test_monorepo_subproject_eidos_isolation enforcing isolated sub-project path resolution, Git diff/blob scoping, SpecDelta baseline verification, shared Git-root eidos/.cache semantic model resolution with proper .gitignore configuration, shared Git-root plugin and AGENTS.md placement, and zero cross-project drift bleed."
+    expect:
+      frontmatter:
+        rule: "In a Git monorepo containing one or more sub-project eidos/ directories (e.g. packages/<pkg>/eidos/), each sub-project eidos/ MUST operate as a self-contained project whose repo_root is the parent directory of that eidos/ folder, resolving all source_path, specification_file, and test_binding paths strictly relative to the sub-project root, scoping Git diffs, git cat-file blob reads, and SpecDelta baseline lookups to that sub-project without interference from sibling sub-projects, and sharing a single gitignored semantic model cache at <git_root>/eidos/.cache/models/harrier-oss-v1-0.6b and a single Agent Plugin / AGENTS.md installation at <git_root>."
+        test_binding: "tests/test_monorepo_subprojects.py::test_monorepo_subproject_eidos_isolation"
+vcs:
+  branch: main
+  base_commit: 02ced8d932d8f9d4332d053df98539439272a216
+decisions:
+  - id: DEC-CORE-MONOREPO-ISOLATED-SUBPROJECTS
+    title: "Independent Single-Scope Sub-Project Eidos Directories in Monorepos"
+    decision: "Treat each sub-project eidos/ directory in a monorepo (e.g. packages/api/eidos/) as a self-contained Eidos project whose owning project root (repo_root) is the parent directory of that eidos/ directory, while resolving Git operations against the enclosing .git worktree root (find_git_root) scoped to the sub-project's relative path prefix, always sharing a single gitignored Harrier ONNX model cache at <git_root>/eidos/.cache/models/harrier-oss-v1-0.6b, and always installing the Eidos Agent Plugin (.agents/plugins/eidos) and AGENTS.md / CLAUDE.md at <git_root>."
+    rationale: "Keeping each sub eidos/ directory self-contained with strictly sub-project-relative source_path, specification_file, and test_binding paths, its own eidos/.cache/index.db, and its own standalone portal preserves zero-configuration simplicity and fast O(subproject) indexing/drift checks without cross-project coupling, while centralizing the multi-hundred-MB Harrier ONNX model weights at <git_root>/eidos/.cache/models/harrier-oss-v1-0.6b and the Agent Plugin / AGENTS.md at <git_root> eliminates redundant disk/RAM usage and duplicate agent instruction files across sub-projects."
+    rejected_alternatives:
+      - option: "Merge all sub eidos/ folders into a single shared root index.db knowledge graph"
+        reason_rejected: "Couples independent monorepo services/packages into a global namespace, requires cross-project ID disambiguation, and forces full-monorepo re-indexing on localized sub-project edits."
+      - option: "Require source_path and test_binding inside sub eidos/ specs to be relative to the monorepo .git root"
+        reason_rejected: "Breaks sub-project portability, leaks monorepo directory structure into every component/capability spec, and prevents moving or extracting a sub-project without rewriting all specs."
+      - option: "Allow cross-scope entity reference inheritance between root eidos/ and sub eidos/ directories"
+        reason_rejected: "Violates self-contained catalog validation and makes sub-project validation dependent on external parent/sibling directories."
+      - option: "Download a separate Harrier ONNX model copy or install duplicate .agents/plugins/eidos and AGENTS.md into every sub-project"
+        reason_rejected: "Duplicates 600MB-2.4GB of identical read-only ONNX model weights, in-memory ONNX Runtime sessions, and agent plugin/instruction files across every sub-project in the monorepo."
+---
+= SpecDelta: Support Independent Sub-Project Eidos Directories in Monorepos
+:toc: left
+
+== Problem Statement
+In a monorepo where a single `.git` directory sits at the repository root (`<git_root>/.git`) and individual packages or services maintain their own self-contained `eidos/` folders (e.g., `<git_root>/packages/billing/eidos/`, `<git_root>/services/auth/eidos/`), several core Eidos subsystems currently assume that `repo_root` (the parent of `eidos/`) is identical to the `.git` worktree root:
+
+1. **Conflation of Sub-Project Root (`repo_root`) and Git Worktree Root (`git_root`) (`CMP-PROJECT-RESOLVER`)**:
+   * `find_repo_root()` stops at `.git` or `eidos/` while walking up, which works when CWD is inside a sub-project with an existing `eidos/`, but `resolve_spec_and_repo_roots()` breaks early when encountering nested `package.json` / `pyproject.toml` markers before reaching the sub-project's `eidos/` root.
+   * `get_tracked_files(repo_root)` and `is_generated_or_vendored(repo_root, rel_paths)` check `if (repo_root / ".git").exists():`, which is `False` for every sub-project `<git_root>/packages/<pkg>`, bypassing `git ls-files` (`.gitignore` filtering) and `.gitattributes` (`linguist-generated` / `linguist-vendored`) checks.
+2. **Unscoped Git Diffs & Worktree-Relative Blob Paths in Drift Detection (`CMP-DRIFT-DETECTOR`)**:
+   * `get_git_diff_files(repo_root)` runs `git diff --name-only` and `git status --porcelain -uall` with `cwd=repo_root`. Git always emits paths relative to `<git_root>` (e.g., `packages/billing/src/ledger.py` and `packages/auth/src/user.py`) rather than `repo_root` (`src/ledger.py`), causing:
+     a. Changes in sibling sub-projects (`packages/auth/...`) or root files to bleed into `packages/billing`'s drift check as `unmapped_code_files`.
+     b. Changes inside `packages/billing/src/...` and `packages/billing/eidos/...` to fail path matching against sub-project-relative `source_path: src/...` and `eidos/...` spec classifications.
+   * `batch_read_git_blobs(repo_root, ...)` and `_get_files_versions_batch(repo_root, ...)` query `git cat-file --batch` with `<ref>:<rel_path>`. When `rel_path` is relative to the sub-project (`src/ledger.py`), `git cat-file --batch` looks for `<git_root>/src/ledger.py` instead of `<git_root>/packages/billing/src/ledger.py` and returns `missing`!
+   * `collect_polyglot_test_files(repo_root)` and `_load_or_update_test_binding_cache(repo_root)` check `if (root / ".git").exists():`, which is `False` in sub-projects.
+3. **SpecDelta Git Baseline & History Lookup Failure in Sub-Projects (`CMP-DELTA-ENGINE`)**:
+   * `_resolve_git_repo_root(eidos_dir)` in `src/eidos/core/lifecycle/delta_engine.py` only inspects `(eidos_dir, eidos_dir.parent)` for `.git`. For `<git_root>/packages/billing/eidos` (depth >= 2), it returns `None`, so `eidos delta create` omits `vcs.branch` / `vcs.base_commit` and `eidos delta verify` cannot recover pre-delta baseline blobs from Git history.
+4. **Inconsistent CLI Sub-Project Discovery (`CNT-EIDOS-CLI`, `CMP-HOOK-RUNNER`)**:
+   * `eidos index *`, `eidos delta *`, and `eidos spec *` default `--path` to literal `Path("eidos")` instead of calling `resolve_cli_eidos_dir(path)`. Running those commands from a subdirectory inside a sub-project (e.g. `packages/billing/src/`) or passing `--path packages/billing` fails to locate `packages/billing/eidos`.
+   * Running `eidos context -f packages/billing/src/ledger.py` without `--path` does not walk up from the target `--file` to discover the nearest owning `packages/billing/eidos` directory or normalize the `-f` path relative to `packages/billing`.
+5. **Duplicate ONNX Model Downloads & Sub-Project Plugin/AGENTS.md Scattering (`CMP-SEMANTIC-EMBEDDING-ENGINE`, `CMP-REPO-INITIALIZER`, `CMP-PLUGIN-INSTALLER`)**:
+   * `resolve_semantic_model_dir(eidos_dir)` in `src/eidos/core/index/semantic.py` hardcodes `(Path(eidos_dir).resolve() / ".cache" / "models" / "harrier-oss-v1-0.6b").resolve()`. In a monorepo with $N$ sub-project `eidos/` folders, running `eidos index semantic setup` duplicates 600MB–2.4GB of read-only Harrier-OSS-v1-0.6B ONNX weights $N$ times on disk and instantiates separate `_SESSION_CACHE` ONNX Runtime sessions in memory.
+   * When centralizing the semantic model cache at `<git_root>/eidos/.cache/models/harrier-oss-v1-0.6b` in a monorepo that has not initialized a root `<git_root>/eidos/` project, `<git_root>/eidos/.gitignore` (and `<git_root>/eidos/.cache/.gitignore`) must be provisioned automatically so Git never sees untracked model binaries, and `find_repo_root`, `resolve_spec_and_repo_roots`, and `init_repository` must not mistake a cache-only `<git_root>/eidos/` directory for an already-initialized root specification catalog.
+   * Similarly, `install_plugin`, `uninstall_plugin`, `update_plugin`, and `check_plugin_version_status` in `src/eidos/plugin/` currently resolve `root = (project_dir or Path.cwd()).resolve()`. Running `eidos plugin install` or `eidos doctor` from inside a sub-project would install or look for `.agents/plugins/eidos` and `AGENTS.md` inside the sub-project instead of always sharing the single monorepo root installation at `<git_root>`.
+
+== Proposed Specification Changes
+
+=== 1. Architectural Model: Independent Single-Scope Sub-Projects (`DEC-CORE-MONOREPO-ISOLATED-SUBPROJECTS`)
+* **Isolated Sub-Projects**: Each `eidos/` directory in a monorepo is an independent, self-contained project whose `repo_root` (sub-project root) is `eidos_dir.parent`. Commands operate on one `eidos/` directory at a time.
+* **Strictly Sub-Project-Relative Paths**: All `source_path`, `specification_file`, `test_binding`, and internal spec references inside `<subproject>/eidos/` are resolved strictly relative to `<subproject>/`.
+* **Self-Contained Catalog & Portal**: Each `<subproject>/eidos/` validates only against its own specifications, maintains its own `<subproject>/eidos/.cache/index.db` (including its own `spec_embeddings` rows), and serves/builds its own standalone portal.
+* **Shared Git-Root Semantic Model Cache (`<git_root>/eidos/.cache`)**: All sub-projects in a Git monorepo share a single Harrier ONNX model installation at `<git_root>/eidos/.cache/models/harrier-oss-v1-0.6b` with automatic `.gitignore` configuration (`<git_root>/eidos/.gitignore` and `<git_root>/eidos/.cache/.gitignore`).
+* **Shared Git-Root Agent Plugin & `AGENTS.md` (`<git_root>`)**: The Eidos Agent Plugin (`.agents/plugins/eidos` and all harness targets) and `AGENTS.md` / `CLAUDE.md` are always installed, updated, uninstalled, and inspected at `<git_root>`, never in sub-projects.
+* **Nested Sub-Project Boundary Exclusion**: If a parent directory also has an `eidos/` directory, nested directories that contain their own `eidos/` (i.e., independent child sub-projects) are excluded from the parent project's tracked files, index sync, test discovery, and drift detection.
+
+=== 2. Project & Git Root Separation (`CMP-PROJECT-RESOLVER`, `src/eidos/core/workspace/project.py`)
+* Introduce `find_git_root(start_dir: Path | None = None) -> Path | None` to locate the enclosing `.git` worktree root across all ancestor directories (or via `git rev-parse --show-toplevel`).
+* Update `find_repo_root(start_dir)`:
+  * Walk upward from `start_dir`: if an ancestor `<dir>` has a valid `<dir>/eidos` specification directory (`_has_eidos_markers(<dir>/eidos)`), return `<dir>` immediately (even before reaching `<git_root>/.git`), so any directory inside a sub-project resolves its nearest owning sub-project root.
+* Update `resolve_spec_and_repo_roots(root_dir, doc_path)`:
+  * Require `_has_eidos_markers(child)` when checking a candidate `eidos` directory so a cache-only `<git_root>/eidos/` directory (containing only `.cache/` and `.gitignore`) does not masquerade as an initialized specification root.
+  * Do not stop upward search at intermediate `package.json` / `pyproject.toml` markers before checking ancestor `eidos/` directories; only stop at `.git` after checking whether the `.git` directory itself has a valid `eidos/`.
+* Update `get_tracked_files(repo_root)` and `is_generated_or_vendored(repo_root, rel_paths)`:
+  * Use `find_git_root(repo_root)` instead of `(repo_root / ".git").exists()`. Because `git ls-files` and `git check-attr --stdin` run with `cwd=repo_root`, Git natively accepts and returns paths relative to `repo_root`.
+  * Exclude any nested child sub-project directories (child directories under `repo_root` that contain their own valid `eidos/` root) so independent sub-projects never pollute an enclosing project.
+
+=== 3. Sub-Project-Scoped Git Diffs & Blob Extraction (`CMP-DRIFT-DETECTOR`, `src/eidos/vcs/`)
+* **`get_git_diff_files(repo_root, ...)` (`src/eidos/vcs/diff.py`)**:
+  * Resolve `git_root = find_git_root(repo_root)`. When `git_root` is an ancestor of `repo_root`, compute `rel_prefix = repo_root.relative_to(git_root)` (e.g., `packages/billing`).
+  * Filter Git diff / status paths (`git diff`, `git diff --cached`, `git status --porcelain -uall`) to only files inside `rel_prefix/`, strip `rel_prefix/` so returned paths are strictly relative to `repo_root` (`src/ledger.py`, `eidos/system.adoc`), and exclude files belonging to any nested child sub-project under `repo_root`.
+* **`batch_read_git_blobs(repo_root, object_specs)` & `_get_files_versions_batch` (`src/eidos/vcs/diff.py`)**:
+  * When `git_root` is an ancestor of `repo_root`, prefix `rel_prefix/` onto each `rel_path` when querying `git cat-file --batch` (`<ref>:<rel_prefix>/<norm_rel>`), while mapping the returned dictionary keys back to the caller's `repo_root`-relative `(ref, norm_rel)` keys and reading working-tree files from `repo_root / norm_rel`.
+* **Shallow Clone & Test Discovery (`src/eidos/vcs/diff.py`, `src/eidos/vcs/invariants.py`)**:
+  * Check `(git_root / ".git" / "shallow").exists()` via `find_git_root(repo_root)` and use `find_git_root(repo_root) is not None` in `collect_polyglot_test_files` and `_load_or_update_test_binding_cache`.
+
+=== 4. SpecDelta Git Baseline Resolution in Sub-Projects (`CMP-DELTA-ENGINE`, `src/eidos/core/lifecycle/delta_engine.py`)
+* Update `_resolve_git_repo_root(eidos_dir)` to walk all parents `(eidos_dir.resolve(), *eidos_dir.resolve().parents)` for `.git` (or delegate to `find_git_root(eidos_dir)`).
+* Because `_resolve_git_baseline_sha` already computes `rel_target = target_file.resolve().relative_to(repo_root)` and `rel_delta = delta_file.resolve().relative_to(repo_root)` against `_resolve_git_repo_root(eidos_dir)`, walking all ancestors automatically makes `git log -- <rel_delta>` and `git show <rev>:<rel_target>` resolve `<git_root>/packages/billing/eidos/...` accurately!
+
+=== 5. Unified CLI, Plugin & Hook Resolution (`CNT-EIDOS-CLI`, `CMP-PLUGIN-INSTALLER`, `CMP-HOOK-RUNNER`)
+* **`resolve_cli_eidos_dir(target_path, hint_files)` (`src/eidos/cli/_shared.py`)**:
+  * When `target_path` is provided: if `(target_path / "eidos").is_dir()` and not `has_eidos_markers(target_path)`, return `target_path / "eidos"`; if `target_path` is a subdirectory inside a sub-project (and not itself an `eidos/` dir), walk up to the nearest owning `eidos/` via `find_repo_root(target_path) / "eidos"`.
+  * When `target_path` is `None`: if `hint_files` (e.g., `eidos context -f packages/billing/src/ledger.py`) are provided, walk upward from the first existing hint file path to find its nearest owning `<subproject>/eidos` directory; otherwise walk upward from `Path.cwd()` via `find_repo_root()` to locate the nearest `<subproject>/eidos`.
+* **Consistent CLI Option Resolution**:
+  * Update `index_commands.py`, `delta_commands.py`, `spec_commands.py`, `drift_commands.py`, `context_command.py`, and `doctor_hook_commands.py` to resolve `--path` through `resolve_cli_eidos_dir(path)` and derive `repo_root = resolved_eidos.parent if resolved_eidos.name == "eidos" else find_repo_root(resolved_eidos)`.
+  * In `context_cmd`, normalize `--file` (`-f`) paths that are passed relative to CWD (e.g. `packages/billing/src/ledger.py` when run from `<git_root>`) into sub-project-relative paths (`src/ledger.py`) so index file lookup matches seamlessly.
+* **Git-Root-Only Agent Plugin & `AGENTS.md` (`CMP-PLUGIN-INSTALLER`, `CMP-CLI-DOCTOR-HOOKS`)**:
+  * In `install_plugin`, `uninstall_plugin`, `update_plugin` (`src/eidos/plugin/installer.py`) and `_resolve_installed_plugin_manifest`, `get_installed_plugin_version`, `check_plugin_version_status` (`src/eidos/plugin/version.py`), resolve the target project root via `find_git_root(project_dir or Path.cwd()) or (project_dir or Path.cwd()).resolve()`, ensuring the plugin and `AGENTS.md` / `CLAUDE.md` always live at `<git_root>` and never inside a sub-project.
+  * In `doctor_cmd` (`src/eidos/cli/doctor_hook_commands.py`), check plugin status at `find_git_root(repo_root) or repo_root`.
+* **`HookRunner` (`src/eidos/plugin/hooks.py`)**:
+  * Use `find_repo_root` on the hook workspace path so agent sessions working inside a sub-project run `detect_drift` against that sub-project's `repo_root` and `eidos_dir`.
+
+=== 6. Shared Git-Root `eidos/.cache` Semantic Model & `.gitignore` Hygiene (`CMP-SEMANTIC-EMBEDDING-ENGINE`, `CMP-REPO-INITIALIZER`)
+* **`resolve_semantic_model_dir(eidos_dir: Path) -> Path` (`src/eidos/core/index/semantic.py`)**:
+  * Resolve `git_root = find_git_root(eidos_dir)`.
+  * When `git_root` is found, always resolve the canonical model directory to `(git_root / "eidos" / ".cache" / "models" / "harrier-oss-v1-0.6b").resolve()` (with read fallback to `(Path(eidos_dir).resolve() / ".cache" / "models" / "harrier-oss-v1-0.6b").resolve()` if a model was already provisioned locally in that sub-project before the shared cache was populated).
+  * When `git_root` is `None` (outside a Git repository), fall back to `(Path(eidos_dir).resolve() / ".cache" / "models" / "harrier-oss-v1-0.6b").resolve()`.
+* **Automatic `.gitignore` Provisioning & Non-Blocking Initialization (`src/eidos/core/index/semantic.py`, `src/eidos/core/lifecycle/initializer.py`)**:
+  * When `setup_semantic_model` creates `<git_root>/eidos/.cache/models/harrier-oss-v1-0.6b`, call `_ensure_eidos_gitignore(model_dir.parents[1])` to ensure `<git_root>/eidos/.gitignore` ignores `.cache/`, and also write `<git_root>/eidos/.cache/.gitignore` with `*\n` so Git ignores all cached files even before `<git_root>/eidos/.gitignore` is committed.
+  * Update `init_repository` in `src/eidos/core/lifecycle/initializer.py` so an `eidos/` directory containing only `.cache` and `.gitignore` (such as a Git-root `eidos/` created when a sub-project ran `eidos index semantic setup`) is treated as uninitialized rather than failing with `"Eidos specifications already exist"`, allowing `eidos init` to be run at `<git_root>` later without `--force`.
+
+== Implementation Plan
+1. **Workspace & Git Root Resolution (`src/eidos/core/workspace/project.py`, `src/eidos/core/lifecycle/initializer.py`)**:
+   * Implement `find_git_root(start_dir: Path | None = None) -> Path | None` and `discover_nested_subproject_roots(repo_root: Path) -> list[Path]`.
+   * Update `find_repo_root`, `resolve_spec_and_repo_roots`, `is_generated_or_vendored`, and `get_tracked_files` to support sub-project roots inside an ancestor `.git` monorepo, ignore cache-only `eidos/` directories without specification markers, and exclude nested child sub-projects.
+   * Update `init_repository` in `src/eidos/core/lifecycle/initializer.py` to ignore `.cache` and `.gitignore` when checking whether `eidos_dir` is already populated.
+2. **Shared Git-Root Semantic Model Cache (`src/eidos/core/index/semantic.py`)**:
+   * Update `resolve_semantic_model_dir(eidos_dir)` to resolve `<git_root>/eidos/.cache/models/harrier-oss-v1-0.6b` via `find_git_root(eidos_dir)` (falling back to `<eidos_dir>/.cache/models/harrier-oss-v1-0.6b` outside Git) and ensure `setup_semantic_model` configures `<git_root>/eidos/.gitignore` and `<git_root>/eidos/.cache/.gitignore`.
+3. **VCS Diff, Blob & Invariant Scoping (`src/eidos/vcs/diff.py`, `src/eidos/vcs/invariants.py`, `src/eidos/core/index/sync.py`)**:
+   * Update `get_git_diff_files`, `batch_read_git_blobs`, `_get_files_versions_batch`, `_resolve_base_and_merge_base`, `collect_polyglot_test_files`, `_load_or_update_test_binding_cache`, and `sync.py` file scanning to scope paths to `repo_root` relative to `git_root` and ignore nested sub-projects.
+4. **SpecDelta Engine, Plugin Root Resolution & CLI Subcommands (`src/eidos/core/lifecycle/delta_engine.py`, `src/eidos/plugin/`, `src/eidos/cli/`)**:
+   * Update `_resolve_git_repo_root` in `delta_engine.py` to walk all ancestors via `find_git_root`.
+   * Update `installer.py` and `version.py` in `src/eidos/plugin/` so `install_plugin`, `uninstall_plugin`, `update_plugin`, and `check_plugin_version_status` always target `find_git_root(project_dir or Path.cwd()) or (project_dir or Path.cwd()).resolve()`.
+   * Update `resolve_cli_eidos_dir` in `src/eidos/cli/_shared.py` and wire it across `context_command.py`, `drift_commands.py`, `index_commands.py`, `delta_commands.py`, `spec_commands.py`, `doctor_hook_commands.py`, and `hooks.py`.
+5. **Living Specifications & Invariant Test Binding (`eidos/`, `tests/test_monorepo_subprojects.py`)**:
+   * Co-evolve all targeted specs in `eidos/` (`CNT-EIDOS-CORE`, `CMP-PROJECT-RESOLVER`, `CMP-REPO-INITIALIZER`, `CMP-SEMANTIC-EMBEDDING-ENGINE`, `CMP-INCREMENTAL-SYNC-ENGINE`, `CMP-DRIFT-DETECTOR`, `CMP-DELTA-ENGINE`, `CMP-CLI-APP`, `CMP-CLI-CONTEXT-COMMAND`, `CMP-CLI-DRIFT-COMMANDS`, `CMP-CLI-INDEX-COMMANDS`, `CMP-CLI-DELTA-COMMANDS`, `CMP-CLI-SPEC-COMMANDS`, `CMP-CLI-DOCTOR-HOOKS`, `CMP-PLUGIN-INSTALLER`, `CMP-HOOK-RUNNER`, `CAP-PROD-001`, `CAP-VCS-001`).
+   * Add `tests/test_monorepo_subprojects.py::test_monorepo_subproject_eidos_isolation` referencing `INV-MONOREPO-SUBPROJECT-ISOLATION`.
+   * Verify with `eidos validate eidos --json`, `eidos delta verify DLT-2026-123 --json`, and `eidos drift --uncommitted --json`.
