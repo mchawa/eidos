@@ -3862,6 +3862,7 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
     import subprocess
     import sys
     import tomllib
+
     from typer.testing import CliRunner
 
     from eidos.cli.main import app
@@ -3884,8 +3885,6 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
         create_spec,
         list_specs,
     )
-    from eidos.core.spec.models import SpecDocument
-    from eidos.core.spec.validator import ValidationReport
     from eidos.core.spec.parser import (
         YamlError,
         _parse_spec_content,
@@ -3894,6 +3893,7 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
         safe_load_yaml,
         split_frontmatter_and_body,
     )
+    from eidos.core.spec.validator import ValidationReport
     from eidos.plugin.installer import (
         MANIFEST_FILENAME,
         _copy_plugin_tree,
