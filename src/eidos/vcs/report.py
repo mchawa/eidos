@@ -64,7 +64,9 @@ def build_drift_remediation_and_summary(
                 f"Drift Detected: {len(classification.code_files)} code file(s) changed without corresponding living specification updates in {eidos_rel_prefix}/."
             )
         for cf, cid, spath in target_list[:5]:
-            remediation.append(f"• '{cf}' relates to {cid} -> Update '{spath}' (or a 1-hop linked capability/contract)")
+            remediation.append(
+                f"• '{cf}' relates to {cid} -> Update '{spath}' (or a 1-hop linked capability/contract; co-evolve bound DOM-*, PER-*, POL-*, and design/* specs if affected)"
+            )
         if not target_list:
             remediation.append(
                 f"• Run 'eidos drift' or ask your AI agent to update corresponding living specifications in {eidos_rel_prefix}/."

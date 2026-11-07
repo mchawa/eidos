@@ -25,19 +25,19 @@ You MUST follow these workflows and guardrails whenever you inspect, plan, imple
 
 ## 2. Step 1: Discovery-First Context & Code Graph Intelligence (`eidos context` & `eidos index`)
 
-**STOP before running blind `grep`, `find`, or reading random files.** Eidos maintains an embedded SQLite + AST knowledge graph (`eidos/.cache/index.db`) that resolves files, symbols, specs, and dependencies in milliseconds at a fraction of the token cost.
+**STOP before running blind `grep`, `find`, or reading random files.** Eidos maintains an embedded SQLite + AST knowledge graph (`eidos/.cache/index.db`) that resolves files, symbols, specs, and dependencies in milliseconds.
 
 ### 2.1 Mandatory Tool Replacement Matrix
 
-Whenever you need to orient in the codebase, locate a symbol, search specifications, or assess impact, **prefer the Eidos CLI command first**—even when the user prompt already attaches a `@[file]` path (call `eidos context -f <attached_file> --json` alongside or before reading the attached file):
+Whenever you need to orient in the codebase, locate a symbol, search specs, or assess impact, **prefer the Eidos CLI command first**—even when the user attaches a `@[file]` path (call `eidos context -f <attached_file> --json` alongside or before reading it):
 
 | Instead of doing this... | ALWAYS run this Eidos command FIRST | Why |
 | :--- | :--- | :--- |
-| Running `find` / `ls -R` or reading many files to orient in the repository | `eidos index repo-map --max-tokens 1500` | AST outline of all containers and modules (~85% fewer tokens). |
-| Grepping across source files for a class, function, method, or route | `eidos index find-symbol "<SymbolName>" --json` | Exact `location.file` and `line_start`..`line_end` (pass to `read_file` instead of reading full files), plus `CNT-*` / `CMP-*`. |
-| Grepping `eidos/` for domain concepts, rules, capabilities, or prior spikes | `eidos index search "<keywords>" --json` | BM25 + synonym search (optional hybrid semantic via `--semantic`) over specs, `DEC-*`, and `INV-*`. |
-| Editing or reviewing a file (including user-attached `@[file]` paths) without knowing its governance rules | `eidos context -f <path/to/file> --json` *(or `-t "<task>"` / `-c <ID>`)* | Owning `CNT-*`/`CMP-*`, `INV-*` test bindings, `DEC-*` rationale, and `CTR-*` contracts in one call (trust without re-reading `.adoc` files). |
-| Guessing what breaks when modifying a container, component, contract, symbol, or file | `eidos index blast-radius <SYMBOL_OR_PATH> --depth 2 --json` | Upstream/downstream k-hop dependents of an entity ID, symbol, spec path, or source path. |
+| Running `find` / `ls -R` or reading many files to orient | `eidos index repo-map --max-tokens 1500` | AST outline of all containers and modules (~85% fewer tokens). |
+| Grepping source files for a class, function, method, or route | `eidos index find-symbol "<SymbolName>" --json` | Exact `location.file` and `line_start`..`line_end` (pass to `read_file` instead of reading full files), plus `CNT-*` / `CMP-*`. |
+| Grepping `eidos/` for domain concepts, rules, capabilities, or spikes | `eidos index search "<keywords>" --json` | BM25 + synonym search (optional hybrid semantic via `--semantic`) over specs, `DEC-*`, and `INV-*`. |
+| Editing or reviewing a file (including `@[file]` paths) without knowing its governance | `eidos context -f <path/to/file> --json` *(or `-t "<task>"` / `-c <ID>`)* | Owning `CNT-*`/`CMP-*`, `DOM-*`, `CAP-*`, `PER-*`, `POL-*`, `design`, `INV-*`, `DEC-*`, and `CTR-*` in one call (trust without re-reading `.adoc` files). |
+| Guessing what breaks when modifying an entity, symbol, or file | `eidos index blast-radius <SYMBOL_OR_PATH> --depth 2 --json` | Upstream/downstream k-hop dependents of an entity ID, symbol, spec path, or source path. |
 
 ### 2.2 Context Slicing Tiers (`eidos context`)
 
@@ -46,25 +46,25 @@ Choose the `--tier` flag matching your task scope:
 | Tier | Flag | Budget | Contents Included | When to Use |
 | :--- | :--- | :--- | :--- | :--- |
 | **Anchor** | `--tier anchor` | `~140 tokens` | Owning `CNT-*` / `CMP-*`, runtime, `source_path`, bound domain, compact `DEC-*`, direct `CTR-*` signatures. | Quick single-file bug fixes, minor localized edits. |
-| **Guardrails** *(Default)* | `--tier guardrails` | `~300–900 tokens` | Anchor + `DEC-*` rationale/alternatives, domain capabilities (`CAP-*`), active invariants (`INV-*`) with `test_binding`, and policies (`POL-*`). | Standard feature work, refactoring, test updates. |
-| **Deep** | `--tier deep` | `~500–1,500 tokens` | Guardrails + C4 Level 3 internal building blocks, full contract schemas, full policies, and downstream dependents. | Cross-container refactors, SpecDelta authoring, architectural reviews. |
+| **Guardrails** *(Default)* | `--tier guardrails` | `~300–900 tokens` | Anchor + `DEC-*` rationale, `domain_path`, `design` (`CLT-*`/`DS-*`), capabilities (`CAP-*` with `personas`, `policies`, `experience`), active `INV-*`, and `POL-*`. | Standard feature work, refactoring, test updates. |
+| **Deep** | `--tier deep` | `~500–1,500 tokens` | Guardrails + C4 Level 3 building blocks, full contract schemas, full policies, and downstream dependents. | Cross-container refactors, SpecDelta authoring, architectural reviews. |
 
 ```bash
-# 1. Orient in the codebase with a token-budgeted AST structural repo map
+# 1. Orient in the codebase with a token-budgeted AST repo map
 eidos index repo-map --max-tokens 1500
 
-# 2. Locate exact file:line coordinates and owning C4 component for a code symbol
+# 2. Locate exact file:line coordinates and owning component for a symbol
 eidos index find-symbol "JwtValidator" --json
 
-# 3. Full-text BM25 search across all specifications, capabilities, decisions, and invariants
+# 3. Full-text BM25 search across specs, capabilities, decisions, and invariants
 eidos index search "authentication" --json
 
-# 4. Slice architectural context for a source file, component ID, or natural-language task
+# 4. Slice architectural context for a source file, component ID, or task
 eidos context -f src/auth/jwt_validator.py --json
 eidos context -c CNT-AUTH-SERVICE --tier guardrails --json
 eidos context -t "rate limiting and token expiration" --tier deep --json
 
-# 5. Compute transitive k-hop dependency and governance blast radius before modifying an entity
+# 5. Compute transitive k-hop blast radius before modifying an entity
 eidos index blast-radius CNT-AUTH-SERVICE --depth 2 --json
 ```
 
@@ -89,12 +89,13 @@ Using the ownership and dependency insights from Step 1 (`eidos context` and `ei
 
 1. **Slice Context & Locate Symbols**: Run `eidos context -f <touched_file> --json` (and `eidos index find-symbol <symbol> --json` or `eidos index search "<keywords>" --json` as needed) to identify the owning container (`CNT-*`), component (`CMP-*`), and bound invariants (`INV-*`).
 2. **Implement Code & Tests**: Modify source code and update or add automated tests preserving `INV-*` references.
-3. **Co-Evolve Living Specs on Structural Changes** (skip for pure body-only fixes where no public symbol, file, contract, `INV-*`, or `DEC-*` changed; consult **`eidos-spec`** or run `eidos spec schema <type> [--json]` for YAML schemas):
-   * **New internal module or file**: Update `source_path` in the owning `CNT-*` / `CMP-*` spec (or create a standalone `CMP-*` spec via `eidos spec create component <ID> --title "..."`).
-   * **New package/contract boundary export** (e.g., `__init__.py`, `index.ts`, `mod.rs`, `lib.rs`, `__all__`, or contract `specification_file`): Anchor the new boundary symbol or route in the owning/neighbor spec (`CNT-*`, `CMP-*`, `CTR-*`, or `CAP-*`).
-   * **Removed or renamed public symbol**: Remove or update backticked references to the deleted symbol in the owning `CNT-*`, `CMP-*` (`== Public Surface`), or `CTR-*` spec body—leaving stale backticked references to removed symbols fails `eidos drift` (`stale_removed_symbol`) and `eidos validate`.
-   * **Module-internal helper function**: Covered by a substantive (non-whitespace, non-comment) update to the owning `CNT-*` / `CMP-*` spec—do NOT pollute high-level C4 specs with low-level helper names. Whitespace/comment-only spec edits are rejected (`trivially_covered_files`).
+3. **Co-Evolve Living Specs on Structural Changes** (skip for pure body-only fixes where no public symbol, file, contract, `INV-*`, or `DEC-*` changed; consult **`eidos-spec`** or `eidos spec schema <type> [--json]`):
+   * **New internal module or file**: Update `source_path` in the owning `CNT-*` / `CMP-*` spec (or scaffold a `CMP-*` spec via `eidos spec create component <ID> --title "..."`).
+   * **New package/contract boundary export** (`__init__.py`, `index.ts`, `mod.rs`, `lib.rs`, `__all__`, or contract `specification_file`): Anchor the new export or route in the owning/neighbor spec (`CNT-*`, `CMP-*`, `CTR-*`, or `CAP-*`).
+   * **Removed or renamed public symbol**: Remove or update backticked references to deleted symbols in the owning `CNT-*`, `CMP-*` (`== Public Surface`), or `CTR-*` spec body (`stale_removed_symbol`).
+   * **Module-internal helper function**: Covered by a substantive (non-whitespace, non-comment) update to the owning `CNT-*` / `CMP-*` spec—do NOT pollute C4 specs with helper names (`trivially_covered_files`).
    * **New invariant or design trade-off**: Add `INV-*` (`test_binding: file::func`) to `CAP-*` (`technical.invariants`) or top-level `invariants:` (`POL-*`/`CNT-*`/`CMP-*`), or record a `DEC-*` entry under `decisions:` in the owning spec.
+   * **Domain vocabulary, persona workflow, policy NFR, or UI/design change**: Co-evolve bound `DOM-*` (`ubiquitous_language`), `PER-*`, `POL-*`, or `design/*` (`DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`, `tokens.json`) specs surfaced by `eidos context` (`domain_path`, `design`, `personas`, `policies`, `experience`).
 4. **Verify Zero Drift**: Run `eidos drift --uncommitted --json` (or `eidos drift --uncommitted --strict --json` to also require 1-hop spec or bound test co-evolution on body-only behavioral edits).
 
 ### Workflow B: Planned Mode Execution (Load `eidos-plan`)
@@ -106,11 +107,11 @@ When introducing/removing containers or components, making breaking contract cha
    eidos context -t "<feature or architectural change>" --tier deep --json
    eidos index blast-radius <TARGET-ENTITY-ID> --depth 2 --json
    ```
-2. **Scaffold SpecDelta** (`eidos delta create` automatically generates the collision-free ID, title slug, and 4-hex suffix; subsequent CLI commands accept unambiguous short prefixes like `DLT-YYYY-NNN`):
+2. **Scaffold SpecDelta** (`eidos delta create` generates the collision-free ID, title slug, and 4-hex suffix; subsequent CLI commands accept unambiguous short prefixes like `DLT-YYYY-NNN`):
    ```bash
    eidos delta create --title "..." --kind <feature|enabler|bug>
    ```
-3. **Declare Mutations & Implementation Plan**: Populate `mutations:` (with composable `operation`, `target`, and structured `expect: { body, frontmatter }` post-conditions; run `eidos spec schema delta` to inspect allowed keys) and fill out the `== Problem Statement`, `== Proposed Specification Changes`, and `== Implementation Plan` prose sections in the created `eidos/deltas/dlt-*.adoc` file. Never add manual `affects:` or `blast_radius:` blocks.
+3. **Declare Mutations & Implementation Plan**: Populate `mutations:` (`operation`, `target`, and `expect: { body, frontmatter }`; run `eidos spec schema delta` for allowed keys) and complete `== Problem Statement`, `== Proposed Specification Changes`, and `== Implementation Plan` in `eidos/deltas/dlt-*.adoc`. Never add `affects:` or `blast_radius:` blocks.
 4. **Implement Code, Specs & Tests**: Apply changes across code, `eidos/`, and `tests/`.
 5. **Verify & Apply**:
    ```bash
@@ -130,8 +131,8 @@ Before concluding **any** task or presenting your final response, complete both 
 eidos drift --uncommitted --json
 ```
 
-* **`eidos drift`** runs `eidos validate` internally (v1 JSON Schemas, `x-eidos-ref` cross-references, `source_path`/`specification_file` paths on disk, `== Public Surface` AST symbol existence, and **bidirectional multi-protocol contract parity** across `cli_args`, `openapi`, `protobuf`, `graphql`, `python_protocol`) plus Git diff ownership mapping, workflow mode verification (Direct vs. Planned `mutations[].target`), substantive spec diff checks, stale removed-symbol rejection (`stale_removed_symbol`), `--strict` body-level drift enforcement, and polyglot `INV-*` `test_binding` verification. (Use standalone `eidos validate eidos --json` only when validating specs outside a Git repository.)
-* **If `is_clean: false` or `drift_detected: true`**: Follow the `remediation_suggestions` and `validation_errors` arrays in the JSON output and re-run until exit code is `0`.
+* **`eidos drift`** runs `eidos validate` internally (v1 JSON Schemas, `x-eidos-ref` links, `source_path`/`specification_file` paths, `== Public Surface` AST symbols, and **bidirectional multi-protocol contract parity** across `cli_args`, `openapi`, `protobuf`, `graphql`, `python_protocol`) plus Git diff ownership mapping, workflow mode verification, substantive spec diff checks, `stale_removed_symbol` rejection, `--strict` body-level drift, and polyglot `INV-*` `test_binding` verification. (Use `eidos validate eidos --json` only outside a Git repo.)
+* **If `is_clean: false` or `drift_detected: true`**: Follow `remediation_suggestions` and `validation_errors` in the JSON output and re-run until exit code is `0`.
 
 ### Stage 2: Mandatory Autonomous Adversarial Gap Review
 
@@ -142,6 +143,7 @@ Step back and audit your own `git diff` as an adversarial Staff Reviewer before 
 3. **Contract & SemVer Parity (`CTR-*`)**: Did any CLI flags, endpoints, schemas, or public signatures change? Are callers updated, deleted operations removed from `CTR-*` tables, and `version:` bumped per SemVer?
 4. **Invariant & Test Rigor (`INV-*`)**: Do tests make genuine behavioral assertions on new/modified logic rather than superficial pass-through checks? Is every `INV-*` bound via `test_binding: file::func`?
 5. **Decision Capture (`DEC-*`)**: Are non-obvious trade-offs and rejected alternatives recorded under `decisions:` in the owning spec frontmatter?
+6. **Domain, Persona, Policy & Design Co-Evolution (`DOM-*`, `PER-*`, `POL-*`, `design/*`)**: Did domain terms (`ubiquitous_language`), actor workflows (`PER-*`), NFR policies (`POL-*`), or UI contracts/tokens (`DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`) change, and are their specs updated?
 
 **Autonomous Remediation Rule**: If this review reveals **any** gap, missing test assertion, or unhandled edge case, **fix it immediately** and re-run `eidos drift --uncommitted --json` before responding to the user. In your final response, briefly report your gate status (`clean`) and key edge cases verified.
 

@@ -24,6 +24,14 @@ decisions:
         reason_rejected: "Couples Eidos to polyglot runtime environments, databases, and build toolchains, turning a sub-second static gate into a slow, stateful test runner."
       - option: "Inspect AST assert statements inside test bodies"
         reason_rejected: "Brittle across custom assertion helpers, framework-specific matchers, and polyglot DSLs while still unable to prove runtime behavioral correctness without test execution."
+  - id: DEC-VCS-STRICT-UI-CONTRACT-DESIGN-DRIFT
+    title: "Require Design Subgraph Coverage for Both Token and UI-Contract Frontend Changes"
+    decision: "Require both token and ui_contract frontend modifications on containers or components bound to a CLT-* or DS-* design subgraph to substantively update a specification inside that bound design subgraph (tokens.json, DS-*, UIC-*, CLT-*, SCR-*, FLOW-*) or be declared in an active SpecDelta targeting the design subgraph, removing the owner_specs_by_file bypass for ui_contract changes."
+    rationale: "Allowing CNT-*/CMP-* technical spec edits to satisfy ui_contract changes caused coding agents to skip UIC-*, SCR-*, FLOW-*, and CLT-* updates whenever React/Vue/Svelte props, CSS selectors, or screen routes changed. Containers without bound CLT-*/DS-* entities remain exempt."
+    rejected_alternatives:
+      - option: "Allow owning CNT-*/CMP-* technical spec edits to satisfy ui_contract drift"
+        reason_rejected: "Silently bypasses UIC-*, SCR-*, FLOW-*, and CLT-* co-evolution on frontend prop, event, and route modifications."
+    graduated_from: DLT-2026-125-SURFACE-DOMAINS-114F
 ---
 = Container: Eidos Git Drift & Lifecycle Engine (C4 Level 2 Container)
 :toc: left
@@ -33,7 +41,7 @@ This container represents the Git-native drift detection and specification recon
 
 == Internal Structure & Key Mechanisms
 * **Git Diff & Blob Inspection (`src/eidos/vcs/diff.py`)**: Resolves commit ranges (`--base`, merge-base, or uncommitted working tree + untracked files), classifies touched files into governed source files, living specifications, design token manifests, and polyglot test suites, and batch-reads historical file revisions via a single `git cat-file --batch` subprocess.
-* **Structural & Neighborhood Drift Analysis (`src/eidos/vcs/structural.py`)**: Maps modified source files to their owning `CMP-*` components and `CNT-*` containers via `source_path`, checks whether public AST boundary symbols changed or files were added/deleted, and verifies whether the owning specification (or a 1-hop graph neighbor / active SpecDelta) was substantively updated in the same changeset.
+* **Structural & Neighborhood Drift Analysis (`src/eidos/vcs/structural.py`, `DEC-VCS-STRICT-UI-CONTRACT-DESIGN-DRIFT`)**: Maps modified source files to their owning `CMP-*` components and `CNT-*` containers via `source_path`, checks whether public AST boundary symbols changed or files were added/deleted, verifies whether the owning specification (or a 1-hop graph neighbor / active SpecDelta) was substantively updated in the same changeset, and enforces bound design subgraph co-evolution (`tokens.json`, `DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`) for both `token` and `ui_contract` frontend changes.
 * **Static Invariant Traceability (`src/eidos/vcs/invariants.py`, `DEC-VCS-STATIC-INVARIANT-TRACEABILITY`)**: Verifies that every `INV-*` `test_binding` (`file::func` or `file::Class::method`) resolves to an existing polyglot test symbol on disk whose body or file explicitly references the `INV-*` identifier, accelerated by `test_binding_cache` in `eidos/.cache/index.db`.
 * **Diagnostic & CI Markdown Reporting (`src/eidos/vcs/report.py`)**: Emits actionable CLI remediation instructions, `orjson` JSON payloads, and GitHub/GitLab PR verification summaries.
 

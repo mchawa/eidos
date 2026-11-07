@@ -24,4 +24,4 @@ Executes column-weighted SQLite FTS5 BM25 lexical search (`execute_fts_query`), 
 * `generate_repo_map_from_db(conn: sqlite3.Connection, max_tokens: int = 1500) -> dict[str, Any]`
 
 == Design Constraints & Operational Notes
-* **SQL-Scoped Type Filtering**: Applies `include_types` and `exclude_types` filters inside SQL *before* `LIMIT` so historical SpecDeltas and explorations never crowd out active architecture entities during `eidos context --task`.
+* **SQL-Scoped Type Filtering**: Applies `include_types` (`PRIMARY_TASK_SLICE_ENTITY_TYPES` and `SECONDARY_TASK_SLICE_ENTITY_TYPES` including `product/persona`, `design/client`, `design/ui-component`, `design/screen`, and `design/flow`) and `exclude_types` filters inside SQL *before* `LIMIT` so historical SpecDeltas and explorations never crowd out active architecture, persona, or design entities during `eidos context --task`.

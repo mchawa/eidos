@@ -15,6 +15,8 @@ from typing import Any
 import orjson
 
 from eidos.core.index.query import (
+    PRIMARY_TASK_SLICE_ENTITY_TYPES,
+    SECONDARY_TASK_SLICE_ENTITY_TYPES,
     TASK_SLICE_ENTITY_TYPES,
     execute_fts_query,
     resolve_symbol_or_path_in_db,
@@ -165,6 +167,7 @@ class ArchitecturalContextSlice:
         """Render a clean, token-efficient Markdown representation formatted for the requested tier."""
         compact_prose = bool(getattr(self, "_compact_prose", False))
         compact_decisions = bool(getattr(self, "_compact_decisions", False))
+        compact_metadata = bool(getattr(self, "_compact_metadata", False))
         lines = [
             f"# 🧭 Eidos Architectural Context Slice ({self.tier.upper()} Tier)",
             "",
@@ -195,12 +198,24 @@ class ArchitecturalContextSlice:
             is_comp = comp.get("type") == "tech/component" or cid.startswith("CMP-")
             is_secondary = self._is_secondary_dependency(cid)
 
+            def _fmt_design_item(d: Any) -> str:
+                if isinstance(d, dict):
+                    did = d.get("id", "")
+                    dfp = d.get("file_path", "")
+                    return f"`{did}` (`{dfp}`)" if dfp else f"`{did}`"
+                return f"`{d}`"
+
             if is_comp:
                 parent_cnt = comp.get("container", "N/A")
                 lines.append(f"### `{cid}` ({title}) [C4 Level 3 Component]")
                 lines.append(f"- **Owning Container:** `{parent_cnt}` | **Source Path:** `{pkg}`")
                 if comp.get("file_path"):
                     lines.append(f"- **Specification:** `{comp['file_path']}`")
+                if self.tier in ("guardrails", "deep") and not compact_metadata and not is_secondary:
+                    if comp.get("domain_path"):
+                        lines.append(f"- **Domain Spec:** `{comp['domain_path']}`")
+                    if comp.get("design"):
+                        lines.append(f"- **Bound Design:** {', '.join(_fmt_design_item(d) for d in comp['design'])}")
                 if self.tier == "deep" and comp.get("status"):
                     lines.append(f"- **Lifecycle Status:** `{comp['status']}`")
                 if self.tier in ("guardrails", "deep"):
@@ -216,7 +231,19 @@ class ArchitecturalContextSlice:
                 lines.append(f"### `{cid}` ({title})")
                 lines.append(f"- **Container:** `{ctype}` | **Runtime:** `{runtime}` | **Source Path:** `{pkg}`")
                 if comp.get("domain"):
-                    lines.append(f"- **Domain:** `{comp['domain']}`")
+                    dom_path_str = (
+                        f" (`{comp['domain_path']}`)"
+                        if (self.tier in ("guardrails", "deep") and not compact_metadata and comp.get("domain_path"))
+                        else ""
+                    )
+                    lines.append(f"- **Domain:** `{comp['domain']}`{dom_path_str}")
+                if (
+                    self.tier in ("guardrails", "deep")
+                    and not compact_metadata
+                    and not is_secondary
+                    and comp.get("design")
+                ):
+                    lines.append(f"- **Bound Design:** {', '.join(_fmt_design_item(d) for d in comp['design'])}")
 
                 if self.tier in ("guardrails", "deep") and not (is_secondary and len(self.components) > 3):
                     contracts = comp.get("contracts") or {}
@@ -286,6 +313,22 @@ class ArchitecturalContextSlice:
                 domain = cap.get("domain", "")
                 lines.append(f"### `{cid}`: {title}")
                 lines.append(f"- **Domain:** `{domain}`")
+                if self.tier == "deep" and not compact_metadata:
+                    if cap.get("file_path"):
+                        lines.append(f"- **Specification:** `{cap['file_path']}`")
+                    biz = cap.get("business") if isinstance(cap.get("business"), dict) else {}
+                    personas = [str(p) for p in (biz.get("personas") or []) if p]
+                    if personas:
+                        lines.append(f"- **Personas:** {', '.join(f'`{p}`' for p in personas)}")
+                    exp = cap.get("experience") if isinstance(cap.get("experience"), dict) else {}
+                    exp_items = [
+                        str(x)
+                        for k in ("clients", "design_systems", "screens", "flows", "ui_components")
+                        for x in (exp.get(k) or [])
+                        if x
+                    ]
+                    if exp_items:
+                        lines.append(f"- **Experience (`design/*`):** {', '.join(f'`{x}`' for x in exp_items)}")
                 invs = (cap.get("technical") or {}).get("invariants") or []
                 if invs and not compact_prose:
                     lines.append("- **Capability Invariants (`INV-*`):**")
@@ -372,6 +415,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
 
     _compact_decisions: bool = False
     _compact_prose: bool = False
+    _compact_metadata: bool = False
 
     @staticmethod
     def _clip(text: str, limit: int) -> str:
@@ -397,6 +441,8 @@ class TieredContextSlice(ArchitecturalContextSlice):
             max_decs = 1
         elif self.tier == "anchor" and self._compact_prose:
             max_decs = 2
+        elif self.tier == "guardrails" and self._compact_prose and compact:
+            max_decs = 1
         else:
             max_decs = len(decisions)
         for dec_idx, d in enumerate(decisions[:max_decs]):
@@ -406,7 +452,11 @@ class TieredContextSlice(ArchitecturalContextSlice):
             if self.tier == "anchor" or compact or self._compact_decisions:
                 short_dtext = self._compact_summary(dtext, 55 if self._compact_prose else 120)
                 opt_limit = 45 if self._compact_prose else 60
-                max_anchor_alts = 1 if self._compact_prose else 2
+                max_anchor_alts = (
+                    0
+                    if (compact and self.tier == "guardrails" and self._compact_prose)
+                    else (1 if self._compact_prose else 2)
+                )
                 alts = [
                     {"option": self._clip(str(a.get("option")).strip(), opt_limit)}
                     for a in (d.get("rejected_alternatives") or [])[:max_anchor_alts]
@@ -483,10 +533,13 @@ class TieredContextSlice(ArchitecturalContextSlice):
             "id": cid,
             "title": title,
         }
-        base_keys = (
-            ("type", "container_type", "runtime", "source_path", "domain", "container")
-            if self.tier == "anchor"
-            else (
+        is_secondary = self._is_secondary_dependency(cid)
+        if self.tier == "anchor":
+            base_keys: tuple[str, ...] = ("type", "container_type", "runtime", "source_path", "domain", "container")
+        elif is_secondary and self._compact_prose and len(self.components) > 4:
+            base_keys = ("type", "source_path", "domain", "container", "file_path")
+        else:
+            base_keys = (
                 "type",
                 "container_type",
                 "runtime",
@@ -495,14 +548,17 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 "container",
                 "file_path",
             )
-        )
         for base_key in base_keys:
             if comp.get(base_key):
                 out[base_key] = comp[base_key]
 
-        is_secondary = self._is_secondary_dependency(cid)
         compact_comp = self._compact_decisions and index_in_slice > 0
         if self.tier in ("guardrails", "deep") and not compact_comp and not (is_secondary and len(self.components) > 3):
+            if not self._compact_metadata and not is_secondary:
+                if comp.get("domain_path") and not (self._compact_prose and index_in_slice > 0):
+                    out["domain_path"] = comp["domain_path"]
+                if comp.get("design") and not (self._compact_prose and index_in_slice > 0):
+                    out["design"] = comp["design"]
             if comp.get("contracts"):
                 out["contracts"] = comp["contracts"]
             if comp.get("invariants"):
@@ -548,13 +604,45 @@ class TieredContextSlice(ArchitecturalContextSlice):
             out["path"] = ctr_path
         return out
 
-    def _project_capability(self, cap: dict[str, Any]) -> dict[str, Any]:
+    def _project_capability(self, cap: dict[str, Any], index_in_slice: int = 0) -> dict[str, Any]:
         out: dict[str, Any] = {
             "id": cap.get("id", ""),
             "title": cap.get("title", cap.get("id", "")),
             "domain": cap.get("domain", ""),
             "status": cap.get("status", "active"),
         }
+        if self.tier in ("guardrails", "deep"):
+            if cap.get("file_path") and not (self._compact_metadata and index_in_slice > 0):
+                out["file_path"] = cap["file_path"]
+            if not self._compact_metadata and (self.tier == "deep" or not self._compact_prose or index_in_slice == 0):
+                biz = cap.get("business") if isinstance(cap.get("business"), dict) else {}
+                max_refs = (
+                    1
+                    if (self.tier == "guardrails" and self._compact_prose)
+                    else 10
+                )
+                personas = [str(p) for p in (biz.get("personas") or []) if p][:max_refs]
+                if personas:
+                    out["personas"] = personas
+                if self.tier == "deep" or not self._compact_prose:
+                    policies = [str(p) for p in (biz.get("policies") or []) if p][:max_refs]
+                    if policies:
+                        out["policies"] = policies
+                has_design_comp = any(c.get("design") for c in self.components[:2])
+                if self.tier == "deep" or has_design_comp or not self._compact_prose:
+                    exp = cap.get("experience") if isinstance(cap.get("experience"), dict) else {}
+                    skip_exp_keys = (
+                        {"clients", "design_systems"}
+                        if (self.tier == "guardrails" and self._compact_prose and has_design_comp)
+                        else set()
+                    )
+                    exp_clean = {
+                        k: [str(x) for x in v[:max_refs] if x]
+                        for k, v in exp.items()
+                        if k not in skip_exp_keys and isinstance(v, list) and any(x for x in v)
+                    }
+                    if exp_clean:
+                        out["experience"] = exp_clean
         cap_invs = (cap.get("technical") or {}).get("invariants") or []
         if self.tier in ("guardrails", "deep") and cap_invs and not self._compact_prose:
             out["invariants"] = [
@@ -582,17 +670,25 @@ class TieredContextSlice(ArchitecturalContextSlice):
             "id": pol.get("id", ""),
             "title": pol.get("title", pol.get("id", "")),
         }
+        if pol.get("category"):
+            out["category"] = pol["category"]
         if pol.get("severity"):
             out["severity"] = pol["severity"]
+        if self.tier in ("guardrails", "deep") and pol.get("file_path"):
+            out["file_path"] = pol["file_path"]
         return out
 
     def _compress_verbose_fields_in_place(self, primary_cids: set[str]) -> bool:
         """Progressively compress verbose prose fields (invariant rules and decision narratives)
-        to compact 1-line summaries before dropping invariants or policies.
+        and secondary governance/design metadata before dropping invariants or policies.
         """
         _ = primary_cids
         if not self._compact_prose:
             self._compact_prose = True
+            self._invalidate_budget_cache()
+            return True
+        if not self._compact_metadata:
+            self._compact_metadata = True
             self._invalidate_budget_cache()
             return True
         return False
@@ -604,7 +700,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
             "tier": self.tier,
             "components": [self._project_component(c, idx) for idx, c in enumerate(self.components)],
             "contracts": [self._project_contract(c) for c in self.contracts],
-            "capabilities": [self._project_capability(c) for c in self.capabilities],
+            "capabilities": [self._project_capability(c, idx) for idx, c in enumerate(self.capabilities)],
             "invariants": [self._project_invariant(i) for i in self.invariants],
             "policies": [self._project_policy(p) for p in self.policies],
             "matched_reasons": dict(self.matched_reasons),
@@ -630,6 +726,8 @@ class TieredContextSlice(ArchitecturalContextSlice):
     def _estimate_tokens(self) -> int:
         return self._estimate_text_tokens(self.to_markdown())
 
+    _EXPANDED_REASON_PREFIXES = ("DOM-", "DS-", "PER-", "CLT-", "UIC-", "SCR-", "FLOW-")
+
     def _prune_matched_reasons(self) -> None:
         retained_ids = {
             e.get("id", "")
@@ -638,7 +736,9 @@ class TieredContextSlice(ArchitecturalContextSlice):
             if e.get("id")
         }
         self.matched_reasons = {
-            k: v for k, v in self.matched_reasons.items() if k in retained_ids or k.startswith(("DOM-", "DS-"))
+            k: v
+            for k, v in self.matched_reasons.items()
+            if k in retained_ids or k.startswith(self._EXPANDED_REASON_PREFIXES)
         }
 
     def _state_signature(self, budget: int) -> tuple[Any, ...]:
@@ -647,6 +747,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
             self.tier,
             self._compact_decisions,
             self._compact_prose,
+            self._compact_metadata,
             len(self.components),
             len(self.contracts),
             len(self.capabilities),
@@ -677,20 +778,13 @@ class TieredContextSlice(ArchitecturalContextSlice):
             json_ub = id_len + rule_len + tb_len + pe_len + 135
             return md_ub, json_ub
         if lst is self.capabilities:
-            title_len = len(str(item.get("title", "") or cid))
-            dom_len = len(str(item.get("domain", "") or ""))
-            if self._compact_prose or self.tier == "anchor":
-                return id_len + title_len + dom_len + 34, id_len + title_len + dom_len + 115
-            invs_len = sum(
-                len(str(i.get("id", ""))) + len(str(i.get("rule", ""))) + 40
-                for i in ((item.get("technical") or {}).get("invariants") or [])
-                if isinstance(i, dict)
-            )
-            return id_len + title_len + dom_len + invs_len + 75, id_len + title_len + dom_len + invs_len + 150
+            proj_cap = self._project_capability(item, idx if idx >= 0 else len(lst))
+            cap_ub = len(orjson.dumps(proj_cap, option=orjson.OPT_INDENT_2)) + 48
+            return cap_ub + 32, cap_ub
         if lst is self.policies:
-            title_len = len(str(item.get("title", "") or cid))
-            sev_len = len(str(item.get("severity", "") or ""))
-            return id_len + title_len + sev_len + 24, id_len + title_len + sev_len + 95
+            proj_pol = self._project_policy(item)
+            pol_ub = len(orjson.dumps(proj_pol, option=orjson.OPT_INDENT_2)) + 32
+            return pol_ub, pol_ub
         if lst is self.contracts:
             title_len = len(str(item.get("title", "") or cid))
             prot_len = len(str(item.get("protocol", "") or "standard"))
@@ -704,8 +798,10 @@ class TieredContextSlice(ArchitecturalContextSlice):
             sp_len = len(str(item.get("source_path", "") or ""))
             fp_len = len(str(item.get("file_path", "") or ""))
             dom_len = len(str(item.get("domain", "") or ""))
-            base_ub = id_len + title_len + sp_len + fp_len + dom_len
-            return base_ub + 140, base_ub + 260
+            dom_path_len = len(str(item.get("domain_path", "") or ""))
+            design_len = len(str(item.get("design", "") or ""))
+            base_ub = id_len + title_len + sp_len + fp_len + dom_len + dom_path_len + design_len
+            return base_ub + 160, base_ub + 280
         proj = self._project_component(item, idx if idx >= 0 else len(lst))
         comp_ub = len(orjson.dumps(proj, option=orjson.OPT_INDENT_2)) + 64
         return comp_ub, comp_ub
@@ -723,7 +819,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
             return
         eid = str(item.get("id", "") or "")
         reason_ub = 0
-        if eid and not eid.startswith(("DOM-", "DS-")):
+        if eid and not eid.startswith(self._EXPANDED_REASON_PREFIXES):
             removed_reasons = self.matched_reasons.pop(eid, None)
             if removed_reasons:
                 reason_ub = len(eid) + sum(len(str(r)) + 12 for r in removed_reasons) + 24
@@ -811,6 +907,8 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 self._pop_item(self.components)
             if self._exceeds_budget(budget):
                 self._compress_verbose_fields_in_place(primary_cids)
+            if self._exceeds_budget(budget):
+                self._compress_verbose_fields_in_place(primary_cids)
             while len(self.contracts) > 0 and self._exceeds_budget(budget):
                 self._pop_item(self.contracts)
             if self._exceeds_budget(budget) and not self._compact_decisions:
@@ -881,9 +979,11 @@ class TieredContextSlice(ArchitecturalContextSlice):
         while len(self.capabilities) > 1 and self._exceeds_budget(budget):
             self._pop_item(self.capabilities)
 
-        # Stage 3: If still over budget, trim remaining non-primary 1-hop components and compact decisions.
+        # Stage 3: If still over budget, trim remaining non-primary 1-hop components, compact secondary metadata, and compact decisions.
         if self._exceeds_budget(budget):
             _pop_non_direct(self.components, primary_cids, min_len=1)
+        if self._exceeds_budget(budget):
+            self._compress_verbose_fields_in_place(primary_cids)
         if self._exceeds_budget(budget) and not self._compact_decisions:
             self._compact_decisions = True
             self._invalidate_budget_cache()
@@ -918,6 +1018,8 @@ def build_tiered_context_slice(
     direct_inv_ids: list[str] = []
     direct_cnt_ids: list[str] = []
     expanded_cnt_ids: list[str] = []
+    direct_cap_ids: list[str] = []
+    expanded_cap_ids: list[str] = []
 
     def _add_reason(eid: str, reason: str) -> None:
         bucket = matched_reasons.setdefault(eid, [])
@@ -927,27 +1029,227 @@ def build_tiered_context_slice(
     conn = index._get_connection()
     cursor = conn.cursor()
 
-    # 1. Resolve by Component / Container parameter
+    def _expand_cap_to_components(cap_ids: list[str], member_reason: str, member_ids: list[str] | None = None) -> None:
+        if not cap_ids:
+            return
+        ph_sc = ",".join("?" for _ in cap_ids)
+        cap_comp_rows = cursor.execute(
+            f"""
+            SELECT DISTINCT e.id, e.title, e.type, e.file_path, e.data_json
+            FROM edges ed
+            JOIN entities e ON e.id = ed.target_id
+            WHERE ed.source_id IN ({ph_sc}) AND ed.rel_type = 'implements'
+              AND e.type IN ('tech/container', 'tech/component')
+            ORDER BY CASE WHEN e.type = 'tech/container' THEN 0 ELSE 1 END, e.id
+            LIMIT 4;
+            """,
+            tuple(cap_ids),
+        ).fetchall()
+        for row in cap_comp_rows:
+            m_data = orjson.loads(row["data_json"])
+            m_data["id"] = row["id"]
+            m_data["title"] = row["title"]
+            m_data.setdefault("file_path", row["file_path"])
+            matched_components.setdefault(row["id"], m_data)
+            if row["id"] not in direct_cnt_ids and row["id"] not in expanded_cnt_ids:
+                expanded_cnt_ids.append(row["id"])
+            if member_ids is not None and row["id"] not in member_ids:
+                member_ids.append(row["id"])
+            _add_reason(row["id"], member_reason)
+
+    def _ingest_entity(
+        eid: str,
+        etype: str,
+        data: dict[str, Any],
+        reason: str,
+        hit_ranks: dict[str, int] | None = None,
+        *,
+        expand_cap_components: bool = False,
+    ) -> None:
+        ranks = hit_ranks or {}
+        if etype in ("tech/container", "tech/component"):
+            matched_components[eid] = data
+            if eid not in direct_cnt_ids:
+                direct_cnt_ids.append(eid)
+            _add_reason(eid, reason)
+        elif etype == "tech/contract":
+            matched_contracts[eid] = data
+            _add_reason(eid, reason)
+        elif etype == "product/capability":
+            matched_capabilities[eid] = data
+            if eid not in direct_cap_ids:
+                direct_cap_ids.append(eid)
+            _add_reason(eid, reason)
+            if expand_cap_components:
+                _expand_cap_to_components([eid], f"Implemented by matched capability {eid}")
+        elif etype == "product/policy":
+            matched_policies[eid] = data
+            _add_reason(eid, reason)
+        elif etype == "invariant":
+            matched_invariants[eid] = data
+            if eid not in direct_inv_ids:
+                direct_inv_ids.append(eid)
+            _add_reason(eid, reason)
+        elif etype in ("product/domain", "design/system"):
+            member_reason = (
+                f"Member of FTS-matched domain {eid}"
+                if etype == "product/domain"
+                else f"Styled by FTS-matched design system {eid}"
+            )
+            member_sql = (
+                """
+                SELECT e.id, e.title, e.type, e.file_path, e.data_json FROM edges ed
+                JOIN entities e ON e.id = ed.source_id
+                WHERE ed.target_id = ? AND ed.rel_type = 'realizes'
+                ORDER BY e.id;
+                """
+                if etype == "product/domain"
+                else """
+                SELECT e.id, e.title, e.type, e.file_path, e.data_json FROM edges ed
+                JOIN entities e ON e.id = ed.target_id
+                WHERE ed.source_id = ? AND ed.rel_type = 'styles_container'
+                ORDER BY e.id;
+                """
+            )
+            member_rows = sorted(
+                cursor.execute(member_sql, (eid,)).fetchall(),
+                key=lambda r: (0 if r["id"] in ranks else 1, ranks.get(r["id"], 999), r["id"]),
+            )
+            member_ids: list[str] = []
+            for row in member_rows:
+                m_data = orjson.loads(row["data_json"])
+                m_data["id"] = row["id"]
+                m_data["title"] = row["title"]
+                m_data.setdefault("file_path", row["file_path"])
+                if row["type"] in ("tech/container", "tech/component"):
+                    matched_components.setdefault(row["id"], m_data)
+                    if row["id"] not in direct_cnt_ids and row["id"] not in expanded_cnt_ids:
+                        expanded_cnt_ids.append(row["id"])
+                elif row["type"] == "product/capability":
+                    matched_capabilities.setdefault(row["id"], m_data)
+                    if row["id"] not in direct_cap_ids and row["id"] not in expanded_cap_ids:
+                        expanded_cap_ids.append(row["id"])
+                else:
+                    continue
+                member_ids.append(row["id"])
+                _add_reason(row["id"], member_reason)
+            expanded = f"; expanded to {', '.join(member_ids)}" if member_ids else ""
+            _add_reason(eid, f"{reason}{expanded}")
+        elif etype in SECONDARY_TASK_SLICE_ENTITY_TYPES:
+            member_reason = (
+                f"Serves FTS-matched persona {eid}"
+                if etype == "product/persona"
+                else f"Delivers FTS-matched design entity {eid}"
+            )
+            sec_rows = sorted(
+                cursor.execute(
+                    """
+                    SELECT DISTINCT e.id, e.title, e.type, e.file_path, e.data_json
+                    FROM entities e
+                    WHERE e.type IN ('product/capability', 'tech/container', 'tech/component', 'invariant')
+                      AND (
+                          e.id IN (
+                              SELECT source_id FROM edges
+                              WHERE target_id = ? AND rel_type IN ('serves_persona', 'delivered_by', 'styled_by')
+                          )
+                          OR e.id IN (
+                              SELECT target_id FROM edges
+                              WHERE source_id = ? AND rel_type IN ('implemented_by', 'styles_container', 'asserts')
+                          )
+                          OR e.id IN (
+                              SELECT ed2.target_id FROM edges ed1
+                              JOIN edges ed2 ON ed2.source_id = ed1.source_id
+                              WHERE ed1.target_id = ? AND ed1.rel_type IN ('has_screen', 'has_flow')
+                                AND ed2.rel_type = 'implemented_by'
+                          )
+                          OR e.id IN (
+                              SELECT ed2.source_id FROM edges ed1
+                              JOIN edges ed2 ON ed2.target_id = ed1.source_id
+                              WHERE ed1.target_id = ? AND ed1.rel_type IN ('has_screen', 'has_flow')
+                                AND ed2.rel_type = 'delivered_by'
+                          )
+                          OR e.id IN (
+                              SELECT ed2.source_id FROM edges ed1
+                              JOIN edges ed2 ON ed2.target_id = ed1.target_id
+                              WHERE ed1.source_id = ? AND ed1.rel_type IN ('uses_screen', 'styled_by')
+                                AND ed2.rel_type = 'delivered_by'
+                          )
+                          OR e.id IN (
+                              SELECT ed2.target_id FROM edges ed1
+                              JOIN edges ed2 ON ed2.source_id = ed1.target_id
+                              WHERE ed1.source_id = ? AND ed1.rel_type = 'styled_by'
+                                AND ed2.rel_type = 'styles_container'
+                          )
+                      )
+                    ORDER BY e.id;
+                    """,
+                    (eid, eid, eid, eid, eid, eid),
+                ).fetchall(),
+                key=lambda r: (0 if r["id"] in ranks else 1, ranks.get(r["id"], 999), r["id"]),
+            )
+            sec_cap_ids: list[str] = []
+            member_ids = []
+            for row in sec_rows:
+                m_data = orjson.loads(row["data_json"])
+                m_data["id"] = row["id"]
+                m_data["title"] = row["title"]
+                if row["file_path"]:
+                    m_data.setdefault("file_path", row["file_path"])
+                if row["type"] in ("tech/container", "tech/component"):
+                    matched_components.setdefault(row["id"], m_data)
+                    if row["id"] not in direct_cnt_ids and row["id"] not in expanded_cnt_ids:
+                        expanded_cnt_ids.append(row["id"])
+                elif row["type"] == "product/capability":
+                    matched_capabilities.setdefault(row["id"], m_data)
+                    if row["id"] not in direct_cap_ids and row["id"] not in expanded_cap_ids:
+                        expanded_cap_ids.append(row["id"])
+                    sec_cap_ids.append(row["id"])
+                elif row["type"] == "invariant":
+                    matched_invariants.setdefault(row["id"], m_data)
+                else:
+                    continue
+                member_ids.append(row["id"])
+                _add_reason(row["id"], member_reason)
+
+            if sec_cap_ids and not any(r["type"] in ("tech/container", "tech/component") for r in sec_rows):
+                _expand_cap_to_components(sec_cap_ids, member_reason, member_ids)
+            expanded = f"; expanded to {', '.join(member_ids)}" if member_ids else ""
+            _add_reason(eid, f"{reason}{expanded}")
+
+    # 1. Resolve by Component / Container / Entity parameter
     if component:
         c_clean = component.strip().upper()
-        cursor.execute(
+        comp_rows = cursor.execute(
             """
             SELECT id, title, type, domain, file_path, data_json
             FROM entities
             WHERE type IN ('tech/container', 'tech/component') AND (id = ? OR id LIKE '%' || ? || '%');
             """,
             (c_clean, c_clean),
-        )
-        for row in cursor.fetchall():
+        ).fetchall()
+        if not comp_rows:
+            ph_types = ",".join("?" for _ in TASK_SLICE_ENTITY_TYPES)
+            comp_rows = cursor.execute(
+                f"""
+                SELECT id, title, type, domain, file_path, data_json
+                FROM entities
+                WHERE type IN ({ph_types}) AND (id = ? OR id LIKE '%' || ? || '%');
+                """,
+                (*TASK_SLICE_ENTITY_TYPES, c_clean, c_clean),
+            ).fetchall()
+        for row in comp_rows:
             cid = row["id"]
             data = orjson.loads(row["data_json"])
             data["id"] = cid
             data["title"] = row["title"]
             data.setdefault("file_path", row["file_path"])
-            matched_components[cid] = data
-            if cid not in direct_cnt_ids:
-                direct_cnt_ids.append(cid)
-            _add_reason(cid, f"Explicit component parameter '{component}'")
+            _ingest_entity(
+                cid,
+                row["type"],
+                data,
+                f"Explicit component parameter '{component}'",
+                expand_cap_components=True,
+            )
 
     # 2. Resolve by File paths
     raw_files = [files] if isinstance(files, str) else (files or [])
@@ -974,6 +1276,56 @@ def build_tiered_context_slice(
 
     for fpath in clean_files:
         matches = resolve_symbol_or_path_in_db(conn, fpath)
+        primary_file_matches = [
+            m for m in matches if m["type"] in ("tech/container", "tech/component", "invariant", "tech/contract")
+        ]
+        if primary_file_matches:
+            for m in primary_file_matches:
+                eid = m["entity_id"]
+                etype = m["type"]
+                data = m["data"]
+                data["id"] = eid
+                data["title"] = m["title"]
+                if m.get("file_path"):
+                    data.setdefault("file_path", m["file_path"])
+                if etype in ("tech/container", "tech/component"):
+                    file_reason = f"Source file match on '{fpath}'"
+                elif etype == "invariant":
+                    file_reason = f"Test binding match on '{fpath}'"
+                else:
+                    file_reason = f"Contract file match on '{fpath}'"
+                _ingest_entity(eid, etype, data, file_reason)
+            continue
+
+        if not matches:
+            spec_rows = list(
+                cursor.execute(
+                    "SELECT id, title, type, file_path, data_json FROM entities WHERE file_path = ? AND type != 'invariant';",
+                    (fpath,),
+                ).fetchall()
+            )
+            if not spec_rows and fpath.endswith(".json"):
+                for ds_row in cursor.execute(
+                    "SELECT id, title, type, file_path, data_json FROM entities WHERE type = 'design/system';"
+                ).fetchall():
+                    ds_data = orjson.loads(ds_row["data_json"])
+                    tokens = ds_data.get("tokens") if isinstance(ds_data.get("tokens"), dict) else {}
+                    tok = tokens.get("manifest")
+                    if isinstance(tok, str) and tok.strip():
+                        ds_fp = str(ds_row["file_path"] or "").replace("\\", "/")
+                        tok_path = tok.strip() if "/" in tok.strip() else f"{ds_fp.rsplit('/', 1)[0]}/{tok.strip()}"
+                        if tok_path.replace("\\", "/") == fpath:
+                            spec_rows.append(ds_row)
+            matches = [
+                {
+                    "entity_id": r["id"],
+                    "title": r["title"],
+                    "type": r["type"],
+                    "file_path": r["file_path"],
+                    "data": orjson.loads(r["data_json"]),
+                }
+                for r in spec_rows
+            ]
         for m in matches:
             eid = m["entity_id"]
             etype = m["type"]
@@ -982,32 +1334,42 @@ def build_tiered_context_slice(
             data["title"] = m["title"]
             if m.get("file_path"):
                 data.setdefault("file_path", m["file_path"])
-
-            if etype in ("tech/container", "tech/component"):
-                matched_components[eid] = data
-                if eid not in direct_cnt_ids:
-                    direct_cnt_ids.append(eid)
-                _add_reason(eid, f"Source file match on '{fpath}'")
-            elif etype == "invariant":
-                matched_invariants[eid] = data
-                if eid not in direct_inv_ids:
-                    direct_inv_ids.append(eid)
-                _add_reason(eid, f"Test binding match on '{fpath}'")
-            elif etype == "tech/contract":
-                matched_contracts[eid] = data
-                _add_reason(eid, f"Contract file match on '{fpath}'")
+            _ingest_entity(eid, etype, data, f"Specification file match on '{fpath}'", expand_cap_components=True)
 
     # 3. Resolve by Task prompt (FTS5 lexical + optional Harrier Hybrid RRF search restricted to sliceable entity types,
-    #    so historical SpecDeltas, explorations, and personas never consume the top-k candidate slots)
+    #    retaining up to 8 primary structural matches and up to 4 secondary persona/design matches so secondary entities
+    #    never displace primary C4/capability/invariant candidates)
     if task and task.strip():
-        fts_matches = execute_fts_query(
+        raw_matches = execute_fts_query(
             conn,
             text=task,
-            limit=8,
+            limit=16,
             include_types=TASK_SLICE_ENTITY_TYPES,
             use_semantic=use_semantic,
             eidos_dir=getattr(index, "eidos_dir", None),
         )
+        primary_hits = [m for m in raw_matches if m["type"] in PRIMARY_TASK_SLICE_ENTITY_TYPES][:8]
+        if len(primary_hits) < 8 and len(raw_matches) >= 16:
+            seen_primary = {m["id"] for m in primary_hits}
+            for m in execute_fts_query(
+                conn,
+                text=task,
+                limit=8,
+                include_types=PRIMARY_TASK_SLICE_ENTITY_TYPES,
+                use_semantic=use_semantic,
+                eidos_dir=getattr(index, "eidos_dir", None),
+            ):
+                if m["id"] not in seen_primary:
+                    primary_hits.append(m)
+                    seen_primary.add(m["id"])
+                    if len(primary_hits) >= 8:
+                        break
+        secondary_hits = [
+            m
+            for idx, m in enumerate(raw_matches)
+            if (idx < 8 or len(primary_hits) < 8) and m["type"] in SECONDARY_TASK_SLICE_ENTITY_TYPES
+        ][:4]
+        fts_matches = primary_hits + secondary_hits
         fts_hit_ranks = {m["id"]: idx for idx, m in enumerate(fts_matches)}
         for m in fts_matches:
             eid = m["id"]
@@ -1033,84 +1395,27 @@ def build_tiered_context_slice(
             else:
                 reason = f"FTS lexical match on task (BM25 score: {m['rank']:.2f})"
 
-            if etype in ("tech/container", "tech/component"):
-                matched_components[eid] = data
-                if eid not in direct_cnt_ids:
-                    direct_cnt_ids.append(eid)
-                _add_reason(eid, reason)
-            elif etype == "tech/contract":
-                matched_contracts[eid] = data
-                _add_reason(eid, reason)
-            elif etype == "product/capability":
-                matched_capabilities[eid] = data
-                _add_reason(eid, reason)
-            elif etype == "product/policy":
-                matched_policies[eid] = data
-                _add_reason(eid, reason)
-            elif etype == "invariant":
-                matched_invariants[eid] = data
-                if eid not in direct_inv_ids:
-                    direct_inv_ids.append(eid)
-                _add_reason(eid, reason)
-            elif etype in ("product/domain", "design/system"):
-                member_reason = (
-                    f"Member of FTS-matched domain {eid}"
-                    if etype == "product/domain"
-                    else f"Styled by FTS-matched design system {eid}"
-                )
-                member_sql = (
-                    """
-                    SELECT e.id, e.title, e.type, e.file_path, e.data_json FROM edges ed
-                    JOIN entities e ON e.id = ed.source_id
-                    WHERE ed.target_id = ? AND ed.rel_type = 'realizes'
-                    ORDER BY e.id;
-                    """
-                    if etype == "product/domain"
-                    else """
-                    SELECT e.id, e.title, e.type, e.file_path, e.data_json FROM edges ed
-                    JOIN entities e ON e.id = ed.target_id
-                    WHERE ed.source_id = ? AND ed.rel_type = 'styles_container'
-                    ORDER BY e.id;
-                    """
-                )
-                member_rows = sorted(
-                    cursor.execute(member_sql, (eid,)).fetchall(),
-                    key=lambda r: (0 if r["id"] in fts_hit_ranks else 1, fts_hit_ranks.get(r["id"], 999), r["id"]),
-                )
-                member_ids: list[str] = []
-                for row in member_rows:
-                    m_data = orjson.loads(row["data_json"])
-                    m_data["id"] = row["id"]
-                    m_data["title"] = row["title"]
-                    m_data.setdefault("file_path", row["file_path"])
-                    if row["type"] in ("tech/container", "tech/component"):
-                        matched_components.setdefault(row["id"], m_data)
-                        if row["id"] not in direct_cnt_ids and row["id"] not in expanded_cnt_ids:
-                            expanded_cnt_ids.append(row["id"])
-                    elif row["type"] == "product/capability":
-                        matched_capabilities.setdefault(row["id"], m_data)
-                    else:
-                        continue
-                    member_ids.append(row["id"])
-                    _add_reason(row["id"], member_reason)
-                expanded = f"; expanded to {', '.join(member_ids)}" if member_ids else ""
-                _add_reason(eid, f"{reason}{expanded}")
+            _ingest_entity(eid, etype, data, reason, fts_hit_ranks)
 
     for iid in direct_inv_ids:
         inv_data = matched_invariants[iid]
         parent_cap = inv_data.get("capability_id")
-        if parent_cap and parent_cap not in matched_capabilities:
-            row = cursor.execute(
-                "SELECT id, title, type, domain, file_path, data_json FROM entities WHERE id = ?;",
-                (parent_cap,),
-            ).fetchone()
-            if row:
-                c_data = orjson.loads(row["data_json"])
-                c_data["id"] = row["id"]
-                c_data["title"] = row["title"]
-                c_data.setdefault("file_path", row["file_path"])
-                matched_capabilities[row["id"]] = c_data
-                _add_reason(row["id"], f"Owning capability of matched invariant {iid}")
+        if parent_cap:
+            if parent_cap not in matched_capabilities:
+                row = cursor.execute(
+                    "SELECT id, title, type, domain, file_path, data_json FROM entities WHERE id = ?;",
+                    (parent_cap,),
+                ).fetchone()
+                if row:
+                    c_data = orjson.loads(row["data_json"])
+                    c_data["id"] = row["id"]
+                    c_data["title"] = row["title"]
+                    c_data.setdefault("file_path", row["file_path"])
+                    matched_capabilities[row["id"]] = c_data
+            if parent_cap in matched_capabilities:
+                if parent_cap not in direct_cap_ids:
+                    direct_cap_ids.append(parent_cap)
+                _add_reason(parent_cap, f"Owning capability of matched invariant {iid}")
         parent_pol = inv_data.get("policy_id")
         if parent_pol and parent_pol not in matched_policies:
             row = cursor.execute(
@@ -1140,6 +1445,18 @@ def build_tiered_context_slice(
                     if row["id"] not in direct_cnt_ids:
                         direct_cnt_ids.append(row["id"])
                     _add_reason(row["id"], f"Owning component/container of matched invariant {iid}")
+        parent_uic = inv_data.get("design_component_id")
+        if parent_uic:
+            row = cursor.execute(
+                "SELECT id, title, type, domain, file_path, data_json FROM entities WHERE id = ?;",
+                (parent_uic,),
+            ).fetchone()
+            if row:
+                u_data = orjson.loads(row["data_json"])
+                u_data["id"] = row["id"]
+                u_data["title"] = row["title"]
+                u_data.setdefault("file_path", row["file_path"])
+                _ingest_entity(row["id"], row["type"], u_data, f"Owning UI component of matched invariant {iid}")
 
     has_explicit_query = bool(clean_files or (component and component.strip()) or (task and task.strip()))
     any_matched = bool(
@@ -1233,7 +1550,6 @@ def build_tiered_context_slice(
 
     # 6. Include contracts owned by or provided/consumed by primary components
     direct_ctr_ids = list(matched_contracts.keys())
-    direct_cap_ids = list(matched_capabilities.keys())
     direct_pol_ids = list(matched_policies.keys())
     if primary_cids:
         ph = ",".join("?" for _ in primary_cids)
@@ -1383,11 +1699,77 @@ def build_tiered_context_slice(
             inv_data["id"] = row["id"]
             matched_invariants.setdefault(row["id"], inv_data)
 
-    # Ensure embedded decisions are surfaced on each matched component
+    # Ensure embedded decisions, domain_path, and bound design pointers are surfaced on each matched component
+    comp_domain_ids: set[str] = set()
     for comp_entry in matched_components.values():
         collected_decs = collect_component_decisions(comp_entry)
         if collected_decs:
             comp_entry["decisions"] = collected_decs
+        dom_id = str(comp_entry.get("domain") or "").strip()
+        if not dom_id:
+            parent_cnt = str(comp_entry.get("container") or "").strip()
+            if parent_cnt and parent_cnt in matched_components:
+                dom_id = str(matched_components[parent_cnt].get("domain") or "").strip()
+                if dom_id:
+                    comp_entry["domain"] = dom_id
+        if dom_id:
+            comp_domain_ids.add(dom_id)
+
+    domain_path_by_id: dict[str, str] = {}
+    if comp_domain_ids:
+        ph_dom = ",".join("?" for _ in comp_domain_ids)
+        for row in cursor.execute(
+            f"SELECT id, file_path FROM entities WHERE type = 'product/domain' AND id IN ({ph_dom});",
+            tuple(comp_domain_ids),
+        ).fetchall():
+            if row["file_path"]:
+                domain_path_by_id[row["id"]] = row["file_path"]
+
+    design_cache_by_cnt: dict[str, list[dict[str, str]]] = {}
+    for cid, comp_entry in matched_components.items():
+        dom_id = str(comp_entry.get("domain") or "").strip()
+        if dom_id and dom_id in domain_path_by_id:
+            comp_entry.setdefault("domain_path", domain_path_by_id[dom_id])
+
+        parent_cnt = str(comp_entry.get("container") or "").strip()
+        scope_ids = tuple(sorted({cid, *([parent_cnt] if parent_cnt else [])}))
+        cache_key = ",".join(scope_ids)
+        if cache_key not in design_cache_by_cnt:
+            ph_sc = ",".join("?" for _ in scope_ids)
+            design_rows = cursor.execute(
+                f"""
+                SELECT DISTINCT e.id, e.type, e.file_path
+                FROM entities e
+                WHERE e.type IN ('design/client', 'design/system')
+                  AND (
+                      e.id IN (
+                          SELECT source_id FROM edges
+                          WHERE target_id IN ({ph_sc})
+                            AND rel_type IN ('implemented_by', 'styled_by', 'styles_container', 'delivered_by')
+                      )
+                      OR e.id IN (
+                          SELECT target_id FROM edges
+                          WHERE source_id IN ({ph_sc})
+                            AND rel_type IN ('implemented_by', 'styled_by', 'styles_container', 'delivered_by')
+                      )
+                      OR e.id IN (
+                          SELECT ed2.target_id FROM edges ed1
+                          JOIN edges ed2 ON ed2.source_id = ed1.source_id
+                          WHERE ed1.target_id IN ({ph_sc}) AND ed1.rel_type = 'implemented_by'
+                            AND ed2.rel_type = 'styled_by'
+                      )
+                  )
+                ORDER BY e.id;
+                """,
+                scope_ids * 3,
+            ).fetchall()
+            design_cache_by_cnt[cache_key] = [
+                {"id": r["id"], "type": r["type"], "file_path": r["file_path"] or ""}
+                for r in design_rows
+                if r["id"]
+            ]
+        if design_cache_by_cnt[cache_key]:
+            comp_entry.setdefault("design", design_cache_by_cnt[cache_key])
 
     # Assemble and rank-order lists so token-budget truncation retains highest-priority entities first
     primary_set = set(primary_cids)
@@ -1397,6 +1779,7 @@ def build_tiered_context_slice(
     primary_rank = {cid: idx for idx, cid in enumerate(primary_cids)}
     direct_ctr_rank = {cid: idx for idx, cid in enumerate(direct_ctr_ids)}
     direct_cap_rank = {cid: idx for idx, cid in enumerate(direct_cap_ids)}
+    expanded_cap_rank = {cid: idx for idx, cid in enumerate(expanded_cap_ids)}
     direct_pol_rank = {pid: idx for idx, pid in enumerate(direct_pol_ids)}
 
     file_tokens: set[str] = set()
@@ -1455,8 +1838,8 @@ def build_tiered_context_slice(
     sorted_caps = sorted(
         matched_capabilities.values(),
         key=lambda x: (
-            0 if x.get("id", "") in direct_cap_rank else 1,
-            direct_cap_rank.get(x.get("id", ""), 999),
+            0 if x.get("id", "") in direct_cap_rank else (1 if x.get("id", "") in expanded_cap_rank else 2),
+            direct_cap_rank.get(x.get("id", ""), 100 + expanded_cap_rank.get(x.get("id", ""), 999)),
             *_cap_relevance_tuple(x),
         ),
     )

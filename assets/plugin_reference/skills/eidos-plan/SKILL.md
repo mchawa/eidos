@@ -108,7 +108,7 @@ eidos delta archive --keep-recent 15 --dry-run --json
 ### 2.2 SpecDelta Frontmatter & Schema Rules
 
 > **Critical Schema Rules (`delta.schema.yaml`)**:
-> 1. **Composable `operation` + `target` is the Sole Mutation Contract**: Declare each mutation with `operation: add | modify | remove | deprecate` and `target: <ENTITY-ID>`. Never add `parent:`, `affects:`, or `blast_radius:` blocks to SpecDelta YAML frontmatter (`additionalProperties: false` rejects them).
+> 1. **Composable `operation` + `target` is the Sole Mutation Contract**: Declare each mutation with `operation: add | modify | remove | deprecate` and `target: <ENTITY-ID>` (including affected `DOM-*`, `PER-*`, `POL-*`, and `DS-*`/`UIC-*`/`CLT-*`/`SCR-*`/`FLOW-*` specs alongside `CNT-*`/`CMP-*`/`CTR-*`/`CAP-*`). Never add `parent:`, `affects:`, or `blast_radius:` blocks to SpecDelta YAML frontmatter (`additionalProperties: false` rejects them).
 > 2. **Closed `expect:` Schema**: `expect:` only permits `body:` and `frontmatter:` sub-blocks (allowed keys in §2.4). Flat top-level keys under `expect:` are rejected.
 
 ```yaml

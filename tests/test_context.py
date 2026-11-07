@@ -37,6 +37,38 @@ def test_context_slice_by_file():
     policy_ids = {p["id"] for p in res.policies}
     assert "POL-001-GIT-SOURCE-OF-TRUTH" in policy_ids
 
+    # DLT-2026-125: guardrails/deep project domain_path, design, capability personas/policies/experience, and policy file_path
+    proj = res.to_dict()
+    cli_comp = proj["components"][0]
+    assert cli_comp.get("domain_path", "").endswith("domain.adoc")
+    cap_prod = next(c for c in proj["capabilities"] if c["id"] == "CAP-PROD-001")
+    assert cap_prod.get("file_path", "").endswith(".adoc")
+    assert cap_prod.get("personas")
+    pol_entry = next(p for p in proj["policies"] if p["id"] == "POL-001-GIT-SOURCE-OF-TRUTH")
+    assert pol_entry.get("file_path", "").endswith("POL-001-git-as-single-source-of-truth.adoc")
+    assert pol_entry.get("category")
+
+    portal_sl = get_context_slice(files=["src/eidos/portal/builder.py"], tier="guardrails")
+    portal_proj = portal_sl.to_dict()
+    portal_comp = portal_proj["components"][0]
+    design_ids = {d["id"] for d in portal_comp.get("design", [])}
+    assert "DS-CORE" in design_ids
+    portal_cap = portal_proj["capabilities"][0]
+    assert "experience" in portal_cap
+    assert portal_cap["experience"].get("screens") or portal_cap["experience"].get("design_systems")
+    assert "Domain Spec:" in portal_sl.to_markdown()
+    assert "**Bound Design:** `CLT-WEB-PORTAL`" in portal_sl.to_markdown()
+
+    # Slicing directly by a design token manifest or persona/domain spec file resolves its bound architecture
+    tok_sl = get_context_slice(files=["eidos/design/systems/core/tokens.json"], tier="guardrails")
+    assert any(c["id"] == "CNT-EIDOS-PORTAL" for c in tok_sl.components)
+    dom_file_sl = get_context_slice(files=["eidos/domains/experience-portal/domain.adoc"], tier="guardrails")
+    assert any(c["id"] == "CAP-EXP-001" for c in dom_file_sl.capabilities)
+
+    anchor_portal = get_context_slice(files=["src/eidos/portal/builder.py"], tier="anchor").to_dict()
+    assert "domain_path" not in anchor_portal["components"][0]
+    assert "design" not in anchor_portal["components"][0]
+
 
 def test_context_slice_by_component():
     """Verify slicing by component ID extracts the target component, internal deps, and contracts."""

@@ -618,7 +618,21 @@ def _resolve_bound_design_ids(idx: Any, cf: str, owner_ids: set[str]) -> set[str
     for m in idx.resolve_symbol_or_path(cf):
         if m.get("type") in ("design/client", "design/system") and m.get("entity_id"):
             bound.add(m["entity_id"])
-    for oid in owner_ids:
+    expanded_owners = set(owner_ids)
+    for oid in list(owner_ids):
+        for n in idx.get_k_hop_neighborhood(oid, max_depth=1):
+            ntype = n.get("type")
+            nid = n.get("id")
+            rel = n.get("relationship")
+            if ntype in ("design/client", "design/system") and nid:
+                bound.add(nid)
+            elif (
+                nid
+                and ntype in ("tech/container", "product/capability")
+                and rel in ("part_of", "contains_component", "implements", "implemented_by")
+            ):
+                expanded_owners.add(nid)
+    for oid in expanded_owners - owner_ids:
         for n in idx.get_k_hop_neighborhood(oid, max_depth=1):
             if n.get("type") in ("design/client", "design/system") and n.get("id"):
                 bound.add(n["id"])

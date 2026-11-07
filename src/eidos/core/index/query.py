@@ -25,8 +25,9 @@ from eidos.core.workspace.project import match_path_pattern
 FTS_COLUMN_WEIGHTS: tuple[float, ...] = (0.0, 4.0, 2.0, 1.0, 2.0, 2.0)
 
 # Entity types that get_tiered_context_slice can surface from a task prompt. Restricting the BM25 candidate pool to
-# these types keeps historical SpecDeltas, explorations, personas, and screens from consuming the top-k slots.
-TASK_SLICE_ENTITY_TYPES: tuple[str, ...] = (
+# these types keeps historical SpecDeltas and explorations from consuming the top-k slots while allowing personas
+# and design entities to expand to their governing capabilities and containers.
+PRIMARY_TASK_SLICE_ENTITY_TYPES: tuple[str, ...] = (
     "tech/container",
     "tech/component",
     "tech/contract",
@@ -35,6 +36,19 @@ TASK_SLICE_ENTITY_TYPES: tuple[str, ...] = (
     "invariant",
     "product/domain",
     "design/system",
+)
+
+SECONDARY_TASK_SLICE_ENTITY_TYPES: tuple[str, ...] = (
+    "product/persona",
+    "design/client",
+    "design/ui-component",
+    "design/screen",
+    "design/flow",
+)
+
+TASK_SLICE_ENTITY_TYPES: tuple[str, ...] = (
+    *PRIMARY_TASK_SLICE_ENTITY_TYPES,
+    *SECONDARY_TASK_SLICE_ENTITY_TYPES,
 )
 
 _CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")

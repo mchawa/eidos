@@ -1235,6 +1235,45 @@ def test_task_retrieval_indexes_invariants_and_filters_types(tmp_path):
             assert comp_ids_in_order.index("CNT-WIDGET") < comp_ids_in_order.index("CNT-AAA-MEMBER")
         assert "CAP-WIDGET-001" in [c["id"] for c in dom_slice.capabilities]
 
+        # 5b. DLT-2026-125: Secondary persona and design entities (PER-*, SCR-*, UIC-*, CLT-*, FLOW-*) are indexed in
+        #     TASK_SLICE_ENTITY_TYPES and expand via graph edges to their bound capabilities and containers.
+        _write_retrieval_spec(
+            eidos_dir / "personas" / "operator.adoc",
+            "---\ntype: product/persona\nid: PER-QUASAR-OPERATOR\ntitle: Telemetry Quasar Operator\n"
+            "archetype: Operations Engineer\n---\n= Telemetry Quasar Operator\n",
+        )
+        _write_retrieval_spec(
+            eidos_dir / "design" / "clients" / "widget_web.adoc",
+            "---\ntype: design/client\nid: CLT-WIDGET-WEB\ntitle: Widget Console Web\n"
+            "containers:\n  - CNT-WIDGET\nscreens:\n  - SCR-WIDGET-TELEMETRY\n---\n= Widget Console Web\n",
+        )
+        _write_retrieval_spec(
+            eidos_dir / "design" / "clients" / "screens" / "telemetry.adoc",
+            "---\ntype: design/screen\nid: SCR-WIDGET-TELEMETRY\ntitle: Astrometric Telemetry Screen\n"
+            "route: /telemetry\n---\n= Astrometric Telemetry Screen\n",
+        )
+        cap.write_text(
+            _RETRIEVAL_CAP_WITH_INVARIANT.replace(
+                "technical:\n",
+                "business:\n  personas:\n    - eidos/personas/operator.adoc\n"
+                "experience:\n  clients:\n    - CLT-WIDGET-WEB\n  screens:\n    - SCR-WIDGET-TELEMETRY\n"
+                "technical:\n",
+            ),
+            encoding="utf-8",
+        )
+        _touch_later(cap, offset=5)
+        idx.sync(force=False)
+
+        persona_slice = idx.get_tiered_context_slice(task="telemetry quasar operator")
+        assert "PER-QUASAR-OPERATOR" in persona_slice.matched_reasons
+        assert "CAP-WIDGET-001" in [c["id"] for c in persona_slice.capabilities]
+        assert "CNT-WIDGET" in [c["id"] for c in persona_slice.components]
+
+        screen_slice = idx.get_tiered_context_slice(task="astrometric telemetry screen")
+        assert "SCR-WIDGET-TELEMETRY" in screen_slice.matched_reasons
+        assert "CAP-WIDGET-001" in [c["id"] for c in screen_slice.capabilities]
+        assert "CNT-WIDGET" in [c["id"] for c in screen_slice.components]
+
         # 6. Removing the invariant purges its FTS row on incremental sync (no stale search hits).
         cap.write_text(_RETRIEVAL_CAP_WITH_INVARIANT.split("  invariants:\n")[0] + "---\n= Widget Archival\n")
         _touch_later(cap, offset=10)

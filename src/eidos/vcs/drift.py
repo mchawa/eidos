@@ -517,9 +517,6 @@ def detect_drift(
             continue  # Container is not bound to any CLT-*/DS-*: no design spec required
         satisfying_paths = set(d_paths)
         satisfying_ids = {i.lower() for i in d_ids}
-        if cat == "ui_contract":
-            satisfying_paths |= owner_specs_by_file.get(cf, set())
-            satisfying_ids |= {o.lower() for o in owners_by_file.get(cf, set())}
         matching_design_specs = [s for s in classification.spec_files if _path_in(s, satisfying_paths)]
         covered = any(spec_inspector.is_substantive(s) for s in matching_design_specs)
         if not covered and has_deltas:

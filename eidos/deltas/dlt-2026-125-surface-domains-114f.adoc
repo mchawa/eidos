@@ -1,0 +1,170 @@
+---
+type: delta/mutation
+id: DLT-2026-125-SURFACE-DOMAINS-114F
+title: "Surface Domains, Personas, Policies, and Design Subgraphs in Context Slices, Drift Gates, and Agent Skills"
+status: applied
+intent:
+  kind: feature
+  motivation: "Eliminate the blind spot where coding agents update CNT-*/CMP-* specifications to appease eidos drift while forgetting to co-evolve DOM-* domains, PER-* personas, POL-* policies, and design/* (DS-*, UIC-*, CLT-*, SCR-*, FLOW-*) specifications across context slicing, design drift enforcement, remediation reporting, and bundled agent skills."
+mutations:
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+    details: "Enrich TieredContextSlice and ArchitecturalContextSlice in src/eidos/core/index/context.py so guardrails and deep slices project file_path, business.personas, and experience (clients, design_systems, screens, flows, ui_components) on capabilities, file_path and category on policies, and resolved domain_path (DOM-*) plus bound design targets (CLT-*, DS-*) on components/containers, while compressing these secondary fields first in _compress_verbose_fields_in_place to preserve both strict token budgets (anchor <=300, guardrails <=1000, deep <=2500) and the >=60% guardrails compression floor."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-INDEX
+        status: active
+        source_path: src/eidos/core/index/context.py
+      body:
+        contains:
+          - "personas"
+          - "experience"
+          - "domain_path"
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+    details: "Extend TASK_SLICE_ENTITY_TYPES in src/eidos/core/index/query.py (and task expansion in build_tiered_context_slice) to include product/persona (PER-*), design/client (CLT-*), design/ui-component (UIC-*), design/screen (SCR-*), and design/flow (FLOW-*) while reserving primary top-k slots for architecture, capability, invariant, domain, and policy entities so persona/design hits expand via serves_persona, delivered_by, implemented_by, has_screen, has_flow, styled_by, and styles_container edges into expanded_cnt_ids and matched_capabilities without displacing direct CNT-*/CMP-*/CAP-*/INV-* matches."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-INDEX
+        status: active
+        source_path: src/eidos/core/index/query.py
+      body:
+        contains:
+          - "product/persona"
+          - "design/screen"
+  - operation: modify
+    target: CNT-EIDOS-VCS
+    details: "Record architectural decision DEC-VCS-STRICT-UI-CONTRACT-DESIGN-DRIFT in eidos/architecture/containers/vcs.adoc requiring ui_contract changes on containers bound to CLT-*/DS-* to update a specification inside the bound design subgraph rather than being satisfied by CNT-*/CMP-* edits alone, and resolving bound CLT-*/DS-* entities across CMP-* -> parent CNT-* and capability experience links."
+    expect:
+      frontmatter:
+        status: active
+        decisions.id:
+          - DEC-VCS-STRICT-UI-CONTRACT-DESIGN-DRIFT
+      body:
+        contains:
+          - "DEC-VCS-STRICT-UI-CONTRACT-DESIGN-DRIFT"
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    details: "Update _resolve_bound_design_ids in src/eidos/vcs/structural.py to traverse CMP-* -> parent CNT-* -> 1-hop CLT-*/DS-* and CAP-*.experience bindings; remove the owner_specs_by_file / owners_by_file bypass for cat == 'ui_contract' in src/eidos/vcs/drift.py so ui_contract changes on bound frontend containers must update the bound design subgraph (UIC-*, SCR-*, FLOW-*, CLT-*, DS-*, or tokens.json); and include bound domain, persona, policy, and design subgraph pointers in src/eidos/vcs/report.py remediation bullets."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-VCS
+        status: active
+      body:
+        contains:
+          - "ui_contract"
+          - "_resolve_bound_design_ids"
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Update bundled skills in-place (assets/plugin_reference/skills/eidos/SKILL.md §4 Step 3 and §5 Stage 2, assets/plugin_reference/skills/eidos-plan/SKILL.md §3, and assets/plugin_reference/agents-md/block.md) to include explicit co-evolution rules and adversarial self-review checks for DOM-* ubiquitous language, PER-* personas, POL-* policies, and design/* (DS-*, tokens.json, UIC-*, CLT-*, SCR-*, FLOW-*) while staying within INV-PLUGIN-SKILL-SIZE-CEILING word ceilings."
+    expect:
+      frontmatter:
+        status: active
+      body:
+        contains:
+          - "DOM-*"
+          - "PER-*"
+          - "POL-*"
+  - operation: modify
+    target: CAP-AGENT-001
+    details: "Bump CAP-AGENT-001 to version 1.11.0 in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc and update INV-AGENT-CONTEXT-SLICING and INV-AGENT-TASK-RETRIEVAL-COVERAGE to require surfacing capability personas/experience, policy/capability/domain file_path metadata, and bound design targets in guardrails/deep slices and expanding FTS-matched personas and design entities during task slicing."
+    expect:
+      frontmatter:
+        version: "1.11.0"
+        technical.invariants.id:
+          - INV-AGENT-CONTEXT-SLICING
+          - INV-AGENT-TASK-RETRIEVAL-COVERAGE
+      body:
+        contains:
+          - "personas"
+          - "experience"
+  - operation: modify
+    target: CAP-VCS-001
+    details: "Bump CAP-VCS-001 to version 1.11.0 in eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc and extend INV-DRIFT-DETECTION-ACCURACY to require CMP-* -> parent CNT-* design subgraph resolution and strict design/* specification updates for both token and ui_contract frontend modifications on bound containers."
+    expect:
+      frontmatter:
+        version: "1.11.0"
+        technical.invariants.id:
+          - INV-DRIFT-DETECTION-ACCURACY
+      body:
+        contains:
+          - "ui_contract"
+          - "design subgraph"
+vcs:
+  branch: main
+  base_commit: ae8ff6624ed62c3220f569955d39d16dc59e9c52
+---
+= SpecDelta: Surface Domains, Personas, Policies, and Design Subgraphs in Context Slices, Drift Gates, and Agent Skills
+:toc: left
+
+== Problem Statement
+Autonomous coding agents operating in Eidos-governed repositories reliably update C4 Containers (`CNT-*`), Components (`CMP-*`), Contracts (`CTR-*`), and Invariants (`INV-*`), but frequently forget to update **Bounded Context Domains (`DOM-*`)**, **Actor Personas (`PER-*`)**, **Governance Policies (`POL-*`)**, and **Design Specifications (`DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`)**.
+
+Root-cause analysis across the context slicer, drift detector, and bundled skills identified four reinforcing blind spots:
+
+1. **`eidos context` Strips Domains, Personas, Design Bindings, and File Paths (`CMP-TIERED-CONTEXT-COMPRESSOR`, `CMP-FTS-QUERY-ENGINE`)**:
+   * `AGENTS.md` and `eidos/SKILL.md` instruct agents to run `eidos context -f <file> --json` and *"trust its output directly without re-reading the summarized `.adoc` files"*.
+   * However, `TieredContextSlice.to_dict()` only projects five keys (`components`, `contracts`, `capabilities`, `invariants`, `policies`) and strips:
+     ** `file_path`, `business.personas`, `business.policies`, and `experience` (`clients`, `design_systems`, `screens`, `flows`, `ui_components`) from `_project_capability()`;
+     ** `file_path` and `category` from `_project_policy()`;
+     ** the owning `DOM-*` file path (`domain_path`) and bound `CLT-*`/`DS-*` design entities from `_project_component()`.
+   * `TASK_SLICE_ENTITY_TYPES` in `src/eidos/core/index/query.py` excludes `product/persona` (`PER-*`), `design/client` (`CLT-*`), `design/ui-component` (`UIC-*`), `design/screen` (`SCR-*`), and `design/flow` (`FLOW-*`), so `eidos context -t "<task>"` drops direct hits on personas, screens, flows, and UI components before expansion.
+2. **`eidos drift` Lets `CNT-*`/`CMP-*` Edits Satisfy `ui_contract` Design Drift and Misses `CMP-*` -> `CNT-*` Design Bindings (`CMP-DRIFT-DETECTOR`)**:
+   * In `src/eidos/vcs/drift.py` (lines 520–522), when `classify_design_changes()` classifies a frontend edit as `cat == "ui_contract"` (new/deleted `.tsx`/`.vue`/`.svelte` file, exported UI component, `*Props` contract, or route change), `detect_drift` adds `owner_specs_by_file` (`CNT-*`/`CMP-*`) to `satisfying_paths`. As a result, an agent that updates its `CMP-*` spec satisfies `design_drift` without touching `UIC-*`, `SCR-*`, `FLOW-*`, or `CLT-*`.
+   * In `src/eidos/vcs/structural.py` (`_resolve_bound_design_ids`), when a frontend file maps to a standalone C4 Level 3 `CMP-*` component, `_resolve_bound_design_ids` only inspects 1-hop neighbors of `CMP-*`. Because `CLT-*` binds to `container: CNT-*` (or via `CAP-*.experience`), files owned by a `CMP-*` whose `CNT-*` parent was not directly matched fail to resolve their bound `CLT-*`/`DS-*` subgraph and silently skip `design_drift`.
+3. **Drift Remediation Prompts Point Only to `CMP-*`/`CNT-*` (`src/eidos/vcs/report.py`)**:
+   * `build_drift_remediation_and_summary` outputs `• '<file>' relates to CMP-X -> Update 'eidos/architecture/components/...' (or a 1-hop linked capability/contract)`, never reminding the agent of bound `DOM-*`, `PER-*`, `POL-*`, or `design/*` specifications.
+4. **Bundled Skills Omit `DOM-*`, `PER-*`, `POL-*`, and `design/*` from Co-Evolution & Self-Review Checklists (`CNT-EIDOS-PLUGIN`)**:
+   * `eidos/SKILL.md` §4 (Workflow A, Step 3 "Co-Evolve Living Specs on Structural Changes") lists five rules focused exclusively on `CNT-*`, `CMP-*`, `CTR-*`, `CAP-*`, and `INV-*`/`DEC-*`.
+   * `eidos/SKILL.md` §5 (Stage 2 "Mandatory Autonomous Adversarial Gap Review") audits Requirements, Edge Cases, `CTR-*`, `INV-*`, and `DEC-*`, omitting `DOM-*`, `PER-*`, `POL-*`, and `design/*`.
+
+== Proposed Specification Changes
+
+=== 1. Surface Governance & Design Anchors in `eidos context` (`CMP-TIERED-CONTEXT-COMPRESSOR`, `CMP-FTS-QUERY-ENGINE`, `CAP-AGENT-001`)
+* **Capability & Policy Projection (`src/eidos/core/index/context.py`)**:
+  * In `_project_capability()`: for `guardrails` and `deep` tiers, include `file_path` and (when `not self._compact_prose`) `personas` (from `business.personas`), `policies` (from `business.policies`), and non-empty `experience` lists (`clients`, `design_systems`, `screens`, `flows`, `ui_components`).
+  * In `_project_policy()`: include `category` (all non-anchor tiers) and `file_path` (in `guardrails` and `deep` tiers) alongside `id`, `title`, and `severity`.
+  * In `_project_component()`: for `guardrails` and `deep` tiers (when `not self._compact_prose`), include `domain_path` (resolved `file_path` of the container/component's `DOM-*` spec) and `design` (bound `CLT-*` / `DS-*` IDs) when present, and render them compactly in `ArchitecturalContextSlice.to_markdown()`.
+  * In `_compress_verbose_fields_in_place()` and `_item_md_and_json_upper_bounds()`: account for the new fields and strip optional `personas`/`experience`/`domain_path`/`design` metadata under token-budget pressure before evicting any direct entity matches, preserving both `anchor <= 300`, `guardrails <= 1000`, and `deep <= 2500` token ceilings (`INV-CONTEXT-TOKEN-COMPRESSION`) and the `>= 60.0%` guardrails token-savings floor (`test_spike_c_tiered_context_compression`).
+* **Task-Prompt Retrieval Expansion Without Top-K Displacement (`src/eidos/core/index/query.py`, `src/eidos/core/index/context.py`)**:
+  * Add `product/persona`, `design/client`, `design/ui-component`, `design/screen`, and `design/flow` to `TASK_SLICE_ENTITY_TYPES`.
+  * To prevent `PER-*`, `SCR-*`, `UIC-*`, `FLOW-*`, or `CLT-*` hits from displacing direct `CNT-*`, `CMP-*`, `CTR-*`, `CAP-*`, `POL-*`, `INV-*`, `DOM-*`, or `DS-*` matches from the primary top-8 FTS/Hybrid candidate slots, preserve the primary top-8 candidate allocation for core sliceable types while expanding matched `PER-*`, `CLT-*`, `UIC-*`, `SCR-*`, and `FLOW-*` entities via canonical knowledge-graph edges (`serves_persona`, `delivered_by`, `implemented_by`, `has_screen`, `has_flow`, `styled_by`, and `styles_container`) into `expanded_cnt_ids` and `matched_capabilities`, recording the matched ID in `matched_reasons`.
+
+=== 2. Tighten Design Subgraph Drift & Remediation Guidance (`CMP-DRIFT-DETECTOR`, `CNT-EIDOS-VCS`, `CAP-VCS-001`)
+* **Parent Container & Capability Experience Traversal (`src/eidos/vcs/structural.py`)**:
+  * Update `_resolve_bound_design_ids(idx, cf, owner_ids)` so that in addition to `find_entities_by_symbol(cf)` (`inferred_path`) and 1-hop neighbors of `owner_ids`, it walks 2-hop paths from `CMP-*` -> parent `CNT-*` (`part_of` / `contains_component`) -> `CLT-*`/`DS-*` (`implemented_by` / `styled_by` / `styles_container`) as well as 1-hop `CAP-*` (`implements`) -> `CLT-*`/`DS-*` (`delivered_by` / `experience.clients` / `experience.design_systems`). This ensures newly added/unindexed frontend files under a `CMP-*` directory and capabilities bound via `experience` always resolve their governing `CLT-*`/`DS-*` subgraph.
+* **Require Design Subgraph Co-Evolution for `ui_contract` Changes (`src/eidos/vcs/drift.py`, `DEC-VCS-STRICT-UI-CONTRACT-DESIGN-DRIFT`)**:
+  * Remove the `if cat == "ui_contract": satisfying_paths |= owner_specs_by_file...` bypass in `detect_drift()`. Both `token` and `ui_contract` changes on files belonging to a container with a bound `CLT-*` or `DS-*` subgraph must substantively update at least one spec in that design subgraph (`tokens.json`, `DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, or `FLOW-*`) or be declared in an active SpecDelta.
+* **Actionable Remediation Suggestions (`src/eidos/vcs/report.py`)**:
+  * Enhance `build_drift_remediation_and_summary` so component and design drift bullets remind the agent to co-evolve bound `DOM-*`, `CAP-*` (`personas` / `policies`), and `design/*` (`UIC-*`, `SCR-*`, `FLOW-*`, `CLT-*`, `DS-*`) specifications when structural/UI contracts change.
+
+=== 3. Co-Evolution & Self-Review Checklists in Bundled Skills (`CNT-EIDOS-PLUGIN`)
+* **`assets/plugin_reference/skills/eidos/SKILL.md`** (in-place edit within the `2,050`-word ceiling of `INV-PLUGIN-SKILL-SIZE-CEILING`; current body is `2,011` words, leaving `39` words of headroom—tighten surrounding phrasing in place):
+  * In **§4 Workflow A, Step 3 ("Co-Evolve Living Specs on Structural Changes")**, add concise bullets for:
+    ** **Design token, UI component, screen/route, or user flow change**: Update the bound `design/*` spec (`tokens.json`, `DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`)—`CMP-*`/`CNT-*` edits alone do not satisfy `design_drift`.
+    ** **Domain concept, actor role, or cross-cutting policy change**: Update ubiquitous language in `DOM-*`, actor definitions/links in `PER-*` / `CAP-*.business.personas`, or governance rules in `POL-*` / `CAP-*.business.policies`.
+  * In **§5 Stage 2 ("Mandatory Autonomous Adversarial Gap Review")**, add a 6th checklist item:
+    ** **6. Domain, Persona, Policy & Design Parity (`DOM-*`, `PER-*`, `POL-*`, `design/*`)**: Did new domain terms, user roles, cross-cutting rules, or UI tokens/components/screens/flows get reflected in `eidos/domains/`, `eidos/personas/`, `eidos/policies/`, and `eidos/design/`?
+* **`assets/plugin_reference/skills/eidos-plan/SKILL.md`** (in-place edit within the `1,650`-word ceiling; current body is `1,605` words, leaving `45` words of headroom):
+  * In **§3 ("Staff Systems Architect 5-Dimension Review")**, explicitly include `DOM-*` ubiquitous language, `PER-*` persona links, and `design/*` (`DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`) parity alongside `POL-*` and `INV-*`.
+* **`assets/plugin_reference/agents-md/block.md`** (within the `250`-word template ceiling and `320`-word rendered ceiling):
+  * Mention `domains`, `policies`, and `design` in the `eidos context` bullet so the always-loaded `AGENTS.md` block primes agents on all specification layers.
+
+== Implementation Plan
+1. **Context Slicer & FTS Task Expansion (`src/eidos/core/index/query.py`, `src/eidos/core/index/context.py`)**:
+   * Extend `TASK_SLICE_ENTITY_TYPES` in `query.py` to include `product/persona`, `design/client`, `design/ui-component`, `design/screen`, and `design/flow`.
+   * Update `build_tiered_context_slice()` in `context.py` to expand matched `PER-*` and `design/*` entities to their bound capabilities and containers, resolve `domain_path` and bound `design` IDs onto matched components, and project `file_path`, `personas`, `policies`, and `experience` on capabilities and `file_path`/`category` on policies in `guardrails` and `deep` tiers.
+   * Update `_compress_verbose_fields_in_place()` and `_item_md_and_json_upper_bounds()` to preserve strict token budgets across `anchor`, `guardrails`, and `deep` tiers.
+2. **Design Drift & Remediation Tightening (`src/eidos/vcs/structural.py`, `src/eidos/vcs/drift.py`, `src/eidos/vcs/report.py`)**:
+   * Update `_resolve_bound_design_ids()` in `structural.py` to walk `CMP-*` -> parent `CNT-*` -> `CLT-*`/`DS-*` as well as 1-hop `CAP-*.experience` design links.
+   * Remove the `cat == "ui_contract"` owner-spec bypass in `detect_drift()` (`drift.py`) so `ui_contract` edits on bound containers require a substantive `design/*` spec update or active SpecDelta target.
+   * Update remediation formatting in `report.py`.
+3. **Bundled Skills & Canonical `AGENTS.md` Block (`assets/plugin_reference/`)**:
+   * Tighten and update `assets/plugin_reference/skills/eidos/SKILL.md`, `assets/plugin_reference/skills/eidos-plan/SKILL.md`, and `assets/plugin_reference/agents-md/block.md` in place without exceeding ` _SKILL_WORD_CEILINGS` (`2,050` / `1,650` / `250` words), then run `eidos plugin update` to synchronize `.agents/plugins/eidos/` and root `AGENTS.md`.
+4. **Living Specifications (`eidos/`)**:
+   * Update `eidos/architecture/components/tiered-context-compressor.adoc` (`CMP-TIERED-CONTEXT-COMPRESSOR`), `eidos/architecture/components/fts-query-engine.adoc` (`CMP-FTS-QUERY-ENGINE`), `eidos/architecture/containers/vcs.adoc` (`CNT-EIDOS-VCS` + `DEC-VCS-STRICT-UI-CONTRACT-DESIGN-DRIFT`), `eidos/architecture/components/drift-detector.adoc` (`CMP-DRIFT-DETECTOR`), `eidos/architecture/containers/plugin.adoc` (`CNT-EIDOS-PLUGIN`), `eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc` (`CAP-AGENT-001` v1.11.0), and `eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc` (`CAP-VCS-001` v1.11.0).
+5. **Automated Tests & Verification (`tests/`)**:
+   * Add assertions in `tests/test_context.py` and `tests/test_graph_index.py` verifying `file_path`, `personas`, `experience`, `domain_path`, and `design` projection in `guardrails`/`deep` slices and `PER-*`/`SCR-*`/`UIC-*`/`FLOW-*` task query expansion within token budgets.
+   * Add assertions in `tests/test_drift.py` verifying that `CMP-*`-owned frontend files resolve their parent `CNT-*`'s bound `CLT-*`/`DS-*` and that `ui_contract` changes on bound containers fail `design_drift` when only `CMP-*`/`CNT-*` is edited (requiring a `design/*` spec update).
+   * Verify `tests/test_plugin.py::test_bundled_skill_size_ceilings` and `test_bundled_skill_cli_parity` pass.
+   * Run `eidos delta verify DLT-2026-125 --json`, `eidos drift --uncommitted --json`, and `eidos delta apply DLT-2026-125`.

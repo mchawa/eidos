@@ -13,8 +13,8 @@ source_path: src/eidos/core/index/context.py
 Extracts rank-ordered, token-budgeted architectural subgraph slices (`ArchitecturalContextSlice`) across `anchor` (`<=300` tokens), `guardrails` (`<=1000` tokens), and `deep` (`<=2500` tokens) tiers in both Markdown and `orjson` JSON formats for AI coding agents.
 
 == Key Responsibilities & Collaborators
-* **Multi-Entry Context Slicing**: Resolves context queries by file path (`--file`), entity ID (`--component`), or natural-language task (`--task`) using `CMP-FTS-QUERY-ENGINE` and `CMP-GRAPH-TRAVERSAL-ENGINE`, expanding matched containers, standalone components, capabilities, contracts, invariants, and policies.
-* **Calibrated Token Budgeting & Two-Stage Eviction**: Estimates tokens using structure-aware calibration (`~3.0` chars/token for code/YAML/JSON vs. `~4.0` chars/token for prose) and applies progressive prose compression on invariant rules and `DEC-*` rationale *before* evicting 1-hop neighbors or tail matches.
+* **Multi-Entry Context Slicing**: Resolves context queries by file path (`--file`), entity ID (`--component`), or natural-language task (`--task`) using `CMP-FTS-QUERY-ENGINE` and `CMP-GRAPH-TRAVERSAL-ENGINE`, expanding matched containers, standalone components, capabilities, contracts, invariants, policies, personas, and design entities (`CLT-*`, `UIC-*`, `SCR-*`, `FLOW-*`), and projecting compact `domain_path`, bound `design` (`CLT-*`/`DS-*`) pointers, capability `file_path`/`personas`/`policies`/`experience`, and policy `category`/`file_path` in `guardrails` and `deep` tiers.
+* **Calibrated Token Budgeting & Two-Stage Eviction**: Estimates tokens using structure-aware calibration (`~3.0` chars/token for code/YAML/JSON vs. `~4.0` chars/token for prose) and applies two-stage progressive compression (`_compact_prose` first, then `_compact_metadata` if still over budget) *before* evicting 1-hop neighbors or tail matches.
 
 == Public Surface
 * `ArchitecturalContextSlice`, `TieredContextSlice`

@@ -87,6 +87,7 @@ def test_drift_detection_code_without_specs(monkeypatch):
     assert result.is_clean is False
     assert result.workflow_mode == "direct"
     assert len(result.remediation_suggestions) > 0
+    assert any("co-evolve bound DOM-*, PER-*, POL-*, and design/* specs" in r for r in result.remediation_suggestions)
     assert "DRIFT DETECTED" in result.summary_markdown
 
 
@@ -972,6 +973,37 @@ def test_graph_scoped_design_token_drift(monkeypatch):
     res = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
     assert THEME in res.uncovered_design_files
     assert any("Design System Drift Detected" in r for r in res.remediation_suggestions)
+
+    # 5. DEC-VCS-STRICT-UI-CONTRACT-DESIGN-DRIFT: UI contract change on a bound container (CNT-EIDOS-PORTAL)
+    #    is NOT satisfied by editing only the technical container spec; requires a bound design subgraph spec update.
+    ui_file = "src/eidos/portal/frontend/src/components/PortalReader.tsx"
+    old_tsx = "export interface PortalReaderProps {\n  docId: string;\n}\nexport function PortalReader(p: PortalReaderProps) { return null; }\n"
+    new_tsx = "export interface PortalReaderProps {\n  docId: string;\n  compactMode?: boolean;\n}\nexport function PortalReader(p: PortalReaderProps) { return null; }\n"
+
+    def _ui_ver_fn(repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None):
+        if rel_path == ui_file:
+            return (old_tsx, new_tsx)
+        return _synthetic_substantive_versions(
+            repo_root, rel_path, base_ref=base_ref, head_ref=head_ref, uncommitted=uncommitted, merge_base=merge_base
+        )
+
+    _patch_versions(monkeypatch, _ui_ver_fn)
+    _mock_diff(monkeypatch, [ui_file, "eidos/architecture/containers/portal.adoc"])
+    res_ui_uncovered = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+    assert res_ui_uncovered.drift_detected is True
+    assert ui_file in res_ui_uncovered.uncovered_design_files
+
+    _mock_diff(
+        monkeypatch,
+        [
+            ui_file,
+            "eidos/architecture/containers/portal.adoc",
+            "eidos/design/systems/core/components/portal-reader.adoc",
+        ],
+    )
+    res_ui_covered = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+    assert res_ui_covered.uncovered_design_files == []
+    assert res_ui_covered.drift_detected is False
 
 
 def test_planned_mode_design_target_satisfies_design_drift(monkeypatch):
