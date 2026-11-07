@@ -193,8 +193,9 @@ flowchart LR
     * Deleted and added files are paired by content and public symbol overlap to recognize file moves/renames without relying on Git rename heuristics.
     * For modified code files across Python, TS/JS, Go, Rust, Java, Kotlin, C/C++, C#, Ruby, PHP, Swift, Vue, and Svelte, `AstSymbolIndexer` compares public AST declarations and signatures between the baseline version and current working tree.
     * If a code change only touches internal implementation comments, docstrings, or function-body-local logic without adding/modifying/removing public symbols or files, Eidos classifies it as a non-structural (`body_only_code_files`) edit by default—while still mapping all modified `code_files` into `touched_components` and supporting `--strict` (`detect_drift(..., strict=True)`) to enforce 1-hop spec or bound test co-evolution on body-only edits (`DLT-2026-113`).
-4. **Strict Path-Boundary Ownership Mapping**:
+4. **Strict Path-Boundary Ownership Mapping & Monorepo Sub-Project Isolation (`DLT-2026-123`)**:
     * Every modified source file is mapped to its owning C4 component (`CMP-*` via `source_path`) and C4 container (`CNT-*` via `source_path`).
+    * **Monorepo Sub-Project Scoping**: In monorepos with independent sub-project `eidos/` directories (e.g. `packages/api/eidos/`), `discover_nested_subproject_roots` isolates each sub-project's `source_path`, `test_binding`, knowledge graph index, and Git diff evaluation strictly to its own sub-project boundary without cross-project bleed.
     * **Unowned Code Detection**: If a structural code file is added or modified outside any declared `source_path`, `eidos drift` flags it as **unowned code drift** unless claimed by a container/component or covered by a substantive root `system.adoc` / `system-architecture.adoc` update.
 5. **Substantive Spec Diff & Boundary-Aware Anchoring (`DLT-2026-081`, `DLT-2026-113`)**:
     * To prevent agents or developers from bypassing drift checks by adding a blank line or comment to a `.adoc` file, `StructuralChangeInspector.is_substantive()` normalizes specification diffs by stripping AsciiDoc comments (`//`), YAML comments (`#`), and whitespace.

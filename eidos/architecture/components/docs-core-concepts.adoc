@@ -13,7 +13,7 @@ source_path: docs/concepts
 Documents Eidos's architectural foundations, execution pipeline, 16-schema glossary, SQLite/FTS5 knowledge graph, SpecDelta mutation lifecycle, polyglot test-bound invariants, discovery explorations, and W3C design systems (`docs/concepts/`).
 
 == Key Responsibilities & Collaborators
-* **Conceptual & Reference Architecture Guides**: Explains the 7-container architecture and 4-stage execution loop (`how-eidos-works.md`), Living Specifications (`living-specs.md`), the 10-table SQLite Knowledge Graph (`architectural-index.md`), SpecDeltas (`specdeltas.md`), Invariants (`invariants.md`), Explorations (`explorations.md`), Design Systems (`design.md`), and the canonical 16-schema reference (`schema-glossary.md`).
+* **Conceptual & Reference Architecture Guides**: Explains the 7-container architecture, 4-stage execution loop, and monorepo sub-project boundary isolation (`how-eidos-works.md`), Living Specifications (`living-specs.md`), the 11-table SQLite Knowledge Graph (`architectural-index.md`), SpecDeltas (`specdeltas.md`), Invariants (`invariants.md`), Explorations (`explorations.md`), Design Systems (`design.md`), and the canonical 16-schema reference (`schema-glossary.md`).
 
 == Public Surface
 * `docs/concepts/how-eidos-works.md`, `docs/concepts/living-specs.md`, `docs/concepts/architectural-index.md`

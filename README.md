@@ -191,6 +191,7 @@ eidos/
   * [`POL-002: Invariant Test Enforcement`](eidos/policies/POL-002-invariant-test-enforcement.adoc)
   * [`POL-003: Continuous Documentation Sync`](eidos/policies/POL-003-continuous-documentation-sync.adoc)
   * [`POL-004: Zero AI Call Dependency`](eidos/policies/POL-004-zero-ai-call-dependency.adoc)
+  * [`POL-005: Statement Test Coverage (>90%)`](eidos/policies/pol-005-statement-test-coverage.adoc)
 * **Technical Architecture**:
   * [`Global System Architecture`](eidos/architecture/system-architecture.adoc)
   * [`Containers Directory`](eidos/architecture/containers/)

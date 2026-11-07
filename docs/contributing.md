@@ -43,7 +43,7 @@ uv run eidos plugin validate
 
 ### 3. Run the Test Suite
 
-All tests must pass with full coverage:
+All tests must pass and satisfy `POL-005-STATEMENT-TEST-COVERAGE` (`>90%` statement coverage for every Python file under `src/eidos/`, with `fail_under = 90` enforced in `pyproject.toml`):
 
 ```bash
 uv run pytest -v --cov=src/eidos --cov-report=term-missing
@@ -54,7 +54,7 @@ uv run pytest -v --cov=src/eidos --cov-report=term-missing
 We use [Ruff](https://github.com/astral-sh/ruff) for linting and formatting:
 
 ```bash
-uv run ruff check .
+uv run ruff check src/ tests/
 uv run ruff format --check .
 ```
 

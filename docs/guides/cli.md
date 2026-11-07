@@ -10,7 +10,7 @@ Commands are semantically organized into six functional panels in CLI help outpu
 1. **Setup & Workspace**: Environment information, versioning, workspace diagnostics, and repository bootstrapping.
 2. **Governance & Verification**: Schema validation and spec-to-code drift detection.
 3. **Knowledge Graph & AI Context**: Subgraph context extraction and SQLite/FTS5 knowledge graph maintenance.
-4. **Living Catalog & Mutations**: Specifications, C4 component lifecycle management (`eidos spec component`), and SpecDeltas.
+4. **Living Catalog & Mutations**: Specifications (`eidos spec`) and SpecDeltas (`eidos delta`).
 5. **Living Web Portal**: Local interactive web portal preview server and static site compilation.
 6. **Agent Ecosystem & Plugins**: Multi-agent plugin installation, verification, updates, and lifecycle hooks conforming to `agent-plugins.org`.
 
@@ -54,18 +54,19 @@ Options:
 ---
 
 ### `eidos init`
-Initialize a Git repository with an Eidos living specification skeleton, tracking empty directories with `.gitkeep` files, self-contained `eidos/.gitignore`, and immediate validation. Note that `eidos init` initializes specifications; agent plugins are installed separately via `eidos plugin install`.
+Initialize a Git repository (or an independent sub-project inside a monorepo) with an Eidos living specification skeleton, tracking empty directories with `.gitkeep` files, self-contained `eidos/.gitignore`, and immediate validation. Passing either `<repo>` or `<repo>/eidos` initializes `<repo>/eidos` directly without nesting `eidos/eidos`. Note that `eidos init` initializes specifications; agent plugins are installed separately via `eidos plugin install`.
 
 ```bash
 # Initialize living specification skeleton in current repository
 eidos init
 
-# Initialize at a custom path:
+# Initialize at a custom repository or monorepo sub-project path:
 eidos init /path/to/repo --title "My System"
+eidos init packages/api --title "API Service"
 ```
 
 Options:
-* `PATH`: Target directory to initialize (default: current working directory `.`).
+* `PATH`: Target project or `eidos/` directory to initialize (default: current working directory `.`).
 * `--title, -t TEXT`: Human-readable display title.
 * `--force, -f`: Overwrite existing files if present (preserving an existing authored `system.adoc` when `--title` is omitted).
 
