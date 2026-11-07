@@ -180,11 +180,7 @@ def _structural_addition_for(
         if (other_cf == cf or Path(other_cf).parent == cf_parent) and smap.supports(other_cf):
             for k in smap.get(other_cf, 1):
                 still_present.add(diff.qualified_name(k))
-    removed_keys = [
-        k
-        for k in getattr(diff, "removed", ())
-        if diff.qualified_name(k) not in still_present
-    ]
+    removed_keys = [k for k in getattr(diff, "removed", ()) if diff.qualified_name(k) not in still_present]
     removed_names = [diff.qualified_name(k) for k in removed_keys]
     if not diff.added and not removed_names:
         return None

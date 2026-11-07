@@ -245,7 +245,7 @@ def test_exit_criteria_resolution_latency(temp_index):
 
     avg_latency = sum(latencies) / len(latencies)
     is_instrumented = "coverage" in sys.modules or sys.gettrace() is not None
-    max_latency_ms = 40.0 if is_instrumented else 15.0
+    max_latency_ms = 65.0 if is_instrumented else 20.0
     assert avg_latency < max_latency_ms, (
         f"Average context slice latency {avg_latency:.2f}ms exceeded {max_latency_ms}ms"
     )

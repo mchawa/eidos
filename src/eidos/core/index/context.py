@@ -616,11 +616,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 out["file_path"] = cap["file_path"]
             if not self._compact_metadata and (self.tier == "deep" or not self._compact_prose or index_in_slice == 0):
                 biz = cap.get("business") if isinstance(cap.get("business"), dict) else {}
-                max_refs = (
-                    1
-                    if (self.tier == "guardrails" and self._compact_prose)
-                    else 10
-                )
+                max_refs = 1 if (self.tier == "guardrails" and self._compact_prose) else 10
                 personas = [str(p) for p in (biz.get("personas") or []) if p][:max_refs]
                 if personas:
                     out["personas"] = personas
@@ -855,7 +851,6 @@ class TieredContextSlice(ArchitecturalContextSlice):
         if not (has_lb_sig and self.__dict__.get("_md_ok")):
             md_text = self.to_markdown()
             md_len = len(md_text)
-            self._prune_matched_reasons()
             self.__dict__["_md_char_lb"] = md_len
             self.__dict__["_md_lb_sig"] = sig[1:]
             if max(1, md_len // 4) > budget:
@@ -871,7 +866,6 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 return True
             self.__dict__["_md_ok"] = True
         else:
-            self._prune_matched_reasons()
             self.__dict__["_md_lb_sig"] = sig[1:]
         d = self.to_dict()
         # Include 24-byte headroom for post-enforcement query_latency_ms and token_estimate float/int formatting
@@ -891,6 +885,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
     ) -> None:
         """Enforce rank-ordered token budget truncation for the requested tier across Markdown and JSON (DLT-2026-047)."""
         budget = TIER_TOKEN_BUDGETS.get(self.tier, 1000)
+        self._prune_matched_reasons()
         self._invalidate_budget_cache()
 
         if self.tier == "anchor":
@@ -1343,13 +1338,13 @@ def build_tiered_context_slice(
         raw_matches = execute_fts_query(
             conn,
             text=task,
-            limit=16,
+            limit=12,
             include_types=TASK_SLICE_ENTITY_TYPES,
             use_semantic=use_semantic,
             eidos_dir=getattr(index, "eidos_dir", None),
         )
         primary_hits = [m for m in raw_matches if m["type"] in PRIMARY_TASK_SLICE_ENTITY_TYPES][:8]
-        if len(primary_hits) < 8 and len(raw_matches) >= 16:
+        if len(primary_hits) < 8 and len(raw_matches) >= 12:
             seen_primary = {m["id"] for m in primary_hits}
             for m in execute_fts_query(
                 conn,
@@ -1684,15 +1679,17 @@ def build_tiered_context_slice(
             matched_policies[row["id"]] = p_data
 
     # 10. Invariants from governing policies
-    for pid in list(matched_policies.keys()):
+    if matched_policies and tier != "anchor":
+        pol_ids = list(matched_policies.keys())
+        ph_pol = ",".join("?" for _ in pol_ids)
         cursor.execute(
-            """
+            f"""
             SELECT id, title, data_json FROM entities
             WHERE type = 'invariant' AND id IN (
-                SELECT target_id FROM edges WHERE source_id = ? AND rel_type = 'asserts'
+                SELECT target_id FROM edges WHERE source_id IN ({ph_pol}) AND rel_type = 'asserts'
             );
             """,
-            (pid,),
+            tuple(pol_ids),
         )
         for row in cursor.fetchall():
             inv_data = orjson.loads(row["data_json"])
@@ -1715,61 +1712,74 @@ def build_tiered_context_slice(
         if dom_id:
             comp_domain_ids.add(dom_id)
 
-    domain_path_by_id: dict[str, str] = {}
-    if comp_domain_ids:
-        ph_dom = ",".join("?" for _ in comp_domain_ids)
-        for row in cursor.execute(
-            f"SELECT id, file_path FROM entities WHERE type = 'product/domain' AND id IN ({ph_dom});",
-            tuple(comp_domain_ids),
-        ).fetchall():
-            if row["file_path"]:
-                domain_path_by_id[row["id"]] = row["file_path"]
+    if tier != "anchor" and matched_components:
+        domain_path_by_id: dict[str, str] = {}
+        if comp_domain_ids:
+            ph_dom = ",".join("?" for _ in comp_domain_ids)
+            for row in cursor.execute(
+                f"SELECT id, file_path FROM entities WHERE type = 'product/domain' AND id IN ({ph_dom});",
+                tuple(comp_domain_ids),
+            ).fetchall():
+                if row["file_path"]:
+                    domain_path_by_id[row["id"]] = row["file_path"]
 
-    design_cache_by_cnt: dict[str, list[dict[str, str]]] = {}
-    for cid, comp_entry in matched_components.items():
-        dom_id = str(comp_entry.get("domain") or "").strip()
-        if dom_id and dom_id in domain_path_by_id:
-            comp_entry.setdefault("domain_path", domain_path_by_id[dom_id])
-
-        parent_cnt = str(comp_entry.get("container") or "").strip()
-        scope_ids = tuple(sorted({cid, *([parent_cnt] if parent_cnt else [])}))
-        cache_key = ",".join(scope_ids)
-        if cache_key not in design_cache_by_cnt:
-            ph_sc = ",".join("?" for _ in scope_ids)
-            design_rows = cursor.execute(
+        all_scope_ids = sorted(
+            {
+                sid
+                for cid, comp_entry in matched_components.items()
+                for sid in (cid, str(comp_entry.get("container") or "").strip())
+                if sid
+            }
+        )
+        design_by_scope: dict[str, dict[str, dict[str, str]]] = {}
+        if all_scope_ids:
+            ph_sc = ",".join("?" for _ in all_scope_ids)
+            for r in cursor.execute(
                 f"""
-                SELECT DISTINCT e.id, e.type, e.file_path
-                FROM entities e
-                WHERE e.type IN ('design/client', 'design/system')
-                  AND (
-                      e.id IN (
-                          SELECT source_id FROM edges
-                          WHERE target_id IN ({ph_sc})
-                            AND rel_type IN ('implemented_by', 'styled_by', 'styles_container', 'delivered_by')
-                      )
-                      OR e.id IN (
-                          SELECT target_id FROM edges
-                          WHERE source_id IN ({ph_sc})
-                            AND rel_type IN ('implemented_by', 'styled_by', 'styles_container', 'delivered_by')
-                      )
-                      OR e.id IN (
-                          SELECT ed2.target_id FROM edges ed1
-                          JOIN edges ed2 ON ed2.source_id = ed1.source_id
-                          WHERE ed1.target_id IN ({ph_sc}) AND ed1.rel_type = 'implemented_by'
-                            AND ed2.rel_type = 'styled_by'
-                      )
-                  )
+                SELECT ed.target_id AS scope_id, e.id, e.type, e.file_path
+                FROM edges ed
+                JOIN entities e ON e.id = ed.source_id
+                WHERE ed.target_id IN ({ph_sc})
+                  AND ed.rel_type IN ('implemented_by', 'styled_by', 'styles_container', 'delivered_by')
+                  AND e.type IN ('design/client', 'design/system')
+                UNION
+                SELECT ed.source_id AS scope_id, e.id, e.type, e.file_path
+                FROM edges ed
+                JOIN entities e ON e.id = ed.target_id
+                WHERE ed.source_id IN ({ph_sc})
+                  AND ed.rel_type IN ('implemented_by', 'styled_by', 'styles_container', 'delivered_by')
+                  AND e.type IN ('design/client', 'design/system')
+                UNION
+                SELECT ed1.target_id AS scope_id, e.id, e.type, e.file_path
+                FROM edges ed1
+                JOIN edges ed2 ON ed2.source_id = ed1.source_id
+                JOIN entities e ON e.id = ed2.target_id
+                WHERE ed1.target_id IN ({ph_sc})
+                  AND ed1.rel_type = 'implemented_by'
+                  AND ed2.rel_type = 'styled_by'
+                  AND e.type IN ('design/client', 'design/system')
                 ORDER BY e.id;
                 """,
-                scope_ids * 3,
-            ).fetchall()
-            design_cache_by_cnt[cache_key] = [
-                {"id": r["id"], "type": r["type"], "file_path": r["file_path"] or ""}
-                for r in design_rows
-                if r["id"]
-            ]
-        if design_cache_by_cnt[cache_key]:
-            comp_entry.setdefault("design", design_cache_by_cnt[cache_key])
+                all_scope_ids * 3,
+            ).fetchall():
+                if r["id"]:
+                    design_by_scope.setdefault(r["scope_id"], {})[r["id"]] = {
+                        "id": r["id"],
+                        "type": r["type"],
+                        "file_path": r["file_path"] or "",
+                    }
+
+        for cid, comp_entry in matched_components.items():
+            dom_id = str(comp_entry.get("domain") or "").strip()
+            if dom_id and dom_id in domain_path_by_id:
+                comp_entry.setdefault("domain_path", domain_path_by_id[dom_id])
+            parent_cnt = str(comp_entry.get("container") or "").strip()
+            merged_design: dict[str, dict[str, str]] = {}
+            for sid in (cid, parent_cnt):
+                if sid and sid in design_by_scope:
+                    merged_design.update(design_by_scope[sid])
+            if merged_design:
+                comp_entry.setdefault("design", [merged_design[k] for k in sorted(merged_design)])
 
     # Assemble and rank-order lists so token-budget truncation retains highest-priority entities first
     primary_set = set(primary_cids)
@@ -1853,34 +1863,47 @@ def build_tiered_context_slice(
     )
 
     ordered_invs: list[dict[str, Any]] = []
-    seen_inv_ids: set[str] = set()
-    for iid in direct_inv_ids:
-        if iid in matched_invariants and iid not in seen_inv_ids:
-            ordered_invs.append(matched_invariants[iid])
-            seen_inv_ids.add(iid)
-    for iid in sorted(primary_comp_inv_ids):
-        if iid in matched_invariants and iid not in seen_inv_ids:
-            ordered_invs.append(matched_invariants[iid])
-            seen_inv_ids.add(iid)
+    if tier != "anchor":
+        max_invs = max(len(direct_inv_ids) + 12, 16) if tier == "guardrails" else 1000
+        seen_inv_ids: set[str] = set()
+        for iid in direct_inv_ids:
+            if iid in matched_invariants and iid not in seen_inv_ids:
+                ordered_invs.append(matched_invariants[iid])
+                seen_inv_ids.add(iid)
+        for iid in sorted(primary_comp_inv_ids):
+            if len(ordered_invs) >= max_invs:
+                break
+            if iid in matched_invariants and iid not in seen_inv_ids:
+                ordered_invs.append(matched_invariants[iid])
+                seen_inv_ids.add(iid)
 
-    for source_list in (sorted_comps, sorted_caps, sorted_pols):
-        inv_lists: list[list[str]] = []
-        for src in source_list:
-            raw_invs = list((src.get("technical") or {}).get("invariants") or src.get("invariants") or [])
-            inv_lists.append([inv.get("id") for inv in raw_invs if isinstance(inv, dict) and inv.get("id")])
-        max_len = max((len(lst) for lst in inv_lists), default=0)
-        for idx in range(max_len):
-            for lst in inv_lists:
-                if idx < len(lst):
-                    iid = lst[idx]
-                    if iid in matched_invariants and iid not in seen_inv_ids:
-                        ordered_invs.append(matched_invariants[iid])
-                        seen_inv_ids.add(iid)
+        for source_list in (sorted_comps, sorted_caps, sorted_pols):
+            if len(ordered_invs) >= max_invs:
+                break
+            inv_lists: list[list[str]] = []
+            for src in source_list:
+                raw_invs = list((src.get("technical") or {}).get("invariants") or src.get("invariants") or [])
+                inv_lists.append([inv.get("id") for inv in raw_invs if isinstance(inv, dict) and inv.get("id")])
+            max_len = max((len(lst) for lst in inv_lists), default=0)
+            for idx in range(max_len):
+                if len(ordered_invs) >= max_invs:
+                    break
+                for lst in inv_lists:
+                    if idx < len(lst):
+                        iid = lst[idx]
+                        if iid in matched_invariants and iid not in seen_inv_ids:
+                            ordered_invs.append(matched_invariants[iid])
+                            seen_inv_ids.add(iid)
+                            if len(ordered_invs) >= max_invs:
+                                break
 
-    for iid in sorted(matched_invariants.keys()):
-        if iid not in seen_inv_ids:
-            ordered_invs.append(matched_invariants[iid])
-            seen_inv_ids.add(iid)
+        if len(ordered_invs) < max_invs:
+            for iid in sorted(matched_invariants.keys()):
+                if iid not in seen_inv_ids:
+                    ordered_invs.append(matched_invariants[iid])
+                    seen_inv_ids.add(iid)
+                    if len(ordered_invs) >= max_invs:
+                        break
 
     slice_obj = TieredContextSlice(
         tier=tier,

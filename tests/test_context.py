@@ -424,8 +424,7 @@ def test_inv_context_token_compression():
                 "invariants": [
                     {
                         "id": "RULE-PRIM-1",
-                        "rule": "Sentence one of primary invariant rule. "
-                        + ("Extra prose detail for primary. " * 45),
+                        "rule": "Sentence one of primary invariant rule. " + ("Extra prose detail for primary. " * 45),
                     }
                 ],
                 "decisions": [
