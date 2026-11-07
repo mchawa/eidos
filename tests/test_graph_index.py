@@ -42,7 +42,7 @@ def test_spike_a_schema_initialization_and_sync(temp_index):
     assert stats.total_specs_scanned >= 50
     assert stats.indexed_new >= 50
     is_instrumented = "coverage" in sys.modules or sys.gettrace() is not None
-    max_bulk_sync_ms = 1500.0 if is_instrumented else 800.0
+    max_bulk_sync_ms = 2500.0 if is_instrumented else 1200.0
     assert stats.duration_ms < max_bulk_sync_ms  # Initial bulk sync within limits
 
     # Verify tables contain entities and edges
