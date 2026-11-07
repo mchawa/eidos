@@ -87,6 +87,13 @@ markers = [
     "invariant: Architectural invariant verification marker",
 ]
 
+[tool.coverage.run]
+source = ["src/eidos"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+
 [tool.ruff]
 line-length = 120
 target-version = "py311"

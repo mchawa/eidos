@@ -20,4 +20,4 @@ Exposes the `eidos init` CLI command for bootstrapping repositories with the liv
 * `init_cmd(path: Path, title: str | None, force: bool) -> None`
 
 == Design Constraints & Operational Notes
-* **Safe Default Execution**: Exits with code `1` if `eidos/` is already populated and `--force` is not supplied.
+* **Safe Default Execution**: Exits with code `1` if `eidos/` is already populated and `--force` is not supplied, and normalizes a target path ending in `eidos` to its parent project directory so `eidos init eidos` never nests `eidos/eidos/`.

@@ -1,0 +1,24 @@
+---
+type: product/policy
+id: POL-005-STATEMENT-TEST-COVERAGE
+title: "Minimum 90% Per-File Statement Test Coverage"
+status: active
+category: testing
+severity: blocking
+invariants:
+  - id: INV-POL-005-STATEMENT-TEST-COVERAGE
+    rule: "Every Python source module under src/eidos/ must maintain greater than 90% statement test coverage across the automated pytest suite, enforced by [tool.coverage] configuration in pyproject.toml and continuous test verification."
+    test_binding: "tests/test_validator.py::test_pol_005_statement_test_coverage"
+---
+= Policy: Minimum 90% Per-File Statement Test Coverage
+:toc: left
+
+== Rationale
+
+High aggregate repository coverage can mask poorly tested modules when large, heavily tested files offset low-coverage CLI entrypoints, parser edge cases, or VCS utilities. Enforcing a strict **>90% statement coverage floor per source file** across `src/eidos/` guarantees that every subsystem—CLI commands, living specification parser/validator, SQLite knowledge graph, SpecDelta lifecycle, Git drift detector, web portal, and agent plugin manager—is thoroughly exercised by automated regression tests.
+
+== Enforcement Rules
+
+1. **Per-File Statement Coverage Floor (>90%)**: Every Python module under `src/eidos/` must maintain strictly greater than 90% statement coverage (`>= 91%` in `pytest --cov=src/eidos` reports).
+2. **Declarative Coverage Configuration**: `pyproject.toml` must declare `[tool.coverage.run]` (`source = ["src/eidos"]`) and `[tool.coverage.report]` (`fail_under = 90`).
+3. **Automated Invariant Verification**: Verified by `tests/test_validator.py::test_pol_005_statement_test_coverage` bound to `INV-POL-005-STATEMENT-TEST-COVERAGE`.

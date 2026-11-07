@@ -3853,3 +3853,456 @@ def test_dlt_2026_114_cli_contract_positional_placeholder_alignment(tmp_path: Pa
     )
     rep_ok = validator.validate_directory(eidos_dir)
     assert rep_ok.is_clean, f"Unexpected errors: {rep_ok.broken_references}"
+
+
+def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
+    """Verify POL-005-STATEMENT-TEST-COVERAGE and INV-POL-005-STATEMENT-TEST-COVERAGE: policy spec, pyproject.toml coverage settings, and edge-case branches across core/cli/vcs/plugin modules."""
+    import importlib
+    import importlib.metadata
+    import subprocess
+    import sys
+    import tomllib
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.core.index.ast_indexer import get_ast_indexer
+    from eidos.core.index.graph_index import get_architectural_index
+    from eidos.core.index.sync import index_test_bindings
+    from eidos.core.lifecycle.audit import AuditEngine
+    from eidos.core.lifecycle.catalog import (
+        _format_yaml_scalar_value,
+        _set_frontmatter_scalar,
+        _split_yaml_inline_comment,
+        find_references_to_spec,
+        find_spec_by_id_or_path,
+    )
+    from eidos.core.lifecycle.delta_engine import _resolve_git_baseline_sha, verify_delta_mutations
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import (
+        _resolve_schema_node,
+        _synthesize_example_value,
+        create_spec,
+        list_specs,
+    )
+    from eidos.core.spec.models import SpecDocument
+    from eidos.core.spec.validator import ValidationReport
+    from eidos.core.spec.parser import (
+        YamlError,
+        _parse_spec_content,
+        parse_spec_file,
+        safe_dump_yaml,
+        safe_load_yaml,
+        split_frontmatter_and_body,
+    )
+    from eidos.plugin.installer import (
+        MANIFEST_FILENAME,
+        _copy_plugin_tree,
+        _ensure_codex_plugin_manifest,
+        _uninstall_from_manifest,
+        locate_plugin_bundle,
+    )
+    from eidos.vcs.diff import (
+        GitResolutionError,
+        _resolve_base_and_merge_base,
+        _scope_git_paths_to_subproject,
+    )
+    from eidos.vcs.drift import (
+        ChangedFilesClassification,
+        DriftCheckResult,
+        detect_drift,
+    )
+    from eidos.vcs.invariants import InvariantTrace
+
+    repo_root = Path(__file__).parent.parent
+
+    # 1. Verify POL-005-STATEMENT-TEST-COVERAGE specification and pyproject.toml [tool.coverage]
+    policy_path = repo_root / "eidos/policies/pol-005-statement-test-coverage.adoc"
+    assert policy_path.is_file()
+    pol_doc = parse_spec_file(policy_path)
+    assert pol_doc.doc_id == "POL-005-STATEMENT-TEST-COVERAGE"
+    assert pol_doc.doc_type == "product/policy"
+    assert pol_doc.frontmatter.get("status") == "active"
+    assert pol_doc.frontmatter.get("category") == "testing"
+    assert pol_doc.frontmatter.get("severity") == "blocking"
+    assert not validator.validate_document(pol_doc)
+
+    with open(repo_root / "pyproject.toml", "rb") as f:
+        pyproj = tomllib.load(f)
+    cov_cfg = pyproj.get("tool", {}).get("coverage", {})
+    assert cov_cfg.get("run", {}).get("source") == ["src/eidos"]
+    assert cov_cfg.get("report", {}).get("fail_under", 0) >= 90
+
+    # 2. src/eidos/__init__.py version fallback branches
+    import eidos
+
+    orig_ver_mod = sys.modules.get("eidos._version")
+    try:
+        monkeypatch.setitem(sys.modules, "eidos._version", None)
+        monkeypatch.setattr(importlib.metadata, "version", lambda _pkg: "9.9.9")
+        importlib.reload(eidos)
+        assert eidos.__version__ == "9.9.9"
+
+        def _raise_pkg_not_found(_pkg: str) -> str:
+            raise importlib.metadata.PackageNotFoundError(_pkg)
+
+        monkeypatch.setattr(importlib.metadata, "version", _raise_pkg_not_found)
+        importlib.reload(eidos)
+        assert eidos.__version__ == "0.1.0"
+    finally:
+        if orig_ver_mod is not None:
+            sys.modules["eidos._version"] = orig_ver_mod
+        importlib.reload(eidos)
+
+    # 3. src/eidos/core/spec/parser.py edge cases
+    assert safe_load_yaml(None) is None
+    assert safe_load_yaml(b"key: 42\n") == {"key": 42}
+    assert safe_load_yaml("   \n  ") is None
+    assert safe_load_yaml("\n---") is None
+    with pytest.raises(YamlError):
+        safe_load_yaml(12345)
+    with pytest.raises(YamlError, match="multiple documents"):
+        safe_load_yaml("a: 1\n---\nb: 2\n")
+
+    import fast_yaml
+
+    monkeypatch.setattr(fast_yaml, "safe_dump", lambda *_a, **_kw: (_ for _ in ()).throw(ValueError("emit err")))
+    with pytest.raises(YamlError, match="emit err"):
+        safe_dump_yaml({"a": 1})
+    monkeypatch.undo()
+
+    assert split_frontmatter_and_body("") == (None, "")
+    fm_multi, _body_multi = split_frontmatter_and_body("---\n: invalid: [\n---\nvalid: true\n---\n= Title\n")
+    assert fm_multi == ": invalid: ["
+
+    empty_fm_doc = _parse_spec_content(tmp_path / "empty_fm.adoc", "---\n{}\n---\n= Heading\n")
+    assert any("Missing YAML frontmatter" in e for e in empty_fm_doc.errors)
+
+    # 4. src/eidos/core/lifecycle/initializer.py edge cases
+    init_ws = tmp_path / "init_edge_ws"
+    extra_leaf = init_ws / "eidos" / "architecture" / "custom_leaf"
+    extra_leaf.mkdir(parents=True)
+    ok_init, _, created_init = init_repository(init_ws, title="Edge Init", force=True)
+    assert ok_init
+    assert (extra_leaf / ".gitkeep") in created_init
+
+    bad_adoc = init_ws / "eidos" / "domains" / "bad.adoc"
+    bad_adoc.write_text("---\ntype: product/capability\nid: CAP-BAD-1\ntitle: Bad\nstatus: active\ndomain: DOM-MISSING\nversion: '1.0.0'\n---\n= Bad\n", encoding="utf-8")
+    ok_bad, msg_bad, _ = init_repository(init_ws, title="Edge Init", force=True)
+    assert not ok_bad
+    assert "failed validation" in msg_bad
+
+    # 5. src/eidos/core/lifecycle/catalog.py edge cases
+    assert _format_yaml_scalar_value('"unclosed\'')
+    assert _format_yaml_scalar_value("12345") == '"12345"'
+    assert _split_yaml_inline_comment("'quoted # hash' # comment") == ("'quoted # hash'", " # comment")
+    updated_raw = _set_frontmatter_scalar(
+        "---\ntype: product/domain\ntitle: Old\n\n  nested_cont: 1\nstatus: active\n---\n= Body\n",
+        "title",
+        "New",
+    )
+    assert "title: New" in updated_raw
+    assert find_spec_by_id_or_path(init_ws / "eidos", "   ") is None
+    assert find_spec_by_id_or_path(init_ws / "eidos", "eidos/system.adoc") == (init_ws / "eidos" / "system.adoc").resolve()
+
+    dlt_dir = init_ws / "eidos" / "deltas"
+    arch_dir = dlt_dir / "archive"
+    arch_dir.mkdir(parents=True, exist_ok=True)
+    dlt_active = dlt_dir / "dlt-2026-777-active-1111.adoc"
+    dlt_archived = arch_dir / "dlt-2026-777-old-2222.adoc"
+    dlt_active.write_text("---\ntype: delta/mutation\nid: DLT-2026-777-ACTIVE-1111\ntitle: A\nstatus: proposed\nintent:\n  kind: feature\n  motivation: m\nmutations: []\n---\n= A\n", encoding="utf-8")
+    dlt_archived.write_text("---\ntype: delta/mutation\nid: DLT-2026-777-OLD-2222\ntitle: O\nstatus: applied\nintent:\n  kind: feature\n  motivation: m\nmutations: []\n---\n= O\n", encoding="utf-8")
+    assert find_spec_by_id_or_path(init_ws / "eidos", "DLT-2026-777") == dlt_active.resolve()
+
+    malformed_applied_dlt = dlt_dir / "dlt-2026-778-malformed.adoc"
+    malformed_applied_dlt.write_text("---\nstatus: applied\n: bad_yaml: [\n---\nReferences SYS-EDGE-INIT\n", encoding="utf-8")
+    refs = find_references_to_spec(init_ws / "eidos", "SYS-EDGE-INIT", init_ws / "eidos" / "system.adoc")
+    assert malformed_applied_dlt.resolve() not in refs
+
+    # 6. src/eidos/core/lifecycle/scaffolder.py edge cases
+    scaf_dir = tmp_path / "scaf_edge" / "eidos"
+    init_repository(scaf_dir.parent, title="Scaf Edge")
+    create_spec(scaf_dir, "exploration", "EXP-DUP-001", "First Spike")
+    with pytest.raises(FileExistsError):
+        create_spec(scaf_dir, "exploration", "EXP-DUP-001", "Duplicate Spike Having Different Slug")
+
+    assert list_specs(tmp_path / "nonexistent_eidos_dir") == []
+    assert list_specs(scaf_dir, type_filter="exp")
+
+    assert _resolve_schema_node("not-a-dict", {}) == {}  # type: ignore[arg-type]
+    assert _resolve_schema_node({"$ref": "#/$defs/semver", "description": "override"}, {"semver": {"type": "string"}}) == {
+        "type": "string",
+        "description": "override",
+    }
+    assert _synthesize_example_value("x", {"default": "dval"}, {}) == "dval"
+    assert _synthesize_example_value("test_binding", {"type": "string"}, {}) == "tests/test_example.py::test_invariant"
+    assert _synthesize_example_value("version", {"type": "string"}, {}) == "1.0.0"
+    assert _synthesize_example_value("base_commit", {"type": "string"}, {}) == "a1b2c3d"
+    assert _synthesize_example_value("flag", {"type": "boolean"}, {}) is True
+    assert _synthesize_example_value("arr", {"type": "array"}, {}) == []
+    assert _synthesize_example_value("obj", {"type": "object"}, {}) == {"example": "https://example.com"}
+    assert _synthesize_example_value("unk", {}, {}) == "example_unk"
+
+    # 7. src/eidos/cli/drift_commands.py & src/eidos/cli/index_commands.py CLI branches
+    cli_runner = CliRunner()
+    fake_drift = DriftCheckResult(
+        is_clean=False,
+        drift_detected=True,
+        workflow_mode="direct",
+        classification=ChangedFilesClassification(
+            spec_files=["eidos/system.adoc"],
+        ),
+        validation_report=validator.validate_directory(init_ws / "eidos"),
+        touched_components=["CMP-TEST"],
+        unmapped_code_files=[],
+        invariants=[
+            InvariantTrace(
+                invariant_id="INV-" + "X",
+                rule="rule",
+                spec_path="eidos/system.adoc",
+                spec_id="SYS-TEST",
+                test_binding="tests/test_x.py::test_x",
+                has_test_coverage=False,
+            )
+        ],
+        orphan_invariants=[("INV-" + "ORPHAN", "tests/test_x.py")],
+        remediation_suggestions=["Fix drift"],
+    )
+    monkeypatch.setattr("eidos.cli.drift_commands.detect_drift", lambda **_kw: fake_drift)
+    res_drift_rich = cli_runner.invoke(app, ["drift", "--path", str(tmp_path / "missing_eidos_dir"), "--warn-only"])
+    assert res_drift_rich.exit_code == 0
+    assert "NON-CODE SPECIFICATION DRIFT DETECTED" in res_drift_rich.stdout
+    assert "Broken Cross-References" in res_drift_rich.stdout
+
+    fake_inv_only = DriftCheckResult(
+        is_clean=False,
+        drift_detected=False,
+        workflow_mode="direct",
+        classification=ChangedFilesClassification(),
+        validation_report=validator.validate_directory(scaf_dir),
+        touched_components=[],
+        unmapped_code_files=[],
+        invariants=fake_drift.invariants,
+        orphan_invariants=[],
+        remediation_suggestions=["Fix invariant"],
+    )
+    monkeypatch.setattr("eidos.cli.drift_commands.detect_drift", lambda **_kw: fake_inv_only)
+    res_inv_rich = cli_runner.invoke(app, ["drift", "--path", str(scaf_dir.parent), "--warn-only"])
+    assert res_inv_rich.exit_code == 0
+    assert "INVARIANT TRACEABILITY DRIFT DETECTED" in res_inv_rich.stdout
+    monkeypatch.undo()
+
+    # CLI index commands branches (search/find-symbol empty, semantic setup/sync/unknown)
+    res_no_search = cli_runner.invoke(app, ["index", "search", "zzzz_nonexistent_query_token_999", "--no-semantic", "--path", str(scaf_dir)])
+    assert res_no_search.exit_code == 0
+    assert "No architectural specifications matched" in res_no_search.stdout
+
+    res_no_sym = cli_runner.invoke(app, ["index", "find-symbol", "ZzzzNonexistentSymbol999", "--path", str(scaf_dir)])
+    assert res_no_sym.exit_code == 0
+    assert "No symbols found" in res_no_sym.stdout
+
+    res_bad_sem = cli_runner.invoke(app, ["index", "semantic", "invalid_action", "--path", str(scaf_dir)])
+    assert res_bad_sem.exit_code == 1
+    assert "Unknown semantic action" in res_bad_sem.stdout
+
+    scaf_idx = get_architectural_index(eidos_dir=scaf_dir)
+    monkeypatch.setattr(
+        scaf_idx,
+        "setup_semantic",
+        lambda variant="quantized", force=False: {"variant": variant, "model_dir": str(scaf_dir), "downloaded": ["a"], "skipped": []},
+    )
+    monkeypatch.setattr(
+        scaf_idx,
+        "sync_semantic",
+        lambda force=False: {"duration_ms": 1.2, "encoded_entities": 2, "reused_entities": 1, "pruned_orphans": 0},
+    )
+    monkeypatch.setattr("eidos.cli.index_commands.get_architectural_index", lambda eidos_dir=None: scaf_idx)
+    assert cli_runner.invoke(app, ["index", "semantic", "setup"]).exit_code == 0
+    assert cli_runner.invoke(app, ["index", "semantic", "setup", "--json"]).exit_code == 0
+    assert cli_runner.invoke(app, ["index", "semantic", "sync"]).exit_code == 0
+    assert cli_runner.invoke(app, ["index", "semantic", "sync", "--json"]).exit_code == 0
+
+    def _fail_sem(**_kw):
+        raise RuntimeError("sem failure")
+
+    monkeypatch.setattr(scaf_idx, "setup_semantic", _fail_sem)
+    monkeypatch.setattr(scaf_idx, "sync_semantic", _fail_sem)
+    assert cli_runner.invoke(app, ["index", "semantic", "setup"]).exit_code == 1
+    assert cli_runner.invoke(app, ["index", "semantic", "setup", "--json"]).exit_code == 1
+    assert cli_runner.invoke(app, ["index", "semantic", "sync"]).exit_code == 1
+    assert cli_runner.invoke(app, ["index", "semantic", "sync", "--json"]).exit_code == 1
+    scaf_idx.close()
+    monkeypatch.undo()
+
+    # 8. src/eidos/core/index/sync.py & src/eidos/core/lifecycle/audit.py & delta_engine.py & vcs/diff.py & vcs/drift.py & plugin/installer.py
+    git_ws = tmp_path / "cov_git_ws"
+    git_ws.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=git_ws, check=True)
+    subprocess.run(["git", "config", "user.email", "t@eidos.ai"], cwd=git_ws, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=git_ws, check=True)
+    init_repository(git_ws, title="Cov Git")
+    pkg_dir = git_ws / "src" / "pkg"
+    pkg_dir.mkdir(parents=True)
+    (pkg_dir / "__init__.py").write_text("from .helper import helper_fn\n", encoding="utf-8")
+    (pkg_dir / "helper.py").write_text("def helper_fn() -> int:\n    return 1\n", encoding="utf-8")
+    tests_dir = git_ws / "tests"
+    tests_dir.mkdir()
+    t_file = tests_dir / "test_pkg.py"
+    t_file.write_text('def test_pkg():\n    """Verifies ' + "INV-" + 'COV-1."""\n    assert True\n', encoding="utf-8")
+
+    cnt_f = create_spec(git_ws / "eidos", "container", "CNT-PKG", "Pkg Container")
+    cnt_f.write_text(
+        "---\ntype: tech/container\nid: CNT-PKG\ntitle: Pkg\nstatus: active\ncontainer_type: library\nruntime: Python\nsource_path: src/pkg\n---\n= Pkg\n\n== Public Surface\n* `helper_fn() -> int`\n",
+        encoding="utf-8",
+    )
+    cmp_a = create_spec(git_ws / "eidos", "component", "CMP-PKG-INIT", "Pkg Init")
+    cmp_a.write_text(
+        "---\ntype: tech/component\nid: CMP-PKG-INIT\ntitle: PkgInit\nstatus: active\ncontainer: CNT-PKG\nsource_path: src/pkg/__init__.py\n---\n= PkgInit\n",
+        encoding="utf-8",
+    )
+    cmp_b = create_spec(git_ws / "eidos", "component", "CMP-PKG-HELPER", "Pkg Helper")
+    cmp_b.write_text(
+        "---\ntype: tech/component\nid: CMP-PKG-HELPER\ntitle: PkgHelper\nstatus: active\ncontainer: CNT-PKG\nsource_path: src/pkg/*.py\n---\n= PkgHelper\n\n== Public Surface\n* `helper_fn() -> int`\n",
+        encoding="utf-8",
+    )
+    assert validator.validate_directory(git_ws / "eidos").is_clean
+
+    g_idx = get_architectural_index(repo_root=git_ws, eidos_dir=git_ws / "eidos")
+    g_idx.sync(force=True)
+    index_test_bindings(g_idx._get_connection(), get_ast_indexer(), t_file, "tests/test_pkg.py")
+    g_idx.close()
+
+    subprocess.run(["git", "add", "-A"], cwd=git_ws, check=True)
+    subprocess.run(["git", "commit", "-qm", "initial"], cwd=git_ws, check=True)
+
+    # Modify CMP-PKG-HELPER and commit a delta without base_commit so _resolve_git_baseline_sha uses git log fallback
+    dlt_f = git_ws / "eidos" / "deltas" / "dlt-2026-901-cov-0001.adoc"
+    dlt_f.write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-901-COV-0001\ntitle: Cov Delta\nstatus: proposed\nintent:\n  kind: feature\n  motivation: m\nmutations:\n  - operation: modify\n    target: eidos/architecture/components/pkg-helper.adoc\n    details: Replaced by CMP-PKG-INIT while updating CMP-PKG-HELPER.\n  - operation: modify\n    target: eidos/system.adoc\n    details: Touch system spec.\n  - operation: modify\n    target: SYS-DIFFERENT-99\n    details: Touch system by alias.\n  - operation: modify\n    target: ARCH-DIFFERENT-99\n    details: Touch architecture by alias.\n  - operation: modify\n    target: nonexistent/spec_target.adoc\n    details: Missing path target.\n  - operation: remove\n    target: eidos/architecture/components/pkg-init.adoc\n    details: Remove CMP-PKG-INIT replaced by CMP-PKG-HELPER.\ntombstone:\n  search_tokens:\n    - xy\n  allowed_reasons:\n    - path: src/pkg/helper.py\n      reason: allowed\n---\n= Delta\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "-A"], cwd=git_ws, check=True)
+    subprocess.run(["git", "commit", "-qm", "add delta"], cwd=git_ws, check=True)
+
+    digest = _resolve_git_baseline_sha(
+        git_ws / "eidos",
+        dlt_f,
+        "CMP-PKG-HELPER",
+        cmp_b,
+        rev_cache={},
+        blob_cache={},
+    )
+    assert digest is not None
+
+    # Fallback rev scan in _resolve_git_baseline_sha when rev_cache was pre-populated without fallback
+    _resolve_git_baseline_sha(
+        git_ws / "eidos",
+        dlt_f,
+        "CMP-NONEXISTENT-99",
+        cmp_b,
+        rev_cache={dlt_f: ["HEAD"]},
+        blob_cache={},
+    )
+    verify_delta_mutations(git_ws / "eidos", "DLT-2026-901-COV-0001")
+
+    auditor = AuditEngine(repo_root=git_ws, eidos_dir=git_ws / "eidos")
+    audit_rep = auditor.audit_delta("DLT-2026-901-COV-0001")
+    assert audit_rep.delta_id == "DLT-2026-901-COV-0001"
+    assert auditor._scan_and_classify_references(set(), set(), dlt_f, {}) == ([], [])
+    auditor._check_graph_integrity({"CMP-PKG-INIT"}, "DLT-2026-901-COV-0001", index=None)
+    assert auditor._is_delta_applied(Path("eidos/deltas/dlt-2026-901-cov-0001.adoc")) is False
+    assert auditor._is_delta_applied(Path("eidos/deltas/nonexistent.adoc")) is False
+
+    # Branch drift evaluation with path target in delta (non-uncommitted)
+    drift_branch_res = detect_drift(git_ws, base_ref="HEAD~1", head_ref="HEAD", eidos_dir=git_ws / "eidos", uncommitted=False)
+    assert drift_branch_res.workflow_mode == "planned"
+
+    # Fallback candidate scan and shallow clone error in _resolve_base_and_merge_base
+    monkeypatch.setattr("eidos.vcs.diff._resolve_base_ref", lambda repo, base_ref=None: "origin/main")
+    monkeypatch.setattr(
+        "eidos.vcs.diff._resolve_merge_base",
+        lambda repo, base, head="HEAD", fail_loudly=False: "deadbeef" if base == "HEAD~1" else None,
+    )
+    assert _resolve_base_and_merge_base(git_ws, None, "HEAD") == ("HEAD~1", "deadbeef", False)
+    monkeypatch.setattr("eidos.vcs.diff._resolve_merge_base", lambda repo, base, head="HEAD", fail_loudly=False: None)
+    assert _resolve_base_and_merge_base(git_ws, None, "HEAD") == (None, None, True)
+    (git_ws / ".git" / "shallow").write_text("deadbeef\n", encoding="utf-8")
+    with pytest.raises(GitResolutionError, match="shallow"):
+        _resolve_base_and_merge_base(git_ws, None, "HEAD")
+    (git_ws / ".git" / "shallow").unlink()
+    monkeypatch.undo()
+
+    # SpecValidator schema reference & contract verification edge cases
+    rep_v = ValidationReport()
+    validator._validate_schema_references(
+        {
+            "x-eidos-ref": {"target_types": ["product/domain"], "entity_label": "domain"},
+            "oneOf": [{"properties": {"sub": {"x-eidos-ref": {"target_types": ["product/domain"]}}}}],
+        },
+        ["CMP-PKG-INIT"],
+        "domains",
+        pol_doc,
+        {"CMP-PKG-INIT"},
+        rep_v,
+        {"CMP-PKG-INIT": "tech/component"},
+    )
+    validator._validate_schema_references(
+        {
+            "oneOf": [{"properties": {"sub": {"x-eidos-ref": {"target_types": ["product/domain"]}}}}],
+        },
+        {"sub": "CMP-PKG-INIT"},
+        "domains",
+        pol_doc,
+        {"CMP-PKG-INIT"},
+        rep_v,
+        {"CMP-PKG-INIT": "tech/component"},
+    )
+    validator._check_eidos_ref(
+        {"entity_label": "target"},
+        "CMP-PKG-INIT",
+        "mutations.target",
+        pol_doc,
+        {"CMP-PKG-INIT"},
+        rep_v,
+        {"CMP-PKG-INIT": "product/domain"},
+    )
+    bad_yaml_spec = tmp_path / "bad_contract_spec.yaml"
+    bad_yaml_spec.write_text(": invalid_yaml: [\n", encoding="utf-8")
+    validator._verify_rest_openapi_contract(pol_doc, bad_yaml_spec, rep_v)
+    validator._verify_json_schema_contract(pol_doc, bad_yaml_spec, rep_v)
+    non_dict_spec = tmp_path / "list_contract_spec.yaml"
+    non_dict_spec.write_text("- item1\n- item2\n", encoding="utf-8")
+    validator._verify_rest_openapi_contract(pol_doc, non_dict_spec, rep_v)
+    validator._verify_json_schema_contract(pol_doc, non_dict_spec, rep_v)
+    validator._verify_grpc_proto_contract(pol_doc, tmp_path / "missing_proto.proto", rep_v)
+    assert len(rep_v.broken_references) >= 6
+
+    scoped = _scope_git_paths_to_subproject(
+        ["", "packages/api/src/a.py", "packages/api/nested/b.py", "other/c.py"],
+        git_ws / "packages" / "api",
+        git_ws,
+        ("nested/",),
+    )
+    assert scoped == ["src/a.py"]
+
+    # Plugin installer helper edge cases (_copy_plugin_tree, _ensure_codex_plugin_manifest, _uninstall_from_manifest)
+    bundle_dir = locate_plugin_bundle()
+    plug_dest = tmp_path / "plug_edge_dest"
+    _copy_plugin_tree(bundle_dir, plug_dest, force=False)
+    (plug_dest / "plugin.json").write_bytes(b'{"name": "eidos", "version": "0.0.1"}')
+    (plug_dest / "hooks.json").write_text('{"hooks": "eidos"}', encoding="utf-8")
+    copied_again = _copy_plugin_tree(bundle_dir, plug_dest, force=False)
+    assert (plug_dest / "plugin.json") in copied_again
+    assert (plug_dest / "hooks.json") in copied_again
+
+    mkt_dir = tmp_path / "mkt_edge_dir"
+    mkt_dir.mkdir(parents=True)
+    (mkt_dir / "plugin.json").write_bytes(b'{"name": "other-org"}')
+    assert _ensure_codex_plugin_manifest(mkt_dir, force=False) is None
+    (mkt_dir / "plugin.json").write_bytes(b'{"name": "eidos", "extensions": "invalid"}')
+    assert _ensure_codex_plugin_manifest(mkt_dir, force=False) is not None
+
+    uninst_dir = tmp_path / "uninst_edge_dir"
+    (uninst_dir / "sub_empty").mkdir(parents=True)
+    (uninst_dir / "file_a.txt").write_text("a", encoding="utf-8")
+    (uninst_dir / MANIFEST_FILENAME).write_bytes(b'{"files": ["file_a.txt", "sub_empty", "AGENTS.md"]}')
+    assert _uninstall_from_manifest(uninst_dir) is True

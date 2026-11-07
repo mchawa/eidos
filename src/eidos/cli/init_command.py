@@ -6,7 +6,7 @@ import typer
 from rich.table import Table
 
 from eidos.cli._shared import PANEL_SETUP, console
-from eidos.core.lifecycle.initializer import init_repository
+from eidos.core.lifecycle.initializer import _is_explicit_eidos_spec_dir, init_repository
 
 
 def init_cmd(
@@ -28,7 +28,9 @@ def init_cmd(
     ),
 ):
     """Initialize a repository with an empty Eidos living specification skeleton."""
-    project_dir = target_path or Path.cwd()
+    project_dir = target_path if target_path is not None else Path(".")
+    if _is_explicit_eidos_spec_dir(project_dir):
+        project_dir = project_dir.parent if str(project_dir.parent) != "" else Path(".")
     console.print(f"[bold cyan]Initializing empty Eidos skeleton in:[/bold cyan] {project_dir.resolve()}\n")
 
     success, msg, created_files = init_repository(

@@ -540,6 +540,20 @@ def test_init_repository_cli(tmp_path):
     assert not any(p for p in (target / "eidos").rglob("*.adoc") if p.name != "system.adoc")
     assert not (target / ".agents").exists()
 
+    # Passing <repo>/eidos directly to `eidos init` initializes <repo>/eidos without nesting eidos/eidos
+    target_explicit_eidos = tmp_path / "cli_init_explicit_eidos" / "eidos"
+    res_explicit = runner.invoke(app, ["init", str(target_explicit_eidos), "--title", "explicit-eidos-app"])
+    assert res_explicit.exit_code == 0
+    assert (target_explicit_eidos / "system.adoc").is_file()
+    assert not (target_explicit_eidos / "eidos").exists()
+
+    # A repository root whose own directory name is `eidos` (with .git) initializes <repo>/eidos/system.adoc
+    repo_named_eidos = tmp_path / "repo_named_eidos_parent" / "eidos"
+    (repo_named_eidos / ".git").mkdir(parents=True)
+    res_repo_named = runner.invoke(app, ["init", str(repo_named_eidos), "--title", "self-named-repo"])
+    assert res_repo_named.exit_code == 0
+    assert (repo_named_eidos / "eidos" / "system.adoc").is_file()
+
 
 def test_init_repository_custom(tmp_path):
     """Verify programmatic init_repository call."""
@@ -558,6 +572,13 @@ def test_init_repository_custom(tmp_path):
     assert (target / "eidos" / "architecture" / "components" / ".gitkeep").exists()
     assert not any(p for p in (target / "eidos").rglob("*.adoc") if p.name != "system.adoc")
     assert not (target / ".agents").exists()
+
+    # Passing <repo>/eidos directly to `init_repository` initializes <repo>/eidos without nesting eidos/eidos
+    target_explicit_eidos = tmp_path / "custom_init_explicit_eidos" / "eidos"
+    ok_exp, _msg_exp, _ = init_repository(project_dir=target_explicit_eidos, title="Explicit Service")
+    assert ok_exp
+    assert (target_explicit_eidos / "system.adoc").is_file()
+    assert not (target_explicit_eidos / "eidos").exists()
 
 
 def test_cli_version_command_and_options():

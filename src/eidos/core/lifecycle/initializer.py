@@ -9,6 +9,13 @@ from eidos.core.spec.parser import dump_spec_document
 from eidos.core.spec.validator import SpecValidator
 from eidos.core.workspace.assets import render_spec_template
 
+_PROJECT_ROOT_MARKERS = (".git", "pyproject.toml", "package.json", "Cargo.toml", "go.mod", "src")
+
+
+def _is_explicit_eidos_spec_dir(path: Path, eidos_dir_name: str = "eidos") -> bool:
+    """Return True when ``path`` targets an ``eidos/`` specification directory rather than a project root."""
+    return path.name == eidos_dir_name and not any((path / m).exists() for m in _PROJECT_ROOT_MARKERS)
+
 
 def _ensure_eidos_gitignore(eidos_dir: Path) -> None:
     """Ensure eidos/.gitignore is present and ignores local SQLite cache so host projects remain unpolluted."""
@@ -36,7 +43,11 @@ def init_repository(
     force: bool = False,
 ) -> tuple[bool, str, list[Path]]:
     """Initialize a repository with an Eidos living specification skeleton and governance."""
-    eidos_dir = project_dir / eidos_dir_name
+    eidos_dir = (
+        project_dir
+        if _is_explicit_eidos_spec_dir(project_dir, eidos_dir_name)
+        else project_dir / eidos_dir_name
+    )
     created_files: list[Path] = []
 
     non_cache_entries = (

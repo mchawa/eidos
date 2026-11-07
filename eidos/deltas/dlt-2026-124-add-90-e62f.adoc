@@ -1,0 +1,66 @@
+---
+type: delta/mutation
+id: DLT-2026-124-ADD-90-E62F
+title: "Add 90% Per-File Statement Test Coverage Policy (POL-005)"
+status: applied
+intent:
+  kind: feature
+  motivation: "Establish a blocking testing governance policy (POL-005-STATEMENT-TEST-COVERAGE) requiring >90% statement coverage across all source files in src/eidos/, normalize explicit eidos/ target paths in eidos init, and expand unit tests so every module in src/eidos/ exceeds 90% statement coverage."
+mutations:
+  - operation: add
+    target: POL-005-STATEMENT-TEST-COVERAGE
+    details: "Add blocking testing policy POL-005-STATEMENT-TEST-COVERAGE mandating >90% statement coverage for every Python file under src/eidos/."
+    expect:
+      frontmatter:
+        status: active
+        category: testing
+        severity: blocking
+      body:
+        contains:
+          - "Per-File Statement Coverage Floor (>90%)"
+  - operation: add
+    target: INV-POL-005-STATEMENT-TEST-COVERAGE
+    details: "Bind INV-POL-005-STATEMENT-TEST-COVERAGE to tests/test_validator.py::test_pol_005_statement_test_coverage."
+    expect:
+      frontmatter:
+        rule: "greater than 90% statement test coverage"
+        test_binding: "tests/test_validator.py::test_pol_005_statement_test_coverage"
+  - operation: modify
+    target: CMP-CLI-INIT-COMMAND
+    details: "Normalize explicit eidos/ target paths in init_cmd so passing <repo>/eidos initializes <repo>/eidos directly without nesting <repo>/eidos/eidos."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-CLI
+        source_path: "src/eidos/cli/init_command.py"
+      body:
+        contains:
+          - "normalizes a target path ending in `eidos`"
+  - operation: modify
+    target: CMP-REPO-INITIALIZER
+    details: "Normalize project_dir in init_repository via _is_explicit_eidos_spec_dir when project_dir already targets the eidos/ specification directory."
+    expect:
+      frontmatter:
+        container: CNT-EIDOS-CORE
+        source_path: "src/eidos/core/lifecycle/initializer.py"
+      body:
+        contains:
+          - "normalizes `project_dir` when it already ends with `eidos_dir_name`"
+vcs:
+  branch: main
+  base_commit: 321e364ef0e5074c8d13f93dcd7a24fdc794b01d
+---
+= SpecDelta: Add 90% Per-File Statement Test Coverage Policy (POL-005)
+:toc: left
+
+== Problem Statement
+While aggregate statement coverage across `src/eidos/` is 91%, individual modules could dip to 82%–90% without violating a per-file governance policy. Additionally, passing `<repo>/eidos` to `eidos init` created a nested `<repo>/eidos/eidos/` directory.
+
+== Proposed Specification Changes
+* Introduce `POL-005-STATEMENT-TEST-COVERAGE` (`eidos/policies/pol-005-statement-test-coverage.adoc`) and `INV-POL-005-STATEMENT-TEST-COVERAGE` bound to `tests/test_validator.py::test_pol_005_statement_test_coverage`.
+* Configure `[tool.coverage.run]` and `[tool.coverage.report]` in `pyproject.toml`.
+* Update `CMP-CLI-INIT-COMMAND` and `CMP-REPO-INITIALIZER` to normalize explicit `<repo>/eidos` target paths.
+
+== Implementation Plan
+1. **Policy & Coverage Configuration**: Author `POL-005-STATEMENT-TEST-COVERAGE` and configure `[tool.coverage]` in `pyproject.toml`.
+2. **Initializer Path Normalization**: Normalize explicit `<repo>/eidos` paths in `src/eidos/core/lifecycle/initializer.py` and `src/eidos/cli/init_command.py`.
+3. **Per-File >90% Statement Coverage Suite**: Add `test_pol_005_statement_test_coverage` and unit tests in `tests/test_validator.py` and `tests/test_scaffolder.py` so every file under `src/eidos/` exceeds 90% statement coverage.
