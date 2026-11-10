@@ -15,7 +15,7 @@ import orjson
 
 from eidos.core.spec.parser import YamlError, safe_dump_yaml, safe_load_yaml
 from eidos.core.workspace.assets import get_plugin_reference_dir
-from eidos.plugin.managed_block import BlockResult, BlockStatus, is_valid_skills_dir, upsert_managed_block
+from eidos.plugin.managed_block import BlockResult, BlockStatus, upsert_managed_block
 from eidos.plugin.version import (
     get_bundled_plugin_version,
     get_installed_plugin_version,
@@ -24,15 +24,15 @@ from eidos.plugin.version import (
 
 class PluginInstallTarget(enum.StrEnum):
     # Every target also projects the shared Eidos block into the root AGENTS.md (DEC-PLUGIN-AGENTS-MD-MANAGED-BLOCK).
-    PROJECT = "project"  # Installs .agents/plugins/eidos (agent-plugins.org v1.0.0) and client configurations
-    ANTIGRAVITY = "antigravity"  # Installs .agents/plugins/eidos (strict agent-plugins.org v1.0.0)
+    ANTIGRAVITY = "antigravity"  # Installs .agents/plugins/eidos (agent-plugins.org v1.0.0)
     CLAUDE = "claude"  # Claude Code skills (.claude/skills), Stop hook (.claude/settings.json), CLAUDE.md @AGENTS.md
-    CURSOR = "cursor"  # Configures Cursor skills (.cursor/skills); Cursor reads root AGENTS.md natively
+    CURSOR = "cursor"  # Installs .agents/plugins/eidos (agent-plugins.org v1.0.0)
     AIDER = "aider"  # Configures .aider/skills and adds AGENTS.md to .aider.conf.yml read:
-    CLINE = "cline"  # Configures .cline/plugins/eidos and .cline/skills
-    OPEN_CODE = "open-code"  # Configures .opencode/plugins/eidos and .opencode/skills
-    CODEX = "codex"  # Installs OpenAI Codex plugin bundle (.codex/)
-    COPILOT = "copilot"  # Configures GitHub Copilot (.github/plugin, .github/skills, .github/copilot/settings.json)
+    CLINE = "cline"  # Configures .agents/skills; reads root AGENTS.md natively
+    KILOCODE = "kilocode"  # Configures .agents/skills; reads root AGENTS.md natively
+    OPEN_CODE = "open-code"  # Configures .agents/skills; reads root AGENTS.md natively
+    CODEX = "codex"  # Installs .agents/plugins/eidos (agent-plugins.org v1.0.0)
+    COPILOT = "copilot"  # Installs .agents/plugins/eidos (agent-plugins.org v1.0.0)
     ALL = "all"  # Installs all agent plugins and configurations
 
 
@@ -518,179 +518,6 @@ def _update_project_aider_conf(file_path: Path, conventions_path: str = AGENTS_M
     return file_path
 
 
-def _ensure_copilot_plugin_manifest(target_dir: Path, force: bool = False) -> Path | None:
-    """Ensure .github/plugin/plugin.json exists in target directory with Agent Plugins 1.0 schema and GitHub Copilot metadata."""
-    _check_not_symlink(target_dir)
-    target_dir.mkdir(parents=True, exist_ok=True)
-    manifest_file = target_dir / "plugin.json"
-    _check_not_symlink(manifest_file, root=target_dir)
-    bundled_ver = get_bundled_plugin_version()
-
-    manifest_data = {
-        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-        "name": "eidos",
-        "displayName": "Eidos AI Lifecycle Ecosystem",
-        "version": bundled_ver,
-        "description": "Git-native, agent-agnostic development AI ecosystem and lifecycle orchestration framework for GitHub Copilot.",
-        "author": {
-            "name": "Eidos Contributors",
-            "url": "https://github.com/eidos-ai/eidos",
-        },
-        "homepage": "https://github.com/eidos-ai/eidos",
-        "repository": "https://github.com/eidos-ai/eidos",
-        "license": "MIT",
-        "extensions": {
-            "com.github.copilot": {
-                "type": "agent_plugin",
-                "skills": "skills",
-            }
-        },
-    }
-
-    if manifest_file.exists():
-        try:
-            existing = orjson.loads(manifest_file.read_bytes())
-            if not isinstance(existing, dict) or existing.get("name") != "eidos":
-                if not force:
-                    return None
-            else:
-                merged_ext = dict(existing.get("extensions") if isinstance(existing.get("extensions"), dict) else {})
-                merged_ext["com.github.copilot"] = {
-                    "type": "agent_plugin",
-                    "skills": "skills",
-                }
-                manifest_data = {**existing, **manifest_data, "extensions": merged_ext}
-        except (OSError, orjson.JSONDecodeError, ValueError):
-            if not force:
-                return None
-
-    manifest_file.write_bytes(orjson.dumps(manifest_data, option=orjson.OPT_INDENT_2))
-
-    return manifest_file
-
-
-def _update_project_copilot_settings(settings_file: Path) -> bool:
-    """Safely update .github/copilot/settings.json to enable the Eidos plugin."""
-    _check_not_symlink(settings_file)
-    settings_file.parent.mkdir(parents=True, exist_ok=True)
-    data = {}
-    if settings_file.exists():
-        try:
-            data = orjson.loads(settings_file.read_bytes())
-        except (OSError, orjson.JSONDecodeError, ValueError):
-            data = {}
-
-    if "plugins" not in data or not isinstance(data["plugins"], list):
-        data["plugins"] = []
-
-    has_plugin_entry = any(
-        isinstance(p, dict) and p.get("path") in (".github/plugin", "./.github/plugin") for p in data["plugins"]
-    )
-    if not has_plugin_entry:
-        data["plugins"].append({"path": ".github/plugin"})
-
-    if "enabledPlugins" not in data or not isinstance(data["enabledPlugins"], dict):
-        data["enabledPlugins"] = {}
-    data["enabledPlugins"]["eidos"] = True
-
-    settings_file.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
-    return True
-
-
-def _remove_project_copilot_settings(settings_file: Path) -> bool:
-    """Safely remove Eidos plugin from .github/copilot/settings.json."""
-    if not settings_file.exists():
-        return False
-    try:
-        data = orjson.loads(settings_file.read_bytes())
-    except (OSError, orjson.JSONDecodeError, ValueError):
-        return False
-
-    changed = False
-    if "enabledPlugins" in data and isinstance(data["enabledPlugins"], dict) and "eidos" in data["enabledPlugins"]:
-        del data["enabledPlugins"]["eidos"]
-        changed = True
-
-    if "plugins" in data and isinstance(data["plugins"], list):
-        orig_len = len(data["plugins"])
-        data["plugins"] = [
-            p
-            for p in data["plugins"]
-            if not (isinstance(p, dict) and p.get("path") in (".github/plugin", "./.github/plugin"))
-        ]
-        if len(data["plugins"]) != orig_len:
-            changed = True
-
-    if not changed:
-        return False
-
-    has_other_plugins = bool(data.get("plugins"))
-    has_other_enabled = bool(data.get("enabledPlugins"))
-    has_other_keys = any(k for k in data if k not in ("plugins", "enabledPlugins"))
-
-    if not has_other_plugins and not has_other_enabled and not has_other_keys:
-        settings_file.unlink()
-        parent = settings_file.parent
-        if parent.exists() and not any(parent.iterdir()):
-            with contextlib.suppress(OSError):
-                parent.rmdir()
-    else:
-        settings_file.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
-    return True
-
-
-def _ensure_codex_plugin_manifest(target_dir: Path, force: bool = False) -> Path | None:
-    """Ensure .codex/plugin.json exists in target plugin directory with OpenAI Codex metadata."""
-    _check_not_symlink(target_dir)
-    target_dir.mkdir(parents=True, exist_ok=True)
-    manifest_file = target_dir / "plugin.json"
-    _check_not_symlink(manifest_file, root=target_dir)
-    bundled_ver = get_bundled_plugin_version()
-
-    manifest_data = {
-        "name": "eidos",
-        "displayName": "Eidos AI Lifecycle Ecosystem",
-        "version": bundled_ver,
-        "description": "Git-native, agent-agnostic development AI ecosystem and lifecycle orchestration framework for OpenAI Codex.",
-        "author": {
-            "name": "Eidos Contributors",
-            "url": "https://github.com/eidos-ai/eidos",
-        },
-        "homepage": "https://github.com/eidos-ai/eidos",
-        "repository": "https://github.com/eidos-ai/eidos",
-        "license": "MIT",
-        "extensions": {
-            "com.openai": {
-                "type": "agent_plugin",
-                "skills": "skills",
-            }
-        },
-    }
-
-    if manifest_file.exists():
-        try:
-            existing = orjson.loads(manifest_file.read_bytes())
-            if not isinstance(existing, dict) or existing.get("name") != "eidos":
-                if not force:
-                    return None
-            else:
-                existing["version"] = bundled_ver
-                if "extensions" not in existing or not isinstance(existing["extensions"], dict):
-                    existing["extensions"] = {}
-                existing["extensions"]["com.openai"] = {
-                    "type": "agent_plugin",
-                    "skills": "skills",
-                }
-                manifest_data = existing
-        except (OSError, orjson.JSONDecodeError, ValueError):
-            if not force:
-                return None
-
-    manifest_file.write_bytes(orjson.dumps(manifest_data, option=orjson.OPT_INDENT_2))
-
-    return manifest_file
-
-
 def _uninstall_from_manifest(target_dir: Path) -> bool:
     """Remove manifest-tracked files without wiping shared parent."""
     if not target_dir.exists():
@@ -777,33 +604,6 @@ def _claude_extra_uninstall(root: Path) -> bool:
     return removed_legacy or removed_settings
 
 
-def _codex_pre_manifest_hook(root: Path, source_dir: Path, plugin_dir: Path, force: bool) -> list[Path]:
-    extra: list[Path] = []
-    manifest = _ensure_codex_plugin_manifest(plugin_dir, force=force)
-    if manifest is not None:
-        extra.append(manifest)
-    extra.extend(_copy_skills_flat(source_dir, plugin_dir / "skills", force=force))
-    return extra
-
-
-def _copilot_pre_manifest_hook(root: Path, plugin_dir: Path, force: bool) -> list[Path]:
-    extra: list[Path] = []
-    manifest = _ensure_copilot_plugin_manifest(plugin_dir, force=force)
-    if manifest is not None:
-        extra.append(manifest)
-    return extra
-
-
-def _copilot_post_install_hook(root: Path, force: bool) -> list[Path]:
-    copilot_settings = root / ".github" / "copilot" / "settings.json"
-    _update_project_copilot_settings(copilot_settings)
-    return [copilot_settings]
-
-
-def _copilot_extra_uninstall(root: Path) -> bool:
-    return _remove_project_copilot_settings(root / ".github" / "copilot" / "settings.json")
-
-
 # ---------------------------------------------------------------------------
 # Canonical AGENTS.md managed block (DEC-PLUGIN-AGENTS-MD-MANAGED-BLOCK)
 # ---------------------------------------------------------------------------
@@ -826,16 +626,6 @@ def render_agents_md_block(template: str, targets: dict[str, str]) -> str:
     else:
         locations = "- (no skill locations recorded)"
     return template.replace("{{skill_locations}}", locations)
-
-
-def _relative_skills_dir(root: Path, skills_path: Path) -> str | None:
-    """Return a repository-relative POSIX skills directory, or None if it lies outside the repository root."""
-    try:
-        rel = skills_path.resolve().relative_to(root.resolve())
-    except ValueError:
-        return None
-    rel_str = rel.as_posix()
-    return rel_str if is_valid_skills_dir(rel_str) else None
 
 
 def project_agents_md_block(
@@ -1029,20 +819,25 @@ def _make_project_adapter(target: PluginInstallTarget, name: str) -> TargetAdapt
     )
 
 
+def _make_agents_skills_adapter(target: PluginInstallTarget, name: str, label: str) -> TargetAdapter:
+    return TargetAdapter(
+        target=target,
+        name=name,
+        plugin_subdir=".agents",
+        skills_subdir=".agents/skills",
+        copy_plugin_tree=False,
+        install_destination_subdir=".agents/skills",
+        uninstall_destination_subdir=".agents/skills",
+        install_message=f"Installed 4 skills in .agents/skills/ and the root AGENTS.md block (read natively by {label}).",
+        uninstall_removed_message="Removed .agents/skills/.",
+        uninstall_clean_message=f"No {label} configuration found (already removed).",
+        prune_dirs=(".agents/skills", ".agents"),
+    )
+
+
 TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
-    PluginInstallTarget.PROJECT: _make_project_adapter(PluginInstallTarget.PROJECT, "project"),
     PluginInstallTarget.ANTIGRAVITY: _make_project_adapter(PluginInstallTarget.ANTIGRAVITY, "antigravity"),
-    PluginInstallTarget.CURSOR: TargetAdapter(
-        target=PluginInstallTarget.CURSOR,
-        name="cursor",
-        skills_subdir=".cursor/skills",
-        install_destination_subdir=".cursor/skills",
-        uninstall_destination_subdir=".cursor/skills",
-        install_message="Installed 4 skills in .cursor/skills/ and the root AGENTS.md block (read natively by Cursor).",
-        uninstall_removed_message="Removed .cursor/skills/.",
-        uninstall_clean_message="No Cursor configuration found (already removed).",
-        prune_dirs=(".cursor",),
-    ),
+    PluginInstallTarget.CURSOR: _make_project_adapter(PluginInstallTarget.CURSOR, "cursor"),
     PluginInstallTarget.CLAUDE: TargetAdapter(
         target=PluginInstallTarget.CLAUDE,
         name="claude",
@@ -1060,63 +855,24 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
     PluginInstallTarget.AIDER: TargetAdapter(
         target=PluginInstallTarget.AIDER,
         name="aider",
+        plugin_subdir=".aider",
         skills_subdir=".aider/skills",
+        copy_plugin_tree=False,
         install_destination_subdir=".aider.conf.yml",
         uninstall_destination_subdir=".aider.conf.yml",
         install_message="Installed 4 skills into .aider/skills/, the root AGENTS.md block, and AGENTS.md under read: in .aider.conf.yml.",
         uninstall_removed_message="Removed .aider/skills/.",
         uninstall_clean_message="No Aider configuration found (already removed).",
+        prune_dirs=(".aider/skills", ".aider"),
         post_install_hook=lambda root, _src, _force, _l: [
             _update_project_aider_conf(root / ".aider.conf.yml", AGENTS_MD_FILENAME),
         ],
     ),
-    PluginInstallTarget.CLINE: TargetAdapter(
-        target=PluginInstallTarget.CLINE,
-        name="cline",
-        plugin_subdir=".cline/plugins/eidos",
-        skills_subdir=".cline/skills",
-        uninstall_destination_subdir=".cline",
-        install_message="Configured plugin bundle in .cline/plugins/eidos, 4 skills in .cline/skills/, and the root AGENTS.md block.",
-        uninstall_removed_message="Removed plugin bundle in .cline/plugins/eidos and .cline/skills/.",
-        uninstall_clean_message="No Cline configurations found (already removed).",
-        prune_dirs=(".cline/plugins", ".cline"),
-    ),
-    PluginInstallTarget.OPEN_CODE: TargetAdapter(
-        target=PluginInstallTarget.OPEN_CODE,
-        name="open-code",
-        plugin_subdir=".opencode/plugins/eidos",
-        skills_subdir=".opencode/skills",
-        uninstall_destination_subdir=".opencode/plugins/eidos",
-        install_message="Configured plugin bundle in .opencode/plugins/eidos, 4 skills in .opencode/skills/, and the root AGENTS.md block.",
-        uninstall_removed_message="Removed .opencode/plugins/eidos and .opencode/skills/.",
-        uninstall_clean_message="No OpenCode configuration found (already removed).",
-        prune_dirs=(".opencode/plugins", ".opencode"),
-    ),
-    PluginInstallTarget.CODEX: TargetAdapter(
-        target=PluginInstallTarget.CODEX,
-        name="codex",
-        plugin_subdir=".codex",
-        copy_plugin_tree=False,
-        install_message="Installed OpenAI Codex plugin bundle (.codex/plugin.json, 4 skills) and the root AGENTS.md block.",
-        uninstall_removed_message="Removed OpenAI Codex plugin bundle (.codex/).",
-        uninstall_clean_message="No Codex plugin bundle found (already removed).",
-        pre_manifest_hook=lambda root, src, plugin_dir, force, _l: _codex_pre_manifest_hook(
-            root, src, plugin_dir, force
-        ),
-    ),
-    PluginInstallTarget.COPILOT: TargetAdapter(
-        target=PluginInstallTarget.COPILOT,
-        name="copilot",
-        plugin_subdir=".github/plugin",
-        skills_subdir=".github/skills",
-        install_message="Installed GitHub Copilot plugin (.github/plugin/), 4 skills (.github/skills/), settings (.github/copilot/settings.json), and the root AGENTS.md block.",
-        uninstall_removed_message="Removed GitHub Copilot plugin (.github/plugin/), skills (.github/skills/), and configuration.",
-        uninstall_clean_message="No GitHub Copilot configuration found (already removed).",
-        prune_dirs=(".github/plugin", ".github/copilot"),
-        pre_manifest_hook=lambda root, _src, plugin_dir, force, _l: _copilot_pre_manifest_hook(root, plugin_dir, force),
-        post_install_hook=lambda root, _src, force, _l: _copilot_post_install_hook(root, force),
-        extra_uninstall_hook=_copilot_extra_uninstall,
-    ),
+    PluginInstallTarget.CLINE: _make_agents_skills_adapter(PluginInstallTarget.CLINE, "cline", "Cline"),
+    PluginInstallTarget.KILOCODE: _make_agents_skills_adapter(PluginInstallTarget.KILOCODE, "kilocode", "Kilo Code"),
+    PluginInstallTarget.OPEN_CODE: _make_agents_skills_adapter(PluginInstallTarget.OPEN_CODE, "open-code", "OpenCode"),
+    PluginInstallTarget.CODEX: _make_project_adapter(PluginInstallTarget.CODEX, "codex"),
+    PluginInstallTarget.COPILOT: _make_project_adapter(PluginInstallTarget.COPILOT, "copilot"),
 }
 
 
@@ -1136,14 +892,13 @@ def _resolve_plugin_project_root(project_dir: Path | None) -> Path:
 
 
 def install_plugin(
-    target: PluginInstallTarget = PluginInstallTarget.PROJECT,
+    target: PluginInstallTarget,
     project_dir: Path | None = None,
-    dest_path: Path | None = None,
     force: bool = False,
     launcher: str = "eidos",
     force_blocks: bool | None = None,
 ) -> list[InstallResult]:
-    """Install the Eidos agent plugin strictly inside project scope (.agents/plugins/eidos at the enclosing Git root).
+    """Install the Eidos agent plugin strictly inside project scope (at the enclosing Git root).
 
     ``force_blocks`` (default: ``force``) controls overwriting hand-edited AGENTS.md / CLAUDE.md managed blocks.
     """
@@ -1152,44 +907,15 @@ def install_plugin(
     overwrite_blocks = force if force_blocks is None else force_blocks
     results = []
 
-    # If explicit destination provided, install there directly
-    if dest_path is not None:
-        target_path = dest_path if dest_path.is_absolute() else (root / dest_path)
-        _check_not_symlink(target_path, root=root if not dest_path.is_absolute() else None)
-        created = _copy_plugin_tree(source_dir, target_path, force=force, launcher=launcher)
-        manifest = _write_installation_manifest(target_path, created)
-        created.append(manifest)
-        message = f"Installed plugin bundle to custom project path: {target_path}"
-        custom_skills_dir = _relative_skills_dir(root, target_path / "skills")
-        if custom_skills_dir is None:
-            message += " (outside the repository: root AGENTS.md block not updated)."
-        else:
-            agents_result = project_agents_md_block(
-                root, source_dir, "custom", custom_skills_dir, force=overwrite_blocks
-            )
-            if agents_result is not None and agents_result.status.written:
-                created.append(agents_result.path)
-            message += _block_warning("AGENTS.md", agents_result)
-        results.append(
-            InstallResult(
-                target="custom",
-                destination=target_path,
-                success=True,
-                message=message,
-                created_files=created,
-            )
-        )
-        return results
-
-    # Determine project targets
     targets_to_run: list[PluginInstallTarget] = []
     if target == PluginInstallTarget.ALL:
         targets_to_run = [
-            PluginInstallTarget.PROJECT,
+            PluginInstallTarget.ANTIGRAVITY,
             PluginInstallTarget.CURSOR,
             PluginInstallTarget.CLAUDE,
             PluginInstallTarget.AIDER,
             PluginInstallTarget.CLINE,
+            PluginInstallTarget.KILOCODE,
             PluginInstallTarget.OPEN_CODE,
             PluginInstallTarget.CODEX,
             PluginInstallTarget.COPILOT,
@@ -1206,54 +932,22 @@ def install_plugin(
 
 
 def uninstall_plugin(
-    target: PluginInstallTarget = PluginInstallTarget.PROJECT,
+    target: PluginInstallTarget,
     project_dir: Path | None = None,
-    dest_path: Path | None = None,
 ) -> list[UninstallResult]:
     """Uninstall / remove the Eidos agent plugin strictly from project scope (at the enclosing Git root)."""
     root = _resolve_plugin_project_root(project_dir)
     results = []
 
-    # If explicit destination provided, remove there directly
-    if dest_path is not None:
-        target_path = dest_path if dest_path.is_absolute() else (root / dest_path)
-        if target_path.exists():
-            if target_path.is_file():
-                target_path.unlink()
-                removed = True
-            else:
-                removed = _uninstall_from_manifest(target_path)
-            results.append(
-                UninstallResult(
-                    target="custom",
-                    destination=target_path,
-                    success=True,
-                    message=f"Removed custom plugin path: {target_path}"
-                    if removed
-                    else f"No plugin files found at: {target_path}",
-                    removed=removed,
-                )
-            )
-        else:
-            results.append(
-                UninstallResult(
-                    target="custom",
-                    destination=target_path,
-                    success=True,
-                    message=f"Custom path '{target_path}' does not exist.",
-                    removed=False,
-                )
-            )
-        return results
-
     targets_to_run: list[PluginInstallTarget] = []
     if target == PluginInstallTarget.ALL:
         targets_to_run = [
-            PluginInstallTarget.PROJECT,
+            PluginInstallTarget.ANTIGRAVITY,
             PluginInstallTarget.CURSOR,
             PluginInstallTarget.CLAUDE,
             PluginInstallTarget.AIDER,
             PluginInstallTarget.CLINE,
+            PluginInstallTarget.KILOCODE,
             PluginInstallTarget.OPEN_CODE,
             PluginInstallTarget.CODEX,
             PluginInstallTarget.COPILOT,
@@ -1275,9 +969,8 @@ def uninstall_plugin(
 
 
 def update_plugin(
-    target: PluginInstallTarget = PluginInstallTarget.PROJECT,
+    target: PluginInstallTarget,
     project_dir: Path | None = None,
-    dest_path: Path | None = None,
     launcher: str = "eidos",
 ) -> tuple[str | None, str, list[InstallResult]]:
     """Update the installed Eidos agent plugin to the latest bundled version.
@@ -1285,18 +978,12 @@ def update_plugin(
     Returns:
         (previous_version, current_version, install_results)
     """
-    lookup_dest = dest_path
-    if lookup_dest is None and target in TARGET_ADAPTERS and TARGET_ADAPTERS[target].plugin_subdir:
-        lookup_dest = Path(TARGET_ADAPTERS[target].plugin_subdir)
-    prev_version = get_installed_plugin_version(project_dir=project_dir, dest_path=lookup_dest)
-    if prev_version is None and lookup_dest is not dest_path:
-        prev_version = get_installed_plugin_version(project_dir=project_dir, dest_path=dest_path)
+    prev_version = get_installed_plugin_version(project_dir=project_dir)
     bundled_version = get_bundled_plugin_version()
     # Plugin files are refreshed with force=True, but hand-edited AGENTS.md / CLAUDE.md blocks are never forced.
     results = install_plugin(
         target=target,
         project_dir=project_dir,
-        dest_path=dest_path,
         force=True,
         launcher=launcher,
         force_blocks=False,

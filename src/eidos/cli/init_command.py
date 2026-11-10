@@ -60,7 +60,7 @@ def init_cmd(
     )
     console.print("  • Run [cyan]eidos validate eidos[/cyan] to verify specification compliance.")
     console.print("  • Run [cyan]eidos index sync[/cyan] to initialize the architectural knowledge graph index.")
-    console.print("  • (Optional) Install agent plugins using [cyan]eidos plugin install[/cyan].")
+    console.print("  • (Optional) Install agent plugins using [cyan]eidos plugin install <target>[/cyan].")
 
 
 def register(app: typer.Typer) -> None:

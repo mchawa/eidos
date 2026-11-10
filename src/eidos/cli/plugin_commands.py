@@ -33,20 +33,14 @@ def plugin_install(
     target: Annotated[
         PluginInstallTarget,
         typer.Argument(
-            help="Installation target in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all."
+            help="Installation target in project scope: antigravity, claude, cursor, aider, cline, kilocode, open-code, codex, copilot, all."
         ),
-    ] = PluginInstallTarget.PROJECT,
+    ],
     project_dir: Path | None = typer.Option(
         None,
         "--project-dir",
         "-p",
         help="Root directory of the project (defaults to current working directory).",
-    ),
-    dest: Path | None = typer.Option(
-        None,
-        "--dest",
-        "-d",
-        help="Custom destination directory within the project.",
     ),
     force: bool = typer.Option(
         False,
@@ -60,7 +54,7 @@ def plugin_install(
     ),
 ):
     """Install the Eidos agent plugin strictly inside project scope (.agents/plugins/eidos, agent-plugins.org v1.0.0)."""
-    resolved_target = target if isinstance(target, PluginInstallTarget) else PluginInstallTarget.PROJECT
+    resolved_target = target
     resolved_launcher = launcher if isinstance(launcher, str) else "eidos"
     console.print(
         f"[bold cyan]Installing Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{resolved_target.value}[/bold green])...\n"
@@ -70,7 +64,6 @@ def plugin_install(
         results = install_plugin(
             target=resolved_target,
             project_dir=project_dir,
-            dest_path=dest,
             force=force,
             launcher=resolved_launcher,
         )
@@ -96,30 +89,24 @@ def plugin_uninstall(
     target: Annotated[
         PluginInstallTarget,
         typer.Argument(
-            help="Target to remove in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all."
+            help="Target to remove in project scope: antigravity, claude, cursor, aider, cline, kilocode, open-code, codex, copilot, all."
         ),
-    ] = PluginInstallTarget.PROJECT,
+    ],
     project_dir: Path | None = typer.Option(
         None,
         "--project-dir",
         "-p",
         help="Root directory of the project (defaults to current working directory).",
     ),
-    dest: Path | None = typer.Option(
-        None,
-        "--dest",
-        "-d",
-        help="Custom destination directory within the project to remove.",
-    ),
 ):
     """Uninstall / remove the Eidos agent plugin from project scope."""
-    resolved_target = target if isinstance(target, PluginInstallTarget) else PluginInstallTarget.PROJECT
+    resolved_target = target
     console.print(
         f"[bold cyan]Uninstalling Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{resolved_target.value}[/bold green])...\n"
     )
 
     try:
-        results = uninstall_plugin(target=resolved_target, project_dir=project_dir, dest_path=dest)
+        results = uninstall_plugin(target=resolved_target, project_dir=project_dir)
         for res in results:
             if res.removed:
                 console.print(f"[bold green]✓[/bold green] [bold]{res.target.upper()}:[/bold] {res.message}")
@@ -140,15 +127,9 @@ def plugin_version(
         "-p",
         help="Root directory of the project (defaults to current working directory).",
     ),
-    dest: Path | None = typer.Option(
-        None,
-        "--dest",
-        "-d",
-        help="Custom plugin directory within the project to inspect.",
-    ),
 ):
     """Display and compare bundled vs installed Agent Plugin version."""
-    status_info = check_plugin_version_status(project_dir=project_dir, dest_path=dest)
+    status_info = check_plugin_version_status(project_dir=project_dir)
 
     table = Table(title="Eidos Agent Plugin Version Status", show_header=True)
     table.add_column("Property", style="bold cyan")
@@ -182,11 +163,11 @@ def plugin_version(
 
     if status == "outdated":
         console.print(
-            "\n[bold yellow]Update Available:[/bold yellow] Run [bold green]eidos plugin update[/bold green] to upgrade to the latest bundled version.\n"
+            "\n[bold yellow]Update Available:[/bold yellow] Run [bold green]eidos plugin update <target>[/bold green] to upgrade to the latest bundled version.\n"
         )
     elif status == "not_installed":
         console.print(
-            "\n[dim]Note:[/dim] Run [bold green]eidos plugin install[/bold green] to install the plugin into this project.\n"
+            "\n[dim]Note:[/dim] Run [bold green]eidos plugin install <target>[/bold green] to install the plugin into this project.\n"
         )
 
 
@@ -195,20 +176,14 @@ def plugin_update(
     target: Annotated[
         PluginInstallTarget,
         typer.Argument(
-            help="Target to update in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all."
+            help="Target to update in project scope: antigravity, claude, cursor, aider, cline, kilocode, open-code, codex, copilot, all."
         ),
-    ] = PluginInstallTarget.PROJECT,
+    ],
     project_dir: Path | None = typer.Option(
         None,
         "--project-dir",
         "-p",
         help="Root directory of the project (defaults to current working directory).",
-    ),
-    dest: Path | None = typer.Option(
-        None,
-        "--dest",
-        "-d",
-        help="Custom destination directory within the project to update.",
     ),
     launcher: str = typer.Option(
         "eidos",
@@ -217,7 +192,7 @@ def plugin_update(
     ),
 ):
     """Update project-scoped Agent Plugin to the latest bundled version."""
-    resolved_target = target if isinstance(target, PluginInstallTarget) else PluginInstallTarget.PROJECT
+    resolved_target = target
     resolved_launcher = launcher if isinstance(launcher, str) else "eidos"
     console.print(
         f"[bold cyan]Updating Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{resolved_target.value}[/bold green])...\n"
@@ -227,7 +202,6 @@ def plugin_update(
         prev_ver, current_ver, results = update_plugin(
             target=resolved_target,
             project_dir=project_dir,
-            dest_path=dest,
             launcher=resolved_launcher,
         )
         for res in results:

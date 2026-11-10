@@ -3,7 +3,7 @@ type: tech/contract
 id: CTR-EIDOS-CLI
 title: "Eidos Command-Line Interface Contract"
 status: active
-version: "1.1.0"
+version: "1.2.0"
 protocol: "cli_args"
 container: "CNT-EIDOS-CLI"
 specification_file: "src/eidos/cli/main.py"
@@ -65,12 +65,12 @@ Manages the interactive Living Web Portal and documentation site export.
   - `1`: Specifications directory not found.
 
 === `eidos plugin`
-Manages, validates, installs, updates, and uninstalls Eidos Agent Plugins across supported AI agent environments (Antigravity, Claude Code, Cursor, Aider, Cline, OpenCode, OpenAI Codex, and GitHub Copilot).
+Manages, validates, installs, updates, and uninstalls Eidos Agent Plugins across supported AI agent environments (Antigravity, Claude Code, Cursor, Aider, Cline, Kilo Code, OpenCode, OpenAI Codex, and GitHub Copilot).
 * **Sub-commands**:
-  - `install [TARGET] [--project-dir <path>] [--dest <path>] [--force] [--launcher <launcher>]`: Installs the plugin into `.agents/plugins/eidos` (strict `agent-plugins.org` v1.0.0), `.claude/skills/` & `.claude/settings.json` (Claude Code project-native skills and `Stop` hook), `.github/plugin/` & `.github/skills/` (Copilot Agent Plugins 1.0), `.cursor/skills/`, `.cline/skills/`, `.opencode/skills/`, `.codex/skills/`, `.aider/skills/`, and configures client settings and Agent Skills.
-  - `uninstall [TARGET] [--project-dir <path>] [--dest <path>]`: Uninstalls and cleans up the plugin and tool configurations from project scope.
-  - `version [--project-dir <path>] [--dest <path>]`: Displays and compares bundled vs installed plugin version and reports SemVer sync status.
-  - `update [TARGET] [--project-dir <path>] [--dest <path>] [--launcher <launcher>]`: Updates project-scoped plugin to the latest bundled version and syncs configurations.
+  - `install <TARGET> [--project-dir <path>] [--force] [--launcher <launcher>]`: Installs the plugin across `.agents/plugins/eidos` (`agent-plugins.org v1.0.0` bundle for Antigravity, Cursor, GitHub Copilot, and OpenAI Codex), `.agents/skills/` (Agent Skills for Cline, Kilo Code, and OpenCode), `.claude/skills/` & `.claude/settings.json` (Claude Code project-native skills and `Stop` hook), and `.aider/skills/` (Aider), and projects the canonical root `AGENTS.md` block.
+  - `uninstall <TARGET> [--project-dir <path>]`: Uninstalls and cleans up the plugin and tool configurations from project scope.
+  - `version [--project-dir <path>]`: Displays and compares bundled vs installed plugin version and reports SemVer sync status.
+  - `update <TARGET> [--project-dir <path>] [--launcher <launcher>]`: Updates project-scoped plugin to the latest bundled version and syncs configurations.
   - `validate [PATH]`: Validates an Agent Plugin against canonical JSON schemas and SemVer 2.0.0 rules.
   - `info [PATH]`: Displays plugin metadata, skills, hooks, and extensions.
 

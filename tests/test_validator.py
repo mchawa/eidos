@@ -3897,7 +3897,6 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
     from eidos.plugin.installer import (
         MANIFEST_FILENAME,
         _copy_plugin_tree,
-        _ensure_codex_plugin_manifest,
         _uninstall_from_manifest,
         locate_plugin_bundle,
     )
@@ -4284,7 +4283,7 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
     )
     assert scoped == ["src/a.py"]
 
-    # Plugin installer helper edge cases (_copy_plugin_tree, _ensure_codex_plugin_manifest, _uninstall_from_manifest)
+    # Plugin installer helper edge cases (_copy_plugin_tree, _uninstall_from_manifest)
     bundle_dir = locate_plugin_bundle()
     plug_dest = tmp_path / "plug_edge_dest"
     _copy_plugin_tree(bundle_dir, plug_dest, force=False)
@@ -4293,13 +4292,6 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
     copied_again = _copy_plugin_tree(bundle_dir, plug_dest, force=False)
     assert (plug_dest / "plugin.json") in copied_again
     assert (plug_dest / "hooks.json") in copied_again
-
-    mkt_dir = tmp_path / "mkt_edge_dir"
-    mkt_dir.mkdir(parents=True)
-    (mkt_dir / "plugin.json").write_bytes(b'{"name": "other-org"}')
-    assert _ensure_codex_plugin_manifest(mkt_dir, force=False) is None
-    (mkt_dir / "plugin.json").write_bytes(b'{"name": "eidos", "extensions": "invalid"}')
-    assert _ensure_codex_plugin_manifest(mkt_dir, force=False) is not None
 
     uninst_dir = tmp_path / "uninst_edge_dir"
     (uninst_dir / "sub_empty").mkdir(parents=True)

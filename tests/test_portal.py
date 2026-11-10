@@ -1511,7 +1511,6 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
     from eidos.plugin.hooks import handle_stop_hook
     from eidos.plugin.installer import (
         PluginInstallTarget,
-        _ensure_copilot_plugin_manifest,
         install_plugin,
         update_plugin,
     )
@@ -1616,7 +1615,7 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
     foreign_dir.mkdir(parents=True)
     foreign_manifest = foreign_dir / "plugin.json"
     foreign_manifest.write_bytes(orjson.dumps({"name": "foreign-plugin", "version": "9.9.9"}))
-    install_plugin(target=PluginInstallTarget.PROJECT, project_dir=proj_dir, force=False)
+    install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=proj_dir, force=False)
     assert orjson.loads(foreign_manifest.read_bytes())["name"] == "foreign-plugin"
 
     claude_proj = tmp_path / "claude_proj"
@@ -1629,19 +1628,10 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
     prev_claude_ver, _, _ = update_plugin(target=PluginInstallTarget.CLAUDE, project_dir=claude_proj)
     assert prev_claude_ver == "0.0.8"
 
-    copilot_dir = tmp_path / "copilot_test"
-    copilot_dir.mkdir()
-    (copilot_dir / "plugin.json").write_bytes(
-        orjson.dumps({"name": "eidos", "version": "0.0.1", "customKey": "preserved"})
-    )
-    _ensure_copilot_plugin_manifest(copilot_dir, force=False)
-    merged_copilot = orjson.loads((copilot_dir / "plugin.json").read_bytes())
-    assert merged_copilot["customKey"] == "preserved"
-
     codex_proj = tmp_path / "codex_proj"
     codex_proj.mkdir()
     install_plugin(target=PluginInstallTarget.CODEX, project_dir=codex_proj, force=True)
-    codex_manifest = codex_proj / ".codex" / "plugin.json"
+    codex_manifest = codex_proj / ".agents" / "plugins" / "eidos" / "plugin.json"
     codex_data = orjson.loads(codex_manifest.read_bytes())
     codex_data["version"] = "0.0.9"
     codex_manifest.write_bytes(orjson.dumps(codex_data))

@@ -26,8 +26,8 @@ eidos plugin validate
 eidos plugin info
 
 # Install plugin into project workspace (.agents/plugins/eidos) and IDE configs
-eidos plugin install
+eidos plugin install all
 
-# Upgrade installed plugin and prune legacy skill directories
+# Upgrade installed plugin to the latest bundled version
 eidos plugin update all
 ```

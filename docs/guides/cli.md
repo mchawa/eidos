@@ -446,6 +446,7 @@ eidos plugin install claude
 eidos plugin install cursor
 eidos plugin install aider
 eidos plugin install cline
+eidos plugin install kilocode
 eidos plugin install open-code
 eidos plugin install codex
 eidos plugin install copilot
@@ -470,10 +471,10 @@ eidos plugin uninstall all
 ```
 
 Sub-commands:
-* `install [TARGET]`: Installs the plugin into `.agents/plugins/eidos` and client harness locations via manifest-tracked `TargetAdapter` projections (`--project-dir, -p`, `--dest, -d`, `--force`, `--launcher [eidos|uvx]`).
-* `uninstall [TARGET]`: Safely cleans up Eidos plugin files, skills, and client configurations while preserving user-owned files (`--project-dir, -p`, `--dest, -d`).
-* `version`: Displays and compares bundled vs installed plugin version.
-* `update [TARGET]`: Updates project-scoped plugin to the latest bundled version (`--project-dir, -p`, `--dest, -d`, `--launcher [eidos|uvx]`).
+* `install <TARGET>`: Installs the plugin into `.agents/plugins/eidos` and client harness locations via manifest-tracked `TargetAdapter` projections (`--project-dir, -p`, `--force`, `--launcher [eidos|uvx]`).
+* `uninstall <TARGET>`: Safely cleans up Eidos plugin files, skills, and client configurations while preserving user-owned files (`--project-dir, -p`).
+* `version`: Displays and compares bundled vs installed plugin version (`--project-dir, -p`).
+* `update <TARGET>`: Updates project-scoped plugin to the latest bundled version (`--project-dir, -p`, `--launcher [eidos|uvx]`).
 * `validate`: Validates an Agent Plugin against canonical JSON schemas and SemVer 2.0.0 rules.
 * `info`: Displays plugin metadata, skills, hooks, and extensions.
 

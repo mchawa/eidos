@@ -66,10 +66,10 @@ def test_repo_plugin_conformance():
 
 def test_plugin_install_to_project_scope(tmp_path):
     """Verify project-scoped installation into workspace directories (.agents) without mutating .cursor or .claude."""
-    results = install_plugin(target=PluginInstallTarget.PROJECT, project_dir=tmp_path, force=True)
+    results = install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=tmp_path, force=True)
 
     assert len(results) == 1
-    assert results[0].target == "project"
+    assert results[0].target == "antigravity"
 
     # Check .agents/plugins/eidos
     agent_dir = tmp_path / ".agents" / "plugins" / "eidos"
@@ -80,24 +80,9 @@ def test_plugin_install_to_project_scope(tmp_path):
     agent_report = validate_plugin_package(agent_dir)
     assert agent_report.is_valid
 
-    # Isolated project target must not touch .cursor or .claude
+    # Isolated antigravity target must not touch .cursor or .claude
     assert not (tmp_path / ".cursor").exists()
     assert not (tmp_path / ".claude").exists()
-
-
-def test_plugin_install_to_custom_directory(tmp_path):
-    """Verify installing plugin to a custom project-relative path."""
-    dest = tmp_path / "installed_plugin"
-    results = install_plugin(dest_path=dest, force=True)
-
-    assert len(results) == 1
-    assert results[0].success
-    assert (dest / "plugin.json").exists()
-    assert not (dest / "mcp_config.json").exists()
-    assert not (dest / "mcp.json").exists()
-    assert (dest / "skills" / "eidos" / "SKILL.md").exists()
-    report = validate_plugin_package(dest)
-    assert report.is_valid
 
 
 def test_cli_plugin_validate():
@@ -117,8 +102,11 @@ def test_cli_plugin_info():
 
 
 def test_cli_plugin_install_project(tmp_path):
-    """Verify 'eidos plugin install --project-dir' CLI command."""
-    res = runner.invoke(app, ["plugin", "install", "--project-dir", str(tmp_path)])
+    """Verify 'eidos plugin install <target> --project-dir' CLI command requires an explicit target."""
+    res_missing = runner.invoke(app, ["plugin", "install", "--project-dir", str(tmp_path)])
+    assert res_missing.exit_code != 0
+
+    res = runner.invoke(app, ["plugin", "install", "antigravity", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert "Success!" in res.stdout
     assert (tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json").exists()
@@ -127,7 +115,7 @@ def test_cli_plugin_install_project(tmp_path):
 def test_plugin_uninstall_project_scope(tmp_path):
     """Verify uninstalling plugin from project scope removes .agents/plugins/eidos without deleting .cursor or .claude."""
     # Install first
-    install_plugin(target=PluginInstallTarget.PROJECT, project_dir=tmp_path, force=True)
+    install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=tmp_path, force=True)
     plugin_dir = tmp_path / ".agents" / "plugins" / "eidos"
     cursor_rules = tmp_path / ".cursor" / "rules" / "eidos.mdc"
     cursor_rules.parent.mkdir(parents=True, exist_ok=True)
@@ -136,8 +124,8 @@ def test_plugin_uninstall_project_scope(tmp_path):
     assert plugin_dir.exists()
     assert cursor_rules.exists()
 
-    # Uninstall project target only
-    results = uninstall_plugin(target=PluginInstallTarget.PROJECT, project_dir=tmp_path)
+    # Uninstall antigravity target only
+    results = uninstall_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=tmp_path)
     assert len(results) == 1
     assert results[0].success
 
@@ -146,13 +134,16 @@ def test_plugin_uninstall_project_scope(tmp_path):
 
 
 def test_cli_plugin_uninstall_project(tmp_path):
-    """Verify 'eidos plugin uninstall --project-dir' CLI command."""
+    """Verify 'eidos plugin uninstall <target> --project-dir' CLI command requires an explicit target."""
+    res_missing = runner.invoke(app, ["plugin", "uninstall", "--project-dir", str(tmp_path)])
+    assert res_missing.exit_code != 0
+
     # Install
-    runner.invoke(app, ["plugin", "install", "--project-dir", str(tmp_path)])
+    runner.invoke(app, ["plugin", "install", "antigravity", "--project-dir", str(tmp_path)])
     assert (tmp_path / ".agents" / "plugins" / "eidos").exists()
 
     # Uninstall
-    res = runner.invoke(app, ["plugin", "uninstall", "--project-dir", str(tmp_path)])
+    res = runner.invoke(app, ["plugin", "uninstall", "antigravity", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert "Success!" in res.stdout
     assert not (tmp_path / ".agents" / "plugins" / "eidos").exists()
@@ -160,13 +151,13 @@ def test_cli_plugin_uninstall_project(tmp_path):
 
 def test_cli_plugin_remove_alias(tmp_path):
     """Verify 'eidos plugin remove' alias is removed in favor of 'eidos plugin uninstall'."""
-    runner.invoke(app, ["plugin", "install", "--project-dir", str(tmp_path)])
+    runner.invoke(app, ["plugin", "install", "antigravity", "--project-dir", str(tmp_path)])
     assert (tmp_path / ".agents" / "plugins" / "eidos").exists()
 
-    res_removed = runner.invoke(app, ["plugin", "remove", "--project-dir", str(tmp_path)])
+    res_removed = runner.invoke(app, ["plugin", "remove", "antigravity", "--project-dir", str(tmp_path)])
     assert res_removed.exit_code != 0
 
-    res = runner.invoke(app, ["plugin", "uninstall", "--project-dir", str(tmp_path)])
+    res = runner.invoke(app, ["plugin", "uninstall", "antigravity", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert "Success!" in res.stdout
     assert not (tmp_path / ".agents" / "plugins" / "eidos").exists()
@@ -188,9 +179,6 @@ def test_plugin_install_to_claude_plugin(tmp_path):
             }
         )
     )
-
-    # Verify legacy version is still detected before migration
-    assert get_installed_plugin_version(project_dir=tmp_path) == "1.0.0"
 
     results = install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=tmp_path, force=True)
 
@@ -337,77 +325,73 @@ def test_plugin_install_and_uninstall_aider(tmp_path):
 
 
 def test_plugin_install_and_uninstall_cline(tmp_path):
-    """Verify Cline installation creates plugin bundle and flat skills without MCP configs."""
+    """Verify Cline installation creates shared .agents/skills and root AGENTS.md block without .cline/ or .clinerules/ hooks."""
     results = install_plugin(target=PluginInstallTarget.CLINE, project_dir=tmp_path, force=True)
     assert len(results) == 1
     assert results[0].success
     assert results[0].target == "cline"
+    assert results[0].destination == tmp_path / ".agents" / "skills"
 
-    rules = tmp_path / ".clinerules"
-    mcp_file = tmp_path / ".cline" / "mcp.json"
-    settings_file = tmp_path / ".cline" / "cline_mcp_settings.json"
-    plugin_dir = tmp_path / ".cline" / "plugins" / "eidos"
-    skills_dir = tmp_path / ".cline" / "skills"
-    assert not rules.exists()
-    assert not mcp_file.exists()
-    assert not settings_file.exists()
-    assert plugin_dir.exists()
+    assert not (tmp_path / ".clinerules").exists()
+    assert not (tmp_path / ".cline").exists()
+    assert not (tmp_path / ".cline" / "plugins").exists()
+    assert not (tmp_path / ".cline" / "skills").exists()
+    skills_dir = tmp_path / ".agents" / "skills"
     assert (skills_dir / "eidos" / "SKILL.md").exists()
     assert (skills_dir / "eidos-spec" / "SKILL.md").exists()
     assert (skills_dir / "eidos-plan" / "SKILL.md").exists()
+    assert (skills_dir / "eidos-ops" / "SKILL.md").exists()
     assert len([d for d in skills_dir.iterdir() if d.is_dir()]) == 4
+    assert "targets=cline:.agents/skills" in (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
 
-    # Uninstall
+    # Uninstall removes .agents/skills and prunes empty .agents/
     uninst = uninstall_plugin(target=PluginInstallTarget.CLINE, project_dir=tmp_path)
     assert len(uninst) == 1
     assert uninst[0].success
-    assert not plugin_dir.exists()
     assert not (skills_dir / "eidos").exists()
+    assert not (tmp_path / ".agents").exists()
 
 
 def test_plugin_install_and_uninstall_opencode(tmp_path):
-    """Verify OpenCode installation creates plugin bundle and flat skills."""
+    """Verify OpenCode installation creates shared .agents/skills and root AGENTS.md block without .opencode/."""
     results = install_plugin(target=PluginInstallTarget.OPEN_CODE, project_dir=tmp_path, force=True)
     assert len(results) == 1
     assert results[0].success
     assert results[0].target == "open-code"
+    assert results[0].destination == tmp_path / ".agents" / "skills"
 
-    cfg = tmp_path / "opencode.json"
-    rules = tmp_path / ".opencode" / "rules.md"
-    plugin_dir = tmp_path / ".opencode" / "plugins" / "eidos"
-    skills_dir = tmp_path / ".opencode" / "skills"
-    assert not cfg.exists()
-    assert not rules.exists()
-    assert plugin_dir.exists()
+    assert not (tmp_path / "opencode.json").exists()
+    assert not (tmp_path / ".opencode").exists()
+    assert not (tmp_path / ".opencode" / "plugins").exists()
+    assert not (tmp_path / ".opencode" / "skills").exists()
+    skills_dir = tmp_path / ".agents" / "skills"
     assert (skills_dir / "eidos" / "SKILL.md").exists()
     assert len([d for d in skills_dir.iterdir() if d.is_dir()]) == 4
+    assert "targets=open-code:.agents/skills" in (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
 
     # Uninstall
     uninst = uninstall_plugin(target=PluginInstallTarget.OPEN_CODE, project_dir=tmp_path)
     assert len(uninst) == 1
     assert uninst[0].success
-    assert not plugin_dir.exists()
     assert not (skills_dir / "eidos").exists()
+    assert not (tmp_path / ".agents").exists()
 
 
 def test_plugin_install_and_uninstall_codex(tmp_path):
-    """Verify OpenAI Codex installation creates .codex/plugin.json, skills, and the root AGENTS.md block (no rules file)."""
+    """Verify OpenAI Codex installation creates canonical .agents/plugins/eidos bundle and the root AGENTS.md block."""
     results = install_plugin(target=PluginInstallTarget.CODEX, project_dir=tmp_path, force=True)
     assert len(results) == 1
     assert results[0].success
     assert results[0].target == "codex"
 
-    codex_dir = tmp_path / ".codex"
-    assert (codex_dir / "plugin.json").exists()
-    assert not (codex_dir / "mcp.json").exists()
-    assert not (codex_dir / "rules.md").exists()
-    assert (codex_dir / "skills" / "eidos" / "SKILL.md").exists()
-    assert "targets=codex:.codex/skills" in (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
-    assert len([d for d in (codex_dir / "skills").iterdir() if d.is_dir()]) == 4
-
-    manifest = orjson.loads((codex_dir / "plugin.json").read_bytes())
-    assert manifest["name"] == "eidos"
-    assert "com.openai" in manifest["extensions"]
+    assert not (tmp_path / ".codex" / "plugin.json").exists()
+    assert not (tmp_path / ".codex" / "skills").exists()
+    plugin_dir = tmp_path / ".agents" / "plugins" / "eidos"
+    assert (plugin_dir / "plugin.json").exists()
+    assert (plugin_dir / "hooks.json").exists()
+    assert (plugin_dir / "skills" / "eidos" / "SKILL.md").exists()
+    assert "targets=codex:.agents/plugins/eidos/skills" in (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    assert len([d for d in (plugin_dir / "skills").iterdir() if d.is_dir()]) == 4
 
     # Verify version detection
     installed_ver = get_installed_plugin_version(project_dir=tmp_path)
@@ -417,45 +401,29 @@ def test_plugin_install_and_uninstall_codex(tmp_path):
     uninst = uninstall_plugin(target=PluginInstallTarget.CODEX, project_dir=tmp_path)
     assert len(uninst) == 1
     assert uninst[0].success
-    assert not codex_dir.exists()
+    assert not plugin_dir.exists()
 
 
 def test_plugin_install_and_uninstall_copilot(tmp_path):
-    """Verify GitHub Copilot installation creates plugin (.github/plugin/), skills, settings, and the root AGENTS.md block."""
+    """Verify GitHub Copilot installation creates canonical .agents/plugins/eidos bundle and the root AGENTS.md block."""
     results = install_plugin(target=PluginInstallTarget.COPILOT, project_dir=tmp_path, force=True)
     assert len(results) == 1
     assert results[0].success
     assert results[0].target == "copilot"
 
-    # 1. Native plugin bundle
-    copilot_plugin = tmp_path / ".github" / "plugin"
-    assert (copilot_plugin / "plugin.json").exists()
-    assert not (copilot_plugin / "mcp.json").exists()
-    manifest = orjson.loads((copilot_plugin / "plugin.json").read_bytes())
-    assert manifest["name"] == "eidos"
-    assert "com.github.copilot" in manifest["extensions"]
+    assert not (tmp_path / ".github" / "plugin").exists()
+    assert not (tmp_path / ".github" / "skills").exists()
+    assert not (tmp_path / ".github" / "copilot").exists()
+    plugin_dir = tmp_path / ".agents" / "plugins" / "eidos"
+    assert (plugin_dir / "plugin.json").exists()
+    assert (plugin_dir / "hooks.json").exists()
+    assert (plugin_dir / "skills" / "eidos" / "SKILL.md").exists()
+    assert len([d for d in (plugin_dir / "skills").iterdir() if d.is_dir()]) == 4
 
-    # 2. Native Copilot Agent Skills
-    copilot_skills = tmp_path / ".github" / "skills"
-    assert (copilot_skills / "eidos" / "SKILL.md").exists()
-    assert (copilot_skills / "eidos-spec" / "SKILL.md").exists()
-    assert (copilot_skills / "eidos-plan" / "SKILL.md").exists()
-    assert len([d for d in copilot_skills.iterdir() if d.is_dir()]) == 4
-
-    # 3. Copilot settings
-    copilot_settings = tmp_path / ".github" / "copilot" / "settings.json"
-    assert copilot_settings.exists()
-    settings = orjson.loads(copilot_settings.read_bytes())
-    assert settings["enabledPlugins"].get("eidos") is True
-
-    # 4. MCP servers are NOT created
-    assert not (tmp_path / ".github" / "copilot" / "mcp.json").exists()
-    assert not (tmp_path / ".vscode" / "mcp.json").exists()
-
-    # 5. Copilot loads root AGENTS.md natively: no copilot-instructions.md bridge (DLT-2026-121)
+    # Copilot loads root AGENTS.md natively: no copilot-instructions.md bridge (DLT-2026-121)
     instructions = tmp_path / ".github" / "copilot-instructions.md"
     assert not instructions.exists()
-    assert "targets=copilot:.github/skills" in (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    assert "targets=copilot:.agents/plugins/eidos/skills" in (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
 
     # Verify get_installed_plugin_version detects Copilot plugin
     installed_ver = get_installed_plugin_version(project_dir=tmp_path)
@@ -465,9 +433,7 @@ def test_plugin_install_and_uninstall_copilot(tmp_path):
     uninst = uninstall_plugin(target=PluginInstallTarget.COPILOT, project_dir=tmp_path)
     assert len(uninst) == 1
     assert uninst[0].success
-    assert not copilot_plugin.exists()
-    assert not (copilot_skills / "eidos").exists()
-    assert not copilot_settings.exists()
+    assert not plugin_dir.exists()
 
     # A user-authored copilot-instructions.md is never touched by install or uninstall
     custom_header = "# Team Instructions\nFollow our team rules.\n"
@@ -480,55 +446,83 @@ def test_plugin_install_and_uninstall_copilot(tmp_path):
 
 
 def test_plugin_install_and_uninstall_all_targets(tmp_path):
-    """Verify installing target 'all' configures all 8 AI agent environments."""
+    """Verify installing target 'all' configures all 9 AI agent environments."""
     results = install_plugin(target=PluginInstallTarget.ALL, project_dir=tmp_path, force=True)
     targets = [r.target for r in results]
-    assert len(targets) == 8
-    assert "project" in targets
+    assert len(targets) == 9
+    assert "antigravity" in targets
     assert "cursor" in targets
     assert "claude" in targets
     assert "aider" in targets
     assert "cline" in targets
+    assert "kilocode" in targets
     assert "open-code" in targets
     assert "codex" in targets
     assert "copilot" in targets
 
     # Uninstall all
     uninst = uninstall_plugin(target=PluginInstallTarget.ALL, project_dir=tmp_path)
-    assert len(uninst) == 8
+    assert len(uninst) == 9
     for u in uninst:
         assert u.success
 
 
 def test_cli_install_new_agent_shortcuts(tmp_path):
-    """Verify 'eidos plugin install' and 'eidos plugin uninstall' for aider, cline, open-code, opencode, codex, and copilot."""
+    """Verify 'eidos plugin install' and 'eidos plugin uninstall' for aider, cline, kilocode, open-code, codex, and copilot."""
     # Aider
     res = runner.invoke(app, ["plugin", "install", "aider", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert (tmp_path / ".aider" / "skills" / "eidos" / "SKILL.md").exists()
     assert "targets=aider:.aider/skills" in (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
 
-    # Cline
+    # Cline (shared .agents/skills layout for Cline, Kilo Code, and OpenCode; no .cline/ or .clinerules/ hooks)
     res = runner.invoke(app, ["plugin", "install", "cline", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
-    assert (tmp_path / ".cline" / "skills" / "eidos" / "SKILL.md").exists()
+    assert (tmp_path / ".agents" / "skills" / "eidos" / "SKILL.md").exists()
+    assert not (tmp_path / ".cline" / "plugins").exists()
+    assert not (tmp_path / ".cline" / "skills").exists()
+    assert not (tmp_path / ".clinerules").exists()
+    assert "targets=aider:.aider/skills,cline:.agents/skills" in (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+
+    # Kilo Code
+    res = runner.invoke(app, ["plugin", "install", "kilocode", "--project-dir", str(tmp_path)])
+    assert res.exit_code == 0
+    assert (tmp_path / ".agents" / "skills" / "eidos" / "SKILL.md").exists()
+    assert "targets=aider:.aider/skills,cline:.agents/skills,kilocode:.agents/skills" in (
+        tmp_path / "AGENTS.md"
+    ).read_text(encoding="utf-8")
+
+    # Coexistence with antigravity (.agents/plugins/eidos): uninstalling either preserves the other under .agents/
+    res = runner.invoke(app, ["plugin", "install", "antigravity", "--project-dir", str(tmp_path)])
+    assert res.exit_code == 0
+    res = runner.invoke(app, ["plugin", "uninstall", "cline", "--project-dir", str(tmp_path)])
+    assert res.exit_code == 0
+    assert not (tmp_path / ".agents" / "skills").exists()
+    assert (tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json").exists()
+    res = runner.invoke(app, ["plugin", "install", "cline", "--project-dir", str(tmp_path)])
+    assert res.exit_code == 0
+    res = runner.invoke(app, ["plugin", "uninstall", "antigravity", "--project-dir", str(tmp_path)])
+    assert res.exit_code == 0
+    assert not (tmp_path / ".agents" / "plugins").exists()
+    assert (tmp_path / ".agents" / "skills" / "eidos" / "SKILL.md").exists()
 
     # Open-code
     res = runner.invoke(app, ["plugin", "install", "open-code", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
-    assert (tmp_path / ".opencode" / "skills" / "eidos" / "SKILL.md").exists()
+    assert (tmp_path / ".agents" / "skills" / "eidos" / "SKILL.md").exists()
+    assert not (tmp_path / ".opencode" / "skills").exists()
 
     # Codex
     res = runner.invoke(app, ["plugin", "install", "codex", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
-    assert (tmp_path / ".codex" / "plugin.json").exists()
-    assert (tmp_path / ".codex" / "skills" / "eidos" / "SKILL.md").exists()
+    assert (tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json").exists()
+    assert (tmp_path / ".agents" / "plugins" / "eidos" / "skills" / "eidos" / "SKILL.md").exists()
 
     # Copilot
     res = runner.invoke(app, ["plugin", "install", "copilot", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert not (tmp_path / ".github" / "copilot-instructions.md").exists()
-    assert (tmp_path / ".github" / "skills" / "eidos" / "SKILL.md").exists()
+    assert (tmp_path / ".agents" / "plugins" / "eidos" / "skills" / "eidos" / "SKILL.md").exists()
 
     # Uninstall all
     res = runner.invoke(app, ["plugin", "uninstall", "all", "--project-dir", str(tmp_path)])
@@ -613,7 +607,7 @@ def test_plugin_version_status_check(tmp_path):
     assert not status["is_installed"]
 
     # 2. Installed up-to-date
-    install_plugin(target=PluginInstallTarget.PROJECT, project_dir=tmp_path)
+    install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=tmp_path)
     status_installed = check_plugin_version_status(project_dir=tmp_path)
     assert status_installed["status"] == "up_to_date"
     assert status_installed["is_installed"]
@@ -646,7 +640,7 @@ def test_cli_plugin_version(tmp_path):
     assert "Not installed" in res_not_inst.stdout
 
     # Installed
-    runner.invoke(app, ["plugin", "install", "--project-dir", str(tmp_path)])
+    runner.invoke(app, ["plugin", "install", "antigravity", "--project-dir", str(tmp_path)])
     res_inst = runner.invoke(app, ["plugin", "version", "--project-dir", str(tmp_path)])
     assert res_inst.exit_code == 0
     assert "Up to date" in res_inst.stdout
@@ -667,7 +661,7 @@ def test_cli_plugin_version(tmp_path):
 def test_cli_plugin_update(tmp_path):
     """Verify 'eidos plugin update' CLI command upgrades older plugin versions (CTR-EIDOS-CLI)."""
     # Install initially
-    runner.invoke(app, ["plugin", "install", "--project-dir", str(tmp_path)])
+    runner.invoke(app, ["plugin", "install", "antigravity", "--project-dir", str(tmp_path)])
 
     # Mock older installed version
     plugin_json = tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json"
@@ -676,7 +670,7 @@ def test_cli_plugin_update(tmp_path):
     plugin_json.write_bytes(orjson.dumps(data))
 
     # Run update
-    res = runner.invoke(app, ["plugin", "update", "--project-dir", str(tmp_path)])
+    res = runner.invoke(app, ["plugin", "update", "antigravity", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert "Upgraded Eidos Agent Plugin" in res.stdout
     assert "0.0.5" in res.stdout
@@ -689,10 +683,10 @@ def test_cli_plugin_update(tmp_path):
 
 def test_cli_plugin_upgrade_alias(tmp_path):
     """Verify 'eidos plugin upgrade' alias is removed in favor of 'eidos plugin update' (CTR-EIDOS-CLI)."""
-    res_removed = runner.invoke(app, ["plugin", "upgrade", "--project-dir", str(tmp_path)])
+    res_removed = runner.invoke(app, ["plugin", "upgrade", "antigravity", "--project-dir", str(tmp_path)])
     assert res_removed.exit_code != 0
 
-    res = runner.invoke(app, ["plugin", "update", "--project-dir", str(tmp_path)])
+    res = runner.invoke(app, ["plugin", "update", "antigravity", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert (tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json").exists()
 
@@ -1064,7 +1058,7 @@ def test_plugin_install_and_uninstall_preserves_custom_skills(tmp_path):
     from eidos.plugin.installer import ACTIVE_EIDOS_SKILLS
 
     tree_skills = tmp_path / ".agents" / "plugins" / "eidos" / "skills"
-    flat_skills = tmp_path / ".cursor" / "skills"
+    flat_skills = tmp_path / ".agents" / "skills"
     custom_user_skill = flat_skills / "custom-team-skill"
     custom_user_skill.mkdir(parents=True, exist_ok=True)
     (custom_user_skill / "SKILL.md").write_text("# Custom Team Skill\n", encoding="utf-8")
@@ -1079,7 +1073,7 @@ def test_plugin_install_and_uninstall_preserves_custom_skills(tmp_path):
     assert (custom_user_skill / "SKILL.md").exists()
 
     # Verify uninstall_plugin removes active Eidos skills while keeping custom skill
-    uninstall_plugin(target=PluginInstallTarget.CURSOR, project_dir=tmp_path)
+    uninstall_plugin(target=PluginInstallTarget.CLINE, project_dir=tmp_path)
     for active in ACTIVE_EIDOS_SKILLS:
         assert not (flat_skills / active).exists()
     assert (custom_user_skill / "SKILL.md").exists()
@@ -1091,12 +1085,12 @@ def test_plugin_install_creates_manifest_with_hashes(tmp_path):
 
     from eidos.plugin.installer import MANIFEST_FILENAME
 
-    # 1. Test custom destination
-    dest = tmp_path / "custom_dest"
-    results = install_plugin(dest_path=dest, force=True)
+    # 1. Test ANTIGRAVITY target manifest
+    results = install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=tmp_path, force=True)
     assert len(results) == 1
     assert results[0].success
 
+    dest = tmp_path / ".agents" / "plugins" / "eidos"
     manifest_file = dest / MANIFEST_FILENAME
     assert manifest_file.exists(), f"Expected manifest file at {manifest_file}"
 
@@ -1120,39 +1114,39 @@ def test_plugin_install_creates_manifest_with_hashes(tmp_path):
     codex_root = tmp_path / "codex_project"
     codex_root.mkdir()
     install_plugin(target=PluginInstallTarget.CODEX, project_dir=codex_root, force=True)
-    codex_manifest_file = codex_root / ".codex" / MANIFEST_FILENAME
+    codex_manifest_file = codex_root / ".agents" / "plugins" / "eidos" / MANIFEST_FILENAME
     assert codex_manifest_file.exists()
     codex_manifest = orjson.loads(codex_manifest_file.read_bytes())
     assert "plugin.json" in codex_manifest["files"]
     assert "rules.md" not in codex_manifest["files"]
     assert "skills/eidos/SKILL.md" in codex_manifest["files"]
 
-    # 3. Test COPILOT target manifest
-    copilot_root = tmp_path / "copilot_project"
-    copilot_root.mkdir()
-    install_plugin(target=PluginInstallTarget.COPILOT, project_dir=copilot_root, force=True)
-    copilot_manifest_file = copilot_root / ".github" / "plugin" / MANIFEST_FILENAME
-    assert copilot_manifest_file.exists()
-    copilot_manifest = orjson.loads(copilot_manifest_file.read_bytes())
-    assert "plugin.json" in copilot_manifest["files"]
+    # 3. Test CLINE target manifest
+    cline_root = tmp_path / "cline_project"
+    cline_root.mkdir()
+    install_plugin(target=PluginInstallTarget.CLINE, project_dir=cline_root, force=True)
+    cline_manifest_file = cline_root / ".agents" / MANIFEST_FILENAME
+    assert cline_manifest_file.exists()
+    cline_manifest = orjson.loads(cline_manifest_file.read_bytes())
+    assert "skills/eidos/SKILL.md" in cline_manifest["files"]
 
 
 def test_plugin_uninstall_preserves_unmanifested_user_files(tmp_path):
-    """Verify non-destructive uninstall removes only manifest-tracked files, preserving user files in .codex and --dest (DLT-2026-046)."""
+    """Verify non-destructive uninstall removes only manifest-tracked files, preserving user files in .agents/plugins/eidos and .agents (DLT-2026-046, DLT-2026-127)."""
     from eidos.plugin.installer import MANIFEST_FILENAME
 
-    # 1. Non-destructive uninstall in .codex
-    codex_dir = tmp_path / ".codex"
-    codex_dir.mkdir(parents=True, exist_ok=True)
-    user_file = codex_dir / "user_custom_config.json"
+    # 1. Non-destructive uninstall in .agents/plugins/eidos
+    plugin_dir = tmp_path / ".agents" / "plugins" / "eidos"
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+    user_file = plugin_dir / "user_custom_config.json"
     user_file.write_text('{"user_custom": true}\n', encoding="utf-8")
-    user_skill_file = codex_dir / "skills" / "my-team-skill" / "SKILL.md"
+    user_skill_file = plugin_dir / "skills" / "my-team-skill" / "SKILL.md"
     user_skill_file.parent.mkdir(parents=True, exist_ok=True)
     user_skill_file.write_text("# My Team Skill\n", encoding="utf-8")
 
     install_plugin(target=PluginInstallTarget.CODEX, project_dir=tmp_path, force=True)
-    assert (codex_dir / MANIFEST_FILENAME).exists()
-    assert (codex_dir / "plugin.json").exists()
+    assert (plugin_dir / MANIFEST_FILENAME).exists()
+    assert (plugin_dir / "plugin.json").exists()
     assert user_file.exists()
     assert user_skill_file.exists()
 
@@ -1161,41 +1155,42 @@ def test_plugin_uninstall_preserves_unmanifested_user_files(tmp_path):
     assert uninst[0].success
 
     # Manifest-tracked files removed
-    assert not (codex_dir / MANIFEST_FILENAME).exists()
-    assert not (codex_dir / "plugin.json").exists()
-    assert not (codex_dir / "skills" / "eidos").exists()
+    assert not (plugin_dir / MANIFEST_FILENAME).exists()
+    assert not (plugin_dir / "plugin.json").exists()
+    assert not (plugin_dir / "skills" / "eidos").exists()
 
     # User-created files and parent directory preserved!
-    assert codex_dir.exists(), ".codex directory should NOT be removed when user files exist"
+    assert plugin_dir.exists(), ".agents/plugins/eidos directory should NOT be removed when user files exist"
     assert user_file.exists(), "User file must be preserved"
     assert user_file.read_text(encoding="utf-8") == '{"user_custom": true}\n'
     assert user_skill_file.exists(), "User skill must be preserved"
 
-    # 2. Non-destructive uninstall in custom --dest
-    custom_dest = tmp_path / "custom_dest_preserve"
-    custom_dest.mkdir(parents=True, exist_ok=True)
-    user_dest_file = custom_dest / "untracked_user_notes.txt"
+    # 2. Non-destructive uninstall in .agents (skills-only target)
+    cline_ws = tmp_path / "cline_preserve"
+    agents_dir = cline_ws / ".agents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    user_dest_file = agents_dir / "untracked_user_notes.txt"
     user_dest_file.write_text("keep this safe\n", encoding="utf-8")
 
-    install_plugin(dest_path=custom_dest, force=True)
-    assert (custom_dest / MANIFEST_FILENAME).exists()
-    assert (custom_dest / "plugin.json").exists()
+    install_plugin(target=PluginInstallTarget.CLINE, project_dir=cline_ws, force=True)
+    assert (agents_dir / MANIFEST_FILENAME).exists()
+    assert (agents_dir / "skills" / "eidos" / "SKILL.md").exists()
     assert user_dest_file.exists()
 
-    uninst_dest = uninstall_plugin(dest_path=custom_dest)
+    uninst_dest = uninstall_plugin(target=PluginInstallTarget.CLINE, project_dir=cline_ws)
     assert len(uninst_dest) == 1
     assert uninst_dest[0].success
-    assert not (custom_dest / MANIFEST_FILENAME).exists()
-    assert not (custom_dest / "plugin.json").exists()
-    assert custom_dest.exists(), "Custom dest should NOT be removed when user files exist"
-    assert user_dest_file.exists(), "User file in custom dest must be preserved"
+    assert not (agents_dir / MANIFEST_FILENAME).exists()
+    assert not (agents_dir / "skills" / "eidos").exists()
+    assert agents_dir.exists(), ".agents directory should NOT be removed when user files exist"
+    assert user_dest_file.exists(), "User file in .agents must be preserved"
     assert user_dest_file.read_text(encoding="utf-8") == "keep this safe\n"
 
 
 def test_plugin_install_force_false_prevents_overwriting(tmp_path):
     """Verify force=False (default) prevents overwriting pre-existing user files without --force (DLT-2026-046, DLT-2026-121)."""
     # 1. Pre-existing, user-modified Codex skill file
-    codex_skill = tmp_path / ".codex" / "skills" / "eidos" / "SKILL.md"
+    codex_skill = tmp_path / ".agents" / "plugins" / "eidos" / "skills" / "eidos" / "SKILL.md"
     codex_skill.parent.mkdir(parents=True, exist_ok=True)
     codex_skill.write_text("# Custom User Skill\n", encoding="utf-8")
 
@@ -1209,6 +1204,7 @@ def test_plugin_install_force_false_prevents_overwriting(tmp_path):
 
     # 2. User-authored legacy-named files are never written by install, with or without force
     rules_file = tmp_path / ".codex" / "rules.md"
+    rules_file.parent.mkdir(parents=True, exist_ok=True)
     rules_file.write_text("# Custom User Rules\n", encoding="utf-8")
     conv_file = tmp_path / ".aider.conventions.md"
     conv_file.write_text("# Custom User Aider Conventions\n", encoding="utf-8")
@@ -1220,7 +1216,7 @@ def test_plugin_install_force_false_prevents_overwriting(tmp_path):
 
     # 3. CLI default force=False
     cli_root = tmp_path / "cli_test"
-    cli_skill = cli_root / ".codex" / "skills" / "eidos" / "SKILL.md"
+    cli_skill = cli_root / ".agents" / "plugins" / "eidos" / "skills" / "eidos" / "SKILL.md"
     cli_skill.parent.mkdir(parents=True, exist_ok=True)
     cli_skill.write_text("# User Skill CLI\n", encoding="utf-8")
 
@@ -1258,21 +1254,20 @@ def test_plugin_install_force_false_and_uninstall_preserves_preexisting_user_fil
     install_plugin(project_dir=tmp_path, target=PluginInstallTarget.CODEX, force=False)
     assert rules_file.exists()
     assert rules_file.read_text(encoding="utf-8") == "# User Pre-existing Codex Rules\n"
-    assert not (codex_dir / "hooks.json").exists(), "Codex target should not copy hooks.json"
+    assert not (codex_dir / "hooks.json").exists()
 
     uninstall_plugin(project_dir=tmp_path, target=PluginInstallTarget.CODEX)
     assert rules_file.exists(), "Pre-existing user .codex/rules.md must still exist after uninstall!"
     assert rules_file.read_text(encoding="utf-8") == "# User Pre-existing Codex Rules\n"
-    assert not (codex_dir / "plugin.json").exists()
-    assert not (codex_dir / "skills").exists()
+    assert not (tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json").exists()
 
-    # Also verify user scripts/ directory in custom dest is preserved when force=False
-    custom_dest = tmp_path / "custom_with_scripts"
-    user_script = custom_dest / "scripts" / "deploy.sh"
+    # Also verify user scripts/ directory in .agents/plugins/eidos is preserved when force=False
+    custom_ws = tmp_path / "custom_with_scripts"
+    user_script = custom_ws / ".agents" / "plugins" / "eidos" / "scripts" / "deploy.sh"
     user_script.parent.mkdir(parents=True, exist_ok=True)
     user_script.write_text("#!/bin/sh\necho deploy\n", encoding="utf-8")
 
-    install_plugin(dest_path=custom_dest, force=False)
+    install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=custom_ws, force=False)
     assert user_script.exists(), "User scripts/ directory must not be deleted when force=False"
 
 
@@ -1281,11 +1276,12 @@ def test_plugin_install_refuses_symlink_destination(tmp_path):
     # 1. Symlinked destination directory
     real_target_dir = tmp_path / "real_target"
     real_target_dir.mkdir()
-    symlink_dir = tmp_path / "symlink_dest"
-    symlink_dir.symlink_to(real_target_dir)
+    symlink_ws = tmp_path / "symlink_dest_ws"
+    (symlink_ws / ".agents" / "plugins").mkdir(parents=True)
+    (symlink_ws / ".agents" / "plugins" / "eidos").symlink_to(real_target_dir)
 
     with pytest.raises(FileExistsError, match="symlink"):
-        install_plugin(dest_path=symlink_dir)
+        install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=symlink_ws)
 
     # 2. Symlinked file inside target directory
     project_dir = tmp_path / "symlink_file_project"
@@ -1299,7 +1295,7 @@ def test_plugin_install_refuses_symlink_destination(tmp_path):
     symlinked_manifest.symlink_to(secret_file)
 
     with pytest.raises(FileExistsError, match="symlink"):
-        install_plugin(target=PluginInstallTarget.PROJECT, project_dir=project_dir, force=True)
+        install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=project_dir, force=True)
 
     # Verify secret_file was not overwritten
     assert secret_file.read_text(encoding="utf-8") == "original secret content\n"
@@ -1350,8 +1346,9 @@ def test_plugin_uvx_hook_command_version_pinning(tmp_path):
 
     # 2. End-to-end install with launcher="uvx"
     dest = tmp_path / "installed_uvx"
-    install_plugin(dest_path=dest, force=True, launcher="uvx")
-    installed_hooks = dest / "hooks.json"
+    dest.mkdir()
+    install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=dest, force=True, launcher="uvx")
+    installed_hooks = dest / ".agents" / "plugins" / "eidos" / "hooks.json"
     if installed_hooks.exists():
         installed_text = installed_hooks.read_text(encoding="utf-8")
         assert f"uvx --from eidos-ai=={bundled_ver} eidos hook" in installed_text
@@ -1427,13 +1424,20 @@ def test_dlt_2026_071_plugin_installer_and_validator_fixes(tmp_path):
     assert all(isinstance(p, Path) and not isinstance(p, bool) for p in aider_res[0].created_files)
     assert (tmp_path / ".aider.conf.yml") in aider_res[0].created_files
 
-    # 3. Fallback version check reports actual matched plugin directory (.codex)
+    # 3. Fallback version check reports actual matched plugin directory (.agents for CLINE, .agents/plugins/eidos for CODEX)
+    cline_proj = tmp_path / "cline_only"
+    cline_proj.mkdir()
+    install_plugin(target=PluginInstallTarget.CLINE, project_dir=cline_proj, force=True)
+    st_cline = check_plugin_version_status(project_dir=cline_proj)
+    assert st_cline["is_installed"] is True
+    assert Path(st_cline["plugin_dir"]).resolve() == (cline_proj / ".agents").resolve()
+
     codex_proj = tmp_path / "codex_only"
     codex_proj.mkdir()
     install_plugin(target=PluginInstallTarget.CODEX, project_dir=codex_proj, force=True)
     st = check_plugin_version_status(project_dir=codex_proj)
     assert st["is_installed"] is True
-    assert Path(st["plugin_dir"]).resolve() == (codex_proj / ".codex").resolve()
+    assert Path(st["plugin_dir"]).resolve() == (codex_proj / ".agents" / "plugins" / "eidos").resolve()
 
     # 4. Line-anchored SKILL.md frontmatter allows '---' inside YAML scalar values
     custom_plugin = tmp_path / "custom_plugin"
@@ -1704,8 +1708,8 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
         inst_mod.get_plugin_reference_dir = orig_inst_get_ref
         os.chdir(orig_cwd)
 
-    assert _resolve_installed_plugin_manifest(project_dir=tmp_path, dest_path=Path("rel_dest")) == (
-        (tmp_path / "rel_dest").resolve(),
+    assert _resolve_installed_plugin_manifest(project_dir=tmp_path) == (
+        (tmp_path / ".agents" / "plugins" / "eidos").resolve(),
         None,
     )
 
@@ -1731,16 +1735,17 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     #     and FileNotFoundError on validate/info when locate_plugin_bundle fails
     upd_ws = tmp_path / "upd_ws"
     upd_ws.mkdir()
-    res_upd1 = cli_runner.invoke(app, ["plugin", "update", "--project-dir", str(upd_ws)])
+    res_upd1 = cli_runner.invoke(app, ["plugin", "update", "antigravity", "--project-dir", str(upd_ws)])
     assert res_upd1.exit_code == 0
-    res_upd2 = cli_runner.invoke(app, ["plugin", "update", "--project-dir", str(upd_ws)])
+    res_upd2 = cli_runner.invoke(app, ["plugin", "update", "antigravity", "--project-dir", str(upd_ws)])
     assert res_upd2.exit_code == 0 and "already at latest version" in res_upd2.output
 
     sym_target = tmp_path / "sym_target_dir"
     sym_target.mkdir()
-    sym_link = tmp_path / "sym_link_dest"
-    sym_link.symlink_to(sym_target)
-    res_sym = cli_runner.invoke(app, ["plugin", "install", "--dest", str(sym_link)])
+    sym_ws = tmp_path / "sym_link_ws"
+    sym_ws.mkdir()
+    (sym_ws / ".agents").symlink_to(sym_target)
+    res_sym = cli_runner.invoke(app, ["plugin", "install", "antigravity", "--project-dir", str(sym_ws)])
     assert res_sym.exit_code == 1
 
     import eidos.cli.plugin_commands as pcmd_mod
@@ -1807,7 +1812,7 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     (bad_ver_dir / "plugin.json").write_text('{"name": "eidos", "version": "99.0.0"}', encoding="utf-8")
     res_newer = cli_runner.invoke(app, ["plugin", "version", "--project-dir", str(bad_ver_ws)])
     assert res_newer.exit_code == 0 and "Newer" in res_newer.output
-    res_upd_newer = cli_runner.invoke(app, ["plugin", "update", "--project-dir", str(bad_ver_ws)])
+    res_upd_newer = cli_runner.invoke(app, ["plugin", "update", "antigravity", "--project-dir", str(bad_ver_ws)])
     assert res_upd_newer.exit_code == 0
 
     from eidos.core.lifecycle.scaffolder import create_spec
@@ -1841,8 +1846,8 @@ def test_target_adapter_manifest_includes_post_install_hook_files(tmp_path):
         return [extra_file]
 
     adapter = TargetAdapter(
-        target=PluginInstallTarget.PROJECT,
-        name="custom-project",
+        target=PluginInstallTarget.ANTIGRAVITY,
+        name="custom-antigravity",
         plugin_subdir=".agents/plugins/eidos",
         post_install_hook=_custom_post_hook,
     )
@@ -1893,13 +1898,14 @@ def test_hook_schema_validation_and_non_duplicate_skills(tmp_path):
     install_plugin(target=PluginInstallTarget.ALL, project_dir=inst_root, force=True)
     assert not (inst_root / ".claude" / "plugins").exists()
     assert (inst_root / ".claude" / "skills" / "eidos" / "SKILL.md").exists()
-    for p_sub, s_sub in (
-        (".cline/plugins/eidos", ".cline/skills"),
-        (".opencode/plugins/eidos", ".opencode/skills"),
-        (".github/plugin", ".github/skills"),
-    ):
-        assert not (inst_root / p_sub / "skills").exists(), f"Unexpected duplicate skills in {p_sub}/skills"
-        assert (inst_root / s_sub / "eidos" / "SKILL.md").exists(), f"Missing flat skill in {s_sub}"
+    assert not (inst_root / ".cline" / "plugins").exists()
+    assert not (inst_root / ".cline" / "skills").exists()
+    assert (inst_root / ".agents" / "skills" / "eidos" / "SKILL.md").exists()
+    assert not (inst_root / ".opencode" / "plugins").exists()
+    assert not (inst_root / ".opencode" / "skills").exists()
+    assert not (inst_root / ".github" / "plugin").exists()
+    assert not (inst_root / ".github" / "skills").exists()
+    assert (inst_root / ".agents" / "plugins" / "eidos" / "skills" / "eidos" / "SKILL.md").exists()
 
 
 def test_group_d1_d2_d3_regressions(tmp_path, monkeypatch):  # eidos:fixture
@@ -2262,7 +2268,7 @@ def test_managed_block_preserves_user_content(tmp_path, case):
         path.write_bytes(crlf.encode("utf-8"))
         res = upsert_managed_block(path, "agents-md", render, target="claude", skills_dir=".claude/skills")
         assert res.status is BlockStatus.UNCHANGED, "a CRLF conversion must not be mistaken for a user edit"
-        res = upsert_managed_block(path, "agents-md", render, target="cline", skills_dir=".cline/skills")
+        res = upsert_managed_block(path, "agents-md", render, target="cline", skills_dir=".agents/skills")
         assert res.status is BlockStatus.UPDATED
         out = path.read_bytes().decode("utf-8")
         assert out.startswith("# Team\r\n\r\n") and "\n" not in out.replace("\r\n", "")
@@ -2376,23 +2382,10 @@ def test_agents_md_shared_across_targets(tmp_path):
     all_ws.mkdir()
     install_plugin(target=PluginInstallTarget.ALL, project_dir=all_ws, force=True)
     all_text = (all_ws / "AGENTS.md").read_text(encoding="utf-8")
-    for skills_dir in (".agents/plugins/eidos/skills", ".cursor/skills", ".claude/skills", ".aider/skills"):
-        assert f"`{skills_dir}/<skill>/SKILL.md`" in all_text
-    for skills_dir in (".cline/skills", ".opencode/skills", ".codex/skills", ".github/skills"):
+    for skills_dir in (".agents/plugins/eidos/skills", ".agents/skills", ".claude/skills", ".aider/skills"):
         assert f"`{skills_dir}/<skill>/SKILL.md`" in all_text
 
-    # In-repo --dest participates as custom:<dest>/skills; an out-of-repo --dest leaves AGENTS.md untouched
-    dest_ws = tmp_path / "dest_ws"
-    dest_ws.mkdir()
-    install_plugin(dest_path=Path("tools/eidos"), project_dir=dest_ws, force=True)
-    assert "targets=custom:tools/eidos/skills" in (dest_ws / "AGENTS.md").read_text(encoding="utf-8")
-    outside_ws = tmp_path / "outside_ws"
-    outside_ws.mkdir()
-    res = install_plugin(dest_path=tmp_path / "elsewhere", project_dir=outside_ws, force=True)
-    assert not (outside_ws / "AGENTS.md").exists()
-    assert "outside the repository" in res[0].message
-
-    # Shared skills directory (project + antigravity) is rendered once, and uninstalled targets are pruned on next install
+    # Shared skills directory is rendered once, and uninstalled targets are pruned on next install
     install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=all_ws, force=True)
     shared_text = (all_ws / "AGENTS.md").read_text(encoding="utf-8")
     assert shared_text.count("`.agents/plugins/eidos/skills/<skill>/SKILL.md`") == 1
@@ -2483,4 +2476,4 @@ def test_agents_md_symlink_layouts_never_abort_install(tmp_path):
     assert res2[0].success
     assert "Warning: AGENTS.md block not updated (skipped" in res2[0].message
     assert real.read_text(encoding="utf-8") == "# Shared\n"
-    assert (ws2 / ".cursor" / "skills" / "eidos" / "SKILL.md").exists()
+    assert (ws2 / ".agents" / "plugins" / "eidos" / "skills" / "eidos" / "SKILL.md").exists()

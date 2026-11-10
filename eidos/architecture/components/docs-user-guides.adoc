@@ -10,10 +10,10 @@ source_path: docs/guides
 :toc: left
 
 == Responsibility
-Provides operational reference manuals for the Eidos CLI (`docs/guides/cli.md`), AI Agent Plugin integration across 8 coding harnesses (`docs/guides/agent-plugin.md`, including the canonical root `AGENTS.md` managed block, its marker grammar, user-content preservation, and opt-out), and Living Web Portal deployment (`docs/guides/living-portal.md`).
+Provides operational reference manuals for the Eidos CLI (`docs/guides/cli.md`), AI Agent Plugin integration across 9 coding harnesses (`docs/guides/agent-plugin.md`, including the canonical root `AGENTS.md` managed block, its marker grammar, user-content preservation, and opt-out), and Living Web Portal deployment (`docs/guides/living-portal.md`).
 
 == Key Responsibilities & Collaborators
-* **CLI, Agent Plugin & Portal Manuals**: Documents every top-level command, subcommand, and CLI flag exposed by `CTR-EIDOS-CLI` (including `eidos init` monorepo sub-project and explicit `eidos/` path normalization and `eidos doctor` PyPI release update checks), the 4 bundled workflow skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`), the 8 Constitutional Guardrails, Discovery-First rule bridge generation across 8 coding harnesses, project-native Claude Code integration (`.claude/skills/` and `.claude/settings.json` `hooks.Stop`), and interactive/static Living Portal workflows.
+* **CLI, Agent Plugin & Portal Manuals**: Documents every top-level command, subcommand, and CLI flag exposed by `CTR-EIDOS-CLI` (including `eidos init` monorepo sub-project and explicit `eidos/` path normalization and `eidos doctor` PyPI release update checks), the 4 bundled workflow skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`), the 8 Constitutional Guardrails, Discovery-First rule bridge generation across 9 coding harnesses, `.agents/plugins/eidos` integration for Antigravity, Cursor, GitHub Copilot, and OpenAI Codex, project-native Claude Code integration (`.claude/skills/` and `.claude/settings.json` `hooks.Stop`), shared `.agents/skills/` integration for Cline, Kilo Code, and OpenCode, and interactive/static Living Portal workflows.
 
 == Public Surface
 * `docs/guides/cli.md`

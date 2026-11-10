@@ -1,0 +1,170 @@
+---
+type: delta/mutation
+id: DLT-2026-126-CONFIGURE-CLINE-65BD
+title: "Configure Cline Installation to Use Shared .agents/skills Without Unused Plugin Bundle or Hooks"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: medium
+  motivation: "Replace the broken Cline installation (.cline/plugins/eidos/ containing an unloaded agent-plugins.org plugin.json and Antigravity Stop hooks.json, plus harness-specific .cline/skills/) with the cross-agent .agents/skills/<skill>/SKILL.md layout (natively discovered by both Cline and Kilo Code) and the canonical root AGENTS.md block, without writing dead plugin manifests or incompatible hook scripts."
+vcs:
+  branch: main
+  base_commit: 60be19b0230c6c8ea06dd2f192a51c8c01e7f4e7
+tombstone:
+  search_tokens:
+    - ".cline/plugins"
+    - ".cline/skills"
+  allowed_reasons:
+    - path: "CHANGELOG.md"
+      reason: "Historical release notes referencing pre-DLT-2026-126 Cline paths."
+    - path: "docs/changelog.md"
+      reason: "Historical changelog documentation referencing pre-DLT-2026-126 Cline paths."
+    - path: "eidos/deltas/"
+      reason: "Historical SpecDeltas predating DLT-2026-126."
+    - path: "eidos/explorations/"
+      reason: "Historical exploration documents."
+mutations:
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    details: "Update PluginInstallTarget.CLINE in src/eidos/plugin/installer.py, src/eidos/plugin/version.py, and eidos/architecture/components/plugin-installer.adoc to install the 4 Eidos skills into .agents/skills/<skill>/SKILL.md (compatible with both Cline and Kilo Code) and project the root AGENTS.md block without creating .cline/plugins/eidos/ or .cline/skills/, and remove the dead .cline/plugins/eidos/plugin.json and .cline/skills/eidos/plugin.json entries from _resolve_installed_plugin_manifest()."
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/plugin/installer.py"
+          - "src/eidos/plugin/version.py"
+          - "src/eidos/plugin/managed_block.py"
+        status: "active"
+      body:
+        contains:
+          - ".agents/skills/"
+          - "Kilo Code"
+        not_contains:
+          - ".cline/plugins"
+          - ".cline/skills"
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Update CNT-EIDOS-PLUGIN in eidos/architecture/containers/plugin.adoc to record DEC-PLUGIN-CLINE-AGENTS-SKILLS (documenting why .agents/skills/ + AGENTS.md is used and why .cline/plugins/eidos/ and .clinerules/hooks/ are rejected) and replace .cline/skills/ with .agents/skills/ in Internal Structure & Key Mechanisms."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-PLUGIN-CLINE-AGENTS-SKILLS"
+      body:
+        contains:
+          - ".agents/skills/"
+        not_contains:
+          - ".cline/skills/"
+          - ".cline/plugins/"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Update the 'eidos plugin install' specification in eidos/architecture/contracts/cli.adoc to list .agents/skills/ instead of .cline/skills/."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - ".agents/skills/"
+        not_contains:
+          - ".cline/skills/"
+  - operation: modify
+    target: CAP-AGENT-001
+    details: "Bump CAP-AGENT-001 to version 1.11.1 in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc and document shared .agents/skills/ projection for Cline and Kilo Code."
+    expect:
+      frontmatter:
+        version: "1.11.1"
+        status: "active"
+      body:
+        contains:
+          - ".agents/skills/"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Update docs/guides/agent-plugin.md and eidos/architecture/components/docs-user-guides.adoc to document the .agents/skills/ + AGENTS.md installation for Cline (and Kilo Code compatibility), remove .cline/plugins/ and .cline/skills/ references, and clarify in the Stateless Stop Lifecycle Hook section which harnesses load hooks.json / native Stop hooks."
+    expect:
+      frontmatter:
+        source_path: "docs/guides"
+        status: "active"
+      body:
+        contains:
+          - "docs/guides/agent-plugin.md"
+          - ".agents/skills/"
+        not_contains:
+          - ".cline/skills/"
+          - ".cline/plugins/"
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: "Update docs/concepts/how-eidos-works.md and eidos/architecture/components/docs-core-concepts.adoc to replace .cline/ with .agents/skills/ in the multi-harness projection overview."
+    expect:
+      frontmatter:
+        source_path: "docs/concepts"
+        status: "active"
+      body:
+        contains:
+          - "how-eidos-works.md"
+          - ".agents/skills/"
+---
+= SpecDelta: Configure Cline Installation to Use Shared .agents/skills Without Unused Plugin Bundle or Hooks
+:toc: left
+:icons: font
+:sectnums:
+
+== Problem Statement
+
+The current `eidos plugin install cline` target (`PluginInstallTarget.CLINE` in `src/eidos/plugin/installer.py`) writes an unused plugin bundle, a non-functional `hooks.json`, and a harness-isolated `.cline/skills/` directory:
+
+1. **Unloaded `.cline/plugins/eidos/` Bundle and `hooks.json`**:
+   * `TARGET_ADAPTERS[PluginInstallTarget.CLINE]` sets both `plugin_subdir=".cline/plugins/eidos"` and `skills_subdir=".cline/skills"`.
+   * Because `TargetAdapter.install()` passes `include_skills=(self.skills_subdir is None)`, `_copy_plugin_tree()` copies only `plugin.json` (an `agent-plugins.org v1.0.0` manifest with `com.google.antigravity`) and `hooks.json` (`{"eidos-drift-gate": {"Stop": [...]}}`) into `.cline/plugins/eidos/`, stripping `skills/`.
+   * Cline does **not** load `agent-plugins.org` `plugin.json` or `hooks.json` files (Cline SDK plugins require an npm/TypeScript package declaring `"cline": {"plugins": [...]}` in `package.json` and exporting an `@cline/sdk` `AgentPlugin`).
+   * Furthermore, because `.eidos-manifest.json` is written inside `.cline/plugins/eidos/`, the 4 skills installed under `.cline/skills/` lie outside `target_dir` and are omitted from the manifest.
+2. **Incompatible Hook Semantics in Cline (`.clinerules/hooks/`)**:
+   * Cline (v3.36+) discovers hooks only as extensionless executable scripts (`chmod +x`, macOS/Linux only; unsupported on Windows) inside `.clinerules/hooks/<EventName>` (disabled by default in VS Code unless the user manually toggles *Enable Hooks*), with a different JSON stdin/stdout protocol (`workspaceRoots` + `hookName` on stdin; `{"cancel": bool, "contextModification": str}` on stdout).
+   * Neither of Cline's completion-related hook events maps cleanly to Eidos's stateless `Stop` gate (`DEC-PLUGIN-STOP-SCOPED-DRIFT-GATE`, `DEC-PLUGIN-STATELESS-SINGLE-STOP-HOOK`, `INV-HOOK-CLI-NATIVE`):
+     ** `TaskComplete` is a post-completion observation hook that fires *after* `attempt_completion` has already finalized the task, so it cannot feed a drift warning back into the active agent turn before completion.
+     ** `PreToolUse` has no declarative tool-name matcher in Cline's hook discovery, so installing `.clinerules/hooks/PreToolUse` would spawn a subprocess on **every single tool call** (`read_file`, `write_to_file`, `execute_command`, etc.), violating `DEC-PLUGIN-STOP-SCOPED-DRIFT-GATE` and colliding with any user-authored `.clinerules/hooks/PreToolUse` script.
+3. **Unnecessary `.cline/skills/` Duplication vs. Shared `.agents/skills/`**:
+   * Both **Cline** and **Kilo Code** natively discover project-scoped Agent Skills in the cross-agent `.agents/skills/<skill>/SKILL.md` directory alongside the root `AGENTS.md` instruction file.
+   * Writing into `.cline/skills/` creates an extra top-level `.cline/` dot-directory and duplicates skill files for repositories using Cline, Kilo Code, or other `.agents/skills/`-compatible harnesses.
+
+== Proposed Specification Changes
+
+* **Update `CMP-PLUGIN-INSTALLER` (`src/eidos/plugin/installer.py`, `src/eidos/plugin/version.py`, `eidos/architecture/components/plugin-installer.adoc`)**:
+  1. **Shared `.agents/skills/` Layout (`DEC-PLUGIN-CLINE-AGENTS-SKILLS`)**:
+     - Configure `TARGET_ADAPTERS[PluginInstallTarget.CLINE]` as a skills + `AGENTS.md` target (matching `PluginInstallTarget.CURSOR`):
+       * `plugin_subdir=None` (do not create `.cline/plugins/eidos/` or copy `plugin.json` / `hooks.json`)
+       * `skills_subdir=".agents/skills"`
+       * `install_destination_subdir=".agents/skills"`
+       * `uninstall_destination_subdir=".agents/skills"`
+       * `prune_dirs=(".agents",)` (prunes `.agents/` on uninstall only when empty, preserving `.agents/plugins/eidos` if installed)
+     - Project `targets=cline:.agents/skills` into the canonical root `AGENTS.md` managed block (`- \`.agents/skills/<skill>/SKILL.md\``).
+     - **No Backward Compatibility or Legacy Cleanup**: No migration or cleanup is performed for `.cline/plugins/eidos/` or `.cline/skills/` directories written by earlier releases; fresh-install correctness is the only requirement.
+  2. **Clean Up Dead Fallback Paths in `src/eidos/plugin/version.py`**:
+     - Remove the unused `root / ".cline" / "plugins" / "eidos" / "plugin.json"` and `root / ".cline" / "skills" / "eidos" / "plugin.json"` fallback entries from `_resolve_installed_plugin_manifest()`.
+* **Update `CNT-EIDOS-PLUGIN` (`eidos/architecture/containers/plugin.adoc`)**:
+  - Record `DEC-PLUGIN-CLINE-AGENTS-SKILLS` in frontmatter (phrased without literal tombstone tokens `.cline/plugins` / `.cline/skills` so `eidos delta audit --strict` remains zero-leak on active specs):
+    * *Decision*: Configure `PluginInstallTarget.CLINE` to install the 4 Eidos skills into the shared `.agents/skills/<skill>/SKILL.md` directory (natively discovered by both Cline and Kilo Code) and project the canonical root `AGENTS.md` block, without creating Cline-specific `plugins/eidos/` or `skills/` subdirectories under `.cline/` or `.clinerules/hooks/` scripts, and without migrating or cleaning up legacy `.cline/` directories.
+    * *Rationale*: Cline and Kilo Code both natively discover Agent Skills under `.agents/skills/` and load project instructions from root `AGENTS.md`, providing cross-harness compatibility with zero dot-directory bloat. Meanwhile, Cline ignores `agent-plugins.org` `plugin.json`/`hooks.json` manifests, and Cline's file-based `.clinerules/hooks/` system lacks a pre-completion `Stop` hook (offering only post-completion `TaskComplete` or every-tool `PreToolUse` shell scripts).
+    * *Rejected alternatives*:
+      1. *Keep Cline-specific `plugins/eidos/` (`plugin.json` + `hooks.json`) and `skills/` subdirectories under `.cline/`*: Cline does not load `agent-plugins.org` manifests or `hooks.json`, and a dedicated `.cline/` skills directory duplicates skill files instead of sharing `.agents/skills/` with Kilo Code.
+      2. *Install an executable `.clinerules/hooks/TaskComplete` script*: `TaskComplete` in Cline fires after `attempt_completion` has already ended the task (observation-only), requires a shell wrapper script (`INV-HOOK-CLI-NATIVE`), is unsupported on Windows, and requires manual opt-in in Cline VS Code settings.
+      3. *Install an executable `.clinerules/hooks/PreToolUse` script filtering `attempt_completion`*: Cline has no declarative tool-name matcher in hook discovery and executes `PreToolUse` on every tool call (`read_file`, `write_to_file`, `execute_command`), violating `DEC-PLUGIN-STOP-SCOPED-DRIFT-GATE` and `DEC-PLUGIN-STATELESS-SINGLE-STOP-HOOK` and colliding with user-authored `PreToolUse` scripts.
+      4. *Migrate or clean up legacy `.cline/` subdirectories on install/uninstall*: Backward compatibility is not a goal; fresh-install correctness is the only requirement.
+  - Update `== Internal Structure & Key Mechanisms` in `eidos/architecture/containers/plugin.adoc` to replace `.cline/skills/` with `.agents/skills/`.
+* **Update `CTR-EIDOS-CLI` (`eidos/architecture/contracts/cli.adoc`) & `CAP-AGENT-001` (`eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc`)**:
+  - Update `eidos plugin install` in `CTR-EIDOS-CLI` to reference `.agents/skills/` instead of `.cline/skills/`.
+  - Bump `CAP-AGENT-001` to `1.11.1` and document shared `.agents/skills/` support for Cline and Kilo Code.
+* **Update `CMP-DOCS-USER-GUIDES` & `CMP-DOCS-CORE-CONCEPTS` (`docs/guides/agent-plugin.md`, `docs/concepts/how-eidos-works.md`, `eidos/architecture/components/docs-user-guides.adoc`, `eidos/architecture/components/docs-core-concepts.adoc`)**:
+  - Update the target table and `=== "Cline"` section in `docs/guides/agent-plugin.md` to document `.agents/skills/` (shared by Cline and Kilo Code) and root `AGENTS.md`, and update the `Stateless Stop Lifecycle Hook` section so Cline, Cursor, and Codex are not listed as `hooks.json` consumers.
+  - Update `docs/concepts/how-eidos-works.md` (`§3.5`) and `eidos/architecture/components/docs-core-concepts.adoc` to replace `.cline/` with `.agents/skills/`.
+
+== Implementation Plan
+
+1. **Update Cline Target Adapter & Version Fallbacks (`src/eidos/plugin/installer.py`, `src/eidos/plugin/version.py`)**:
+   * Update `PluginInstallTarget.CLINE` comment and `TARGET_ADAPTERS[PluginInstallTarget.CLINE]` in `src/eidos/plugin/installer.py` to set `skills_subdir=".agents/skills"`, `install_destination_subdir=".agents/skills"`, `uninstall_destination_subdir=".agents/skills"`, `prune_dirs=(".agents",)`, and updated install/uninstall messages.
+   * Remove `root / ".cline" / "plugins" / "eidos" / "plugin.json"` and `root / ".cline" / "skills" / "eidos" / "plugin.json"` from `_resolve_installed_plugin_manifest()` in `src/eidos/plugin/version.py`.
+2. **Update Living Specifications & User Documentation**:
+   * Update `eidos/architecture/components/plugin-installer.adoc`, `eidos/architecture/containers/plugin.adoc` (adding `DEC-PLUGIN-CLINE-AGENTS-SKILLS`), `eidos/architecture/contracts/cli.adoc`, `eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc` (`1.11.1`), `eidos/architecture/components/docs-user-guides.adoc`, `eidos/architecture/components/docs-core-concepts.adoc`, `docs/guides/agent-plugin.md`, and `docs/concepts/how-eidos-works.md`.
+3. **Update Automated Tests & Verify**:
+   * Update `tests/test_plugin.py` (`test_plugin_install_and_uninstall_cline`, `test_cli_install_new_agent_shortcuts`, `test_hook_schema_validation_and_non_duplicate_skills`, `test_managed_block_preserves_user_content`, and `test_agents_md_shared_across_targets`) to assert that `PluginInstallTarget.CLINE` installs the 4 skills into `.agents/skills/`, projects `targets=cline:.agents/skills` in `AGENTS.md`, does not create `.cline/` or `.clinerules/`, and preserves `.agents/plugins/eidos` when uninstalling `cline`.
+   * Run `eidos validate eidos --json`, `eidos delta verify DLT-2026-126-CONFIGURE-CLINE-65BD --json`, `eidos delta audit DLT-2026-126-CONFIGURE-CLINE-65BD --strict --json`, `eidos drift --uncommitted --json`, and `pytest`.
+

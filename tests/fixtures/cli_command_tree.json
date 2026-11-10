@@ -2056,12 +2056,12 @@
         ],
         "secondary": [],
         "kind": "TyperArgument",
-        "required": false,
-        "default": "project",
-        "help": "Installation target in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
+        "required": true,
+        "default": "None",
+        "help": "Installation target in project scope: antigravity, claude, cursor, aider, cline, kilocode, open-code, codex, copilot, all.",
         "panel": null,
         "envvar": "None",
-        "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'codex', 'copilot', 'all'])"
+        "type": "Choice(['antigravity', 'claude', 'cursor', 'aider', 'cline', 'kilocode', 'open-code', 'codex', 'copilot', 'all'])"
       },
       {
         "name": "project_dir",
@@ -2074,21 +2074,6 @@
         "required": false,
         "default": "None",
         "help": "Root directory of the project (defaults to current working directory).",
-        "panel": null,
-        "envvar": "None",
-        "type": "<typer.models.TyperPath object>"
-      },
-      {
-        "name": "dest",
-        "opts": [
-          "--dest",
-          "-d"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "None",
-        "help": "Custom destination directory within the project.",
         "panel": null,
         "envvar": "None",
         "type": "<typer.models.TyperPath object>"
@@ -2142,12 +2127,12 @@
         ],
         "secondary": [],
         "kind": "TyperArgument",
-        "required": false,
-        "default": "project",
-        "help": "Target to remove in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
+        "required": true,
+        "default": "None",
+        "help": "Target to remove in project scope: antigravity, claude, cursor, aider, cline, kilocode, open-code, codex, copilot, all.",
         "panel": null,
         "envvar": "None",
-        "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'codex', 'copilot', 'all'])"
+        "type": "Choice(['antigravity', 'claude', 'cursor', 'aider', 'cline', 'kilocode', 'open-code', 'codex', 'copilot', 'all'])"
       },
       {
         "name": "project_dir",
@@ -2160,21 +2145,6 @@
         "required": false,
         "default": "None",
         "help": "Root directory of the project (defaults to current working directory).",
-        "panel": null,
-        "envvar": "None",
-        "type": "<typer.models.TyperPath object>"
-      },
-      {
-        "name": "dest",
-        "opts": [
-          "--dest",
-          "-d"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "None",
-        "help": "Custom destination directory within the project to remove.",
         "panel": null,
         "envvar": "None",
         "type": "<typer.models.TyperPath object>"
@@ -2205,21 +2175,6 @@
         "panel": null,
         "envvar": "None",
         "type": "<typer.models.TyperPath object>"
-      },
-      {
-        "name": "dest",
-        "opts": [
-          "--dest",
-          "-d"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "None",
-        "help": "Custom plugin directory within the project to inspect.",
-        "panel": null,
-        "envvar": "None",
-        "type": "<typer.models.TyperPath object>"
       }
     ]
   },
@@ -2240,12 +2195,12 @@
         ],
         "secondary": [],
         "kind": "TyperArgument",
-        "required": false,
-        "default": "project",
-        "help": "Target to update in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
+        "required": true,
+        "default": "None",
+        "help": "Target to update in project scope: antigravity, claude, cursor, aider, cline, kilocode, open-code, codex, copilot, all.",
         "panel": null,
         "envvar": "None",
-        "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'codex', 'copilot', 'all'])"
+        "type": "Choice(['antigravity', 'claude', 'cursor', 'aider', 'cline', 'kilocode', 'open-code', 'codex', 'copilot', 'all'])"
       },
       {
         "name": "project_dir",
@@ -2258,21 +2213,6 @@
         "required": false,
         "default": "None",
         "help": "Root directory of the project (defaults to current working directory).",
-        "panel": null,
-        "envvar": "None",
-        "type": "<typer.models.TyperPath object>"
-      },
-      {
-        "name": "dest",
-        "opts": [
-          "--dest",
-          "-d"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "None",
-        "help": "Custom destination directory within the project to update.",
         "panel": null,
         "envvar": "None",
         "type": "<typer.models.TyperPath object>"

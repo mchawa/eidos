@@ -164,7 +164,7 @@ def get_bundled_plugin_version() -> str:
 
 
 def _resolve_installed_plugin_manifest(
-    project_dir: Path | None = None, dest_path: Path | None = None
+    project_dir: Path | None = None,
 ) -> tuple[Path, Path | None]:
     """Resolve (plugin_dir, manifest_path) for an installed project or fallback agent plugin at the enclosing Git root."""
     from eidos.core.workspace.project import _has_eidos_markers, find_git_root, find_repo_root
@@ -178,36 +178,28 @@ def _resolve_installed_plugin_manifest(
         root = git_root if (sub_root != git_root and _has_eidos_markers(sub_root / "eidos")) else base_dir
     else:
         root = base_dir
-    if dest_path is not None:
-        target_dir = dest_path if dest_path.is_absolute() else (root / dest_path)
-    else:
-        target_dir = root / ".agents" / "plugins" / "eidos"
+    target_dir = root / ".agents" / "plugins" / "eidos"
 
     for cand_name in ("plugin.json", ".eidos-manifest.json", "plugins/eidos/plugin.json"):
         manifest_path = target_dir / cand_name
         if manifest_path.exists():
             return manifest_path.parent, manifest_path
 
-    if dest_path is None:
-        fallbacks = [
-            root / ".claude" / ".eidos-manifest.json",
-            root / ".claude" / "plugins" / "eidos" / "plugin.json",
-            root / ".github" / "plugin" / "plugin.json",
-            root / ".codex" / "plugin.json",
-            root / ".opencode" / "plugins" / "eidos" / "plugin.json",
-            root / ".cline" / "plugins" / "eidos" / "plugin.json",
-            root / ".cline" / "skills" / "eidos" / "plugin.json",
-        ]
-        for fb in fallbacks:
-            if fb.exists():
-                return fb.parent, fb
+    fallbacks = [
+        root / ".claude" / ".eidos-manifest.json",
+        root / ".agents" / ".eidos-manifest.json",
+        root / ".aider" / ".eidos-manifest.json",
+    ]
+    for fb in fallbacks:
+        if fb.exists():
+            return fb.parent, fb
 
     return target_dir, None
 
 
-def get_installed_plugin_version(project_dir: Path | None = None, dest_path: Path | None = None) -> str | None:
-    """Retrieve installed plugin version from project scope or custom destination."""
-    _plugin_dir, manifest_path = _resolve_installed_plugin_manifest(project_dir=project_dir, dest_path=dest_path)
+def get_installed_plugin_version(project_dir: Path | None = None) -> str | None:
+    """Retrieve installed plugin version from project scope."""
+    _plugin_dir, manifest_path = _resolve_installed_plugin_manifest(project_dir=project_dir)
     if manifest_path is None:
         return None
     try:
@@ -217,7 +209,7 @@ def get_installed_plugin_version(project_dir: Path | None = None, dest_path: Pat
         return None
 
 
-def check_plugin_version_status(project_dir: Path | None = None, dest_path: Path | None = None) -> dict[str, Any]:
+def check_plugin_version_status(project_dir: Path | None = None) -> dict[str, Any]:
     """Check version status between bundled plugin and installed project plugin."""
     from eidos.core.workspace.project import _has_eidos_markers, find_git_root, find_repo_root
 
@@ -230,10 +222,10 @@ def check_plugin_version_status(project_dir: Path | None = None, dest_path: Path
         root = git_root if (sub_root != git_root and _has_eidos_markers(sub_root / "eidos")) else base_dir
     else:
         root = base_dir
-    target_dir, _manifest_path = _resolve_installed_plugin_manifest(project_dir=root, dest_path=dest_path)
+    target_dir, _manifest_path = _resolve_installed_plugin_manifest(project_dir=root)
 
     bundled = get_bundled_plugin_version()
-    installed = get_installed_plugin_version(project_dir=root, dest_path=dest_path)
+    installed = get_installed_plugin_version(project_dir=root)
 
     if installed is None:
         status = "not_installed"

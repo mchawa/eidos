@@ -235,8 +235,8 @@ In **Planned Mode**, architectural changes are governed by **SpecDeltas (`eidos/
 
 Eidos integrates with AI coding assistants through a declarative `TargetAdapter` pipeline (`src/eidos/plugin/installer.py`) and a stateless CLI-native `Stop` lifecycle hook (`src/eidos/plugin/hooks.py`):
 
-1. **Manifest-Tracked Multi-Harness Projection (`eidos plugin install`)**:
-    * Projects the canonical plugin (`assets/plugin_reference/`) and **4 cohesive Discovery-First Agent Skills** (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`) into `.agents/plugins/eidos/`, `.claude/`, `.cursor/`, `.github/`, `.aider/`, `.cline/`, `.opencode/`, and `.codex/`.
+1. **Manifest-Tracked Multi-Harness Projection (`eidos plugin install <target>`)**:
+    * Projects the canonical plugin (`assets/plugin_reference/`) and **4 cohesive Discovery-First Agent Skills** (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`) into `.agents/plugins/eidos/` (Antigravity, Cursor, GitHub Copilot, OpenAI Codex), `.agents/skills/` (Cline, Kilo Code, OpenCode), `.claude/` (Claude Code), and `.aider/` (Aider).
     * Records SHA-256 file digests in `.eidos-manifest.json` so `eidos plugin update` and `eidos plugin uninstall` never clobber user-owned files or custom instructions.
 2. **Stateless Unified `Stop` Hook (`eidos hook`)**:
     * When an AI agent finishes its task (`Stop` event), `eidos hook` runs `detect_drift(uncommitted=True)` once—evaluating specification schemas, cross-reference integrity, invariant test bindings, and spec-to-code synchronization in a single pass.

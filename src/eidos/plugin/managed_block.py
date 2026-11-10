@@ -285,7 +285,7 @@ def upsert_managed_block(
                 BlockStatus.MODIFIED,
                 path,
                 targets=dict(block.targets),
-                detail="block content was edited by hand; re-run 'eidos plugin install --force' to overwrite",
+                detail="block content was edited by hand; re-run 'eidos plugin install <target> --force' to overwrite",
             )
         if text[block.start : block.end] == rendered:
             return BlockResult(BlockStatus.UNCHANGED, path, targets=targets)

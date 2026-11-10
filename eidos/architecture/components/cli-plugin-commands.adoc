@@ -23,4 +23,4 @@ Implements the `eidos plugin` subcommand group (`install`, `uninstall`, `update`
 * `plugin_validate(...)`, `plugin_version(...)`, `plugin_info(...)`
 
 == Design Constraints & Operational Notes
-* **Safe Default Target & Overwrite Guard**: Defaults `[TARGET]` to `project` (`.agents/plugins/eidos`) with `force=False`, refusing to overwrite modified user files unless `--force` is specified.
+* **Explicit Target Selection & Overwrite Guard**: Requires an explicit `<TARGET>` (`antigravity`, `claude`, `cursor`, `aider`, `cline`, `kilocode`, `open-code`, `codex`, `copilot`, or `all`) on `install`, `uninstall`, and `update` with `force=False` by default, refusing to overwrite modified user files unless `--force` is specified.

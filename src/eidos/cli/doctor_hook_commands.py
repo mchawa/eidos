@@ -186,7 +186,7 @@ def doctor_cmd(
         ),
         f"Installed: v{plugin_status.get('installed_version')} / Bundled: v{plugin_status.get('bundled_version')}"
         if plugin_installed
-        else "Optional: Run 'eidos plugin install' to enable agent skills & hooks",
+        else "Optional: Run 'eidos plugin install <target>' to enable agent skills & hooks",
     )
 
     console.print(table)

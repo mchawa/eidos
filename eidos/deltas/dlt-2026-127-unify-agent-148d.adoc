@@ -1,0 +1,229 @@
+---
+type: delta/mutation
+id: DLT-2026-127-UNIFY-AGENT-148D
+title: "Unify Agent Plugin Targets Around .agents/plugins/eidos and .agents/skills, Add Kilo Code Target, and Require Explicit Target Without --dest"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: medium
+  motivation: "Point agent-plugins.org v1.0.0 compatible clients (antigravity, cursor, copilot, codex) to the canonical .agents/plugins/eidos/ bundle, point Agent Skills clients (cline, kilocode, open-code) to the shared .agents/skills/ directory, add a dedicated kilocode install target (PluginInstallTarget.KILOCODE), remove the redundant generic 'project' target (PluginInstallTarget.PROJECT) and custom '--dest' ('dest_path') override so 'eidos plugin install/uninstall/update <target>' always requires an explicit target, and retire broken per-client plugin/skill directories (.cursor/skills/, .opencode/plugins/eidos/, .opencode/skills/, .codex/, .github/plugin/, .github/skills/, .github/copilot/settings.json) and their bespoke manifest/settings helpers."
+vcs:
+  branch: main
+  base_commit: 60be19b0230c6c8ea06dd2f192a51c8c01e7f4e7
+tombstone:
+  search_tokens:
+    - ".cursor/skills"
+    - ".opencode/plugins"
+    - ".opencode/skills"
+    - ".codex/plugin.json"
+    - ".codex/skills"
+    - ".github/plugin"
+    - ".github/skills"
+    - ".github/copilot"
+    - "_ensure_copilot_plugin_manifest"
+    - "_update_project_copilot_settings"
+    - "_remove_project_copilot_settings"
+    - "_ensure_codex_plugin_manifest"
+    - "PluginInstallTarget.PROJECT"
+    - "dest_path"
+    - "_relative_skills_dir"
+  allowed_reasons:
+    - path: "CHANGELOG.md"
+      reason: "Historical release notes referencing pre-DLT-2026-127 harness paths."
+    - path: "docs/changelog.md"
+      reason: "Historical changelog documentation referencing pre-DLT-2026-127 harness paths."
+    - path: "eidos/deltas/"
+      reason: "Historical SpecDeltas predating DLT-2026-127."
+    - path: "eidos/explorations/"
+      reason: "Historical exploration documents."
+mutations:
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    details: "Update PluginInstallTarget and TARGET_ADAPTERS in src/eidos/plugin/installer.py, src/eidos/plugin/version.py, and eidos/architecture/components/plugin-installer.adoc to add PluginInstallTarget.KILOCODE = 'kilocode', remove PluginInstallTarget.PROJECT = 'project', remove custom destination (dest_path / _relative_skills_dir) parameters and branches from install_plugin, uninstall_plugin, update_plugin, get_installed_plugin_version, check_plugin_version_status, and _resolve_installed_plugin_manifest, configure agent-plugins.org compatible targets (antigravity, cursor, copilot, codex) to install to .agents/plugins/eidos/, configure Agent Skills targets (cline, kilocode, open-code) to install to .agents/skills/, and remove retired per-client plugin/settings helpers and dead version.py fallbacks."
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/plugin/installer.py"
+          - "src/eidos/plugin/version.py"
+          - "src/eidos/plugin/managed_block.py"
+        status: "active"
+      body:
+        contains:
+          - ".agents/plugins/eidos"
+          - ".agents/skills/"
+          - "Kilo Code"
+        not_contains:
+          - ".cursor/skills"
+          - ".opencode/plugins"
+          - ".opencode/skills"
+          - ".codex/"
+          - ".github/plugin"
+          - ".github/skills"
+          - ".github/copilot"
+          - "dest_path"
+          - "custom:<dest>/skills"
+  - operation: modify
+    target: CMP-CLI-PLUGIN-COMMANDS
+    details: "Update src/eidos/cli/plugin_commands.py and eidos/architecture/components/cli-plugin-commands.adoc to require the positional <target> argument on 'eidos plugin install <target>', 'uninstall <target>', and 'update <target>', remove the '--dest' / '-d' option from 'install', 'uninstall', 'update', and 'version', and expose the 9 client targets (antigravity, claude, cursor, aider, cline, kilocode, open-code, codex, copilot) plus 'all'."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/plugin_commands.py"
+        status: "active"
+      body:
+        contains:
+          - "kilocode"
+        not_contains:
+          - "Defaults [TARGET] to project"
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Update CNT-EIDOS-PLUGIN in eidos/architecture/containers/plugin.adoc to record DEC-PLUGIN-UNIFIED-AGENTS-LAYOUT (documenting why agent-plugins.org clients share .agents/plugins/eidos/, cline/kilocode/open-code share .agents/skills/, and why the generic 'project' target and '--dest' override are removed) and update Internal Structure & Key Mechanisms to list only the active projection paths (.agents/plugins/eidos, .agents/skills/, .claude/skills/, .claude/settings.json, .aider/skills/)."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-PLUGIN-UNIFIED-AGENTS-LAYOUT"
+      body:
+        contains:
+          - ".agents/plugins/eidos"
+          - ".agents/skills/"
+          - "Kilo Code"
+        not_contains:
+          - ".cursor/skills"
+          - ".opencode/skills"
+          - ".codex/"
+          - ".github/plugin"
+          - ".github/skills"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Bump CTR-EIDOS-CLI to version 1.2.0 in eidos/architecture/contracts/cli.adoc and update 'eidos plugin' to require '<TARGET>' on 'install', 'uninstall', and 'update', remove '--dest <path>', list Kilo Code ('kilocode'), and reflect the unified target directories (.agents/plugins/eidos, .agents/skills/, .claude/skills/ & .claude/settings.json, and .aider/skills/)."
+    expect:
+      frontmatter:
+        version: "1.2.0"
+        status: "active"
+      body:
+        contains:
+          - "Kilo Code"
+          - "install <TARGET>"
+          - "uninstall <TARGET>"
+          - "update <TARGET>"
+          - ".agents/plugins/eidos"
+          - ".agents/skills/"
+        not_contains:
+          - "--dest <path>"
+          - ".cursor/skills/"
+          - ".opencode/skills/"
+          - ".codex/skills/"
+          - ".github/plugin/"
+          - ".github/skills/"
+  - operation: modify
+    target: CAP-AGENT-001
+    details: "Bump CAP-AGENT-001 to version 1.12.0 in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc and document the unified .agents/plugins/eidos/ (agent-plugins.org v1.0.0) and .agents/skills/ projection layout across 9 supported coding harnesses including Kilo Code."
+    expect:
+      frontmatter:
+        version: "1.12.0"
+        status: "active"
+      body:
+        contains:
+          - ".agents/plugins/eidos/"
+          - ".agents/skills/"
+          - "Kilo Code"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Update docs/guides/agent-plugin.md, docs/guides/cli.md, and eidos/architecture/components/docs-user-guides.adoc to add the dedicated 'kilocode' target and tab, remove the 'project' target row and '--dest' option references, require '<TARGET>' on 'eidos plugin install/uninstall/update', document .agents/plugins/eidos/ for Antigravity, Cursor, GitHub Copilot, and OpenAI Codex, and document .agents/skills/ for Cline, Kilo Code, and OpenCode."
+    expect:
+      frontmatter:
+        source_path: "docs/guides"
+        status: "active"
+      body:
+        contains:
+          - "docs/guides/agent-plugin.md"
+          - ".agents/plugins/eidos"
+          - ".agents/skills/"
+          - "Kilo Code"
+        not_contains:
+          - ".cursor/skills"
+          - ".opencode/plugins"
+          - ".github/plugin"
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: "Update docs/concepts/how-eidos-works.md and eidos/architecture/components/docs-core-concepts.adoc to reflect the unified projection targets (.agents/plugins/eidos/, .agents/skills/, .claude/, and .aider/)."
+    expect:
+      frontmatter:
+        source_path: "docs/concepts"
+        status: "active"
+      body:
+        contains:
+          - "how-eidos-works.md"
+          - ".agents/plugins/eidos"
+          - ".agents/skills/"
+---
+= SpecDelta: Unify Agent Plugin Targets Around .agents/plugins/eidos and .agents/skills, Add Kilo Code Target, and Require Explicit Target Without --dest
+:toc: left
+:icons: font
+:sectnums:
+
+== Problem Statement
+
+Across Eidos's supported AI coding harnesses, `TARGET_ADAPTERS` in `src/eidos/plugin/installer.py` and `src/eidos/cli/plugin_commands.py` previously maintained bespoke per-client dot-directories that conflicted with the `agent-plugins.org v1.0.0` specification (`https://agent-plugins.org/compatible-clients`) and the `agentskills.io` `.agents/skills/` standard, lacked a dedicated `kilocode` install target, and exposed a redundant `project` target and `--dest` (`dest_path`) override:
+
+1. **Fragmented & Broken Bundles for `agent-plugins.org` Compatible Clients (`cursor`, `copilot`, `codex`)**:
+   * According to `agent-plugins.org/compatible-clients` and the `agent-plugins.org v1.0.0` specification, **Google Antigravity**, **Cursor**, **GitHub Copilot**, and **OpenAI Codex** all support the portable `agent-plugins.org v1.0.0` package format (`.agents/plugins/eidos/` containing `plugin.json` + `skills/`).
+   * Instead of pointing `cursor`, `copilot`, and `codex` to the canonical `.agents/plugins/eidos/` bundle:
+     ** `PluginInstallTarget.COPILOT` wrote a split layout (`.github/plugin/` + `.github/skills/` + `.github/copilot/settings.json`). Because `TargetAdapter.install()` sets `include_skills=(self.skills_subdir is None)`, `.github/plugin/` omitted `skills/` (leaving `"skills": "skills"` in `.github/plugin/plugin.json` dangling) and copied Antigravity's `hooks.json` into `.github/plugin/hooks.json` (which violates Copilot's `"version": 1` hook schema).
+     ** `PluginInstallTarget.CODEX` generated a bespoke `.codex/plugin.json` and `.codex/skills/` outside `.agents/plugins/eidos/`.
+     ** `PluginInstallTarget.CURSOR` installed skills into `.cursor/skills/` instead of sharing `.agents/plugins/eidos/`.
+2. **Unloaded Plugin Bundle in OpenCode (`open-code`) & Missing Dedicated `kilocode` Target**:
+   * **OpenCode** is **not** an `agent-plugins.org` client; its `.opencode/plugins/` directory loads only TypeScript/JavaScript modules (`index.ts`). Writing `plugin.json` and `hooks.json` into `.opencode/plugins/eidos/` produced dead files that OpenCode never loads, while `.opencode/skills/` duplicated the cross-agent `.agents/skills/` directory that OpenCode natively scans.
+   * **Kilo Code** natively discovers skills in `.agents/skills/<skill>/SKILL.md` and reads root `AGENTS.md`, but lacked its own first-class `PluginInstallTarget.KILOCODE = "kilocode"` CLI target (`eidos plugin install kilocode`).
+3. **Redundant Generic `project` Target and Custom `--dest` (`dest_path`) Override**:
+   * Once `antigravity`, `cursor`, `copilot`, and `codex` all install into `.agents/plugins/eidos/`, the unnamed `PluginInstallTarget.PROJECT = "project"` target is redundant with explicit client targets and `all`, and its implicit default on `eidos plugin install` / `uninstall` / `update` obscures which coding harness is being configured.
+   * Similarly, the `--dest` / `-d` (`dest_path`) custom destination flag and `_relative_skills_dir` (`custom:<dest>/skills`) add bespoke branching across `install_plugin`, `uninstall_plugin`, `update_plugin`, and `version.py` that is unnecessary when every supported client maps to a well-defined canonical repository directory.
+
+== Proposed Specification Changes
+
+* **Update `CMP-PLUGIN-INSTALLER` (`src/eidos/plugin/installer.py`, `src/eidos/plugin/version.py`, `eidos/architecture/components/plugin-installer.adoc`) & `CMP-CLI-PLUGIN-COMMANDS` (`src/eidos/cli/plugin_commands.py`, `eidos/architecture/components/cli-plugin-commands.adoc`)**:
+  1. **Unified `.agents/plugins/eidos/` Adapter for `agent-plugins.org` Clients (`DEC-PLUGIN-UNIFIED-AGENTS-LAYOUT`)**:
+     - Configure `PluginInstallTarget.ANTIGRAVITY`, `PluginInstallTarget.CURSOR`, `PluginInstallTarget.COPILOT`, and `PluginInstallTarget.CODEX` via `_make_project_adapter(target, name)` to install the canonical `agent-plugins.org v1.0.0` bundle into `.agents/plugins/eidos/` and project `targets=<target>:.agents/plugins/eidos/skills` into the root `AGENTS.md` block.
+     - Remove the bespoke Copilot and Codex manifest/settings helpers from `src/eidos/plugin/installer.py`: `_ensure_copilot_plugin_manifest`, `_update_project_copilot_settings`, `_remove_project_copilot_settings`, `_ensure_codex_plugin_manifest`, `_codex_pre_manifest_hook`, `_copilot_pre_manifest_hook`, `_copilot_post_install_hook`, and `_copilot_extra_uninstall`.
+  2. **Unified `.agents/skills/` Adapter for Agent Skills Clients (`cline`, `kilocode`, `open-code`)**:
+     - Add `PluginInstallTarget.KILOCODE = "kilocode"` to `PluginInstallTarget` and include it in `PluginInstallTarget.ALL` and the CLI help strings of `eidos plugin install`, `eidos plugin uninstall`, and `eidos plugin update`.
+     - Configure `PluginInstallTarget.CLINE`, `PluginInstallTarget.KILOCODE`, and `PluginInstallTarget.OPEN_CODE` via `_make_agents_skills_adapter(target, name, label)` (`plugin_subdir=None`, `skills_subdir=".agents/skills"`, `install_destination_subdir=".agents/skills"`, `uninstall_destination_subdir=".agents/skills"`, `prune_dirs=(".agents",)`), installing the 4 Eidos skills into `.agents/skills/<skill>/SKILL.md` and projecting `targets=<target>:.agents/skills` into root `AGENTS.md`.
+  3. **Retain Specialized Adapters for `claude` and `aider`**:
+     - `PluginInstallTarget.CLAUDE`: `.claude/skills/`, `.claude/settings.json` (`hooks.Stop`), root `CLAUDE.md` (`@AGENTS.md`), and root `AGENTS.md`.
+     - `PluginInstallTarget.AIDER`: `.aider/skills/`, `.aider.conf.yml` (`read: [AGENTS.md]`), and root `AGENTS.md`.
+  4. **Remove `PluginInstallTarget.PROJECT` and Custom `--dest` (`dest_path`), Requiring `<target>` Always**:
+     - Remove `PROJECT = "project"` from `PluginInstallTarget` and `TARGET_ADAPTERS` so only the 9 client targets (`antigravity`, `claude`, `cursor`, `aider`, `cline`, `kilocode`, `open-code`, `codex`, `copilot`) plus `all` exist.
+     - Require `target: PluginInstallTarget` as a mandatory positional argument on `eidos plugin install <target>`, `eidos plugin uninstall <target>`, and `eidos plugin update <target>` (as well as `install_plugin`, `uninstall_plugin`, and `update_plugin`).
+     - Remove the `--dest` / `-d` option from `plugin_install`, `plugin_uninstall`, `plugin_update`, and `plugin_version` in `src/eidos/cli/plugin_commands.py`, remove `dest_path: Path | None = None` and `_relative_skills_dir` from `src/eidos/plugin/installer.py`, and remove `dest_path: Path | None = None` from `_resolve_installed_plugin_manifest`, `get_installed_plugin_version`, and `check_plugin_version_status` in `src/eidos/plugin/version.py`.
+  5. **Clean Up Dead Fallback Paths & Resolve All 4 Canonical Manifests in `src/eidos/plugin/version.py`**:
+     - Replace the retired `.github/plugin/plugin.json`, `.codex/plugin.json`, `.opencode/plugins/eidos/plugin.json`, and `.claude/plugins/eidos/plugin.json` fallback entries in `_resolve_installed_plugin_manifest()` with the active manifest locations across all four canonical layouts (`.agents/plugins/eidos/plugin.json` / `.agents/plugins/eidos/.eidos-manifest.json`, `.claude/.eidos-manifest.json`, `.agents/.eidos-manifest.json`, and `.aider/.eidos-manifest.json`).
+     - Update user-facing CLI hint strings in `src/eidos/cli/plugin_commands.py`, `src/eidos/cli/init_command.py`, `src/eidos/cli/doctor_hook_commands.py`, and `src/eidos/plugin/managed_block.py` to include `<target>` (e.g. `eidos plugin install <target>` / `eidos plugin update <target>`).
+  6. **No Backward Compatibility or Legacy Cleanup**:
+     - No migration or uninstall cleanup is performed for legacy per-client directories written by earlier releases; fresh-install correctness is the only requirement.
+* **Update `CNT-EIDOS-PLUGIN` (`eidos/architecture/containers/plugin.adoc`)**:
+  - Record `DEC-PLUGIN-UNIFIED-AGENTS-LAYOUT` in frontmatter (phrased without literal tombstone tokens so `eidos delta audit --strict` remains zero-leak on active specs):
+    * *Decision*: Consolidate `TARGET_ADAPTERS` across 9 explicit coding-harness targets (`antigravity`, `claude`, `cursor`, `aider`, `cline`, `kilocode`, `open-code`, `codex`, `copilot`, plus `all`) into four canonical projection layouts (all sharing the root `AGENTS.md` managed block), require `<target>` explicitly on `eidos plugin install/uninstall/update`, and remove the generic `project` target and `--dest` custom destination option: (1) `.agents/plugins/eidos/` (`agent-plugins.org v1.0.0` bundle) for compatible clients (`antigravity`, `cursor`, `copilot`, `codex`), (2) `.agents/skills/<skill>/SKILL.md` for `agentskills.io`-native clients without `agent-plugins.org` support (`cline`, `kilocode`, `open-code`), (3) `.claude/skills/` + `.claude/settings.json` (`hooks.Stop`) + `CLAUDE.md` (`@AGENTS.md`) for Claude Code, and (4) `.aider/skills/` + `.aider.conf.yml` (`read:`) for Aider.
+    * *Rationale*: Cursor, GitHub Copilot, OpenAI Codex, and Google Antigravity support `agent-plugins.org v1.0.0`, whereas Cline, Kilo Code, and OpenCode do not load `agent-plugins.org` `plugin.json`/`hooks.json` bundles and natively discover skills under `.agents/skills/`. Consolidating onto `.agents/plugins/eidos/` and `.agents/skills/`, exposing a dedicated `kilocode` target, and requiring an explicit client target (without `project` or `--dest`) eliminates broken split-directory Copilot/OpenCode bundles, removes ~150 lines of bespoke manifest/settings and custom-destination code, and ensures `AGENTS.md` always records the exact coding harnesses installed in the repository.
+    * *Rejected alternatives*:
+      1. *Maintain separate per-client plugin and skill dot-directories for Cursor, Copilot, Codex, and OpenCode*: Produces broken split bundles when `skills/` is stripped from `plugin_subdir`, writes Antigravity `hooks.json` files into clients that reject or ignore them, and duplicates the 4 skills across up to 8 directories.
+      2. *Retain the generic `project` target and `--dest` custom-destination flag*: Redundant once `antigravity`, `cursor`, `copilot`, and `codex` all target `.agents/plugins/eidos/`, and obscures which coding client is configured in `AGENTS.md`.
+      3. *Migrate and delete legacy per-client directories on install/uninstall*: Backward compatibility is not a goal; fresh-install correctness is the only requirement.
+  - Update `== Internal Structure & Key Mechanisms` in `eidos/architecture/containers/plugin.adoc` to list `.agents/plugins/eidos`, `.agents/skills/`, `.claude/skills/`, `.claude/settings.json`, and `.aider/skills/`.
+* **Update `CTR-EIDOS-CLI` (`eidos/architecture/contracts/cli.adoc`) & `CAP-AGENT-001` (`eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc`)**:
+  - Bump `CTR-EIDOS-CLI` to `1.2.0`, update `eidos plugin install <TARGET>`, `uninstall <TARGET>`, `update <TARGET>`, and `version` to require `<TARGET>` and remove `--dest <path>`, include Kilo Code (`kilocode`), and bump `CAP-AGENT-001` to `1.12.0`.
+* **Update `CMP-DOCS-USER-GUIDES` & `CMP-DOCS-CORE-CONCEPTS` (`docs/guides/agent-plugin.md`, `docs/guides/cli.md`, `docs/concepts/how-eidos-works.md`, `assets/plugin_reference/README.md`, `eidos/architecture/components/docs-user-guides.adoc`, `eidos/architecture/components/docs-core-concepts.adoc`)**:
+  - Update the installation target table (removing `project` and adding `kilocode`) and assistant tabs in `docs/guides/agent-plugin.md` (including a dedicated `=== "Kilo Code"` tab), `docs/guides/cli.md` (requiring `<TARGET>` and removing `--dest, -d`), `assets/plugin_reference/README.md`, and `docs/concepts/how-eidos-works.md` (`§3.5`).
+
+== Implementation Plan
+
+1. **Unify Target Adapters, Add `kilocode`, Remove `project` & `--dest`, and Remove Bespoke Helpers (`src/eidos/plugin/installer.py`, `src/eidos/plugin/version.py`, `src/eidos/cli/plugin_commands.py`)**:
+   * Add `KILOCODE = "kilocode"` to `PluginInstallTarget`, remove `PROJECT = "project"`, update `PluginInstallTarget.ALL` to run all 9 client targets (`ANTIGRAVITY`, `CLAUDE`, `CURSOR`, `AIDER`, `CLINE`, `KILOCODE`, `OPEN_CODE`, `CODEX`, `COPILOT`), and make `target: PluginInstallTarget` required without `--dest` / `dest_path` across `src/eidos/cli/plugin_commands.py`, `src/eidos/plugin/installer.py`, and `src/eidos/plugin/version.py`.
+   * Point `PluginInstallTarget.ANTIGRAVITY`, `PluginInstallTarget.CURSOR`, `PluginInstallTarget.COPILOT`, and `PluginInstallTarget.CODEX` to `_make_project_adapter` (`.agents/plugins/eidos/`), and point `PluginInstallTarget.CLINE`, `PluginInstallTarget.KILOCODE`, and `PluginInstallTarget.OPEN_CODE` to `_make_agents_skills_adapter` (`.agents/skills/`).
+   * Remove `_relative_skills_dir`, `_ensure_copilot_plugin_manifest`, `_update_project_copilot_settings`, `_remove_project_copilot_settings`, `_ensure_codex_plugin_manifest`, `_codex_pre_manifest_hook`, `_copilot_pre_manifest_hook`, `_copilot_post_install_hook`, and `_copilot_extra_uninstall` from `src/eidos/plugin/installer.py`.
+   * Remove `dest_path` and the retired `.github/plugin/plugin.json`, `.codex/plugin.json`, and `.opencode/plugins/eidos/plugin.json` fallbacks from `_resolve_installed_plugin_manifest()`, `get_installed_plugin_version()`, and `check_plugin_version_status()` in `src/eidos/plugin/version.py`.
+2. **Update Living Specifications & User Documentation**:
+   * Update `eidos/architecture/components/plugin-installer.adoc`, `eidos/architecture/components/cli-plugin-commands.adoc`, `eidos/architecture/containers/plugin.adoc` (adding `DEC-PLUGIN-UNIFIED-AGENTS-LAYOUT`), `eidos/architecture/contracts/cli.adoc` (`1.2.0`), `eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc` (`1.12.0`), `eidos/architecture/components/docs-user-guides.adoc`, `eidos/architecture/components/docs-core-concepts.adoc`, `docs/guides/agent-plugin.md`, `docs/guides/cli.md`, `docs/concepts/how-eidos-works.md`, and `assets/plugin_reference/README.md`.
+3. **Update Automated Tests & Verify**:
+   * Update `tests/fixtures/cli_command_tree.json`, `tests/test_plugin.py`, `tests/test_monorepo_subprojects.py`, `tests/test_portal.py`, and `tests/test_validator.py` to reflect required `<target>`, removal of `PluginInstallTarget.PROJECT` and `--dest` / `dest_path`, the unified `.agents/plugins/eidos/` and `.agents/skills/` target layouts, `eidos plugin install kilocode`, and `PluginInstallTarget.ALL` (9 targets).
+   * Run `eidos validate eidos --json`, `eidos delta verify DLT-2026-127-UNIFY-AGENT-148D --json`, `eidos delta audit DLT-2026-127-UNIFY-AGENT-148D --strict --json`, `eidos drift --uncommitted --json`, and `uv run pytest`.
