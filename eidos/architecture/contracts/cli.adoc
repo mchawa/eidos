@@ -3,7 +3,7 @@ type: tech/contract
 id: CTR-EIDOS-CLI
 title: "Eidos Command-Line Interface Contract"
 status: active
-version: "1.2.0"
+version: "1.3.0"
 protocol: "cli_args"
 container: "CNT-EIDOS-CLI"
 specification_file: "src/eidos/cli/main.py"
@@ -65,12 +65,12 @@ Manages the interactive Living Web Portal and documentation site export.
   - `1`: Specifications directory not found.
 
 === `eidos plugin`
-Manages, validates, installs, updates, and uninstalls Eidos Agent Plugins across supported AI agent environments (Antigravity, Claude Code, Cursor, Aider, Cline, Kilo Code, OpenCode, OpenAI Codex, and GitHub Copilot).
+Manages, validates, installs, updates, and uninstalls Eidos Agent Plugins across supported AI agent environments (Antigravity, Claude Code, Cursor, Aider, Cline, Kilo Code, OpenCode, OpenAI Codex, and GitHub Copilot, plus `all`).
 * **Sub-commands**:
-  - `install <TARGET> [--project-dir <path>] [--force] [--launcher <launcher>]`: Installs the plugin across `.agents/plugins/eidos` (`agent-plugins.org v1.0.0` bundle for Antigravity, Cursor, GitHub Copilot, and OpenAI Codex), `.agents/skills/` (Agent Skills for Cline, Kilo Code, and OpenCode), `.claude/skills/` & `.claude/settings.json` (Claude Code project-native skills and `Stop` hook), and `.aider/skills/` (Aider), and projects the canonical root `AGENTS.md` block.
+  - `install <TARGET> [--project-dir <path>] [--force/--no-force] [--launcher <launcher>] [--hooks]`: Installs the plugin across `.agents/plugins/eidos` (`agent-plugins.org v1.0.0` bundle for Antigravity, Cursor, GitHub Copilot, and OpenAI Codex), `.claude/skills/` (Claude Code project-native skills), `.agents/skills/` (Cline, Kilo Code, OpenCode), and `.aider/skills/` (Aider), projects the canonical root `AGENTS.md` block (plus `CLAUDE.md` `@AGENTS.md` import for Claude Code and `.aider.conf.yml` `read:` entry for Aider), and when `--hooks` is passed (disabled by default) wires each hook-capable target's native `Stop` / `TaskComplete` lifecycle hook (`.agents/plugins/eidos/hooks.json`, `.claude/settings.json`, `.cursor/hooks.json`, `.clinerules/hooks/TaskComplete`, `.github/hooks/hooks.json`, `.codex/hooks.json`).
   - `uninstall <TARGET> [--project-dir <path>]`: Uninstalls and cleans up the plugin and tool configurations from project scope.
   - `version [--project-dir <path>]`: Displays and compares bundled vs installed plugin version and reports SemVer sync status.
-  - `update <TARGET> [--project-dir <path>] [--launcher <launcher>]`: Updates project-scoped plugin to the latest bundled version and syncs configurations.
+  - `update <TARGET> [--project-dir <path>] [--launcher <launcher>]`: Updates project-scoped plugin to the latest bundled version and syncs configurations (preserving each target's recorded `hooks` setting in `.eidos-manifest.json`).
   - `validate [PATH]`: Validates an Agent Plugin against canonical JSON schemas and SemVer 2.0.0 rules.
   - `info [PATH]`: Displays plugin metadata, skills, hooks, and extensions.
 
@@ -121,16 +121,16 @@ Bootstraps a repository with an Eidos living specification directory skeleton, a
   - `1`: Directory already initialized without `--force`, or validation failed.
 
 === `eidos doctor [--path PATH] [--json]`
-Runs a comprehensive workspace health and configuration diagnostic across the CLI binary, non-blocking PyPI release currency (`checks.cli_update`), living specifications, knowledge graph index, and agent plugin installations.
+Runs a comprehensive workspace health and configuration diagnostic across the CLI binary, non-blocking PyPI release currency (`checks.cli_update`), living specifications, knowledge graph index, and agent plugin installations (including per-target `Stop` hook health `hooks_ok`, `hooks_status`, `target_hooks`, and `hook_errors`, distinguishing intentionally disabled hooks when installed without `--hooks` from broken/missing hooks when installed with `--hooks`).
 * **Options**:
   - `--path, -p`: Path to eidos specifications directory (defaults to `./eidos`).
-  - `--json`: Output diagnostic report in JSON format (including `checks.cli_update` with `status`, `installed_version`, `latest_version`, `update_available`, and `upgrade_command`).
+  - `--json`: Output diagnostic report in JSON format (including `checks.cli_update` with `status`, `installed_version`, `latest_version`, `update_available`, and `upgrade_command`, and `checks.agent_plugin` with `hooks_ok`, `hooks_status`, `target_hooks`, and `hook_errors`).
 * **Exit Codes**:
-  - `0`: All critical workspace diagnostic checks passed (available PyPI CLI updates or offline network status remain non-blocking advisory warnings).
-  - `1`: One or more critical workspace diagnostics failed.
+  - `0`: All critical workspace diagnostic checks passed (available PyPI CLI updates or offline network status remain non-blocking advisory warnings, and plugins installed without `--hooks` pass with `hooks_status: "disabled"`).
+  - `1`: One or more critical workspace diagnostics failed (including when an installed target originally configured with `--hooks` has a missing, invalid, or corrupted `Stop` hook).
 
 === `eidos hook [--path PATH]`
-Executes the stateless CLI-native agent lifecycle `Stop` hook across supported AI coding harnesses, verifying specification schemas, invariant test bindings, and spec-to-code drift and emitting a JSON decision (`allow` with optional `systemMessage` warning).
+Executes the stateless CLI-native agent lifecycle `Stop` / `TaskComplete` hook across the 6 hook-capable AI coding harnesses, verifying specification schemas, invariant test bindings, and spec-to-code drift and emitting a client-aware 1-turn capped continuation payload (`decision: "continue"` for Antigravity, `followup_message` for Cursor, `cancel: true` with `contextModification`/`errorMessage` for Cline, and `decision: "block"` for Claude Code, GitHub Copilot, and OpenAI Codex on the first stop turn, or a clean allow response on retry).
 * **Options**:
   - `--path, -p`: Path to repository root or `eidos` directory.
 * **Exit Codes**:

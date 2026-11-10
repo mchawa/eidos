@@ -210,8 +210,9 @@ def get_installed_plugin_version(project_dir: Path | None = None) -> str | None:
 
 
 def check_plugin_version_status(project_dir: Path | None = None) -> dict[str, Any]:
-    """Check version status between bundled plugin and installed project plugin."""
+    """Check version status and Stop hook health between bundled plugin and installed project plugin."""
     from eidos.core.workspace.project import _has_eidos_markers, find_git_root, find_repo_root
+    from eidos.plugin.installer import _read_manifest_targets, check_target_hook_health
 
     base_dir = (project_dir or Path.cwd()).resolve()
     git_root = find_git_root(base_dir)
@@ -245,6 +246,44 @@ def check_plugin_version_status(project_dir: Path | None = None) -> dict[str, An
             status = "newer"
             status_text = f"Newer than bundled ({installed} > {bundled})"
 
+    hooks_ok = True
+    hooks_status = "not_installed"
+    target_hooks: dict[str, dict[str, Any]] = {}
+    hook_errors: list[str] = []
+
+    if installed is not None:
+        shared_targets = _read_manifest_targets(root / ".agents" / "plugins" / "eidos")
+        claude_targets = _read_manifest_targets(root / ".claude")
+        agents_targets = _read_manifest_targets(root / ".agents")
+        aider_targets = _read_manifest_targets(root / ".aider")
+        installed_targets: dict[str, bool] = {}
+        for t_name, t_meta in {**shared_targets, **claude_targets, **agents_targets, **aider_targets}.items():
+            installed_targets[t_name] = bool(t_meta.get("hooks", False))
+
+        if not installed_targets:
+            if (root / ".agents" / "plugins" / "eidos" / "plugin.json").is_file():
+                installed_targets["antigravity"] = (root / ".agents" / "plugins" / "eidos" / "hooks.json").is_file()
+            if (root / ".claude" / ".eidos-manifest.json").is_file():
+                installed_targets["claude"] = (root / ".claude" / "settings.json").is_file()
+
+        for t_name, hooks_expected in sorted(installed_targets.items()):
+            h_info = check_target_hook_health(root, t_name, hooks_expected)
+            target_hooks[t_name] = h_info
+            if not h_info["ok"]:
+                hooks_ok = False
+                hook_errors.append(str(h_info["detail"]))
+
+        if not hooks_ok:
+            hooks_status = "broken"
+        else:
+            statuses = {info["status"] for info in target_hooks.values()}
+            if statuses == {"active"}:
+                hooks_status = "active"
+            elif statuses == {"disabled"} or not statuses:
+                hooks_status = "disabled"
+            else:
+                hooks_status = "partial"
+
     return {
         "project_dir": root,
         "plugin_dir": target_dir,
@@ -253,6 +292,10 @@ def check_plugin_version_status(project_dir: Path | None = None) -> dict[str, An
         "installed_version": installed,
         "status": status,
         "status_text": status_text,
+        "hooks_ok": hooks_ok,
+        "hooks_status": hooks_status,
+        "target_hooks": target_hooks,
+        "hook_errors": hook_errors,
     }
 
 

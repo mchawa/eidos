@@ -13,14 +13,62 @@ from eidos.core.workspace.project import find_repo_root
 from eidos.vcs.drift import detect_drift
 
 
+def _detect_hook_client(payload: dict[str, Any]) -> str:
+    """Identify the calling agent harness ('antigravity', 'cursor', 'cline', or 'standard') from the stdin payload."""
+    if "loop_count" in payload or "workspace_roots" in payload or payload.get("hook_event_name") == "stop":
+        return "cursor"
+    if "clineVersion" in payload or "hookName" in payload or "workspaceRoots" in payload:
+        return "cline"
+    if "stop_hook_active" in payload or "cwd" in payload or "sessionId" in payload:
+        return "standard"
+    return "antigravity"
+
+
+def _allow_response(client: str) -> dict[str, Any]:
+    """Return the clean allow response for the detected client."""
+    if client == "antigravity":
+        return {"decision": "allow"}
+    if client == "cline":
+        return {"cancel": False}
+    return {}
+
+
+def _is_retry_or_non_normal_stop(payload: dict[str, Any], client: str) -> bool:
+    """Return True when the in-memory 1-turn retry guard has already fired or the stop was not a normal completion."""
+    if client == "antigravity":
+        exec_num = payload.get("executionNum", 1)
+        term_reason = str(payload.get("terminationReason", "") or "")
+        return (isinstance(exec_num, int) and exec_num > 1) or term_reason not in ("", "NO_TOOL_CALL")
+    if client == "cursor":
+        loop_count = payload.get("loop_count", 0)
+        status = str(payload.get("status", "completed") or "completed")
+        return (isinstance(loop_count, int) and loop_count > 0) or status != "completed"
+    if client == "cline":
+        hook_name = str(payload.get("hookName", "TaskComplete") or "TaskComplete")
+        return bool(payload.get("stop_hook_active")) or hook_name != "TaskComplete"
+    return bool(payload.get("stop_hook_active"))
+
+
+def _continuation_response(client: str, message: str) -> dict[str, Any]:
+    """Format the 1-turn continuation response for the detected client."""
+    if client == "antigravity":
+        return {"decision": "continue", "reason": message}
+    if client == "cursor":
+        return {"followup_message": message}
+    if client == "cline":
+        return {"cancel": True, "contextModification": message, "errorMessage": message}
+    return {"decision": "block", "reason": message}
+
+
 def find_workspace_root(payload: dict[str, Any] | None = None) -> Path:
     """Determine the active project or sub-project workspace root directory from hook payload or current working directory."""
     if payload:
-        ws_paths = payload.get("workspacePaths", [])
-        if ws_paths and isinstance(ws_paths, list):
-            p = Path(ws_paths[0])
-            if p.exists():
-                return find_repo_root(p.resolve())
+        for list_key in ("workspacePaths", "workspace_roots", "workspaceRoots"):
+            ws_paths = payload.get(list_key, [])
+            if ws_paths and isinstance(ws_paths, list) and isinstance(ws_paths[0], str) and ws_paths[0].strip():
+                p = Path(ws_paths[0].strip())
+                if p.exists():
+                    return find_repo_root(p.resolve())
         for key in ("cwd", "workspaceRoot", "workspace_root"):
             val = payload.get(key)
             if isinstance(val, str) and val.strip():
@@ -33,6 +81,10 @@ def find_workspace_root(payload: dict[str, Any] | None = None) -> Path:
 
 def handle_stop_hook(payload: dict[str, Any], workspace_root: Path) -> dict[str, Any]:
     """Run stateless specification validation, invariant verification, and drift check on agent Stop."""
+    client = _detect_hook_client(payload)
+    if _is_retry_or_non_normal_stop(payload, client):
+        return _allow_response(client)
+
     resolved_root = workspace_root.resolve()
     eidos_dir = resolved_root / "eidos"
     if not eidos_dir.exists() and resolved_root.exists():
@@ -41,7 +93,7 @@ def handle_stop_hook(payload: dict[str, Any], workspace_root: Path) -> dict[str,
             resolved_root = cand_root
             eidos_dir = cand_root / "eidos"
     if not eidos_dir.exists():
-        return {"decision": "allow"}
+        return _allow_response(client)
 
     try:
         drift_res = detect_drift(repo_root=resolved_root, eidos_dir=eidos_dir, uncommitted=True)
@@ -79,15 +131,12 @@ def handle_stop_hook(payload: dict[str, Any], workspace_root: Path) -> dict[str,
                 f"Recommended Actions:\n"
                 f"{remediation_lines}"
             )
-            return {"decision": "allow", "systemMessage": msg}
+            return _continuation_response(client, msg)
     except Exception as exc:
         print(f"[Eidos Stop Hook Error] {exc}", file=sys.stderr)
-        return {
-            "decision": "allow",
-            "systemMessage": f"⚠️ [Eidos Stop Hook] Internal drift check error: {exc}",
-        }
+        return _allow_response(client)
 
-    return {"decision": "allow"}
+    return _allow_response(client)
 
 
 def execute_hook(

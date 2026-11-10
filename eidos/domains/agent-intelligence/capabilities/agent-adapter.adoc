@@ -4,7 +4,7 @@ id: CAP-AGENT-001
 title: "Universal Agent Adapter & Context Slicing Engine"
 domain: DOM-AGENT-INTELLIGENCE
 status: active
-version: "1.12.0"
+version: "1.13.0"
 
 business:
   personas:
@@ -44,7 +44,7 @@ technical:
       rule: "eidos doctor must check for newer eidos-ai releases on PyPI via check_cli_update_status with a bounded timeout, report update availability and upgrade instructions in both Rich table and --json (checks.cli_update) outputs, and remain non-blocking (healthy=True, exit code 0) when an update is available or when PyPI is unreachable."
       test_binding: "tests/test_plugin.py::test_cli_doctor_update_check"
     - id: INV-AGENT-DRIFT-HOOK
-      rule: "The stateless AI agent plugin Stop hook (eidos hook) must evaluate living specification validity, invariant test bindings, and spec-to-code synchronization via detect_drift and emit a non-blocking systemMessage warning when issues or internal errors occur."
+      rule: "The stateless AI agent plugin Stop hook (eidos hook) must evaluate living specification validity, invariant test bindings, and spec-to-code synchronization via detect_drift and emit a client-aware 1-turn capped continuation payload on the first stop when issues exist or a clean allow response on retry or internal error."
       test_binding: "tests/test_plugin.py::test_drift_hook_stop_event_drift_detected"
     - id: INV-HOOK-CLI-NATIVE
       rule: "All lifecycle hooks in hooks.json must invoke the native eidos hook CLI entrypoint directly without shell or Python wrapper scripts."
@@ -69,10 +69,10 @@ technical:
 :toc: left
 
 == Job To Be Done (JTBD)
-Enable the team to use any state-of-the-art coding agent (Antigravity agy, Claude Code, Cursor, Cline, Codex, Aider) interchangeably without rewriting project workflows.
+Enable the team to use any state-of-the-art coding agent (Antigravity agy, Claude Code, Cursor, Aider, Cline, Kilo Code, OpenCode, GitHub Copilot, OpenAI Codex) interchangeably without rewriting project workflows.
 
 == Intent
-Avoids vendor lock-in and eliminates context window bloat. External AI coding assistants—including Google Antigravity `agy`, Claude Code, Cursor, Cline, OpenAI Codex, GitHub Copilot, and Aider—query the deterministic Eidos CLI to retrieve token-budgeted, graph-indexed architectural slices (`eidos context --json`) and verify invariant compliance before committing changes.
+Avoids vendor lock-in and eliminates context window bloat. External AI coding assistants—including Google Antigravity `agy`, Claude Code, Cursor, Aider, Cline, Kilo Code, OpenCode, OpenAI Codex, and GitHub Copilot—query the deterministic Eidos CLI to retrieve token-budgeted, graph-indexed architectural slices (`eidos context --json`) and verify invariant compliance before committing changes.
 
 In strict adherence to *POL-004*, Eidos never initiates AI/LLM calls itself. Instead, it provides the authoritative, noise-free substrate (C4 topology, interface contracts, governing policies, and test-bound invariants) that grounds external agents and prevents architectural drift.
 
@@ -81,9 +81,9 @@ In strict adherence to *POL-004*, Eidos never initiates AI/LLM calls itself. Ins
 * **Tiered Architectural Context Slicing**: Dynamically extracting token-compressed architectural subgraphs matching task requirements.
 * **Hybrid Lexical-Relational Retrieval**: Combining FTS5 BM25 search with graph-neighborhood traversals to resolve engineering prompts to architectural entities.
 * **Architectural Blast-Radius Analysis**: Recursive CTE impact mapping allowing agents to assess blast radius before proposing code changes.
-* **Stateless Stop Lifecycle Hook**: Single unified `Stop` hook (`eidos hook`) verifying specification schemas, cross-references, invariant test bindings, and spec-to-code synchronization via `detect_drift` and emitting non-blocking `systemMessage` warnings when drift or validation errors are detected.
-* **Non-Destructive Plugin Ecosystem Management**: Installing and removing agent plugins via `eidos plugin` across 9 supported coding harnesses (`.agents/plugins/eidos/` for Antigravity, Cursor, GitHub Copilot, and OpenAI Codex; `.agents/skills/` for Cline, Kilo Code, and OpenCode; `.claude/skills/` and `.claude/settings.json` `hooks.Stop` for Claude Code; and `.aider/skills/` for Aider) with deterministic `.eidos-manifest.json` tracking (preventing destruction of shared parent directories and shared host settings files), non-destructive `force=False` overwrite semantics, symlink guards, and version-pinned `uvx` hook execution.
-* **Canonical `AGENTS.md` Bridge (`INV-PLUGIN-MANAGED-BLOCK-SAFETY`)**: Every install target projects one marker-delimited, hash-stamped Eidos block into the repository's root `AGENTS.md`, the instruction file every supported harness loads (Claude Code via a `CLAUDE.md` `@AGENTS.md` import, Aider via `.aider.conf.yml` `read:`). The block lists every installed skill location and never touches user-authored content outside its markers.
+* **Stateless 1-Turn Stop Lifecycle Hook**: Single unified `Stop` / `TaskComplete` hook (`eidos hook`) verifying specification schemas, cross-references, invariant test bindings, and spec-to-code synchronization via `detect_drift` and emitting client-aware 1-turn capped continuation payloads (`decision: "continue"` for Antigravity, `followup_message` for Cursor, `cancel: true` with `contextModification`/`errorMessage` for Cline, and `decision: "block"` for Claude Code, GitHub Copilot, and OpenAI Codex) gated by each client's in-memory `stdin` retry counter.
+* **Non-Destructive Plugin Ecosystem Management**: Installing and removing agent plugins via `eidos plugin` across all 9 supported coding harnesses (`.agents/plugins/eidos/` for Antigravity, Cursor, GitHub Copilot, and OpenAI Codex; `.claude/skills/` for Claude Code; `.agents/skills/` for Cline, Kilo Code, and OpenCode; `.aider/skills/` for Aider) with opt-in `--hooks` native `Stop` / `TaskComplete` hook wiring on `eidos plugin install` (`.agents/plugins/eidos/hooks.json`, `.claude/settings.json`, `.cursor/hooks.json`, `.clinerules/hooks/TaskComplete`, `.github/hooks/hooks.json`, `.codex/hooks.json`, disabled by default and preserved on `eidos plugin update`), deterministic `.eidos-manifest.json` tracking (recording per-target hook intent for `eidos doctor` health verification and preventing destruction of shared parent directories and shared host settings files), non-destructive `force=False` overwrite semantics, symlink guards, and version-pinned `uvx` hook execution.
+* **Canonical `AGENTS.md` Bridge (`INV-PLUGIN-MANAGED-BLOCK-SAFETY`)**: Every install target projects one marker-delimited, hash-stamped Eidos block into the repository's root `AGENTS.md`, the instruction file every supported harness loads (7 natively, Claude Code via a `CLAUDE.md` `@AGENTS.md` import, and Aider via `.aider.conf.yml` `read:`). The block lists every installed skill location and never touches user-authored content outside its markers.
 * **Self-Contained, Guarded Skills (`INV-PLUGIN-SKILL-SIZE-CEILING`, `INV-PLUGIN-SKILL-CLI-PARITY`)**: The 4 bundled skills stay complete in their `SKILL.md` files with trigger-focused descriptions, no-growth word ceilings, and test-enforced parity between every referenced `eidos` command or option and the live CLI.
 
 == Tiered Context Slicing Architecture
@@ -103,5 +103,5 @@ Eidos implements a three-tier context compression model:
 * **Calibrated Token Budget Estimation**: `TieredContextSlice._estimate_tokens` weights structural syntax characters (`{}[]:,"'|`) at ~3.0 characters per token and natural-language prose at ~4.0 characters per token so `anchor`, `guardrails`, and `deep` slices honor strict token budgets across both Markdown and JSON outputs.
 * **Zero-Drift Freshness (`INV-AGENT-GRAPH-INDEX-FRESHNESS`)**: Every CLI query lazily checks dirty status via SHA-256 and mtime hashing, synchronizing modified specs in sub-5ms so agents never operate on stale architecture.
 * **Non-Destructive Plugin Management (`INV-PLUGIN-SCHEMA-CONFORMANCE`)**: The `eidos plugin` ecosystem ensures non-destructive installation, manifest-tracked uninstallation (`.eidos-manifest.json`), `force=False` overwrite protection, symlink traversal prevention, and version-pinned `uvx` hook commands.
-* **Stateless Stop Hook (`INV-AGENT-DRIFT-HOOK`)**: The stateless `eidos hook` command runs `detect_drift(uncommitted=True)` once on `Stop` and returns `{"decision": "allow"}` when clean or `{"decision": "allow", "systemMessage": "..."}` when specification validation, invariant, or drift issues exist.
+* **Stateless Stop Hook (`INV-AGENT-DRIFT-HOOK`)**: The stateless `eidos hook` command runs `detect_drift(uncommitted=True)` on `Stop` and emits client-aware 1-turn continuation payloads when specification validation, invariant, or drift issues exist, or a clean allow response when clean or on the retry turn.
 * **Non-Blocking PyPI Release Update Diagnostics (`INV-DOCTOR-UPDATE-CHECK`)**: `eidos doctor` queries PyPI (`https://pypi.org/pypi/eidos-ai/json`) via `check_cli_update_status` using Python stdlib `urllib.request` with a bounded 2-second timeout, reporting `checks.cli_update` in `--json` and a `CLI Update Check` row (`PASS` / `WARN` / `SKIPPED`) in the Rich table without failing `healthy` or exit code `0`.

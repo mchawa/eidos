@@ -1,0 +1,378 @@
+---
+type: delta/mutation
+id: DLT-2026-128-OPTIMIZE-AGENT-21CC
+title: "Add Opt-In Native Stop Lifecycle Hooks (--hooks), Doctor Hook Health Diagnostics, and Stateless 1-Turn Continuation Across Hook-Capable Agent Targets"
+status: proposed
+intent:
+  kind: feature
+  motivation: "Keep all 9 agent plugin targets (antigravity, claude, cursor, aider, cline, kilocode, open-code, codex, copilot, plus all) while adding opt-in native Stop / TaskComplete hook installation via '--hooks' on 'eidos plugin install' (disabled by default, and preserved automatically on 'eidos plugin update' without taking '--hooks') for the 6 hook-capable clients (.agents/plugins/eidos/hooks.json for Antigravity, .claude/settings.json for Claude Code, .cursor/hooks.json with loop_limit: 1 for Cursor, .clinerules/hooks/TaskComplete for Cline, .github/hooks/hooks.json for GitHub Copilot, and .codex/hooks.json for OpenAI Codex), reporting hook health in 'eidos doctor' (distinguishing active hooks, broken/missing hooks when originally installed with '--hooks', and intentionally omitted hooks when installed without '--hooks'), and updating handle_stop_hook() in src/eidos/plugin/hooks.py to emit client-aware 1-turn capped continuation feedback using each client's native in-memory stdin retry counter (stop_hook_active, executionNum/terminationReason, hookName, and loop_count)."
+vcs:
+  branch: main
+  base_commit: 20d97a37ce692b97f153294d32c5ffea8ea4b6b2
+mutations:
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    details: "Update src/eidos/plugin/installer.py, src/eidos/plugin/version.py, and eidos/architecture/components/plugin-installer.adoc to support opt-in '--hooks' (default False) on install_plugin() and preserve each target's recorded hook state on update_plugin() (via _resolve_saved_hook_preference() in .eidos-manifest.json), inspect target hook health in check_plugin_version_status() and check_target_hook_health(), and non-destructively wire or remove native Stop / TaskComplete hooks for the 6 hook-capable targets: .cursor/hooks.json (Cursor, with loop_limit: 1), .clinerules/hooks/TaskComplete (Cline, executable 0o755 script), .github/hooks/hooks.json (GitHub Copilot), and .codex/hooks.json (OpenAI Codex) alongside .agents/plugins/eidos/hooks.json (Antigravity) and .claude/settings.json (Claude Code), while retaining skills and AGENTS.md projection for all 9 targets (including aider, cline, kilocode, and open-code)."
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/plugin/installer.py"
+          - "src/eidos/plugin/version.py"
+          - "src/eidos/plugin/managed_block.py"
+        status: "active"
+      body:
+        contains:
+          - ".agents/plugins/eidos"
+          - ".cursor/hooks.json"
+          - ".clinerules/hooks/TaskComplete"
+          - ".github/hooks/hooks.json"
+          - ".codex/hooks.json"
+          - ".claude/settings.json"
+          - "check_target_hook_health"
+          - ".aider.conf.yml"
+  - operation: modify
+    target: CMP-HOOK-RUNNER
+    details: "Update find_workspace_root() and handle_stop_hook() in src/eidos/plugin/hooks.py and eidos/architecture/components/hook-runner.adoc to resolve Cursor 'workspace_roots' and Cline 'workspaceRoots' alongside 'workspacePaths', 'cwd', 'workspaceRoot', and 'workspace_root' and emit client-aware 1-turn capped continuation feedback ({'decision': 'continue', 'reason': msg} for Antigravity when executionNum <= 1 and terminationReason == 'NO_TOOL_CALL'; {'followup_message': msg} for Cursor when loop_count == 0 and status == 'completed'; {'cancel': true, 'contextModification': msg, 'errorMessage': msg} for Cline when hookName == 'TaskComplete'; and {'decision': 'block', 'reason': msg} for Claude Code, OpenAI Codex, and GitHub Copilot when not stop_hook_active) while returning a clean allow response ({'decision': 'allow'} for Antigravity, {'cancel': false} for Cline, {} for others) when clean or on the retry turn."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/plugin/hooks.py"
+        status: "active"
+      body:
+        contains:
+          - "workspace_roots"
+          - "workspaceRoots"
+          - "stop_hook_active"
+          - "executionNum"
+          - "loop_count"
+          - "followup_message"
+  - operation: modify
+    target: CMP-CLI-PLUGIN-COMMANDS
+    details: "Update src/eidos/cli/plugin_commands.py and eidos/architecture/components/cli-plugin-commands.adoc so 'eidos plugin install <target>' exposes opt-in '--hooks' (default False, installing native Stop hooks only when '--hooks' is passed) across all 9 targets (antigravity, claude, cursor, aider, cline, kilocode, open-code, codex, copilot, plus 'all'), and 'eidos plugin update <target>' updates the installed state (preserving each target's recorded hook state from .eidos-manifest.json) without taking '--hooks'."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/plugin_commands.py"
+        status: "active"
+      body:
+        contains:
+          - "antigravity"
+          - "claude"
+          - "cursor"
+          - "aider"
+          - "cline"
+          - "kilocode"
+          - "open-code"
+          - "codex"
+          - "copilot"
+          - "--hooks"
+        not_contains:
+          - "--no-hooks"
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+    details: "Update doctor_cmd() in src/eidos/cli/doctor_hook_commands.py and eidos/architecture/components/cli-doctor-hooks.adoc so 'eidos doctor' and 'eidos doctor --json' inspect per-target Stop hook health via check_plugin_version_status(), reporting PASS with '(hooks: active)' when installed with '--hooks' and intact, PASS with '(hooks: disabled)' when installed without '--hooks' (intentionally omitted), and FAIL (status: 'hook_error', hooks_ok: false, exit code 1) when a target was originally installed with '--hooks' but its hook file or Stop entry is missing or corrupted."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/doctor_hook_commands.py"
+        status: "active"
+      body:
+        contains:
+          - "hooks_ok"
+          - "hooks_status"
+          - "--hooks"
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Update CNT-EIDOS-PLUGIN in eidos/architecture/containers/plugin.adoc to record DEC-PLUGIN-HOOK-CAPABLE-TARGETS (documenting opt-in '--hooks' Stop / TaskComplete hook wiring for the 6 hook-capable coding harnesses alongside skills and AGENTS.md support for all 9 harnesses, manifest-tracked hook health verification in eidos doctor, and stateless in-memory 1-turn continuation) and update Architectural Boundary and Internal Structure & Key Mechanisms."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-PLUGIN-HOOK-CAPABLE-TARGETS"
+      body:
+        contains:
+          - ".agents/plugins/eidos"
+          - ".cursor/hooks.json"
+          - ".clinerules/hooks/TaskComplete"
+          - ".github/hooks/hooks.json"
+          - ".codex/hooks.json"
+          - ".claude/settings.json"
+          - ".agents/skills"
+          - ".aider/skills"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Bump CTR-EIDOS-CLI to version 1.3.0 in eidos/architecture/contracts/cli.adoc and update 'eidos plugin', 'eidos doctor', and 'eidos hook' to document opt-in '--hooks' on 'eidos plugin install', current-state preservation on 'eidos plugin update', native Stop / TaskComplete hook configurations (.agents/plugins/eidos/hooks.json, .claude/settings.json, .cursor/hooks.json, .clinerules/hooks/TaskComplete, .github/hooks/hooks.json, .codex/hooks.json), doctor hook health diagnostics, and client-aware 1-turn Stop hook continuation."
+    expect:
+      frontmatter:
+        version: "1.3.0"
+        status: "active"
+      body:
+        contains:
+          - ".agents/plugins/eidos"
+          - ".cursor/hooks.json"
+          - ".clinerules/hooks/TaskComplete"
+          - ".github/hooks/hooks.json"
+          - ".codex/hooks.json"
+          - ".claude/settings.json"
+          - "--hooks"
+        not_contains:
+          - "--no-hooks"
+  - operation: modify
+    target: CAP-AGENT-001
+    details: "Bump CAP-AGENT-001 to version 1.13.0 in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc and update the capability specification to describe opt-in '--hooks' native Stop / TaskComplete hook registrations for the 6 hook-capable harnesses alongside skills and AGENTS.md projection across all 9 harnesses, manifest-tracked doctor hook health verification, and stateless 1-turn continuation."
+    expect:
+      frontmatter:
+        version: "1.13.0"
+        status: "active"
+      body:
+        contains:
+          - ".agents/plugins/eidos/"
+          - ".cursor/hooks.json"
+          - ".clinerules/hooks/TaskComplete"
+          - ".github/hooks/hooks.json"
+          - ".codex/hooks.json"
+          - "--hooks"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Update docs/guides/agent-plugin.md, docs/guides/cli.md, and eidos/architecture/components/docs-user-guides.adoc to document all 9 supported coding assistants, opt-in '--hooks' on 'eidos plugin install', native Stop / TaskComplete hook files (.agents/plugins/eidos/hooks.json, .claude/settings.json, .cursor/hooks.json, .clinerules/hooks/TaskComplete, .github/hooks/hooks.json, .codex/hooks.json) for the 6 hook-capable targets, doctor hook health reporting, and client-aware 1-turn Stop hook continuation."
+    expect:
+      frontmatter:
+        source_path: "docs/guides"
+        status: "active"
+      body:
+        contains:
+          - "9 coding harnesses"
+          - ".agents/plugins/eidos"
+          - ".cursor/hooks.json"
+          - ".clinerules/hooks/TaskComplete"
+          - ".github/hooks/hooks.json"
+          - ".codex/hooks.json"
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: "Update docs/concepts/how-eidos-works.md and eidos/architecture/components/docs-core-concepts.adoc to reflect opt-in '--hooks' native Stop / TaskComplete hooks for the 6 hook-capable agent targets alongside skills and AGENTS.md projection across all 9 targets and stateless 1-turn Stop hook continuation."
+    expect:
+      frontmatter:
+        source_path: "docs/concepts"
+        status: "active"
+      body:
+        contains:
+          - ".agents/plugins/eidos"
+          - ".agents/skills"
+          - "AGENTS.md"
+---
+= SpecDelta: Add Opt-In Native Stop Lifecycle Hooks (--hooks), Doctor Hook Health Diagnostics, and Stateless 1-Turn Continuation Across Hook-Capable Agent Targets
+:toc: left
+
+== Problem Statement
+
+Eidos's agent integration relies on two pillars working together:
+
+1. **Progressive-Disclosure Skills & `AGENTS.md`**: The 4 Eidos skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`) and the canonical root `AGENTS.md` block across all 9 supported coding assistants (`antigravity`, `claude`, `cursor`, `aider`, `cline`, `kilocode`, `open-code`, `codex`, `copilot`).
+2. **The Stateless `Stop` / `TaskComplete` Lifecycle Hook (`eidos hook`)**: Runs `detect_drift(uncommitted=True)` at the end of an agent turn to surface specification validation errors, broken invariant test bindings, and spec-to-code drift across the 6 coding clients that natively support CLI `Stop` / `TaskComplete` hooks (`antigravity`, `claude`, `cursor`, `cline`, `copilot`, `codex`).
+
+Currently:
+
+1. **Unconditional Hook Installation & Missing Opt-In Control**: `eidos plugin install` previously installed `Stop` hooks unconditionally for Antigravity and Claude Code without a `--hooks` opt-in flag, and `eidos doctor` could not tell whether a missing hook was intentionally omitted or accidentally broken.
+2. **Missing Native `Stop` / `TaskComplete` Hook Wiring for `cursor`, `cline`, `copilot`, and `codex`**: Under `agent-plugins.org v1.0.0`, lifecycle hooks are not part of the portable core specification. Each of those four clients loads its completion hook from its own native project hook file:
+   * **Cursor (`cursor`)**: `.cursor/hooks.json` (`version: 1`, `hooks.stop` array with `loop_limit: 1`).
+   * **Cline (`cline`)**: `.clinerules/hooks/TaskComplete` (executable `0o755` POSIX shell trampoline invoking `exec eidos hook` or `exec uvx --from eidos-ai==<ver> eidos hook`).
+   * **GitHub Copilot (`copilot`)**: `.github/hooks/hooks.json` (`version: 1`, `hooks.agentStop` array with `type: "command"`, `bash`, `powershell`, `timeoutSec`).
+   * **OpenAI Codex (`codex`)**: `.codex/hooks.json` (`hooks.Stop` array with `hooks: [{"type": "command", "command": "...", "timeout": 30}]`).
+3. **Incompatible `Stop` Hook `stdout` Wire Schemas**: Returning `{"decision": "allow", "systemMessage": "..."}` only works in Claude Code—OpenAI Codex rejects `"decision": "allow"` under `StopCommandOutputWire`, while Antigravity (`Stop`), Cursor (`stop`), Cline (`TaskComplete`), and GitHub Copilot (`agentStop`) ignore `systemMessage` and instead require their native continuation payload (`{"decision": "continue", "reason": "..."}` in Antigravity, `{"followup_message": "..."}` in Cursor, `{"cancel": true, "contextModification": "...", "errorMessage": "..."}` in Cline, and `{"decision": "block", "reason": "..."}` in Claude Code, Codex, and Copilot) gated by each client's built-in in-memory retry counter (`executionNum`, `loop_count`, `hookName`, `stop_hook_active`).
+
+== Proposed Specification Changes
+
+=== 1. Support All 9 Agent Targets with Opt-In Native `Stop` / `TaskComplete` Hooks for the 6 Hook-Capable Clients (`CMP-PLUGIN-INSTALLER`, `CMP-CLI-PLUGIN-COMMANDS`, `CTR-EIDOS-CLI`)
+
+Keep all 9 concrete targets (plus `all`), wiring native `Stop` / `TaskComplete` hooks when `--hooks` is passed on `eidos plugin install`:
+
+[cols="1,2,2,2", options="header"]
+|===
+| Target | Plugin / Skills Path | Opt-In Native `Stop` / `TaskComplete` Hook Config (`--hooks`) | Root Instruction Bridge
+
+| `antigravity`
+| `.agents/plugins/eidos/` (`plugin.json`, `skills/`)
+| `.agents/plugins/eidos/hooks.json` (`eidos-drift-gate.Stop`)
+| Root `AGENTS.md` (`antigravity:.agents/plugins/eidos/skills`)
+
+| `claude`
+| `.claude/skills/<skill>/SKILL.md`
+| `.claude/settings.json` (`hooks.Stop`)
+| Root `AGENTS.md` (`claude:.claude/skills`) + `CLAUDE.md` (`@AGENTS.md`)
+
+| `cursor`
+| `.agents/plugins/eidos/` (`plugin.json`, `skills/`)
+| `.cursor/hooks.json` (`version: 1`, `hooks.stop`, `loop_limit: 1`)
+| Root `AGENTS.md` (`cursor:.agents/plugins/eidos/skills`)
+
+| `cline`
+| `.agents/skills/<skill>/SKILL.md`
+| `.clinerules/hooks/TaskComplete` (executable `0o755` script invoking `eidos hook`)
+| Root `AGENTS.md` (`cline:.agents/skills`)
+
+| `copilot`
+| `.agents/plugins/eidos/` (`plugin.json`, `skills/`)
+| `.github/hooks/hooks.json` (`version: 1`, `hooks.agentStop`)
+| Root `AGENTS.md` (`copilot:.agents/plugins/eidos/skills`)
+
+| `codex`
+| `.agents/plugins/eidos/` (`plugin.json`, `skills/`)
+| `.codex/hooks.json` (`hooks.Stop`)
+| Root `AGENTS.md` (`codex:.agents/plugins/eidos/skills`)
+
+| `kilocode`
+| `.agents/skills/<skill>/SKILL.md`
+| _N/A (skills + `AGENTS.md` only)_
+| Root `AGENTS.md` (`kilocode:.agents/skills`)
+
+| `open-code`
+| `.agents/skills/<skill>/SKILL.md`
+| _N/A (skills + `AGENTS.md` only)_
+| Root `AGENTS.md` (`open-code:.agents/skills`)
+
+| `aider`
+| `.aider/skills/<skill>/SKILL.md`
+| _N/A (skills + `AGENTS.md` + `.aider.conf.yml` `read:` entry)_
+| Root `AGENTS.md` (`aider:.aider/skills`) + `.aider.conf.yml`
+
+| `all`
+| All 9 targets above
+| All 6 native `Stop` / `TaskComplete` hook configs above (when `--hooks` is passed)
+| Root `AGENTS.md` + `CLAUDE.md` + `.aider.conf.yml`
+|===
+
+=== 2. Opt-In `--hooks` Flag on `install`, State Preservation on `update`, and `eidos doctor` Hook Health (`CMP-PLUGIN-INSTALLER`, `CMP-CLI-PLUGIN-COMMANDS`, `CMP-CLI-DOCTOR-HOOKS`)
+
+1. **Opt-In `--hooks` CLI Flag on `eidos plugin install`**:
+   * `eidos plugin install <target> [--hooks]` defaults to `hooks=False` (no `--no-hooks` flag). By default, Eidos installs only the target's plugin/skills bundle and `AGENTS.md` block without installing any `Stop` hook (and removes any previously installed Eidos `Stop` hook for that target). Only when `--hooks` (`hooks=True`) is explicitly passed does Eidos install and wire the target's native `Stop` / `TaskComplete` hook.
+   * `eidos plugin update <target>` does **not** accept `--hooks`; it reads each target's recorded `hooks` setting from `.eidos-manifest.json` (via `_resolve_saved_hook_preference()`) and refreshes the current installed state.
+2. **Manifest Hook Intent Tracking (`.eidos-manifest.json`)**:
+   * `.agents/plugins/eidos/.eidos-manifest.json`, `.claude/.eidos-manifest.json`, `.agents/.eidos-manifest.json`, and `.aider/.eidos-manifest.json` record `"targets": {"<target>": {"hooks": <bool>, "launcher": "<launcher>"}}` alongside `"version"` and `"files"`.
+   * For `antigravity`, `.agents/plugins/eidos/hooks.json` is copied only when `hooks=True` and omitted/removed when `hooks=False` (unless `antigravity` remains installed with `hooks=True`).
+3. **Target-Aware Hook Health in `check_plugin_version_status()` and `eidos doctor`**:
+   * `check_plugin_version_status()` inspects each installed target's recorded `hooks` intent and verifies its native hook file:
+     - **Installed without `--hooks` (`hooks: false`, default) or non-hook target**: `status: "disabled"`, `ok: true` (`eidos doctor` recognizes the hook is intentionally not installed and displays `PASS` with `(hooks: disabled)`).
+     - **Installed with `--hooks` (`hooks: true`) and valid**: `status: "active"`, `ok: true` (`eidos doctor` displays `PASS` with `(hooks: active)`).
+     - **Installed with `--hooks` (`hooks: true`) and missing/corrupted**: `status: "missing" | "invalid" | "corrupted"`, `ok: false` (`eidos doctor` displays `FAIL`, sets `checks.agent_plugin.ok = false`, `checks.agent_plugin.status = "hook_error"`, `hooks_ok = false`, and exits `1` with target-specific diagnostics in `hook_errors`).
+4. **Non-Destructive Native `Stop` / `TaskComplete` Hook Helpers (`src/eidos/plugin/installer.py`)**:
+   Add non-destructive install/uninstall helpers (modeled on `_update_project_claude_settings` / `_remove_project_claude_settings`) that honor `--launcher eidos` (`eidos hook`) and `--launcher uvx` (`uvx --from eidos-ai==<ver> eidos hook`), preserve existing user hooks and keys, and cleanly remove only the Eidos hook entry on uninstall or when `hooks=False` (deleting the hook file and pruning empty parent directories when no other hooks remain):
+
+1. **Cursor (`.cursor/hooks.json`)**:
+   * `_update_project_cursor_hooks(hooks_file: Path, launcher: str = "eidos") -> Path`
+   * `_remove_project_cursor_hooks(hooks_file: Path) -> bool`
+   * Schema:
++
+[source,json]
+----
+{
+  "version": 1,
+  "hooks": {
+    "stop": [
+      {
+        "command": "eidos hook",
+        "loop_limit": 1
+      }
+    ]
+  }
+}
+----
+
+2. **Cline (`.clinerules/hooks/TaskComplete`)**:
+   * `_update_project_cline_hooks(hook_file: Path, launcher: str = "eidos") -> Path`
+   * `_remove_project_cline_hooks(hook_file: Path) -> bool`
+   * Executable script (`0o755`):
++
+[source,sh]
+----
+#!/usr/bin/env sh
+# Managed by Eidos (eidos-drift-gate)
+exec eidos hook
+----
+
+3. **GitHub Copilot (`.github/hooks/hooks.json`)**:
+   * `_update_project_copilot_hooks(hooks_file: Path, launcher: str = "eidos") -> Path`
+   * `_remove_project_copilot_hooks(hooks_file: Path) -> bool`
+   * Schema:
++
+[source,json]
+----
+{
+  "version": 1,
+  "hooks": {
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "eidos hook",
+        "powershell": "eidos hook",
+        "timeoutSec": 30
+      }
+    ]
+  }
+}
+----
+
+4. **OpenAI Codex (`.codex/hooks.json`)**:
+   * `_update_project_codex_hooks(hooks_file: Path, launcher: str = "eidos") -> Path`
+   * `_remove_project_codex_hooks(hooks_file: Path) -> bool`
+   * Schema:
++
+[source,json]
+----
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "eidos hook",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
+----
+
+=== 3. Stateless Client-Aware 1-Turn `Stop` / `TaskComplete` Hook Continuation (`CMP-HOOK-RUNNER`)
+
+Update `src/eidos/plugin/hooks.py` to support all 6 hook-capable clients natively without writing any disk state files:
+
+1. **Workspace Root Detection (`find_workspace_root`)**:
+   * Check `"workspacePaths"` (Antigravity), `"workspace_roots"` (Cursor), and `"workspaceRoots"` (Cline) list fields in addition to `"cwd"`, `"workspaceRoot"`, and `"workspace_root"`.
+2. **Client Detection & In-Memory 1-Turn Continuation Guard (`handle_stop_hook`)**:
+   * Detect the calling client and its per-turn in-memory retry state directly from `payload`:
+     - **Cursor** (`"loop_count"` or `"workspace_roots"` in `payload` or `payload.get("hook_event_name") == "stop"`):
+       * Clean, retry, or non-completed stop (`payload.get("loop_count", 0) > 0` or `payload.get("status", "completed") != "completed"`): return `{}`.
+       * First completed stop with drift/validation issues: return `{"followup_message": msg}`.
+     - **Cline** (`"clineVersion"` or `"hookName"` or `"workspaceRoots"` in `payload`):
+       * Clean, retry, or non-`TaskComplete` hook (`payload.get("hookName", "TaskComplete") != "TaskComplete"` or `bool(payload.get("stop_hook_active"))`): return `{"cancel": False}`.
+       * `TaskComplete` with drift/validation issues: return `{"cancel": True, "contextModification": msg, "errorMessage": msg}`.
+     - **Claude Code, OpenAI Codex, and GitHub Copilot** (`"stop_hook_active"` in `payload` or `"cwd"` in `payload` or `"sessionId"` in `payload`):
+       * Clean or retry stop (`bool(payload.get("stop_hook_active"))`): return `{}`.
+       * First stop with drift/validation issues: return `{"decision": "block", "reason": msg}`.
+     - **Antigravity** (default / `"executionNum"` or `"workspacePaths"` or `"terminationReason"` in `payload`):
+       * Clean or retry/non-normal stop (`payload.get("executionNum", 1) > 1` or `payload.get("terminationReason", "NO_TOOL_CALL") not in ("", "NO_TOOL_CALL")`): return `{"decision": "allow"}`.
+       * First stop with drift/validation issues: return `{"decision": "continue", "reason": msg}`.
+
+=== 4. Record Architectural Decision (`CNT-EIDOS-PLUGIN`)
+
+Add `DEC-PLUGIN-HOOK-CAPABLE-TARGETS` to `eidos/architecture/containers/plugin.adoc` documenting why `Stop` / `TaskComplete` hooks are opt-in via `--hooks` (`hooks=False` by default on `eidos plugin install` and preserved on `eidos plugin update`), wired into each of the 6 hook-capable clients' native configuration files (`.agents/plugins/eidos/hooks.json`, `.claude/settings.json`, `.cursor/hooks.json`, `.clinerules/hooks/TaskComplete`, `.github/hooks/hooks.json`, `.codex/hooks.json`) and tracked per target in `.eidos-manifest.json` for `eidos doctor` health verification, and how `eidos hook` provides stateless, per-conversation 1-turn continuation across all 6 hook-capable clients using their native in-memory `stdin` retry counters.
+
+== Implementation Plan
+
+1. **Plugin Installer, Manifest Hook Tracking & Version / Health Inspection (`src/eidos/plugin/`)**:
+   * Retain all 9 concrete targets in `PluginInstallTarget` and `TARGET_ADAPTERS` (`ANTIGRAVITY`, `CLAUDE`, `CURSOR`, `AIDER`, `CLINE`, `KILOCODE`, `OPEN_CODE`, `CODEX`, `COPILOT`, plus `ALL`).
+   * Add `hooks: bool = False` (opt-in) to `install_plugin()` / `TargetAdapter.install()` and preserve installed hook settings in `update_plugin()` via `_resolve_saved_hook_preference()`.
+   * Record per-target metadata (`"targets": {"<target>": {"hooks": <bool>, "launcher": "<launcher>"}}`) in `.eidos-manifest.json`; only copy `.agents/plugins/eidos/hooks.json` when `antigravity` is installed with `hooks=True` (and remove it when `antigravity` is installed with `hooks=False` or uninstalled).
+   * Add non-destructive `_update_project_cursor_hooks` / `_remove_project_cursor_hooks` (`.cursor/hooks.json`), `_update_project_cline_hooks` / `_remove_project_cline_hooks` (`.clinerules/hooks/TaskComplete`), `_update_project_copilot_hooks` / `_remove_project_copilot_hooks` (`.github/hooks/hooks.json`), and `_update_project_codex_hooks` / `_remove_project_codex_hooks` (`.codex/hooks.json`) in `src/eidos/plugin/installer.py` alongside `_update_project_claude_settings` / `_remove_project_claude_settings` (`.claude/settings.json`), wiring each when `hooks=True` and removing the Eidos `Stop` / `TaskComplete` hook entry when `hooks=False` or on uninstall.
+   * Update `check_plugin_version_status()` in `src/eidos/plugin/version.py` to evaluate per-target `Stop` / `TaskComplete` hook health (`hooks_ok`, `hooks_status`, `target_hooks`, `hook_errors`), distinguishing intentionally omitted hooks (`hooks: false` -> `"disabled"`, `ok: true`), intact active hooks (`hooks: true` -> `"active"`, `ok: true`), and missing/corrupted hooks when originally installed with `--hooks` (`hooks: true` -> `"missing" | "invalid" | "corrupted"`, `ok: false`).
+   * Update `find_workspace_root()` and `handle_stop_hook()` in `src/eidos/plugin/hooks.py` to inspect `"workspace_roots"` and `"workspaceRoots"` and emit client-aware 1-turn continuation responses gated by `executionNum` / `terminationReason` (Antigravity), `loop_count` / `status` (Cursor), `hookName` (Cline), and `stop_hook_active` (Claude Code, OpenAI Codex, GitHub Copilot).
+2. **CLI Commands (`src/eidos/cli/plugin_commands.py`, `src/eidos/cli/doctor_hook_commands.py`)**:
+   * Expose `--hooks` (`typer.Option(False, "--hooks", ...)`) on `plugin_install` only; keep `plugin_update` without `--hooks` so it updates the current installed state.
+   * Update `doctor_cmd()` in `src/eidos/cli/doctor_hook_commands.py` to surface `hooks_ok`, `hooks_status`, `target_hooks`, and `hook_errors` in both Rich table output and `--json` output (`PASS` with `(hooks: disabled)` when installed without `--hooks`, `PASS` with `(hooks: active)` when installed with `--hooks` and valid, and `FAIL` / exit `1` with `status: "hook_error"` when installed with `--hooks` and missing or corrupted).
+3. **Living Specifications (`eidos/`)**:
+   * Update `eidos/architecture/components/plugin-installer.adoc` (`CMP-PLUGIN-INSTALLER`), `eidos/architecture/components/hook-runner.adoc` (`CMP-HOOK-RUNNER`), `eidos/architecture/components/cli-plugin-commands.adoc` (`CMP-CLI-PLUGIN-COMMANDS`), `eidos/architecture/components/cli-doctor-hooks.adoc` (`CMP-CLI-DOCTOR-HOOKS`), `eidos/architecture/containers/plugin.adoc` (`CNT-EIDOS-PLUGIN`, adding `DEC-PLUGIN-HOOK-CAPABLE-TARGETS`), `eidos/architecture/contracts/cli.adoc` (`CTR-EIDOS-CLI` -> `1.3.0`), `eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc` (`CAP-AGENT-001` -> `1.13.0`), `eidos/architecture/components/docs-user-guides.adoc` (`CMP-DOCS-USER-GUIDES`), and `eidos/architecture/components/docs-core-concepts.adoc` (`CMP-DOCS-CORE-CONCEPTS`).
+4. **Documentation & Tests (`docs/`, `tests/`)**:
+   * Update `docs/guides/agent-plugin.md`, `docs/guides/cli.md`, and `docs/concepts/how-eidos-works.md`.
+   * Update `tests/fixtures/cli_command_tree.json` and `tests/test_plugin.py` to verify all 9 targets, default `hooks=False` vs opt-in `--hooks` installation and update state preservation, non-destructive `.cursor/hooks.json`, `.clinerules/hooks/TaskComplete`, `.github/hooks/hooks.json`, `.codex/hooks.json`, `.claude/settings.json`, and `.agents/plugins/eidos/hooks.json` management, `eidos doctor` hook diagnostics (active, intentionally disabled, and broken/missing when installed with `--hooks`), `workspace_roots` / `workspaceRoots` resolution, and client-aware 1-turn continuation in `handle_stop_hook()`.
+5. **Verification Gates**:
+   * Run `eidos delta verify DLT-2026-128-OPTIMIZE-AGENT-21CC --json`, `eidos delta audit DLT-2026-128-OPTIMIZE-AGENT-21CC --strict --json`, `eidos drift --uncommitted --json`, and `uv run pytest`.

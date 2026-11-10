@@ -39,7 +39,7 @@ eidos info
 ---
 
 ### `eidos doctor`
-Verify Eidos tool installation, non-blocking PyPI release update availability (`checks.cli_update`), Git repository status, specification directory health, knowledge graph index freshness, and installed agent plugin currency:
+Verify Eidos tool installation, non-blocking PyPI release update availability (`checks.cli_update`), Git repository status, specification directory health, knowledge graph index freshness, and installed agent plugin currency and `Stop` hook health (`hooks_ok`, `hooks_status`, `target_hooks`, `hook_errors`):
 
 ```bash
 eidos doctor
@@ -49,7 +49,7 @@ eidos doctor --json
 
 Options:
 * `--path, -p PATH`: Path to the project or specifications directory (default: current directory).
-* `--json`: Output diagnostic report in JSON format (including `checks.cli_update` with `status`, `installed_version`, `latest_version`, `update_available`, and `upgrade_command`).
+* `--json`: Output diagnostic report in JSON format (including `checks.cli_update` with `status`, `installed_version`, `latest_version`, `update_available`, and `upgrade_command`, and `checks.agent_plugin` with `hooks_ok`, `hooks_status`, `target_hooks`, and `hook_errors`).
 
 ---
 
@@ -434,25 +434,28 @@ Options:
 ## 6. Agent Ecosystem & Plugins
 
 ### `eidos plugin`
-Manage and validate Eidos agent plugins complying with the `agent-plugins.org v1.0.0` specification:
+Manage and validate Eidos agent plugins complying with the `agent-plugins.org v1.0.0` specification across all 9 supported AI coding assistants (`antigravity`, `claude`, `cursor`, `aider`, `cline`, `kilocode`, `open-code`, `codex`, `copilot`, and `all`):
 
 ```bash
-# Install plugin for all supported AI agents
+# Install plugin for all 9 supported AI agents (skills + AGENTS.md, no hooks by default)
 eidos plugin install all
+
+# Install plugin with native Stop lifecycle hooks enabled
+eidos plugin install all --hooks
 
 # Or install for a specific target:
 eidos plugin install antigravity
-eidos plugin install claude
-eidos plugin install cursor
-eidos plugin install aider
+eidos plugin install claude --hooks
+eidos plugin install cursor --hooks
+eidos plugin install codex --hooks
+eidos plugin install copilot --hooks
 eidos plugin install cline
 eidos plugin install kilocode
 eidos plugin install open-code
-eidos plugin install codex
-eidos plugin install copilot
+eidos plugin install aider
 
 # Configure hooks to use ephemeral uvx runner instead of global eidos binary:
-eidos plugin install all --launcher uvx
+eidos plugin install all --hooks --launcher uvx
 
 # Inspect installed vs bundled plugin version
 eidos plugin version
@@ -463,7 +466,7 @@ eidos plugin validate
 # Display detailed plugin metadata and manifest
 eidos plugin info
 
-# Update installed plugin to latest bundled engine version
+# Update installed plugin to latest bundled engine version (preserves installed hook setting)
 eidos plugin update all
 
 # Uninstall plugin files and agent configurations
@@ -471,10 +474,10 @@ eidos plugin uninstall all
 ```
 
 Sub-commands:
-* `install <TARGET>`: Installs the plugin into `.agents/plugins/eidos` and client harness locations via manifest-tracked `TargetAdapter` projections (`--project-dir, -p`, `--force`, `--launcher [eidos|uvx]`).
+* `install <TARGET>`: Installs the plugin into `.agents/plugins/eidos` and client harness locations via manifest-tracked `TargetAdapter` projections (`--project-dir, -p`, `--force/--no-force`, `--launcher [eidos|uvx]`, `--hooks`).
 * `uninstall <TARGET>`: Safely cleans up Eidos plugin files, skills, and client configurations while preserving user-owned files (`--project-dir, -p`).
 * `version`: Displays and compares bundled vs installed plugin version (`--project-dir, -p`).
-* `update <TARGET>`: Updates project-scoped plugin to the latest bundled version (`--project-dir, -p`, `--launcher [eidos|uvx]`).
+* `update <TARGET>`: Updates project-scoped plugin to the latest bundled version and preserves the current hook state (`--project-dir, -p`, `--launcher [eidos|uvx]`).
 * `validate`: Validates an Agent Plugin against canonical JSON schemas and SemVer 2.0.0 rules.
 * `info`: Displays plugin metadata, skills, hooks, and extensions.
 

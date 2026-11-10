@@ -10,14 +10,15 @@ source_path: src/eidos/plugin/hooks.py
 :toc: left
 
 == Responsibility
-Executes the stateless CLI-native `Stop` lifecycle hook (`eidos hook`), running uncommitted drift and validation checks once at the end of an agent turn and emitting a non-blocking JSON verdict (`DEC-PLUGIN-STATELESS-SINGLE-STOP-HOOK`).
+Executes the stateless CLI-native `Stop` lifecycle hook (`eidos hook`), running uncommitted drift and validation checks at the end of an agent turn and emitting client-aware 1-turn capped continuation feedback (`DEC-PLUGIN-STATELESS-SINGLE-STOP-HOOK`, `DEC-PLUGIN-HOOK-CAPABLE-TARGETS`).
 
 == Key Responsibilities & Collaborators
-* **Stateless Stop Gate Execution**: Resolves the nearest governing sub-project `repo_root` and `eidos/` directory (`find_workspace_root`, `find_repo_root`), invokes `CMP-DRIFT-DETECTOR` (`detect_drift(uncommitted=True)` and `generate_remediation_prompt`), and returns `{"decision": "allow"}` when clean or `{"decision": "allow", "systemMessage": "..."}` when specification validation, invariant, or drift issues exist.
+* **Stateless Client-Aware Stop Gate Execution**: Resolves the nearest governing sub-project `repo_root` and `eidos/` directory (`find_workspace_root` supporting `"cwd"`, `"workspaceRoot"`, `"workspace_root"`, `"workspacePaths"`, Cursor `"workspace_roots"`, and Cline `"workspaceRoots"`, plus `find_repo_root`), invokes `CMP-DRIFT-DETECTOR` (`detect_drift(uncommitted=True)` and `generate_remediation_prompt`), and inspects the client's in-memory retry counter on `stdin` (`executionNum` and `terminationReason` for Antigravity, `loop_count` and `status` for Cursor, `hookName` for Cline, and `stop_hook_active` for Claude Code, GitHub Copilot, and OpenAI Codex). Returns a clean allow response (`{"decision": "allow"}` for Antigravity, `{"cancel": false}` for Cline, and `{}` for Cursor, Claude Code, Copilot, and Codex) when clean, on the retry turn (`executionNum > 1`, `loop_count > 0`, `hookName != "TaskComplete"`, or `stop_hook_active` is truthy), or on internal errors, and emits a 1-turn continuation prompt (`{"decision": "continue", "reason": msg}` for Antigravity, `{"followup_message": msg}` for Cursor, `{"cancel": true, "contextModification": msg, "errorMessage": msg}` for Cline, and `{"decision": "block", "reason": msg}` for Claude Code, Copilot, and Codex) on the first stop turn when drift, validation, or invariant issues exist.
 
 == Public Surface
-* `handle_stop_hook(repo_root: Path, eidos_dir: Path | None = None) -> dict[str, Any]`
-* `execute_hook(path: Path | None = None) -> dict[str, Any]`
+* `find_workspace_root(payload: dict[str, Any], explicit_root: Path | None = None) -> Path`
+* `handle_stop_hook(payload: dict[str, Any], explicit_root: Path | None = None) -> dict[str, Any]`
+* `execute_hook(repo_root: Path | None = None) -> int`
 
 == Design Constraints & Operational Notes
-* **Zero Local Hook State (`DEC-PLUGIN-STATELESS-SINGLE-STOP-HOOK`)**: Maintains no local fingerprint files or SQLite hook snapshots, preventing infinite agent retry loops across coding harnesses.
+* **Zero Local Hook State (`DEC-PLUGIN-STATELESS-SINGLE-STOP-HOOK`, `DEC-PLUGIN-HOOK-CAPABLE-TARGETS`)**: Maintains no local fingerprint files or SQLite hook snapshots; 1-turn continuation capping relies strictly on each coding client's built-in in-memory `stdin` retry counter (`executionNum`, `loop_count`, `hookName`, `stop_hook_active`), preventing infinite agent retry loops across coding harnesses.

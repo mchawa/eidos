@@ -89,7 +89,7 @@ eidos drift
 # Launch interactive C4 architecture portal
 eidos portal serve --path eidos --port 8080
 
-# Install AI agent plugin (4 skills for Antigravity, Claude, Cursor, Copilot, Aider, Cline, OpenCode, Codex)
+# Install AI agent plugin (4 skills for Antigravity, Claude, Cursor, Copilot, Aider, Cline, Kilo Code, OpenCode, Codex)
 eidos plugin install all
 ```
 

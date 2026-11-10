@@ -2107,6 +2107,20 @@
         "panel": null,
         "envvar": "None",
         "type": "STRING"
+      },
+      {
+        "name": "hooks",
+        "opts": [
+          "--hooks"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Install native Stop lifecycle hook for hook-capable targets (antigravity, claude, cursor, codex, copilot).",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
       }
     ]
   },

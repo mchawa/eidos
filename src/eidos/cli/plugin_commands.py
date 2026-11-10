@@ -52,10 +52,16 @@ def plugin_install(
         "--launcher",
         help="Hook command launcher: 'eidos' (global CLI on PATH) or 'uvx' (ephemeral uvx runner).",
     ),
+    hooks: bool = typer.Option(
+        False,
+        "--hooks",
+        help="Install native Stop lifecycle hook for hook-capable targets (antigravity, claude, cursor, cline, codex, copilot).",
+    ),
 ):
     """Install the Eidos agent plugin strictly inside project scope (.agents/plugins/eidos, agent-plugins.org v1.0.0)."""
     resolved_target = target
     resolved_launcher = launcher if isinstance(launcher, str) else "eidos"
+    resolved_hooks = hooks if isinstance(hooks, bool) else False
     console.print(
         f"[bold cyan]Installing Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{resolved_target.value}[/bold green])...\n"
     )
@@ -66,6 +72,7 @@ def plugin_install(
             project_dir=project_dir,
             force=force,
             launcher=resolved_launcher,
+            hooks=resolved_hooks,
         )
         for res in results:
             if res.success:

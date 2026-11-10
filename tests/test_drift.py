@@ -2315,13 +2315,13 @@ def test_deep_review_subsystem_4_shallow_clone_deleted_spec_and_json_cli(tmp_pat
     with pytest.raises(GitResolutionError, match="shallow"):
         _resolve_base_and_merge_base(repo, base_ref=None, head_ref="HEAD")
 
-    # 3. Stateless Stop hook surfaces non-exempt .adoc missing YAML frontmatter via systemMessage warning
+    # 3. Stateless Stop hook surfaces non-exempt .adoc missing YAML frontmatter via 1-turn continuation payload
     dom_dir = tmp_path / "eidos" / "domains"
     dom_dir.mkdir(parents=True, exist_ok=True)
     (dom_dir / "dom-test.adoc").write_text("= Missing Frontmatter\nBody only.\n", encoding="utf-8")
     res_doc = handle_stop_hook({}, workspace_root=tmp_path)
-    assert res_doc["decision"] == "allow"
-    assert "frontmatter delimiter ('---')" in res_doc["systemMessage"]
+    assert res_doc["decision"] == "continue"
+    assert "frontmatter delimiter ('---')" in res_doc["reason"]
 
 
 def test_real_git_structural_and_design_drift_and_cache_mtime_hit(tmp_path):

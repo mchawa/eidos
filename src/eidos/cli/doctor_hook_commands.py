@@ -88,6 +88,14 @@ def doctor_cmd(
     plugin_status = check_plugin_version_status(project_dir=plugin_root)
     plugin_installed = plugin_status.get("status") != "not_installed"
     plugin_up_to_date = plugin_status.get("status") == "up_to_date"
+    hooks_ok = bool(plugin_status.get("hooks_ok", True))
+    hooks_status = str(plugin_status.get("hooks_status", "not_installed" if not plugin_installed else "disabled"))
+    target_hooks = plugin_status.get("target_hooks", {})
+    hook_errors = list(plugin_status.get("hook_errors", []))
+    agent_plugin_ok = not plugin_installed or (plugin_up_to_date and hooks_ok)
+    agent_plugin_status = (
+        "hook_error" if (plugin_installed and plugin_up_to_date and not hooks_ok) else plugin_status.get("status")
+    )
     cli_update = check_cli_update_status()
 
     checks = {
@@ -123,11 +131,15 @@ def doctor_cmd(
             "total_entities": index_entities,
         },
         "agent_plugin": {
-            "ok": not plugin_installed or plugin_up_to_date,
+            "ok": agent_plugin_ok,
             "installed": plugin_installed,
-            "status": plugin_status.get("status"),
+            "status": agent_plugin_status,
             "installed_version": plugin_status.get("installed_version"),
             "bundled_version": plugin_status.get("bundled_version"),
+            "hooks_ok": hooks_ok,
+            "hooks_status": hooks_status,
+            "target_hooks": target_hooks,
+            "hook_errors": hook_errors,
         },
     }
     overall_ok = cli_ok and git_ok and (not specs_exist or (specs_valid and index_ok)) and checks["agent_plugin"]["ok"]
@@ -175,18 +187,30 @@ def doctor_cmd(
         "[bold green]PASS[/bold green]" if index_ok else "[bold yellow]WARN[/bold yellow]",
         f"{index_entities} entities indexed ({db_path.relative_to(repo_root) if db_path.is_relative_to(repo_root) else db_path})",
     )
+    if plugin_installed:
+        base_plugin_detail = (
+            f"Installed: v{plugin_status.get('installed_version')} / Bundled: v{plugin_status.get('bundled_version')}"
+        )
+        if not hooks_ok and hook_errors:
+            plugin_details = f"{base_plugin_detail} — Hook error: {'; '.join(hook_errors)}"
+        else:
+            plugin_details = f"{base_plugin_detail} (hooks: {hooks_status})"
+    else:
+        plugin_details = "Optional: Run 'eidos plugin install <target>' to enable agent skills & hooks"
+
+    if plugin_installed and not hooks_ok:
+        plugin_badge = "[bold red]FAIL[/bold red]"
+    elif plugin_up_to_date:
+        plugin_badge = "[bold green]PASS[/bold green]"
+    elif not plugin_installed:
+        plugin_badge = "[dim]NOT INSTALLED[/dim]"
+    else:
+        plugin_badge = f"[bold yellow]{plugin_status.get('status', '').upper()}[/bold yellow]"
+
     table.add_row(
         "Agent Plugin Status",
-        "[bold green]PASS[/bold green]"
-        if plugin_up_to_date
-        else (
-            "[dim]NOT INSTALLED[/dim]"
-            if not plugin_installed
-            else f"[bold yellow]{plugin_status.get('status', '').upper()}[/bold yellow]"
-        ),
-        f"Installed: v{plugin_status.get('installed_version')} / Bundled: v{plugin_status.get('bundled_version')}"
-        if plugin_installed
-        else "Optional: Run 'eidos plugin install <target>' to enable agent skills & hooks",
+        plugin_badge,
+        plugin_details,
     )
 
     console.print(table)

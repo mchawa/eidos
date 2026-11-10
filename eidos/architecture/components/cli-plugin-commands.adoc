@@ -17,10 +17,10 @@ Implements the `eidos plugin` subcommand group (`install`, `uninstall`, `update`
 
 == Public Surface
 * `plugin_app: typer.Typer`
-* `plugin_install(target: PluginInstallTarget, path: Path, force: bool) -> None`
-* `plugin_uninstall(target: PluginInstallTarget, path: Path) -> None`
-* `plugin_update(target: PluginInstallTarget, path: Path) -> None`
+* `plugin_install(target: PluginInstallTarget, project_dir: Path | None, force: bool, launcher: str, hooks: bool) -> None`
+* `plugin_uninstall(target: PluginInstallTarget, project_dir: Path | None) -> None`
+* `plugin_update(target: PluginInstallTarget, project_dir: Path | None, launcher: str) -> None`
 * `plugin_validate(...)`, `plugin_version(...)`, `plugin_info(...)`
 
 == Design Constraints & Operational Notes
-* **Explicit Target Selection & Overwrite Guard**: Requires an explicit `<TARGET>` (`antigravity`, `claude`, `cursor`, `aider`, `cline`, `kilocode`, `open-code`, `codex`, `copilot`, or `all`) on `install`, `uninstall`, and `update` with `force=False` by default, refusing to overwrite modified user files unless `--force` is specified.
+* **Explicit Target Selection, Opt-In `--hooks` on Install, & Overwrite Guard**: Requires an explicit `<TARGET>` (`antigravity`, `claude`, `cursor`, `aider`, `cline`, `kilocode`, `open-code`, `codex`, `copilot`, or `all`) on `install`, `uninstall`, and `update` with `force=False` by default, refusing to overwrite modified user files unless `--force` is specified. `eidos plugin install` defaults to `hooks=False` (installing native `Stop` hooks only when `--hooks` is passed), while `eidos plugin update` updates the current installed state (preserving each target's recorded hook setting in `.eidos-manifest.json`).

@@ -1649,7 +1649,8 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
 
     # D4: handle_stop_hook runs statelessly without creating stop-gate.json
     stop_res = handle_stop_hook({}, tmp_path)
-    assert stop_res["decision"] == "allow"
+    assert stop_res["decision"] == "continue"
+    assert handle_stop_hook({"executionNum": 2}, tmp_path) == {"decision": "allow"}
     assert not (eidos_dir / ".cache" / "stop-gate.json").exists()
 
     # D5: EidosPortalHandler MIME types and Content-Length validation
