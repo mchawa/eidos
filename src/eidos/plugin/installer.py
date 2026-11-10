@@ -24,16 +24,16 @@ from eidos.plugin.version import (
 
 class PluginInstallTarget(enum.StrEnum):
     # Every target also projects the shared Eidos block into the root AGENTS.md (DEC-PLUGIN-AGENTS-MD-MANAGED-BLOCK).
-    ANTIGRAVITY = "antigravity"  # Installs .agents/plugins/eidos (agent-plugins.org v1.0.0)
+    ANTIGRAVITY = "antigravity"  # Configures .agents/skills + opt-in .agents/hooks.json
     CLAUDE = "claude"  # Claude Code skills (.claude/skills), opt-in Stop hook (.claude/settings.json), CLAUDE.md @AGENTS.md
-    CURSOR = "cursor"  # Installs .agents/plugins/eidos + opt-in .cursor/hooks.json (loop_limit: 1)
+    CURSOR = "cursor"  # Configures .agents/skills + opt-in .cursor/hooks.json (loop_limit: 1)
     AIDER = "aider"  # Configures .aider/skills and adds AGENTS.md to .aider.conf.yml read:
-    CLINE = "cline"  # Configures .agents/skills; reads root AGENTS.md natively
+    CLINE = "cline"  # Configures .agents/skills + opt-in .clinerules/hooks/TaskComplete
     KILOCODE = "kilocode"  # Configures .agents/skills; reads root AGENTS.md natively
     OPEN_CODE = "open-code"  # Configures .agents/skills; reads root AGENTS.md natively
-    CODEX = "codex"  # Installs .agents/plugins/eidos + opt-in .codex/hooks.json
-    COPILOT = "copilot"  # Installs .agents/plugins/eidos + opt-in .github/hooks/hooks.json
-    ALL = "all"  # Installs all agent plugins and configurations
+    CODEX = "codex"  # Configures .agents/skills + opt-in .codex/hooks.json
+    COPILOT = "copilot"  # Configures .agents/skills + opt-in .github/hooks/hooks.json
+    ALL = "all"  # Installs all agent skills and configurations
 
 
 @dataclass
@@ -55,18 +55,18 @@ class UninstallResult:
 
 
 def locate_plugin_bundle() -> Path:
-    """Find the canonical Eidos plugin reference package."""
+    """Find the canonical Eidos Agent Skills reference package."""
     # 1. Check assets/plugin_reference via asset locator
     try:
         ref_dir = get_plugin_reference_dir()
-        if ref_dir.exists() and (ref_dir / "plugin.json").exists():
+        if ref_dir.exists() and (ref_dir / "skills").is_dir():
             return ref_dir
     except OSError:
         pass
 
     # 2. Check repo root assets/plugin_reference
     local_assets = Path.cwd() / "assets" / "plugin_reference"
-    if local_assets.exists() and (local_assets / "plugin.json").exists():
+    if local_assets.exists() and (local_assets / "skills").is_dir():
         return local_assets
 
     raise FileNotFoundError("Could not locate Eidos plugin reference in assets or repository.")
@@ -84,9 +84,11 @@ ACTIVE_EIDOS_SKILLS: frozenset[str] = frozenset(
 
 MANIFEST_FILENAME = ".eidos-manifest.json"
 
-# Shared, user-owned root files that Eidos edits only through managed blocks or merges; they are never recorded in
-# (or unlinked from) an installation manifest, even when a custom --dest points at the repository root.
-SHARED_USER_FILES: frozenset[str] = frozenset({"AGENTS.md", "CLAUDE.md", ".aider.conf.yml", "settings.json"})
+# Shared, user-owned files that Eidos edits only through managed blocks or merges; they are never recorded in
+# (or unlinked from) an installation manifest.
+SHARED_USER_FILES: frozenset[str] = frozenset(
+    {"AGENTS.md", "CLAUDE.md", ".aider.conf.yml", "settings.json", "hooks.json"}
+)
 
 AGENTS_MD_FILENAME = "AGENTS.md"
 AGENTS_MD_BLOCK = "agents-md"
@@ -222,97 +224,6 @@ def _prune_empty_dirs(root_dir: Path) -> None:
                 pass
 
 
-def _rewrite_hook_command_for_target_root(target: Path, version: str | None = None) -> bool:
-    """Rewrite hook commands in hooks.json to use version-pinned uvx invocation."""
-    target_hooks = target if target.name == "hooks.json" else (target / "hooks.json")
-    if not target_hooks.exists():
-        return False
-    try:
-        ver = version or get_bundled_plugin_version()
-        hooks_text = target_hooks.read_text(encoding="utf-8")
-        replacement = f'"command": "uvx --from eidos-ai=={ver} eidos hook'
-        new_text = re.sub(
-            r'"command"\s*:\s*"(?:uvx --from eidos-ai(?:==[^\s"]+)?\s+)?eidos hook\b',
-            replacement,
-            hooks_text,
-        )
-        target_hooks.write_text(new_text, encoding="utf-8")
-        return True
-    except OSError:
-        return False
-
-
-def _copy_plugin_tree(
-    source_dir: Path,
-    target_dir: Path,
-    force: bool = False,
-    launcher: str = "eidos",
-    include_skills: bool = True,
-    include_hooks: bool = True,
-) -> list[Path]:
-    """Copy all plugin files to target destination within the project."""
-    _check_not_symlink(target_dir)
-
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    target_skills_dir = target_dir / "skills"
-    if target_skills_dir.exists() and not include_skills:
-        _remove_skills_flat(source_dir, target_skills_dir)
-
-    created = []
-    for item in source_dir.rglob("*"):
-        if item.is_file():
-            rel = item.relative_to(source_dir)
-            if not include_skills and rel.parts and rel.parts[0] == "skills":
-                continue
-            if not include_hooks and rel.name == "hooks.json":
-                continue
-            # Never copy internal cache, assistant-specific, or installer-only template directories into plugins
-            if any(part in (".claude-plugin", ".eidos", ".cache", ".git") for part in rel.parts):
-                continue
-            if rel.parts and rel.parts[0] == AGENTS_MD_TEMPLATE_REL.parts[0]:
-                continue
-            if rel.name == MANIFEST_FILENAME:
-                continue
-            dest = target_dir / rel
-            _check_not_symlink(dest, root=target_dir)
-            if dest.exists() and not force:
-                if _compute_sha256(dest) == _compute_sha256(item):
-                    created.append(dest)
-                elif dest.name == "plugin.json":
-                    with contextlib.suppress(OSError, orjson.JSONDecodeError, ValueError):
-                        existing_json = orjson.loads(dest.read_bytes())
-                        if isinstance(existing_json, dict) and existing_json.get("name") == "eidos":
-                            created.append(dest)
-                elif dest.name == "hooks.json":
-                    with contextlib.suppress(OSError):
-                        if "eidos" in dest.read_text(encoding="utf-8", errors="ignore"):
-                            created.append(dest)
-                continue
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(item, dest)
-            created.append(dest)
-
-    # Ensure plugin.json reflects the bundled plugin version
-    target_manifest = target_dir / "plugin.json"
-    if target_manifest.exists() and (target_manifest in created or force):
-        try:
-            data = orjson.loads(target_manifest.read_bytes())
-            bundled_ver = get_bundled_plugin_version()
-            if isinstance(data, dict) and (force or data.get("name") == "eidos") and data.get("version") != bundled_ver:
-                data["version"] = bundled_ver
-                target_manifest.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
-        except (OSError, orjson.JSONDecodeError, ValueError):
-            pass
-
-    # Rewrite hook commands if launcher == "uvx"
-    target_hooks = target_dir / "hooks.json"
-    if target_hooks.exists() and launcher == "uvx":
-        _rewrite_hook_command_for_target_root(target_hooks)
-
-    return created
-
-
 def _copy_skills_flat(source_dir: Path, target_skills_dir: Path, force: bool = False) -> list[Path]:
     """Copy individual skills from source bundle into target_skills_dir/<skill-name>/."""
     _check_not_symlink(target_skills_dir)
@@ -345,32 +256,6 @@ def _copy_skills_flat(source_dir: Path, target_skills_dir: Path, force: bool = F
     return created
 
 
-def _remove_skills_flat(source_dir: Path | None, target_skills_dir: Path) -> bool:
-    """Remove known active Eidos skills from target_skills_dir without removing unrelated user skills."""
-    if not target_skills_dir.exists():
-        return False
-
-    known_skills = set(ACTIVE_EIDOS_SKILLS)
-    if source_dir:
-        source_skills = source_dir / "skills" if (source_dir / "skills").exists() else source_dir
-        if source_skills.exists():
-            known_skills |= {d.name for d in source_skills.iterdir() if d.is_dir() and not d.name.startswith(".")}
-
-    removed_any = False
-    for skill_name in sorted(known_skills):
-        skill_dir = target_skills_dir / skill_name
-        if skill_dir.exists():
-            shutil.rmtree(skill_dir)
-            removed_any = True
-
-    # If target_skills_dir is now empty, remove it safely
-    if target_skills_dir.exists() and not any(target_skills_dir.iterdir()):
-        with contextlib.suppress(OSError):
-            target_skills_dir.rmdir()
-
-    return removed_any
-
-
 def _is_eidos_hook_command(cmd: Any) -> bool:
     """Return True if a hook command string invokes 'eidos hook' directly or via uvx."""
     if not isinstance(cmd, str):
@@ -390,37 +275,6 @@ def _is_eidos_stop_hook_entry(entry: Any) -> bool:
     return False
 
 
-def _cleanup_legacy_claude_plugin_keys(data: dict[str, Any]) -> bool:
-    """Remove legacy Eidos 'plugins' and 'enabledPlugins' keys from a Claude settings dict."""
-    changed = False
-    enabled = data.get("enabledPlugins")
-    if isinstance(enabled, dict):
-        for k in ("eidos", "eidos@plugins-dir", "eidos@local", "eidos@skills-dir"):
-            if k in enabled:
-                del enabled[k]
-                changed = True
-        if not enabled:
-            data.pop("enabledPlugins", None)
-            changed = True
-
-    plugins_list = data.get("plugins")
-    if isinstance(plugins_list, list):
-        filtered = [
-            p
-            for p in plugins_list
-            if not (isinstance(p, dict) and p.get("path") in (".claude/plugins/eidos", "./.claude/plugins/eidos"))
-        ]
-        if len(filtered) != len(plugins_list):
-            changed = True
-        if filtered:
-            data["plugins"] = filtered
-        else:
-            data.pop("plugins", None)
-            changed = True
-
-    return changed
-
-
 def _update_project_claude_settings(file_path: Path, launcher: str = "eidos") -> Path:
     """Safely update project-level .claude/settings.json to register the Eidos Stop hook."""
     _check_not_symlink(file_path)
@@ -433,8 +287,6 @@ def _update_project_claude_settings(file_path: Path, launcher: str = "eidos") ->
                 data = loaded
         except (OSError, orjson.JSONDecodeError, ValueError):
             data = {}
-
-    _cleanup_legacy_claude_plugin_keys(data)
 
     bundled_ver = get_bundled_plugin_version()
     hook_cmd = f"uvx --from eidos-ai=={bundled_ver} eidos hook" if launcher == "uvx" else "eidos hook"
@@ -478,7 +330,7 @@ def _update_project_claude_settings(file_path: Path, launcher: str = "eidos") ->
 
 
 def _remove_project_claude_settings(file_path: Path) -> bool:
-    """Safely remove Eidos Stop hook and legacy keys from project-level .claude/settings.json."""
+    """Safely remove Eidos Stop hook from project-level .claude/settings.json."""
     if not file_path.exists():
         return False
     try:
@@ -488,8 +340,7 @@ def _remove_project_claude_settings(file_path: Path) -> bool:
     except (OSError, orjson.JSONDecodeError, ValueError):
         return False
 
-    changed = _cleanup_legacy_claude_plugin_keys(data)
-
+    changed = False
     hooks_dict = data.get("hooks")
     if isinstance(hooks_dict, dict):
         stop_list = hooks_dict.get("Stop")
@@ -903,8 +754,66 @@ def _remove_project_cline_hooks(file_path: Path) -> bool:
     return True
 
 
+def _update_project_antigravity_hooks(file_path: Path, launcher: str = "eidos") -> Path:
+    """Safely update project-level .agents/hooks.json to register the Eidos Stop hook for Antigravity."""
+    _check_not_symlink(file_path)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    data: dict[str, Any] = {}
+    if file_path.exists():
+        try:
+            loaded = orjson.loads(file_path.read_bytes())
+            if isinstance(loaded, dict):
+                data = loaded
+        except (OSError, orjson.JSONDecodeError, ValueError):
+            data = {}
+
+    bundled_ver = get_bundled_plugin_version()
+    hook_cmd = f"uvx --from eidos-ai=={bundled_ver} eidos hook" if launcher == "uvx" else "eidos hook"
+    data["eidos-drift-gate"] = {
+        "Stop": [
+            {
+                "type": "command",
+                "command": hook_cmd,
+                "timeout": 30,
+            }
+        ]
+    }
+    file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+    return file_path
+
+
+def _remove_project_antigravity_hooks(file_path: Path) -> bool:
+    """Safely remove Eidos Stop hook from project-level .agents/hooks.json."""
+    if not file_path.exists() or file_path.is_symlink():
+        return False
+    try:
+        data = orjson.loads(file_path.read_bytes())
+        if not isinstance(data, dict):
+            return False
+    except (OSError, orjson.JSONDecodeError, ValueError):
+        return False
+
+    changed = False
+    if "eidos-drift-gate" in data:
+        data.pop("eidos-drift-gate", None)
+        changed = True
+
+    if not changed:
+        return False
+
+    if not data:
+        file_path.unlink()
+        parent = file_path.parent
+        if parent.exists() and not any(parent.iterdir()):
+            with contextlib.suppress(OSError):
+                parent.rmdir()
+    else:
+        file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+    return True
+
+
 TARGET_HOOK_PATHS: dict[str, str] = {
-    "antigravity": ".agents/plugins/eidos/hooks.json",
+    "antigravity": ".agents/hooks.json",
     "claude": ".claude/settings.json",
     "cursor": ".cursor/hooks.json",
     "cline": ".clinerules/hooks/TaskComplete",
@@ -915,7 +824,7 @@ TARGET_HOOK_PATHS: dict[str, str] = {
 
 def check_target_hook_health(root: Path, target_name: str, hooks_expected: bool) -> dict[str, Any]:
     """Verify whether a target's native Stop hook matches its installed hook expectation."""
-    hook_rel = TARGET_HOOK_PATHS.get(target_name, ".agents/plugins/eidos/hooks.json")
+    hook_rel = TARGET_HOOK_PATHS.get(target_name, ".agents/hooks.json")
     if not hooks_expected:
         return {
             "ok": True,
@@ -1039,13 +948,6 @@ def _uninstall_from_manifest(target_dir: Path, target_name: str | None = None) -
         targets_entry.pop(target_name, None)
         removed_any = True
         if targets_entry:
-            if target_name == "antigravity":
-                hooks_file = target_dir / "hooks.json"
-                if hooks_file.is_file() or hooks_file.is_symlink():
-                    with contextlib.suppress(OSError):
-                        hooks_file.unlink()
-                if isinstance(files_entry, dict):
-                    files_entry.pop("hooks.json", None)
             data["targets"] = dict(sorted(targets_entry.items()))
             if isinstance(files_entry, dict):
                 data["files"] = files_entry
@@ -1099,13 +1001,16 @@ def _prune_empty_dirs_list(root: Path, rel_dirs: tuple[str, ...]) -> None:
                 d.rmdir()
 
 
+def _antigravity_configure_hooks(root: Path, launcher: str, hooks: bool) -> list[Path]:
+    antigravity_hooks = root / ".agents" / "hooks.json"
+    if hooks:
+        _update_project_antigravity_hooks(antigravity_hooks, launcher=launcher)
+        return [antigravity_hooks]
+    _remove_project_antigravity_hooks(antigravity_hooks)
+    return []
+
+
 def _claude_configure_hooks(root: Path, launcher: str, hooks: bool) -> list[Path]:
-    legacy_plugin_dir = root / ".claude" / "plugins" / "eidos"
-    if legacy_plugin_dir.exists():
-        _uninstall_from_manifest(legacy_plugin_dir)
-        if legacy_plugin_dir.exists() and (legacy_plugin_dir / "plugin.json").exists():
-            shutil.rmtree(legacy_plugin_dir, ignore_errors=True)
-        _prune_empty_dirs_list(root, (".claude/plugins/eidos", ".claude/plugins"))
     claude_settings = root / ".claude" / "settings.json"
     if hooks:
         _update_project_claude_settings(claude_settings, launcher=launcher)
@@ -1115,15 +1020,7 @@ def _claude_configure_hooks(root: Path, launcher: str, hooks: bool) -> list[Path
 
 
 def _claude_extra_uninstall(root: Path) -> bool:
-    removed_legacy = False
-    legacy_plugin_dir = root / ".claude" / "plugins" / "eidos"
-    if legacy_plugin_dir.exists():
-        removed_legacy = _uninstall_from_manifest(legacy_plugin_dir)
-        if legacy_plugin_dir.exists() and (legacy_plugin_dir / "plugin.json").exists():
-            shutil.rmtree(legacy_plugin_dir, ignore_errors=True)
-            removed_legacy = True
-    removed_settings = _remove_project_claude_settings(root / ".claude" / "settings.json")
-    return removed_legacy or removed_settings
+    return _remove_project_claude_settings(root / ".claude" / "settings.json")
 
 
 def _cursor_configure_hooks(root: Path, launcher: str, hooks: bool) -> list[Path]:
@@ -1190,11 +1087,7 @@ def _is_target_still_installed(root: Path, target_name: str, skills_dir: str) ->
     """Return True if target_name still has its installed skills on disk and in any shared manifest."""
     if not (root / skills_dir / "eidos" / "SKILL.md").is_file():
         return False
-    if skills_dir == ".agents/plugins/eidos/skills":
-        manifest_targets = _read_manifest_targets(root / ".agents" / "plugins" / "eidos")
-        if manifest_targets:
-            return target_name in manifest_targets
-    elif skills_dir == ".agents/skills":
+    if skills_dir == ".agents/skills":
         manifest_targets = _read_manifest_targets(root / ".agents")
         if manifest_targets:
             return target_name in manifest_targets
@@ -1253,7 +1146,7 @@ def _block_warning(label: str, result: BlockResult | None) -> str:
 
 @dataclass(frozen=True)
 class TargetAdapter:
-    """Declarative table-driven adapter encapsulating target-specific plugin installation and uninstallation."""
+    """Declarative table-driven adapter encapsulating target-specific skills installation and uninstallation."""
 
     target: PluginInstallTarget
     name: str
@@ -1264,10 +1157,7 @@ class TargetAdapter:
     install_message: str = ""
     uninstall_removed_message: str = ""
     uninstall_clean_message: str = ""
-    copy_plugin_tree: bool = True
-    extra_cleanup_files: tuple[str, ...] = ()
     prune_dirs: tuple[str, ...] = ()
-    pre_manifest_hook: Callable[[Path, Path, Path, bool, str], list[Path]] | None = None
     post_install_hook: Callable[[Path, Path, bool, str], list[Path]] | None = None
     configure_hooks: Callable[[Path, str, bool], list[Path]] | None = None
     extra_uninstall_hook: Callable[[Path], bool] | None = None
@@ -1297,39 +1187,13 @@ class TargetAdapter:
         ``hooks`` (default False) controls whether the target's native Stop hook is installed.
         """
         overwrite_blocks = force if force_blocks is None else force_blocks
-        supports_hooks = (self.target == PluginInstallTarget.ANTIGRAVITY) or (self.configure_hooks is not None)
+        supports_hooks = self.configure_hooks is not None
         effective_hooks = bool(hooks and supports_hooks)
         created: list[Path] = []
         plugin_dir = (root / self.plugin_subdir) if self.plugin_subdir else None
 
         if plugin_dir is not None:
             _check_not_symlink(plugin_dir, root=root)
-            if self.copy_plugin_tree:
-                existing_targets = _read_manifest_targets(plugin_dir)
-                if self.target == PluginInstallTarget.ANTIGRAVITY:
-                    include_hooks = effective_hooks
-                    if not effective_hooks and (plugin_dir / "hooks.json").exists():
-                        with contextlib.suppress(OSError):
-                            (plugin_dir / "hooks.json").unlink()
-                else:
-                    ag_hooks = bool(existing_targets.get("antigravity", {}).get("hooks", False))
-                    include_hooks = ag_hooks and (plugin_dir / "hooks.json").exists()
-                    if not ag_hooks and (plugin_dir / "hooks.json").exists():
-                        with contextlib.suppress(OSError):
-                            (plugin_dir / "hooks.json").unlink()
-
-                created.extend(
-                    _copy_plugin_tree(
-                        source_dir,
-                        plugin_dir,
-                        force=force,
-                        launcher=launcher,
-                        include_skills=(self.skills_subdir is None),
-                        include_hooks=include_hooks,
-                    )
-                )
-            if self.pre_manifest_hook is not None:
-                created.extend(self.pre_manifest_hook(root, source_dir, plugin_dir, force, launcher))
 
         if self.post_install_hook is not None:
             created.extend(self.post_install_hook(root, source_dir, force, launcher))
@@ -1373,25 +1237,12 @@ class TargetAdapter:
             created_files=created,
         )
 
-    def uninstall(self, root: Path, source_dir: Path | None = None) -> UninstallResult:
+    def uninstall(self, root: Path) -> UninstallResult:
         """Execute declarative uninstallation pipeline for this target."""
         was_removed = False
         plugin_dir = (root / self.plugin_subdir) if self.plugin_subdir else None
 
         if plugin_dir is not None and plugin_dir.exists() and _uninstall_from_manifest(plugin_dir, target_name=self.name):
-            was_removed = True
-
-        for file_rel in self.extra_cleanup_files:
-            f_path = root / file_rel
-            if f_path.exists():
-                f_path.unlink()
-                was_removed = True
-
-        if (
-            self.skills_subdir is not None
-            and (plugin_dir is None or not (plugin_dir / MANIFEST_FILENAME).exists())
-            and _remove_skills_flat(source_dir, root / self.skills_subdir)
-        ):
             was_removed = True
 
         if self.extra_uninstall_hook is not None and self.extra_uninstall_hook(root):
@@ -1412,25 +1263,6 @@ class TargetAdapter:
         )
 
 
-def _make_project_adapter(
-    target: PluginInstallTarget,
-    name: str,
-    configure_hooks: Callable[[Path, str, bool], list[Path]] | None = None,
-    extra_uninstall_hook: Callable[[Path], bool] | None = None,
-) -> TargetAdapter:
-    return TargetAdapter(
-        target=target,
-        name=name,
-        plugin_subdir=".agents/plugins/eidos",
-        install_message="Installed to project scope .agents/plugins/eidos (agent-plugins.org v1.0.0) and the root AGENTS.md block.",
-        uninstall_removed_message="Removed plugin directory at {rel}.",
-        uninstall_clean_message="No plugin found at {rel} (already removed).",
-        prune_dirs=(".agents/plugins", ".agents"),
-        configure_hooks=configure_hooks,
-        extra_uninstall_hook=extra_uninstall_hook,
-    )
-
-
 def _make_agents_skills_adapter(
     target: PluginInstallTarget,
     name: str,
@@ -1443,7 +1275,6 @@ def _make_agents_skills_adapter(
         name=name,
         plugin_subdir=".agents",
         skills_subdir=".agents/skills",
-        copy_plugin_tree=False,
         install_destination_subdir=".agents/skills",
         uninstall_destination_subdir=".agents/skills",
         install_message=f"Installed 4 skills in .agents/skills/ and the root AGENTS.md block (read natively by {label}).",
@@ -1456,10 +1287,17 @@ def _make_agents_skills_adapter(
 
 
 TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
-    PluginInstallTarget.ANTIGRAVITY: _make_project_adapter(PluginInstallTarget.ANTIGRAVITY, "antigravity"),
-    PluginInstallTarget.CURSOR: _make_project_adapter(
+    PluginInstallTarget.ANTIGRAVITY: _make_agents_skills_adapter(
+        PluginInstallTarget.ANTIGRAVITY,
+        "antigravity",
+        "Antigravity",
+        configure_hooks=_antigravity_configure_hooks,
+        extra_uninstall_hook=lambda root: _remove_project_antigravity_hooks(root / ".agents" / "hooks.json"),
+    ),
+    PluginInstallTarget.CURSOR: _make_agents_skills_adapter(
         PluginInstallTarget.CURSOR,
         "cursor",
+        "Cursor",
         configure_hooks=_cursor_configure_hooks,
         extra_uninstall_hook=lambda root: _remove_project_cursor_hooks(root / ".cursor" / "hooks.json"),
     ),
@@ -1468,11 +1306,10 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
         name="claude",
         plugin_subdir=".claude",
         skills_subdir=".claude/skills",
-        copy_plugin_tree=False,
         install_message="Installed 4 Claude Code skills in .claude/skills/ and imported the root AGENTS.md block from CLAUDE.md.",
         uninstall_removed_message="Removed Claude Code skills from .claude/skills/ and cleaned up .claude/settings.json.",
         uninstall_clean_message="No Claude Code configuration found (already removed).",
-        prune_dirs=(".claude/skills", ".claude/plugins", ".claude"),
+        prune_dirs=(".claude/skills", ".claude"),
         configure_hooks=_claude_configure_hooks,
         extra_uninstall_hook=_claude_extra_uninstall,
         claude_import=True,
@@ -1482,7 +1319,6 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
         name="aider",
         plugin_subdir=".aider",
         skills_subdir=".aider/skills",
-        copy_plugin_tree=False,
         install_destination_subdir=".aider.conf.yml",
         uninstall_destination_subdir=".aider.conf.yml",
         install_message="Installed 4 skills into .aider/skills/, the root AGENTS.md block, and AGENTS.md under read: in .aider.conf.yml.",
@@ -1502,15 +1338,17 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
     ),
     PluginInstallTarget.KILOCODE: _make_agents_skills_adapter(PluginInstallTarget.KILOCODE, "kilocode", "Kilo Code"),
     PluginInstallTarget.OPEN_CODE: _make_agents_skills_adapter(PluginInstallTarget.OPEN_CODE, "open-code", "OpenCode"),
-    PluginInstallTarget.CODEX: _make_project_adapter(
+    PluginInstallTarget.CODEX: _make_agents_skills_adapter(
         PluginInstallTarget.CODEX,
         "codex",
+        "OpenAI Codex",
         configure_hooks=_codex_configure_hooks,
         extra_uninstall_hook=lambda root: _remove_project_codex_hooks(root / ".codex" / "hooks.json"),
     ),
-    PluginInstallTarget.COPILOT: _make_project_adapter(
+    PluginInstallTarget.COPILOT: _make_agents_skills_adapter(
         PluginInstallTarget.COPILOT,
         "copilot",
+        "GitHub Copilot",
         configure_hooks=_copilot_configure_hooks,
         extra_uninstall_hook=lambda root: _remove_project_copilot_hooks(root / ".github" / "hooks" / "hooks.json"),
     ),
@@ -1586,15 +1424,10 @@ def uninstall_plugin(
 
     targets_to_run = _all_concrete_targets() if target == PluginInstallTarget.ALL else [target]
 
-    try:
-        source_dir = locate_plugin_bundle()
-    except (FileNotFoundError, OSError):
-        source_dir = None
-
     for t in targets_to_run:
         adapter = TARGET_ADAPTERS.get(t)
         if adapter is not None:
-            results.append(adapter.uninstall(root, source_dir))
+            results.append(adapter.uninstall(root))
 
     return results
 
@@ -1603,12 +1436,7 @@ def _resolve_saved_hook_preference(root: Path, target_name: str) -> bool:
     """Resolve whether a target was previously installed with hooks=True in .eidos-manifest.json."""
     if target_name not in TARGET_HOOK_PATHS:
         return False
-    if target_name == "claude":
-        manifest_dir = root / ".claude"
-    elif target_name == "cline":
-        manifest_dir = root / ".agents"
-    else:
-        manifest_dir = root / ".agents" / "plugins" / "eidos"
+    manifest_dir = (root / ".claude") if target_name == "claude" else (root / ".agents")
     targets_meta = _read_manifest_targets(manifest_dir)
     if target_name in targets_meta and "hooks" in targets_meta[target_name]:
         return bool(targets_meta[target_name]["hooks"])

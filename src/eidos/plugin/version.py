@@ -138,35 +138,20 @@ def _to_comparable_semver(version: str) -> str | None:
 def get_bundled_plugin_version() -> str:
     """Return the bundled plugin version (synchronized with eidos engine package version)."""
     pkg_raw = getattr(eidos, "__version__", "0.2.0")
-    pkg_exact_semver = pkg_raw.strip() if isinstance(pkg_raw, str) and is_valid_semver(pkg_raw) else None
-
-    # 1. Check canonical plugin bundle (via locate_plugin_bundle)
-    try:
-        from eidos.core.workspace.assets import get_plugin_reference_dir
-
-        ref_dir = get_plugin_reference_dir()
-        manifest = ref_dir / "plugin.json"
-        if manifest.exists():
-            data = orjson.loads(manifest.read_bytes())
-            v = data.get("version")
-            if v and is_valid_semver(v):
-                if pkg_exact_semver and compare_semver(pkg_exact_semver, v) > 0:
-                    return pkg_exact_semver
-                return v
-    except (OSError, orjson.JSONDecodeError, ValueError):
-        pass
-
-    # 2. Fall back to normalized eidos package version (supports PEP 440 .devN/.postN)
-    normalized_pkg = normalize_to_semver(pkg_raw)
-    if normalized_pkg:
-        return normalized_pkg
+    if isinstance(pkg_raw, str):
+        cleaned = pkg_raw.strip()
+        if is_valid_semver(cleaned):
+            return cleaned
+        normalized_pkg = normalize_to_semver(cleaned)
+        if normalized_pkg:
+            return normalized_pkg
     return "0.2.0"
 
 
 def _resolve_installed_plugin_manifest(
     project_dir: Path | None = None,
 ) -> tuple[Path, Path | None]:
-    """Resolve (plugin_dir, manifest_path) for an installed project or fallback agent plugin at the enclosing Git root."""
+    """Resolve (manifest_dir, manifest_path) for an installed agent skills configuration at the enclosing Git root."""
     from eidos.core.workspace.project import _has_eidos_markers, find_git_root, find_repo_root
 
     base_dir = (project_dir or Path.cwd()).resolve()
@@ -178,29 +163,26 @@ def _resolve_installed_plugin_manifest(
         root = git_root if (sub_root != git_root and _has_eidos_markers(sub_root / "eidos")) else base_dir
     else:
         root = base_dir
-    target_dir = root / ".agents" / "plugins" / "eidos"
+    target_dir = root / ".agents"
 
-    for cand_name in ("plugin.json", ".eidos-manifest.json", "plugins/eidos/plugin.json"):
-        manifest_path = target_dir / cand_name
-        if manifest_path.exists():
-            return manifest_path.parent, manifest_path
-
-    fallbacks = [
-        root / ".claude" / ".eidos-manifest.json",
+    candidates = [
         root / ".agents" / ".eidos-manifest.json",
+        root / ".claude" / ".eidos-manifest.json",
         root / ".aider" / ".eidos-manifest.json",
     ]
-    for fb in fallbacks:
-        if fb.exists():
-            return fb.parent, fb
+    for cand in candidates:
+        if cand.exists():
+            return cand.parent, cand
 
     return target_dir, None
 
 
 def get_installed_plugin_version(project_dir: Path | None = None) -> str | None:
     """Retrieve installed plugin version from project scope."""
-    _plugin_dir, manifest_path = _resolve_installed_plugin_manifest(project_dir=project_dir)
+    plugin_dir, manifest_path = _resolve_installed_plugin_manifest(project_dir=project_dir)
     if manifest_path is None:
+        if (plugin_dir / "skills").is_symlink() and (plugin_dir / "skills" / "eidos" / "SKILL.md").is_file():
+            return get_bundled_plugin_version()
         return None
     try:
         data = orjson.loads(manifest_path.read_bytes())
@@ -252,17 +234,16 @@ def check_plugin_version_status(project_dir: Path | None = None) -> dict[str, An
     hook_errors: list[str] = []
 
     if installed is not None:
-        shared_targets = _read_manifest_targets(root / ".agents" / "plugins" / "eidos")
-        claude_targets = _read_manifest_targets(root / ".claude")
         agents_targets = _read_manifest_targets(root / ".agents")
+        claude_targets = _read_manifest_targets(root / ".claude")
         aider_targets = _read_manifest_targets(root / ".aider")
         installed_targets: dict[str, bool] = {}
-        for t_name, t_meta in {**shared_targets, **claude_targets, **agents_targets, **aider_targets}.items():
+        for t_name, t_meta in {**agents_targets, **claude_targets, **aider_targets}.items():
             installed_targets[t_name] = bool(t_meta.get("hooks", False))
 
         if not installed_targets:
-            if (root / ".agents" / "plugins" / "eidos" / "plugin.json").is_file():
-                installed_targets["antigravity"] = (root / ".agents" / "plugins" / "eidos" / "hooks.json").is_file()
+            if (root / ".agents" / ".eidos-manifest.json").is_file() or (root / ".agents" / "skills").is_symlink():
+                installed_targets["antigravity"] = (root / ".agents" / "hooks.json").is_file()
             if (root / ".claude" / ".eidos-manifest.json").is_file():
                 installed_targets["claude"] = (root / ".claude" / "settings.json").is_file()
 

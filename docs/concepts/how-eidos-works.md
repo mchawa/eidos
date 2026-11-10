@@ -231,13 +231,13 @@ In **Planned Mode**, architectural changes are governed by **SpecDeltas (`eidos/
 
 ---
 
-### 3.5 Agent Plugin Harnesses & Stateless Stop Hook (`CNT-EIDOS-PLUGIN`)
+### 3.5 Agent Harnesses, Agent Skills & Stateless Stop Hook (`CNT-EIDOS-PLUGIN`)
 
 Eidos integrates with AI coding assistants through a declarative `TargetAdapter` pipeline (`src/eidos/plugin/installer.py`) and a stateless CLI-native `Stop` lifecycle hook (`src/eidos/plugin/hooks.py`):
 
-1. **Manifest-Tracked Multi-Harness Projection (`eidos plugin install <target> [--hooks]`)**:
-    * Projects the canonical plugin (`assets/plugin_reference/`), **4 cohesive Discovery-First Agent Skills** (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`), and the root `AGENTS.md` managed block across all 9 supported coding assistants: `.agents/plugins/eidos/` for Antigravity, Cursor, GitHub Copilot, and OpenAI Codex; `.claude/skills/` for Claude Code; `.agents/skills/` for Cline, Kilo Code, and OpenCode; and `.aider/skills/` (plus `.aider.conf.yml` `read:`) for Aider.
-    * When `--hooks` is passed on `eidos plugin install` (disabled by default, and preserved automatically on `eidos plugin update`), non-destructively wires each of the 6 hook-capable targets' native `Stop` / `TaskComplete` hook configuration (`.agents/plugins/eidos/hooks.json`, `.claude/settings.json`, `.cursor/hooks.json` with `loop_limit: 1`, `.clinerules/hooks/TaskComplete`, `.github/hooks/hooks.json`, and `.codex/hooks.json`).
+1. **Manifest-Tracked Multi-Harness Skill Projection (`eidos plugin install <target> [--hooks]`)**:
+    * Projects **4 cohesive Discovery-First Agent Skills** (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops` from `assets/plugin_reference/skills/`) and the root `AGENTS.md` managed block across all 9 supported coding assistants: `.agents/skills/` for Antigravity, Cursor, GitHub Copilot, OpenAI Codex, Cline, Kilo Code, and OpenCode; `.claude/skills/` for Claude Code; and `.aider/skills/` (plus `.aider.conf.yml` `read:`) for Aider.
+    * When `--hooks` is passed on `eidos plugin install` (disabled by default, and preserved automatically on `eidos plugin update`), non-destructively wires each of the 6 hook-capable targets' native `Stop` / `TaskComplete` hook configuration (`.agents/hooks.json`, `.claude/settings.json`, `.cursor/hooks.json` with `loop_limit: 1`, `.clinerules/hooks/TaskComplete`, `.github/hooks/hooks.json`, and `.codex/hooks.json`).
     * Records SHA-256 file digests and per-target hook intent (`hooks: true/false`) in `.eidos-manifest.json` so `eidos doctor` verifies hook health against installation intent and `eidos plugin update` / `eidos plugin uninstall` never clobber user-owned files or custom instructions.
 2. **Stateless 1-Turn `Stop` / `TaskComplete` Hook (`eidos hook`)**:
     * When an AI agent finishes its turn (`Stop` / `TaskComplete` event), `eidos hook` runs `detect_drift(uncommitted=True)`—evaluating specification schemas, cross-reference integrity, invariant test bindings, and spec-to-code synchronization in a single pass.

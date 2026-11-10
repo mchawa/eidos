@@ -3,7 +3,7 @@ type: tech/contract
 id: CTR-EIDOS-CLI
 title: "Eidos Command-Line Interface Contract"
 status: active
-version: "1.3.0"
+version: "1.4.0"
 protocol: "cli_args"
 container: "CNT-EIDOS-CLI"
 specification_file: "src/eidos/cli/main.py"
@@ -34,7 +34,7 @@ Validates all specification documents under `PATH` (defaults to `./eidos`) again
 === `eidos context [--file PATH] [--component ID] [--task PROMPT] [--tier TIER] [--semantic/--no-semantic] [--json] [--path PATH]`
 Extracts a compact, token-efficient architectural subgraph context slice (C4 components, bound contracts, domain capabilities, active invariants, and governing policies).
 * **Options**:
-  - `--file, -f`: Target source code file path(s).
+  - `--file, -f`: Target source file path(s), comma-separated paths, or quoted glob patterns (e.g. `'apps/*/Dockerfile'`).
   - `--component, -c`: Target component identifier (e.g. `CMP-EIDOS-CLI`).
   - `--task, -t`: Free-text task description or prompt.
   - `--tier, -T`: Context tier budget: `anchor` (~140 tokens), `guardrails` (default, ~260-890 tokens), or `deep` (~500-1500 tokens).
@@ -65,14 +65,14 @@ Manages the interactive Living Web Portal and documentation site export.
   - `1`: Specifications directory not found.
 
 === `eidos plugin`
-Manages, validates, installs, updates, and uninstalls Eidos Agent Plugins across supported AI agent environments (Antigravity, Claude Code, Cursor, Aider, Cline, Kilo Code, OpenCode, OpenAI Codex, and GitHub Copilot, plus `all`).
+Manages, validates, installs, updates, and uninstalls Eidos Agent Skills and lifecycle hooks across supported AI agent environments (Antigravity, Claude Code, Cursor, Aider, Cline, Kilo Code, OpenCode, OpenAI Codex, and GitHub Copilot, plus `all`).
 * **Sub-commands**:
-  - `install <TARGET> [--project-dir <path>] [--force/--no-force] [--launcher <launcher>] [--hooks]`: Installs the plugin across `.agents/plugins/eidos` (`agent-plugins.org v1.0.0` bundle for Antigravity, Cursor, GitHub Copilot, and OpenAI Codex), `.claude/skills/` (Claude Code project-native skills), `.agents/skills/` (Cline, Kilo Code, OpenCode), and `.aider/skills/` (Aider), projects the canonical root `AGENTS.md` block (plus `CLAUDE.md` `@AGENTS.md` import for Claude Code and `.aider.conf.yml` `read:` entry for Aider), and when `--hooks` is passed (disabled by default) wires each hook-capable target's native `Stop` / `TaskComplete` lifecycle hook (`.agents/plugins/eidos/hooks.json`, `.claude/settings.json`, `.cursor/hooks.json`, `.clinerules/hooks/TaskComplete`, `.github/hooks/hooks.json`, `.codex/hooks.json`).
+  - `install <TARGET> [--project-dir <path>] [--force/--no-force] [--launcher <launcher>] [--hooks]`: Installs the 4 Eidos Agent Skills across `.agents/skills/` (Antigravity, Cursor, GitHub Copilot, OpenAI Codex, Cline, Kilo Code, OpenCode), `.claude/skills/` (Claude Code project-native skills), and `.aider/skills/` (Aider), projects the canonical root `AGENTS.md` block (plus `CLAUDE.md` `@AGENTS.md` import for Claude Code and `.aider.conf.yml` `read:` entry for Aider), and when `--hooks` is passed (disabled by default) wires each hook-capable target's native `Stop` / `TaskComplete` lifecycle hook (`.agents/hooks.json`, `.claude/settings.json`, `.cursor/hooks.json`, `.clinerules/hooks/TaskComplete`, `.github/hooks/hooks.json`, `.codex/hooks.json`).
   - `uninstall <TARGET> [--project-dir <path>]`: Uninstalls and cleans up the plugin and tool configurations from project scope.
   - `version [--project-dir <path>]`: Displays and compares bundled vs installed plugin version and reports SemVer sync status.
   - `update <TARGET> [--project-dir <path>] [--launcher <launcher>]`: Updates project-scoped plugin to the latest bundled version and syncs configurations (preserving each target's recorded `hooks` setting in `.eidos-manifest.json`).
-  - `validate [PATH]`: Validates an Agent Plugin against canonical JSON schemas and SemVer 2.0.0 rules.
-  - `info [PATH]`: Displays plugin metadata, skills, hooks, and extensions.
+  - `validate [PATH]`: Validates an Agent Skills package against `agentskills.io` frontmatter and SemVer 2.0.0 rules.
+  - `info [PATH]`: Displays Agent Skills package metadata, skills, and lifecycle hooks.
 
 === `eidos spec`
 Manages the living specification catalog (15 declarative specification & discovery blueprint types, excluding `delta/mutation`) and dynamic v1 schema introspection across all 16 bundled schemas: listing, authoring, inspecting, and deleting specifications.

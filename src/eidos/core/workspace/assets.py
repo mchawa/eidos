@@ -66,13 +66,8 @@ def get_v1_schemas_dir() -> Path:
     return get_assets_path("schemas/v1")
 
 
-def get_agent_plugins_schemas_dir() -> Path:
-    """Return the directory containing agent-plugins.org JSON schemas."""
-    return get_assets_path("schemas/agent_plugins")
-
-
 def get_plugin_reference_dir() -> Path:
-    """Return the directory containing the canonical Eidos Agent Plugin reference."""
+    """Return the directory containing the canonical Eidos Agent Skills reference."""
     return get_assets_path("plugin_reference")
 
 

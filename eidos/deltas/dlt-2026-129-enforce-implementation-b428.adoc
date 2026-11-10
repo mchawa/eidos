@@ -1,0 +1,238 @@
+---
+type: delta/mutation
+id: DLT-2026-129-ENFORCE-IMPLEMENTATION-B428
+title: Enforce Implementation-Plan Blast-Radius Reconciliation, Glob Context Slicing, and 1-Hop Review Rules
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate '[BLOCKER] Unauthorized Blast Radius', glob-slicing blind spots ('eidos context -f \"apps/*/Dockerfile\"'), DEC-*-heavy guardrail eviction in 'eidos context -f', stale few-shot skill templates, and unverified Implementation Plan CLI/workspace steps by: (1) adding deterministic glob expansion and primary DEC-* compaction before 1-hop INV-*/POL-* eviction in CMP-TIERED-CONTEXT-COMPRESSOR and CMP-CLI-CONTEXT-COMMAND, and (2) tightening eidos-plan and eidos skills (plus the canonical DLT-2026-015 template) to require bottom-up 'eidos context -f' reconciliation, 1-hop structural vs. UNMODIFIED annotation rules, INV-* test pairing, CLI/workspace path verification, and autonomous pre-presentation 5-Dimension self-review."
+mutations:
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+    details: "Expand glob metacharacters ('*', '?', '[') in build_tiered_context_slice (--file) across both existing workspace files and planned not-yet-created files under existing parent directories or indexed source_path prefixes, and compact primary-component DEC-* narratives (index_in_slice == 0) in _enforce_token_budget Stage 1a before evicting 1-hop capability INV-* and POL-* guardrails (without dropping primary DEC-* entries in Stage 3). Record DEC-CONTEXT-GLOB-AND-GUARDRAIL-RETENTION in eidos/architecture/components/tiered-context-compressor.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/core/index/context.py"
+        decisions.id:
+          - "DEC-CONTEXT-GLOB-AND-GUARDRAIL-RETENTION"
+      body:
+        contains:
+          - "DEC-CONTEXT-GLOB-AND-GUARDRAIL-RETENTION"
+          - "glob"
+  - operation: modify
+    target: CMP-CLI-CONTEXT-COMMAND
+    details: "Normalize comma-separated and quoted glob --file (-f) inputs relative to repo_root when invoked from subdirectories in src/eidos/cli/context_command.py, clarify the --file option help text, and update eidos/architecture/components/cli-context-command.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/cli/context_command.py"
+      body:
+        contains:
+          - "glob"
+          - "comma-separated"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Bump CTR-EIDOS-CLI from 1.3.0 to 1.4.0 in eidos/architecture/contracts/cli.adoc to document comma-separated and quoted glob file patterns on 'eidos context --file' (-f)."
+    expect:
+      frontmatter:
+        version: "1.4.0"
+        status: "active"
+      body:
+        contains:
+          - "glob"
+          - "--file, -f"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Document quoted glob and comma-separated file slicing in docs/guides/cli.md ('### eidos context', POL-003) and update eidos/architecture/components/docs-user-guides.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/guides"
+      body:
+        contains:
+          - "docs/guides/cli.md"
+          - "eidos context"
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Tighten assets/plugin_reference/skills/eidos-plan/SKILL.md (<= 1,650 words) and assets/plugin_reference/skills/eidos/SKILL.md (<= 2,050 words) in place—including fixing the canonical DLT-2026-015 YAML/AsciiDoc template—to enforce bottom-up '== Implementation Plan' reconciliation via quoted globs/comma-separated 'eidos context -f', design-subgraph coverage, SYS-*/ARCH-* non-coverage, inline parent/body-only UNMODIFIED avoidance annotations, INV-* test pairing, pre-presentation 5-Dimension self-review (verifying planned CLI flags, workspace paths/symlinks, and in-file few-shot templates), and symmetric 1-hop review rules. Record DEC-PLUGIN-DELTA-BLAST-RADIUS-RECONCILIATION in eidos/architecture/containers/plugin.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-PLUGIN-DELTA-BLAST-RADIUS-RECONCILIATION"
+      body:
+        contains:
+          - "DEC-PLUGIN-DELTA-BLAST-RADIUS-RECONCILIATION"
+          - "1-hop ownership"
+  - operation: modify
+    target: CAP-AGENT-001
+    details: "Bump CAP-AGENT-001 to version 1.14.0 (from 1.13.0) in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc, link CMP-TIERED-CONTEXT-COMPRESSOR and CMP-CLI-CONTEXT-COMMAND under technical.components, update INV-AGENT-CONTEXT-SLICING, add INV-PLUGIN-SKILL-DELTA-RECONCILIATION, and document --file glob slicing and SpecDelta blast-radius/self-review guardrails."
+    expect:
+      frontmatter:
+        version: "1.14.0"
+        status: "active"
+        technical.components:
+          - "CMP-TIERED-CONTEXT-COMPRESSOR"
+          - "CMP-CLI-CONTEXT-COMMAND"
+        technical.invariants.id:
+          - "INV-AGENT-CONTEXT-SLICING"
+          - "INV-PLUGIN-SKILL-DELTA-RECONCILIATION"
+      body:
+        contains:
+          - "1-hop ownership"
+          - "Implementation Plan"
+          - "INV-PLUGIN-SKILL-DELTA-RECONCILIATION"
+  - operation: modify
+    target: INV-AGENT-CONTEXT-SLICING
+    details: "Extend INV-AGENT-CONTEXT-SLICING on CAP-AGENT-001 and tests/test_context.py::test_context_slice_by_file to require deterministic --file glob pattern resolution across existing workspace files and planned paths under existing/indexed parent directories, including subdirectory invocations."
+    expect:
+      frontmatter:
+        rule: "glob"
+        test_binding: "tests/test_context.py::test_context_slice_by_file"
+  - operation: modify
+    target: CAP-AGENT-002
+    details: "Bump CAP-AGENT-002 to version 1.3.0 (from 1.2.0) in eidos/domains/agent-intelligence/capabilities/cap-agent-002.adoc, link CMP-TIERED-CONTEXT-COMPRESSOR under technical.components, and update INV-CONTEXT-TOKEN-COMPRESSION and Key Responsibilities to require compacting primary-component DEC-* prose before evicting 1-hop capability INV-* and POL-* guardrails."
+    expect:
+      frontmatter:
+        version: "1.3.0"
+        status: "active"
+        technical.components:
+          - "CMP-TIERED-CONTEXT-COMPRESSOR"
+        technical.invariants.id:
+          - "INV-CONTEXT-TOKEN-COMPRESSION"
+      body:
+        contains:
+          - "DEC-*"
+          - "guardrails"
+  - operation: modify
+    target: INV-CONTEXT-TOKEN-COMPRESSION
+    details: "Update INV-CONTEXT-TOKEN-COMPRESSION on CAP-AGENT-002 and tests/test_context.py::test_inv_context_token_compression so DEC-*-heavy primary components compact DEC-* narratives in Stage 1a before evicting 1-hop capability INV-* or POL-* guardrails while retaining compact primary DEC-* summaries."
+    expect:
+      frontmatter:
+        rule: "DEC-*"
+        test_binding: "tests/test_context.py::test_inv_context_token_compression"
+  - operation: add
+    target: INV-PLUGIN-SKILL-DELTA-RECONCILIATION
+    details: "Add INV-PLUGIN-SKILL-DELTA-RECONCILIATION on CAP-AGENT-001 bound to tests/test_plugin.py::test_eidos_plan_skill_blast_radius_reconciliation_rules verifying that bundled eidos-plan and eidos skills (and the DLT-2026-015 template) enforce bottom-up Implementation Plan file/glob reconciliation, SYS-*/ARCH-* non-coverage, 1-hop parent CNT-* and design-subgraph coverage, UNMODIFIED avoidance annotations, INV-* test pairing, CLI/workspace path verification, and autonomous pre-presentation 5-Dimension SpecDelta self-review."
+    expect:
+      frontmatter:
+        rule: "1-hop"
+        test_binding: "tests/test_plugin.py::test_eidos_plan_skill_blast_radius_reconciliation_rules"
+vcs:
+  branch: main
+  base_commit: 29eb8057df3ef418eb997aa3255c689bbb9e1bc6
+---
+= SpecDelta: Enforce Implementation-Plan Blast-Radius Reconciliation, Glob Context Slicing, and 1-Hop Review Rules
+:toc: left
+
+== Problem Statement
+
+When coding agents author a SpecDelta (`eidos/deltas/dlt-*.adoc`) and subsequently run a Staff Systems Architect Review (`eidos-plan` §3) prior to code implementation, reviews frequently fail with avoidable `[BLOCKER]` and `[WARNING]` findings:
+
+[source,text]
+----
+[BLOCKER] Unauthorized Blast Radius Across N CNT-* Containers and M CMP-* Components:
+mutations: only authorizes CNT-A, CNT-B, ARCH-001, and SYS-001.
+However, == Implementation Plan Step 1 edits apps/*/docker/Dockerfile (owned by CNT-C..CNT-H)
+and Step 2 modifies foo.py (CMP-FOO), bar.py (CMP-BAR), and router.py (CMP-ROUTER).
+Editing those files without declaring their owning specs in mutations: will fail eidos drift --uncommitted.
+----
+
+Eight interacting engine and skill gaps cause these recurring authoring and review defects:
+
+1. **Top-Down `mutations:` Authoring Without Bottom-Up `== Implementation Plan` Reconciliation**:
+   * Agents populate `mutations:` in YAML frontmatter from the high-level prompt and only later draft concrete file paths in `== Implementation Plan` without slicing each planned file via `eidos context -f` to back-propagate missing 1-hop owners (`CNT-*`, `CMP-*`, `CTR-*`, `CAP-*`) and bound design specs (`DS-*`, `CLT-*`, `UIC-*`, `SCR-*`, `FLOW-*`) into `mutations:`.
+   * While `status: proposed` and `0` source files are modified in Git, `eidos drift --uncommitted` exits `0` (`is_clean: true`), masking the mismatch until architectural review.
+2. **Glob Blind Spot in `eidos context -f` (`CMP-TIERED-CONTEXT-COMPRESSOR`, `CMP-CLI-CONTEXT-COMMAND`)**:
+   * Implementation plans frequently specify cross-container globs such as `apps/*/docker/Dockerfile`. Currently, `build_tiered_context_slice` (`src/eidos/core/index/context.py`) treats `--file` strings literally without glob expansion: unquoted globs shell-expand into extra positional arguments that fail Typer with exit code `2`, whereas quoted globs (`eidos context -f "apps/*/docker/Dockerfile"`) match zero `source_path` prefixes and silently return `components: []`—misleading agents into treating governed container files as unmapped files.
+3. **`DEC-*`-Heavy Primary Containers Evicting 1-Hop Capability `INV-*` & `POL-*` Guardrails (`CMP-TIERED-CONTEXT-COMPRESSOR`)**:
+   * In `TieredContextSlice._enforce_token_budget` (`src/eidos/core/index/context.py`), Stage 1a (`_compress_verbose_fields_in_place`) sets `_compact_prose = True`, which leaves full multi-paragraph `DEC-*` decisions uncompacted on `index_in_slice == 0`. On `DEC-*`-heavy containers (e.g., `CNT-EIDOS-PLUGIN` with 6 `DEC-*` records), Stage 1b and Stage 2 evict 11 of 12 capability invariants (hiding `INV-PLUGIN-SKILL-SIZE-CEILING` and `INV-PLUGIN-SKILL-CLI-PARITY`) and policies before Stage 3 sets `_compact_decisions = True` (which then drops primary `DEC-*` records altogether and collapses the slice to `~280` tokens under a `1,000` / `2,500` budget).
+4. **The `SYS-*` / `ARCH-*` Umbrella Fallacy**:
+   * Authoring agents add `SYS-*` and `ARCH-*` to `mutations:` assuming system-level specs authorize edits across all containers/components, whereas `_collect_1hop_spec_targets` (`src/eidos/vcs/structural.py`, line 507) explicitly strips system-level specs from `CNT-*`/`CMP-*` coverage (`SYS-*`/`ARCH-*` cover only *unmapped* repository files).
+5. **Ambiguous 1-Hop & Design-Subgraph Rules in Reviewer Dimension 1 (`eidos-plan` §3)**:
+   * `eidos-plan/SKILL.md` §3 Dimension 1 mentions *"1-hop ownership neighborhood"* without defining that `_collect_1hop_spec_targets` covers a `CMP-*` file when `mutations:` includes `CMP-*`, its parent `CNT-*`, or a bound 1-hop `CTR-*`/`CAP-*` (and `detect_drift` separately requires `DS-*`/`CLT-*`/`UIC-*`/`SCR-*`/`FLOW-*` on design token or `ui_contract` changes), causing reviewers to falsely flag child `CMP-*` files already covered by a parent `CNT-*`.
+6. **The `eidos delta verify` `UNMODIFIED` Catch-22 on Body-Only & Non-Code Edits**:
+   * Default `eidos drift` only requires spec coverage on `structural_code_files` (plus `body_only_code_files` under `--strict` only when `not classification.test_files`) and classifies `Dockerfile` under `other_files`, while `verify_delta_mutations` fails with `UNMODIFIED` whenever an `operation: modify` target's `.adoc` file has no Git diff. Demanding `mutations:` entries for unmodified specs traps agents between a review `[BLOCKER]` and an `UNMODIFIED` verification failure.
+7. **Contradictory Canonical Template (`DLT-2026-015`) & Unbound Planned Tests**:
+   * In `assets/plugin_reference/skills/eidos-plan/SKILL.md` (`DLT-2026-015`, lines 125–168), Step 2 says *"update `CTR-BILLING-API` and `CNT-BILLING-API` specifications"* while `CNT-BILLING-API` is absent from `mutations:`, `INV-BILL-WEBHOOK-SIG` omits `expect.frontmatter: { rule, test_binding }`, and `CAP-BILL-001` omits `technical.invariants.id` and `expect.body`—teaching agents by example to author non-compliant SpecDeltas.
+8. **Unverified Planned CLI/Workspace Steps & Delayed 5-Dimension Review**:
+   * Agents draft CLI commands and workspace file operations in `== Implementation Plan` without checking live CLI flags, snapshot fixtures, or workspace symlinks (e.g., `.agents/plugins/eidos -> ../../assets/plugin_reference`), and wait for the user to ask `"review it"` instead of running the §3 5-Dimension Review autonomously before presenting a SpecDelta.
+
+== Proposed Specification Changes
+
+=== 1. Glob File Slicing & Guardrail-Preserving Compaction (`CMP-TIERED-CONTEXT-COMPRESSOR`, `CMP-CLI-CONTEXT-COMMAND`, `CTR-EIDOS-CLI`, `CMP-DOCS-USER-GUIDES`, `CAP-AGENT-001`, `CAP-AGENT-002`)
+
+1. **Deterministic `--file` Glob Expansion (`CMP-TIERED-CONTEXT-COMPRESSOR`, `CMP-CLI-CONTEXT-COMMAND`)**:
+   * In `build_tiered_context_slice` (`src/eidos/core/index/context.py`), when any `--file` entry (after comma splitting) contains glob metacharacters (`*`, `?`, `[`):
+     - Expand matching workspace files relative to `index.root` in deterministic sorted order (skipping excluded/cache directories such as `.git`, `.venv`, `node_modules`, `__pycache__`).
+     - When a glob targets planned not-yet-created files (yielding zero existing leaf files, e.g., `"apps/*/docker/.dockerignore"`), expand matching existing parent directories under `index.root` and `fnmatch`-matched indexed `symbol_mappings` (`source_path`, `owned_path`, `inferred_path`) prefixes to synthesize candidate relative paths for `resolve_symbol_or_path_in_db`, returning an honest empty slice when neither existing paths nor indexed prefixes match.
+   * In `context_cmd` (`src/eidos/cli/context_command.py`), split comma-separated `--file` (`-f`) values and preserve repo-root-relative globs when invoked from subdirectories (rebasing relative globs to `Path.cwd()` only when `Path.cwd()` matches files and `repo_root` does not), and update `--file` help text + `CTR-EIDOS-CLI` (`1.4.0`) + `docs/guides/cli.md` (`CMP-DOCS-USER-GUIDES`).
+2. **Primary `DEC-*` Compaction Before 1-Hop `INV-*`/`POL-*` Eviction (`CMP-TIERED-CONTEXT-COMPRESSOR`)**:
+   * In `TieredContextSlice._enforce_token_budget` (`src/eidos/core/index/context.py`), add a Stage 1a step (after `_compact_prose` and `_compact_metadata`, *before* Stage 1b `_pop_non_direct` evicts 1-hop `invariants`, `policies`, or `capabilities`) that compacts `index_in_slice == 0` `DEC-*` narratives into compact 1-line summaries (`compact=True` in `_project_decisions` and `format_decisions_markdown`), and retain compact `DEC-*` summaries on `index_in_slice == 0` in Stage 3 unless still over budget.
+   * Record `DEC-CONTEXT-GLOB-AND-GUARDRAIL-RETENTION` on `CMP-TIERED-CONTEXT-COMPRESSOR`, bump `CAP-AGENT-001` to `1.14.0` (`INV-AGENT-CONTEXT-SLICING`), and bump `CAP-AGENT-002` to `1.3.0` (`INV-CONTEXT-TOKEN-COMPRESSION`).
+
+=== 2. SpecDelta Authoring, Template Alignment & Pre-Presentation Self-Review (`CNT-EIDOS-PLUGIN`, `CAP-AGENT-001`, `INV-PLUGIN-SKILL-DELTA-RECONCILIATION`)
+
+Update `assets/plugin_reference/skills/eidos-plan/SKILL.md` (`<= 1,650` words) and `assets/plugin_reference/skills/eidos/SKILL.md` (`<= 2,050` words) in place to enforce:
+
+1. **Bottom-Up `== Implementation Plan` Reconciliation (`eidos context -f "<path_or_glob>" --tier guardrails --json`)**:
+   * After drafting `== Implementation Plan`, slice every planned file or **quoted** glob (`-f "apps/*/Dockerfile"` or comma-separated `-f a,b`—never unquoted shell globs).
+   * Declare 1-hop owners (`CMP-*`, parent `CNT-*`, or bound `CTR-*`/`CAP-*`) for structural code or spec-documented runtime/boundary changes, plus bound `DS-*`/`CLT-*`/`UIC-*`/`SCR-*`/`FLOW-*` specs when mutating design tokens or `ui_contract` surfaces. `SYS-*` and `ARCH-*` cover only unmapped files, never `CNT-*`/`CMP-*` `source_path` files.
+2. **1-Hop Parent & Body-Only / Non-Code Annotation Rule (Avoiding `UNMODIFIED`)**:
+   * Never add a `CNT-*`/`CMP-*` to `mutations:` unless its `.adoc` file will actually change on disk (`eidos delta verify` rejects unchanged targets as `UNMODIFIED`). Annotate parent-covered or non-structural files inline in `== Implementation Plan` as `(covered via parent CNT-*)` or `(body-only; no spec mutation)` (noting `eidos drift --strict` requires accompanying test updates on body-only edits).
+3. **`INV-*` Test Pairing, Concrete Constraint Targets & Live CLI/Workspace Verification**:
+   * Pair every new/modified test (`tests/...::test_...`) or capability/policy rule with an `INV-*` (`add` or `modify`) mutation (`expect.frontmatter: { rule, test_binding }` plus parent `invariants.id` / `technical.invariants.id`), cite concrete targets for active `INV-*`/`POL-*` constraints (word ceilings, `POL-005` `>90%` per-file coverage, CLI snapshots), and verify every planned CLI flag, workspace path/symlink, and in-file skill example against the live repository.
+4. **Canonical `DLT-2026-015` Template Reconciliation & Autonomous Pre-Presentation 5-Dimension Self-Review**:
+   * Update `DLT-2026-015` in `eidos-plan/SKILL.md` so `CAP-BILL-001` declares `technical.invariants.id: ["INV-BILL-WEBHOOK-SIG"]` and `expect.body`, `INV-BILL-WEBHOOK-SIG` declares `expect.frontmatter: { rule, test_binding }`, and Step 2 reconciles `CNT-BILLING-API` via `(covered via CMP-WEBHOOK-VERIFIER)`.
+   * Require running the `eidos-plan` §3 5-Dimension Review autonomously—fixing all `[BLOCKER]`, `[WARNING]`, and `[NIT]` findings—before presenting *any* authored or updated SpecDelta (`proposed` included), and align §3 Dimensions 1, 3, & 4 with 1-hop parent coverage, `design/*` subgraph checks, `UNMODIFIED` avoidance, CLI/workspace verification, and few-shot template parity.
+
+=== 3. In-Place Skill Tightening & Trim Budget (`INV-PLUGIN-SKILL-SIZE-CEILING`)
+
+[cols="1,2,2,1", options="header"]
+|===
+| Skill | Trim Target (Existing Lines) | Addition Target | Net Word Budget
+| `eidos-plan/SKILL.md` (`1,611` words, ceiling `1,650`)
+| Compress §1 `EXP-2026-001` prose body (lines 46–59, ~`-50` words), §2.1 bash comments (lines 79–106, ~`-45` words), and verbose `details:`/prose in §2.2 `DLT-2026-015` (lines 125–168, ~`-25` net words after adding missing `expect:` fields) = ~`-120` words.
+| Add bottom-up quoted-glob/comma `eidos context -f` reconciliation, `SYS-*`/`ARCH-*` non-coverage, `(covered via parent CNT-*)` / `(body-only; no spec mutation)` rules, `INV-*` pairing, CLI/symlink/template verification, and pre-presentation self-review in §2.1/§2.2 (~`+85` words) + symmetric §3 Dimension 1/3/4 rules (~`+50` words) = ~`+135` words.
+| `~1,626 <= 1,650` words
+
+| `eidos/SKILL.md` (`2,034` words, ceiling `2,050`)
+| Compress §2.2 bash comments (lines 53–68, ~`-28` words) and verbose parentheticals in §4 Workflow A & Workflow B Step 2–3 (lines 90–115, ~`-32` words) = ~`-60` words.
+| Add quoted-glob/comma `eidos context -f` reconciliation of `== Implementation Plan` files (1-hop + `design/*`, excluding `SYS-*`/`ARCH-*`, inline `UNMODIFIED`-avoidance annotations, `INV-*` pairing, CLI/workspace verification) and mandatory pre-presentation `eidos-plan` §3 self-review in §4 Workflow B Step 3 & §5 Stage 2 (~`+55` words).
+| `~2,029 <= 2,050` words
+|===
+
+=== 4. Architectural Decisions (`DEC-CONTEXT-GLOB-AND-GUARDRAIL-RETENTION` & `DEC-PLUGIN-DELTA-BLAST-RADIUS-RECONCILIATION`)
+
+* **`DEC-CONTEXT-GLOB-AND-GUARDRAIL-RETENTION` (on `CMP-TIERED-CONTEXT-COMPRESSOR`)**:
+  * *Decision*: Expand `--file` glob patterns (`*`, `?`, `[`) deterministically in `build_tiered_context_slice` across both existing workspace files and planned paths under existing directories / indexed `source_path` prefixes, and compact primary-component (`index_in_slice == 0`) `DEC-*` prose to 1-line summaries in `_enforce_token_budget` Stage 1a before evicting 1-hop `INV-*` or `POL-*` guardrails.
+  * *Rationale*: Makes `eidos context -f "apps/*/docker/Dockerfile"` resolve every owning container in `<5ms` even before planned files exist on disk, while preventing `DEC-*`-heavy containers (`CNT-EIDOS-PLUGIN`) from evicting critical capability invariants (`INV-PLUGIN-SKILL-SIZE-CEILING`) and dropping primary `DEC-*` summaries.
+  * *Rejected Alternatives*:
+    ** *Require agents to run shell `find`/`ls` before `eidos context -f`*: Rejected because it violates CLI-first discovery (`eidos/SKILL.md` §2.1) and fails on not-yet-created files in `proposed` SpecDeltas.
+    ** *Require separate `eidos context -c <CAP-ID>` calls instead of fixing `_enforce_token_budget`*: Rejected because evicting 11 invariants to `280` tokens under a `1,000`/`2,500`-token budget violated `INV-CONTEXT-TOKEN-COMPRESSION`'s prose-before-guardrails contract.
+* **`DEC-PLUGIN-DELTA-BLAST-RADIUS-RECONCILIATION` (on `CNT-EIDOS-PLUGIN`)**:
+  * *Decision*: Enforce symmetric SpecDelta authoring and mandatory pre-presentation 5-Dimension self-review rules in `eidos-plan` and `eidos` skills (bottom-up quoted-glob/comma `eidos context -f` reconciliation, 1-hop + `design/*` coverage excluding `SYS-*`/`ARCH-*`, inline `(covered via parent CNT-*)` / `(body-only; no spec mutation)` annotations, `INV-*` pairing, live CLI/workspace verification, and compliant few-shot templates) while keeping post-implementation AST drift and baseline digest checks in `eidos drift` and `eidos delta verify`.
+  * *Rejected Alternatives*:
+    ** *Regex-parse file paths from `== Implementation Plan` prose in `SpecValidator`*: Rejected because free-form plan prose legitimately cites context/caller files, parent-covered files, and body-only/non-code files whose unmodified specs would fail `eidos delta verify` (`UNMODIFIED`).
+    ** *Allow `SYS-*` or `ARCH-*` to wildcard-cover `CNT-*`/`CMP-*` code in `eidos drift`*: Rejected because bypassing container/component ownership defeats C4 boundary governance (`INV-DRIFT-DIFF-AWARE-COVERAGE`).
+
+== Implementation Plan
+
+1. **Glob File Slicing & Guardrail-Preserving Compaction (`src/eidos/core/index/context.py` — `CMP-TIERED-CONTEXT-COMPRESSOR`; `src/eidos/cli/context_command.py` — `CMP-CLI-CONTEXT-COMMAND`, `CTR-EIDOS-CLI`)**:
+   * In `src/eidos/core/index/context.py` (`CMP-TIERED-CONTEXT-COMPRESSOR`, maintaining `>90%` statement coverage per `POL-005`):
+     - Add helper `_expand_context_file_pattern(root, conn, pattern)` invoked during `clean_files` resolution (lines 1250–1272) when `any(ch in sub_clean for ch in "*?[")`: expand existing workspace files under `index.root` (ignoring excluded/cache dirs), and when zero files match on disk, expand matching parent directories / `fnmatch`-matched `symbol_mappings` (`source_path`, `owned_path`, `inferred_path`) prefixes to synthesize candidate relative paths.
+     - Update `TieredContextSlice._compress_verbose_fields_in_place` / `_enforce_token_budget` (lines 677–691, 933–985) and `_project_component` / `to_markdown` (lines 266–280, 578–591) so Stage 1a compacts `index_in_slice == 0` `DEC-*` prose to compact 1-line summaries before Stage 1b/2 evicts 1-hop `INV-*`/`POL-*`/`CAP-*` items, while retaining compact primary `DEC-*` summaries in Stage 3 unless still over budget.
+   * In `src/eidos/cli/context_command.py` (`CMP-CLI-CONTEXT-COMMAND`, maintaining `>90%` statement coverage per `POL-005`):
+     - Split comma-separated `--file` (`-f`) arguments, keep repo-root-relative globs intact when run from subdirectories unless only `Path.cwd()` matches, and update `--file` `help=` text; regenerate `tests/fixtures/cli_command_tree.json` *(CLI snapshot fixture classified under `other_files`; no spec mutation)*.
+2. **In-Place Skill Tightening & Template Alignment (`assets/plugin_reference/skills/eidos-plan/SKILL.md`, `assets/plugin_reference/skills/eidos/SKILL.md` — `CNT-EIDOS-PLUGIN`)**:
+   * Edit `assets/plugin_reference/skills/eidos-plan/SKILL.md` (`<= 1,650` words) and `assets/plugin_reference/skills/eidos/SKILL.md` (`<= 2,050` words) per the trim/addition table in §3 above, including fixing `DLT-2026-015` in `eidos-plan/SKILL.md` (`CAP-BILL-001` `technical.invariants.id` + `expect.body`, `INV-BILL-WEBHOOK-SIG` `expect.frontmatter`, Step 2 `(covered via CMP-WEBHOOK-VERIFIER)`). *(Note: `.agents/plugins/eidos` is a Git-tracked symlink to `../../assets/plugin_reference`; no `eidos plugin update` step is needed.)*
+3. **Documentation & Living Specifications (`docs/guides/cli.md` — `CMP-DOCS-USER-GUIDES`; `eidos/**`)**:
+   * Update `docs/guides/cli.md` (`### eidos context`) with quoted glob (`-f "src/eidos/*/installer.py"`) and comma-separated examples, and update `eidos/architecture/components/docs-user-guides.adoc` (`CMP-DOCS-USER-GUIDES`).
+   * Update `eidos/architecture/components/tiered-context-compressor.adoc` (`CMP-TIERED-CONTEXT-COMPRESSOR`, recording `DEC-CONTEXT-GLOB-AND-GUARDRAIL-RETENTION`), `eidos/architecture/components/cli-context-command.adoc` (`CMP-CLI-CONTEXT-COMMAND`), `eidos/architecture/contracts/cli.adoc` (`CTR-EIDOS-CLI` `1.4.0`), `eidos/architecture/containers/plugin.adoc` (`CNT-EIDOS-PLUGIN`, recording `DEC-PLUGIN-DELTA-BLAST-RADIUS-RECONCILIATION`), `eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc` (`CAP-AGENT-001` `1.14.0`, `INV-AGENT-CONTEXT-SLICING`, `INV-PLUGIN-SKILL-DELTA-RECONCILIATION`), and `eidos/domains/agent-intelligence/capabilities/cap-agent-002.adoc` (`CAP-AGENT-002` `1.3.0`, `INV-CONTEXT-TOKEN-COMPRESSION`).
+4. **Invariant Tests (`tests/test_context.py`, `tests/test_plugin.py`)**:
+   * Extend `tests/test_context.py::test_context_slice_by_file` (`INV-AGENT-CONTEXT-SLICING`) to test quoted globs over existing files, planned non-existent files under governed directories, unmatched globs (empty slice), comma-separated globs, subdirectory CLI invocations, and missing `--path` CLI error handling so both `eidos.core.index.context` and `eidos.cli.context_command` exceed `90%` statement coverage (`POL-005`).
+   * Extend `tests/test_context.py::test_inv_context_token_compression` (`INV-CONTEXT-TOKEN-COMPRESSION`) to verify that slicing a file on a `DEC-*`-heavy container (`CNT-EIDOS-PLUGIN`) retains both compact `DEC-*` summaries and 1-hop capability invariants (`INV-PLUGIN-SKILL-SIZE-CEILING`, `INV-PLUGIN-SKILL-CLI-PARITY`) within `guardrails` (`<= 1,000`) and `deep` (`<= 2,500`) budgets.
+   * Add `tests/test_plugin.py::test_eidos_plan_skill_blast_radius_reconciliation_rules` (`INV-PLUGIN-SKILL-DELTA-RECONCILIATION`) asserting all reconciliation, `UNMODIFIED`-avoidance, `INV-*` pairing, CLI/workspace verification, and self-review rules across `eidos-plan/SKILL.md` and `eidos/SKILL.md`, plus programmatic checks on `DLT-2026-015`'s `mutations:` vs. `== Implementation Plan`.
+5. **Verification Gates**:
+   * Run `eidos delta verify DLT-2026-129-ENFORCE-IMPLEMENTATION-B428 --json`, `eidos delta audit DLT-2026-129-ENFORCE-IMPLEMENTATION-B428 --strict --json`, `eidos drift --uncommitted --json`, `uv run pytest tests/test_context.py tests/test_plugin.py tests/test_docs_sync.py tests/test_cli_json.py --cov=eidos.core.index.context --cov=eidos.cli.context_command`, and `uv run pytest tests/test_validator.py -k "test_pol_005" --no-cov`.

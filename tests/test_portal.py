@@ -1608,15 +1608,15 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
     assert "CNT-ALPHA" in proposed_dlt["blast_radius"]["impacted_containers"]
     assert "CMP-ALPHA-MOD" in proposed_dlt["blast_radius"]["impacted_components"]
 
-    # D2 & D7: Non-Eidos plugin.json protection, base field preservation, and update_plugin target lookup
+    # D2 & D7: Non-destructive skill protection and update_plugin target lookup
     proj_dir = tmp_path / "plugin_proj"
     proj_dir.mkdir()
-    foreign_dir = proj_dir / ".agents" / "plugins" / "eidos"
-    foreign_dir.mkdir(parents=True)
-    foreign_manifest = foreign_dir / "plugin.json"
-    foreign_manifest.write_bytes(orjson.dumps({"name": "foreign-plugin", "version": "9.9.9"}))
+    foreign_skill_dir = proj_dir / ".agents" / "skills" / "eidos"
+    foreign_skill_dir.mkdir(parents=True)
+    foreign_skill = foreign_skill_dir / "SKILL.md"
+    foreign_skill.write_text("# Custom user skill\n", encoding="utf-8")
     install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=proj_dir, force=False)
-    assert orjson.loads(foreign_manifest.read_bytes())["name"] == "foreign-plugin"
+    assert foreign_skill.read_text(encoding="utf-8") == "# Custom user skill\n"
 
     claude_proj = tmp_path / "claude_proj"
     claude_proj.mkdir()
@@ -1631,7 +1631,7 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
     codex_proj = tmp_path / "codex_proj"
     codex_proj.mkdir()
     install_plugin(target=PluginInstallTarget.CODEX, project_dir=codex_proj, force=True)
-    codex_manifest = codex_proj / ".agents" / "plugins" / "eidos" / "plugin.json"
+    codex_manifest = codex_proj / ".agents" / ".eidos-manifest.json"
     codex_data = orjson.loads(codex_manifest.read_bytes())
     codex_data["version"] = "0.0.9"
     codex_manifest.write_bytes(orjson.dumps(codex_data))

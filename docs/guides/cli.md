@@ -12,7 +12,7 @@ Commands are semantically organized into six functional panels in CLI help outpu
 3. **Knowledge Graph & AI Context**: Subgraph context extraction and SQLite/FTS5 knowledge graph maintenance.
 4. **Living Catalog & Mutations**: Specifications (`eidos spec`) and SpecDeltas (`eidos delta`).
 5. **Living Web Portal**: Local interactive web portal preview server and static site compilation.
-6. **Agent Ecosystem & Plugins**: Multi-agent plugin installation, verification, updates, and lifecycle hooks conforming to `agent-plugins.org`.
+6. **Agent Ecosystem & Plugins**: Multi-agent skills installation, verification, updates, and lifecycle hooks conforming to `agentskills.io`.
 
 ---
 
@@ -137,11 +137,13 @@ Exit Codes:
 ## 3. Knowledge Graph & AI Context
 
 ### `eidos context`
-Extract a compact, rank-ordered, token-budgeted architectural subgraph slice (C4 containers/components, bound contracts, domain capabilities, active invariants, governing policies, and embedded `DEC-*` decisions) given target file paths, a component/container ID, or a natural-language task prompt. Powered by the embedded SQLite knowledge graph for sub-3ms resolution.
+Extract a compact, rank-ordered, token-budgeted architectural subgraph slice (C4 containers/components, bound contracts, domain capabilities, active invariants, governing policies, and embedded `DEC-*` decisions) given target file paths, comma-separated paths, or quoted glob patterns, a component/container ID, or a natural-language task prompt. Powered by the embedded SQLite knowledge graph for sub-3ms resolution.
 
 ```bash
-# Slice context for touched code files (defaults to guardrails tier)
+# Slice context for touched code files, comma-separated paths, or quoted globs (defaults to guardrails tier)
 eidos context -f src/eidos/cli/main.py
+eidos context -f src/eidos/cli/main.py,src/eidos/cli/context_command.py
+eidos context -f "src/eidos/*/installer.py" --json
 
 # Lightweight anchor context (<= 300 tokens)
 eidos context -c CNT-EIDOS-CORE --tier anchor
@@ -157,7 +159,7 @@ eidos context -c CNT-EIDOS-CORE --json
 ```
 
 Options:
-* `-f, --file TEXT`: Target source code file path(s) to slice context for.
+* `-f, --file TEXT`: Target source file path(s), comma-separated paths, or quoted glob patterns (e.g. `'apps/*/Dockerfile'`). Always quote globs so your shell does not expand them into positional arguments.
 * `-c, --component TEXT`: Target container or component identifier (e.g. `CNT-EIDOS-CLI`, `CMP-SPEC-VALIDATOR`).
 * `-t, --task TEXT`: Free-text task description or engineering prompt.
 * `-T, --tier [anchor|guardrails|deep]`: Context compression budget (default: `guardrails`).
@@ -431,25 +433,26 @@ Options:
 
 ---
 
-## 6. Agent Ecosystem & Plugins
+## 6. Agent Ecosystem & Skills
 
 ### `eidos plugin`
-Manage and validate Eidos agent plugins complying with the `agent-plugins.org v1.0.0` specification across all 9 supported AI coding assistants (`antigravity`, `claude`, `cursor`, `aider`, `cline`, `kilocode`, `open-code`, `codex`, `copilot`, and `all`):
+Manage and validate Eidos Agent Skills complying with the `agentskills.io` specification across all 9 supported AI coding assistants (`antigravity`, `claude`, `cursor`, `aider`, `cline`, `kilocode`, `open-code`, `codex`, `copilot`, and `all`):
 
 ```bash
-# Install plugin for all 9 supported AI agents (skills + AGENTS.md, no hooks by default)
+# Install Agent Skills for all 9 supported AI agents (skills + AGENTS.md, no hooks by default)
 eidos plugin install all
 
-# Install plugin with native Stop lifecycle hooks enabled
+# Install Agent Skills with native Stop / TaskComplete lifecycle hooks enabled
 eidos plugin install all --hooks
 
 # Or install for a specific target:
 eidos plugin install antigravity
+eidos plugin install antigravity --hooks
 eidos plugin install claude --hooks
 eidos plugin install cursor --hooks
 eidos plugin install codex --hooks
 eidos plugin install copilot --hooks
-eidos plugin install cline
+eidos plugin install cline --hooks
 eidos plugin install kilocode
 eidos plugin install open-code
 eidos plugin install aider
@@ -457,29 +460,29 @@ eidos plugin install aider
 # Configure hooks to use ephemeral uvx runner instead of global eidos binary:
 eidos plugin install all --hooks --launcher uvx
 
-# Inspect installed vs bundled plugin version
+# Inspect installed vs bundled skills version
 eidos plugin version
 
-# Validate plugin conformance against agent-plugins.org standard
+# Validate Agent Skills bundle conformance against agentskills.io standard
 eidos plugin validate
 
-# Display detailed plugin metadata and manifest
+# Display detailed Agent Skills metadata and lifecycle hooks
 eidos plugin info
 
-# Update installed plugin to latest bundled engine version (preserves installed hook setting)
+# Update installed skills to latest bundled engine version (preserves installed hook setting)
 eidos plugin update all
 
-# Uninstall plugin files and agent configurations
+# Uninstall skill files and agent hook configurations
 eidos plugin uninstall all
 ```
 
 Sub-commands:
-* `install <TARGET>`: Installs the plugin into `.agents/plugins/eidos` and client harness locations via manifest-tracked `TargetAdapter` projections (`--project-dir, -p`, `--force/--no-force`, `--launcher [eidos|uvx]`, `--hooks`).
-* `uninstall <TARGET>`: Safely cleans up Eidos plugin files, skills, and client configurations while preserving user-owned files (`--project-dir, -p`).
-* `version`: Displays and compares bundled vs installed plugin version (`--project-dir, -p`).
-* `update <TARGET>`: Updates project-scoped plugin to the latest bundled version and preserves the current hook state (`--project-dir, -p`, `--launcher [eidos|uvx]`).
-* `validate`: Validates an Agent Plugin against canonical JSON schemas and SemVer 2.0.0 rules.
-* `info`: Displays plugin metadata, skills, hooks, and extensions.
+* `install <TARGET>`: Installs Agent Skills into `.agents/skills/`, `.claude/skills/`, or `.aider/skills/` and client harness locations via manifest-tracked `TargetAdapter` projections (`--project-dir, -p`, `--force/--no-force`, `--launcher [eidos|uvx]`, `--hooks`).
+* `uninstall <TARGET>`: Safely cleans up Eidos skill files and client hook configurations while preserving user-owned files (`--project-dir, -p`).
+* `version`: Displays and compares bundled vs installed skills version (`--project-dir, -p`).
+* `update <TARGET>`: Updates project-scoped skills to the latest bundled version and preserves the current hook state (`--project-dir, -p`, `--launcher [eidos|uvx]`).
+* `validate`: Validates an Agent Skills bundle against `agentskills.io` frontmatter rules and SemVer 2.0.0 versioning.
+* `info`: Displays Agent Skills metadata, skills, lifecycle hooks, and supported targets.
 
 ---
 

@@ -12,7 +12,7 @@ source_path:
 :toc: left
 
 == Responsibility
-Root Typer CLI application (`src/eidos/cli/main.py`) and shared workspace resolution helpers (`src/eidos/cli/_shared.py`) that mount all subcommand modules, handle `--version` / `eidos info`, and resolve the governing `eidos/` specification directory.
+Root Typer CLI application (`src/eidos/cli/main.py`) and shared workspace resolution helpers (`src/eidos/cli/_shared.py`) that mount all subcommand modules, handle `--version` / `eidos info` (reporting the 16 loaded v1 schemas, 9 supported AI coding harnesses, and `agentskills.io` Agent Skills standard), and resolve the governing `eidos/` specification directory.
 
 == Key Responsibilities & Collaborators
 * **Root Command Registration**: Mounts `init`, `validate`, `spec`, `delta`, `context`, `index`, `drift`, `portal`, `plugin`, `doctor`, and `hook` subcommand groups onto the root `app` Typer instance (`CTR-EIDOS-CLI`).

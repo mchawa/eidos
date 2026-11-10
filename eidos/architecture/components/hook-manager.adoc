@@ -10,13 +10,13 @@ source_path: src/eidos/plugin/validator.py
 :toc: left
 
 == Responsibility
-Validates agent lifecycle hook configurations (`hooks.json`) against the `agent-plugins.org v1.0.0` hooks schema and enforces that `eidos-drift-gate` is scoped exclusively to the `Stop` lifecycle event (`DEC-PLUGIN-STOP-SCOPED-DRIFT-GATE`, `INV-HOOK-CLI-NATIVE`).
+Validates agent lifecycle hook configurations (`hooks.json`) for structural conformance and enforces that `eidos-drift-gate` is scoped exclusively to the `Stop` lifecycle event (`DEC-PLUGIN-STOP-SCOPED-DRIFT-GATE`, `INV-HOOK-CLI-NATIVE`).
 
 == Key Responsibilities & Collaborators
-* **Hook Schema & Command Validation**: Parses `hooks.json` via `orjson`, validates structural conformance against `hooks.schema.json`, and verifies that hook commands invoke `eidos hook` natively without wrapper scripts.
+* **Hook Structure & Command Validation**: Parses `hooks.json` via `orjson`, validates structural conformance of named hook events and handler lists, and verifies that hook commands invoke `eidos hook` natively without wrapper scripts.
 
 == Public Surface
-* `validate_plugin_package(plugin_dir: Path | None = None) -> PluginValidationReport`
+* `validate_plugin_package(plugin_dir: Path, version: str | None = None) -> PluginValidationReport`
 * `_verify_hook_command(command: str, errors: list[str], context: str) -> None`
 
 == Design Constraints & Operational Notes

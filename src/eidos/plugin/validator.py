@@ -1,25 +1,21 @@
-"""Validator for Agent Plugins conforming to agent-plugins.org v1.0.0."""
+"""Validator for Eidos Agent Skills packages (agentskills.io) and lifecycle hooks."""
 
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import jsonschema
 import orjson
 
 from eidos.core.spec.parser import safe_load_yaml
-from eidos.core.workspace.assets import get_agent_plugins_schemas_dir
-from eidos.plugin.version import is_valid_semver
+from eidos.plugin.version import get_bundled_plugin_version, is_valid_semver
 
-PLUGIN_SCHEMA_ID = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
-MCP_SCHEMA_ID = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
 PLUGIN_NAME_PATTERN = re.compile(r"^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")
 
 
 @dataclass
 class PluginValidationReport:
-    """Summary of plugin package validation."""
+    """Summary of Agent Skills package validation."""
 
     plugin_path: Path
     is_valid: bool = True
@@ -40,19 +36,8 @@ class PluginValidationReport:
         self.warnings.append(message)
 
 
-def _load_bundled_schema(schema_name: str) -> dict[str, Any]:
-    """Load bundled JSON schema from assets."""
-    try:
-        schema_path = get_agent_plugins_schemas_dir() / schema_name
-    except Exception as e:
-        raise FileNotFoundError(f"Bundled schema '{schema_name}' not found: {e}") from e
-    if not schema_path.exists():
-        raise FileNotFoundError(f"Bundled schema '{schema_name}' not found at {schema_path}")
-    return orjson.loads(schema_path.read_bytes())
-
-
-def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
-    """Validate an Agent Plugin directory against agent-plugins.org v1.0.0 specifications."""
+def validate_plugin_package(plugin_dir: Path, version: str | None = None) -> PluginValidationReport:
+    """Validate an Agent Skills package directory (skills/*/SKILL.md and optional hooks.json)."""
     report = PluginValidationReport(plugin_path=plugin_dir)
 
     if not plugin_dir.exists():
@@ -63,105 +48,28 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
         report.add_error(f"Plugin path '{plugin_dir}' is not a directory.")
         return report
 
-    # 1. Validate manifest: plugin.json
-    manifest_path = plugin_dir / "plugin.json"
-    if not manifest_path.exists():
-        report.add_error("Missing required manifest file 'plugin.json' in plugin root.")
-        return report
+    report.plugin_name = "eidos-agent-skills"
+    resolved_version = version if version is not None else get_bundled_plugin_version()
+    report.plugin_version = resolved_version
+    if not is_valid_semver(resolved_version):
+        report.add_error(
+            f"Plugin version '{resolved_version}' is not a valid Semantic Version (SemVer 2.0.0). "
+            "Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD] (e.g. 0.1.0, 1.0.0-beta.1)"
+        )
 
-    try:
-        manifest = orjson.loads(manifest_path.read_bytes())
-    except orjson.JSONDecodeError as e:
-        report.add_error(f"Invalid JSON in 'plugin.json': {e}")
-        return report
-    except Exception as e:
-        report.add_error(f"Error reading 'plugin.json': {e}")
-        return report
+    # 1. Validate Skills: skills/*/SKILL.md (or direct <skill>/SKILL.md subdirectories)
+    skills_dir: Path | None = plugin_dir / "skills"
+    if not (skills_dir.exists() and skills_dir.is_dir()):
+        has_direct_skills = any((d / "SKILL.md").is_file() for d in plugin_dir.iterdir() if d.is_dir())
+        if has_direct_skills:
+            skills_dir = plugin_dir
+        else:
+            report.add_error("Missing required 'skills' directory in Agent Skills package.")
+            skills_dir = None
 
-    # Validate against plugin.schema.json
-    try:
-        plugin_schema = _load_bundled_schema("plugin.schema.json")
-        validator = jsonschema.Draft202012Validator(plugin_schema)
-        schema_errors = list(validator.iter_errors(manifest))
-        for err in schema_errors:
-            report.add_error(f"plugin.json schema violation: {err.message} at path '{err.json_path}'")
-    except Exception as e:
-        report.add_error(f"Schema validator error: {e}")
-
-    # Validate name constraints specifically
-    name = manifest.get("name")
-    if name:
-        report.plugin_name = name
-        if not PLUGIN_NAME_PATTERN.match(name) or len(name) > 64:
-            report.add_error(
-                f"Plugin name '{name}' violates naming constraints: must be 1-64 chars, "
-                "lowercase alphanumeric/hyphens/dots, starting/ending with alphanumeric, no '--' or '..'"
-            )
-    else:
-        report.add_error("plugin.json is missing required 'name' field.")
-
-    # Validate version strictly with SemVer 2.0.0
-    version = manifest.get("version")
-    if version:
-        report.plugin_version = version
-        if not is_valid_semver(version):
-            report.add_error(
-                f"Plugin version '{version}' is not a valid Semantic Version (SemVer 2.0.0). "
-                "Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD] (e.g. 0.1.0, 1.0.0-beta.1)"
-            )
-    else:
-        report.add_error("plugin.json is missing required 'version' field.")
-
-    # Discover extensions in manifest
-    if "extensions" in manifest and isinstance(manifest["extensions"], dict):
-        report.extensions = list(manifest["extensions"].keys())
-
-    # 2. Validate MCP configuration: mcp_config.json (Antigravity) or mcp.json (agent-plugins.org)
-    mcp_config_path = plugin_dir / "mcp_config.json"
-    mcp_path = plugin_dir / "mcp.json"
-
-    if mcp_config_path.exists():
-        try:
-            mcp_data = orjson.loads(mcp_config_path.read_bytes())
-            servers = mcp_data.get("mcpServers", {})
-            if isinstance(servers, dict):
-                report.mcp_servers.extend(list(servers.keys()))
-        except orjson.JSONDecodeError as e:
-            report.add_error(f"Invalid JSON in 'mcp_config.json': {e}")
-        except Exception as e:
-            report.add_error(f"Error reading 'mcp_config.json': {e}")
-
-    elif mcp_path.exists():
-        try:
-            mcp_data = orjson.loads(mcp_path.read_bytes())
-
-            mcp_schema = _load_bundled_schema("mcp.schema.json")
-            mcp_validator = jsonschema.Draft202012Validator(mcp_schema)
-            mcp_errors = list(mcp_validator.iter_errors(mcp_data))
-            for err in mcp_errors:
-                report.add_error(f"mcp.json schema violation: {err.message} at path '{err.json_path}'")
-
-            servers = mcp_data.get("mcpServers", {})
-            if isinstance(servers, dict):
-                report.mcp_servers.extend(list(servers.keys()))
-                for s_name, s_conf in servers.items():
-                    if isinstance(s_conf, dict) and s_conf.get("type") == "stdio":
-                        cmd = s_conf.get("command", "")
-                        if " " in cmd.strip() and not cmd.startswith(("./", "/")):
-                            report.add_warning(
-                                f"MCP server '{s_name}' command '{cmd}' contains spaces. "
-                                "Spec requires a single executable token, not a shell command string."
-                            )
-        except orjson.JSONDecodeError as e:
-            report.add_error(f"Invalid JSON in 'mcp.json': {e}")
-        except Exception as e:
-            report.add_error(f"Error validating 'mcp.json': {e}")
-
-    # 3. Validate Skills: skills/ (optional)
-    skills_dir = plugin_dir / "skills"
-    if skills_dir.exists() and skills_dir.is_dir():
+    if skills_dir is not None:
         for item in sorted(skills_dir.iterdir()):
-            if item.is_dir():
+            if item.is_dir() and not item.name.startswith("."):
                 skill_md = item / "SKILL.md"
                 if not skill_md.exists():
                     report.add_warning(f"Skill directory '{item.name}' missing 'SKILL.md'.")
@@ -180,13 +88,23 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
                             if isinstance(fm, dict):
                                 s_name = fm.get("name")
                                 s_desc = fm.get("description")
-                                if not s_name:
+                                if not s_name or not isinstance(s_name, str):
                                     report.add_error(f"Skill '{item.name}' SKILL.md missing 'name' in frontmatter.")
+                                else:
+                                    if not PLUGIN_NAME_PATTERN.match(s_name) or len(s_name) > 64:
+                                        report.add_error(
+                                            f"Skill name '{s_name}' violates naming constraints: must be 1-64 chars, "
+                                            "lowercase alphanumeric/hyphens/dots, starting/ending with alphanumeric, no '--' or '..'"
+                                        )
+                                    if s_name != item.name:
+                                        report.add_error(
+                                            f"Skill '{item.name}' SKILL.md frontmatter name '{s_name}' does not match directory name '{item.name}'."
+                                        )
                                 if not s_desc:
                                     report.add_warning(
                                         f"Skill '{item.name}' SKILL.md missing 'description' in frontmatter."
                                     )
-                                report.skills.append(s_name or item.name)
+                                report.skills.append(str(s_name) if s_name else item.name)
                             else:
                                 report.add_error(f"Skill '{item.name}' SKILL.md frontmatter is not a dictionary.")
                         else:
@@ -196,7 +114,10 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
                 except Exception as e:
                     report.add_error(f"Error parsing skill '{item.name}' SKILL.md: {e}")
 
-    # 4. Validate Lifecycle Hooks: hooks.json (optional)
+        if not report.skills:
+            report.add_error("No valid skills found in 'skills' directory.")
+
+    # 2. Validate Lifecycle Hooks: hooks.json (optional)
     hooks_path = plugin_dir / "hooks.json"
     if hooks_path.exists():
         try:

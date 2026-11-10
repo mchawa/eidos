@@ -10,14 +10,14 @@ source_path: src/eidos/plugin/validator.py
 :toc: left
 
 == Responsibility
-Validates Eidos Agent Plugin bundles (`plugin.json` and `skills/*/SKILL.md`) against the `agent-plugins.org v1.0.0` specification and SemVer 2.0.0 versioning rules (`INV-PLUGIN-SCHEMA-CONFORMANCE`).
+Validates Eidos Agent Skills packages (`skills/*/SKILL.md` and `hooks.json`) against the `agentskills.io` specification and SemVer 2.0.0 versioning rules (`INV-PLUGIN-SCHEMA-CONFORMANCE`).
 
 == Key Responsibilities & Collaborators
-* **Manifest & Skill Frontmatter Validation**: Parses `plugin.json` via `orjson`, validates against `assets/schemas/agent_plugins/plugin.schema.json` (via `CMP-ASSET-LOCATOR`), extracts line-anchored YAML frontmatter from `SKILL.md` files, and verifies skill directory naming parity.
+* **Skill Frontmatter & Naming Parity Validation**: Extracts line-anchored YAML frontmatter from `SKILL.md` files (`safe_load_yaml`), verifies required `name` and `description` attributes, validates identifier format (`PLUGIN_NAME_PATTERN`), and enforces skill directory naming parity.
 
 == Public Surface
-* `validate_plugin_package(plugin_dir: Path | None = None) -> PluginValidationReport`
+* `validate_plugin_package(plugin_dir: Path, version: str | None = None) -> PluginValidationReport`
 * `PluginValidationReport`
 
 == Design Constraints & Operational Notes
-* **Strict SemVer 2.0.0 Enforcement**: Rejects non-SemVer version strings in `plugin.json` so downstream agent harnesses can parse plugin metadata reliably.
+* **Strict SemVer 2.0.0 Enforcement**: Rejects non-SemVer version strings so downstream agent harnesses and version sync checks operate deterministically.

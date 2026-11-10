@@ -4,7 +4,7 @@ id: CAP-AGENT-002
 title: "Polyglot AST Code Graph & Structural Repo Map Intelligence"
 domain: DOM-AGENT-INTELLIGENCE
 status: active
-version: "1.2.0"
+version: "1.3.0"
 
 business:
   personas:
@@ -23,6 +23,7 @@ technical:
     - "CNT-EIDOS-CORE"
   components:
     - "CMP-AST-SYMBOL-INDEXER"
+    - "CMP-TIERED-CONTEXT-COMPRESSOR"
   contracts:
     - "CTR-EIDOS-CLI"
   invariants:
@@ -45,7 +46,7 @@ technical:
       rule: "Incremental ArchitecturalIndex.sync() must refresh stored mtime in place when SHA-256 matches, reuse dirty-check state without redundant directory walks, evict stale entities and edges by previous doc_id when a specification ID is renamed in place, reject duplicate entity ID collisions across files, and unify SQLite schema_version across validator, drift, and graph index caches."
       test_binding: "tests/test_graph_index.py::test_inv_index_incremental_parity"
     - id: INV-CONTEXT-TOKEN-COMPRESSION
-      rule: "Tiered context slicing ('eidos context') must enforce rank-ordered token budgets per tier (anchor <= 300, guardrails <= 1000, deep <= 2500 tokens) across both Markdown and JSON outputs (projecting tier-scoped fields in to_dict), apply progressive prose field compression before evicting invariants or policies with incremental token delta accounting in _enforce_token_budget, and return an honest empty slice when an explicit query matches zero entities."
+      rule: "Tiered context slicing ('eidos context') must enforce rank-ordered token budgets per tier (anchor <= 300, guardrails <= 1000, deep <= 2500 tokens) across both Markdown and JSON outputs (projecting tier-scoped fields in to_dict), apply progressive Stage 1a prose and primary DEC-* narrative compression before evicting 1-hop capability INV-* or POL-* guardrails (while retaining compact primary DEC-* summaries) with incremental token delta accounting in _enforce_token_budget, and return an honest empty slice when an explicit query matches zero entities."
       test_binding: "tests/test_context.py::test_inv_context_token_compression"
 ---
 = Capability: Polyglot AST Code Graph & Structural Repo Map Intelligence
@@ -64,7 +65,7 @@ In strict compliance with *POL-004-ZERO-AI-CALL-DEPENDENCY*, all AST extraction,
 == 2. Key Responsibilities
 
 1. **Token-Budgeted AI Repo Map (`eidos index repo-map`) & Context Slicing (`eidos context`)**:
-   Synthesizes a compact structural outline of classes, public methods, function signatures, and file coordinates across polyglot source trees (Python, TypeScript/JS, Go, Rust, Java, Kotlin, C/C++ with length-preserving `*_API` / `*_EXPORT` macro normalization, C#, Ruby, PHP, Swift, Vue, Svelte), achieving $\ge 85\%$ token compression compared to raw code ingestion, and enforces strict tier token budgets (`anchor`, `guardrails`, `deep`) across both Markdown and JSON (`--format json`) context slices while returning honest empty slices when explicit queries match zero entities.
+   Synthesizes a compact structural outline of classes, public methods, function signatures, and file coordinates across polyglot source trees (Python, TypeScript/JS, Go, Rust, Java, Kotlin, C/C++ with length-preserving `*_API` / `*_EXPORT` macro normalization, C#, Ruby, PHP, Swift, Vue, Svelte), achieving $\ge 85\%$ token compression compared to raw code ingestion, enforces strict tier token budgets (`anchor`, `guardrails`, `deep`) across both Markdown and JSON (`--json`) context slices—compacting primary-component `DEC-*` narratives in Stage 1a before evicting 1-hop capability `INV-*` or `POL-*` guardrails while retaining compact primary `DEC-*` summaries—and returns honest empty slices when explicit queries match zero entities.
 2. **Sub-Millisecond Symbol Discovery (`eidos index find-symbol`)**:
    Exposes machine-readable (`--json`) lookup of symbol declarations, line numbers, docstrings, and owning C4 components for agent tool calling.
 3. **Vertical Grounding**:

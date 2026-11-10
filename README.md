@@ -147,7 +147,7 @@ eidos/
 │
 ├── assets/                        # [BUNDLED SCHEMAS, SKILLS & PORTAL ASSETS]
 │   ├── schemas/v1/                # 16 canonical JSON/YAML schemas + shared `common/defs.yaml`
-│   ├── plugin_reference/          # Canonical `agent-plugins.org v1.0.0` bundle & 4 workflow skills
+│   ├── plugin_reference/          # Canonical `agentskills.io` 4 workflow skills & reference `hooks.json`
 │   └── portal/                    # Pre-compiled air-gapped portal SPA (`bundle.html.gz`)
 │
 ├── eidos/                         # [THE LIVING SPECIFICATION / DOGFOODED CATALOG]
@@ -173,7 +173,7 @@ eidos/
 | **Scope** | Coding loop only (Aider, Claude Code) or monolithic bot (Devin) | Full SDLC: Exploration → Product Baseline → SpecDelta → Code → CI |
 | **Specifications** | Ephemeral Jira tickets, stale Confluence/Notion pages | Versioned YAML frontmatter + AsciiDoc living in Git |
 | **Change Management** | Narrative RFC essays that rot in archive folders | Declarative `SpecDelta` mutations applied automatically upon merge |
-| **Agent Support** | Vendor-locked to a single proprietary LLM | Agent-agnostic via agent-plugins.org v1.0.0 & CLI-first Agent Skills |
+| **Agent Support** | Vendor-locked to a single proprietary LLM | Agent-agnostic via `agentskills.io` CLI-first Agent Skills across 9 coding clients |
 | **VCS Support** | Tied to a single SaaS platform or closed web UI | 100% Git-native local repository engine |
 
 ---

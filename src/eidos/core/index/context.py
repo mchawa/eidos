@@ -6,6 +6,7 @@ guardrails (<=1000 tokens), and deep (<=2500 tokens) tiers for AI coding agents.
 
 from __future__ import annotations
 
+import fnmatch
 import re
 import time
 from dataclasses import asdict, dataclass, field
@@ -21,6 +22,161 @@ from eidos.core.index.query import (
     execute_fts_query,
     resolve_symbol_or_path_in_db,
 )
+
+_GLOB_EXCLUDED_DIRS = frozenset(
+    {
+        ".git",
+        ".hg",
+        ".svn",
+        ".venv",
+        "venv",
+        "node_modules",
+        "__pycache__",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".tox",
+        "dist",
+        "build",
+        ".cache",
+    }
+)
+
+
+def _has_glob_magic(path_str: str) -> bool:
+    return any(ch in path_str for ch in "*?[")
+
+
+def _concretize_glob_segment(seg: str) -> str:
+    if seg == "**":
+        return "_planned_dir"
+    cleaned = re.sub(r"\[[^\]]*\]", "_p", seg)
+    cleaned = re.sub(r"[*?]+", "_planned", cleaned)
+    return cleaned or "_planned"
+
+
+def _expand_context_file_pattern(root: Path, conn: Any, pattern: str) -> list[str]:
+    """Deterministically expand a repo-relative glob pattern across existing files and planned governed paths."""
+    import posixpath
+
+    resolved_root = root.resolve()
+    root_posix = resolved_root.as_posix().rstrip("/")
+    root_prefix = f"{root_posix}/"
+    raw_pat = pattern.strip().replace("\\", "/")
+    if raw_pat.startswith("/"):
+        norm_abs = posixpath.normpath(raw_pat)
+        if norm_abs.startswith(root_prefix):
+            pat = norm_abs[len(root_prefix) :]
+        else:
+            return []
+    else:
+        pat = raw_pat
+        while pat.startswith("./"):
+            pat = pat[2:]
+    norm_segs: list[str] = []
+    for seg in pat.split("/"):
+        if not seg or seg == ".":
+            continue
+        if seg == "..":
+            if not norm_segs or _has_glob_magic(norm_segs[-1]):
+                return []
+            norm_segs.pop()
+        else:
+            norm_segs.append(seg)
+    if not norm_segs:
+        return []
+    pat = "/".join(norm_segs)
+
+    existing_matches: list[str] = []
+    try:
+        for candidate in resolved_root.glob(pat):
+            if not candidate.is_file():
+                continue
+            try:
+                rel_parts = candidate.resolve().relative_to(resolved_root).parts
+            except ValueError:
+                continue
+            if any(part in _GLOB_EXCLUDED_DIRS for part in rel_parts):
+                continue
+            existing_matches.append("/".join(rel_parts))
+    except (OSError, ValueError, NotImplementedError):
+        existing_matches = []
+
+    if existing_matches:
+        return sorted(dict.fromkeys(existing_matches))
+
+    # Fallback for planned not-yet-created files in proposed SpecDeltas:
+    # 1) Walk existing parent directory segments on disk when at least one directory segment matches.
+    synthesized: list[str] = []
+    segs = norm_segs
+    if len(segs) >= 2:
+        dir_segs = segs[:-1]
+        leaf_concrete = _concretize_glob_segment(segs[-1])
+
+        def _walk_dirs(cur_dir: Path, idx: int, matched_depth: int, rel_prefix: tuple[str, ...]) -> None:
+            if idx >= len(dir_segs):
+                if matched_depth > 0:
+                    synthesized.append("/".join((*rel_prefix, leaf_concrete)))
+                return
+            seg = dir_segs[idx]
+            if seg == "**":
+                _walk_dirs(cur_dir, idx + 1, matched_depth, rel_prefix)
+                try:
+                    children = sorted(cur_dir.iterdir(), key=lambda p: p.name)
+                except OSError:
+                    children = []
+                for child in children:
+                    if child.is_dir() and child.name not in _GLOB_EXCLUDED_DIRS:
+                        _walk_dirs(child, idx, matched_depth + 1, (*rel_prefix, child.name))
+                return
+
+            try:
+                children = sorted(cur_dir.iterdir(), key=lambda p: p.name)
+            except OSError:
+                children = []
+            matched_dirs = [
+                c for c in children if c.is_dir() and c.name not in _GLOB_EXCLUDED_DIRS and fnmatch.fnmatchcase(c.name, seg)
+            ]
+            if matched_dirs:
+                for child in matched_dirs:
+                    _walk_dirs(child, idx + 1, matched_depth + 1, (*rel_prefix, child.name))
+            elif matched_depth > 0 and not _has_glob_magic(seg):
+                rest = tuple(_concretize_glob_segment(s) for s in dir_segs[idx:])
+                synthesized.append("/".join((*rel_prefix, *rest, leaf_concrete)))
+
+        _walk_dirs(resolved_root, 0, 0, ())
+
+    # 2) Match indexed symbol_mappings paths and governed source_path / owned_path / package_path prefixes.
+    for row in conn.execute(
+        "SELECT DISTINCT symbol, kind FROM symbol_mappings WHERE symbol IS NOT NULL AND symbol != '';"
+    ).fetchall():
+        sym = str(row["symbol"]).strip().replace("\\", "/").strip("/")
+        kind = str(row["kind"] or "")
+        if not sym:
+            continue
+        if not _has_glob_magic(sym) and fnmatch.fnmatchcase(sym, pat):
+            synthesized.append(sym)
+            continue
+        if kind in ("package_path", "owned_path", "inferred_path", "source_path"):
+            sym_parts = [s for s in sym.split("/") if s and s != "."]
+            if (
+                sym_parts
+                and len(segs) >= len(sym_parts)
+                and "**" not in segs[: len(sym_parts)]
+                and "**" not in sym_parts
+                and all(
+                    fnmatch.fnmatchcase(sp, pp) or fnmatch.fnmatchcase(pp, sp)
+                    for sp, pp in zip(sym_parts, segs[: len(sym_parts)], strict=False)
+                )
+            ):
+                head = [
+                    sp if not _has_glob_magic(sp) else (pp if not _has_glob_magic(pp) else _concretize_glob_segment(pp))
+                    for sp, pp in zip(sym_parts, segs[: len(sym_parts)], strict=False)
+                ]
+                tail = [_concretize_glob_segment(s) for s in segs[len(sym_parts) :]]
+                synthesized.append("/".join((*head, *tail)))
+
+    return sorted(dict.fromkeys(synthesized))
 
 STOP_WORDS = {
     "a",
@@ -77,6 +233,7 @@ def format_decisions_markdown(
     tier: str = "guardrails",
     *,
     compact: bool = False,
+    compact_tail: bool = False,
     compact_prose: bool = False,
     max_items: int | None = None,
 ) -> list[str]:
@@ -96,9 +253,9 @@ def format_decisions_markdown(
             for a in (dec.get("rejected_alternatives") or [])
             if isinstance(a, dict) and a.get("option")
         ]
-        if tier == "anchor" or compact:
+        if tier == "anchor" or compact or (compact_tail and dec_idx > 0):
             short_dtext = _clip_text(dtext, 55 if compact_prose else 120)
-            max_anchor_alts = 1 if compact_prose else 2
+            max_anchor_alts = 0 if (tier == "guardrails" and compact_prose and dec_idx > 0) else (1 if compact_prose else 2)
             short_alts = [_clip_text(a, 45 if compact_prose else 55) for a in alts[:max_anchor_alts]]
             rej_suffix = f" *(Rejected: {', '.join(short_alts)})*" if short_alts else ""
             lines.append(f"  - `{did}` (**{dtitle}**): {short_dtext}{rej_suffix}")
@@ -167,6 +324,7 @@ class ArchitecturalContextSlice:
         """Render a clean, token-efficient Markdown representation formatted for the requested tier."""
         compact_prose = bool(getattr(self, "_compact_prose", False))
         compact_decisions = bool(getattr(self, "_compact_decisions", False))
+        compact_primary_decisions = bool(getattr(self, "_compact_primary_decisions", False))
         compact_metadata = bool(getattr(self, "_compact_metadata", False))
         lines = [
             f"# 🧭 Eidos Architectural Context Slice ({self.tier.upper()} Tier)",
@@ -265,22 +423,39 @@ class ArchitecturalContextSlice:
 
             if (
                 not is_secondary
-                and (not compact_decisions or (self.tier == "anchor" and idx_comp == 0))
+                and (not compact_decisions or idx_comp == 0)
                 and not (self.tier != "deep" and len(self.components) > 4)
             ):
                 decisions = collect_component_decisions(comp)
                 if decisions and not (self.tier == "anchor" and compact_decisions and len(decisions) > 6):
+                    heavy_primary_guardrails = (
+                        self.tier == "guardrails"
+                        and compact_primary_decisions
+                        and idx_comp == 0
+                        and len(decisions) > 3
+                    )
                     compact_decs = (
                         (self.tier == "guardrails" and idx_comp > 0)
                         or (compact_prose and idx_comp > 0)
                         or compact_decisions
                     )
-                    max_dec_items = 1 if (self.tier == "anchor" and compact_decisions) else None
+                    compact_tail = compact_primary_decisions and idx_comp == 0 and not compact_decs
+                    if self.tier == "anchor" and compact_decisions:
+                        max_dec_items: int | None = 1
+                    elif self.tier == "guardrails" and compact_prose and idx_comp > 0:
+                        max_dec_items = 1
+                    elif (self.tier == "guardrails" and compact_decisions and idx_comp == 0) or heavy_primary_guardrails:
+                        max_dec_items = 2
+                    elif self.tier == "guardrails" and compact_primary_decisions and idx_comp == 0:
+                        max_dec_items = 3
+                    else:
+                        max_dec_items = None
                     lines.extend(
                         format_decisions_markdown(
                             decisions,
                             tier=self.tier,
                             compact=compact_decs,
+                            compact_tail=compact_tail,
                             compact_prose=compact_prose,
                             max_items=max_dec_items,
                         )
@@ -414,6 +589,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
     """Token-budgeted architectural slice matching a query, extending ArchitecturalContextSlice."""
 
     _compact_decisions: bool = False
+    _compact_primary_decisions: bool = False
     _compact_prose: bool = False
     _compact_metadata: bool = False
 
@@ -435,26 +611,44 @@ class TieredContextSlice(ArchitecturalContextSlice):
         decisions: list[dict[str, Any]],
         *,
         compact: bool = False,
+        compact_tail: bool = False,
+        is_primary: bool = True,
     ) -> list[dict[str, Any]]:
         projected: list[dict[str, Any]] = []
+        heavy_primary_guardrails = (
+            self.tier == "guardrails" and self._compact_primary_decisions and is_primary and len(decisions) > 3
+        )
         if self.tier == "anchor" and self._compact_decisions:
             max_decs = 1
         elif self.tier == "anchor" and self._compact_prose:
             max_decs = 2
-        elif self.tier == "guardrails" and self._compact_prose and compact:
+        elif self.tier == "guardrails" and self._compact_prose and compact and not is_primary:
             max_decs = 1
+        elif (self.tier == "guardrails" and self._compact_decisions and is_primary) or heavy_primary_guardrails:
+            max_decs = 2
+        elif self.tier == "guardrails" and self._compact_primary_decisions and is_primary:
+            max_decs = 3
         else:
             max_decs = len(decisions)
         for dec_idx, d in enumerate(decisions[:max_decs]):
             if not isinstance(d, dict):
                 continue
             dtext = str(d.get("decision", "") or "")
-            if self.tier == "anchor" or compact or self._compact_decisions:
+            use_compact_entry = (
+                self.tier == "anchor"
+                or compact
+                or self._compact_decisions
+                or (compact_tail and dec_idx > 0)
+            )
+            if use_compact_entry:
                 short_dtext = self._compact_summary(dtext, 55 if self._compact_prose else 120)
                 opt_limit = 45 if self._compact_prose else 60
                 max_anchor_alts = (
                     0
-                    if (compact and self.tier == "guardrails" and self._compact_prose)
+                    if (
+                        (self.tier == "anchor" and self._compact_decisions)
+                        or ((compact or compact_tail) and self.tier == "guardrails" and self._compact_prose)
+                    )
                     else (1 if self._compact_prose else 2)
                 )
                 alts = [
@@ -577,7 +771,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
 
         if (
             not is_secondary
-            and (not self._compact_decisions or (self.tier == "anchor" and index_in_slice == 0))
+            and (not self._compact_decisions or index_in_slice == 0)
             and not (self.tier != "deep" and len(self.components) > 4)
         ):
             decisions = collect_component_decisions(comp)
@@ -587,7 +781,13 @@ class TieredContextSlice(ArchitecturalContextSlice):
                     or (self._compact_prose and index_in_slice > 0)
                     or self._compact_decisions
                 )
-                out["decisions"] = self._project_decisions(decisions, compact=compact_decs)
+                compact_tail = self._compact_primary_decisions and index_in_slice == 0 and not compact_decs
+                out["decisions"] = self._project_decisions(
+                    decisions,
+                    compact=compact_decs,
+                    compact_tail=compact_tail,
+                    is_primary=(index_in_slice == 0),
+                )
 
         return out
 
@@ -675,12 +875,16 @@ class TieredContextSlice(ArchitecturalContextSlice):
         return out
 
     def _compress_verbose_fields_in_place(self, primary_cids: set[str]) -> bool:
-        """Progressively compress verbose prose fields (invariant rules and decision narratives)
-        and secondary governance/design metadata before dropping invariants or policies.
+        """Progressively compress verbose prose fields (invariant rules and primary tail decision narratives)
+        and, on later calls, secondary governance/design metadata before dropping invariants or policies.
         """
         _ = primary_cids
         if not self._compact_prose:
             self._compact_prose = True
+            self._invalidate_budget_cache()
+            return True
+        if self.tier != "anchor" and not self._compact_primary_decisions:
+            self._compact_primary_decisions = True
             self._invalidate_budget_cache()
             return True
         if not self._compact_metadata:
@@ -731,8 +935,9 @@ class TieredContextSlice(ArchitecturalContextSlice):
             for e in group
             if e.get("id")
         }
+        max_r = 1 if (self.tier == "anchor" and self._compact_decisions) else None
         self.matched_reasons = {
-            k: v
+            k: (v[:max_r] if max_r is not None else v)
             for k, v in self.matched_reasons.items()
             if k in retained_ids or k.startswith(self._EXPANDED_REASON_PREFIXES)
         }
@@ -742,6 +947,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
             budget,
             self.tier,
             self._compact_decisions,
+            self._compact_primary_decisions,
             self._compact_prose,
             self._compact_metadata,
             len(self.components),
@@ -930,9 +1136,11 @@ class TieredContextSlice(ArchitecturalContextSlice):
                     if not self._exceeds_budget(budget):
                         break
 
-        # Stage 1a: Progressively compress verbose prose fields (description, rationale, details, responsibility)
-        # before evicting invariants, policies, or capabilities.
+        # Stage 1a: Progressively compress verbose prose fields (invariant rules and primary tail DEC-* narratives)
+        # before evicting invariants, policies, or capabilities (deferring _compact_metadata to Stage 3).
         if self._exceeds_budget(budget):
+            self._compress_verbose_fields_in_place(primary_cids)
+        if self._exceeds_budget(budget) and not self._compact_primary_decisions:
             self._compress_verbose_fields_in_place(primary_cids)
 
         # Stage 1b: Trim 1-hop expanded (non-direct) entities before touching any direct query matches.
@@ -942,8 +1150,17 @@ class TieredContextSlice(ArchitecturalContextSlice):
         )
         _pop_non_direct(self.capabilities, direct_caps, min_len=3)
 
-        _pop_non_direct(self.invariants, direct_invs, min_len=1)
+        if not has_non_comp_direct and any(
+            len(collect_component_decisions(c)) > 3 for c in self.components if c.get("id") in primary_cids
+        ):
+            _pop_non_direct(self.components, primary_cids, min_len=max(1, len(primary_cids)))
+            _pop_non_direct(self.policies, direct_pols, min_len=1)
+            _pop_non_direct(self.capabilities, direct_caps, min_len=1)
+
+        _pop_non_direct(self.capabilities, direct_caps, min_len=2)
         _pop_non_direct(self.policies, direct_pols, min_len=1)
+        _pop_non_direct(self.invariants, direct_invs, min_len=2)
+        _pop_non_direct(self.invariants, direct_invs, min_len=1)
         _pop_non_direct(self.capabilities, direct_caps, min_len=1)
 
         # If still over budget and direct invariant/capability/policy matches exist, compact decision prose
@@ -1018,7 +1235,7 @@ def build_tiered_context_slice(
 
     def _add_reason(eid: str, reason: str) -> None:
         bucket = matched_reasons.setdefault(eid, [])
-        if reason not in bucket:
+        if reason not in bucket and len(bucket) < 3:
             bucket.append(reason)
 
     conn = index._get_connection()
@@ -1248,7 +1465,9 @@ def build_tiered_context_slice(
 
     # 2. Resolve by File paths
     raw_files = [files] if isinstance(files, str) else (files or [])
+    requested_files: list[str] = []
     clean_files: list[str] = []
+    seen_clean_files: set[str] = set()
     for f in raw_files:
         if not f:
             continue
@@ -1256,18 +1475,39 @@ def build_tiered_context_slice(
             sub_clean = sub.strip()
             if not sub_clean:
                 continue
+            if _has_glob_magic(sub_clean):
+                norm_pat = sub_clean.replace("\\", "/")
+                while norm_pat.startswith("./"):
+                    norm_pat = norm_pat[2:]
+                if norm_pat not in requested_files:
+                    requested_files.append(norm_pat)
+                for expanded in _expand_context_file_pattern(index.root, conn, norm_pat):
+                    if expanded not in seen_clean_files:
+                        seen_clean_files.add(expanded)
+                        clean_files.append(expanded)
+                continue
             p = Path(sub_clean)
+            escaped_root = False
             if p.is_absolute():
                 try:
-                    rel = str(p.resolve().relative_to(index.root)).replace("\\", "/")
-                    clean_files.append(rel)
+                    norm_f = str(p.resolve().relative_to(index.root.resolve())).replace("\\", "/")
                 except ValueError:
-                    clean_files.append(sub_clean.replace("\\", "/"))
+                    norm_f = sub_clean.replace("\\", "/")
+                    escaped_root = True
             else:
-                c = sub_clean.replace("\\", "/")
-                while c.startswith("./"):
-                    c = c[2:]
-                clean_files.append(c)
+                norm_f = sub_clean.replace("\\", "/")
+                while norm_f.startswith("./"):
+                    norm_f = norm_f[2:]
+                if ".." in norm_f.split("/"):
+                    try:
+                        norm_f = str((index.root / norm_f).resolve().relative_to(index.root.resolve())).replace("\\", "/")
+                    except ValueError:
+                        escaped_root = True
+            if norm_f not in requested_files:
+                requested_files.append(norm_f)
+            if not escaped_root and norm_f not in seen_clean_files:
+                seen_clean_files.add(norm_f)
+                clean_files.append(norm_f)
 
     for fpath in clean_files:
         matches = resolve_symbol_or_path_in_db(conn, fpath)
@@ -1453,7 +1693,9 @@ def build_tiered_context_slice(
                 u_data.setdefault("file_path", row["file_path"])
                 _ingest_entity(row["id"], row["type"], u_data, f"Owning UI component of matched invariant {iid}")
 
-    has_explicit_query = bool(clean_files or (component and component.strip()) or (task and task.strip()))
+    has_explicit_query = bool(
+        requested_files or clean_files or (component and component.strip()) or (task and task.strip())
+    )
     any_matched = bool(
         matched_components or matched_capabilities or matched_contracts or matched_invariants or matched_policies
     )
@@ -1877,13 +2119,47 @@ def build_tiered_context_slice(
                 ordered_invs.append(matched_invariants[iid])
                 seen_inv_ids.add(iid)
 
+        inv_focus_tokens: set[str] = set()
+        inv_leaf_tokens: set[str] = set()
+        if clean_files or component:
+            for f in clean_files:
+                inv_focus_tokens.update(
+                    _tokenize_text(f.replace("/", " ").replace("_", " ").replace("-", " ").replace(".", " "))
+                )
+                leaf_stem = f.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+                inv_leaf_tokens.update(_tokenize_text(leaf_stem.replace("_", " ").replace("-", " ")))
+            for cid in primary_cids:
+                inv_focus_tokens.update(
+                    _tokenize_text(cid.removeprefix("CNT-").removeprefix("CMP-").replace("_", " ").replace("-", " "))
+                )
+            _focus_noise = {"eidos", "src", "py", "md", "adoc", "json", "ts", "js", "go", "rs", "main", "init", "index"}
+            inv_focus_tokens -= _focus_noise
+            inv_leaf_tokens -= _focus_noise
+
+        def _cap_inv_rank_key(item: tuple[int, dict[str, Any]]) -> tuple[int, int, int]:
+            inv_toks = set(
+                _tokenize_text(
+                    f"{item[1].get('id', '')} {item[1].get('test_binding', '')}"
+                    .replace("/", " ")
+                    .replace("_", " ")
+                    .replace("-", " ")
+                    .replace(":", " ")
+                    .replace(".", " ")
+                )
+            )
+            return (-len(inv_leaf_tokens & inv_toks), -len(inv_focus_tokens & inv_toks), item[0])
+
         for source_list in (sorted_comps, sorted_caps, sorted_pols):
             if len(ordered_invs) >= max_invs:
                 break
             inv_lists: list[list[str]] = []
+            is_cap_group = source_list is sorted_caps
             for src in source_list:
                 raw_invs = list((src.get("technical") or {}).get("invariants") or src.get("invariants") or [])
-                inv_lists.append([inv.get("id") for inv in raw_invs if isinstance(inv, dict) and inv.get("id")])
+                valid_invs = [inv for inv in raw_invs if isinstance(inv, dict) and inv.get("id")]
+                if is_cap_group and inv_focus_tokens:
+                    valid_invs = [inv_d for _, inv_d in sorted(enumerate(valid_invs), key=_cap_inv_rank_key)]
+                inv_lists.append([inv["id"] for inv in valid_invs])
             max_len = max((len(lst) for lst in inv_lists), default=0)
             for idx in range(max_len):
                 if len(ordered_invs) >= max_invs:
@@ -1907,7 +2183,7 @@ def build_tiered_context_slice(
 
     slice_obj = TieredContextSlice(
         tier=tier,
-        query={"files": clean_files, "component": component, "task": task},
+        query={"files": requested_files, "component": component, "task": task},
         components=sorted_comps,
         contracts=sorted_ctrs,
         capabilities=sorted_caps,

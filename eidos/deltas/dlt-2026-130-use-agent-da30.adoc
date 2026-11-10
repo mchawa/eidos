@@ -1,0 +1,283 @@
+---
+type: delta/mutation
+id: DLT-2026-130-USE-AGENT-DA30
+title: "Use Agent Skills Across All Clients and Remove agent-plugins.org Bundles"
+status: applied
+intent:
+  kind: feature
+  motivation: "Standardize all 9 supported AI coding harnesses on Agent Skills (agentskills.io) and native Stop/TaskComplete hook projections without installing agent-plugins.org (.agents/plugins/eidos/) bundles for any client: project .agents/skills/<skill>/SKILL.md for Antigravity, Cursor, GitHub Copilot, OpenAI Codex, Cline, Kilo Code, and OpenCode (plus .agents/hooks.json for Antigravity when --hooks is opted in), retain .claude/skills/ for Claude Code and .aider/skills/ for Aider, remove assets/plugin_reference/plugin.json and assets/schemas/agent_plugins/ (plugin.schema.json, mcp.schema.json, and get_agent_plugins_schemas_dir()), and update eidos plugin validate / info / version to operate directly on bundled SKILL.md frontmatter, hooks.json, and SemVer-normalized eidos.__version__."
+vcs:
+  branch: main
+  base_commit: 29eb8057df3ef418eb997aa3255c689bbb9e1bc6
+tombstone:
+  search_tokens:
+    - ".agents/plugins/eidos"
+    - "agent-plugins.org"
+    - "plugin.schema.json"
+    - "mcp.schema.json"
+    - "get_agent_plugins_schemas_dir"
+    - "_make_project_adapter"
+    - "_copy_plugin_tree"
+    - "plugin.json"
+  allowed_reasons:
+    - path: "CHANGELOG.md"
+      reason: "Historical release notes referencing pre-DLT-2026-130 agent-plugins.org bundles and schemas."
+    - path: "docs/changelog.md"
+      reason: "Historical changelog documentation referencing pre-DLT-2026-130 agent-plugins.org bundles and schemas."
+    - path: "eidos/deltas/"
+      reason: "Historical SpecDeltas predating DLT-2026-130."
+    - path: "eidos/explorations/"
+      reason: "Historical exploration documents."
+mutations:
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    details: "Update src/eidos/plugin/installer.py, src/eidos/plugin/version.py, and eidos/architecture/components/plugin-installer.adoc so all 7 cross-agent harnesses (antigravity, cursor, copilot, codex, cline, kilocode, open-code) install skills into .agents/skills/<skill>/SKILL.md (tracked in .agents/.eidos-manifest.json) via _make_agents_skills_adapter without projecting .agents/plugins/eidos/ or plugin.json, wire Antigravity's opt-in --hooks Stop hook to .agents/hooks.json (eidos-drift-gate.Stop via _antigravity_configure_hooks / _update_project_antigravity_hooks / _remove_project_antigravity_hooks) with 'hooks.json' in SHARED_USER_FILES, update locate_plugin_bundle() to check (ref_dir / 'skills').is_dir(), remove _make_project_adapter, _copy_plugin_tree, and _rewrite_hook_command_for_target_root, and derive get_bundled_plugin_version() directly from normalize_to_semver(eidos.__version__) while resolving installed manifests across .agents/.eidos-manifest.json, .claude/.eidos-manifest.json, and .aider/.eidos-manifest.json."
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/plugin/installer.py"
+          - "src/eidos/plugin/version.py"
+          - "src/eidos/plugin/managed_block.py"
+        status: "active"
+      body:
+        contains:
+          - ".agents/skills/"
+          - ".agents/hooks.json"
+          - ".claude/skills/"
+          - ".aider/skills/"
+        not_contains:
+          - ".agents/plugins/eidos"
+          - "agent-plugins.org"
+          - "plugin.json"
+  - operation: modify
+    target: CMP-PLUGIN-VALIDATOR
+    details: "Update src/eidos/plugin/validator.py and eidos/architecture/components/plugin-validator.adoc to validate bundled Agent Skills packages (skills/*/SKILL.md YAML frontmatter, skill directory naming parity, and hooks.json) and SemVer 2.0.0 versioning directly without requiring plugin.json or assets/schemas/agent_plugins/plugin.schema.json."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/plugin/validator.py"
+        status: "active"
+      body:
+        contains:
+          - "SKILL.md"
+          - "agentskills.io"
+          - "SemVer 2.0.0"
+        not_contains:
+          - "agent-plugins.org"
+          - "plugin.schema.json"
+          - "plugin.json"
+  - operation: modify
+    target: CMP-HOOK-MANAGER
+    details: "Update eidos/architecture/components/hook-manager.adoc to describe structural and Stop-event validation of hooks.json for CLI-native Stop hooks without referencing agent-plugins.org v1.0.0 or hooks.schema.json."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/plugin/validator.py"
+        status: "active"
+      body:
+        contains:
+          - "hooks.json"
+          - "DEC-PLUGIN-STOP-SCOPED-DRIFT-GATE"
+          - "INV-HOOK-CLI-NATIVE"
+        not_contains:
+          - "agent-plugins.org"
+          - "hooks.schema.json"
+  - operation: modify
+    target: CMP-CLI-PLUGIN-COMMANDS
+    details: "Update src/eidos/cli/plugin_commands.py and eidos/architecture/components/cli-plugin-commands.adoc so eidos plugin validate and eidos plugin info inspect the bundled Agent Skills package (skills/*/SKILL.md and hooks.json) and SemVer-normalized eidos.__version__ directly without reading plugin.json."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/plugin_commands.py"
+        status: "active"
+      body:
+        contains:
+          - "CMP-PLUGIN-INSTALLER"
+          - "CMP-PLUGIN-VALIDATOR"
+          - "CMP-HOOK-MANAGER"
+        not_contains:
+          - "agent-plugins.org"
+          - "plugin.json"
+  - operation: modify
+    target: CMP-CLI-APP
+    details: "Update eidos info in src/eidos/cli/main.py and eidos/architecture/components/cli-app.adoc to report 'agentskills.io (Agent Skills)' as the Plugin Standard and list all 9 supported AI coding harnesses without referencing agent-plugins.org."
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/cli/main.py"
+          - "src/eidos/cli/_shared.py"
+        status: "active"
+      body:
+        contains:
+          - "info() -> None"
+          - "CTR-EIDOS-CLI"
+        not_contains:
+          - "agent-plugins.org"
+  - operation: modify
+    target: CMP-ASSET-LOCATOR
+    details: "Remove assets/schemas/agent_plugins/ (plugin.schema.json and mcp.schema.json), remove assets/plugin_reference/plugin.json, remove get_agent_plugins_schemas_dir() from src/eidos/core/workspace/assets.py, and update eidos/architecture/components/asset-locator.adoc."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/workspace/assets.py"
+        status: "active"
+      body:
+        contains:
+          - "get_plugin_reference_dir() -> Path"
+          - "get_v1_schemas_dir() -> Path"
+        not_contains:
+          - "agent-plugins.org"
+          - "get_agent_plugins_schemas_dir"
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Update eidos/architecture/containers/plugin.adoc to replace agent-plugins.org v1.0.0 runtime/bundle references with agentskills.io Agent Skills, record DEC-PLUGIN-SKILLS-ONLY-ALL-TARGETS (graduated from DLT-2026-130-USE-AGENT-DA30), update DEC-PLUGIN-HOOK-CAPABLE-TARGETS to reflect the three skill projection directories (.agents/skills/, .claude/skills/, .aider/skills/) and .agents/hooks.json for Antigravity, and update INV-PLUGIN-SCHEMA-CONFORMANCE to validate SKILL.md frontmatter, hooks.json, and PEP 440 -> SemVer 2.0.0 version normalization without plugin.json."
+    expect:
+      frontmatter:
+        status: "active"
+        runtime: "Python 3.12 / orjson / agentskills.io"
+        decisions.id:
+          - "DEC-PLUGIN-SKILLS-ONLY-ALL-TARGETS"
+      body:
+        contains:
+          - ".agents/skills/"
+          - ".agents/hooks.json"
+          - ".claude/skills/"
+          - ".aider/skills/"
+          - "agentskills.io"
+        not_contains:
+          - ".agents/plugins/eidos"
+          - "agent-plugins.org"
+          - "plugin.json"
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: "Update DEC-CORE-MONOREPO-ISOLATED-SUBPROJECTS in eidos/architecture/containers/core.adoc to reference .agents/skills/ instead of .agents/plugins/eidos when describing Git-root agent skill installation."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "CNT-EIDOS-CORE"
+        not_contains:
+          - ".agents/plugins/eidos"
+          - "agent-plugins.org"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Bump CTR-EIDOS-CLI to version 1.4.0 in eidos/architecture/contracts/cli.adoc and update 'eidos plugin install', 'validate', and 'info' to describe .agents/skills/ projection across Antigravity, Cursor, GitHub Copilot, OpenAI Codex, Cline, Kilo Code, and OpenCode, .agents/hooks.json for Antigravity --hooks, .claude/skills/ for Claude Code, and .aider/skills/ for Aider without .agents/plugins/eidos or agent-plugins.org."
+    expect:
+      frontmatter:
+        version: "1.4.0"
+        status: "active"
+      body:
+        contains:
+          - ".agents/skills/"
+          - ".agents/hooks.json"
+          - ".claude/skills/"
+          - ".aider/skills/"
+        not_contains:
+          - ".agents/plugins/eidos"
+          - "agent-plugins.org"
+  - operation: modify
+    target: CAP-AGENT-001
+    details: "Bump CAP-AGENT-001 to version 1.14.0 in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc and update Non-Destructive Plugin Ecosystem Management and INV-PLUGIN-SCHEMA-CONFORMANCE to reflect unified Agent Skills projection (.agents/skills/, .claude/skills/, .aider/skills/), .agents/hooks.json for Antigravity, and skill/hook validation without agent-plugins.org or plugin.json."
+    expect:
+      frontmatter:
+        version: "1.14.0"
+        status: "active"
+      body:
+        contains:
+          - ".agents/skills/"
+          - ".agents/hooks.json"
+          - ".claude/skills/"
+          - ".aider/skills/"
+        not_contains:
+          - ".agents/plugins/eidos"
+          - "agent-plugins.org"
+          - "plugin.json"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Update docs/guides/agent-plugin.md, docs/guides/cli.md, and eidos/architecture/components/docs-user-guides.adoc to document .agents/skills/ for Antigravity, Cursor, GitHub Copilot, OpenAI Codex, Cline, Kilo Code, and OpenCode, .agents/hooks.json for Antigravity --hooks, and skill-only bundle validation without .agents/plugins/eidos or agent-plugins.org."
+    expect:
+      frontmatter:
+        source_path: "docs/guides"
+        status: "active"
+      body:
+        contains:
+          - "docs/guides/agent-plugin.md"
+          - ".agents/skills/"
+          - ".agents/hooks.json"
+        not_contains:
+          - ".agents/plugins/eidos"
+          - "agent-plugins.org"
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: "Update docs/concepts/how-eidos-works.md and eidos/architecture/components/docs-core-concepts.adoc to describe Agent Skills projection across .agents/skills/, .claude/skills/, and .aider/skills/ without .agents/plugins/eidos."
+    expect:
+      frontmatter:
+        source_path: "docs/concepts"
+        status: "active"
+      body:
+        contains:
+          - "how-eidos-works.md"
+          - ".agents/skills/"
+        not_contains:
+          - ".agents/plugins/eidos"
+          - "agent-plugins.org"
+---
+= SpecDelta: Use Agent Skills Across All Clients and Remove agent-plugins.org Bundles
+:toc: left
+:icons: font
+:sectnums:
+
+== Problem Statement
+
+Eidos previously split its 9 supported AI coding harnesses across two distinct packaging standards:
+
+1. **Dual Packaging Overhead (`.agents/plugins/eidos/` vs. `.agents/skills/`)**:
+   * Four targets (`antigravity`, `cursor`, `copilot`, `codex`) installed an `agent-plugins.org v1.0.0` bundle under `.agents/plugins/eidos/` (`plugin.json` + `skills/`), while three targets (`cline`, `kilocode`, `open-code`) installed the exact same 4 skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`) under `.agents/skills/<skill>/SKILL.md`.
+   * Installing both a target from the first group (e.g., `antigravity` or `cursor`) and a target from the second group (e.g., `cline` or `kilocode`) or running `eidos plugin install all` duplicated all 4 skill directories inside `.agents/` (`.agents/plugins/eidos/skills/` and `.agents/skills/`).
+2. **Native `.agents/skills/` & `.agents/hooks.json` Support Across All Cross-Agent Clients**:
+   * Google Antigravity, Cursor, GitHub Copilot, OpenAI Codex, Cline, Kilo Code, and OpenCode all natively discover workspace skills at `.agents/skills/<skill>/SKILL.md` (`agentskills.io` format) and read the root `AGENTS.md` instruction block.
+   * Furthermore, Google Antigravity natively discovers workspace lifecycle hooks at `.agents/hooks.json` (under top-level named hook key `"eidos-drift-gate": {"Stop": [...]}`), just as Cursor uses `.cursor/hooks.json`, Copilot uses `.github/hooks/hooks.json`, Codex uses `.codex/hooks.json`, Cline uses `.clinerules/hooks/TaskComplete`, and Claude Code uses `.claude/settings.json`.
+3. **Unnecessary `plugin.json` and `assets/schemas/agent_plugins/` Artifacts**:
+   * Once no client uses `agent-plugins.org` bundles, `assets/plugin_reference/plugin.json` and `assets/schemas/agent_plugins/` (`plugin.schema.json` and `mcp.schema.json`, plus `get_agent_plugins_schemas_dir()`) are dead weight that require manual version synchronization and extra schema plumbing.
+
+== Proposed Specification Changes
+
+* **Unify All 9 Targets on Agent Skills (`CMP-PLUGIN-INSTALLER`, `CNT-EIDOS-PLUGIN`, `CAP-AGENT-001`)**:
+  1. **Three Canonical Skill Directories Across 9 Harnesses (`DEC-PLUGIN-SKILLS-ONLY-ALL-TARGETS`)**:
+     - **`.agents/skills/<skill>/SKILL.md`** (tracked in `.agents/.eidos-manifest.json` via `_make_agents_skills_adapter`): Shared by 7 targets—`antigravity`, `cursor`, `copilot`, `codex`, `cline`, `kilocode`, and `open-code`. All 7 project `targets=<target>:.agents/skills` in the root `AGENTS.md` managed block.
+     - **`.claude/skills/<skill>/SKILL.md`** (tracked in `.claude/.eidos-manifest.json`): Used by `claude`, alongside root `CLAUDE.md` (`@AGENTS.md`) and `AGENTS.md` (`targets=claude:.claude/skills`).
+     - **`.aider/skills/<skill>/SKILL.md`** (tracked in `.aider/.eidos-manifest.json`): Used by `aider`, alongside `.aider.conf.yml` (`read: [AGENTS.md]`) and `AGENTS.md` (`targets=aider:.aider/skills`).
+  2. **Native Opt-In `--hooks` Lifecycle Wiring Across All 6 Hook-Capable Clients**:
+     - `antigravity`: `.agents/hooks.json` (`eidos-drift-gate.Stop` invoking `<launcher> hook`, non-destructively merged and cleaned up via `_antigravity_configure_hooks`, `_update_project_antigravity_hooks`, and `_remove_project_antigravity_hooks`, with `"hooks.json"` included in `SHARED_USER_FILES`).
+     - `claude`: `.claude/settings.json` (`hooks.Stop` nested matcher array).
+     - `cursor`: `.cursor/hooks.json` (`version: 1`, `hooks.stop` with `loop_limit: 1`).
+     - `cline`: `.clinerules/hooks/TaskComplete` (executable `0o755` script).
+     - `copilot`: `.github/hooks/hooks.json` (`version: 1`, `hooks.agentStop`).
+     - `codex`: `.codex/hooks.json` (`hooks.Stop`).
+  3. **Retire `.agents/plugins/eidos/` Projection & Version Fallbacks**:
+     - Update `locate_plugin_bundle()` in `src/eidos/plugin/installer.py` to check `(ref_dir / "skills").is_dir()` instead of `(ref_dir / "plugin.json").exists()`.
+     - Remove `_make_project_adapter`, `_copy_plugin_tree`, `_rewrite_hook_command_for_target_root`, and legacy `.claude/plugins/eidos` cleanup from `src/eidos/plugin/installer.py`.
+     - Update `get_bundled_plugin_version()` in `src/eidos/plugin/version.py` to return `normalize_to_semver(__version__)` directly without reading `plugin.json`.
+     - Update `_resolve_installed_plugin_manifest()` and `check_plugin_version_status()` in `src/eidos/plugin/version.py` to resolve installed state strictly from `.agents/.eidos-manifest.json`, `.claude/.eidos-manifest.json`, and `.aider/.eidos-manifest.json`.
+* **Remove `plugin.json` and `assets/schemas/agent_plugins/` & Validate Bundled Skills Directly (`CMP-ASSET-LOCATOR`, `CMP-PLUGIN-VALIDATOR`, `CMP-HOOK-MANAGER`, `CMP-CLI-PLUGIN-COMMANDS`, `CMP-CLI-APP`)**:
+  - Delete `assets/plugin_reference/plugin.json` and `assets/schemas/agent_plugins/` (`plugin.schema.json`, `mcp.schema.json`).
+  - Remove `get_agent_plugins_schemas_dir()` from `src/eidos/core/workspace/assets.py`.
+  - Update `validate_plugin_package()` in `src/eidos/plugin/validator.py` (`CMP-PLUGIN-VALIDATOR` / `CMP-HOOK-MANAGER`) to validate the bundled skill package (`skills/*/SKILL.md` frontmatter against `agentskills.io` rules, skill directory naming parity, SemVer 2.0.0 version normalization of `get_bundled_plugin_version()`, and `hooks.json` Stop-scoped CLI-native hook rules) without `plugin.json` or `plugin.schema.json`.
+  - Update `eidos plugin validate` and `eidos plugin info` in `src/eidos/cli/plugin_commands.py` (`CMP-CLI-PLUGIN-COMMANDS`) to display and validate the bundled Agent Skills package metadata (`eidos-agent-skills`, `get_bundled_plugin_version()`, skills list, and `hooks.json` Stop hook events), and update `eidos info` in `src/eidos/cli/main.py` (`CMP-CLI-APP`) to display `agentskills.io (Agent Skills)` and all 9 targets.
+* **Update Contracts & Documentation (`CTR-EIDOS-CLI`, `CNT-EIDOS-CORE`, `CMP-DOCS-USER-GUIDES`, `CMP-DOCS-CORE-CONCEPTS`)**:
+  - Bump `CTR-EIDOS-CLI` to `1.4.0` and `CAP-AGENT-001` to `1.14.0`.
+  - Update `docs/guides/agent-plugin.md`, `docs/guides/cli.md`, `docs/concepts/how-eidos-works.md`, `README.md`, `docs/index.md`, and `assets/plugin_reference/README.md` to reflect `.agents/skills/` and `.agents/hooks.json`.
+
+== Implementation Plan
+
+1. **Remove `agent-plugins.org` Assets & Schema Locator (`assets/`, `src/eidos/core/workspace/assets.py`)**:
+   * Delete `assets/plugin_reference/plugin.json`, `assets/schemas/agent_plugins/plugin.schema.json`, and `assets/schemas/agent_plugins/mcp.schema.json`.
+   * Remove `get_agent_plugins_schemas_dir()` from `src/eidos/core/workspace/assets.py`.
+2. **Unify Skill Adapters & Antigravity Hook Wiring (`src/eidos/plugin/installer.py`, `src/eidos/plugin/version.py`)**:
+   * Configure `ANTIGRAVITY`, `CURSOR`, `COPILOT`, and `CODEX` in `TARGET_ADAPTERS` via `_make_agents_skills_adapter` targeting `.agents/skills/` (with `configure_hooks` set to `_antigravity_configure_hooks`, `_cursor_configure_hooks`, `_copilot_configure_hooks`, and `_codex_configure_hooks` respectively, and `extra_uninstall_hook` cleaning up each target's hook entry).
+   * Implement `_antigravity_configure_hooks`, `_update_project_antigravity_hooks`, and `_remove_project_antigravity_hooks` for `.agents/hooks.json` (`eidos-drift-gate.Stop`), add `"hooks.json"` to `SHARED_USER_FILES`, and update `TARGET_HOOK_PATHS["antigravity"]` in `src/eidos/plugin/installer.py` to `".agents/hooks.json"`.
+   * Update `locate_plugin_bundle()` to check `(ref_dir / "skills").is_dir()`, and remove `_make_project_adapter`, `_copy_plugin_tree`, `_rewrite_hook_command_for_target_root`, and legacy `.claude/plugins/eidos` cleanup from `src/eidos/plugin/installer.py`.
+   * Update `get_bundled_plugin_version()`, `_resolve_installed_plugin_manifest()`, and `check_plugin_version_status()` in `src/eidos/plugin/version.py` to operate solely on `normalize_to_semver(__version__)` and `.eidos-manifest.json` files under `.agents/`, `.claude/`, and `.aider/`.
+3. **Update Skill Package Validator & CLI Commands (`src/eidos/plugin/validator.py`, `src/eidos/cli/plugin_commands.py`, `src/eidos/cli/main.py`)**:
+   * Update `validate_plugin_package()` in `src/eidos/plugin/validator.py` to validate `skills/*/SKILL.md` frontmatter, `hooks.json`, and SemVer version string without `plugin.json` or `plugin.schema.json`.
+   * Update `plugin_validate` and `plugin_info` in `src/eidos/cli/plugin_commands.py` to report skills and hooks directly from the skill package directory and `get_bundled_plugin_version()`, and update `info()` in `src/eidos/cli/main.py`.
+4. **Synchronize Living Specifications, Documentation, and Tests**:
+   * Update the 12 living specifications (`CMP-PLUGIN-INSTALLER`, `CMP-PLUGIN-VALIDATOR`, `CMP-HOOK-MANAGER`, `CMP-CLI-PLUGIN-COMMANDS`, `CMP-CLI-APP`, `CMP-ASSET-LOCATOR`, `CNT-EIDOS-PLUGIN`, `CNT-EIDOS-CORE`, `CTR-EIDOS-CLI`, `CAP-AGENT-001`, `CMP-DOCS-USER-GUIDES`, `CMP-DOCS-CORE-CONCEPTS`), user guides, and test suites (`tests/test_plugin.py`, `tests/test_monorepo_subprojects.py`, `tests/test_validator.py`, `tests/test_portal.py`, `tests/test_context.py`).
+   * Verify with `eidos validate eidos --json`, `eidos delta verify DLT-2026-130-USE-AGENT-DA30 --json`, `eidos delta audit DLT-2026-130-USE-AGENT-DA30 --strict --json`, `eidos drift --uncommitted --json`, and `uv run pytest`.

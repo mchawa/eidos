@@ -12,8 +12,10 @@ from eidos.core.index.context import (
 runner = CliRunner()
 
 
-def test_context_slice_by_file():
-    """Verify INV-AGENT-CONTEXT-SLICING: Slicing by file path extracts owning component, dependencies, contracts, and invariants."""
+def test_context_slice_by_file(tmp_path, monkeypatch):
+    """Verify INV-AGENT-CONTEXT-SLICING: Slicing by file path or glob pattern extracts owning component, dependencies, contracts, and invariants."""
+    from pathlib import Path
+
     res = get_context_slice(files=["src/eidos/cli/main.py"])
 
     assert isinstance(res, ArchitecturalContextSlice)
@@ -68,6 +70,151 @@ def test_context_slice_by_file():
     anchor_portal = get_context_slice(files=["src/eidos/portal/builder.py"], tier="anchor").to_dict()
     assert "domain_path" not in anchor_portal["components"][0]
     assert "design" not in anchor_portal["components"][0]
+
+    # DLT-2026-129: deterministic --file glob slicing across existing files, planned paths, and unmatched globs
+    skill_glob_sl = get_context_slice(files=["./assets/plugin_reference/skills/*/SKILL.md"], tier="guardrails")
+    assert any(c["id"] == "CNT-EIDOS-PLUGIN" for c in skill_glob_sl.components)
+    assert any(i["id"] == "INV-PLUGIN-SKILL-DELTA-RECONCILIATION" for i in skill_glob_sl.invariants)
+
+    planned_glob_sl = get_context_slice(
+        files=[
+            "src/eidos/*/planned_future_module.py",
+            "src/eidos/portal/**/planned_[a-z].py",
+            "src/eidos/portal/planned_subdir/view.py",
+        ],
+        tier="deep",
+    )
+    planned_comp_ids = {c["id"] for c in planned_glob_sl.components}
+    assert {"CNT-EIDOS-CLI", "CNT-EIDOS-CORE", "CNT-EIDOS-PLUGIN", "CNT-EIDOS-PORTAL"} <= planned_comp_ids
+
+    unmatched_glob_sl = get_context_slice(files=["nonexistent_dir_xyz/*/missing.py"], tier="guardrails")
+    assert unmatched_glob_sl.components == []
+    assert unmatched_glob_sl.invariants == []
+
+    # Planned cross-container glob resolved via indexed source_path prefixes before directories/files exist on disk
+    mini_eidos = tmp_path / "mini_repo" / "eidos"
+    mini_cnts = mini_eidos / "architecture" / "containers"
+    mini_cnts.mkdir(parents=True)
+    for slug, cid in (("svc-a", "CNT-SVC-A"), ("svc-b", "CNT-SVC-B")):
+        (mini_cnts / f"{slug}.adoc").write_text(
+            f"---\ntype: tech/container\nid: {cid}\ntitle: {cid}\nstatus: active\n"
+            f"container_type: service\nruntime: Python 3.12\nsource_path: apps/{slug}/docker\n---\n= {cid}\n",
+            encoding="utf-8",
+        )
+    mini_sl = get_context_slice(
+        files=["apps/*/docker/.dockerignore", "apps/svc-a/docker/Dockerfile"],
+        eidos_dir=mini_eidos,
+        repo_root=tmp_path / "mini_repo",
+    )
+    assert {"CNT-SVC-A", "CNT-SVC-B"} <= {c["id"] for c in mini_sl.components}
+    import eidos.core.index.graph_index as gi
+
+    if gi._INDEX_INSTANCE is not None:
+        gi._INDEX_INSTANCE.close()
+        gi._INDEX_INSTANCE = None
+
+    # CLI comma-separated globs, subdirectory rebasing, and missing --path error handling
+    repo_root = Path(__file__).resolve().parent.parent
+    res_missing_json = runner.invoke(app, ["context", "--path", str(tmp_path / "no_eidos_here"), "--json"])
+    assert res_missing_json.exit_code == 1
+    assert "not found" in orjson.loads(res_missing_json.output)["error"]
+    res_missing_txt = runner.invoke(app, ["context", "--path", str(tmp_path / "no_eidos_here")])
+    assert res_missing_txt.exit_code == 1
+    assert "not found" in res_missing_txt.output
+
+    monkeypatch.chdir(repo_root / "src" / "eidos" / "cli")
+    res_sub_repo_glob = runner.invoke(
+        app,
+        ["context", "-f", "assets/plugin_reference/skills/*/SKILL.md,src/eidos/cli/main.py", "--no-semantic", "--json"],
+    )
+    assert res_sub_repo_glob.exit_code == 0
+    sub_repo_ids = {c["id"] for c in orjson.loads(res_sub_repo_glob.output)["components"]}
+    assert "CNT-EIDOS-PLUGIN" in sub_repo_ids
+    assert "CNT-EIDOS-CLI" in sub_repo_ids
+
+    res_sub_cwd_glob = runner.invoke(app, ["context", "-f", "*_command.py", "--no-semantic", "--json"])
+    assert res_sub_cwd_glob.exit_code == 0
+    sub_cwd_ids = {c["id"] for c in orjson.loads(res_sub_cwd_glob.output)["components"]}
+    assert "CMP-CLI-CONTEXT-COMMAND" in sub_cwd_ids
+    assert "CNT-EIDOS-CLI" in sub_cwd_ids
+
+    res_outside = runner.invoke(
+        app,
+        [
+            "context",
+            "-f",
+            f"{tmp_path}/*.py,{tmp_path / 'outside.py'},src/eidos/cli/../../../../outside/*.py,src/eidos/cli/../../../../outside.py",
+            "--no-semantic",
+            "--json",
+        ],
+    )
+    assert res_outside.exit_code == 0
+    assert orjson.loads(res_outside.output)["components"] == []
+
+    res_abs_glob = runner.invoke(
+        app, ["context", "-f", f"{repo_root}/assets/plugin_reference/skills/*/SKILL.md", "--no-semantic", "--json"]
+    )
+    assert res_abs_glob.exit_code == 0
+    assert any(c["id"] == "CNT-EIDOS-PLUGIN" for c in orjson.loads(res_abs_glob.output)["components"])
+
+    monkeypatch.chdir(repo_root / "src" / "eidos" / "portal")
+    res_sibling_glob = runner.invoke(app, ["context", "-f", "../cli/*_command.py", "--no-semantic", "--json"])
+    assert res_sibling_glob.exit_code == 0
+    assert "CMP-CLI-CONTEXT-COMMAND" in {c["id"] for c in orjson.loads(res_sibling_glob.output)["components"]}
+
+    monkeypatch.chdir(repo_root / "src" / "eidos")
+    res_sub_planned_glob = runner.invoke(
+        app, ["context", "-f", "./cli/planned_*.py", "--tier", "guardrails", "--no-semantic", "--json"]
+    )
+    assert res_sub_planned_glob.exit_code == 0
+    assert "CNT-EIDOS-CLI" in {c["id"] for c in orjson.loads(res_sub_planned_glob.output)["components"]}
+    monkeypatch.chdir(repo_root)
+
+    # Slicing context_command.py retains INV-AGENT-CONTEXT-SLICING via leaf-stem focus ranking
+    ctx_cmd_sl = get_context_slice(files=["src/eidos/cli/context_command.py"], tier="guardrails")
+    assert any(i["id"] == "INV-AGENT-CONTEXT-SLICING" for i in ctx_cmd_sl.invariants)
+
+    # Equal-depth wildcard source_path (src/pkg/*.py) resolves planned globs, and monorepo sub-project globs route cleanly
+    wild_repo = tmp_path / "wild_repo"
+    (wild_repo / "eidos" / "architecture" / "containers").mkdir(parents=True)
+    (wild_repo / "eidos" / "architecture" / "containers" / "pkg.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-WILD-PKG\ntitle: WildPkg\nstatus: active\n"
+        "container_type: library\nruntime: Python 3.12\nsource_path: src/pkg/*.py\n---\n= WildPkg\n",
+        encoding="utf-8",
+    )
+    wild_sl = get_context_slice(files=["src/*/planned.py"], eidos_dir=wild_repo / "eidos", repo_root=wild_repo)
+    assert [c["id"] for c in wild_sl.components] == ["CNT-WILD-PKG"]
+    if gi._INDEX_INSTANCE is not None:
+        gi._INDEX_INSTANCE.close()
+        gi._INDEX_INSTANCE = None
+
+    mono_root = tmp_path / "mono_root"
+    assert runner.invoke(app, ["init", str(mono_root), "--title", "Mono Root"]).exit_code == 0
+    sub_api = mono_root / "packages" / "api"
+    sub_api.mkdir(parents=True)
+    assert runner.invoke(app, ["init", str(sub_api), "--title", "Sub API"]).exit_code == 0
+    (sub_api / "src").mkdir()
+    (sub_api / "src" / "routes.py").write_text("def route() -> None:\n    pass\n", encoding="utf-8")
+    (sub_api / "eidos" / "architecture" / "containers" / "api.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-SUB-API\ntitle: Sub API\nstatus: active\n"
+        "container_type: service\nruntime: Python 3.12\nsource_path: src\n---\n= Sub API\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(mono_root)
+    res_mono_glob = runner.invoke(app, ["context", "-f", "packages/api/src/*.py", "--no-semantic", "--json"])
+    assert res_mono_glob.exit_code == 0
+    assert [c["id"] for c in orjson.loads(res_mono_glob.output)["components"]] == ["CNT-SUB-API"]
+    monkeypatch.chdir(repo_root)
+    if gi._INDEX_INSTANCE is not None:
+        gi._INDEX_INSTANCE.close()
+        gi._INDEX_INSTANCE = None
+
+    # Secondary persona and screen task expansion (lexical BM25) resolves member capabilities and containers
+    idx_inst = gi.get_architectural_index()
+    persona_sl = idx_inst.get_tiered_context_slice(task="PER-SOFTWARE-ARCHITECT", tier="guardrails", use_semantic=False)
+    assert persona_sl.capabilities
+    screen_sl = idx_inst.get_tiered_context_slice(task="SCR-OVERVIEW", tier="guardrails", use_semantic=False)
+    assert screen_sl.components or screen_sl.capabilities
 
 
 def test_context_slice_by_component():
@@ -461,6 +608,25 @@ def test_inv_context_token_compression():
     assert len(synthetic_sl.invariants) == 3
     assert synthetic_sl.token_estimate <= TIER_TOKEN_BUDGETS["guardrails"]
 
+    # 6. DEC-*-heavy primary container (CNT-EIDOS-PLUGIN) compacts tail DEC-* narratives in Stage 1a before
+    #    evicting 1-hop capability invariants, retaining both compact DEC-* summaries and skill invariants
+    for tier, max_budget in TIER_TOKEN_BUDGETS.items():
+        plugin_sl = get_context_slice(files=["assets/plugin_reference/skills/*/SKILL.md"], tier=tier)
+        md_out = plugin_sl.to_markdown()
+        js_out = plugin_sl.to_json()
+        assert plugin_sl.token_estimate <= max_budget, f"{tier} token_estimate={plugin_sl.token_estimate} > {max_budget}"
+        assert len(md_out) // 4 <= max_budget, f"{tier} markdown tokens={len(md_out) // 4} > {max_budget}"
+        assert len(js_out) // 4 <= max_budget, f"{tier} json tokens={len(js_out) // 4} > {max_budget}"
+        if tier in ("guardrails", "deep"):
+            proj_plugin = plugin_sl.to_dict()
+            prim_decs = proj_plugin["components"][0].get("decisions", [])
+            assert len(prim_decs) >= 2, f"Expected primary DEC-* summaries retained in {tier}"
+            assert "DEC-PLUGIN-" in md_out
+            inv_set = {inv["id"] for inv in proj_plugin["invariants"]}
+            assert {"INV-PLUGIN-SKILL-DELTA-RECONCILIATION", "INV-PLUGIN-SKILL-SIZE-CEILING"} <= inv_set
+            if tier == "deep":
+                assert "INV-PLUGIN-SKILL-CLI-PARITY" in inv_set
+
 
 def test_progressive_compression_stages_and_inline_component_context(tmp_path):
     """Verify Stage 1/2/3 eviction under extreme budget pressure, anchor overflow trimming, and inline CMP-* component context."""  # eidos:fixture
@@ -549,7 +715,6 @@ def test_progressive_compression_stages_and_inline_component_context(tmp_path):
     import subprocess
 
     from eidos.core.workspace.assets import (
-        get_agent_plugins_schemas_dir,
         get_assets_path,
         get_schemas_dir,
         get_v1_schemas_dir,
@@ -568,7 +733,6 @@ def test_progressive_compression_stages_and_inline_component_context(tmp_path):
     assert get_assets_path("") == get_assets_path()
     assert get_schemas_dir().is_dir()
     assert get_v1_schemas_dir().is_dir()
-    assert get_agent_plugins_schemas_dir().is_dir()
     with pytest.raises(FileNotFoundError):
         get_assets_path("nonexistent_asset_subpath_999")
 

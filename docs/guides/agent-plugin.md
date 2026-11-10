@@ -1,6 +1,6 @@
 # AI Agent Integration
 
-Eidos is **agent-agnostic** and **model-agnostic**. It provides a standardized plugin bundle conforming to **[agent-plugins.org v1.0.0](https://agent-plugins.org)**, 4 cohesive **Agent Skills** conforming to **[agentskills.io](https://agentskills.io)** across 9 supported AI coding assistants (**Google Antigravity**, **Claude Code**, **Cursor**, **Aider**, **Cline**, **Kilo Code**, **OpenCode**, **GitHub Copilot**, and **OpenAI Codex**), and an opt-in stateless `Stop` / `TaskComplete` lifecycle hook (`--hooks`) for the 6 hook-capable clients (**Google Antigravity**, **Claude Code**, **Cursor**, **Cline**, **GitHub Copilot**, and **OpenAI Codex**)—so agents can understand, query, and mutate your living specifications safely through direct CLI execution.
+Eidos is **agent-agnostic** and **model-agnostic**. It provides 4 cohesive **Agent Skills** conforming to **[agentskills.io](https://agentskills.io)** across 9 supported AI coding assistants (**Google Antigravity**, **Claude Code**, **Cursor**, **Aider**, **Cline**, **Kilo Code**, **OpenCode**, **GitHub Copilot**, and **OpenAI Codex**), and an opt-in stateless `Stop` / `TaskComplete` lifecycle hook (`--hooks`) for the 6 hook-capable clients (**Google Antigravity**, **Claude Code**, **Cursor**, **Cline**, **GitHub Copilot**, and **OpenAI Codex**)—so agents can understand, query, and mutate your living specifications safely through direct CLI execution.
 
 ```
                     ┌─────────────────────────────────────────┐
@@ -12,8 +12,8 @@ Eidos is **agent-agnostic** and **model-agnostic**. It provides a standardized p
                     (eidos validate, …)  │   (root AGENTS.md block)
                                          ▼
                     ┌─────────────────────────────────────────┐
-                    │           Eidos Agent Plugin            │
-                    │        (agent-plugins.org v1)           │
+                    │           Eidos Agent Skills            │
+                    │           (agentskills.io)              │
                     └────────────────────┬────────────────────┘
                                          │
                     Inspect Architecture │   Scaffold & Apply
@@ -52,6 +52,7 @@ eidos plugin install all --hooks
 
 # Targeted installation for a specific assistant:
 eidos plugin install antigravity
+eidos plugin install antigravity --hooks
 eidos plugin install cursor --hooks
 eidos plugin install claude --hooks
 eidos plugin install cline --hooks
@@ -66,16 +67,16 @@ eidos plugin install aider
 
 | Target Argument | Target Path / Config | Opt-In `--hooks` Config | Description |
 | :--- | :--- | :--- | :--- |
-| `all` | All 9 environments below | All 6 hook files below | Installs plugins, skills, and configs for all 9 assistants (plus native `Stop` / `TaskComplete` hooks for the 6 hook-capable assistants when `--hooks` is passed) |
-| `antigravity` | `.agents/plugins/eidos/`, `AGENTS.md` | `.agents/plugins/eidos/hooks.json` | Installs `agent-plugins.org v1.0.0` bundle with 4 skills and extensions (plus `hooks.json` when `--hooks` is passed) |
+| `all` | All 9 environments below | All 6 hook files below | Installs Agent Skills and configs for all 9 assistants (plus native `Stop` / `TaskComplete` hooks for the 6 hook-capable assistants when `--hooks` is passed) |
+| `antigravity` | `.agents/skills/`, `AGENTS.md` | `.agents/hooks.json` (`eidos-drift-gate.Stop`) | Installs 4 Eidos Agent Skills into `.agents/skills/`, updates `AGENTS.md`, and wires `.agents/hooks.json` when `--hooks` is passed |
 | `claude` | `.claude/skills/`, `CLAUDE.md`, `AGENTS.md` | `.claude/settings.json` (`hooks.Stop`) | Installs 4 Claude Code skills, imports `AGENTS.md` from `CLAUDE.md`, and wires `hooks.Stop` when `--hooks` is passed |
-| `cursor` | `.agents/plugins/eidos/`, `AGENTS.md` | `.cursor/hooks.json` (`hooks.stop`, `loop_limit: 1`) | Installs `agent-plugins.org v1.0.0` bundle, updates `AGENTS.md`, and wires `.cursor/hooks.json` when `--hooks` is passed |
-| `cline` | `.agents/skills/`, `AGENTS.md` | `.clinerules/hooks/TaskComplete` | Installs 4 Eidos skills into `.agents/skills/`, updates `AGENTS.md`, and wires executable `.clinerules/hooks/TaskComplete` when `--hooks` is passed |
-| `copilot` | `.agents/plugins/eidos/`, `AGENTS.md` | `.github/hooks/hooks.json` (`hooks.agentStop`) | Installs `agent-plugins.org v1.0.0` bundle, updates `AGENTS.md`, and wires `.github/hooks/hooks.json` when `--hooks` is passed |
-| `codex` | `.agents/plugins/eidos/`, `AGENTS.md` | `.codex/hooks.json` (`hooks.Stop`) | Installs `agent-plugins.org v1.0.0` bundle, updates `AGENTS.md`, and wires `.codex/hooks.json` when `--hooks` is passed |
-| `kilocode` | `.agents/skills/`, `AGENTS.md` | _N/A_ | Installs 4 Eidos skills into `.agents/skills/` and updates `AGENTS.md` |
-| `open-code` | `.agents/skills/`, `AGENTS.md` | _N/A_ | Installs 4 Eidos skills into `.agents/skills/` and updates `AGENTS.md` |
-| `aider` | `.aider/skills/`, `.aider.conf.yml`, `AGENTS.md` | _N/A_ | Installs 4 Eidos skills into `.aider/skills/`, updates `AGENTS.md`, and appends `AGENTS.md` to `read:` in `.aider.conf.yml` |
+| `cursor` | `.agents/skills/`, `AGENTS.md` | `.cursor/hooks.json` (`hooks.stop`, `loop_limit: 1`) | Installs 4 Eidos Agent Skills into `.agents/skills/`, updates `AGENTS.md`, and wires `.cursor/hooks.json` when `--hooks` is passed |
+| `cline` | `.agents/skills/`, `AGENTS.md` | `.clinerules/hooks/TaskComplete` | Installs 4 Eidos Agent Skills into `.agents/skills/`, updates `AGENTS.md`, and wires executable `.clinerules/hooks/TaskComplete` when `--hooks` is passed |
+| `copilot` | `.agents/skills/`, `AGENTS.md` | `.github/hooks/hooks.json` (`hooks.agentStop`) | Installs 4 Eidos Agent Skills into `.agents/skills/`, updates `AGENTS.md`, and wires `.github/hooks/hooks.json` when `--hooks` is passed |
+| `codex` | `.agents/skills/`, `AGENTS.md` | `.codex/hooks.json` (`hooks.Stop`) | Installs 4 Eidos Agent Skills into `.agents/skills/`, updates `AGENTS.md`, and wires `.codex/hooks.json` when `--hooks` is passed |
+| `kilocode` | `.agents/skills/`, `AGENTS.md` | _N/A_ | Installs 4 Eidos Agent Skills into `.agents/skills/` and updates `AGENTS.md` |
+| `open-code` | `.agents/skills/`, `AGENTS.md` | _N/A_ | Installs 4 Eidos Agent Skills into `.agents/skills/` and updates `AGENTS.md` |
+| `aider` | `.aider/skills/`, `.aider.conf.yml`, `AGENTS.md` | _N/A_ | Installs 4 Eidos Agent Skills into `.aider/skills/`, updates `AGENTS.md`, and appends `AGENTS.md` to `read:` in `.aider.conf.yml` |
 
 ### The Root `AGENTS.md` Block
 
@@ -85,7 +86,7 @@ Every target writes one shared Eidos block into your repository's root `AGENTS.m
 # Acme Billing Service
 Run `pnpm test` before committing.          <- yours, never touched
 
-<!-- eidos:begin agents-md sha256:3f9a1c0b7e2d targets=claude:.claude/skills,cursor:.agents/plugins/eidos/skills · managed by `eidos plugin`; edits inside this block are overwritten -->
+<!-- eidos:begin agents-md sha256:3f9a1c0b7e2d targets=claude:.claude/skills,cursor:.agents/skills · managed by `eidos plugin`; edits inside this block are overwritten -->
 ## Eidos Living Specifications
 ...short guardrails, key eidos commands, and every installed skill location...
 <!-- eidos:end agents-md -->
@@ -98,7 +99,7 @@ Run `pnpm test` before committing.          <- yours, never touched
 * **Your edits are protected**: the `sha256:` stamp detects hand edits inside the block. Eidos then leaves the block alone (and says so) unless you run `eidos plugin install <target> --force`. `eidos plugin update` never overwrites an edited block.
 * **Opt out**: add `<!-- eidos:agents-md off -->` anywhere in `AGENTS.md` (or `<!-- eidos:claude-import off -->` in `CLAUDE.md`) and Eidos will not write that block.
 * **Symlinks are respected**: Eidos never writes through a symlinked `AGENTS.md` or `CLAUDE.md`; it reports a warning instead. If `CLAUDE.md` is a symlink to `AGENTS.md`, no import block is needed.
-* **Left in place on uninstall**: `eidos plugin uninstall` removes skills, plugin files, and Eidos `Stop` hook entries while leaving the `AGENTS.md` / `CLAUDE.md` blocks in place; delete them by hand if you no longer want them.
+* **Left in place on uninstall**: `eidos plugin uninstall` removes skills and Eidos `Stop` hook entries while leaving the `AGENTS.md` / `CLAUDE.md` blocks in place; delete them by hand if you no longer want them.
 
 > [!NOTE]
 > **Upgrading from earlier releases**: per-assistant rule files and instruction blocks written by older Eidos versions are not migrated or removed. The root `AGENTS.md` block replaces them; you can delete the old files by hand.
@@ -111,7 +112,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
 === "Google Antigravity"
 
-    Google Antigravity natively discovers plugins adhering to the **[agent-plugins.org v1.0.0](https://agent-plugins.org)** standard inside `.agents/plugins/`.
+    Google Antigravity natively discovers Agent Skills adhering to **[agentskills.io](https://agentskills.io)** inside `.agents/skills/` and workspace lifecycle hooks inside `.agents/hooks.json`.
 
     ### 1. Installation
 
@@ -119,27 +120,29 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     ```bash
     eidos plugin install antigravity
+    # Or with native .agents/hooks.json Stop hook enabled:
+    eidos plugin install antigravity --hooks
     ```
 
     This creates the following directory structure inside your project:
 
     ```text
-    .agents/plugins/eidos/
-    ├── plugin.json               # agent-plugins.org v1.0.0 manifest
-    ├── hooks.json                # Stateless Stop drift gate hook
+    .agents/
+    ├── .eidos-manifest.json          # Managed files & per-target hook state
+    ├── hooks.json                    # Stateless Stop drift gate hook (when --hooks is passed)
     └── skills/
-        ├── eidos/                # Master orchestrator, context slicing & continuous drift detection
-        ├── eidos-spec/           # Product, Arc42/C4 architecture, design systems & invariants (NO ADRs)
-        ├── eidos-plan/           # Technical spikes (EXP-*), SpecDeltas (DLT-*) & Staff Architect review
-        └── eidos-ops/            # Greenfield init, brownfield extraction & Living Web Portal
+        ├── eidos/SKILL.md            # Master orchestrator, context slicing & continuous drift detection
+        ├── eidos-spec/SKILL.md       # Product, Arc42/C4 architecture, design systems & invariants (NO ADRs)
+        ├── eidos-plan/SKILL.md       # Technical spikes (EXP-*), SpecDeltas (DLT-*) & Staff Architect review
+        └── eidos-ops/SKILL.md        # Greenfield init, brownfield extraction & Living Web Portal
     ```
 
     ### 2. How Antigravity Uses Eidos
 
-    * **Master Engineering Skill**: Antigravity indexes `skills/eidos/SKILL.md` to guide agent decision-making, strictly enforcing the 8 Constitutional Guardrails (Single Source of Truth, Zero ADRs, Dual Workflow Mode Selection, Mandatory Invariant-Test Traceability, CLI-First Discovery & Determinism, Subagent Context Propagation, Zero Unreconciled Drift, and Mandatory Autonomous Pre-Completion Review) alongside `eidos context`, `eidos index`, and `eidos drift`.
-    * **Workflow-Aligned Agent Skills**: Antigravity agents invoke `/eidos-spec` to author or inspect living specs, schemas (`eidos spec schema`), and invariants, `/eidos-plan` for explorations, SpecDeltas, and Staff reviews, and `/eidos-ops` for repository initialization, brownfield extraction, and Web Portal operations.
-    * **Stateless Stop Hook**: The `eidos-drift-gate` (`eidos hook`) runs at task completion (`Stop`) to verify AsciiDoc schemas, invariant test bindings, and spec-to-code synchronization.
-    * **Root `AGENTS.md`**: The shared Eidos block in the repository's root `AGENTS.md` is loaded as a project rule and lists `.agents/plugins/eidos/skills/` as the skill location.
+    * **Master Engineering Skill**: Antigravity indexes `.agents/skills/eidos/SKILL.md` to guide agent decision-making, strictly enforcing the 8 Constitutional Guardrails (Single Source of Truth, Zero ADRs, Dual Workflow Mode Selection, Mandatory Invariant-Test Traceability, CLI-First Discovery & Determinism, Subagent Context Propagation, Zero Unreconciled Drift, and Mandatory Autonomous Pre-Completion Review) alongside `eidos context`, `eidos index`, and `eidos drift`.
+    * **Workflow-Aligned Agent Skills**: Antigravity agents invoke `eidos-spec` to author or inspect living specs, schemas (`eidos spec schema`), and invariants, `eidos-plan` for explorations, SpecDeltas, and Staff reviews, and `eidos-ops` for repository initialization, brownfield extraction, and Web Portal operations.
+    * **Stateless Stop Hook**: When installed with `--hooks`, `eidos-drift-gate` (`eidos hook` in `.agents/hooks.json`) runs at task completion (`Stop`) to verify AsciiDoc schemas, invariant test bindings, and spec-to-code synchronization.
+    * **Root `AGENTS.md`**: The shared Eidos block in the repository's root `AGENTS.md` is loaded as a project rule and lists `.agents/skills/` as the skill location.
 
 === "Claude Code"
 
@@ -156,11 +159,13 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     ```bash
     eidos plugin install claude
+    # Or with native .claude/settings.json Stop hook enabled:
+    eidos plugin install claude --hooks
     ```
 
     This automatically:
     - Installs all 4 cohesive Eidos skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`) into `.claude/skills/<skill-name>/SKILL.md` so they are immediately discovered by Claude Code on startup.
-    - Non-destructively registers the Eidos `Stop` hook (`eidos hook`, or `uvx --from eidos-ai==<ver> eidos hook` when `--launcher uvx` is passed) under `hooks.Stop` in `.claude/settings.json` while preserving your existing settings and custom hooks.
+    - When `--hooks` is passed, non-destructively registers the Eidos `Stop` hook (`eidos hook`, or `uvx --from eidos-ai==<ver> eidos hook` when `--launcher uvx` is passed) under `hooks.Stop` in `.claude/settings.json` while preserving your existing settings and custom hooks.
     - Tracks managed skill files in `.claude/.eidos-manifest.json` for clean updates and uninstallation (`eidos plugin uninstall claude`).
     - Writes the shared Eidos block into the root `AGENTS.md` and a one-line import block into the root `CLAUDE.md` so Claude Code loads it as project memory (skipped if your `CLAUDE.md` already imports `@AGENTS.md`):
 
@@ -173,7 +178,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
 === "Cursor"
 
-    Cursor is an **[agent-plugins.org v1.0.0](https://agent-plugins.org/compatible-clients)** compatible client that discovers the canonical plugin bundle inside `.agents/plugins/eidos/` and reads the root `AGENTS.md` natively.
+    Cursor discovers Agent Skills inside `.agents/skills/` and reads the root `AGENTS.md` natively.
 
     ### 1. Automatic Configuration
 
@@ -184,13 +189,13 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     ```
 
     This automatically:
-    - Installs the canonical `agent-plugins.org v1.0.0` plugin bundle (`plugin.json` and all 4 skills) into `.agents/plugins/eidos/`.
+    - Installs all 4 Eidos Agent Skills into `.agents/skills/`.
     - Writes the shared Eidos block into the root `AGENTS.md` (see [The Root `AGENTS.md` Block](#the-root-agentsmd-block)), which Cursor Composer and Chat agents load as project instructions.
     - When `--hooks` is passed, non-destructively registers the Eidos `stop` hook (`loop_limit: 1`) in `.cursor/hooks.json`.
 
 === "GitHub Copilot"
 
-    GitHub Copilot is an **[agent-plugins.org v1.0.0](https://agent-plugins.org/compatible-clients)** compatible client that discovers the canonical plugin bundle inside `.agents/plugins/eidos/` and reads the root `AGENTS.md` natively.
+    GitHub Copilot discovers Agent Skills inside `.agents/skills/` and reads the root `AGENTS.md` natively.
 
     ### 1. Installation
     ```bash
@@ -200,16 +205,16 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     ```
 
     This automatically:
-    - Installs the canonical `agent-plugins.org v1.0.0` plugin bundle (`plugin.json` and all 4 Eidos skills) into `.agents/plugins/eidos/`.
+    - Installs all 4 Eidos Agent Skills into `.agents/skills/`.
     - Writes the shared Eidos block into the root `AGENTS.md`, which GitHub Copilot loads natively. Your own Copilot instruction files are never touched.
     - When `--hooks` is passed, non-destructively registers the Eidos `agentStop` hook in `.github/hooks/hooks.json`.
 
     ### 2. Using with Copilot
-    GitHub Copilot automatically discovers the installed plugin and skills under `.agents/plugins/eidos/` and loads the root `AGENTS.md` in Copilot Chat and Copilot Agent mode—enforcing the single source of truth under `eidos/`, zero spec-to-code drift, and bidirectional invariant-test traceability.
+    GitHub Copilot automatically discovers the installed skills under `.agents/skills/` and loads the root `AGENTS.md` in Copilot Chat and Copilot Agent mode—enforcing the single source of truth under `eidos/`, zero spec-to-code drift, and bidirectional invariant-test traceability.
 
 === "OpenAI Codex"
 
-    OpenAI Codex utilizes portable `agent-plugins.org v1.0.0` packages inside `.agents/plugins/eidos/` and reads project instructions from the root `AGENTS.md` natively.
+    OpenAI Codex discovers Agent Skills inside `.agents/skills/` and reads project instructions from the root `AGENTS.md` natively.
 
     ### 1. Installation
     ```bash
@@ -219,7 +224,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     ```
 
     This automatically:
-    - Installs the canonical `agent-plugins.org v1.0.0` plugin bundle (`plugin.json` and all 4 Eidos skills) into `.agents/plugins/eidos/`.
+    - Installs all 4 Eidos Agent Skills into `.agents/skills/`.
     - Writes the shared Eidos block into the root `AGENTS.md`, which Codex loads as project instructions.
     - When `--hooks` is passed, non-destructively registers the Eidos `Stop` hook in `.codex/hooks.json`.
 
@@ -378,7 +383,7 @@ Every capability invariant (`INV-*`) must declare a concrete `test_binding` (`pa
 Eidos CLI commands are 100% deterministic local operations with zero external AI/LLM runtime calls. Agents always run Eidos knowledge graph and context CLI commands (`eidos context`, `eidos index repo-map`, `eidos index find-symbol`, `eidos index search`, `eidos index blast-radius` with `--json`) before falling back to raw file reads or `grep`/`find`, scaffold via `eidos spec create` / `eidos delta create`, and inspect v1 schemas via `eidos spec schema <type> [--json]`.
 
 ### 6. Subagent Context Propagation
-Whenever an agent delegates coding, refactoring, or specification work to a worker subagent, it passes the relevant `eidos context --json` slice in the subagent's prompt or instructs the subagent to read `.agents/plugins/eidos/skills/eidos/SKILL.md` before editing files.
+Whenever an agent delegates coding, refactoring, or specification work to a worker subagent, it passes the relevant `eidos context --json` slice in the subagent's prompt or instructs the subagent to read `.agents/skills/eidos/SKILL.md` (or `.claude/skills/eidos/SKILL.md` / `.aider/skills/eidos/SKILL.md`) before editing files.
 
 ### 7. Zero Unreconciled Drift
 No task may conclude with failing specification schemas (`eidos validate eidos`) or unmanaged code-to-spec drift (`eidos drift --uncommitted`).
@@ -392,7 +397,7 @@ Before presenting work or concluding a task, the agent executes an autonomous ad
 
 When `--hooks` is passed to `eidos plugin install <target> --hooks` (preserved automatically by `eidos plugin update <target>`), Eidos registers its stateless `Stop` / `TaskComplete` lifecycle hook across the 6 hook-capable coding clients:
 
-* **Google Antigravity**: `.agents/plugins/eidos/hooks.json` (`eidos-drift-gate.Stop`)
+* **Google Antigravity**: `.agents/hooks.json` (`eidos-drift-gate.Stop`)
 * **Claude Code**: `.claude/settings.json` (`hooks.Stop`)
 * **Cursor**: `.cursor/hooks.json` (`hooks.stop` with `loop_limit: 1`)
 * **Cline**: `.clinerules/hooks/TaskComplete` (executable `0o755` script invoking `eidos hook`)
@@ -419,11 +424,11 @@ When using any of the 9 supported agent clients (Google Antigravity, Claude Code
 
 ## Plugin Lifecycle & Maintenance
 
-Eidos provides a complete suite of commands to manage, inspect, and update the installed agent plugin:
+Eidos provides a complete suite of commands to manage, inspect, and update the installed Agent Skills and lifecycle hooks:
 
-### Inspect Plugin Manifest
+### Inspect Bundled Skills & Hooks
 
-Display full metadata and configuration for the Eidos Agent Plugin:
+Display full metadata and configuration for the Eidos Agent Skills bundle:
 
 ```bash
 eidos plugin info
@@ -432,31 +437,31 @@ eidos plugin info
 Output:
 
 ```text
-╭──────────────────────── Eidos Agent Plugin Manifest ─────────────────────────╮
-│ Plugin Identifier:  eidos                                                    │
-│           Version:  0.23.0                                                   │
-│       Description:  Git-native, agent-agnostic development AI ecosystem and  │
-│                     lifecycle orchestration framework.                       │
-│           License:  MIT                                                      │
-│     Specification:  agent-plugins.org v1.0.0                                 │
-│            Skills:  eidos, eidos-ops, eidos-plan, eidos-spec                 │
-│       MCP Servers:  None                                                     │
-│   Lifecycle Hooks:  eidos-drift-gate                                         │
-│        Extensions:  com.google.antigravity                                   │
+╭───────────────────────── Eidos Agent Skills Bundle ──────────────────────────╮
+│         Identifier:  eidos                                                   │
+│            Version:  0.23.0                                                  │
+│        Description:  Git-native, agent-agnostic development AI ecosystem and │
+│                      lifecycle orchestration framework.                      │
+│            License:  MIT                                                     │
+│      Specification:  agentskills.io                                          │
+│             Skills:  eidos, eidos-ops, eidos-plan, eidos-spec                │
+│    Lifecycle Hooks:  eidos-drift-gate                                        │
+│  Supported Targets:  antigravity, claude, cursor, aider, cline, kilocode,    │
+│                      open-code, codex, copilot                               │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
 ### Inspect Version Status
 
-Compare the currently installed plugin against the version bundled with the Eidos engine:
+Compare the currently installed skills against the version bundled with the Eidos engine:
 
 ```bash
 eidos plugin version
 ```
 
-### Upgrade the Installed Plugin
+### Upgrade Installed Skills
 
-When upgrading `eidos-ai`, update the project's installed plugin files in-place:
+When upgrading `eidos-ai`, update the project's installed skills and hooks in-place:
 
 ```bash
 eidos plugin update all
@@ -464,7 +469,7 @@ eidos plugin update all
 
 ### Verify Conformance
 
-Ensure that your plugin bundle strictly complies with the `agent-plugins.org v1.0.0` specification:
+Ensure that your Agent Skills bundle strictly complies with the `agentskills.io` specification and SemVer 2.0.0 versioning:
 
 ```bash
 eidos plugin validate
@@ -473,26 +478,21 @@ eidos plugin validate
 Output:
 
 ```text
-              Agent Plugin Conformance (agent-plugins.org v1.0.0)               
-┏━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Property               ┃ Value                                               ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ Plugin Name            │ eidos                                               │
-│ Plugin Version         │ 0.23.0                                              │
-│ Overall Status         │ CONFORMANT                                          │
-│ Discovered Skills      │ eidos, eidos-ops, eidos-plan, eidos-spec            │
-│ Configured MCP Servers │ None                                                │
-│ Lifecycle Hooks        │ eidos-drift-gate                                    │
-│ Client Extensions      │ com.google.antigravity                              │
-└────────────────────────┴─────────────────────────────────────────────────────┘
+                   Agent Skills Conformance (agentskills.io)                    
+┏━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Property          ┃ Value                                                    ┃
+┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Bundle Name       │ eidos                                                    │
+│ Bundle Version    │ 0.23.0                                                   │
+│ Overall Status    │ CONFORMANT                                               │
+│ Discovered Skills │ eidos, eidos-ops, eidos-plan, eidos-spec                 │
+│ Lifecycle Hooks   │ eidos-drift-gate                                         │
+└───────────────────┴──────────────────────────────────────────────────────────┘
 ```
-
-> [!NOTE]
-> Under `agent-plugins.org v1.0.0`, MCP servers are strictly optional. Eidos plugins decommissioned local stdio MCP servers in favor of direct CLI execution with machine-readable `--json` output, providing superior reliability in cloud, sandbox, and container environments.
 
 ### Uninstall / Clean Up
 
-To cleanly remove plugin files and agent configurations:
+To cleanly remove installed skill files and agent hook configurations:
 
 ```bash
 eidos plugin uninstall all

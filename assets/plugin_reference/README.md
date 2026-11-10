@@ -1,11 +1,10 @@
-# Eidos Agent Plugin (`agent-plugins.org v1.0.0`)
+# Eidos Agent Skills Bundle (`agentskills.io`)
 
-This directory contains the official **Eidos Agent Plugin**, structured in strict compliance with the [agent-plugins.org v1.0.0](https://agent-plugins.org) open specification.
+This directory contains the official **Eidos Agent Skills** reference bundle, structured in compliance with the [agentskills.io](https://agentskills.io) open specification.
 
 ## Contents
 
-- `plugin.json` — Standard plugin manifest declaring identity, SemVer version, metadata, and client extensions (`com.google.antigravity`).
-- `hooks.json` — Stateless `Stop` lifecycle hook (`eidos-drift-gate` invoking `eidos hook`) verifying specification validity, invariant test bindings, and spec-to-code synchronization.
+- `hooks.json` — Reference stateless `Stop` lifecycle hook (`eidos-drift-gate` invoking `eidos hook`) verifying specification validity, invariant test bindings, and spec-to-code synchronization.
 - `skills/` — 4 cohesive workflow-aligned Agent Skills conforming to [agentskills.io](https://agentskills.io):
   - `eidos/SKILL.md` — **Master Orchestrator, Context & Drift**: Workflow routing (Direct vs. Planned Mode), tiered context slicing (`eidos context`), and continuous drift detection (`eidos drift`).
   - `eidos-spec/SKILL.md` — **Living Specification & Invariant Authoring**: Product domains (`DOM-*`), capabilities (`CAP-*`), personas (`PER-*`), Arc42/C4 architecture (`CNT-*`, standalone `CMP-*`, `CTR-*`, embedded `decisions:`), Multi-Design Systems (`DS-*`, W3C tokens, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`), and policies/invariants (`POL-*`, `INV-*` with polyglot `file::func` test bindings).
@@ -19,15 +18,15 @@ Eidos operates via **direct CLI execution** (`eidos validate --json`, `eidos dri
 ## Usage with Eidos CLI
 
 ```bash
-# Validate plugin conformance
+# Validate Agent Skills bundle conformance
 eidos plugin validate
 
-# View plugin metadata
+# View Agent Skills metadata
 eidos plugin info
 
-# Install plugin into project workspace (.agents/plugins/eidos) and IDE configs
+# Install Agent Skills into project workspace (.agents/skills, .claude/skills, .aider/skills) and IDE configs
 eidos plugin install all
 
-# Upgrade installed plugin to the latest bundled version
+# Upgrade installed skills to the latest bundled version
 eidos plugin update all
 ```

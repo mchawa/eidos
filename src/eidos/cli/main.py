@@ -85,8 +85,11 @@ def info():
     for s in schemas:
         grid.add_row("", f"• {s}")
     grid.add_row("Supported VCS:", "Git (local repository)")
-    grid.add_row("Supported Agents:", "Antigravity (agy), Claude Code, Cursor, Copilot")
-    grid.add_row("Plugin Standard:", "agent-plugins.org v1.0.0 & agentskills.io")
+    grid.add_row(
+        "Supported Agents:",
+        "Antigravity (agy), Claude Code, Cursor, Aider, Cline, Kilo Code, OpenCode, Codex, Copilot",
+    )
+    grid.add_row("Plugin Standard:", "agentskills.io (Agent Skills)")
 
     console.print(Panel(grid, title="[bold blue]Eidos AI Ecosystem[/bold blue]", expand=False))
 

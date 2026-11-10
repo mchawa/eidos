@@ -40,12 +40,7 @@ site/
 **/.claude-plugin/
 **/.mcp.json
 .agents/*
-!.agents/plugins/
-!.agents/plugins/eidos/
-.agents/plugins/eidos/.claude-plugin/
-.agents/plugins/eidos/.mcp.json
-assets/plugin_reference/.claude-plugin/
-assets/plugin_reference/.mcp.json
+!.agents/skills
 .aider*
 .clinerules
 .cline/

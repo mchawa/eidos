@@ -13,7 +13,7 @@ source_path: src/eidos/cli/plugin_commands.py
 Implements the `eidos plugin` subcommand group (`install`, `uninstall`, `update`, `validate`, `version`, `info`) for distributing and validating the Eidos Agent Plugin across supported AI coding harnesses.
 
 == Key Responsibilities & Collaborators
-* **Plugin Lifecycle Dispatch**: Delegates multi-harness installation, manifest-tracked uninstallation, and version checks to `CMP-PLUGIN-INSTALLER`, and `agent-plugins.org v1.0.0` bundle validation to `CMP-PLUGIN-VALIDATOR` and `CMP-HOOK-MANAGER`.
+* **Plugin Lifecycle Dispatch**: Delegates multi-harness skill and hook installation, manifest-tracked uninstallation, and version checks to `CMP-PLUGIN-INSTALLER`, and `agentskills.io` Agent Skills and `hooks.json` package validation to `CMP-PLUGIN-VALIDATOR` and `CMP-HOOK-MANAGER`.
 
 == Public Surface
 * `plugin_app: typer.Typer`

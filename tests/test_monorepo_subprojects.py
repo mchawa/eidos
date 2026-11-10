@@ -268,10 +268,10 @@ def test_monorepo_subproject_eidos_isolation(tmp_path: Path, monkeypatch) -> Non
     assert not has_eidos_markers(git_root / "eidos")
     assert find_repo_root(api_root / "src") == api_root.resolve()
 
-    # 8. Shared Git-root Agent Plugin & AGENTS.md placement when invoked from a sub-project
+    # 8. Shared Git-root Agent Skills & AGENTS.md placement when invoked from a sub-project
     install_results = install_plugin(PluginInstallTarget.ANTIGRAVITY, project_dir=api_root)
     assert all(r.success for r in install_results)
-    assert (git_root / ".agents" / "plugins" / "eidos").is_dir()
+    assert (git_root / ".agents" / "skills" / "eidos" / "SKILL.md").is_file()
     assert (git_root / "AGENTS.md").is_file()
     assert not (api_root / ".agents").exists()
     assert not (api_root / "AGENTS.md").exists()
@@ -281,7 +281,7 @@ def test_monorepo_subproject_eidos_isolation(tmp_path: Path, monkeypatch) -> Non
 
     uninstall_results = uninstall_plugin(PluginInstallTarget.ANTIGRAVITY, project_dir=billing_root)
     assert all(r.success for r in uninstall_results)
-    assert not (git_root / ".agents" / "plugins" / "eidos" / ".eidos-manifest.json").exists()
+    assert not (git_root / ".agents" / ".eidos-manifest.json").exists()
 
     # 9. Initializing a root eidos/ project at <git_root> later succeeds without --force despite .cache & .gitignore
     root_init_ok, root_init_msg, _ = init_repository(git_root, title="Monorepo Root Architecture")

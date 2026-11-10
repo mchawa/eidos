@@ -3,7 +3,6 @@
 from pathlib import Path
 from typing import Annotated
 
-import orjson
 import typer
 from rich.panel import Panel
 from rich.table import Table
@@ -19,11 +18,12 @@ from eidos.plugin.installer import (
 from eidos.plugin.validator import validate_plugin_package
 from eidos.plugin.version import (
     check_plugin_version_status,
+    get_bundled_plugin_version,
 )
 
 plugin_app = typer.Typer(
     name="plugin",
-    help="Manage, install, and validate Eidos agent plugins (agent-plugins.org v1.0.0).",
+    help="Manage, install, and validate Eidos Agent Skills and lifecycle hooks (agentskills.io).",
     add_completion=False,
 )
 
@@ -58,7 +58,7 @@ def plugin_install(
         help="Install native Stop lifecycle hook for hook-capable targets (antigravity, claude, cursor, cline, codex, copilot).",
     ),
 ):
-    """Install the Eidos agent plugin strictly inside project scope (.agents/plugins/eidos, agent-plugins.org v1.0.0)."""
+    """Install Eidos Agent Skills and optional Stop hooks in project scope."""
     resolved_target = target
     resolved_launcher = launcher if isinstance(launcher, str) else "eidos"
     resolved_hooks = hooks if isinstance(hooks, bool) else False
@@ -244,7 +244,7 @@ def plugin_validate(
         help="Path to plugin directory (defaults to assets/plugin_reference or bundled).",
     ),
 ):
-    """Validate an Agent Plugin against agent-plugins.org v1.0.0 and agentskills.io specifications."""
+    """Validate bundled or project Agent Skills and lifecycle hooks (agentskills.io)."""
     target_dir = plugin_path
     if target_dir is None:
         try:
@@ -252,23 +252,21 @@ def plugin_validate(
         except FileNotFoundError:
             target_dir = Path("assets/plugin_reference")
 
-    console.print(f"[bold cyan]Validating Agent Plugin at:[/bold cyan] {target_dir.resolve()}\n")
+    console.print(f"[bold cyan]Validating Agent Skills package at:[/bold cyan] {target_dir.resolve()}\n")
     report = validate_plugin_package(target_dir)
 
-    table = Table(title="Agent Plugin Conformance (agent-plugins.org v1.0.0)", show_header=True)
+    table = Table(title="Agent Skills Package Conformance (agentskills.io)", show_header=True)
     table.add_column("Property", style="bold cyan")
     table.add_column("Value", style="white")
 
-    table.add_row("Plugin Name", str(report.plugin_name or "N/A"))
-    table.add_row("Plugin Version", str(report.plugin_version or "N/A"))
+    table.add_row("Package Name", str(report.plugin_name or "N/A"))
+    table.add_row("Package Version", str(report.plugin_version or "N/A"))
     table.add_row(
         "Overall Status",
         "[bold green]CONFORMANT[/bold green]" if report.is_valid else "[bold red]NON-CONFORMANT[/bold red]",
     )
     table.add_row("Discovered Skills", ", ".join(report.skills) if report.skills else "None")
-    table.add_row("Configured MCP Servers", ", ".join(report.mcp_servers) if report.mcp_servers else "None")
     table.add_row("Lifecycle Hooks", ", ".join(report.hooks) if report.hooks else "None")
-    table.add_row("Client Extensions", ", ".join(report.extensions) if report.extensions else "None")
 
     console.print(table)
 
@@ -283,7 +281,7 @@ def plugin_validate(
             console.print(f"  [red]✗[/red] {err}")
         raise typer.Exit(code=1)
 
-    console.print("\n[bold green]Success![/bold green] Plugin strictly satisfies agent-plugins.org v1.0.0.")
+    console.print("\n[bold green]Success![/bold green] Agent Skills package strictly satisfies agentskills.io.")
 
 
 @plugin_app.command("info")
@@ -293,7 +291,7 @@ def plugin_info(
         help="Path to plugin directory (defaults to assets/plugin_reference or bundled).",
     ),
 ):
-    """Display metadata and configuration for the Eidos Agent Plugin."""
+    """Display metadata and configuration for the Eidos Agent Skills package."""
     target_dir = plugin_path
     if target_dir is None:
         try:
@@ -302,23 +300,15 @@ def plugin_info(
             target_dir = Path("assets/plugin_reference")
 
     report = validate_plugin_package(target_dir)
-    manifest_file = target_dir / "plugin.json"
-    manifest_data = {}
-    if manifest_file.exists():
-        manifest_data = orjson.loads(manifest_file.read_bytes())
 
     grid = Table.grid(padding=(0, 2))
     grid.add_column(style="bold cyan", justify="right")
     grid.add_column(style="white")
 
-    grid.add_row("Plugin Identifier:", f"[bold green]{manifest_data.get('name')}[/bold green]")
-    grid.add_row("Version:", str(manifest_data.get("version")))
-    grid.add_row("Description:", str(manifest_data.get("description")))
-    grid.add_row("License:", str(manifest_data.get("license")))
-    grid.add_row("Specification:", "agent-plugins.org v1.0.0")
+    grid.add_row("Package Identifier:", f"[bold green]{report.plugin_name or 'eidos'}[/bold green]")
+    grid.add_row("Version:", str(report.plugin_version or get_bundled_plugin_version()))
+    grid.add_row("Specification:", "agentskills.io")
     grid.add_row("Skills:", ", ".join(report.skills) or "None")
-    grid.add_row("MCP Servers:", ", ".join(report.mcp_servers) or "None")
     grid.add_row("Lifecycle Hooks:", ", ".join(report.hooks) or "None")
-    grid.add_row("Extensions:", ", ".join(report.extensions) or "None")
 
-    console.print(Panel(grid, title="[bold blue]Eidos Agent Plugin Manifest[/bold blue]", expand=False))
+    console.print(Panel(grid, title="[bold blue]Eidos Agent Skills Package[/bold blue]", expand=False))

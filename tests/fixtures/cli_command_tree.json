@@ -326,7 +326,7 @@
         "kind": "TyperOption",
         "required": false,
         "default": "None",
-        "help": "Target source code file path(s) to slice context for.",
+        "help": "Target source file path(s), comma-separated paths, or quoted glob patterns (e.g. 'apps/*/Dockerfile').",
         "panel": null,
         "envvar": "None",
         "type": "STRING"
@@ -2034,7 +2034,7 @@
     "path": [
       "plugin"
     ],
-    "help": "Manage, install, and validate Eidos agent plugins (agent-plugins.org v1.0.0).",
+    "help": "Manage, install, and validate Eidos Agent Skills and lifecycle hooks (agentskills.io).",
     "hidden": false,
     "panel": "Agent Ecosystem & Plugins",
     "params": []
@@ -2045,7 +2045,7 @@
       "plugin",
       "install"
     ],
-    "help": "Install the Eidos agent plugin strictly inside project scope (.agents/plugins/eidos, agent-plugins.org v1.0.0).",
+    "help": "Install Eidos Agent Skills and optional Stop hooks in project scope.",
     "hidden": false,
     "panel": null,
     "params": [
@@ -2117,7 +2117,7 @@
         "kind": "TyperOption",
         "required": false,
         "default": "False",
-        "help": "Install native Stop lifecycle hook for hook-capable targets (antigravity, claude, cursor, codex, copilot).",
+        "help": "Install native Stop lifecycle hook for hook-capable targets (antigravity, claude, cursor, cline, codex, copilot).",
         "panel": null,
         "envvar": "None",
         "type": "BOOL"
@@ -2253,7 +2253,7 @@
       "plugin",
       "validate"
     ],
-    "help": "Validate an Agent Plugin against agent-plugins.org v1.0.0 and agentskills.io specifications.",
+    "help": "Validate bundled or project Agent Skills and lifecycle hooks (agentskills.io).",
     "hidden": false,
     "panel": null,
     "params": [
@@ -2279,7 +2279,7 @@
       "plugin",
       "info"
     ],
-    "help": "Display metadata and configuration for the Eidos Agent Plugin.",
+    "help": "Display metadata and configuration for the Eidos Agent Skills package.",
     "hidden": false,
     "panel": null,
     "params": [

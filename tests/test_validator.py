@@ -1922,7 +1922,6 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
 
     from eidos.core.spec.parser import extract_frontmatter
     from eidos.core.workspace.assets import (
-        get_agent_plugins_schemas_dir,
         get_assets_path,
         get_plugin_reference_dir,
         get_schemas_dir,
@@ -1955,7 +1954,6 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
     assert is_generated_or_vendored(Path.cwd(), ["src/eidos/core/spec/validator.py"]) == set()
     assert get_schemas_dir().is_dir()
     assert get_v1_schemas_dir().is_dir()
-    assert get_agent_plugins_schemas_dir().is_dir()
     assert get_plugin_reference_dir().is_dir()
     with pytest.raises(FileNotFoundError):
         get_assets_path("nonexistent_asset_subpath_999")
@@ -2176,7 +2174,6 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
     # plus design/system inheritance path and planned status
     from eidos.core.spec.validator import is_entity_id
     from eidos.core.workspace.assets import (
-        get_agent_plugins_schemas_dir,
         get_plugin_reference_dir,
         get_schemas_dir,
         get_v1_schemas_dir,
@@ -2185,7 +2182,6 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
     assert is_entity_id(123) is False  # type: ignore[arg-type]
     assert get_schemas_dir().is_dir()
     assert get_v1_schemas_dir().is_dir()
-    assert get_agent_plugins_schemas_dir().is_dir()
     assert get_plugin_reference_dir().is_dir()
 
     uic_dir = eidos_dir / "design" / "systems" / "clean" / "components"
@@ -3896,7 +3892,7 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
     from eidos.core.spec.validator import ValidationReport
     from eidos.plugin.installer import (
         MANIFEST_FILENAME,
-        _copy_plugin_tree,
+        _copy_skills_flat,
         _uninstall_from_manifest,
         locate_plugin_bundle,
     )
@@ -4283,15 +4279,13 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
     )
     assert scoped == ["src/a.py"]
 
-    # Plugin installer helper edge cases (_copy_plugin_tree, _uninstall_from_manifest)
+    # Plugin installer helper edge cases (_copy_skills_flat, _uninstall_from_manifest)
     bundle_dir = locate_plugin_bundle()
     plug_dest = tmp_path / "plug_edge_dest"
-    _copy_plugin_tree(bundle_dir, plug_dest, force=False)
-    (plug_dest / "plugin.json").write_bytes(b'{"name": "eidos", "version": "0.0.1"}')
-    (plug_dest / "hooks.json").write_text('{"hooks": "eidos"}', encoding="utf-8")
-    copied_again = _copy_plugin_tree(bundle_dir, plug_dest, force=False)
-    assert (plug_dest / "plugin.json") in copied_again
-    assert (plug_dest / "hooks.json") in copied_again
+    _copy_skills_flat(bundle_dir, plug_dest, force=False)
+    (plug_dest / "eidos" / "SKILL.md").write_text("# modified eidos skill\n", encoding="utf-8")
+    copied_again = _copy_skills_flat(bundle_dir, plug_dest, force=True)
+    assert (plug_dest / "eidos" / "SKILL.md") in copied_again
 
     uninst_dir = tmp_path / "uninst_edge_dir"
     (uninst_dir / "sub_empty").mkdir(parents=True)

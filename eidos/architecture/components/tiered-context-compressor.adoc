@@ -5,6 +5,17 @@ title: TieredContextCompressor
 container: CNT-EIDOS-INDEX
 status: active
 source_path: src/eidos/core/index/context.py
+decisions:
+  - id: DEC-CONTEXT-GLOB-AND-GUARDRAIL-RETENTION
+    title: "Deterministic --file Glob Expansion and Stage 1a Primary DEC-* Compaction Before 1-Hop Guardrail Eviction"
+    decision: "Expand '--file' glob metacharacters ('*', '?', '[') deterministically in build_tiered_context_slice across existing workspace files and planned paths under existing directories or indexed source_path prefixes, and compact tail primary-component DEC-* narratives to 1-line summaries in Stage 1a before evicting 1-hop capability INV-* or POL-* guardrails."
+    rationale: "Allows 'eidos context -f \"apps/*/Dockerfile\"' to resolve every owning container in sub-5ms even before planned files exist on disk, while preventing DEC-*-heavy containers (e.g. CNT-EIDOS-PLUGIN) from evicting capability invariants such as INV-PLUGIN-SKILL-SIZE-CEILING and INV-PLUGIN-SKILL-CLI-PARITY."
+    rejected_alternatives:
+      - option: "Require agents to run shell find/ls before eidos context -f"
+        reason_rejected: "Violates CLI-first discovery (eidos/SKILL.md §2.1) and fails on not-yet-created files in proposed SpecDeltas."
+      - option: "Require separate eidos context -c <CAP-ID> calls instead of compacting primary DEC-* prose in Stage 1a"
+        reason_rejected: "Evicting 1-hop invariants while leaving multi-paragraph primary DEC-* narratives uncompressed violates INV-CONTEXT-TOKEN-COMPRESSION's prose-before-guardrails contract."
+    graduated_from: DLT-2026-129-ENFORCE-IMPLEMENTATION-B428
 ---
 = Component: TieredContextCompressor
 :toc: left
@@ -13,15 +24,15 @@ source_path: src/eidos/core/index/context.py
 Extracts rank-ordered, token-budgeted architectural subgraph slices (`ArchitecturalContextSlice`) across `anchor` (`<=300` tokens), `guardrails` (`<=1000` tokens), and `deep` (`<=2500` tokens) tiers in both Markdown and `orjson` JSON formats for AI coding agents.
 
 == Key Responsibilities & Collaborators
-* **Multi-Entry Context Slicing**: Resolves context queries by file path (`--file`), entity ID (`--component`), or natural-language task (`--task`) using `CMP-FTS-QUERY-ENGINE` and `CMP-GRAPH-TRAVERSAL-ENGINE`, expanding matched containers, standalone components, capabilities, contracts, invariants, policies, personas, and design entities (`CLT-*`, `UIC-*`, `SCR-*`, `FLOW-*`), and projecting compact `domain_path`, bound `design` (`CLT-*`/`DS-*`) pointers, capability `file_path`/`personas`/`policies`/`experience`, and policy `category`/`file_path` in `guardrails` and `deep` tiers.
-* **Calibrated Token Budgeting & Two-Stage Eviction**: Estimates tokens using structure-aware calibration (`~3.0` chars/token for code/YAML/JSON vs. `~4.0` chars/token for prose) and applies two-stage progressive compression (`_compact_prose` first, then `_compact_metadata` if still over budget) *before* evicting 1-hop neighbors or tail matches.
+* **Multi-Entry & Glob Context Slicing (`DEC-CONTEXT-GLOB-AND-GUARDRAIL-RETENTION`)**: Resolves context queries by file path, comma-separated file list, or quoted glob pattern (`--file`, expanding `*`, `?`, `[` across existing workspace files and planned paths under existing directories or `fnmatch`-matched `symbol_mappings` prefixes), entity ID (`--component`), or natural-language task (`--task`) using `CMP-FTS-QUERY-ENGINE` and `CMP-GRAPH-TRAVERSAL-ENGINE`, expanding matched containers, standalone components, capabilities, contracts, invariants, policies, personas, and design entities (`CLT-*`, `UIC-*`, `SCR-*`, `FLOW-*`), and projecting compact `domain_path`, bound `design` (`CLT-*`/`DS-*`) pointers, capability `file_path`/`personas`/`policies`/`experience`, and policy `category`/`file_path` in `guardrails` and `deep` tiers.
+* **Calibrated Token Budgeting & Guardrail-Preserving Compaction (`DEC-CONTEXT-GLOB-AND-GUARDRAIL-RETENTION`)**: Estimates tokens using structure-aware calibration (`~3.0` chars/token for code/YAML/JSON vs. `~4.0` chars/token for prose), ranks capability `INV-*` guardrails by lexical overlap with queried file/component tokens, and applies progressive Stage 1a prose compression (`_compact_prose` followed by `_compact_primary_decisions` tail `DEC-*` compaction, deferring `_compact_metadata` to Stage 3) *before* evicting 1-hop capability `INV-*` or `POL-*` guardrails while retaining compact primary `DEC-*` summaries.
 
 == Public Surface
 * `ArchitecturalContextSlice`, `TieredContextSlice`
-* `build_tiered_context_slice(index: ArchitecturalIndex, files: list[str] | None, component: str | None, task: str | None, tier: str = "guardrails", use_semantic: bool = True) -> ArchitecturalContextSlice`
+* `build_tiered_context_slice(index: ArchitecturalIndex, files: list[str] | str | None = None, component: str | None = None, task: str | None = None, tier: str = "guardrails", use_semantic: bool = True) -> TieredContextSlice`
 * `get_context_slice(...) -> ArchitecturalContextSlice`
 * `collect_component_decisions(comp: dict) -> list[dict]`, `format_decisions_markdown(...) -> list[str]`
 
 == Design Constraints & Operational Notes
-* **Honest Empty Slices**: Returns an empty `ArchitecturalContextSlice` when an explicit query matches zero entities rather than injecting unrelated alphabetical fallback specs.
+* **Honest Empty Slices**: Returns an empty `ArchitecturalContextSlice` when an explicit file, glob, component, or task query matches zero entities rather than injecting unrelated alphabetical fallback specs.
 * **Direct-Over-1-Hop Container Prioritization & Hybrid Provenance (`DEC-INDEX-HYBRID-SEMANTIC-RRF`)**: Separates directly matched containers/components (`direct_cnt_ids`) from 1-hop domain/design-system expansions (`expanded_cnt_ids`) so 1-hop expansions never crowd out direct FTS/Hybrid container hits or survive `_enforce_token_budget` ahead of direct matches, and records `"Hybrid task match"` / `"Semantic task match"` provenance in `matched_reasons`.
