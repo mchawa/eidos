@@ -18,6 +18,8 @@ tombstone:
     - "get_agent_plugins_schemas_dir"
     - "_make_project_adapter"
     - "_copy_plugin_tree"
+    - "_remove_skills_flat"
+    - "_cleanup_legacy_claude_plugin_keys"
     - "plugin.json"
   allowed_reasons:
     - path: "CHANGELOG.md"
@@ -31,7 +33,7 @@ tombstone:
 mutations:
   - operation: modify
     target: CMP-PLUGIN-INSTALLER
-    details: "Update src/eidos/plugin/installer.py, src/eidos/plugin/version.py, and eidos/architecture/components/plugin-installer.adoc so all 7 cross-agent harnesses (antigravity, cursor, copilot, codex, cline, kilocode, open-code) install skills into .agents/skills/<skill>/SKILL.md (tracked in .agents/.eidos-manifest.json) via _make_agents_skills_adapter without projecting .agents/plugins/eidos/ or plugin.json, wire Antigravity's opt-in --hooks Stop hook to .agents/hooks.json (eidos-drift-gate.Stop via _antigravity_configure_hooks / _update_project_antigravity_hooks / _remove_project_antigravity_hooks) with 'hooks.json' in SHARED_USER_FILES, update locate_plugin_bundle() to check (ref_dir / 'skills').is_dir(), remove _make_project_adapter, _copy_plugin_tree, and _rewrite_hook_command_for_target_root, and derive get_bundled_plugin_version() directly from normalize_to_semver(eidos.__version__) while resolving installed manifests across .agents/.eidos-manifest.json, .claude/.eidos-manifest.json, and .aider/.eidos-manifest.json."
+    details: "Update src/eidos/plugin/installer.py, src/eidos/plugin/version.py, and eidos/architecture/components/plugin-installer.adoc so all 7 cross-agent harnesses (antigravity, cursor, copilot, codex, cline, kilocode, open-code) install skills into .agents/skills/<skill>/SKILL.md (tracked in .agents/.eidos-manifest.json) via _make_agents_skills_adapter without projecting .agents/plugins/eidos/ or plugin.json, wire Antigravity's opt-in --hooks Stop hook to .agents/hooks.json (eidos-drift-gate.Stop via _antigravity_configure_hooks / _update_project_antigravity_hooks / _remove_project_antigravity_hooks) with 'hooks.json' in SHARED_USER_FILES, update locate_plugin_bundle() to check (ref_dir / 'skills').is_dir(), remove _make_project_adapter, _copy_plugin_tree, _rewrite_hook_command_for_target_root, _remove_skills_flat, _cleanup_legacy_claude_plugin_keys, extra_cleanup_files, and pre_manifest_hook so uninstallation relies strictly on .eidos-manifest.json and extra_uninstall_hook, and derive get_bundled_plugin_version() directly from normalize_to_semver(eidos.__version__) while resolving installed manifests across .agents/.eidos-manifest.json, .claude/.eidos-manifest.json, and .aider/.eidos-manifest.json."
     expect:
       frontmatter:
         source_path:
@@ -251,11 +253,11 @@ Eidos previously split its 9 supported AI coding harnesses across two distinct p
      - `cline`: `.clinerules/hooks/TaskComplete` (executable `0o755` script).
      - `copilot`: `.github/hooks/hooks.json` (`version: 1`, `hooks.agentStop`).
      - `codex`: `.codex/hooks.json` (`hooks.Stop`).
-  3. **Retire `.agents/plugins/eidos/` Projection & Version Fallbacks**:
+  3. **Retire `.agents/plugins/eidos/` Projection, Legacy Uninstallation Fallbacks & Version Fallbacks**:
      - Update `locate_plugin_bundle()` in `src/eidos/plugin/installer.py` to check `(ref_dir / "skills").is_dir()` instead of `(ref_dir / "plugin.json").exists()`.
-     - Remove `_make_project_adapter`, `_copy_plugin_tree`, `_rewrite_hook_command_for_target_root`, and legacy `.claude/plugins/eidos` cleanup from `src/eidos/plugin/installer.py`.
+     - Remove `_make_project_adapter`, `_copy_plugin_tree`, `_rewrite_hook_command_for_target_root`, `_remove_skills_flat`, `_cleanup_legacy_claude_plugin_keys`, `extra_cleanup_files`, and `pre_manifest_hook` from `src/eidos/plugin/installer.py` so `TargetAdapter.uninstall()` relies strictly on `.eidos-manifest.json` (`_uninstall_from_manifest`), `extra_uninstall_hook` (for native `Stop` hook cleanup), and `_prune_empty_dirs_list`.
      - Update `get_bundled_plugin_version()` in `src/eidos/plugin/version.py` to return `normalize_to_semver(__version__)` directly without reading `plugin.json`.
-     - Update `_resolve_installed_plugin_manifest()` and `check_plugin_version_status()` in `src/eidos/plugin/version.py` to resolve installed state strictly from `.agents/.eidos-manifest.json`, `.claude/.eidos-manifest.json`, and `.aider/.eidos-manifest.json`.
+     - Update `_resolve_installed_plugin_manifest()` and `check_plugin_version_status()` in `src/eidos/plugin/version.py` to resolve installed state strictly from `.agents/.eidos-manifest.json`, `.claude/.eidos-manifest.json`, and `.aider/.eidos-manifest.json` (plus symlinked `.agents/skills` in Eidos's own repository).
 * **Remove `plugin.json` and `assets/schemas/agent_plugins/` & Validate Bundled Skills Directly (`CMP-ASSET-LOCATOR`, `CMP-PLUGIN-VALIDATOR`, `CMP-HOOK-MANAGER`, `CMP-CLI-PLUGIN-COMMANDS`, `CMP-CLI-APP`)**:
   - Delete `assets/plugin_reference/plugin.json` and `assets/schemas/agent_plugins/` (`plugin.schema.json`, `mcp.schema.json`).
   - Remove `get_agent_plugins_schemas_dir()` from `src/eidos/core/workspace/assets.py`.
@@ -273,7 +275,7 @@ Eidos previously split its 9 supported AI coding harnesses across two distinct p
 2. **Unify Skill Adapters & Antigravity Hook Wiring (`src/eidos/plugin/installer.py`, `src/eidos/plugin/version.py`)**:
    * Configure `ANTIGRAVITY`, `CURSOR`, `COPILOT`, and `CODEX` in `TARGET_ADAPTERS` via `_make_agents_skills_adapter` targeting `.agents/skills/` (with `configure_hooks` set to `_antigravity_configure_hooks`, `_cursor_configure_hooks`, `_copilot_configure_hooks`, and `_codex_configure_hooks` respectively, and `extra_uninstall_hook` cleaning up each target's hook entry).
    * Implement `_antigravity_configure_hooks`, `_update_project_antigravity_hooks`, and `_remove_project_antigravity_hooks` for `.agents/hooks.json` (`eidos-drift-gate.Stop`), add `"hooks.json"` to `SHARED_USER_FILES`, and update `TARGET_HOOK_PATHS["antigravity"]` in `src/eidos/plugin/installer.py` to `".agents/hooks.json"`.
-   * Update `locate_plugin_bundle()` to check `(ref_dir / "skills").is_dir()`, and remove `_make_project_adapter`, `_copy_plugin_tree`, `_rewrite_hook_command_for_target_root`, and legacy `.claude/plugins/eidos` cleanup from `src/eidos/plugin/installer.py`.
+   * Update `locate_plugin_bundle()` to check `(ref_dir / "skills").is_dir()`, and remove `_make_project_adapter`, `_copy_plugin_tree`, `_rewrite_hook_command_for_target_root`, `_remove_skills_flat`, `_cleanup_legacy_claude_plugin_keys`, `extra_cleanup_files`, and `pre_manifest_hook` from `src/eidos/plugin/installer.py`.
    * Update `get_bundled_plugin_version()`, `_resolve_installed_plugin_manifest()`, and `check_plugin_version_status()` in `src/eidos/plugin/version.py` to operate solely on `normalize_to_semver(__version__)` and `.eidos-manifest.json` files under `.agents/`, `.claude/`, and `.aider/`.
 3. **Update Skill Package Validator & CLI Commands (`src/eidos/plugin/validator.py`, `src/eidos/cli/plugin_commands.py`, `src/eidos/cli/main.py`)**:
    * Update `validate_plugin_package()` in `src/eidos/plugin/validator.py` to validate `skills/*/SKILL.md` frontmatter, `hooks.json`, and SemVer version string without `plugin.json` or `plugin.schema.json`.

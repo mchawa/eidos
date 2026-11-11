@@ -81,6 +81,19 @@ def test_plugin_install_to_project_scope(tmp_path):
     assert not (tmp_path / ".cursor").exists()
     assert not (tmp_path / ".claude").exists()
 
+    # Verify non-destructive merge and uninstall preservation on .agents/hooks.json
+    hooks_file = agent_dir / "hooks.json"
+    hooks_file.write_bytes(orjson.dumps({"custom-gate": {"Stop": [{"type": "command", "command": "echo hi"}]}}))
+    install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=tmp_path, force=True, hooks=True)
+    merged_hooks = orjson.loads(hooks_file.read_bytes())
+    assert "custom-gate" in merged_hooks
+    assert "eidos-drift-gate" in merged_hooks
+
+    uninstall_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=tmp_path)
+    assert hooks_file.is_file()
+    remaining_hooks = orjson.loads(hooks_file.read_bytes())
+    assert remaining_hooks == {"custom-gate": {"Stop": [{"type": "command", "command": "echo hi"}]}}
+
 
 def test_cli_plugin_validate():
     """Verify 'eidos plugin validate' CLI command."""
