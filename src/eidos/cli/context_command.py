@@ -79,7 +79,7 @@ def context_cmd(
         if json_output:
             typer.echo(orjson.dumps({"error": f"Directory '{eidos_dir}' not found."}).decode("utf-8"))
         else:
-            console.print(f"[bold red]Error:[/bold red] Directory '{eidos_dir}' not found.")
+            console.print(f"[bold red]Error:[/bold red] Directory '{eidos_dir}' not found.", soft_wrap=True)
         raise typer.Exit(code=1)
 
     resolved_eidos = eidos_dir.resolve()

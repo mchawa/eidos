@@ -115,12 +115,25 @@ def test_context_slice_by_file(tmp_path, monkeypatch):
 
     # CLI comma-separated globs, subdirectory rebasing, and missing --path error handling
     repo_root = Path(__file__).resolve().parent.parent
-    res_missing_json = runner.invoke(app, ["context", "--path", str(tmp_path / "no_eidos_here"), "--json"])
+    missing_dir = tmp_path / "no_eidos_here"
+    res_missing_json = runner.invoke(app, ["context", "--path", str(missing_dir), "--json"])
     assert res_missing_json.exit_code == 1
     assert "not found" in orjson.loads(res_missing_json.output)["error"]
-    res_missing_txt = runner.invoke(app, ["context", "--path", str(tmp_path / "no_eidos_here")])
+    res_missing_txt = runner.invoke(app, ["context", "--path", str(missing_dir)])
     assert res_missing_txt.exit_code == 1
-    assert "not found" in res_missing_txt.output
+    assert str(missing_dir) in res_missing_txt.output
+    assert "not found." in res_missing_txt.output
+    assert "\n" not in res_missing_txt.output.strip()
+
+    # Regression: 72-char (CI 'runner' boundary) and >100-char missing paths must not hard-wrap at 80 columns
+    ci_boundary_path = Path("/tmp/" + ("x" * 67))  # 72 chars -> 74 chars quoted ('...' + ' not' == 78 cols)
+    very_long_path = tmp_path / ("missing_" + ("y" * 100))
+    for missing_p in (ci_boundary_path, very_long_path):
+        res_wrap = runner.invoke(app, ["context", "--path", str(missing_p)], env={"COLUMNS": "80"})
+        assert res_wrap.exit_code == 1
+        assert str(missing_p) in res_wrap.output
+        assert "not found." in res_wrap.output
+        assert "\n" not in res_wrap.output.strip()
 
     monkeypatch.chdir(repo_root / "src" / "eidos" / "cli")
     res_sub_repo_glob = runner.invoke(
