@@ -15,9 +15,9 @@ source_path:
 Scaffolds minimal, schema-valid draft blueprints across all 15 living specification types, introspects v1 JSON Schemas (`get_spec_schema_info`), resolves catalog entities, and performs reference-safe specification deletion.
 
 == Key Responsibilities & Collaborators
-* **Blueprint Scaffolding**: Generates schema-valid `.adoc` blueprints (`create_spec`) using `CMP-ASSET-LOCATOR` templates (`*.template.adoc`) and `CMP-DESIGN-ENGINE` for `design/*` specs while auto-resolving parent domain/container references from the live catalog.
+* **Generic Catalog-Aware Blueprint Scaffolding**: Generates schema-valid `.adoc` blueprints (`create_spec`) using `CMP-ASSET-LOCATOR` templates (`*.template.adoc`) and `CMP-DESIGN-ENGINE` for `design/*` specs while resolving parent domain/container/persona/design-system references strictly from live catalog entities (or omitting optional reference fields rather than injecting nonexistent placeholder IDs).
 * **Dynamic Schema Introspection**: Flattens v1 JSON Schemas and `$defs` (`get_spec_schema_info`) to synthesize required/optional key metadata and valid YAML frontmatter examples for `eidos spec schema`.
-* **Catalog Lookup & Safe Deletion**: Queries `CMP-GRAPH-STORAGE` (`get_spec_catalog`, `list_specs`) and checks incoming references (`find_references_to_spec`) before deleting a specification (`delete_spec`).
+* **Quote-Safe YAML Scalar Updates & Ambiguity-Checked Lookup**: Updates top-level YAML scalars via structure-aware `_set_frontmatter_scalar` without corrupting multiline quoted or block scalars, and resolves entities via `find_spec_by_id_or_path` (supporting `include_archived`, rejecting bare `DLT-YYYY` year-only prefixes, and raising explicit `ValueError` diagnostics when a prefix matches multiple colliding candidates) before deleting specifications (`delete_spec`).
 
 == Public Surface
 * `create_spec(eidos_dir: Path, doc_type_key: str, raw_id: str, title: str) -> Path`

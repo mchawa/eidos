@@ -19,7 +19,7 @@ properties:
     pattern: "^SYS-[A-Z0-9_-]+$"
     description: "Unique system identifier following the SYS-<NAME> convention (e.g. SYS-EIDOS-001)."
   title:
-    type: string
+    $ref: "#/$defs/non_empty_string"
     description: "Full human-readable display title of the software product or platform."
   status:
     $ref: "#/$defs/lifecycle_status"

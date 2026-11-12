@@ -10,15 +10,15 @@ source_path: src/eidos/cli/delta_commands.py
 :toc: left
 
 == Responsibility
-Implements the `eidos delta` subcommand group (`status`, `list`, `create`, `verify`, `audit`, `apply`, `delete`, `archive`, `changelog`) for managing the SpecDelta (`DLT-*`) architectural mutation lifecycle.
+Implements the `eidos delta` subcommand group (`status`, `list`, `show`, `create`, `verify`, `audit`, `apply`, `delete`, `archive`, `changelog`) for managing and inspecting the SpecDelta (`DLT-*`) architectural mutation lifecycle.
 
 == Key Responsibilities & Collaborators
-* **SpecDelta Lifecycle Orchestration**: Routes `--path` discovery across all `eidos delta` subcommands through `resolve_cli_eidos_dir(path)` (`CMP-CLI-APP`) for consistent monorepo sub-project discovery, and delegates blueprint creation, status transitions, mutation verification, in-place application, deletion, and two-tier archive slimming to `CMP-DELTA-ENGINE`.
+* **SpecDelta Inspection & Lifecycle Orchestration**: Routes `--path` discovery across all `eidos delta` subcommands through `resolve_cli_eidos_dir(path)` (`CMP-CLI-APP`), exposes `delta_show_cmd` (`eidos delta show`) to inspect active (`eidos/deltas/`) and archived (`eidos/deltas/archive/`) SpecDeltas in Rich or `--json` format while preserving the disjoint `spec`/`delta` boundary, and delegates blueprint creation, status transitions, mutation verification, in-place application, deletion, and two-tier archive slimming to `CMP-DELTA-ENGINE`.
 * **Deletion Auditing & Changelog Generation**: Delegates reverse-dependency leak auditing (`eidos delta audit`) to `CMP-DELTA-AUDITOR` and Keep a Changelog generation (`eidos delta changelog`) to `CMP-CHANGELOG-GENERATOR`.
 
 == Public Surface
 * `delta_app: typer.Typer`
-* `delta_status_cmd(...)`, `delta_list_cmd(...)`, `delta_create_cmd(...)`, `delta_verify_cmd(...)`, `delta_audit_cmd(...)`, `delta_apply_cmd(...)`, `delta_delete_cmd(...)`, `delta_archive_cmd(...)`, `delta_changelog_cmd(...)`
+* `delta_status_cmd(...)`, `delta_list_cmd(...)`, `delta_show_cmd(...)`, `delta_create_cmd(...)`, `delta_verify_cmd(...)`, `delta_audit_cmd(...)`, `delta_apply_cmd(...)`, `delta_delete_cmd(...)`, `delta_archive_cmd(...)`, `delta_changelog_cmd(...)`
 
 == Design Constraints & Operational Notes
 * **Verify-Gated Application**: `eidos delta apply` runs post-condition verification by default (`--verify/--no-verify`) and exits with code `1` if any declared mutation is unverified.

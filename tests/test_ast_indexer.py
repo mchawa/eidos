@@ -159,6 +159,194 @@ def test_inv_index_polyglot_symbol_precision():
     assert cpp_by_name["Build"].kind == "method"
     assert cpp_by_name["Build"].parent_symbol == "RenderGraph"
 
+    # 5. Interface/trait member signature structural diffs across TS, Go, Rust, Java, and C#
+    from eidos.core.index.ast_indexer import (
+        INV_OR_POL_TOKEN_RE,
+        boundary_symbol_map,
+        has_structural_changes,
+        public_symbol_map,
+    )
+
+    ts_iface_v1 = (
+        "export interface AuthService {\n"
+        "  (token: string): boolean;\n"
+        "  new (realm: string): AuthService;\n"
+        "  [key: string]: unknown;\n"
+        "  readonly realm: string;\n"
+        "  login(user: string, otp?: string): Promise<boolean>;\n"
+        "}\n"
+        "export declare function ambientVerify(token: string): boolean;\n"
+    )
+    ts_iface_v2 = ts_iface_v1.replace("Promise<boolean>", "Promise<string>")
+    assert has_structural_changes(ts_iface_v1, ts_iface_v2, "src/auth.ts")[0] is True
+    assert ("function", "", "ambientVerify") in public_symbol_map(ts_iface_v1, "src/auth.ts")
+    assert ("method", "AuthService", "login") in public_symbol_map(ts_iface_v1, "src/auth.ts")
+
+    go_iface_v1 = (
+        "package auth\n\n"
+        "type Authenticator interface {\n"
+        "    io.Closer\n"
+        "    Verify(token string) (bool, error)\n"
+        "}\n"
+    )
+    go_iface_v2 = go_iface_v1.replace("(bool, error)", "error")
+    assert has_structural_changes(go_iface_v1, go_iface_v2, "pkg/auth/iface.go")[0] is True
+    assert ("method", "Authenticator", "Verify") in public_symbol_map(go_iface_v1, "pkg/auth/iface.go")
+
+    rs_trait_v1 = (
+        "pub trait Authenticator {\n"
+        "    type Claims;\n"
+        "    fn verify(&self, token: &str) -> bool;\n"
+        "    fn realm(&self) -> &str { \"default\" }\n"
+        "}\n"
+        "pub struct JwtAuth;\n"
+        "impl Authenticator for JwtAuth {\n"
+        "    type Claims = String;\n"
+        "    fn verify(&self, token: &str) -> bool { !token.is_empty() }\n"
+        "}\n"
+        "trait InternalHook {\n"
+        "    fn on_tick(&self);\n"
+        "}\n"
+    )
+    rs_trait_v2 = rs_trait_v1.replace("token: &str", "token: &[u8]")
+    rs_pub_v1 = public_symbol_map(rs_trait_v1, "src/auth.rs")
+    assert has_structural_changes(rs_trait_v1, rs_trait_v2, "src/auth.rs")[0] is True
+    assert ("method", "Authenticator", "verify") in rs_pub_v1
+    assert ("method", "Authenticator", "realm") in rs_pub_v1
+    assert ("method", "JwtAuth", "verify") in rs_pub_v1
+    assert ("method", "InternalHook", "on_tick") not in rs_pub_v1
+
+    java_iface_v1 = (
+        "public interface Authenticator {\n"
+        "    boolean verify(String token);\n"
+        "    default String realm() { return \"main\"; }\n"
+        "}\n"
+    )
+    java_iface_v2 = java_iface_v1.replace("boolean verify(String token);", "int verify(String token, boolean strict);")
+    assert has_structural_changes(java_iface_v1, java_iface_v2, "src/Authenticator.java")[0] is True
+
+    cs_iface_v1 = (
+        "public interface IAuthenticator {\n"
+        "    string Realm { get; }\n"
+        "    bool Verify(string token);\n"
+        "}\n"
+        "internal interface IInternalCheck {\n"
+        "    bool Ping();\n"
+        "}\n"
+    )
+    cs_iface_v2 = cs_iface_v1.replace("string Realm { get; }", "string Realm { get; set; }")
+    cs_pub_v1 = public_symbol_map(cs_iface_v1, "src/IAuthenticator.cs")
+    assert has_structural_changes(cs_iface_v1, cs_iface_v2, "src/IAuthenticator.cs")[0] is True
+    assert ("method", "IAuthenticator", "Verify") in cs_pub_v1
+    assert ("method", "IInternalCheck", "Ping") not in cs_pub_v1
+
+    # 6. Overload-safe public_symbol_map & boundary_symbol_map keys across TS, Java, C#, C++, and Kotlin
+    ts_overload_v1 = (
+        "export function parseInput(raw: string): number;\n"
+        "export function parseInput(raw: Uint8Array, encoding: string): number;\n"
+        "export function parseInput(raw: string | Uint8Array, encoding?: string): number {\n"
+        "  return typeof raw === 'string' ? raw.length : raw.byteLength;\n"
+        "}\n"
+    )
+    ts_overload_body_edit = ts_overload_v1.replace("raw.byteLength", "raw.byteLength + 0")
+    ts_overload_sig_edit = ts_overload_v1.replace("encoding: string", "encoding: BufferEncoding")
+    ts_ov_map = public_symbol_map(ts_overload_v1, "src/parser.ts")
+    assert ("function", "", "parseInput") in ts_ov_map
+    assert sum(1 for k in ts_ov_map if k[0] == "function" and k[2].startswith("parseInput")) == 2
+    assert has_structural_changes(ts_overload_v1, ts_overload_body_edit, "src/parser.ts")[0] is False
+    assert has_structural_changes(ts_overload_v1, ts_overload_sig_edit, "src/parser.ts")[0] is True
+
+    java_ov_v1 = (
+        "public class Codec {\n"
+        "    public String encode(String s) { return s; }\n"
+        "    public String encode(byte[] b, int offset) { return \"\"; }\n"
+        "}\n"
+    )
+    java_ov_v2 = java_ov_v1.replace("String encode(String s)", "String encode(CharSequence s)")
+    assert len([k for k in public_symbol_map(java_ov_v1, "src/Codec.java") if k[2].startswith("encode")]) == 2
+    assert has_structural_changes(java_ov_v1, java_ov_v2, "src/Codec.java")[0] is True
+
+    cs_ov_v1 = (
+        "public class Codec {\n"
+        "    public string Encode(string s) { return s; }\n"
+        "    public string Encode(byte[] b, int offset) { return \"\"; }\n"
+        "}\n"
+    )
+    cs_ov_v2 = cs_ov_v1.replace("Encode(string s)", "Encode(ReadOnlySpan<char> s)")
+    assert len([k for k in public_symbol_map(cs_ov_v1, "src/Codec.cs") if k[2].startswith("Encode")]) == 2
+    assert has_structural_changes(cs_ov_v1, cs_ov_v2, "src/Codec.cs")[0] is True
+
+    cpp_ov_v1 = (
+        "class Codec {\n"
+        "public:\n"
+        "    int decode(const char* buf) { return 0; }\n"
+        "    int decode(const char* buf, int len) { return len; }\n"
+        "};\n"
+    )
+    cpp_ov_v2 = cpp_ov_v1.replace("decode(const char* buf)", "decode(const unsigned char* buf)")
+    assert len([k for k in boundary_symbol_map(cpp_ov_v1, "include/codec.hpp") if k[2].startswith("decode")]) == 2
+    assert has_structural_changes(cpp_ov_v1, cpp_ov_v2, "include/codec.hpp")[0] is True
+
+    kt_ov_v1 = (
+        "class Codec {\n"
+        "    fun decode(raw: String): Int = raw.length\n"
+        "    fun decode(raw: ByteArray, offset: Int): Int = raw.size - offset\n"
+        "}\n"
+    )
+    kt_ov_v2 = kt_ov_v1.replace("raw: String", "raw: CharSequence")
+    assert len([k for k in public_symbol_map(kt_ov_v1, "src/Codec.kt") if k[2].startswith("decode")]) == 2
+    assert has_structural_changes(kt_ov_v1, kt_ov_v2, "src/Codec.kt")[0] is True
+
+    # 7. INV_OR_POL_TOKEN_RE exact identifier boundaries without over-matching lowercase suffixes
+    tok_prose_suffix = "Enforces " + "INV-" + "AUTH-001-compliant and " + "POL-" + "SEC-02-enforced."
+    tok_extended = "Covers " + "INV-" + "AUTH-1-EXTENDED and not prefix-INV-" + "BAD-01."
+    assert [m.group(1) for m in INV_OR_POL_TOKEN_RE.finditer(tok_prose_suffix)] == [
+        "INV-" + "AUTH-001",
+        "POL-" + "SEC-02",
+    ]
+    assert [m.group(1) for m in INV_OR_POL_TOKEN_RE.finditer(tok_extended)] == [
+        "INV-" + "AUTH-1-EXTENDED",
+    ]
+
+    # 8. Disabled test modifiers (.skip/.todo/.fixme/xit/xtest/Deno ignore) and describe() suite wrappers rejected
+    inv_tag = "INV-" + "TS-RUN-001"
+    ts_test_src = (
+        f"describe('auth suite {inv_tag}', () => {{\n"
+        f"  it.skip('skipped spec {inv_tag}', () => {{}});\n"
+        f"  test.todo('todo spec {inv_tag}');\n"
+        f"  test.fixme('fixme spec {inv_tag}', () => {{}});\n"
+        f"  xit('xit spec {inv_tag}', () => {{}});\n"
+        f"  xtest('xtest spec {inv_tag}', () => {{}});\n"
+        f"  describe.each([1, 2])('param suite %d {inv_tag}', () => {{}});\n"
+        f"  it('active login spec {inv_tag}', () => {{ expect(true).toBe(true); }});\n"
+        f"  test.each([1, 2])('table test %d {inv_tag}', () => {{ expect(1).toBe(1); }});\n"
+        "});\n"
+        f"Deno.test({{ name: 'ignored deno {inv_tag}', ignore: true, fn() {{}} }});\n"
+        f"Deno.test('active deno {inv_tag}', () => {{}});\n"
+    )
+    ts_test_fns = idx.list_test_functions("tests/auth.test.ts", ts_test_src)
+    assert set(ts_test_fns.keys()) == {
+        f"active login spec {inv_tag}",
+        f"table test %d {inv_tag}",
+        f"active deno {inv_tag}",
+    }
+
+    py_skip_src = (
+        "import pytest\n\n"
+        "@pytest.mark.skip(reason='disabled')\n"
+        f"def test_disabled_case():\n    # {inv_tag}\n    assert True\n\n"
+        f"def test_enabled_case():\n    # {inv_tag}\n    assert True\n"
+    )
+    assert set(idx.list_test_functions("tests/test_skip.py", py_skip_src).keys()) == {"test_enabled_case"}
+
+    rs_skip_src = (
+        "#[test]\n#[ignore]\n"
+        f"fn test_ignored_rust() {{ /* {inv_tag} */ }}\n\n"
+        "#[test]\n"
+        f"fn test_active_rust() {{ /* {inv_tag} */ }}\n"
+    )
+    assert set(idx.list_test_functions("tests/skip_test.rs", rs_skip_src).keys()) == {"test_active_rust"}
+
 
 def test_polyglot_kotlin_and_qualified_class_test_methods():
     """Verify Kotlin symbol/test extraction and Class::method test qualification without overwriting."""  # eidos:fixture
@@ -1477,5 +1665,53 @@ def test_all_ast_languages_and_corner_cases(tmp_path: Path) -> None:
     )
     assert "nsUtils" in ts_exp
     assert "DefaultWidget" in ts_exp
+
+    # 7. Overload param disambiguation with generics/escaped quotes, duplicate overload keys,
+    #    boundary re-exports, and block-comment eidos:fixture suppression
+    from eidos.core.index.ast_indexer import (
+        CodeSymbol,
+        _build_overload_safe_symbol_map,
+        _extract_overload_param_suffix,
+        boundary_symbol_map,
+        extract_test_file_cache_payload,
+        public_symbol_map,
+    )
+
+    assert (
+        _extract_overload_param_suffix('export function fmt<T>(sep: string = "\\"):"): string;', "fmt")
+        == '<T>(sep: string = "\\"):")'
+    )
+    assert _extract_overload_param_suffix("export const plainVal = 1;", "plainVal") == ""
+    dup_overloads = [
+        CodeSymbol(name="dup", kind="function", file_path="src/dup.rs", line_start=1, line_end=1, signature="fn dup(x: i32)"),
+        CodeSymbol(name="dup", kind="function", file_path="src/dup.rs", line_start=2, line_end=2, signature="fn dup(x: i32)"),
+        CodeSymbol(name="dup", kind="function", file_path="src/dup.rs", line_start=3, line_end=3, signature="fn dup(x: i32)"),
+    ]
+    dup_map = _build_overload_safe_symbol_map(dup_overloads)
+    assert ("function", "", "dup") in dup_map
+    assert ("function", "", "dup(x: i32)") in dup_map
+    assert ("function", "", "dup(x: i32)#2") in dup_map
+
+    assert public_symbol_map(None, "src/missing.py") == {}
+    assert boundary_symbol_map(None, "src/missing.py") == {}
+    rs_alias_reexp = boundary_symbol_map(
+        "pub use crate::core::Engine as PublicEngine;\npub use crate::sub::{Alpha, Beta as B};\n",
+        "src/lib.rs",
+    )
+    assert ("export", "", "PublicEngine") in rs_alias_reexp
+    assert ("export", "", "Alpha") in rs_alias_reexp
+    assert ("export", "", "B") in rs_alias_reexp
+
+    inv_p = "INV" + "-"
+    fix_fns, fix_file_toks, _, _ = extract_test_file_cache_payload(
+        "tests/fixture_block.test.ts",
+        "function testBlockFixture() {\n"
+        "  /* eidos:fixture */\n"
+        f"  // {inv_p}SYNTH-FIX-001\n"
+        "}\n",
+    )
+    assert fix_fns == {}
+    assert fix_file_toks == [f"{inv_p}SYNTH-FIX-001"]
+
 
 

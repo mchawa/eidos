@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import orjson
 import typer
@@ -15,10 +16,63 @@ from eidos.core.index.graph_index import get_architectural_index
 from eidos.core.spec.validator import SpecValidator
 from eidos.core.workspace.project import find_git_root, find_repo_root, resolve_spec_and_repo_roots
 from eidos.plugin.hooks import execute_hook
+from eidos.plugin.managed_block import is_managed_block_opted_out, read_managed_block
 from eidos.plugin.version import (
     check_cli_update_status,
     check_plugin_version_status,
 )
+
+
+def _check_onboarding_governance(plugin_root: Path) -> dict[str, Any]:
+    """Verify root AGENTS.md managed-block integrity when Agent Skills are installed."""
+    agents_path = plugin_root / "AGENTS.md"
+    onboarding_expected = any(
+        (plugin_root / sub / ".eidos-manifest.json").is_file()
+        or (plugin_root / sub / "skills" / "eidos" / "SKILL.md").is_file()
+        or (plugin_root / sub / "skills").is_symlink()
+        for sub in (".agents", ".claude", ".aider")
+    )
+
+    if not onboarding_expected:
+        agents_md_ok = True
+        agents_md_status = "not_installed"
+        detail = "No Agent Skills installed"
+    elif is_managed_block_opted_out(agents_path, "agents-md"):
+        agents_md_ok = True
+        agents_md_status = "opted_out"
+        detail = f"Opted out via <!-- eidos:agents-md off --> ({agents_path})"
+    elif not agents_path.is_file():
+        agents_md_ok = False
+        agents_md_status = "missing_file"
+        detail = f"Missing root AGENTS.md ({agents_path}); run 'eidos plugin install <target>' to restore"
+    else:
+        try:
+            block = read_managed_block(agents_path, "agents-md")
+        except (ValueError, OSError, UnicodeDecodeError) as exc:
+            agents_md_ok = False
+            agents_md_status = "malformed"
+            detail = f"Malformed AGENTS.md managed block: {exc}"
+        else:
+            if block is None or not block.inner.strip():
+                agents_md_ok = False
+                agents_md_status = "missing_block"
+                detail = (
+                    f"Missing or wiped Eidos managed block in {agents_path}; "
+                    "run 'eidos plugin install <target>' to restore"
+                )
+            else:
+                agents_md_ok = True
+                agents_md_status = "valid"
+                detail = f"Managed block intact ({agents_path})"
+
+    return {
+        "ok": agents_md_ok,
+        "status": agents_md_status,
+        "expected": onboarding_expected,
+        "path": str(agents_path),
+        "agents_md_ok": agents_md_ok,
+        "detail": detail,
+    }
 
 
 def doctor_cmd(
@@ -92,10 +146,12 @@ def doctor_cmd(
     hooks_status = str(plugin_status.get("hooks_status", "not_installed" if not plugin_installed else "disabled"))
     target_hooks = plugin_status.get("target_hooks", {})
     hook_errors = list(plugin_status.get("hook_errors", []))
+    skipped_files = list(plugin_status.get("skipped_files", []))
     agent_plugin_ok = not plugin_installed or (plugin_up_to_date and hooks_ok)
     agent_plugin_status = (
         "hook_error" if (plugin_installed and plugin_up_to_date and not hooks_ok) else plugin_status.get("status")
     )
+    agents_md_check = _check_onboarding_governance(plugin_root)
     cli_update = check_cli_update_status()
 
     checks = {
@@ -136,13 +192,22 @@ def doctor_cmd(
             "status": agent_plugin_status,
             "installed_version": plugin_status.get("installed_version"),
             "bundled_version": plugin_status.get("bundled_version"),
+            "skipped_files": skipped_files,
             "hooks_ok": hooks_ok,
             "hooks_status": hooks_status,
             "target_hooks": target_hooks,
             "hook_errors": hook_errors,
+            "agents_md_ok": agents_md_check["agents_md_ok"],
         },
+        "agents_md": agents_md_check,
     }
-    overall_ok = cli_ok and git_ok and (not specs_exist or (specs_valid and index_ok)) and checks["agent_plugin"]["ok"]
+    overall_ok = (
+        cli_ok
+        and git_ok
+        and (not specs_exist or (specs_valid and index_ok))
+        and checks["agent_plugin"]["ok"]
+        and checks["agents_md"]["ok"]
+    )
 
     if json_output:
         typer.echo(orjson.dumps({"healthy": overall_ok, "checks": checks}, option=orjson.OPT_INDENT_2).decode("utf-8"))
@@ -193,6 +258,8 @@ def doctor_cmd(
         )
         if not hooks_ok and hook_errors:
             plugin_details = f"{base_plugin_detail} — Hook error: {'; '.join(hook_errors)}"
+        elif plugin_status.get("status") == "modified":
+            plugin_details = f"{base_plugin_detail} — {plugin_status.get('status_text')}"
         else:
             plugin_details = f"{base_plugin_detail} (hooks: {hooks_status})"
     else:
@@ -211,6 +278,21 @@ def doctor_cmd(
         "Agent Plugin Status",
         plugin_badge,
         plugin_details,
+    )
+
+    if not agents_md_check["ok"]:
+        onboarding_badge = "[bold red]FAIL[/bold red]"
+    elif agents_md_check["status"] == "not_installed":
+        onboarding_badge = "[dim]NOT INSTALLED[/dim]"
+    elif agents_md_check["status"] == "opted_out":
+        onboarding_badge = "[dim]OPTED OUT[/dim]"
+    else:
+        onboarding_badge = "[bold green]PASS[/bold green]"
+
+    table.add_row(
+        "Onboarding Governance",
+        onboarding_badge,
+        str(agents_md_check["detail"]),
     )
 
     console.print(table)

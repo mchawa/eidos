@@ -233,10 +233,18 @@ def test_spec_deletion_safety_with_references(tmp_path):
 
 def test_delta_lifecycle_apply(tmp_path):
     """Verify SpecDelta transition in flat storage with in-place status update (CTR-EIDOS-CLI, CAP-AGENT-001)."""
+    create_spec(tmp_path, "policy", "POL-RATE-001", "Rate Limiter Policy")
     dlt_file = create_delta(
         eidos_dir=tmp_path,
         raw_id="DLT-2026-100",
         title="Rate Limiter",
+    )
+    dlt_file.write_text(
+        dlt_file.read_text(encoding="utf-8").replace(
+            "mutations: []",
+            "mutations:\n  - operation: add\n    target: POL-RATE-001\n",
+        ),
+        encoding="utf-8",
     )
     assert dlt_file.exists()
     assert dlt_file.name.startswith("dlt-2026-100-rate-limiter-")
@@ -356,7 +364,17 @@ def test_cli_delta_commands(tmp_path):
     assert "SpecDelta Lifecycle Status Dashboard" in res_status.stdout
     assert "DLT-2026-555" in res_status.stdout
 
-    # 4. Apply delta
+    # 4. Apply delta (after declaring and fulfilling at least one mutation)
+    create_spec(tmp_path, "policy", "POL-555-CLI", "CLI Expansion Policy")
+    dlt_555 = find_spec_by_id_or_path(tmp_path / "deltas", "DLT-2026-555")
+    assert dlt_555 is not None
+    dlt_555.write_text(
+        dlt_555.read_text(encoding="utf-8").replace(
+            "mutations: []",
+            "mutations:\n  - operation: add\n    target: POL-555-CLI\n",
+        ),
+        encoding="utf-8",
+    )
     res_apply = runner.invoke(app, ["delta", "apply", "DLT-2026-555", "--path", str(tmp_path)])
     assert res_apply.exit_code == 0
     assert "Successfully applied" in res_apply.stdout
@@ -428,6 +446,15 @@ def test_cli_spec_lifecycle_tools(tmp_path):
             "--path",
             str(tmp_path),
         ],
+    )
+    dlt_888 = find_spec_by_id_or_path(tmp_path / "deltas", "DLT-2026-888")
+    assert dlt_888 is not None
+    dlt_888.write_text(
+        dlt_888.read_text(encoding="utf-8").replace(
+            "mutations: []",
+            "mutations:\n  - operation: add\n    target: POL-100-CLI\n",
+        ),
+        encoding="utf-8",
     )
     apply_res = runner.invoke(app, ["delta", "apply", "DLT-2026-888", "--path", str(tmp_path)])
     assert apply_res.exit_code == 0
@@ -595,9 +622,11 @@ def test_cli_version_command_and_options():
     assert res_short.exit_code == 0
     assert f"eidos {eidos.__version__}" in res_short.output
 
-    # 3. version subcommand is removed
+    # 3. version subcommand is removed; info command reports engine version & loaded v1 schemas
     res_cmd = runner.invoke(app, ["version"])
     assert res_cmd.exit_code != 0
+    res_info = runner.invoke(app, ["info"])
+    assert res_info.exit_code == 0 and "Eidos Engine Version" in res_info.output
 
 
 def test_cli_index_update_alias(tmp_path):
@@ -799,7 +828,7 @@ def test_create_component_client_flow_and_safe_yaml(tmp_path):
 
     clt_file = create_spec(tmp_path, "client", "CLT-WEB", "Web App")
     assert clt_file == tmp_path / "design" / "clients" / "web" / "client.adoc"
-    assert parse_spec_file(clt_file).frontmatter["design_system"] == "DS-CORE"
+    assert parse_spec_file(clt_file).frontmatter["design_system"] == "DS-APP"
     assert_valid_spec(SpecValidator(), clt_file)
 
     flow_file = create_spec(tmp_path, "flow", "LOGIN", "Login Flow")
@@ -885,6 +914,39 @@ def test_engine_genericity_zero_self_references():
             violations.append(f"{portal_path}: matched '{m.group(0)}'")
 
     assert violations == [], f"Forbidden self-references found in engine/skills: {violations}"
+
+    # Verify scaffolder.py and changelog.py contain zero hardcoded Eidos/placeholder IDs
+    scaffolder_src = Path("src/eidos/core/lifecycle/scaffolder.py").read_text(encoding="utf-8")
+    for placeholder in ("PER-USER", "DOM-CORE", "CNT-CORE", "DS-CORE", "tech/contract_cnt"):
+        assert placeholder not in scaffolder_src, f"Hardcoded placeholder '{placeholder}' found in scaffolder.py"
+    changelog_src = Path("src/eidos/core/lifecycle/changelog.py").read_text(encoding="utf-8")
+    assert "All notable changes to Eidos are documented" not in changelog_src
+
+    import tempfile
+
+    from eidos.core.lifecycle.changelog import ChangelogGenerator
+
+    with tempfile.TemporaryDirectory() as td:
+        ext_repo = Path(td) / "billing-gateway"
+        ext_eidos = ext_repo / "eidos"
+        create_spec(ext_eidos, "system", "SYS-BILLING-001", "Nimbus Billing Gateway")
+        arch_p = create_spec(ext_eidos, "architecture", "ARCH-BILLING-001", "Billing Architecture")
+        assert parse_spec_file(arch_p).frontmatter["c4_context"]["actors"] == []
+        create_spec(ext_eidos, "domain", "DOM-LEDGER", "Ledger Domain")
+        cnt_p = create_spec(ext_eidos, "container", "CNT-LEDGER-API", "Ledger API")
+        (ext_repo / "src").mkdir(parents=True, exist_ok=True)
+        (ext_repo / "src" / "app.py").write_text("x = 1\n", encoding="utf-8")
+        cap_p = create_spec(ext_eidos, "capability", "CAP-LEDGER-001", "Post Journal")
+        cap_fm = parse_spec_file(cap_p).frontmatter
+        assert cap_fm["domain"] == "DOM-LEDGER"
+        assert "business" not in cap_fm
+        assert cap_fm["technical"]["containers"] == ["CNT-LEDGER-API"]
+        ctr_p = create_spec(ext_eidos, "contract", "CTR-LEDGER-CLI", "Ledger CLI")
+        assert parse_spec_file(ctr_p).frontmatter["container"] == "CNT-LEDGER-API"
+        _ = cnt_p
+        assert SpecValidator().validate_directory(ext_eidos).is_clean
+        ext_md = ChangelogGenerator(repo_root=ext_repo, eidos_dir=ext_eidos).generate_changelog()
+        assert "All notable changes to Nimbus Billing Gateway are documented in this file." in ext_md
 
 
 def test_foreign_repo_end_to_end_workflow(tmp_path):
@@ -995,6 +1057,69 @@ def test_foreign_repo_end_to_end_workflow(tmp_path):
         build_static_portal(eidos_dir=eidos_dir, output_dir=portal_out)
         assert (portal_out / "index.html").exists()
         assert (portal_out / "data.json").exists()
+
+        # 5. Foreign checkout nested under ~/.agents/... parent path + Git-tracked files in target/site/vendor + cached .gitignore subproject scan
+        from eidos.core.lifecycle.catalog import _set_frontmatter_scalar
+        from eidos.core.workspace.project import (
+            clear_subproject_roots_cache,
+            discover_nested_subproject_roots,
+            find_repo_root,
+            get_tracked_files,
+        )
+
+        agents_checkout = tmp_path / ".agents" / "workspaces" / "rust_web_repo"
+        init_repository(project_dir=agents_checkout, title="Rust Web Repo")
+        (agents_checkout / "src" / "compiler" / "target").mkdir(parents=True)
+        (agents_checkout / "src" / "compiler" / "target" / "x86.rs").write_text("pub fn emit() {}\n", encoding="utf-8")
+        (agents_checkout / "packages" / "site" / "src").mkdir(parents=True)
+        (agents_checkout / "packages" / "site" / "src" / "App.tsx").write_text(
+            "export const App = () => null;\n", encoding="utf-8"
+        )
+        (agents_checkout / ".gitignore").write_text("ignored_subproj/\n", encoding="utf-8")
+        (agents_checkout / "ignored_subproj" / "eidos").mkdir(parents=True)
+        (agents_checkout / "ignored_subproj" / "eidos" / "system.adoc").write_text(
+            "---\ntype: product/system\nid: SYS-IGNORED\ntitle: Ignored\nstatus: draft\narchetypes: [service]\n---\n= Ignored\n",
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "init"], cwd=agents_checkout, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "dev@rust.io"], cwd=agents_checkout, capture_output=True, check=True
+        )
+        subprocess.run(["git", "config", "user.name", "Rust Dev"], cwd=agents_checkout, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "add", "eidos", "src", "packages", ".gitignore"],
+            cwd=agents_checkout,
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(["git", "commit", "-m", "init"], cwd=agents_checkout, capture_output=True, check=True)
+
+        assert find_repo_root(agents_checkout / "eidos") == agents_checkout.resolve()
+        tracked = set(get_tracked_files(agents_checkout))
+        assert "src/compiler/target/x86.rs" in tracked
+        assert "packages/site/src/App.tsx" in tracked
+        clear_subproject_roots_cache()
+        assert discover_nested_subproject_roots(agents_checkout) == []
+        assert discover_nested_subproject_roots(agents_checkout) == []
+
+        # 6. _set_frontmatter_scalar preserves multiline quoted strings containing 'status:' at column 0, and find_spec_by_id_or_path guards ambiguity & bare DLT-YYYY
+        tricky_yaml = (
+            "---\n"
+            "type: delta/mutation\n"
+            "id: DLT-2026-801\n"
+            'title: "Explain\nstatus: proposed\nin multiline string"\n'
+            "status: proposed\n"
+            "---\n= Tricky\n"
+        )
+        updated_tricky = _set_frontmatter_scalar(tricky_yaml, "status", "applied")
+        assert 'title: "Explain\nstatus: proposed\nin multiline string"' in updated_tricky
+        assert "\nstatus: applied\n---" in updated_tricky
+
+        create_delta(agents_checkout / "eidos", "DLT-2026-119-ALPHA", title="Alpha Branch")
+        create_delta(agents_checkout / "eidos", "DLT-2026-119-BETA", title="Beta Branch")
+        assert find_spec_by_id_or_path(agents_checkout / "eidos" / "deltas", "DLT-2026") is None
+        with pytest.raises(ValueError, match="Ambiguous specification prefix"):
+            find_spec_by_id_or_path(agents_checkout / "eidos" / "deltas", "DLT-2026-119")
     finally:
         if gi._INDEX_INSTANCE is not None:
             gi._INDEX_INSTANCE.close()
@@ -1756,3 +1881,60 @@ def test_spec_schema_introspection_loads_from_assets_and_synthesizes_valid_examp
     res_invalid = runner.invoke(app, ["spec", "schema", "nonexistent-type", "--json"])
     assert res_invalid.exit_code == 1
     assert "Unknown specification schema type" in orjson.loads(res_invalid.stdout)["error"]
+
+
+def test_catalog_yaml_scalar_state_machine_and_archive_symlink_filtering(tmp_path):
+    """Verify catalog.py YAML scalar quoting/multiline state machine, archive exclusion, and symlink safety."""
+    from eidos.core.lifecycle.catalog import (
+        _format_yaml_scalar_value,
+        _set_frontmatter_scalar,
+        find_references_to_spec,
+        find_spec_by_id_or_path,
+    )
+
+    # 1. Malformed outer-quoted scalar falls back to safe JSON-escaped string
+    escaped_bad = _format_yaml_scalar_value('"broken " inner"')
+    assert escaped_bad.startswith('"') and '\\"' in escaped_bad
+
+    # 2. _set_frontmatter_scalar preserves multiline block scalars, escaped single quotes, and escaped double quotes
+    complex_raw = (
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-888\n"
+        "summary: |\n"
+        "  status: should_not_touch\n"
+        "  second line\n"
+        "single_note: 'it''s multiline\n"
+        "  status: ignored'\n"
+        'double_note: "escaped \\"quote\\"\n'
+        '  status: ignored"\n'
+        "status: proposed # inline status comment\n"
+        "---\n"
+        "= Delta Body\n"
+    )
+    updated_raw = _set_frontmatter_scalar(complex_raw, "status", "applied")
+    parsed_doc = SpecValidator()  # ensure valid YAML parse via parse_spec_file
+    eidos_dir = tmp_path / "eidos"
+    (eidos_dir / "deltas" / "archive").mkdir(parents=True)
+    active_dlt = eidos_dir / "deltas" / "dlt-2026-888.adoc"
+    active_dlt.write_text(updated_raw, encoding="utf-8")
+    doc = parse_spec_file(active_dlt)
+    assert parsed_doc is not None
+    assert doc.frontmatter["status"] == "applied"
+    assert "status: should_not_touch" in doc.frontmatter["summary"]
+    assert "it's multiline" in doc.frontmatter["single_note"]
+    assert 'escaped "quote"' in doc.frontmatter["double_note"]
+
+    # 3. include_archived=False excludes deltas/archive/* and skips symlinks safely
+    arch_dlt = eidos_dir / "deltas" / "archive" / "dlt-2026-777.adoc"
+    arch_dlt.write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-777\ntitle: Archived\nstatus: applied\n---\n= Archived\n",
+        encoding="utf-8",
+    )
+    sym_spec = eidos_dir / "deltas" / "symlink-spec.adoc"
+    sym_spec.symlink_to(arch_dlt)
+
+    assert find_spec_by_id_or_path(eidos_dir, "DLT-2026-777", include_archived=False) is None
+    assert find_spec_by_id_or_path(eidos_dir, str(arch_dlt), include_archived=False) is None
+    assert find_spec_by_id_or_path(eidos_dir, "DLT-2026-777", include_archived=True) == arch_dlt.resolve()
+    assert find_references_to_spec(eidos_dir, "DLT-2026-888", active_dlt) == []

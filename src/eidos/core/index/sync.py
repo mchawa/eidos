@@ -294,9 +294,12 @@ def store_code_symbols(
     owners: list[str],
     symbols: list[Any],
     imports: list[str] | None = None,
+    *,
+    is_test: bool = False,
 ) -> None:
-    """Replace all persisted symbols of one source file (delete-then-insert)."""
+    """Replace all persisted symbols of one source or test file (delete-then-insert)."""
     conn.execute("DELETE FROM code_symbols WHERE file_path = ?;", (rel_path,))
+    is_test_int = 1 if is_test else 0
 
     for position, entity_id in enumerate(owners):
         is_prim = 1 if position == 0 else 0
@@ -305,8 +308,8 @@ def store_code_symbols(
             conn.execute(
                 """
                 INSERT OR IGNORE INTO code_symbols
-                (file_path, symbol, kind, parent_symbol, line_start, line_end, signature, entity_id, is_primary)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                (file_path, symbol, kind, parent_symbol, line_start, line_end, signature, entity_id, is_primary, is_test)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     rel_path,
@@ -318,6 +321,7 @@ def store_code_symbols(
                     sym.signature or "",
                     entity_id,
                     is_prim,
+                    is_test_int,
                 ),
             )
         for imp in imports or ():
@@ -325,10 +329,10 @@ def store_code_symbols(
                 conn.execute(
                     """
                     INSERT OR IGNORE INTO code_symbols
-                    (file_path, symbol, kind, parent_symbol, line_start, line_end, signature, entity_id, is_primary)
-                    VALUES (?, ?, 'import', '', 0, 0, '', ?, ?);
+                    (file_path, symbol, kind, parent_symbol, line_start, line_end, signature, entity_id, is_primary, is_test)
+                    VALUES (?, ?, 'import', '', 0, 0, '', ?, ?, ?);
                     """,
-                    (rel_path, imp, entity_id, is_prim),
+                    (rel_path, imp, entity_id, is_prim, is_test_int),
                 )
 
 
@@ -348,7 +352,7 @@ def restore_code_mappings(conn: sqlite3.Connection, entity_id: str) -> None:
         r[0]
         for r in conn.execute(
             """
-            SELECT DISTINCT file_path FROM code_symbols WHERE entity_id = ?
+            SELECT DISTINCT file_path FROM code_symbols WHERE entity_id = ? AND is_test = 0
             UNION
             SELECT rel_path FROM indexed_files WHERE doc_type = 'code/source' AND doc_id = ?;
             """,
@@ -510,7 +514,9 @@ def reconcile_code_ownership(
         if rel_code in manifest and manifest[rel_code] == (owners[0] if owners else "source"):
             stored = {
                 r[0]
-                for r in conn.execute("SELECT DISTINCT entity_id FROM code_symbols WHERE file_path = ?;", (rel_code,))
+                for r in conn.execute(
+                    "SELECT DISTINCT entity_id FROM code_symbols WHERE file_path = ? AND is_test = 0;", (rel_code,)
+                )
             }
             if not stored or stored == set(owners):
                 continue
@@ -770,6 +776,15 @@ def build_spec_path_resolver(conn: sqlite3.Connection) -> Any:
     return _resolve_ref
 
 
+_SQLITE_ID_BATCH_SIZE = 400
+_SPEC_REF_TOKEN_RE = re.compile(r"\b[A-Z]{2,5}-[A-Z0-9_-]+\b")
+
+
+def _iter_id_chunks(ids: list[str], chunk_size: int = _SQLITE_ID_BATCH_SIZE) -> list[list[str]]:
+    """Split ``ids`` into bounded slices well below SQLite's variable and expression-tree limits."""
+    return [ids[i : i + chunk_size] for i in range(0, len(ids), chunk_size)]
+
+
 def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | None = None) -> None:
     """Rebuild specification-declared relational edges from persisted entity frontmatter.
 
@@ -781,64 +796,102 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
 
     clean_ids = sorted(d for d in (updated_doc_ids or ()) if d)
     if updated_doc_ids is not None and clean_ids:
-        ph = ",".join("?" for _ in clean_ids)
-        child_rows = conn.execute(
-            f"""
-            SELECT target_id FROM edges
-            WHERE source_id IN ({ph})
-              AND rel_type IN (
-                  'asserts', 'contains_container', 'describes_system',
-                  'graduated_from', 'graduated_to', 'implemented_by',
-                  'styled_by', 'styles_container', 'extends',
-                  'serves_persona', 'delivered_by', 'has_screen', 'has_flow', 'uses_screen'
-              )
-            UNION
-            SELECT source_id FROM edges
-            WHERE target_id IN ({ph})
-              AND rel_type IN (
-                  'contains_container', 'describes_system', 'graduated_from', 'graduated_to',
-                  'implemented_by', 'styled_by', 'styles_container', 'extends',
-                  'serves_persona', 'delivered_by', 'has_screen', 'has_flow', 'uses_screen'
-              )
-            UNION
-            SELECT id FROM entities
-            WHERE type = 'invariant' AND file_path IN (SELECT file_path FROM entities WHERE id IN ({ph}));
-            """,
-            (*clean_ids, *clean_ids, *clean_ids),
-        ).fetchall()
-        evict_ids = sorted(set(clean_ids) | {r[0] for r in child_rows if r[0]})
-        evict_ph = ",".join("?" for _ in evict_ids)
+        child_id_set: set[str] = set()
+        for chunk in _iter_id_chunks(clean_ids):
+            ph = ",".join("?" for _ in chunk)
+            for (tid,) in conn.execute(
+                f"""
+                SELECT target_id FROM edges
+                WHERE source_id IN ({ph})
+                  AND rel_type IN (
+                      'asserts', 'contains_container', 'describes_system',
+                      'graduated_from', 'graduated_to', 'implemented_by',
+                      'styled_by', 'styles_container', 'extends',
+                      'serves_persona', 'delivered_by', 'has_screen', 'has_flow', 'uses_screen'
+                  );
+                """,
+                tuple(chunk),
+            ).fetchall():
+                if tid:
+                    child_id_set.add(tid)
+            for (sid,) in conn.execute(
+                f"""
+                SELECT source_id FROM edges
+                WHERE target_id IN ({ph})
+                  AND rel_type IN (
+                      'contains_container', 'describes_system', 'graduated_from', 'graduated_to',
+                      'implemented_by', 'styled_by', 'styles_container', 'extends',
+                      'serves_persona', 'delivered_by', 'has_screen', 'has_flow', 'uses_screen'
+                  );
+                """,
+                tuple(chunk),
+            ).fetchall():
+                if sid:
+                    child_id_set.add(sid)
+            for (inv_id,) in conn.execute(
+                f"""
+                SELECT id FROM entities
+                WHERE type = 'invariant' AND file_path IN (SELECT file_path FROM entities WHERE id IN ({ph}));
+                """,
+                tuple(chunk),
+            ).fetchall():
+                if inv_id:
+                    child_id_set.add(inv_id)
 
-        neighbor_rows = conn.execute(
-            f"""
-            SELECT DISTINCT id FROM entities
-            WHERE type != 'invariant' AND (
-                id IN ({evict_ph})
-                OR id IN (SELECT source_id FROM edges WHERE target_id IN ({evict_ph}))
-                OR id IN (SELECT target_id FROM edges WHERE source_id IN ({evict_ph}))
-                OR id IN (SELECT source_id FROM edges WHERE target_id NOT IN (SELECT id FROM entities))
-            );
-            """,
-            (*evict_ids, *evict_ids, *evict_ids),
-        ).fetchall()
+        evict_ids = sorted(set(clean_ids) | child_id_set)
+        non_inv_entities = {
+            r[0]: (r[1] or "", r[2] or "")
+            for r in conn.execute("SELECT id, file_path, data_json FROM entities WHERE type != 'invariant';").fetchall()
+            if r[0]
+        }
+        non_inv_id_set = set(non_inv_entities)
+
+        neighbor_candidates: set[str] = set()
+        linked_targets: set[str] = set()
+        for chunk in _iter_id_chunks(evict_ids):
+            evict_ph = ",".join("?" for _ in chunk)
+            for src_id, dst_id in conn.execute(
+                f"SELECT source_id, target_id FROM edges WHERE target_id IN ({evict_ph});",
+                tuple(chunk),
+            ).fetchall():
+                if src_id:
+                    neighbor_candidates.add(src_id)
+                if dst_id:
+                    linked_targets.add(dst_id)
+            for (dst_id,) in conn.execute(
+                f"SELECT target_id FROM edges WHERE source_id IN ({evict_ph});",
+                tuple(chunk),
+            ).fetchall():
+                if dst_id:
+                    neighbor_candidates.add(dst_id)
+
+        for (dangling_src,) in conn.execute(
+            "SELECT DISTINCT source_id FROM edges WHERE target_id NOT IN (SELECT id FROM entities);"
+        ).fetchall():
+            if dangling_src:
+                neighbor_candidates.add(dangling_src)
+
         scope_set = (
-            {r[0] for r in neighbor_rows}
+            ((neighbor_candidates | set(evict_ids)) & non_inv_id_set)
             | set(clean_ids)
-            | (
-                set(evict_ids)
-                & {r[0] for r in conn.execute("SELECT id FROM entities WHERE type != 'invariant';").fetchall()}
-            )
         )
 
-        # Also include any existing entity whose frontmatter JSON mentions one of evict_ids,
-        # so previously dangling references to a newly created target spec are linked on incremental sync.
-        like_clauses = " OR ".join("instr(data_json, ?) > 0" for _ in evict_ids)
-        if like_clauses:
-            ref_rows = conn.execute(
-                f"SELECT id FROM entities WHERE type != 'invariant' AND ({like_clauses});",
-                tuple(evict_ids),
-            ).fetchall()
-            scope_set.update(r[0] for r in ref_rows if r[0])
+        # Include any existing entity whose frontmatter JSON mentions a newly added/unlinked target spec
+        # in a single O(N) Python pass (zero SQLite expression depth or parameter limits).
+        unlinked_evict = set(evict_ids) - linked_targets
+        if unlinked_evict:
+            unlinked_basenames = {
+                Path(non_inv_entities[eid][0]).name
+                for eid in unlinked_evict
+                if eid in non_inv_entities and non_inv_entities[eid][0]
+            }
+            for cand_id, (_cand_fp, cand_json) in non_inv_entities.items():
+                if cand_id in scope_set or not cand_json:
+                    continue
+                if unlinked_evict.intersection(_SPEC_REF_TOKEN_RE.findall(cand_json)) or any(
+                    bn in cand_json for bn in unlinked_basenames
+                ):
+                    scope_set.add(cand_id)
 
         # Include design/client and tech/architecture entities so indirect design and C4 Level 1 edges stay consistent.
         clt_rows = conn.execute(
@@ -847,20 +900,36 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
         if clt_rows:
             scope_set.update(r[0] for r in clt_rows if r[0])
 
+        for chunk in _iter_id_chunks(evict_ids):
+            evict_ph = ",".join("?" for _ in chunk)
+            conn.execute(
+                f"""
+                DELETE FROM edges
+                WHERE source_id IN ({evict_ph})
+                  AND NOT (rel_type = 'asserts' AND instr(source_id, '::') > 0);
+                """,
+                tuple(chunk),
+            )
+            conn.execute(
+                f"""
+                DELETE FROM edges
+                WHERE target_id IN ({evict_ph})
+                  AND NOT (rel_type = 'asserts' AND instr(source_id, '::') > 0);
+                """,
+                tuple(chunk),
+            )
+
         scope_ids = sorted(scope_set)
-        conn.execute(
-            f"""
-            DELETE FROM edges
-            WHERE (source_id IN ({evict_ph}) OR target_id IN ({evict_ph}))
-              AND NOT (rel_type = 'asserts' AND instr(source_id, '::') > 0);
-            """,
-            (*evict_ids, *evict_ids),
-        )
-        scope_ph = ",".join("?" for _ in scope_ids)
-        rows = conn.execute(
-            f"SELECT id, type, file_path, data_json FROM entities WHERE type != 'invariant' AND id IN ({scope_ph}) ORDER BY id;",
-            tuple(scope_ids),
-        ).fetchall()
+        rows = []
+        for chunk in _iter_id_chunks(scope_ids):
+            scope_ph = ",".join("?" for _ in chunk)
+            rows.extend(
+                conn.execute(
+                    f"SELECT id, type, file_path, data_json FROM entities WHERE type != 'invariant' AND id IN ({scope_ph});",
+                    tuple(chunk),
+                ).fetchall()
+            )
+        rows.sort(key=lambda r: str(r["id"]))
     else:
         conn.execute(
             """
@@ -1116,7 +1185,7 @@ def _derive_ast_import_edges(
 
     known_files: set[str] = set()
     for (fp,) in conn.execute(
-        "SELECT DISTINCT file_path FROM code_symbols UNION SELECT rel_path FROM indexed_files WHERE doc_type = 'code/source';"
+        "SELECT DISTINCT file_path FROM code_symbols WHERE is_test = 0 UNION SELECT rel_path FROM indexed_files WHERE doc_type = 'code/source';"
     ):
         if fp:
             known_files.add(_normalize_rel_path(fp))
@@ -1145,7 +1214,7 @@ def _derive_ast_import_edges(
         """
         SELECT file_path, symbol, entity_id
         FROM code_symbols
-        WHERE kind = 'import' AND is_primary = 1
+        WHERE kind = 'import' AND is_primary = 1 AND is_test = 0
         ORDER BY file_path, symbol;
         """
     ).fetchall()
@@ -1314,6 +1383,37 @@ def index_test_bindings(
         """,
         (rel_test, mtime_ns, sha, functions_json, file_tokens_json),
     )
+    if test_path.suffix.lower() in _CODE_EXTS:
+        src_cache_key = (type(ast_idx), str(test_path.resolve()), sha) if use_cache else None
+        src_cached = _SOURCE_AST_MEM_CACHE.get(src_cache_key) if src_cache_key is not None else None
+        if src_cached is not None:
+            test_symbols = list(src_cached[0])
+        elif hasattr(ast_idx, "extract_symbols"):
+            test_symbols = list(ast_idx.extract_symbols(test_path, content))
+            if src_cache_key is not None:
+                _SOURCE_AST_MEM_CACHE[src_cache_key] = (test_symbols, [])
+        else:
+            test_symbols = []
+        known_test_names = {s.name for s in test_symbols} | {
+            f"{s.parent_symbol}::{s.name}" for s in test_symbols if s.parent_symbol
+        }
+        if functions:
+            from eidos.core.index.ast_indexer import CodeSymbol
+
+            for fn_key in functions:
+                bare_fn = fn_key.split("::")[-1] if "::" in fn_key else fn_key
+                if fn_key not in known_test_names and bare_fn not in known_test_names:
+                    test_symbols.append(
+                        CodeSymbol(
+                            name=bare_fn,
+                            kind="function",
+                            file_path=rel_test,
+                            line_start=1,
+                            line_end=1,
+                        )
+                    )
+                    known_test_names.add(bare_fn)
+        store_code_symbols(conn, rel_test, ["tests"], test_symbols, is_test=True)
     _upsert_file_tokens_fts(conn, rel_test, "code/test", content)
     for test_name, fn_tokens in functions.items():
         identifier = f"{rel_test}::{test_name}"
@@ -2042,12 +2142,11 @@ def sync_index(
                         "SELECT id FROM entities WHERE type IN ('tech/container', 'tech/component');"
                     ).fetchall():
                         fts_target_ids.add(cid)
-            _FRESH_FTS_BASE_SYMBOLS.clear()
-            _FRESH_FTS_BASE_SYMBOLS.update(fresh_base_symbols)
-            try:
-                _project_ast_code_symbols_into_fts(conn, target_entity_ids=fts_target_ids)
-            finally:
-                _FRESH_FTS_BASE_SYMBOLS.clear()
+            _project_ast_code_symbols_into_fts(
+                conn,
+                target_entity_ids=fts_target_ids,
+                fresh_base_symbols=fresh_base_symbols,
+            )
 
         if spec_updates:
             conn.execute(
@@ -2218,52 +2317,58 @@ def sync_index(
     return stats
 
 
-_FRESH_FTS_BASE_SYMBOLS: dict[str, str] = {}
-
-
 def _project_ast_code_symbols_into_fts(
     conn: sqlite3.Connection,
     target_entity_ids: set[str] | None = None,
+    fresh_base_symbols: dict[str, str] | None = None,
 ) -> None:
-    """Deterministically project primary AST code_symbols (class, function, interface, struct, enum) into specs_fts.symbols."""
+    """Deterministically project primary AST code_symbols (class, function, method, interface, struct, enum) into specs_fts.symbols."""
     from eidos.core.index.query import compound_identifier_subtokens
 
     if target_entity_ids is not None and not target_entity_ids:
         return
 
+    local_base_symbols = fresh_base_symbols or {}
     by_entity: dict[str, list[str]] = {}
     if target_entity_ids is not None:
         clean_targets = sorted(t for t in target_entity_ids if t)
         if not clean_targets:
             return
-        ph = ",".join("?" for _ in clean_targets)
-        for row in conn.execute(
-            f"""
-            SELECT DISTINCT entity_id, symbol FROM code_symbols
-            WHERE is_primary = 1
-              AND kind IN ('class', 'function', 'interface', 'struct', 'enum')
-              AND entity_id IN ({ph})
-            ORDER BY entity_id, symbol;
-            """,
-            tuple(clean_targets),
-        ).fetchall():
-            by_entity.setdefault(row[0], []).append(row[1])
-        spec_rows = conn.execute(
-            f"""
-            SELECT f.rowid, f.entity_id, f.title, f.jtbd_or_rule, f.body_text, f.symbols, e.type, e.data_json
-            FROM specs_fts f
-            JOIN entities e ON e.id = f.entity_id
-            WHERE e.type != 'invariant'
-              AND f.entity_id IN ({ph})
-              AND (e.type IN ('tech/container', 'tech/component') OR f.entity_id IN (SELECT DISTINCT entity_id FROM code_symbols));
-            """,
-            tuple(clean_targets),
-        ).fetchall()
+        spec_rows = []
+        for chunk in _iter_id_chunks(clean_targets):
+            ph = ",".join("?" for _ in chunk)
+            for row in conn.execute(
+                f"""
+                SELECT DISTINCT entity_id, symbol FROM code_symbols
+                WHERE is_primary = 1
+                  AND is_test = 0
+                  AND kind IN ('class', 'function', 'method', 'interface', 'struct', 'enum')
+                  AND entity_id IN ({ph})
+                ORDER BY entity_id, symbol;
+                """,
+                tuple(chunk),
+            ).fetchall():
+                by_entity.setdefault(row[0], []).append(row[1])
+            spec_rows.extend(
+                conn.execute(
+                    f"""
+                    SELECT f.rowid, f.entity_id, f.title, f.jtbd_or_rule, f.body_text, f.symbols, e.type, e.data_json
+                    FROM specs_fts f
+                    JOIN entities e ON e.id = f.entity_id
+                    WHERE e.type != 'invariant'
+                      AND f.entity_id IN ({ph})
+                      AND (e.type IN ('tech/container', 'tech/component') OR f.entity_id IN (SELECT DISTINCT entity_id FROM code_symbols WHERE is_test = 0));
+                    """,
+                    tuple(chunk),
+                ).fetchall()
+            )
     else:
         for row in conn.execute(
             """
             SELECT DISTINCT entity_id, symbol FROM code_symbols
-            WHERE is_primary = 1 AND kind IN ('class', 'function', 'interface', 'struct', 'enum')
+            WHERE is_primary = 1
+              AND is_test = 0
+              AND kind IN ('class', 'function', 'method', 'interface', 'struct', 'enum')
             ORDER BY entity_id, symbol;
             """
         ).fetchall():
@@ -2274,7 +2379,7 @@ def _project_ast_code_symbols_into_fts(
             FROM specs_fts f
             JOIN entities e ON e.id = f.entity_id
             WHERE e.type != 'invariant'
-              AND (e.type IN ('tech/container', 'tech/component') OR f.entity_id IN (SELECT DISTINCT entity_id FROM code_symbols));
+              AND (e.type IN ('tech/container', 'tech/component') OR f.entity_id IN (SELECT DISTINCT entity_id FROM code_symbols WHERE is_test = 0));
             """
         ).fetchall()
 
@@ -2282,8 +2387,8 @@ def _project_ast_code_symbols_into_fts(
         rowid = srow[0]
         entity_id = srow[1]
         cur_symbols = str(srow[5] or "")
-        if entity_id in _FRESH_FTS_BASE_SYMBOLS:
-            base_symbols = _FRESH_FTS_BASE_SYMBOLS[entity_id]
+        if entity_id in local_base_symbols:
+            base_symbols = local_base_symbols[entity_id]
         else:
             title = str(srow[2] or "")
             jtbd_or_rule = str(srow[3] or "")

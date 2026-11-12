@@ -25,7 +25,7 @@ from eidos.core.spec.parser import parse_spec_file
 
 delta_app = typer.Typer(
     name="delta",
-    help="Manage SpecDeltas through their mutation lifecycle (list, create, status, verify, audit, apply, archive, delete, changelog).",
+    help="Manage SpecDeltas through their mutation lifecycle (list, show, create, status, verify, audit, apply, archive, delete, changelog).",
     add_completion=False,
 )
 
@@ -107,6 +107,134 @@ def delta_list_cmd(
             str(d["relative_path"]),
         )
     console.print(table)
+
+
+@delta_app.command("show")
+def delta_show_cmd(
+    delta_id: str = typer.Argument(
+        ...,
+        help="SpecDelta ID (e.g. DLT-2026-001), unambiguous prefix, or path.",
+    ),
+    path: Path = typer.Option(
+        Path("eidos"),
+        "--path",
+        "-p",
+        help="Path to eidos directory.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output machine-readable JSON SpecDelta document.",
+    ),
+):
+    """Display frontmatter metadata, composable mutations, and AsciiDoc body of an active or archived SpecDelta."""
+    from eidos.core.workspace.project import find_repo_root
+
+    eidos_dir = resolve_cli_eidos_dir(path)
+    try:
+        file_path = find_spec_by_id_or_path(eidos_dir / "deltas", delta_id, include_archived=True) or (
+            find_spec_by_id_or_path(eidos_dir, delta_id, include_archived=True)
+        )
+    except ValueError as exc:
+        if json_output:
+            typer.echo(orjson.dumps({"error": str(exc)}, option=orjson.OPT_INDENT_2).decode("utf-8"))
+        else:
+            console.print(f"[bold red]Error:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    if not file_path or not file_path.exists():
+        err_msg = f"SpecDelta '{delta_id}' not found under '{eidos_dir}/deltas'."
+        if json_output:
+            typer.echo(orjson.dumps({"error": err_msg}, option=orjson.OPT_INDENT_2).decode("utf-8"))
+        else:
+            console.print(f"[bold red]Error:[/bold red] {err_msg}")
+        raise typer.Exit(code=1)
+
+    doc = parse_spec_file(file_path)
+    if doc.doc_type != "delta/mutation":
+        living_id = doc.doc_id or delta_id
+        err_msg = (
+            f"'{living_id}' is a living specification ({doc.doc_type}), not a SpecDelta. "
+            f"Use 'eidos spec show {living_id}' instead."
+        )
+        if json_output:
+            typer.echo(orjson.dumps({"error": err_msg}, option=orjson.OPT_INDENT_2).decode("utf-8"))
+        else:
+            console.print(f"[bold red]Error:[/bold red] {err_msg}")
+        raise typer.Exit(code=1)
+
+    resolved_eidos = eidos_dir.resolve()
+    repo_root = resolved_eidos.parent if resolved_eidos.name == "eidos" else find_repo_root(resolved_eidos)
+    resolved_fp = file_path.resolve()
+    rel_to_eidos = resolved_fp.relative_to(resolved_eidos) if resolved_fp.is_relative_to(resolved_eidos) else file_path
+    rel_to_repo = (
+        resolved_fp.relative_to(repo_root.resolve()).as_posix()
+        if resolved_fp.is_relative_to(repo_root.resolve())
+        else str(rel_to_eidos).replace("\\", "/")
+    )
+    is_archived = "archive" in rel_to_eidos.parts
+
+    fm = dict(doc.frontmatter or {})
+    doc_id_str = str(doc.doc_id or fm.get("id") or file_path.stem.upper())
+    title_str = str(doc.title or fm.get("title") or "Untitled")
+    status_str = str(fm.get("status") or "proposed").strip().lower()
+    intent = fm.get("intent") if isinstance(fm.get("intent"), dict) else {}
+    kind_str = str(intent.get("kind") or "feature")
+    motivation_str = str(intent.get("motivation") or "").strip()
+    mutations = list(fm.get("mutations") or [])
+    body_str = doc.body or ""
+
+    if json_output:
+        payload = {
+            "id": doc_id_str,
+            "type": doc.doc_type,
+            "title": title_str,
+            "status": status_str,
+            "kind": kind_str,
+            "is_archived": is_archived,
+            "path": str(resolved_fp),
+            "relative_path": rel_to_repo,
+            "frontmatter": fm,
+            "mutations": mutations,
+            "body": body_str,
+        }
+        typer.echo(orjson.dumps(payload, option=orjson.OPT_INDENT_2).decode("utf-8"))
+        return
+
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(style="bold cyan", justify="right")
+    grid.add_column(style="white")
+    grid.add_row("Delta ID:", f"[bold green]{doc_id_str}[/bold green]")
+    grid.add_row("Title:", title_str)
+    grid.add_row("Status:", status_str)
+    grid.add_row("Kind:", kind_str)
+    grid.add_row("Archived:", "yes" if is_archived else "no")
+    grid.add_row("Path:", rel_to_repo)
+    if motivation_str:
+        grid.add_row("Motivation:", motivation_str)
+
+    console.print(Panel(grid, title=f"[bold blue]{title_str}[/bold blue]", expand=False))
+
+    if mutations:
+        mut_table = Table(
+            title=f"Composable Mutations ({len(mutations)})",
+            show_header=True,
+            header_style="bold magenta",
+        )
+        mut_table.add_column("Operation", style="cyan")
+        mut_table.add_column("Target", style="yellow")
+        mut_table.add_column("Details", style="white")
+        for m in mutations:
+            if isinstance(m, dict):
+                op = str(m.get("operation") or m.get("action") or "")
+                tgt = str(m.get("target") or "")
+                det = str(m.get("details") or "")
+                mut_table.add_row(op, tgt, det)
+        console.print(mut_table)
+
+    if body_str.strip():
+        console.print("\n[bold cyan]Specification Body:[/bold cyan]")
+        typer.echo(body_str.strip())
 
 
 @delta_app.command("create")
@@ -451,9 +579,16 @@ def delta_status_cmd(
         return
 
     if delta_id:
-        file_path = find_spec_by_id_or_path(eidos_dir / "deltas", delta_id) or find_spec_by_id_or_path(
-            eidos_dir, delta_id
-        )
+        try:
+            file_path = find_spec_by_id_or_path(eidos_dir / "deltas", delta_id) or find_spec_by_id_or_path(
+                eidos_dir, delta_id
+            )
+        except ValueError as exc:
+            if json_output:
+                typer.echo(orjson.dumps({"error": str(exc)}, option=orjson.OPT_INDENT_2).decode("utf-8"))
+            else:
+                console.print(f"[bold red]Error:[/bold red] {exc}")
+            raise typer.Exit(code=1) from exc
         if not file_path or not file_path.exists():
             if json_output:
                 typer.echo(

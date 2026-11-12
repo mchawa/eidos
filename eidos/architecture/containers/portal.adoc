@@ -33,19 +33,29 @@ decisions:
     decision: "Expose a lightweight GET /api/version endpoint returning the repository mtime tuple and poll it every 3 seconds only when window.__EIDOS_DATA__ is absent (live server mode), plus GET /api/drift for live uncommitted drift status."
     rationale: "Live portal sessions automatically refresh when specifications change on disk, while static builds remain 100% network-silent."
     graduated_from: DLT-2026-108-SCALABLE-STATIC
+  - id: DEC-PORTAL-STRICT-SANITIZATION-AND-SSE-CHUNKING
+    title: "Enforce Mermaid Strict Security, Loopback-Only Server Isolation, SSE Live Drift, and Lazy Local Static Spec Chunks"
+    decision: "Configure Mermaid with securityLevel: 'strict' (binding C4 node drill-down clicks via post-render DOM event listeners instead of Mermaid inline JS callbacks), enforce DOMPurify SANITIZE_DOM: true and idprefix: 'spec-' on AsciiDoc rendering, restrict tokens.manifest resolution to repo_root via Path.resolve().is_relative_to(repo_root), remove wildcard CORS and validate Host headers on eidos portal serve while streaming workspace/code/test drift updates over GET /api/events (SSE), and emit local relative spec-body JSON chunks (specs/<id>.json) + code-split local assets in eidos portal build (retaining --single-file for file:// bundles)."
+    rationale: "Mermaid securityLevel: 'loose' and unescaped error innerHTML allow arbitrary XSS via spec prose, wildcard CORS exposes private architecture graphs to any open browser tab, ignoring src/ and tests/ leaves live drift stale, and inlining all spec bodies + Mermaid/Asciidoctor into a single 6.73 MB index.html scales poorly to 2,000+ specs—whereas local relative chunks keep zero remote origin dependencies (INV-PORTAL-AIR-GAPPED-BUNDLE) while cutting initial HTML parse overhead dramatically."
+    rejected_alternatives:
+      - option: "Retain Mermaid securityLevel: 'loose' and rely solely on regex escaping in generator.py"
+        reason_rejected: "Raw [mermaid] diagram blocks in AsciiDoc specs still reach Mermaid's parser directly and bypass Python-side flow generator escaping."
+      - option: "Load Mermaid.js and Asciidoctor.js from public CDNs to shrink index.html"
+        reason_rejected: "Violates INV-PORTAL-AIR-GAPPED-BUNDLE and breaks offline / air-gapped enterprise environments."
+    graduated_from: DLT-2026-132-HARDEN-WEB-D1D8
 ---
 = Container: Eidos Living Web Portal (C4 Level 2 Container)
 :toc: left
 
 == Architectural Boundary
-This container represents the graphical web interface under `src/eidos/portal/` and packaged bundle assets under `assets/portal/`. It enables non-IDE stakeholders (product managers, architects, designers, and compliance officers) to visually navigate the living architecture, inspect C4 topologies, simulate architectural blast radius (`INV-PORTAL-STATIC-SCALABILITY`), monitor SpecDelta lifecycles, and explore multi-design system tokens via hash-based deep linking (`DEC-PORTAL-HASH-ROUTING`).
+This container represents the graphical web interface under `src/eidos/portal/` and packaged bundle assets under `assets/portal/`. It enables non-IDE stakeholders (product managers, architects, designers, and compliance officers) to visually navigate the living architecture, inspect C4 topologies, simulate architectural blast radius directly on C4 SVG nodes (`INV-PORTAL-STATIC-SCALABILITY`), monitor SpecDelta lifecycles and real-time workspace drift, and explore multi-design system tokens via hash-based deep linking (`DEC-PORTAL-HASH-ROUTING`).
 
 == Internal Structure & Key Mechanisms
-* **Dual Deployment Modes (`CTR-EIDOS-PORTAL`)**: Operates either as a local multi-threaded HTTP preview server (`eidos portal serve`, exposing `/api/data`, `/api/version`, `/api/drift`, and `/api/specs/{id}` with progressive 3-second mtime live reload) or as a zero-backend static site export (`eidos portal build`, emitting `index.html` and `data.json` for GitHub/GitLab Pages).
-* **Payload Deduplication & Client-Side Graph Traversal (`DEC-PORTAL-PAYLOAD-DEDUP-AND-CLIENT-BFS`)**: Serializes each specification body once in `data.specs`, strips duplicate prose fields from specialized entity collections in static builds, and pre-computes directed graph edges (`data.edges`) and validation diagnostics (`data.validation`) so interactive Blast Radius simulation and C4 drill-down work entirely client-side.
+* **Dual Deployment Modes & Loopback Isolation (`CTR-EIDOS-PORTAL`, `DEC-PORTAL-STRICT-SANITIZATION-AND-SSE-CHUNKING`)**: Operates either as a same-origin isolated HTTP + Server-Sent Events preview server (`eidos portal serve`, validating `Host` headers and streaming live `eidos/` + `src/` + `tests/` drift/version updates over `/api/events` alongside `/api/data`, `/api/version`, `/api/drift`, and `/api/validate`) or as a zero-backend static site export (`eidos portal build`, emitting chunked `./assets/*` + `./specs/<id>.json` by default or a standalone `index.html` with `--single-file`).
+* **Strict XSS Sanitization & Payload Chunking (`DEC-PORTAL-PAYLOAD-DEDUP-AND-CLIENT-BFS`, `DEC-PORTAL-STRICT-SANITIZATION-AND-SSE-CHUNKING`)**: Configures Mermaid with `securityLevel: "strict"` and DOM-delegated C4 drill-down listeners, enforces DOMPurify `SANITIZE_DOM: true` and `idprefix: "spec-"` on AsciiDoc bodies, restricts `tokens.manifest` inside `repo_root`, and lazy-loads per-spec `./specs/<id>.json` body chunks on SpecReader open while retaining pre-computed `data.edges` and `data.validation` for instant client-side Blast Radius simulation.
 
 == Air-Gapped Bundle (`INV-PORTAL-AIR-GAPPED-BUNDLE`)
-The single-file bundle served by `eidos portal serve` and emitted by `eidos portal build` loads zero scripts, stylesheets, fonts, or other subresources from remote origins, so C4 diagrams and the specification reader work in air-gapped environments and from `file://` static sites:
+Both the single-file bundle served by `eidos portal serve` (and `eidos portal build --single-file`) and the default chunked static export (`eidos portal build`, emitting local `./assets/*` and `./specs/<id>.json`) load zero scripts, stylesheets, fonts, or other subresources from remote origins, so C4 diagrams and the specification reader work in air-gapped environments (and over `file://` with `--single-file`):
 
 * **Mermaid.js** is imported from npm at the version pinned in `package.json` / `pnpm-lock.yaml` (lazy `import()` folded inline by the single-file build; the ELK layout engine is not shipped, `dagre` is the portal layout).
 * **Asciidoctor.js** (`@asciidoctor/core`, `safe: 'secure'`) renders specification AsciiDoc bodies directly in the browser; `include::` is unsupported in the browser.

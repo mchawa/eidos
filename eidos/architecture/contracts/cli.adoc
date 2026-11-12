@@ -3,7 +3,7 @@ type: tech/contract
 id: CTR-EIDOS-CLI
 title: "Eidos Command-Line Interface Contract"
 status: active
-version: "1.4.0"
+version: "1.5.0"
 protocol: "cli_args"
 container: "CNT-EIDOS-CLI"
 specification_file: "src/eidos/cli/main.py"
@@ -14,7 +14,7 @@ specification_file: "src/eidos/cli/main.py"
 == Command Specifications
 
 === `eidos --version`
-Displays current Eidos engine version (e.g. `eidos 0.8.0`).
+Displays current Eidos engine version (e.g. `eidos 0.23.0`).
 * **Options**: `--version`, `-V`
 * **Exit Code**: 0
 
@@ -23,10 +23,10 @@ Displays current engine version, loaded v1 schemas, and available agent plugin t
 * **Exit Code**: 0
 
 === `eidos validate [PATH] [--json]`
-Validates all specification documents under `PATH` (defaults to `./eidos`) against the bundled JSON/YAML schemas and verifies cross-references.
+Validates all specification documents under `PATH` (defaults to `./eidos`) against the bundled JSON/YAML schemas and verifies cross-references, `== Public Surface` AST symbols, active `test_binding` coverage, and contract parity.
 * **Arguments**: `PATH` (Optional directory path)
 * **Options**:
-  - `--json`: Output a compact machine-readable JSON validation report (`is_clean`, `total_docs`, `valid_docs`, `broken_references`, `schema_errors`, and any invalid `documents`).
+  - `--json`: Output a compact machine-readable JSON validation report (`is_clean`, `total_docs`, `valid_docs`, `broken_references`, repo-relative `schema_errors`, and any invalid `documents`).
 * **Exit Codes**:
   - `0`: All specifications are valid.
   - `1`: One or more validation errors or broken cross-references found.
@@ -34,7 +34,7 @@ Validates all specification documents under `PATH` (defaults to `./eidos`) again
 === `eidos context [--file PATH] [--component ID] [--task PROMPT] [--tier TIER] [--semantic/--no-semantic] [--json] [--path PATH]`
 Extracts a compact, token-efficient architectural subgraph context slice (C4 components, bound contracts, domain capabilities, active invariants, and governing policies).
 * **Options**:
-  - `--file, -f`: Target source file path(s), comma-separated paths, or quoted glob patterns (e.g. `'apps/*/Dockerfile'`).
+  - `--file, -f`: Target source file path(s), comma-separated paths, or quoted glob patterns including `{a,b}` brace globs (e.g. `'apps/*/Dockerfile'`, `'src/**/*.{ts,tsx}'`).
   - `--component, -c`: Target component identifier (e.g. `CMP-EIDOS-CLI`).
   - `--task, -t`: Free-text task description or prompt.
   - `--tier, -T`: Context tier budget: `anchor` (~140 tokens), `guardrails` (default, ~260-890 tokens), or `deep` (~500-1500 tokens).
@@ -52,14 +52,14 @@ Manages the embedded SQLite architectural knowledge graph and FTS5 hybrid search
   - `search <query> [--limit <n>] [--semantic/--no-semantic] [--path <path>] [--json]`: Performs BM25 full-text search with optional Harrier Hybrid RRF fusion across titles, requirements, and invariants.
   - `blast-radius <symbol_or_path> [--depth <n>] [--path <path>] [--json]`: Computes the transitive dependency and governance blast radius for a canonical entity ID, AST code symbol, specification file path, or source file path (reporting `query`, `resolved_entities`, `entity_id`, and `neighbors` in `--json` output).
   - `repo-map [--max-tokens <tokens>] [--json] [--path <path>]`: Generates a token-budgeted structural repo map outline (classes, functions, methods, routes) for AI coding agents in Markdown or JSON (`--json`).
-  - `find-symbol <query> [--limit <n>] [--json] [--path <path>]`: Locates code symbols across polyglot AST source files and links them to associated living component specifications. Each `--json` match carries `file_path` (the owning *specification* path) and a `location` object (`file`, `line_start`, `line_end`, `signature`, `parent_symbol`) pointing at the source definition, or `null` for non-AST matches such as paths and component references. The text table shows a `Location` (`file:line`) column.
-  - `semantic [action] [--model <variant>] [--force] [--path <path>] [--json]`: Manages and inspects the optional Harrier-OSS-v1-0.6B ONNX semantic embedding index (`status`, `setup`, or `sync`).
+  - `find-symbol <query> [--limit <n>] [--json] [--path <path>]`: Locates code symbols (including class methods and automated test symbols) across polyglot AST source files and links them to associated living component specifications. Each `--json` match carries `file_path` (the owning *specification* path) and a `location` object (`file`, `line_start`, `line_end`, `signature`, `parent_symbol`) pointing at the source definition, or `null` for non-AST matches.
+  - `semantic [action] [--model <variant>] [--force] [--path <path>] [--json]`: Manages and inspects the optional SHA-256 verified Harrier-OSS-v1-0.6B ONNX semantic embedding index (`status`, `setup`, or `sync`).
 
 === `eidos portal`
 Manages the interactive Living Web Portal and documentation site export.
 * **Sub-commands**:
-  - `serve [--path PATH] [--host HOST] [--port PORT] [--open]`: Launches the local interactive Eidos Living Web Portal HTTP server.
-  - `build [--path PATH] [--out OUT_DIR]`: Exports the Living Web Portal as a self-contained static site.
+  - `serve [--path PATH] [--host HOST] [--port PORT] [--open]`: Launches the local interactive Eidos Living Web Portal HTTP + SSE (`/api/events`) server.
+  - `build [--path PATH] [--out OUT_DIR] [--single-file]`: Exports the Living Web Portal as a self-contained static site using externalized local `./assets/*` and per-entity `./specs/<id>.json` body chunks by default, or inlines all JS, CSS, and spec bodies into a single standalone `index.html` when `--single-file` is passed.
 * **Exit Codes**:
   - `0`: Operation completed successfully.
   - `1`: Specifications directory not found.
@@ -67,9 +67,9 @@ Manages the interactive Living Web Portal and documentation site export.
 === `eidos plugin`
 Manages, validates, installs, updates, and uninstalls Eidos Agent Skills and lifecycle hooks across supported AI agent environments (Antigravity, Claude Code, Cursor, Aider, Cline, Kilo Code, OpenCode, OpenAI Codex, and GitHub Copilot, plus `all`).
 * **Sub-commands**:
-  - `install <TARGET> [--project-dir <path>] [--force/--no-force] [--launcher <launcher>] [--hooks]`: Installs the 4 Eidos Agent Skills across `.agents/skills/` (Antigravity, Cursor, GitHub Copilot, OpenAI Codex, Cline, Kilo Code, OpenCode), `.claude/skills/` (Claude Code project-native skills), and `.aider/skills/` (Aider), projects the canonical root `AGENTS.md` block (plus `CLAUDE.md` `@AGENTS.md` import for Claude Code and `.aider.conf.yml` `read:` entry for Aider), and when `--hooks` is passed (disabled by default) wires each hook-capable target's native `Stop` / `TaskComplete` lifecycle hook (`.agents/hooks.json`, `.claude/settings.json`, `.cursor/hooks.json`, `.clinerules/hooks/TaskComplete`, `.github/hooks/hooks.json`, `.codex/hooks.json`).
-  - `uninstall <TARGET> [--project-dir <path>]`: Uninstalls and cleans up the plugin and tool configurations from project scope.
-  - `version [--project-dir <path>]`: Displays and compares bundled vs installed plugin version and reports SemVer sync status.
+  - `install <TARGET> [--project-dir <path>] [--force/--no-force] [--launcher <launcher>] [--hooks]`: Installs the 4 Eidos Agent Skills across `.agents/skills/` (Antigravity, Cursor, GitHub Copilot, OpenAI Codex, Cline, Kilo Code, OpenCode), `.claude/skills/` (Claude Code project-native skills), and `.aider/skills/` (Aider), projects the canonical root `AGENTS.md` block (plus `CLAUDE.md` `@AGENTS.md` import for Claude Code and comment-preserving `.aider.conf.yml` `read:` entry for Aider), and when `--hooks` is passed (disabled by default) wires each hook-capable target's native `Stop` / `PreToolUse` (`attempt_completion`) lifecycle hook (`.agents/hooks.json`, `.claude/settings.json`, `.cursor/hooks.json`, `.clinerules/hooks/PreToolUse`, `.github/hooks/hooks.json`, `.codex/hooks.json`).
+  - `uninstall <TARGET> [--project-dir <path>]`: Uninstalls and cleans up the plugin, managed `AGENTS.md` / `CLAUDE.md` / `.aider.conf.yml` target entries, and tool hook configurations from project scope.
+  - `version [--project-dir <path>]`: Displays and compares bundled vs installed plugin version and reports SemVer sync status (`up_to_date`, `outdated`, or `modified` when non-force installs skipped edited skills).
   - `update <TARGET> [--project-dir <path>] [--launcher <launcher>]`: Updates project-scoped plugin to the latest bundled version and syncs configurations (preserving each target's recorded `hooks` setting in `.eidos-manifest.json`).
   - `validate [PATH]`: Validates an Agent Skills package against `agentskills.io` frontmatter and SemVer 2.0.0 rules.
   - `info [PATH]`: Displays Agent Skills package metadata, skills, and lifecycle hooks.
@@ -78,40 +78,42 @@ Manages, validates, installs, updates, and uninstalls Eidos Agent Skills and lif
 Manages the living specification catalog (15 declarative specification & discovery blueprint types, excluding `delta/mutation`) and dynamic v1 schema introspection across all 16 bundled schemas: listing, authoring, inspecting, and deleting specifications.
 * **Sub-commands**:
   - `list [--path <path>] [--type <type>] [--status <status>] [--include-archived] [--json]`: Lists all living specifications across the 15 living specification types (excluding SpecDeltas and excluding `archive/` subdirectories by default unless `--include-archived` is passed) in tabular or JSON format. Rejects `--type delta` with an error directing the caller to `eidos delta list`.
-  - `show <id_or_path> [--path <path>]`: Displays detailed frontmatter metadata and preview of a living specification document (rejecting `delta/mutation` targets and directing the caller to `eidos delta status` / `eidos delta verify`).
-  - `create <type> <id> --title <title> [--path <path>]`: Scaffolds a minimal, schema-valid draft blueprint (`status: draft`, or `status: proposed` for `exploration`) across all 15 living specification types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`), auto-resolving required parent references from the catalog or canonical fallbacks (`DOM-CORE`, `CNT-CORE`, `DS-CORE`, `PER-USER`) and rejecting `delta/mutation` (directing to `eidos delta create`).
+  - `show <id_or_path> [--path <path>]`: Displays detailed frontmatter metadata and preview of a living specification document (rejecting `delta/mutation` targets and directing the caller to `eidos delta show`).
+  - `create <type> <id> --title <title> [--path <path>]`: Scaffolds a minimal, schema-valid draft blueprint (`status: draft`, or `status: proposed` for `exploration`) across all 15 living specification types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`), auto-resolving parent references from existing catalog specs (or omitting optional references) and rejecting `delta/mutation` (directing to `eidos delta create`).
   - `delete <id_or_path> [--path <path>] [--force]`: Safely deletes a living specification document with cross-reference safety checks (rejecting `delta/mutation` targets and directing to `eidos delta delete`).
-  - `schema [type] [--json]`: Dynamically loads and inspects bundled v1 YAML frontmatter schemas from `assets/schemas/v1/` across all 16 specification types (omit `[type]` to list all 16 schemas, or pass a short alias or canonical type like `capability` / `product/capability`), displaying required/optional keys, nested object/array item constraints, and schema-synthesized YAML frontmatter templates in Rich tabular or `--json` format.
+  - `schema [type] [--json]`: Dynamically loads and inspects bundled v1 YAML frontmatter schemas from `assets/schemas/v1/` across all 16 specification types, displaying required/optional keys, nested constraints, and schema-synthesized YAML frontmatter templates in Rich tabular or `--json` format.
 
 === `eidos delta`
 Orchestrates SpecDeltas (`DLT-*`) throughout their semantic mutation lifecycle using flat storage (`eidos/deltas/` and `eidos/deltas/archive/`).
 * **Sub-commands**:
   - `list [--path <path>] [--status <status>] [--include-archived] [--json]`: Lists SpecDeltas from flat `eidos/deltas/` (or including `eidos/deltas/archive/` when `--include-archived` is passed) with optional status filter (`proposed`, `in_review`, `approved`, `applied`, `rejected`, or `active`) and `--json` output.
+  - `show <delta_id> [--path <path>] [--json]`: Displays frontmatter metadata, composable `mutations`, archival state, and AsciiDoc body of an active (`eidos/deltas/`) or archived (`eidos/deltas/archive/`) SpecDelta in Rich terminal or `--json` format (rejecting living specifications and directing to `eidos spec show`).
   - `status [id] [new_status] [--path <path>] [--json]`: Displays lifecycle status dashboard across the 5 canonical `delta_status` states (`proposed`, `in_review`, `approved`, `applied`, `rejected`) or transitions a specific SpecDelta's status when `id` and `new_status` are given.
   - `create [id] --title <title> [--kind <kind>] [--slug] [--path <path>]`: Scaffolds a new SpecDelta blueprint in flat storage `eidos/deltas/<id>.adoc` with status `proposed`, auto-detecting `vcs.branch` and `vcs.base_commit` from Git `HEAD` (`id` defaults to `auto`, `--slug` / `-s` appends a title-derived slug suffix, `--kind`: `feature, enabler, bug`; defaults to `feature`).
-  - `verify <id_or_path> [--path <path>] [--json]`: Verifies that all semantic mutations declared in a SpecDelta exist in the living specifications catalog.
+  - `verify <id_or_path> [--path <path>] [--json]`: Verifies that a SpecDelta declares at least one mutation and that all declared semantic mutations and `expect:` post-conditions exist in the living specifications catalog.
   - `audit <id_or_path> [--path <path>] [--strict] [--json]`: Performs reverse-dependency blast-radius audit on entities removed or deprecated by the SpecDelta, classifying references into approved (historical, negative tests, cleanup routines, tombstones) vs. unacknowledged active leaks.
-  - `apply <id_or_path> [--verify/--no-verify] [--json]`: Verifies declared mutations against the living specification catalog by default (`--verify`, or bypass via `--no-verify`), validates the updated SpecDelta, and updates frontmatter status to `applied`.
-  - `archive [--keep-recent <n>] [--explorations/--no-explorations] [--dry-run] [--json] [--path <path>]`: Partitions and slims older terminal SpecDeltas (`applied`/`rejected`) and Explorations (`adopted`/`discarded`) beyond the most recent `--keep-recent` (default `15`) into `eidos/deltas/archive/` and `eidos/explorations/archive/`, stripping verification `expect` scaffolding while retaining schema-valid `.adoc` artifacts.
+  - `apply <id_or_path> [--verify/--no-verify] [--path <path>] [--json]`: Verifies declared non-empty mutations against the living specification catalog by default (`--verify`, or bypass via `--no-verify`), validates the updated SpecDelta, and updates frontmatter status to `applied`.
+  - `archive [--keep-recent <n>] [--explorations/--no-explorations] [--dry-run] [--json] [--path <path>]`: Partitions and slims older terminal SpecDeltas (`applied`/`rejected`) and Explorations (`adopted`/`discarded`) beyond the most recent `--keep-recent` (default `15`) into `eidos/deltas/archive/` and `eidos/explorations/archive/`, stripping verification `expect` scaffolding while retaining full multi-line exploration findings and schema-valid `.adoc` artifacts.
   - `delete <id_or_path> [--path <path>] [--force]`: Deletes a SpecDelta (`DLT-*`) file (rejecting non-delta living specifications and directing to `eidos spec delete`).
-  - `changelog [--output <path>] [--unreleased/--no-unreleased] [--docs/--no-docs] [--path <path>]`: Compiles an auditable, Keep a Changelog compliant release history partitioned by Git release tags and applied SpecDeltas (`DLT-*`).
+  - `changelog [--output <path>] [--unreleased/--no-unreleased] [--docs/--no-docs] [--stdout] [--path <path>]`: Compiles an auditable, Keep a Changelog compliant release history partitioned by Git release tags and frontmatter-verified applied SpecDeltas (`DLT-*`).
 
-=== `eidos drift [--base REF] [--head REF] [--uncommitted] [--strict] [--markdown FILE] [--json]`
-Detects spec-to-code drift, schema validity, and invariant test coverage across both Planned Mode and Direct Mode.
+=== `eidos drift [--base REF] [--head REF] [--path PATH] [--uncommitted] [--strict] [--markdown FILE] [--warn-only] [--json]`
+Detects spec-to-code drift, schema validity, onboarding governance integrity, planned-mode SpecDelta mutation validity, and static invariant test coverage (including `design/` `UIC-*` invariants) across both Planned Mode and Direct Mode.
 * **Options**:
   - `--base, -b`: Base git reference to compare against (defaults to `origin/main` or `main`).
-  - `--head`: Head git reference (defaults to `HEAD`).
+  - `--head`: Head git reference (defaults to `HEAD`; commit-range checks without `--uncommitted` evaluate specs and invariants isolated to the `--head` Git tree).
+  - `--path, -p`: Path to the specifications directory (default: `eidos`).
   - `--uncommitted, -u`: Analyze uncommitted working tree and staged changes instead of branch diff.
   - `--strict`: Enforce strict drift detection on behavioral (`body_only_code_files`) modifications, requiring a substantive 1-hop specification update, an active SpecDelta target, or a modified bound test file.
   - `--markdown, -m`: Path to write the markdown summary comment (e.g. for CI/CD reports).
-  - `--json`: Output raw JSON verification result, including `structural_code_files`, `body_only_code_files`, and `trivially_covered_files` (a list of `{file, owner, additions, spec_files, rule}` where `rule` is `trivial_spec_diff`, `missing_anchor`, or `stale_removed_symbol`): structural changes whose only spec coverage was a whitespace/comment-only edit, an unanchored addition, or a specification that still references removed public symbols; these files count as drift.
+  - `--json`: Output raw JSON verification result, including `structural_code_files`, `body_only_code_files`, and `trivially_covered_files`.
   - `--warn-only`: Do not exit with code 1 on drift.
 * **Exit Codes**:
   - `0`: Specifications and code are synchronized, all schemas valid, invariant tests green.
-  - `1`: Spec-to-code drift detected or specification validation errors.
+  - `1`: Spec-to-code drift detected, shallow-clone history insufficient, or specification validation errors.
 
 === `eidos init [PATH]`
-Bootstraps a repository with an Eidos living specification directory skeleton, a root `eidos/system.adoc` (populated with `product/system` frontmatter when `--title` is provided, or an empty placeholder otherwise), `.gitkeep` files for empty directories, a self-contained `eidos/.gitignore`, and immediate schema validation. Note: `eidos init` initializes Eidos specifications and does not install plugins (plugins can be installed separately via `eidos plugin install`).
+Bootstraps a repository with an Eidos living specification directory skeleton, a root `eidos/system.adoc`, `.gitkeep` files for empty directories, a self-contained `eidos/.gitignore`, and immediate schema validation. Note: `eidos init` initializes Eidos specifications and does not install plugins (plugins can be installed separately via `eidos plugin install`).
 * **Arguments**: `PATH` (Optional directory path, defaults to `.`)
 * **Options**:
   - `--title <title>`: Human-readable display title.
@@ -121,16 +123,16 @@ Bootstraps a repository with an Eidos living specification directory skeleton, a
   - `1`: Directory already initialized without `--force`, or validation failed.
 
 === `eidos doctor [--path PATH] [--json]`
-Runs a comprehensive workspace health and configuration diagnostic across the CLI binary, non-blocking PyPI release currency (`checks.cli_update`), living specifications, knowledge graph index, and agent plugin installations (including per-target `Stop` hook health `hooks_ok`, `hooks_status`, `target_hooks`, and `hook_errors`, distinguishing intentionally disabled hooks when installed without `--hooks` from broken/missing hooks when installed with `--hooks`).
+Runs a comprehensive workspace health and configuration diagnostic across the CLI binary, non-blocking PyPI release currency (`checks.cli_update`), root `AGENTS.md` managed-block integrity (`checks.agents_md`), living specifications, knowledge graph index, and agent plugin installations (including per-target hook health `hooks_ok`, `hooks_status`, `target_hooks`, and `hook_errors`).
 * **Options**:
   - `--path, -p`: Path to eidos specifications directory (defaults to `./eidos`).
-  - `--json`: Output diagnostic report in JSON format (including `checks.cli_update` with `status`, `installed_version`, `latest_version`, `update_available`, and `upgrade_command`, and `checks.agent_plugin` with `hooks_ok`, `hooks_status`, `target_hooks`, and `hook_errors`).
+  - `--json`: Output diagnostic report in JSON format (including `checks.cli_update`, `checks.agents_md`, and `checks.agent_plugin` with `hooks_ok`, `hooks_status`, `target_hooks`, and `hook_errors`).
 * **Exit Codes**:
-  - `0`: All critical workspace diagnostic checks passed (available PyPI CLI updates or offline network status remain non-blocking advisory warnings, and plugins installed without `--hooks` pass with `hooks_status: "disabled"`).
-  - `1`: One or more critical workspace diagnostics failed (including when an installed target originally configured with `--hooks` has a missing, invalid, or corrupted `Stop` hook).
+  - `0`: All critical workspace diagnostic checks passed (available PyPI CLI updates remain non-blocking advisory notices, and plugins installed without `--hooks` pass with `hooks_status: "disabled"`).
+  - `1`: One or more critical workspace diagnostics failed (including wiped root `AGENTS.md` managed blocks or missing/corrupted installed hooks).
 
 === `eidos hook [--path PATH]`
-Executes the stateless CLI-native agent lifecycle `Stop` / `TaskComplete` hook across the 6 hook-capable AI coding harnesses, verifying specification schemas, invariant test bindings, and spec-to-code drift and emitting a client-aware 1-turn capped continuation payload (`decision: "continue"` for Antigravity, `followup_message` for Cursor, `cancel: true` with `contextModification`/`errorMessage` for Cline, and `decision: "block"` for Claude Code, GitHub Copilot, and OpenAI Codex on the first stop turn, or a clean allow response on retry).
+Executes the session-baseline-aware CLI-native agent lifecycle `Stop` / `PreToolUse` (`attempt_completion`) / `SessionStart` hook across the 6 hook-capable AI coding harnesses, capturing working-tree baselines on session start, short-circuiting zero-edit Q&A turns on pre-existing dirty worktrees, honoring both `stop_hook_active` and `stopHookActive` retry flags, and emitting a client-aware 1-turn capped continuation payload (`decision: "continue"` for Antigravity, `followup_message` for Cursor, `cancel: true` on `.clinerules/hooks/PreToolUse` `attempt_completion` for Cline, and `decision: "block"` for Claude Code, GitHub Copilot, and OpenAI Codex on the first stop turn, or a clean allow response on retry).
 * **Options**:
   - `--path, -p`: Path to repository root or `eidos` directory.
 * **Exit Codes**:
@@ -145,4 +147,3 @@ Every operation has a single canonical command path without top-level shortcuts 
 4. **Living Catalog & Mutations**: `spec`, `delta`
 5. **Living Web Portal**: `portal`
 6. **Agent Ecosystem & Plugins**: `plugin`, `hook`
-

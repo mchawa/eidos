@@ -657,3 +657,35 @@ def test_dlt_2026_107_index_driven_spec_scoped_deletion_audit(tmp_path):
         if gi._INDEX_INSTANCE is not None:
             gi._INDEX_INSTANCE.close()
             gi._INDEX_INSTANCE = None
+
+
+def test_delta_tombstone_allowed_reasons_pattern_schema_alignment(tmp_path):
+    """Verify DLT-2026-135: delta.schema.yaml accepts optional tombstone.allowed_reasons[].pattern matching AuditEngine._is_exempted (INV-DELTA-DELETION-AUDIT)."""
+    from eidos.core.spec.parser import parse_spec_file
+    from eidos.core.spec.validator import SpecValidator
+
+    dlt_file = tmp_path / "dlt-2026-135-tombstone.adoc"
+    dlt_file.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-135-TOMBSTONE\n"
+        "title: Tombstone Pattern Schema Alignment\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: enabler\n"
+        "  motivation: Align delta.schema.yaml with AuditEngine._is_exempted.\n"
+        "mutations:\n"
+        "  - operation: remove\n"
+        "    target: CMP-LEGACY\n"
+        "tombstone:\n"
+        "  search_tokens:\n"
+        "    - legacy_bridge\n"
+        "  allowed_reasons:\n"
+        "    - path: src/compat/\n"
+        "      pattern: legacy_bridge\n"
+        "      reason: Intentional v1 compatibility shim.\n"
+        "---\n= Tombstone Pattern\n",
+        encoding="utf-8",
+    )
+    validator = SpecValidator()
+    assert validator.validate_document(parse_spec_file(dlt_file)) == []

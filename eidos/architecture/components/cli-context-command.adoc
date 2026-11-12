@@ -13,10 +13,11 @@ source_path: src/eidos/cli/context_command.py
 Exposes the `eidos context` CLI command for extracting token-budgeted 3-tier architectural subgraph slices (`anchor`, `guardrails`, `deep`) by file path, comma-separated paths, or quoted glob pattern, component/container ID, or natural-language task prompt.
 
 == Key Responsibilities & Collaborators
-* **Context Slice CLI Adapter**: Parses `--file` (`-f`, splitting comma-separated values and preserving repo-root-relative glob patterns unless invoked from a subdirectory whose local glob matches when `repo_root` does not), `--component`, `--task`, `--tier`, `--semantic/--no-semantic`, `--json`, and `--path` options, resolves the nearest governing sub-project `eidos/` directory via `CMP-CLI-APP` (`resolve_cli_eidos_dir(path, hint_files=non_glob_files)`), and delegates subgraph extraction to `CMP-TIERED-CONTEXT-COMPRESSOR` via `CMP-GRAPH-STORAGE` (`ArchitecturalIndex`).
+* **Brace-Aware Context Slice CLI Adapter**: Parses `--file` (`-f`, splitting comma-separated values only outside `{...}` brace groups via `split_brace_aware_csv` so patterns such as `'src/**/*.{ts,tsx}'` remain intact and preserving repo-root-relative globs), `--component`, `--task`, `--tier`, `--semantic/--no-semantic`, `--json`, and `--path` options via `resolve_cli_target_files_and_workspace`, and delegates subgraph extraction to `CMP-TIERED-CONTEXT-COMPRESSOR`.
 
 == Public Surface
 * `register(app: typer.Typer) -> None`
+* `resolve_cli_target_files_and_workspace(files: list[str] | None, path: Path | None, *, json_output: bool = False) -> tuple[Path, Path, list[str] | None]`
 * `context_cmd(files: list[str] | None, component: str | None, task: str | None, tier: str, semantic: bool, json_output: bool, path: Path | None) -> None`
 
 == Design Constraints & Operational Notes

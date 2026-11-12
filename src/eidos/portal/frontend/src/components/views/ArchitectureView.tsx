@@ -1,5 +1,6 @@
 import * as React from "react";
-import { getConfiguredMermaid } from "@/lib/mermaid";
+import { getConfiguredMermaid, sanitizeMermaidCode } from "@/lib/mermaid";
+import { hasSpecBodyOrChunk } from "@/lib/specChunks";
 import {
   ZoomIn,
   ZoomOut,
@@ -71,6 +72,7 @@ export function ArchitectureView({
   const [focusedSubComponentId, setFocusedSubComponentId] = React.useState<string | null>(null);
   const [inspectedContract, setInspectedContract] = React.useState<SpecContract | null>(null);
   const [blastTargetId, setBlastTargetId] = React.useState<string>("");
+  const [diagramError, setDiagramError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (!initialComponentId) return;
@@ -127,12 +129,12 @@ export function ArchitectureView({
       }
     });
 
+    const hop1 = new Set<string>([...upstream1, ...downstream1]);
+    const hop2 = new Set<string>([...upstream2, ...downstream2]);
     const allImpacted = new Set<string>([
       blastTargetId,
-      ...upstream1,
-      ...downstream1,
-      ...upstream2,
-      ...downstream2,
+      ...hop1,
+      ...hop2,
     ]);
 
     return {
@@ -141,41 +143,122 @@ export function ArchitectureView({
       downstream1: Array.from(downstream1),
       upstream2: Array.from(upstream2),
       downstream2: Array.from(downstream2),
+      hop1,
+      hop2,
       allImpacted,
     };
   }, [blastTargetId, data.edges]);
 
-  // Toggle SVG node opacity/outline when Blast Radius Simulator is active (zero Mermaid re-render)
-  React.useEffect(() => {
+  // Apply 1-hop / 2-hop / target / dimmed blast-radius styling directly onto C4 SVG nodes
+  const applyBlastRadiusToSvg = React.useCallback(() => {
     if (!diagramRef.current) return;
-    const nodes = diagramRef.current.querySelectorAll(".node");
+    const nodes = diagramRef.current.querySelectorAll(
+      '[data-c4-entity], [id*="CNT-"], [id*="CMP-"], [id*="SYS-"], .node'
+    );
+    const nodeMatchesEntity = (el: Element, entityId: string): boolean => {
+      if (!entityId) return false;
+      const explicit = el.getAttribute("data-c4-entity") || "";
+      if (explicit === entityId) return true;
+      const txt = el.textContent || "";
+      const nid = el.id || "";
+      const slug = entityId.replace(/-/g, "_");
+      return txt.includes(entityId) || nid.includes(slug) || nid.includes(entityId);
+    };
+
     nodes.forEach((n) => {
       const el = n as HTMLElement;
+      el.classList.remove(
+        "blast-radius-target",
+        "blast-radius-1-hop",
+        "blast-radius-2-hop",
+        "blast-radius-dimmed"
+      );
+      el.removeAttribute("data-blast-hop");
+
+      const shape = el.querySelector<SVGElement>("rect, polygon, path, circle");
+      if (shape) {
+        const origStroke = shape.getAttribute("data-orig-stroke");
+        const origStrokeW = shape.getAttribute("data-orig-stroke-width");
+        const origDash = shape.getAttribute("data-orig-dasharray");
+        if (origStroke !== null) shape.style.stroke = origStroke;
+        if (origStrokeW !== null) shape.style.strokeWidth = origStrokeW;
+        if (origDash !== null) shape.style.strokeDasharray = origDash;
+      }
+
       if (!blastRadiusReport) {
         el.style.opacity = "1";
         el.style.filter = "";
         return;
       }
-      const txt = el.textContent || "";
-      const nid = el.id || "";
-      let isHit = false;
-      blastRadiusReport.allImpacted.forEach((impId) => {
-        if (
-          txt.includes(impId) ||
-          nid.includes(impId.replace(/-/g, "_")) ||
-          nid.includes(impId)
-        ) {
-          isHit = true;
+
+      const saveOrigShapeStyle = () => {
+        if (!shape) return;
+        if (shape.getAttribute("data-orig-stroke") === null) {
+          shape.setAttribute("data-orig-stroke", shape.style.stroke || "");
+          shape.setAttribute("data-orig-stroke-width", shape.style.strokeWidth || "");
+          shape.setAttribute("data-orig-dasharray", shape.style.strokeDasharray || "");
         }
-      });
-      el.style.opacity = isHit ? "1" : "0.28";
-      el.style.filter =
-        txt.includes(blastRadiusReport.targetId) ||
-        nid.includes(blastRadiusReport.targetId.replace(/-/g, "_"))
-          ? "drop-shadow(0 0 8px rgba(59,130,246,0.85))"
-          : "";
+      };
+
+      const isTarget = nodeMatchesEntity(el, blastRadiusReport.targetId);
+      let isHop1 = false;
+      let isHop2 = false;
+      if (!isTarget) {
+        blastRadiusReport.hop1.forEach((id) => {
+          if (nodeMatchesEntity(el, id)) isHop1 = true;
+        });
+        if (!isHop1) {
+          blastRadiusReport.hop2.forEach((id) => {
+            if (nodeMatchesEntity(el, id)) isHop2 = true;
+          });
+        }
+      }
+
+      if (isTarget) {
+        el.classList.add("blast-radius-target");
+        el.setAttribute("data-blast-hop", "target");
+        el.style.opacity = "1";
+        el.style.filter = "drop-shadow(0 0 12px rgba(59, 130, 246, 0.95))";
+        saveOrigShapeStyle();
+        if (shape) {
+          shape.style.stroke = "#3b82f6";
+          shape.style.strokeWidth = "3.5px";
+          shape.style.strokeDasharray = "";
+        }
+      } else if (isHop1) {
+        el.classList.add("blast-radius-1-hop");
+        el.setAttribute("data-blast-hop", "1-hop");
+        el.style.opacity = "1";
+        el.style.filter = "drop-shadow(0 0 10px rgba(244, 63, 94, 0.88))";
+        saveOrigShapeStyle();
+        if (shape) {
+          shape.style.stroke = "#f43f5e";
+          shape.style.strokeWidth = "3px";
+          shape.style.strokeDasharray = "";
+        }
+      } else if (isHop2) {
+        el.classList.add("blast-radius-2-hop");
+        el.setAttribute("data-blast-hop", "2-hop");
+        el.style.opacity = "0.94";
+        el.style.filter = "drop-shadow(0 0 7px rgba(245, 158, 11, 0.78))";
+        saveOrigShapeStyle();
+        if (shape) {
+          shape.style.stroke = "#f59e0b";
+          shape.style.strokeWidth = "2.5px";
+          shape.style.strokeDasharray = "5 3";
+        }
+      } else {
+        el.classList.add("blast-radius-dimmed");
+        el.setAttribute("data-blast-hop", "dimmed");
+        el.style.opacity = "0.22";
+        el.style.filter = "grayscale(0.45)";
+      }
     });
-  }, [blastRadiusReport, level, selectedContainerId]);
+  }, [blastRadiusReport]);
+
+  React.useEffect(() => {
+    applyBlastRadiusToSvg();
+  }, [applyBlastRadiusToSvg, level, selectedContainerId]);
 
   // Dynamic active tiers from components
   const activeTiers = React.useMemo(() => {
@@ -275,6 +358,11 @@ export function ArchitectureView({
 
   const handleMouseUp = () => {
     isDraggingRef.current = false;
+    if (hasMovedRef.current) {
+      window.setTimeout(() => {
+        hasMovedRef.current = false;
+      }, 0);
+    }
   };
 
   // Attach native non-passive wheel listener so scrolling inside the C4 diagram zooms without scrolling the page
@@ -327,17 +415,19 @@ export function ArchitectureView({
     setInspectorOpen(false);
   };
 
-  const attachC4ClickHandlers = () => {
+  const decorateC4Nodes = React.useCallback(() => {
     if (!diagramRef.current) return;
-    const nodes = diagramRef.current.querySelectorAll(".node");
+    const nodes = diagramRef.current.querySelectorAll(
+      '[id*="CNT-"], [id*="CNT_"], [id*="CMP-"], [id*="CMP_"], [id*="SYS-"], [id*="SYS"], .node'
+    );
+    const sysTitle = data.overview?.system_title || "";
+    const sysId = data.overview?.system_id || "SYS";
+
     nodes.forEach((node) => {
       node.classList.add("cursor-pointer");
       const text = node.textContent || "";
       const nodeId = node.id || "";
 
-      const sysTitle = data.overview?.system_title || "";
-      const sysId = data.overview?.system_id || "SYS";
-      // Add tooltips to guide user on click actions
       if (level === 1) {
         if (
           text.includes("SYS") ||
@@ -345,6 +435,7 @@ export function ArchitectureView({
           (sysId && text.includes(sysId)) ||
           nodeId.includes("SYS")
         ) {
+          node.setAttribute("data-c4-entity", sysId);
           node.setAttribute("title", "Click to drill down into Level 2: Containers");
         }
       } else if (level === 2) {
@@ -356,6 +447,7 @@ export function ArchitectureView({
             nodeId.includes(c.id)
         );
         if (matched) {
+          node.setAttribute("data-c4-entity", matched.id);
           node.setAttribute(
             "title",
             `Click to drill down into ${matched.id} (${matched.title}) Level 3 Components`
@@ -364,78 +456,123 @@ export function ArchitectureView({
           node.setAttribute("title", "Click container to drill down into Level 3: Components");
         }
       } else if (level === 3) {
-        if (text.includes("Peer") || nodeId.includes("peer_")) {
-          node.setAttribute("title", "Click to navigate to peer container");
-        } else {
-          node.setAttribute("title", "Click to inspect module details");
-        }
-      }
-
-      node.addEventListener("click", (e) => {
-        e.stopPropagation();
-
-        // Level 1: System Context navigation -> drill down to Level 2 Containers
-        if (level === 1) {
-          if (
-            text.includes("SYS") ||
-            (sysTitle && text.includes(sysTitle)) ||
-            (sysId && text.includes(sysId)) ||
-            nodeId.includes("SYS")
-          ) {
-            setC4Level(2);
-            return;
-          }
-        }
-
-        // Level 2: Container navigation -> drill down to Level 3 Components
-        if (level === 2) {
-          const matched = data.components.find(
-            (c) =>
-              text.includes(c.id) ||
-              text.includes(c.title) ||
-              nodeId.includes(c.id.replace(/-/g, "_")) ||
-              nodeId.includes(c.id)
-          );
-          if (matched) {
-            drillDownToContainer(matched.id);
-            return;
-          }
-        }
-
-        // Level 3: Component navigation -> drill to peer container or inspect
-        if (level === 3) {
-          const peerMatch = data.components.find(
-            (c) =>
-              (text.includes(c.id) && (text.includes("Peer") || nodeId.includes("peer_"))) ||
-              nodeId.includes(`peer_${c.id.replace(/-/g, "_")}`)
-          );
-          if (peerMatch) {
-            drillDownToContainer(peerMatch.id);
-            return;
-          }
-
-          // Inspect container or specific Level 3 component / contract
-          const ctrClicked = (data.contracts || []).find(
-            (ct) => text.includes(ct.id) || nodeId.includes(ct.id.replace(/-/g, "_"))
-          );
-          if (ctrClicked) {
-            setInspectedContract(ctrClicked);
-            return;
-          }
-          const currentComp = data.components.find((c) => c.id === selectedContainerId);
-          if (currentComp) {
-            const matchedSub = (currentComp.internal_components || []).find(
+        const peerMatch = data.components.find(
+          (c) =>
+            (text.includes(c.id) && (text.includes("Peer") || nodeId.includes("peer_"))) ||
+            nodeId.includes(`peer_${c.id.replace(/-/g, "_")}`)
+        );
+        const ctrMatch = (data.contracts || []).find(
+          (ct) => text.includes(ct.id) || nodeId.includes(ct.id.replace(/-/g, "_"))
+        );
+        const currentComp = data.components.find((c) => c.id === selectedContainerId);
+        const matchedSub = currentComp
+          ? (currentComp.internal_components || []).find(
               (sub, idx) =>
                 (sub.id && text.includes(sub.id)) ||
                 (sub.title && text.includes(sub.title)) ||
                 nodeId.includes(`mod_${selectedContainerId.replace(/-/g, "_")}_${idx}`)
-            );
-            openC4Inspector(currentComp, matchedSub?.id || null);
+            )
+          : undefined;
+
+        if (peerMatch) {
+          node.setAttribute("data-c4-entity", peerMatch.id);
+          node.setAttribute("title", "Click to navigate to peer container");
+        } else if (ctrMatch) {
+          node.setAttribute("data-c4-entity", ctrMatch.id);
+          node.setAttribute("title", `Click to inspect contract ${ctrMatch.id}`);
+        } else {
+          if (matchedSub?.id) {
+            node.setAttribute("data-c4-entity", matchedSub.id);
           }
+          node.setAttribute("title", "Click to inspect module details");
         }
-      });
+      }
     });
+  }, [level, data.overview, data.components, data.contracts, selectedContainerId]);
+
+  // Post-render DOM event delegation for C4 node drill-down under Mermaid securityLevel: "strict"
+  const handleDiagramClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (hasMovedRef.current) return;
+    const target = e.target as Element | null;
+    if (!target || !diagramRef.current) return;
+
+    const node = target.closest(
+      '[data-c4-entity], [id*="CNT-"], [id*="CNT_"], [id*="CMP-"], [id*="CMP_"], [id*="SYS-"], [id*="SYS"], [id*="ctr_"], [id*="peer_"], [id*="mod_"], .node'
+    );
+    if (!node || !diagramRef.current.contains(node)) return;
+    e.stopPropagation();
+
+    const text = node.textContent || "";
+    const nodeId = node.id || "";
+    const entityAttr = node.getAttribute("data-c4-entity") || "";
+    const sysTitle = data.overview?.system_title || "";
+    const sysId = data.overview?.system_id || "SYS";
+
+    if (level === 1) {
+      if (
+        entityAttr === sysId ||
+        text.includes("SYS") ||
+        (sysTitle && text.includes(sysTitle)) ||
+        (sysId && text.includes(sysId)) ||
+        nodeId.includes("SYS")
+      ) {
+        setC4Level(2);
+      }
+      return;
+    }
+
+    if (level === 2) {
+      const matched = data.components.find(
+        (c) =>
+          entityAttr === c.id ||
+          text.includes(c.id) ||
+          text.includes(c.title) ||
+          nodeId.includes(c.id.replace(/-/g, "_")) ||
+          nodeId.includes(c.id)
+      );
+      if (matched) {
+        drillDownToContainer(matched.id);
+      }
+      return;
+    }
+
+    if (level === 3) {
+      const peerMatch = data.components.find(
+        (c) =>
+          (text.includes(c.id) && (text.includes("Peer") || nodeId.includes("peer_"))) ||
+          nodeId.includes(`peer_${c.id.replace(/-/g, "_")}`)
+      );
+      if (peerMatch) {
+        drillDownToContainer(peerMatch.id);
+        return;
+      }
+
+      const ctrClicked = (data.contracts || []).find(
+        (ct) =>
+          entityAttr === ct.id ||
+          text.includes(ct.id) ||
+          nodeId.includes(ct.id.replace(/-/g, "_"))
+      );
+      if (ctrClicked) {
+        setInspectedContract(ctrClicked);
+        return;
+      }
+
+      const currentComp = data.components.find((c) => c.id === selectedContainerId);
+      if (currentComp) {
+        const matchedSub = (currentComp.internal_components || []).find(
+          (sub, idx) =>
+            (sub.id && (entityAttr === sub.id || text.includes(sub.id))) ||
+            (sub.title && text.includes(sub.title)) ||
+            nodeId.includes(`mod_${selectedContainerId.replace(/-/g, "_")}_${idx}`)
+        );
+        openC4Inspector(currentComp, matchedSub?.id || null);
+      }
+    }
   };
+
+  const applyBlastRef = React.useRef(applyBlastRadiusToSvg);
+  applyBlastRef.current = applyBlastRadiusToSvg;
 
   // Render diagram when source changes
   React.useEffect(() => {
@@ -443,26 +580,30 @@ export function ArchitectureView({
     const renderDiagram = async () => {
       if (!diagramRef.current) return;
       try {
+        setDiagramError(null);
         const mermaid = await getConfiguredMermaid(darkMode);
         const uniqueId = `mermaid-${Date.now()}`;
-        const { svg } = await mermaid.render(uniqueId, currentDiagramSource);
+        const safeSource = sanitizeMermaidCode(currentDiagramSource);
+        const { svg } = await mermaid.render(uniqueId, safeSource || "graph TD\nSYS[System]");
         if (!isCancelled && diagramRef.current) {
           diagramRef.current.innerHTML = svg;
           const svgEl = diagramRef.current.querySelector("svg");
           if (svgEl) {
             svgEl.style.maxWidth = "none";
           }
-          attachC4ClickHandlers();
+          decorateC4Nodes();
+          applyBlastRef.current();
           // Automatically calculate and apply optimal readable zoom level
           requestAnimationFrame(() => {
             autoFitDiagram();
           });
         }
       } catch (err) {
-        if (!isCancelled && diagramRef.current) {
-          diagramRef.current.innerHTML = `<pre class="text-xs text-red-400 p-4 font-mono">${String(
-            err
-          )}</pre>`;
+        if (!isCancelled) {
+          if (diagramRef.current) {
+            diagramRef.current.replaceChildren();
+          }
+          setDiagramError(err instanceof Error ? err.message : String(err));
         }
       }
     };
@@ -471,7 +612,7 @@ export function ArchitectureView({
     return () => {
       isCancelled = true;
     };
-  }, [currentDiagramSource, darkMode, level, selectedContainerId, autoFitDiagram]);
+  }, [currentDiagramSource, darkMode, level, selectedContainerId, autoFitDiagram, decorateC4Nodes]);
 
   return (
     <div className="space-y-4 animate-in fade-in duration-200">
@@ -683,9 +824,19 @@ export function ArchitectureView({
           </button>
         </div>
 
+        {diagramError && (
+          <div
+            role="alert"
+            className="absolute inset-x-4 top-4 z-30 rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-xs text-rose-400 font-mono whitespace-pre-wrap"
+          >
+            {diagramError}
+          </div>
+        )}
+
         <div
           id="c4ActiveDiagram"
           ref={diagramRef}
+          onClick={handleDiagramClick}
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
             transformOrigin: "center center",
@@ -736,45 +887,85 @@ export function ArchitectureView({
         </div>
 
         {blastRadiusReport && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-border/60 text-xs">
-            <div className="p-3 rounded-xl bg-muted/20 border border-border/60 space-y-1.5">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
-                1-Hop &amp; 2-Hop Upstream Dependents ({blastRadiusReport.upstream1.length + blastRadiusReport.upstream2.length})
+          <div className="space-y-2.5 pt-2 border-t border-border/60 text-xs">
+            <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.9)]" />
+                Target ({blastRadiusReport.targetId})
               </span>
-              <div className="flex flex-wrap gap-1">
-                {[...blastRadiusReport.upstream1, ...blastRadiusReport.upstream2].map((id) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => requestSpecNavigation(id)}
-                    className="px-2 py-0.5 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-mono text-[10px] cursor-pointer"
-                  >
-                    {id}
-                  </button>
-                ))}
-                {blastRadiusReport.upstream1.length + blastRadiusReport.upstream2.length === 0 && (
-                  <span className="text-muted-foreground italic text-[11px]">None</span>
-                )}
-              </div>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.85)]" />
+                1-Hop Direct Impact ({blastRadiusReport.hop1.size})
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full border border-dashed border-amber-400 bg-amber-500/30" />
+                2-Hop Secondary Impact ({blastRadiusReport.hop2.size})
+              </span>
             </div>
-            <div className="p-3 rounded-xl bg-muted/20 border border-border/60 space-y-1.5">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
-                1-Hop &amp; 2-Hop Downstream Dependencies ({blastRadiusReport.downstream1.length + blastRadiusReport.downstream2.length})
-              </span>
-              <div className="flex flex-wrap gap-1">
-                {[...blastRadiusReport.downstream1, ...blastRadiusReport.downstream2].map((id) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => requestSpecNavigation(id)}
-                    className="px-2 py-0.5 rounded bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 font-mono text-[10px] cursor-pointer"
-                  >
-                    {id}
-                  </button>
-                ))}
-                {blastRadiusReport.downstream1.length + blastRadiusReport.downstream2.length === 0 && (
-                  <span className="text-muted-foreground italic text-[11px]">None</span>
-                )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="p-3 rounded-xl bg-muted/20 border border-border/60 space-y-1.5">
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                  1-Hop &amp; 2-Hop Upstream Dependents ({blastRadiusReport.upstream1.length + blastRadiusReport.upstream2.length})
+                </span>
+                <div className="flex flex-wrap gap-1">
+                  {blastRadiusReport.upstream1.map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => requestSpecNavigation(id)}
+                      className="px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 font-mono text-[10px] cursor-pointer"
+                      title="1-Hop Direct Upstream Dependent"
+                    >
+                      1-hop • {id}
+                    </button>
+                  ))}
+                  {blastRadiusReport.upstream2.map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => requestSpecNavigation(id)}
+                      className="px-2 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-dashed border-amber-500/30 font-mono text-[10px] cursor-pointer"
+                      title="2-Hop Secondary Upstream Dependent"
+                    >
+                      2-hop • {id}
+                    </button>
+                  ))}
+                  {blastRadiusReport.upstream1.length + blastRadiusReport.upstream2.length === 0 && (
+                    <span className="text-muted-foreground italic text-[11px]">None</span>
+                  )}
+                </div>
+              </div>
+              <div className="p-3 rounded-xl bg-muted/20 border border-border/60 space-y-1.5">
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                  1-Hop &amp; 2-Hop Downstream Dependencies ({blastRadiusReport.downstream1.length + blastRadiusReport.downstream2.length})
+                </span>
+                <div className="flex flex-wrap gap-1">
+                  {blastRadiusReport.downstream1.map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => requestSpecNavigation(id)}
+                      className="px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 font-mono text-[10px] cursor-pointer"
+                      title="1-Hop Direct Downstream Dependency"
+                    >
+                      1-hop • {id}
+                    </button>
+                  ))}
+                  {blastRadiusReport.downstream2.map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => requestSpecNavigation(id)}
+                      className="px-2 py-0.5 rounded bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-dashed border-blue-500/30 font-mono text-[10px] cursor-pointer"
+                      title="2-Hop Secondary Downstream Dependency"
+                    >
+                      2-hop • {id}
+                    </button>
+                  ))}
+                  {blastRadiusReport.downstream1.length + blastRadiusReport.downstream2.length === 0 && (
+                    <span className="text-muted-foreground italic text-[11px]">None</span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -1334,14 +1525,17 @@ export function ArchitectureView({
               )}
 
               {/* Living Specification Document Body rendered via AsciiDocRenderer */}
-              {inspectedComponent.description && (
+              {hasSpecBodyOrChunk(inspectedComponent.id, inspectedComponent.description) && (
                 <div className="space-y-2 pt-2 border-t border-border/60">
                   <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                     <BookOpen className="h-3.5 w-3.5 text-purple-400" />
                     Living Container Specification (`CNT-*`)
                   </h4>
                   <div className="max-h-[360px] overflow-y-auto rounded-xl p-3 bg-card border border-border/60">
-                    <AsciiDocRenderer content={inspectedComponent.description} />
+                    <AsciiDocRenderer
+                      specId={inspectedComponent.id}
+                      content={inspectedComponent.description || ""}
+                    />
                   </div>
                 </div>
               )}
@@ -1401,9 +1595,12 @@ export function ArchitectureView({
                   </span>
                 )}
             </div>
-            {inspectedContract.description && (
+            {hasSpecBodyOrChunk(inspectedContract.id, inspectedContract.description) && (
               <div className="p-4 rounded-2xl bg-card border border-border/80">
-                <AsciiDocRenderer content={inspectedContract.description} />
+                <AsciiDocRenderer
+                  specId={inspectedContract.id}
+                  content={inspectedContract.description || ""}
+                />
               </div>
             )}
           </div>

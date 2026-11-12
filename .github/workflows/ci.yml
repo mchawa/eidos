@@ -101,7 +101,39 @@ jobs:
         run: uv sync --frozen --python ${{ matrix.python-version }} --all-extras --dev
 
       - name: Run test suite with coverage
-        run: uv run pytest -v --cov=src/eidos --cov-report=term-missing --cov-report=markdown:coverage.md --junitxml=junit.xml
+        env:
+          COVERAGE_CORE: ${{ matrix.python-version != '3.11' && 'sysmon' || 'ctrace' }}
+        run: |
+          uv run eidos index sync
+          uv run pytest -v --cov=src/eidos --cov-report=term-missing --cov-report=markdown:coverage.md --cov-report=json:coverage.json --junitxml=junit.xml
+
+      - name: Verify per-file >90% statement coverage (POL-005)
+        run: |
+          python3 - << 'EOF'
+          import json
+          import pathlib
+          import sys
+
+          cov_data = json.loads(pathlib.Path("coverage.json").read_text(encoding="utf-8"))
+          files = cov_data.get("files", {})
+          offenders = []
+          for py_file in sorted(pathlib.Path("src/eidos").rglob("*.py")):
+              rel = py_file.as_posix()
+              if rel == "src/eidos/_version.py" or rel.startswith("src/eidos/portal/frontend/"):
+                  continue
+              entry = files.get(rel) or files.get(rel.replace("/", "\\"))
+              pct = float(entry["summary"]["percent_covered"]) if entry else 0.0
+              if pct <= 90.0:
+                  offenders.append((rel, pct))
+          if offenders:
+              print("POL-005 per-file coverage violation (each module must be strictly > 90.0%):", file=sys.stderr)
+              print("| Module | Coverage |", file=sys.stderr)
+              print("| :--- | ---: |", file=sys.stderr)
+              for rel, pct in offenders:
+                  print(f"| `{rel}` | {pct:.2f}% |", file=sys.stderr)
+              sys.exit(1)
+          print("POL-005 verified: every Python module under src/eidos/ has > 90.0% statement coverage.")
+          EOF
 
       - name: Write test summary
         if: always()

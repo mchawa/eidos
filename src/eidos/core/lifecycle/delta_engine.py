@@ -245,20 +245,120 @@ def _resolve_git_branch(eidos_dir: Path) -> str | None:
     return None
 
 
+def _collect_other_git_branch_delta_stems(eidos_dir: Path) -> list[str]:
+    """Collect SpecDelta stems from non-HEAD local/remote Git branches without spawning Git on single-branch repos."""
+    resolved_eidos = eidos_dir.resolve()
+    repo_root: Path | None = None
+    git_dir: Path | None = None
+    for cand in (resolved_eidos, *resolved_eidos.parents):
+        dot_git = cand / ".git"
+        if dot_git.is_dir():
+            repo_root = cand
+            git_dir = dot_git
+            break
+        if dot_git.is_file():
+            with contextlib.suppress(OSError):
+                raw_ptr = dot_git.read_text(encoding="utf-8").strip()
+                if raw_ptr.startswith("gitdir:"):
+                    ptr_path = Path(raw_ptr.partition(":")[2].strip())
+                    resolved_git = (cand / ptr_path).resolve() if not ptr_path.is_absolute() else ptr_path.resolve()
+                    commondir_file = resolved_git / "commondir"
+                    if commondir_file.is_file():
+                        common_rel = commondir_file.read_text(encoding="utf-8").strip()
+                        common_dir = (
+                            (resolved_git / common_rel).resolve()
+                            if not Path(common_rel).is_absolute()
+                            else Path(common_rel).resolve()
+                        )
+                    else:
+                        common_dir = resolved_git
+                    repo_root = cand
+                    git_dir = common_dir
+                    break
+    if repo_root is None or git_dir is None:
+        return []
+
+    head_ref = ""
+    head_file = (repo_root / ".git" / "HEAD") if (repo_root / ".git").is_dir() else None
+    if head_file is None:
+        with contextlib.suppress(OSError):
+            ptr_txt = (repo_root / ".git").read_text(encoding="utf-8").strip()
+            if ptr_txt.startswith("gitdir:"):
+                p_dir = Path(ptr_txt.partition(":")[2].strip())
+                wt_git = (repo_root / p_dir).resolve() if not p_dir.is_absolute() else p_dir.resolve()
+                if (wt_git / "HEAD").is_file():
+                    head_file = wt_git / "HEAD"
+    if head_file is not None and head_file.is_file():
+        with contextlib.suppress(OSError):
+            head_txt = head_file.read_text(encoding="utf-8").strip()
+            if head_txt.startswith("ref:"):
+                head_ref = head_txt.partition(":")[2].strip()
+
+    discovered_refs: set[str] = set()
+    for sub in ("refs/heads", "refs/remotes"):
+        ref_base = git_dir / sub
+        if ref_base.is_dir():
+            for rf in ref_base.rglob("*"):
+                if rf.is_file() and rf.name != "HEAD":
+                    with contextlib.suppress(ValueError):
+                        rel_ref = f"{sub}/{rf.relative_to(ref_base).as_posix()}"
+                        discovered_refs.add(rel_ref)
+    packed_refs = git_dir / "packed-refs"
+    if packed_refs.is_file():
+        with contextlib.suppress(OSError):
+            for ln in packed_refs.read_text(encoding="utf-8", errors="replace").splitlines():
+                stripped = ln.strip()
+                if not stripped or stripped.startswith(("#", "^")):
+                    continue
+                parts = stripped.split()
+                if (
+                    len(parts) >= 2
+                    and parts[1].startswith(("refs/heads/", "refs/remotes/"))
+                    and not parts[1].endswith("/HEAD")
+                ):
+                    discovered_refs.add(parts[1])
+
+    other_refs = sorted(r for r in discovered_refs if r != head_ref)
+    if not other_refs:
+        return []
+
+    try:
+        rel_deltas = (eidos_dir / "deltas").resolve().relative_to(repo_root).as_posix()
+    except ValueError:
+        rel_deltas = "eidos/deltas"
+
+    stems: list[str] = []
+    for ref in other_refs:
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            res = subprocess.run(
+                ["git", "-C", str(repo_root), "ls-tree", "-r", "--name-only", ref, "--", rel_deltas],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            if res.returncode == 0 and res.stdout:
+                for ln in res.stdout.splitlines():
+                    p_str = ln.strip()
+                    if p_str.lower().endswith(".adoc"):
+                        stems.append(Path(p_str).stem)
+    return stems
+
+
 def generate_collision_free_delta_id(
     eidos_dir: Path,
     raw_id: str | None = None,
     title: str = "",
     slug_suffix: bool = False,
 ) -> str:
-    """Generate a Git-free SpecDelta ID (DLT-YYYY-NNN-<SLUG>-<4HEX>) scanning local deltas only."""
+    """Generate a collision-free SpecDelta ID (DLT-YYYY-NNN-<SLUG>-<4HEX>) across local deltas and visible Git branches."""
     import datetime
 
     from eidos.core.lifecycle.catalog import normalize_id
 
-    _ = slug_suffix
     deltas_dir = eidos_dir / "deltas"
     existing_ids: set[str] = set()
+    existing_seq_prefixes: set[str] = set()
     max_seq_by_year: dict[int, int] = {}
     seq_re = re.compile(r"^DLT-(\d{4})-(\d{3,})(?:-[A-Z0-9_-]+)?$", re.IGNORECASE)
 
@@ -270,6 +370,7 @@ def generate_collision_free_delta_id(
         m = seq_re.match(norm)
         if m:
             yr, seq = int(m.group(1)), int(m.group(2))
+            existing_seq_prefixes.add(f"DLT-{yr}-{seq:03d}")
             if seq > max_seq_by_year.get(yr, 0):
                 max_seq_by_year[yr] = seq
 
@@ -281,21 +382,29 @@ def generate_collision_free_delta_id(
                 if isinstance(fm_cand, dict) and isinstance(fm_cand.get("id"), str):
                     _record_candidate(fm_cand["id"])
 
+    for branch_stem in _collect_other_git_branch_delta_stems(eidos_dir):
+        _record_candidate(branch_stem)
+
     cleaned_raw = (raw_id or "").strip()
+    use_extended_slug = bool(slug_suffix or cleaned_raw.lower() == "auto-slug")
     is_auto = cleaned_raw.lower() in ("", "auto", "auto-slug")
 
     year = datetime.datetime.now(datetime.UTC).year
     if is_auto:
         next_seq = max_seq_by_year.get(year, 0) + 1
+        while f"DLT-{year}-{next_seq:03d}" in existing_seq_prefixes:
+            next_seq += 1
         base_id = f"DLT-{year}-{next_seq:03d}"
     else:
         base_id = normalize_id("delta", cleaned_raw).replace("_", "-")
         if re.match(r"^DLT-(?:\d{4}-\d+|\d+)-[A-Z0-9-]+-[0-9A-F]{4}$", base_id):
             base_id = base_id[:-5]
 
-    slug_tokens = [tok for tok in re.split(r"[^A-Za-z0-9]+", title.upper()) if len(tok) >= 2][:2]
+    max_tokens = 4 if use_extended_slug else 2
+    slug_tokens = [tok for tok in re.split(r"[^A-Za-z0-9]+", title.upper()) if len(tok) >= 2][:max_tokens]
     title_slug = "-".join(slug_tokens) if slug_tokens else "DELTA"
-    if re.match(r"^DLT-(?:\d{4}-\d+|\d+)-[A-Z][A-Z0-9-]*$", base_id):
+    has_alpha_slug = bool(re.match(r"^DLT-(?:\d{4}-\d+|\d+)-[A-Z][A-Z0-9-]*$", base_id))
+    if has_alpha_slug and (not use_extended_slug or base_id.endswith(f"-{title_slug}")):
         base_with_slug = base_id
     else:
         base_with_slug = f"{base_id}-{title_slug}"
@@ -369,9 +478,22 @@ def create_delta(
     return dest_file
 
 
+def _resolve_delta_lookup(eidos_dir: Path, target: str) -> tuple[Path | None, str | None]:
+    """Resolve a SpecDelta target across deltas/ and eidos_dir, capturing ambiguity errors cleanly."""
+    try:
+        fp = find_spec_by_id_or_path(eidos_dir / "deltas", target)
+        if not fp:
+            fp = find_spec_by_id_or_path(eidos_dir, target)
+        return fp, None
+    except ValueError as exc:
+        return None, str(exc)
+
+
 def delete_delta(eidos_dir: Path, target: str, force: bool = False) -> tuple[bool, str, list[Path]]:
     """Safely delete a SpecDelta (DLT-*) document, rejecting non-delta living specifications."""
-    file_path = find_spec_by_id_or_path(eidos_dir / "deltas", target) or find_spec_by_id_or_path(eidos_dir, target)
+    file_path, amb_err = _resolve_delta_lookup(eidos_dir, target)
+    if amb_err:
+        return False, amb_err, []
     if not file_path or not file_path.exists():
         return False, f"SpecDelta '{target}' not found under '{eidos_dir}'.", []
 
@@ -422,9 +544,9 @@ def set_delta_status(
         allowed = ", ".join(VALID_DELTA_STATUSES)
         return False, f"Invalid SpecDelta status '{new_status}'. Allowed values: {allowed}.", None, None
 
-    file_path = find_spec_by_id_or_path(eidos_dir / "deltas", delta_id_or_path)
-    if not file_path:
-        file_path = find_spec_by_id_or_path(eidos_dir, delta_id_or_path)
+    file_path, amb_err = _resolve_delta_lookup(eidos_dir, delta_id_or_path)
+    if amb_err:
+        return False, amb_err, None, None
 
     if not file_path or not file_path.exists():
         return False, f"SpecDelta '{delta_id_or_path}' not found.", None, None
@@ -468,6 +590,38 @@ def set_delta_status(
     )
 
 
+def _digest_normalized_bytes(raw_bytes: bytes) -> str:
+    """Compute SHA-256 digest after normalizing CRLF line endings to LF."""
+    return hashlib.sha256(raw_bytes.replace(b"\r\n", b"\n")).hexdigest()
+
+
+def _is_shallow_git_repo(repo_root: Path) -> bool:
+    """Return True if repo_root is a shallow Git repository (--depth / fetch-depth)."""
+    from eidos.vcs.diff import _is_shallow_repository
+
+    return _is_shallow_repository(repo_root)
+
+
+def _git_rel_path(
+    path: Path,
+    repo_root: Path,
+    snapshot_root: Path | None = None,
+    git_sub_prefix: str = "",
+) -> str | None:
+    """Resolve `path` relative to `repo_root` (remapping `snapshot_root` prefixes for commit-range drift snapshots)."""
+    resolved = path.resolve()
+    if snapshot_root is not None:
+        try:
+            sub_rel = resolved.relative_to(snapshot_root.resolve()).as_posix()
+            return f"{git_sub_prefix}/{sub_rel}".strip("/") if git_sub_prefix else sub_rel
+        except ValueError:
+            pass
+    try:
+        return resolved.relative_to(repo_root).as_posix()
+    except ValueError:
+        return None
+
+
 def _resolve_git_baseline_sha(
     eidos_dir: Path,
     delta_file: Path,
@@ -476,29 +630,43 @@ def _resolve_git_baseline_sha(
     *,
     rev_cache: dict[Path, list[str]] | None = None,
     blob_cache: dict[tuple[str, str], tuple[bytes | None, dict[str, Any] | None]] | None = None,
+    git_repo_root: Path | None = None,
+    snapshot_root: Path | None = None,
+    git_sub_prefix: str = "",
 ) -> str | None:
     """Recover the pre-delta baseline SHA-256 of target_key from vcs.base_commit or Git history."""
     if target_file is None or not target_file.exists():
         return None
 
-    repo_root = _resolve_git_repo_root(eidos_dir)
+    repo_root = git_repo_root.resolve() if git_repo_root is not None else _resolve_git_repo_root(eidos_dir)
     if repo_root is None:
         return None
 
-    try:
-        rel_target = str(target_file.resolve().relative_to(repo_root)).replace("\\", "/")
-    except ValueError:
+    rel_target = _git_rel_path(target_file, repo_root, snapshot_root=snapshot_root, git_sub_prefix=git_sub_prefix)
+    if rel_target is None:
         return None
 
     def _compute_fallback_revs() -> list[str]:
         fb_revs: list[str] = []
+        is_shallow = _is_shallow_git_repo(repo_root)
+        delta_in_head = False
 
         def _add_fb(cand: str | None) -> None:
             if cand and cand not in fb_revs:
                 fb_revs.append(cand)
 
         with contextlib.suppress(ValueError, OSError, subprocess.SubprocessError):
-            rel_delta = str(delta_file.resolve().relative_to(repo_root)).replace("\\", "/")
+            rel_delta = _git_rel_path(delta_file, repo_root, snapshot_root=snapshot_root, git_sub_prefix=git_sub_prefix)
+            if rel_delta is None:
+                raise ValueError("delta outside repo_root")
+            if is_shallow:
+                cat_res = subprocess.run(
+                    ["git", "-C", str(repo_root), "cat-file", "-e", f"HEAD:{rel_delta}"],
+                    capture_output=True,
+                    timeout=5,
+                    check=False,
+                )
+                delta_in_head = cat_res.returncode == 0
             log_res = subprocess.run(
                 ["git", "-C", str(repo_root), "log", "--diff-filter=A", "--format=%H", "--", rel_delta],
                 capture_output=True,
@@ -518,9 +686,11 @@ def _resolve_git_baseline_sha(
                 )
                 if parent_check.returncode == 0:
                     _add_fb(f"{first_commit}~1")
-                _add_fb(first_commit)
+                    _add_fb(first_commit)
+                elif not (is_shallow and delta_in_head):
+                    _add_fb(first_commit)
 
-        if not fb_revs:
+        if not fb_revs and not (is_shallow and delta_in_head):
             with contextlib.suppress(OSError, subprocess.SubprocessError):
                 for base_branch in ("origin/main", "main", "origin/master", "master"):
                     mb_res = subprocess.run(
@@ -593,7 +763,7 @@ def _resolve_git_baseline_sha(
                     if isinstance(inv, dict) and inv.get("id") == target_key:
                         return True, _digest_dict(inv)
             return True, None
-        return True, hashlib.sha256(raw_bytes).hexdigest()
+        return True, _digest_normalized_bytes(raw_bytes)
 
     for rev in revs:
         found, digest = _digest_from_rev(rev)
@@ -639,7 +809,6 @@ def _resolve_target_path_and_id(
 _PROSE_EXPECT_FIELDS: frozenset[str] = frozenset(
     {
         "rule",
-        "test_binding",
         "description",
         "motivation",
         "summary",
@@ -831,10 +1000,22 @@ def _evaluate_declarative_postcondition(
                 return False
 
         for k, exp_v in fm_expectations.items():
+            if "." in k:
+                segs = k.split(".")
+                if len(segs) < 2 or any(not seg for seg in segs):
+                    if diagnostics is not None:
+                        diagnostics.append(f"frontmatter.{k} has malformed dotted key path")
+                    return False
             found_key, actual = _resolve_frontmatter_path(target_dict, k)
             leaf_key = k.rsplit(".", 1)[-1]
             is_prose = leaf_key in _PROSE_EXPECT_FIELDS
-            if not found_key and (exp_v is not None or "." in k):
+            if exp_v is None:
+                if found_key and actual is not None:
+                    if diagnostics is not None:
+                        diagnostics.append(f"frontmatter.{k} expected None (absent/deleted), got {actual!r}")
+                    return False
+                continue
+            if not found_key:
                 if diagnostics is not None:
                     diagnostics.append(f"frontmatter.{k} expected {exp_v!r}, got None")
                 return False
@@ -878,11 +1059,61 @@ def _evaluate_declarative_postcondition(
     return None
 
 
-def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool, str, DeltaVerificationReport | None]:
+def _is_shallow_committed_delta(
+    eidos_dir: Path,
+    delta_file: Path,
+    *,
+    git_repo_root: Path | None = None,
+    snapshot_root: Path | None = None,
+    git_sub_prefix: str = "",
+) -> bool:
+    """Return True if delta_file is committed in a shallow Git clone whose pre-delta parent commit is grafted away."""
+    repo_root = git_repo_root.resolve() if git_repo_root is not None else _resolve_git_repo_root(eidos_dir)
+    if repo_root is None or not _is_shallow_git_repo(repo_root):
+        return False
+    with contextlib.suppress(ValueError, OSError, subprocess.SubprocessError):
+        rel_delta = _git_rel_path(delta_file, repo_root, snapshot_root=snapshot_root, git_sub_prefix=git_sub_prefix)
+        if rel_delta is None:
+            return False
+        cat_res = subprocess.run(
+            ["git", "-C", str(repo_root), "cat-file", "-e", f"HEAD:{rel_delta}"],
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+        if cat_res.returncode != 0:
+            return False
+        log_res = subprocess.run(
+            ["git", "-C", str(repo_root), "log", "--diff-filter=A", "--format=%H", "--", rel_delta],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        commits = [ln.strip() for ln in log_res.stdout.splitlines() if ln.strip()]
+        earliest = commits[-1] if commits else "HEAD"
+        parent_res = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "--verify", "--quiet", f"{earliest}~1"],
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+        return parent_res.returncode != 0
+    return False
+
+
+def verify_delta_mutations(
+    eidos_dir: Path,
+    delta_id_or_path: str,
+    *,
+    git_repo_root: Path | None = None,
+    snapshot_root: Path | None = None,
+    git_sub_prefix: str = "",
+) -> tuple[bool, str, DeltaVerificationReport | None]:
     """Verify that all composable semantic mutations declared in a SpecDelta are fulfilled in living specifications."""
-    file_path = find_spec_by_id_or_path(eidos_dir / "deltas", delta_id_or_path)
-    if not file_path:
-        file_path = find_spec_by_id_or_path(eidos_dir, delta_id_or_path)
+    file_path, amb_err = _resolve_delta_lookup(eidos_dir, delta_id_or_path)
+    if amb_err:
+        return False, amb_err, None
 
     if not file_path or not file_path.exists():
         return False, f"SpecDelta '{delta_id_or_path}' not found.", None
@@ -894,8 +1125,25 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
     raw_mutations = doc.frontmatter.get("mutations", [])
     if not isinstance(raw_mutations, list):
         raw_mutations = []
+    if not raw_mutations:
+        empty_report = DeltaVerificationReport(
+            delta_id=doc.doc_id,
+            delta_file=file_path,
+            total_mutations=0,
+            verified_count=0,
+            is_verified=False,
+            mutations=[],
+        )
+        return False, f"SpecDelta '{doc.doc_id}' declares zero mutations (mutations: []).", empty_report
 
     delta_status = str(doc.frontmatter.get("status", "proposed")).strip().lower()
+    shallow_committed = _is_shallow_committed_delta(
+        eidos_dir,
+        file_path,
+        git_repo_root=git_repo_root,
+        snapshot_root=snapshot_root,
+        git_sub_prefix=git_sub_prefix,
+    )
     specs_by_id, invariant_map = _build_spec_catalog_with_invariants(eidos_dir)
     invariants = set(invariant_map.keys())
     rev_cache: dict[Path, list[str]] = {}
@@ -932,8 +1180,16 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
         # 1. Removal / Deprecation Operations
         elif op == "remove" and entity_kind == "invariant":
             if lookup_target not in invariants:
-                verified = True
-                status = "ABSENT_AS_EXPECTED"
+                decl_ok = _evaluate_declarative_postcondition(
+                    m, lookup_target, specs_by_id, invariant_map, diagnostics=diag
+                )
+                if decl_ok is False:
+                    verified = False
+                    status = "UNMODIFIED"
+                    failure_reason = "; ".join(diag) if diag else "Declarative expect post-condition failed."
+                else:
+                    verified = True
+                    status = "ABSENT_AS_EXPECTED"
             else:
                 verified = False
                 status = "STILL_PRESENT"
@@ -941,15 +1197,36 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
 
         elif op == "deprecate" or (op == "remove" and entity_kind in ("capability", "policy")):
             if lookup_target not in specs_by_id and not target_path_exists:
-                verified = True
-                status = "ABSENT_AS_EXPECTED"
+                decl_ok = _evaluate_declarative_postcondition(
+                    m, lookup_target, specs_by_id, invariant_map, target_file=target_path_resolved, diagnostics=diag
+                )
+                if decl_ok is False:
+                    verified = False
+                    status = "UNMODIFIED"
+                    failure_reason = "; ".join(diag) if diag else "Declarative expect post-condition failed."
+                else:
+                    verified = True
+                    status = "ABSENT_AS_EXPECTED"
             else:
                 doc_fm = specs_by_id[lookup_target][2] if lookup_target in specs_by_id else {}
                 if not doc_fm and target_path_resolved and target_path_resolved.exists():
                     doc_fm = parse_spec_file(target_path_resolved).frontmatter or {}
                 if str(doc_fm.get("status", "")).lower() in ("deprecated", "retired"):
-                    verified = True
-                    status = "DEPRECATED"
+                    decl_ok = _evaluate_declarative_postcondition(
+                        m,
+                        lookup_target,
+                        specs_by_id,
+                        invariant_map,
+                        target_file=target_path_resolved,
+                        diagnostics=diag,
+                    )
+                    if decl_ok is False:
+                        verified = False
+                        status = "UNMODIFIED"
+                        failure_reason = "; ".join(diag) if diag else "Declarative expect post-condition failed."
+                    else:
+                        verified = True
+                        status = "DEPRECATED"
                 else:
                     verified = False
                     status = "ACTIVE_NOT_DEPRECATED"
@@ -960,8 +1237,16 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
         elif op == "remove":
             still_present = lookup_target in specs_by_id or target_path_exists
             if not still_present:
-                verified = True
-                status = "ABSENT_AS_EXPECTED"
+                decl_ok = _evaluate_declarative_postcondition(
+                    m, lookup_target, specs_by_id, invariant_map, target_file=target_path_resolved, diagnostics=diag
+                )
+                if decl_ok is False:
+                    verified = False
+                    status = "UNMODIFIED"
+                    failure_reason = "; ".join(diag) if diag else "Declarative expect post-condition failed."
+                else:
+                    verified = True
+                    status = "ABSENT_AS_EXPECTED"
             else:
                 verified = False
                 status = "STILL_PRESENT"
@@ -1036,6 +1321,9 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                             inv_file,
                             rev_cache=rev_cache,
                             blob_cache=blob_cache,
+                            git_repo_root=git_repo_root,
+                            snapshot_root=snapshot_root,
+                            git_sub_prefix=git_sub_prefix,
                         )
                         if base_sha is not None and inv_sha == base_sha:
                             verified = False
@@ -1052,8 +1340,15 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                         inv_file,
                         rev_cache=rev_cache,
                         blob_cache=blob_cache,
+                        git_repo_root=git_repo_root,
+                        snapshot_root=snapshot_root,
+                        git_sub_prefix=git_sub_prefix,
                     )
-                    mod_ok = (inv_sha != base_sha) if base_sha is not None else (delta_status == "applied")
+                    mod_ok = (
+                        (inv_sha != base_sha)
+                        if base_sha is not None
+                        else (delta_status == "applied" or shallow_committed)
+                    )
                     verified = mod_ok
                     status = ("FOUND" if delta_status == "applied" else "MODIFIED") if mod_ok else "UNMODIFIED"
                     if not mod_ok:
@@ -1085,7 +1380,7 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                 status = "MISSING"
                 failure_reason = f"Target specification '{lookup_target}' not found."
             else:
-                cur_sha = hashlib.sha256(target_file.read_bytes()).hexdigest()
+                cur_sha = _digest_normalized_bytes(target_file.read_bytes())
 
                 decl_ok = _evaluate_declarative_postcondition(
                     m,
@@ -1111,6 +1406,9 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                             target_file,
                             rev_cache=rev_cache,
                             blob_cache=blob_cache,
+                            git_repo_root=git_repo_root,
+                            snapshot_root=snapshot_root,
+                            git_sub_prefix=git_sub_prefix,
                         )
                         if base_sha is not None and cur_sha == base_sha:
                             verified = False
@@ -1127,8 +1425,15 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                         target_file,
                         rev_cache=rev_cache,
                         blob_cache=blob_cache,
+                        git_repo_root=git_repo_root,
+                        snapshot_root=snapshot_root,
+                        git_sub_prefix=git_sub_prefix,
                     )
-                    mod_ok = (cur_sha != base_sha) if base_sha is not None else (delta_status == "applied")
+                    mod_ok = (
+                        (cur_sha != base_sha)
+                        if base_sha is not None
+                        else (delta_status == "applied" or shallow_committed)
+                    )
                     verified = mod_ok
                     status = ("FOUND" if delta_status == "applied" else "MODIFIED") if mod_ok else "UNMODIFIED"
                     if not mod_ok:
@@ -1180,9 +1485,9 @@ def apply_delta(
         delta_id_or_path: ID, filename, or Path of the delta to apply.
         verify: If True (default), verify that all mutations are fulfilled in living specs before applying.
     """
-    file_path = find_spec_by_id_or_path(eidos_dir / "deltas", delta_id_or_path)
-    if not file_path:
-        file_path = find_spec_by_id_or_path(eidos_dir, delta_id_or_path)
+    file_path, amb_err = _resolve_delta_lookup(eidos_dir, delta_id_or_path)
+    if amb_err:
+        return False, amb_err, None
 
     if not file_path or not file_path.exists():
         return False, f"SpecDelta '{delta_id_or_path}' not found.", None
@@ -1190,6 +1495,14 @@ def apply_delta(
     doc = parse_spec_file(file_path)
     if doc.doc_type != "delta/mutation":
         return False, f"Document at '{file_path}' is not a SpecDelta (type: {doc.doc_type}).", None
+
+    raw_mutations = doc.frontmatter.get("mutations", [])
+    if not isinstance(raw_mutations, list) or not raw_mutations:
+        return (
+            False,
+            f"Cannot apply SpecDelta '{doc.doc_id}': SpecDelta declares zero mutations (mutations: []).",
+            file_path,
+        )
 
     if verify:
         ver_ok, ver_msg, report = verify_delta_mutations(eidos_dir, delta_id_or_path)
@@ -1230,6 +1543,29 @@ def apply_delta(
         f"Successfully applied SpecDelta '{doc.doc_id}' in-place -> {file_path.name}.",
         file_path,
     )
+
+
+def _extract_exploration_section(body: str, heading_pattern: str, inline_label_pattern: str) -> str:
+    """Extract full multi-line AsciiDoc section content (preserving paragraphs, bullets, and '===' subsections)."""
+    if not body:
+        return ""
+    sec_m = re.search(
+        rf"^==\s+[^\r\n]*(?:{heading_pattern})[^\r\n]*\r?\n(.*?)(?=^==\s+|\Z)",
+        body,
+        re.MULTILINE | re.DOTALL | re.IGNORECASE,
+    )
+    if sec_m:
+        extracted = sec_m.group(1).strip()
+        if extracted:
+            return extracted
+    inline_m = re.search(
+        rf"(?:\*{inline_label_pattern}:\*|\*\s*\*{inline_label_pattern}\*:)[ \t]*(.+?)(?=\r?\n\s*\r?\n|\r?\n\*\s*\*|\r?\n==\s+|\Z)",
+        body,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if inline_m:
+        return inline_m.group(1).strip()
+    return ""
 
 
 def _sequence_sort_key(doc_id: str, prefix: str) -> tuple[int, int, str]:
@@ -1302,23 +1638,13 @@ def archive_explorations(
         title = str(fm.get("title") or doc.title or doc_id)
         orig_size = p.stat().st_size
 
-        hypothesis = ""
-        m_hyp = re.search(
-            r"(?:\*Hypothesis:\*|\* \*Hypothesis\*:|^==+\s+[^\n]*Hypothesis[^\n]*)\s*\n+(?:\*\s*\*Hypothesis\*:\s*)?([^=\n][^\n]+)",
-            doc.body or "",
-            re.MULTILINE,
+        raw_body = doc.body or ""
+        hypothesis = _extract_exploration_section(raw_body, r"Hypothesis", r"Hypothesis")
+        findings = _extract_exploration_section(
+            raw_body,
+            r"Findings|Outcome|Learnings|Results|Conclusion",
+            r"(?:Findings|Outcome|Learnings)",
         )
-        if m_hyp:
-            hypothesis = " ".join(m_hyp.group(1).split())
-
-        findings = ""
-        m_find = re.search(
-            r"(?:\*Findings:\*|\* \*Findings\*:|^==+\s+[^\n]*(?:Findings|Outcome)[^\n]*)\s*\n+\*?\s*([^=\n][^\n]+)",
-            doc.body or "",
-            re.MULTILINE,
-        )
-        if m_find:
-            findings = " ".join(m_find.group(1).split())
 
         slim_fm: dict[str, Any] = {
             "type": "product/exploration",

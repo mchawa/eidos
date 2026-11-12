@@ -29,7 +29,6 @@ from eidos.cli.index_commands import index_app
 from eidos.cli.plugin_commands import plugin_app
 from eidos.cli.portal_commands import portal_app
 from eidos.cli.spec_commands import spec_app
-from eidos.core.spec.validator import SpecValidator
 
 app = typer.Typer(
     name="eidos",
@@ -67,6 +66,8 @@ def main(
 
 def info():
     """Display Eidos engine version, bundled schemas, and platform status."""
+    from eidos.core.spec.validator import SpecValidator
+
     validator = SpecValidator()
     schemas = sorted(
         {

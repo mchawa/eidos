@@ -22,6 +22,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
 import { AsciiDocRenderer } from "@/components/ui/AsciiDocRenderer";
+import { hasSpecBodyOrChunk } from "@/lib/specChunks";
 import { requestSpecNavigation } from "@/lib/specNav";
 import { cn } from "@/lib/utils";
 import type {
@@ -889,13 +890,13 @@ export function BusinessView({
                 })()}
 
                 {/* Specification Body */}
-                {selectedEntity.item.body && (
+                {hasSpecBodyOrChunk(selectedEntity.item.id, selectedEntity.item.body) && (
                   <div className="space-y-2 pt-2">
                     <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                       <BookOpen className="h-3.5 w-3.5 text-purple-400" />
                       Living Specification Rationale & Body
                     </h4>
-                    <AsciiDocRenderer content={selectedEntity.item.body} />
+                    <AsciiDocRenderer specId={selectedEntity.item.id} content={selectedEntity.item.body || ""} />
                   </div>
                 )}
               </div>
@@ -1008,13 +1009,13 @@ export function BusinessView({
                 })()}
 
                 {/* Specification Body */}
-                {selectedEntity.item.body && (
+                {hasSpecBodyOrChunk(selectedEntity.item.id, selectedEntity.item.body) && (
                   <div className="space-y-2 pt-2">
                     <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                       <BookOpen className="h-3.5 w-3.5 text-purple-400" />
                       Living Specification Body
                     </h4>
-                    <AsciiDocRenderer content={selectedEntity.item.body} />
+                    <AsciiDocRenderer specId={selectedEntity.item.id} content={selectedEntity.item.body || ""} />
                   </div>
                 )}
               </div>
@@ -1250,13 +1251,13 @@ export function BusinessView({
                 </div>
 
                 {/* Specification Body */}
-                {selectedEntity.item.body && (
+                {hasSpecBodyOrChunk(selectedEntity.item.id, selectedEntity.item.body) && (
                   <div className="space-y-2 pt-2">
                     <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                       <BookOpen className="h-3.5 w-3.5 text-purple-400" />
                       Living Specification Body
                     </h4>
-                    <AsciiDocRenderer content={selectedEntity.item.body} />
+                    <AsciiDocRenderer specId={selectedEntity.item.id} content={selectedEntity.item.body || ""} />
                   </div>
                 )}
               </div>
@@ -1346,13 +1347,13 @@ export function BusinessView({
                 )}
 
                 {/* Specification Body */}
-                {selectedEntity.item.body && (
+                {hasSpecBodyOrChunk(selectedEntity.item.id, selectedEntity.item.body) && (
                   <div className="space-y-2 pt-2">
                     <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                       <BookOpen className="h-3.5 w-3.5 text-purple-400" />
                       Living Specification Profile
                     </h4>
-                    <AsciiDocRenderer content={selectedEntity.item.body} />
+                    <AsciiDocRenderer specId={selectedEntity.item.id} content={selectedEntity.item.body || ""} />
                   </div>
                 )}
               </div>

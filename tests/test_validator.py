@@ -703,7 +703,7 @@ def test_spec_validation_cache_warm_hit_and_invalidation(tmp_path: Path, monkeyp
     edited_report = validator.validate_directory(eidos_dir)
     assert validated_docs == ["worker.adoc"]
     assert not edited_report.is_clean
-    assert str(comp_file) in edited_report.schema_errors
+    assert "eidos/architecture/components/worker.adoc" in edited_report.schema_errors
 
     # Warm run on invalid document still preserves cached schema_errors without re-running validator
     validated_docs.clear()
@@ -1426,7 +1426,7 @@ def test_scoped_empty_system_adoc_exemption_and_non_system_empty_failure(
 
     report = validator.validate_directory(eidos_dir)
     assert not report.is_clean
-    assert str(empty_cap) in report.schema_errors
+    assert "eidos/domains/core/capabilities/empty_cap.adoc" in report.schema_errors
 
 
 def test_schema_cache_collision_free_and_functional_cli_parity(tmp_path: Path, validator: SpecValidator) -> None:
@@ -1974,13 +1974,13 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
         "type: product/policy\n"
         "id: POL-CACHE-001\n"
         "title: Cache Policy\n"
-        "status: active\n"
+        "status: draft\n"
         "category: quality\n"
         "severity: blocking\n"
         "invariants:\n"
         "  - id: INV-" + "POL-CACHE-1\n"
         "    rule: Validate caching\n"
-        "    test_binding: N/A\n"
+        "    test_binding: TBD\n"
         "---\n"
         "= Cache Policy\n",
         encoding="utf-8",
@@ -2702,6 +2702,11 @@ def test_dlt_2026_087_composable_delta_mutation_validation(tmp_path):
     src_dir = tmp_path / "src" / "core"
     src_dir.mkdir(parents=True)
     (src_dir / "engine.py").write_text("def run(): pass\n", encoding="utf-8")
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir(parents=True)
+    (tests_dir / "test_core.py").write_text(
+        "def test_core_runs():\n    # INV-" + "CORE-001\n    assert True\n", encoding="utf-8"
+    )
 
     (cnt_dir / "core.adoc").write_text(
         "---\n"
@@ -2715,7 +2720,7 @@ def test_dlt_2026_087_composable_delta_mutation_validation(tmp_path):
         "invariants:\n"
         "  - id: INV-" + "CORE-001\n"
         "    rule: Core must run\n"
-        "    test_binding: N/A\n"
+        "    test_binding: tests/test_core.py::test_core_runs\n"
         "---\n"
         "= Core\n",
         encoding="utf-8",
@@ -3851,8 +3856,966 @@ def test_dlt_2026_114_cli_contract_positional_placeholder_alignment(tmp_path: Pa
     assert rep_ok.is_clean, f"Unexpected errors: {rep_ok.broken_references}"
 
 
+def test_dlt_132_134_136_tokens_containment_active_bindings_and_strict_schemas(tmp_path, validator):
+    """Verify DLT-2026-132, DLT-2026-134, and DLT-2026-136: tokens.manifest containment, repo-relative schema_errors, strict active test_binding (including UIC-*), non-empty schema strings/arrays, and cli client platform (INV-W3C-DTCG-COMPLIANCE, INV-POL-002-INVARIANT-TEST-ENFORCEMENT, INV-SPEC-VALIDATION, INV-CLIENT-DESIGN-BINDING)."""
+    from eidos.core.spec.parser import parse_spec_file
+
+    repo = tmp_path / "repo"
+    eidos_dir = repo / "eidos"
+    ds_dir = eidos_dir / "design" / "systems" / "brand"
+    uic_dir = ds_dir / "components"
+    clt_dir = eidos_dir / "design" / "clients" / "cli-app"
+    pol_dir = eidos_dir / "policies"
+    dlt_dir = eidos_dir / "deltas"
+    tests_dir = repo / "tests"
+    for d in (ds_dir, uic_dir, clt_dir, pol_dir, dlt_dir, tests_dir):
+        d.mkdir(parents=True, exist_ok=True)
+
+    outside_tokens = tmp_path / "outside_tokens.json"
+    outside_tokens.write_text('{"color": {"$value": "#000000", "$type": "color"}}\n', encoding="utf-8")
+    (ds_dir / "tokens.json").write_text('{"color": {"$value": "#112233", "$type": "color"}}\n', encoding="utf-8")
+
+    # 1. Symlinked tokens.manifest escaping repo_root must fail containment check
+    escape_link = ds_dir / "escape_tokens.json"
+    escape_link.symlink_to(outside_tokens)
+    ds_spec = ds_dir / "system.adoc"
+    ds_spec.write_text(
+        "---\n"
+        "type: design/system\n"
+        "id: DS-BRAND\n"
+        "title: Brand Design System\n"
+        "status: active\n"
+        "tokens:\n"
+        "  spec_format: w3c_design_tokens\n"
+        "  manifest: escape_tokens.json\n"
+        "---\n= Brand\n",
+        encoding="utf-8",
+    )
+    rep_escape = validator.validate_directory(eidos_dir)
+    assert any("outside repository root" in r for r in rep_escape.broken_references)
+
+    # Schema also rejects ../ traversal and absolute paths in tokens.manifest
+    ds_traversal = ds_dir / "traversal.adoc"
+    ds_traversal.write_text(
+        "---\n"
+        "type: design/system\n"
+        "id: DS-TRAVERSAL\n"
+        "title: Traversal DS\n"
+        "status: draft\n"
+        "tokens:\n"
+        "  spec_format: w3c_design_tokens\n"
+        "  manifest: ../../outside_tokens.json\n"
+        "---\n= Traversal\n",
+        encoding="utf-8",
+    )
+    trav_errs = validator.validate_document(parse_spec_file(ds_traversal))
+    assert any("manifest" in e for e in trav_errs)
+    ds_traversal.unlink()
+
+    # Fix DS-BRAND to valid repo-contained tokens.json and add CLI client (platform: cli)
+    ds_spec.write_text(
+        ds_spec.read_text(encoding="utf-8").replace("escape_tokens.json", "tokens.json"),
+        encoding="utf-8",
+    )
+    (clt_dir / "client.adoc").write_text(
+        "---\n"
+        "type: design/client\n"
+        "id: CLT-CLI-APP\n"
+        "title: CLI Client Surface\n"
+        "platform: cli\n"
+        "design_system: DS-BRAND\n"
+        "status: active\n"
+        "---\n= CLI Client\n",
+        encoding="utf-8",
+    )
+
+    # 2. Active UIC-* and POL-* invariants reject N/A, TBD, NONE, and bare file paths lacking ::
+    uic_spec = uic_dir / "button.adoc"
+    uic_spec.write_text(
+        "---\n"
+        "type: design/ui-component\n"
+        "id: UIC-BRAND-BTN\n"
+        "title: Brand Button\n"
+        "design_system: DS-BRAND\n"
+        "status: active\n"
+        "invariants:\n"
+        "  - id: INV-" + "UIC-BTN-1\n"
+        "    rule: Button must expose accessible label.\n"
+        "    test_binding: TBD\n"
+        "---\n= Button\n",
+        encoding="utf-8",
+    )
+    pol_spec = pol_dir / "pol-strict.adoc"
+    pol_spec.write_text(
+        "---\n"
+        "type: product/policy\n"
+        "id: POL-STRICT-001\n"
+        "title: Strict Policy\n"
+        "status: active\n"
+        "category: quality\n"
+        "invariants:\n"
+        "  - id: INV-" + "POL-NA\n"
+        "    rule: N/A binding rejected.\n"
+        "    test_binding: N/A\n"
+        "  - id: INV-" + "POL-BARE\n"
+        "    rule: Bare path rejected.\n"
+        "    test_binding: tests/test_ui.py\n"
+        "---\n= Policy\n",
+        encoding="utf-8",
+    )
+    (tests_dir / "test_ui.py").write_text(
+        "def test_btn():\n    # INV-" + "UIC-BTN-1\n    # INV-" + "POL-NA\n    # INV-" + "POL-BARE\n    assert True\n",
+        encoding="utf-8",
+    )
+    rep_bindings = validator.validate_directory(eidos_dir)
+    assert any(
+        ("INV-" + "UIC-BTN-1") in r and "invalid test_binding 'TBD'" in r for r in rep_bindings.broken_references
+    )
+    assert any(("INV-" + "POL-NA") in r and "invalid test_binding 'N/A'" in r for r in rep_bindings.broken_references)
+    assert any(("INV-" + "POL-BARE") in r and "missing '::symbol'" in r for r in rep_bindings.broken_references)
+
+    # Draft spec with TBD passes, and active specs with file::symbol pass
+    uic_spec.write_text(
+        uic_spec.read_text(encoding="utf-8").replace("status: active", "status: draft"), encoding="utf-8"
+    )
+    pol_spec.write_text(
+        pol_spec.read_text(encoding="utf-8")
+        .replace("test_binding: N/A\n", "test_binding: tests/test_ui.py::test_btn\n")
+        .replace("test_binding: tests/test_ui.py\n", "test_binding: tests/test_ui.py::test_btn\n"),
+        encoding="utf-8",
+    )
+    rep_clean = validator.validate_directory(eidos_dir)
+    assert rep_clean.is_clean, f"Unexpected errors: {rep_clean.schema_errors} / {rep_clean.broken_references}"
+
+    # 3. Non-empty strings, minItems: 1 code_paths, delta expect test_binding N/A removal, and tombstone pattern
+    bad_blank = pol_dir / "blank.adoc"
+    bad_blank.write_text(
+        "---\ntype: product/policy\nid: POL-BLANK\ntitle: '   '\nstatus: draft\ncategory: quality\n---\n= Blank\n",
+        encoding="utf-8",
+    )
+    rep_blank = validator.validate_directory(eidos_dir)
+    assert "eidos/policies/blank.adoc" in rep_blank.schema_errors
+    assert rep_blank.schema_errors.get(str(bad_blank))
+    bad_blank.unlink()
+
+    bad_cnt = eidos_dir / "architecture" / "containers" / "empty-paths.adoc"
+    bad_cnt.parent.mkdir(parents=True, exist_ok=True)
+    bad_cnt.write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-EMPTY-PATHS\n"
+        "title: Empty Paths\n"
+        "container_type: service\n"
+        "runtime: Python\n"
+        "source_path: []\n"
+        "---\n= Empty\n",
+        encoding="utf-8",
+    )
+    assert validator.validate_document(parse_spec_file(bad_cnt))
+    bad_cnt.unlink()
+
+    dlt_na = dlt_dir / "dlt-na.adoc"
+    dlt_na.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-001\n"
+        "title: Reject NA Expect\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: bug\n"
+        "  motivation: Forbid N/A in expect.frontmatter.test_binding.\n"
+        "mutations:\n"
+        "  - operation: modify\n"
+        "    target: INV-" + "POL-NA\n"
+        "    expect:\n"
+        "      frontmatter:\n"
+        "        test_binding: N/A\n"
+        "---\n= Delta\n",
+        encoding="utf-8",
+    )
+    assert any("N/A" in e or "test_binding" in e for e in validator.validate_document(parse_spec_file(dlt_na)))
+    dlt_na.unlink()
+
+    # Verify $defs.non_empty_string is reused everywhere (zero inline minLength / \S redefinitions or bare string types)
+    from eidos.core.spec.parser import safe_load_yaml
+    from eidos.core.workspace.assets import get_v1_schemas_dir
+
+    inline_redefs: list[tuple[str, str]] = []
+    bare_strings: list[tuple[str, str]] = []
+
+    def _audit_schema_strings(node: object, fname: str, path: str = "") -> None:
+        if isinstance(node, dict):
+            if node.get("type") == "string" and path != "$defs.non_empty_string":
+                if "minLength" in node or node.get("pattern") == "\\S":
+                    inline_redefs.append((fname, path))
+                if not any(k in node for k in ("const", "enum", "pattern")):
+                    bare_strings.append((fname, path))
+            for k, v in node.items():
+                _audit_schema_strings(v, fname, f"{path}.{k}" if path else k)
+        elif isinstance(node, list):
+            for idx, item in enumerate(node):
+                _audit_schema_strings(item, fname, f"{path}[{idx}]")
+
+    for yaml_path in sorted(get_v1_schemas_dir().rglob("*.yaml")):
+        _audit_schema_strings(safe_load_yaml(yaml_path.read_text(encoding="utf-8")), yaml_path.name)
+
+    assert inline_redefs == [], f"Inline non_empty_string redefinitions found: {inline_redefs}"
+    assert bare_strings == [], f"Bare unconstrained string fields found: {bare_strings}"
+
+    # Verify $ref: "#/$defs/non_empty_string" + sibling x-eidos-ref both enforce on flow.schema.yaml steps[].screen
+    flow_dir = eidos_dir / "design" / "flows"
+    flow_dir.mkdir(parents=True, exist_ok=True)
+    flow_ws = flow_dir / "flow-blank-screen.adoc"
+    flow_ws.write_text(
+        "---\ntype: design/flow\nid: FLOW-CHECK\ntitle: Flow Check\nstatus: draft\nsteps:\n  - step: 1\n    title: Open\n    screen: '   '\n---\n= Flow\n",
+        encoding="utf-8",
+    )
+    assert validator.validate_document(parse_spec_file(flow_ws))
+    flow_ws.write_text(
+        "---\ntype: design/flow\nid: FLOW-CHECK\ntitle: Flow Check\nstatus: draft\nsteps:\n  - step: 1\n    title: Open\n    screen: SCR-MISSING\n---\n= Flow\n",
+        encoding="utf-8",
+    )
+    rep_flow = validator.validate_directory(eidos_dir)
+    assert any("SCR-MISSING" in b for b in rep_flow.broken_references)
+    flow_ws.unlink()
+
+
+def test_dlt_135_contract_parity_public_surface_parser_models_and_brace_globs(tmp_path, validator):
+    """Verify DLT-2026-135: trailing '---' YAML, graceful UnicodeDecodeError, parent-first path inference, {a,b} brace globs, backtick gRPC & protobuf message/enum parity, OpenAPI route boundaries, '::'/generics/per-class Public Surface, and imported Typer/Click CLI parity (INV-SPEC-VALIDATION, INV-SPEC-GRAPH-INTEGRITY)."""
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.core.spec.models import infer_entity_type_from_path
+    from eidos.core.spec.parser import YamlError, parse_spec_file, safe_load_yaml
+    from eidos.core.workspace.project import expand_brace_globs, match_path_pattern
+
+    # 1. Parser: trailing --- / ... allowed; genuine multi-doc rejected; invalid UTF-8 captured in parse_errors
+    assert safe_load_yaml("id: POL-001\ntitle: Valid\n---\n") == {"id": "POL-001", "title": "Valid"}
+    assert safe_load_yaml("id: POL-001\n...\n") == {"id": "POL-001"}
+    with pytest.raises(YamlError, match="multiple documents"):
+        safe_load_yaml("a: 1\n---\nb: 2\n")
+
+    bad_utf8 = tmp_path / "corrupt.adoc"
+    bad_utf8.write_bytes(b"\xff\xfe---\nid: POL-BAD\n---\n")
+    corrupt_doc = parse_spec_file(bad_utf8)
+    assert not corrupt_doc.is_valid
+    assert any("Invalid UTF-8 encoding" in err for err in corrupt_doc.parse_errors)
+
+    # 2. Models: canonical parent directories take precedence over stem prefixes (e.g. flow-engine.adoc)
+    assert infer_entity_type_from_path(Path("eidos/architecture/components/flow-engine.adoc")) == (
+        "CMP-",
+        "tech/component",
+        "CMP-FLOW-ENGINE",
+    )
+    assert infer_entity_type_from_path(Path("eidos/architecture/containers/scr-worker.adoc")) == (
+        "CNT-",
+        "tech/container",
+        "CNT-SCR-WORKER",
+    )
+    assert infer_entity_type_from_path(Path("eidos/architecture/contracts/cap-gateway.adoc")) == (
+        "CTR-",
+        "tech/contract",
+        "CTR-CAP-GATEWAY",
+    )
+    assert infer_entity_type_from_path(Path("eidos/design/systems/core/components/dom-card.adoc")) == (
+        "UIC-",
+        "design/ui-component",
+        "UIC-DOM-CARD",
+    )
+
+    # 3. Brace globs in project.py and validator._resolve_source_path
+    assert expand_brace_globs("src/{core,cli}/*.{py,ts}") == [
+        "src/core/*.py",
+        "src/core/*.ts",
+        "src/cli/*.py",
+        "src/cli/*.ts",
+    ]
+    assert expand_brace_globs("src/{unclosed/*.py") == ["src/{unclosed/*.py"]
+    assert match_path_pattern("src/cli/run.py", "src/{core,cli}/*.py")
+    assert not match_path_pattern("src/other/run.py", "src/{core,cli}/*.py")
+
+    # 4. Build workspace testing gRPC, Protobuf, OpenAPI, Public Surface, and CLI sub-apps
+    ws = tmp_path / "ws"
+    eidos_dir = ws / "eidos"
+    cnt_dir = eidos_dir / "architecture" / "containers"
+    cmp_dir = eidos_dir / "architecture" / "components"
+    ctr_dir = eidos_dir / "architecture" / "contracts"
+    for d in (
+        cnt_dir,
+        cmp_dir,
+        ctr_dir,
+        ws / "src" / "alpha",
+        ws / "src" / "beta",
+        ws / "proto",
+        ws / "api",
+        ws / "cli",
+    ):
+        d.mkdir(parents=True, exist_ok=True)
+
+    (ws / "src" / "alpha" / "mod.py").write_text(
+        "class BaseSvc:\n"
+        "    def inherited_op(self):\n"
+        "        return 1\n\n"
+        "class ClassA(BaseSvc):\n"
+        "    def method_a(self):\n"
+        "        return 2\n\n"
+        "class ClassB:\n"
+        "    def method_b(self):\n"
+        "        return 3\n\n"
+        "def first(items):\n"
+        "    return items[0]\n",
+        encoding="utf-8",
+    )
+    (ws / "src" / "beta" / "lib.rs").write_text(
+        "pub struct RenderGraph {}\n"
+        "impl RenderGraph {\n"
+        "    pub fn execute(&self) {}\n"
+        "}\n"
+        "pub async fn parse<T>(input: T) -> T { input }\n",
+        encoding="utf-8",
+    )
+    (ws / "src" / "beta" / "server.go").write_text(
+        "package beta\ntype Server struct{}\nfunc (s *Server) Start() {}\n",
+        encoding="utf-8",
+    )
+
+    (cnt_dir / "core.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-CORE\n"
+        "title: Core\n"
+        "status: active\n"
+        "container_type: service\n"
+        "runtime: Polyglot\n"
+        "source_path: 'src/{alpha,beta}/*'\n"
+        "---\n= Core\n",
+        encoding="utf-8",
+    )
+
+    # Public Surface: valid ::, generics, Go receiver, pub async fn, and inherited method pass; ClassA.method_b and RenderGraph::Missing fail
+    cmp_surface = cmp_dir / "surface.adoc"
+    cmp_surface.write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-SURFACE\n"
+        "title: Surface Component\n"
+        "container: CNT-CORE\n"
+        "status: active\n"
+        "source_path: 'src/{alpha,beta}/*'\n"
+        "---\n= Surface\n\n"
+        "== Public Surface\n"
+        "* `crate::beta::parse<T>(input: T)`\n"
+        "* `RenderGraph::execute()`\n"
+        "* `RenderGraph::DoesNotExist()`\n"
+        "* `func (s *Server) Start()`\n"
+        "* `def first[T](items: list[T])`\n"
+        "* `ClassA.inherited_op()`\n"
+        "* `ClassA.method_b()`\n",
+        encoding="utf-8",
+    )
+
+    # Protobuf pure message/enum contract + gRPC contract with prose 'service layer' and 'rpc retries'
+    (ws / "proto" / "events.proto").write_text(
+        'syntax = "proto3";\nmessage UserEvent { string id = 1; }\nenum EventKind { UNKNOWN = 0; }\n',
+        encoding="utf-8",
+    )
+    (ws / "proto" / "svc.proto").write_text(
+        'syntax = "proto3";\nservice OrderService {\n  rpc CreateOrder (OrderReq) returns (OrderResp);\n}\n',
+        encoding="utf-8",
+    )
+    ctr_proto = ctr_dir / "events.adoc"
+    ctr_proto.write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "id: CTR-EVENTS-PROTO\n"
+        "title: Events Protobuf\n"
+        "status: active\n"
+        "protocol: protobuf\n"
+        "container: CNT-CORE\n"
+        "specification_file: proto/events.proto\n"
+        "---\n= Events\n\n"
+        "Defines `message UserEvent`, `enum EventKind`, and `message GhostEvent`.\n",
+        encoding="utf-8",
+    )
+    ctr_grpc = ctr_dir / "grpc.adoc"
+    ctr_grpc.write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "id: CTR-ORDER-GRPC\n"
+        "title: Order gRPC\n"
+        "status: active\n"
+        "protocol: grpc\n"
+        "container: CNT-CORE\n"
+        "specification_file: proto/svc.proto\n"
+        "---\n= Order gRPC\n\n"
+        "The service layer handles rpc retries for `service OrderService` and `rpc CreateOrder`.\n",
+        encoding="utf-8",
+    )
+
+    # OpenAPI route boundary: /v2/users must NOT satisfy /users, and `/etc/eidos/config.yaml` must NOT false-fail
+    (ws / "api" / "openapi.yaml").write_text(
+        "openapi: 3.1.0\npaths:\n  /users:\n    get:\n      summary: Users\n  /v2/users:\n    get:\n      summary: V2 Users\n",
+        encoding="utf-8",
+    )
+    ctr_rest = ctr_dir / "rest.adoc"
+    ctr_rest.write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "id: CTR-REST\n"
+        "title: REST API\n"
+        "status: active\n"
+        "protocol: openapi\n"
+        "container: CNT-CORE\n"
+        "specification_file: api/openapi.yaml\n"
+        "---\n= REST\n\n"
+        "Reads `/etc/eidos/config.yaml` and exposes `GET /v2/users` and `POST /v1/ghost`.\n",
+        encoding="utf-8",
+    )
+
+    # CLI contract: Click with helper import from typer + Typer with imported sibling sub_app
+    (ws / "cli" / "click_cli.py").write_text(
+        "import click\nfrom typer import BadParameter\n\n"
+        "@click.group()\ndef cli(): pass\n\n"
+        "@cli.command('serve')\ndef serve_cmd(): pass\n",
+        encoding="utf-8",
+    )
+    (ws / "cli" / "sub_commands.py").write_text(
+        "import typer\nsub_app = typer.Typer(name='sub')\n\n@sub_app.command('ping')\ndef ping_cmd(): pass\n",
+        encoding="utf-8",
+    )
+    (ws / "cli" / "extra_sub.py").write_text(
+        "import typer\nextra_app = typer.Typer(name='extra')\n\n@extra_app.command('pong')\ndef pong_cmd(): pass\n",
+        encoding="utf-8",
+    )
+    (ws / "cli" / "sibling_cmds.py").write_text(
+        "def register(app):\n    @app.command('health')\n    def health_cmd(): pass\n",
+        encoding="utf-8",
+    )
+    (ws / "cli" / "typer_main.py").write_text(
+        "import typer\nimport sub_commands\nimport sibling_cmds\nfrom extra_sub import extra_app\n"
+        "app = typer.Typer()\napp.add_typer(sub_commands.sub_app, name='sub')\n"
+        "app.add_typer(extra_app, name='extra')\nsibling_cmds.register(app)\n",
+        encoding="utf-8",
+    )
+    ctr_click = ctr_dir / "click.adoc"
+    ctr_click.write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "id: CTR-CLICK\n"
+        "title: Click CLI\n"
+        "status: active\n"
+        "protocol: cli_args\n"
+        "container: CNT-CORE\n"
+        "specification_file: cli/click_cli.py\n"
+        "---\n= Click CLI\nDocuments `cli` entrypoint.\n",
+        encoding="utf-8",
+    )
+    ctr_typer = ctr_dir / "typer.adoc"
+    ctr_typer.write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "id: CTR-TYPER\n"
+        "title: Typer CLI\n"
+        "status: active\n"
+        "protocol: cli_args\n"
+        "container: CNT-CORE\n"
+        "specification_file: cli/typer_main.py\n"
+        "---\n= Typer CLI\n\n"
+        "=== `mycli health`\nHealth check.\n\n"
+        "=== `mycli extra`\n* **Sub-commands**:\n  - `mycli extra pong`: Pong.\n\n"
+        "=== `mycli sub`\n* **Sub-commands**:\n  - `mycli sub bogus`: Bogus.\n",
+        encoding="utf-8",
+    )
+
+    rep = validator.validate_directory(eidos_dir)
+    refs_joined = "\n".join(rep.broken_references)
+    # Surface checks
+    assert "DoesNotExist" in refs_joined
+    assert "method_b" in refs_joined
+    assert "inherited_op" not in refs_joined
+    assert "execute" not in refs_joined
+    assert "parse" not in refs_joined
+    assert "Start" not in refs_joined
+    assert "first" not in refs_joined
+    # Protobuf & gRPC checks
+    assert "GhostEvent" in refs_joined
+    assert "layer" not in refs_joined
+    assert "retries" not in refs_joined
+    # OpenAPI checks
+    assert "OpenAPI path '/users' defined in 'openapi.yaml' is not documented" in refs_joined
+    assert "/v1/ghost" in refs_joined
+    assert "/etc/eidos/config.yaml" not in refs_joined
+    # CLI checks
+    assert "CLI command 'serve' defined in 'click_cli.py'" in refs_joined
+    assert "CLI subcommand 'sub ping' is not documented" in refs_joined
+    assert "documented CLI subcommand 'sub bogus'" in refs_joined
+
+    # Fix all intentional drift items and confirm clean validation
+    cmp_surface.write_text(
+        cmp_surface.read_text(encoding="utf-8")
+        .replace("* `RenderGraph::DoesNotExist()`\n", "")
+        .replace("* `ClassA.method_b()`\n", "* `ClassA.method_a()`\n"),
+        encoding="utf-8",
+    )
+    ctr_proto.write_text(
+        ctr_proto.read_text(encoding="utf-8").replace(", and `message GhostEvent`", ""),
+        encoding="utf-8",
+    )
+    ctr_rest.write_text(
+        ctr_rest.read_text(encoding="utf-8").replace(
+            "exposes `GET /v2/users` and `POST /v1/ghost`.",
+            "exposes `GET /v2/users`.\n\n|===\n| Method | Path\n| GET | `/users`\n|===\n",
+        ),
+        encoding="utf-8",
+    )
+    ctr_click.write_text(
+        ctr_click.read_text(encoding="utf-8") + "\n=== `cli serve`\nServes requests.\n",
+        encoding="utf-8",
+    )
+    ctr_typer.write_text(
+        ctr_typer.read_text(encoding="utf-8").replace("mycli sub bogus", "mycli sub ping"),
+        encoding="utf-8",
+    )
+
+    rep_fixed = validator.validate_directory(eidos_dir)
+    assert rep_fixed.is_clean, f"Expected clean workspace, got: {rep_fixed.broken_references}"
+    # Exercise SQLite validation cache hit (mtime match + sha256 match after mtime bump)
+    rep_cached = validator.validate_directory(eidos_dir)
+    assert rep_cached.is_clean
+    import os as _os
+
+    st_now = cmp_surface.stat()
+    _os.utime(cmp_surface, ns=(st_now.st_atime_ns, st_now.st_mtime_ns + 1_000_000))
+    assert validator.validate_directory(eidos_dir).is_clean
+
+    # Verify `eidos spec show DLT-*` directs callers to `eidos delta show`
+    dlt_sample = eidos_dir / "deltas" / "dlt-2026-001-sample.adoc"
+    dlt_sample.parent.mkdir(parents=True, exist_ok=True)
+    dlt_sample.write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-001\ntitle: Sample\nstatus: proposed\n"
+        "intent:\n  kind: bug\n  motivation: Test redirect.\nmutations:\n  - operation: modify\n    target: CNT-CORE\n---\n= Sample\n",
+        encoding="utf-8",
+    )
+    cli_runner = CliRunner()
+    res_spec_dlt = cli_runner.invoke(app, ["spec", "show", "DLT-2026-001", "--path", str(eidos_dir)])
+    assert res_spec_dlt.exit_code == 1
+    assert "eidos delta show DLT-2026-001" in " ".join(res_spec_dlt.output.split())
+    res_spec_path = cli_runner.invoke(app, ["spec", "show", str(dlt_sample), "--path", str(eidos_dir)])
+    assert res_spec_path.exit_code == 1
+    assert "eidos delta show DLT-2026-001" in " ".join(res_spec_path.output.split())
+
+
+def test_group_e_parser_models_project_and_spec_cli_branches(tmp_path, validator):
+    """Exercise edge-case branches across parser.py, models.py, project.py, validator.py, and spec_commands.py."""
+    import io
+    import subprocess
+
+    import orjson
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.core.spec.models import (
+        CapabilityTechnicalModel,
+        DecisionModel,
+        DeltaIntentModel,
+        DeltaMutationModel,
+        FrontmatterModel,
+        InvariantModel,
+        RejectedAlternativeModel,
+        _SchemaErrorsMap,
+        infer_entity_type_from_path,
+    )
+    from eidos.core.spec.parser import (
+        YamlError,
+        _parse_spec_content,
+        parse_spec_file,
+        safe_dump_yaml,
+        safe_load_yaml,
+        split_frontmatter_and_body,
+    )
+    from eidos.core.workspace.project import (
+        _glob_to_anchored_regex,
+        _is_inside_plugin_or_assets,
+        discover_nested_subproject_roots,
+        find_repo_root,
+        get_tracked_files,
+        is_generated_or_vendored,
+        is_polyglot_test_file,
+        load_project,
+        match_path_pattern,
+        matches_owned_paths,
+        resolve_spec_and_repo_roots,
+    )
+
+    # 1. Parser edge cases
+    assert safe_load_yaml(None) is None
+    assert safe_load_yaml("   \n  ") is None
+    assert safe_load_yaml("---\n...\n") is None
+    assert safe_load_yaml(b"key: 42\n") == {"key": 42}
+    with pytest.raises(YamlError):
+        safe_load_yaml(12345)
+    buf = io.StringIO()
+    dumped = safe_dump_yaml({"alpha": "beta"}, stream=buf)
+    assert "alpha: beta" in dumped and buf.getvalue() == dumped
+    assert split_frontmatter_and_body("") == (None, "")
+    raw_fm, body_txt = split_frontmatter_and_body("---\nnote: 'a\n---\nb'\n---\n= Title\n")
+    assert raw_fm is not None and "note:" in raw_fm and "= Title" in body_txt
+    missing_doc = parse_spec_file(tmp_path / "does_not_exist.adoc")
+    assert not missing_doc.is_valid and any("Failed to read" in e for e in missing_doc.parse_errors)
+    empty_sys = _parse_spec_content(tmp_path / "eidos" / "system.adoc", "")
+    assert empty_sys.doc_id == "SYS-UNINITIALIZED"
+    no_fm_doc = _parse_spec_content(tmp_path / "plain.adoc", "---\n---\n= Plain\n")
+    assert not no_fm_doc.is_valid
+
+    # 2. Models & path inference edge cases
+    assert infer_entity_type_from_path("") is None
+    assert infer_entity_type_from_path("eidos/design/systems/brand/system.adoc") == ("DS-", "design/system", "DS-BRAND")
+    assert infer_entity_type_from_path("eidos/screens/login.adoc") == ("SCR-", "design/screen", "SCR-LOGIN")
+    assert infer_entity_type_from_path("eidos/flows/signup.adoc") == ("FLOW-", "design/flow", "FLOW-SIGNUP")
+    assert infer_entity_type_from_path("eidos/design/clients/mobile/client.adoc") == (
+        "CLT-",
+        "design/client",
+        "CLT-MOBILE",
+    )
+    assert infer_entity_type_from_path("eidos/architecture/system-architecture.adoc") == (
+        "ARCH-",
+        "tech/architecture",
+        "ARCH-SYSTEM-ARCHITECTURE",
+    )
+    assert infer_entity_type_from_path("eidos/capabilities/billing.adoc") == (
+        "CAP-",
+        "product/capability",
+        "CAP-BILLING",
+    )
+    assert infer_entity_type_from_path("eidos/policies/pol-sec.adoc") == ("POL-", "product/policy", "POL-SEC")
+    assert infer_entity_type_from_path("eidos/personas/admin.adoc") == ("PER-", "product/persona", "PER-ADMIN")
+    assert infer_entity_type_from_path("eidos/explorations/exp-01.adoc") == ("EXP-", "product/exploration", "EXP-01")
+    assert infer_entity_type_from_path("eidos/deltas/dlt-01.adoc") == ("DLT-", "delta/mutation", "DLT-01")
+    assert infer_entity_type_from_path("eidos/domains/payments/domain.adoc") == (
+        "DOM-",
+        "product/domain",
+        "DOM-PAYMENTS",
+    )
+    assert infer_entity_type_from_path("eidos/system.adoc") == ("SYS-", "product/system", "SYS-SYSTEM")
+    assert infer_entity_type_from_path("cap-solo.adoc") == ("CAP-", "product/capability", "CAP-SOLO")
+    assert infer_entity_type_from_path("dlt-solo.adoc") == ("DLT-", "delta/mutation", "DLT-SOLO")
+    assert infer_entity_type_from_path("unrecognized.adoc") is None
+
+    assert RejectedAlternativeModel.model_validate("Manual SQL").option == "Manual SQL"
+    assert RejectedAlternativeModel.model_validate(99).option == ""
+    assert DecisionModel.model_validate(99).id == ""
+    assert InvariantModel.model_validate("INV-" + "RAW").id == "INV-" + "RAW"
+    assert InvariantModel.model_validate(99).id == ""
+    assert CapabilityTechnicalModel.model_validate(99).containers == []
+    assert DeltaIntentModel.model_validate(99).kind is None
+    assert DeltaMutationModel.model_validate(99).operation == ""
+    assert FrontmatterModel.model_validate(99).source_paths() == []
+    assert FrontmatterModel.model_validate({"source_path": None}).source_paths() == []
+    err_map = _SchemaErrorsMap({"eidos/policies/a.adoc": ["bad"]})
+    assert err_map.get("/workspace/repo/eidos/policies/a.adoc") == ["bad"]
+    assert err_map.get("/workspace/repo/other.adoc") is None
+
+    # 3. Workspace project.py branches: nested subprojects, gitattributes, globs, polyglot tests, root resolution
+    g_repo = tmp_path / "git_ws"
+    (g_repo / "eidos").mkdir(parents=True)
+    (g_repo / "eidos" / "system.adoc").write_text(
+        "---\ntype: product/system\nid: SYS-GIT-WS\ntitle: Git WS\nstatus: active\narchetypes:\n  - cli_tool\n---\n= Git WS\n",
+        encoding="utf-8",
+    )
+    (g_repo / "src").mkdir(parents=True)
+    (g_repo / "src" / "main.py").write_text(
+        "class Widget:\n"
+        "    count: int = 0\n"
+        "    plain = 1\n"
+        "    def __init__(self):\n"
+        "        self.ready = True\n"
+        "__all__ = ['Widget']\n"
+        "type WidgetId = str\n",
+        encoding="utf-8",
+    )
+    (g_repo / "src" / "gen.py").write_text("# generated\nx = 1\n", encoding="utf-8")
+    (g_repo / ".gitattributes").write_text("src/gen.py linguist-generated=true\n", encoding="utf-8")
+    (g_repo / ".gitignore").write_text("ignored_dir/\n", encoding="utf-8")
+    (g_repo / "ignored_dir" / "eidos").mkdir(parents=True)
+    (g_repo / "ignored_dir" / "eidos" / "system.adoc").write_text("---\nid: SYS-IGN\n---\n", encoding="utf-8")
+    sub_proj = g_repo / "packages" / "sub"
+    (sub_proj / "eidos").mkdir(parents=True)
+    (sub_proj / "eidos" / "system.adoc").write_text("---\nid: SYS-SUB\n---\n", encoding="utf-8")
+    (sub_proj / "sub_code.py").write_text("y = 2\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-b", "main"], cwd=g_repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=g_repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=g_repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "add", ".gitattributes", ".gitignore", "eidos", "src"], cwd=g_repo, check=True, capture_output=True
+    )
+    subprocess.run(["git", "commit", "-m", "init"], cwd=g_repo, check=True, capture_output=True)
+    (g_repo / "src" / "untracked.py").write_text("z = 3\n", encoding="utf-8")
+
+    nested = discover_nested_subproject_roots(g_repo)
+    assert nested == [sub_proj.resolve()]
+    assert discover_nested_subproject_roots(g_repo) == [sub_proj.resolve()]
+    assert discover_nested_subproject_roots(tmp_path / "no_such_dir") == []
+    assert "src/gen.py" in is_generated_or_vendored(g_repo, ["src/gen.py", "src/main.py"])
+    tracked = get_tracked_files(g_repo, include_untracked=True)
+    assert "src/main.py" in tracked and "src/untracked.py" in tracked
+    assert "src/gen.py" not in tracked
+    assert not any(f.startswith("packages/sub/") for f in tracked)
+    assert get_tracked_files(tmp_path / "missing_repo") == []
+
+    # Non-git fallback walk in get_tracked_files
+    nongit = tmp_path / "nongit_ws"
+    (nongit / "src").mkdir(parents=True)
+    (nongit / "src" / "a.py").write_text("a = 1\n", encoding="utf-8")
+    (nongit / "nested" / "eidos").mkdir(parents=True)
+    (nongit / "nested" / "eidos" / "system.adoc").write_text("---\nid: SYS-N\n---\n", encoding="utf-8")
+    (nongit / "nested" / "skip.py").write_text("b = 2\n", encoding="utf-8")
+    assert get_tracked_files(nongit) == ["src/a.py"]
+
+    assert _is_inside_plugin_or_assets(g_repo / ".agents" / "skills" / "eidos", repo_root=g_repo)
+    assert _is_inside_plugin_or_assets(g_repo / ".claude" / "plugins" / "x", repo_root=g_repo)
+    assert _is_inside_plugin_or_assets(g_repo / "assets" / "schemas" / "v1", repo_root=g_repo)
+    assert _is_inside_plugin_or_assets(Path("/nonexistent_root/.agents/skills/eidos"))
+    assert _is_inside_plugin_or_assets(Path("/nonexistent_root/.claude/plugins/p"))
+    assert _is_inside_plugin_or_assets(Path("/nonexistent_root/assets/schemas/s"))
+    assert not _is_inside_plugin_or_assets(tmp_path / "outside", repo_root=g_repo)
+    assert resolve_spec_and_repo_roots(None, None)[1].exists()
+    assert find_repo_root(g_repo / "src" / "main.py") == g_repo.resolve()
+    sr, rr = resolve_spec_and_repo_roots(g_repo / "src")
+    assert sr == (g_repo / "eidos").resolve() and rr == g_repo.resolve()
+    cfg1 = load_project(repo_root=g_repo)
+    cfg2 = load_project(eidos_dir=g_repo / "eidos")
+    assert cfg1.system_id == "SYS-GIT-WS" and cfg2.system_title == "Git WS"
+
+    assert is_polyglot_test_file(
+        "packages/web/src/__tests__/btn.ts", repo_root=g_repo, package_paths=["packages/web/src"]
+    )
+    assert is_polyglot_test_file("ui/card.test.tsx")
+    assert is_polyglot_test_file("pkg/svc_test.go")
+    assert is_polyglot_test_file("crates/core_test.rs")
+    assert is_polyglot_test_file("src/test/OrderTest.java")
+    assert is_polyglot_test_file(Path("/tmp/tests/test_ext.py"))
+
+    rx = _glob_to_anchored_regex("**/src/**/mod_?/[!0-9]*[]a][abc/**")
+    assert rx.startswith("^") and rx.endswith("$")
+    assert _glob_to_anchored_regex("**").startswith("^")
+    assert match_path_pattern("", "src/*.py") == 0
+    assert match_path_pattern("src/a/b.py", "src/**") > 500
+    assert match_path_pattern("other/a.py", "src/**") == 0
+    assert match_path_pattern("src/mod_1/x.py", "src/**/mod_?/[!0-9]*.py") > 500
+    matched_ok, best_sc = matches_owned_paths("src/main.py", ["src/**", "src/main.py"])
+    assert matched_ok and best_sc > 2000
+
+    # Public surface class attributes / __all__ / TypeAlias + JSON Schema contract in validator
+    (g_repo / "eidos" / "architecture" / "containers").mkdir(parents=True)
+    (g_repo / "eidos" / "architecture" / "components").mkdir(parents=True)
+    (g_repo / "eidos" / "architecture" / "contracts").mkdir(parents=True)
+    (g_repo / "schema.json").write_text(
+        '{"type": "object", "required": ["order_id"], "properties": {"order_id": {"type": "string"}}}\n',
+        encoding="utf-8",
+    )
+    (g_repo / "eidos" / "architecture" / "containers" / "app.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-APP\ntitle: App\nstatus: active\ncontainer_type: service\nruntime: Python\nsource_path: src/main.py\n---\n= App\n",
+        encoding="utf-8",
+    )
+    (g_repo / "eidos" / "architecture" / "components" / "widget.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-WIDGET\ntitle: Widget\ncontainer: CNT-APP\nstatus: active\nsource_path: src/main.py\n---\n"
+        "= Widget\n\n== Public Surface\n* `Widget.count`\n* `Widget.plain`\n* `Widget.ready`\n* `WidgetId`\n",
+        encoding="utf-8",
+    )
+    (g_repo / "eidos" / "architecture" / "contracts" / "schema.adoc").write_text(
+        "---\ntype: tech/contract\nid: CTR-SCHEMA\ntitle: Schema\nstatus: active\nprotocol: json_schema\ncontainer: CNT-APP\nspecification_file: schema.json\n---\n= Schema\nRequires `order_id`.\n",
+        encoding="utf-8",
+    )
+
+    # 4. Exercise spec_commands.py CLI (validate, spec list, spec show, spec create, spec delete, spec schema)
+    runner = CliRunner()
+    assert runner.invoke(app, ["validate", str(tmp_path / "missing_eidos")]).exit_code == 1
+    assert runner.invoke(app, ["validate", str(tmp_path / "missing_eidos"), "--json"]).exit_code == 1
+    res_val_ok = runner.invoke(app, ["validate", str(g_repo / "eidos")])
+    assert res_val_ok.exit_code == 0, res_val_ok.output
+    res_val_json = runner.invoke(app, ["validate", str(g_repo / "eidos"), "--json"])
+    assert res_val_json.exit_code == 0 and orjson.loads(res_val_json.stdout)["is_clean"] is True
+
+    # Introduce temporary broken spec to cover failure paths in `eidos validate` (Rich + --json)
+    bad_spec = g_repo / "eidos" / "policies" / "bad.adoc"
+    bad_spec.parent.mkdir(parents=True, exist_ok=True)
+    bad_spec.write_text("---\ntype: product/policy\nid: bad\ntitle: Bad\n---\n= Bad\n", encoding="utf-8")
+    assert runner.invoke(app, ["validate", str(g_repo / "eidos")]).exit_code == 1
+    assert runner.invoke(app, ["validate", str(g_repo / "eidos"), "--json"]).exit_code == 1
+    bad_spec.unlink()
+
+    assert runner.invoke(app, ["spec", "list", "--path", str(g_repo / "eidos")]).exit_code == 0
+    res_list_json = runner.invoke(app, ["spec", "list", "--path", str(g_repo / "eidos"), "--json"])
+    assert res_list_json.exit_code == 0 and orjson.loads(res_list_json.stdout)["count"] >= 3
+    assert runner.invoke(app, ["spec", "list", "--path", str(tmp_path / "empty_specs")]).exit_code == 0
+    assert runner.invoke(app, ["spec", "list", "--type", "delta", "--path", str(g_repo / "eidos")]).exit_code == 1
+    assert (
+        runner.invoke(app, ["spec", "list", "--type", "delta", "--json", "--path", str(g_repo / "eidos")]).exit_code
+        == 1
+    )
+    assert runner.invoke(app, ["spec", "show", "CNT-APP", "--path", str(g_repo / "eidos")]).exit_code == 0
+    assert runner.invoke(app, ["spec", "show", "NO-SUCH-SPEC", "--path", str(g_repo / "eidos")]).exit_code == 1
+    assert (
+        runner.invoke(
+            app, ["spec", "create", "policy", "POL-TEMP-01", "-t", "Temp Pol", "--path", str(g_repo / "eidos")]
+        ).exit_code
+        == 0
+    )
+    assert runner.invoke(app, ["spec", "delete", "POL-TEMP-01", "--path", str(g_repo / "eidos")]).exit_code == 0
+    assert runner.invoke(app, ["spec", "schema"]).exit_code == 0
+    assert runner.invoke(app, ["spec", "schema", "bogus-type"]).exit_code == 1
+
+    # 5. Additional validator protocol & reference edge cases (GraphQL, Python Protocol, malformed OpenAPI/JSON Schema)
+    (g_repo / "api.graphql").write_text("type Query {\n  user(id: ID!): String\n}\n", encoding="utf-8")
+    (g_repo / "proto_iface.py").write_text(
+        "from typing import Protocol\nclass StoragePort(Protocol):\n    def load(self, key: str) -> str: ...\n",
+        encoding="utf-8",
+    )
+    (g_repo / "bad_openapi.yaml").write_text("paths: [unclosed\n", encoding="utf-8")
+    (g_repo / "bad_schema.json").write_text("{unclosed\n", encoding="utf-8")
+    (g_repo / "eidos" / "architecture" / "contracts" / "gql.adoc").write_text(
+        "---\ntype: tech/contract\nid: CTR-GQL\ntitle: GraphQL\nstatus: active\nprotocol: graphql\ncontainer: CNT-APP\nspecification_file: api.graphql\n---\n= GQL\nExposes `query ghostOp`.\n",
+        encoding="utf-8",
+    )
+    (g_repo / "eidos" / "architecture" / "contracts" / "pyproto.adoc").write_text(
+        "---\ntype: tech/contract\nid: CTR-PYPROTO\ntitle: PyProto\nstatus: active\nprotocol: python_protocol\ncontainer: CNT-APP\nspecification_file: proto_iface.py\n---\n= PyProto\nExposes `def missing_fn(self)`.\n",
+        encoding="utf-8",
+    )
+    (g_repo / "eidos" / "architecture" / "contracts" / "badoas.adoc").write_text(
+        "---\ntype: tech/contract\nid: CTR-BADOAS\ntitle: Bad OAS\nstatus: active\nprotocol: openapi\ncontainer: CNT-APP\nspecification_file: bad_openapi.yaml\n---\n= Bad OAS\n",
+        encoding="utf-8",
+    )
+    (g_repo / "eidos" / "architecture" / "contracts" / "badjs.adoc").write_text(
+        "---\ntype: tech/contract\nid: CTR-BADJS\ntitle: Bad JS\nstatus: active\nprotocol: json_schema\ncontainer: CNT-APP\nspecification_file: bad_schema.json\n---\n= Bad JS\n",
+        encoding="utf-8",
+    )
+    rep_more = validator.validate_directory(g_repo / "eidos")
+    more_refs = "\n".join(rep_more.broken_references)
+    assert "GraphQL operation 'user'" in more_refs and "ghostOp" in more_refs
+    assert "StoragePort" in more_refs and "missing_fn" in more_refs
+    assert "failed to parse" in more_refs
+
+    # Circular DS extends + argparse + Click nested group/add_command + Typer positional arg parity + nested generics + entity ref type mismatch
+    ds_a = g_repo / "eidos" / "design" / "systems" / "dsa" / "system.adoc"
+    ds_b = g_repo / "eidos" / "design" / "systems" / "dsb" / "system.adoc"
+    ds_a.parent.mkdir(parents=True, exist_ok=True)
+    ds_b.parent.mkdir(parents=True, exist_ok=True)
+    ds_a.write_text(
+        "---\ntype: design/system\nid: DS-A\ntitle: A\nstatus: active\nextends: DS-B\n---\n= A\n", encoding="utf-8"
+    )
+    ds_b.write_text(
+        "---\ntype: design/system\nid: DS-B\ntitle: B\nstatus: active\nextends: DS-A\n"
+        "tokens:\n  manifest: /abs/escape/tokens.json\n---\n= B\n",
+        encoding="utf-8",
+    )
+    (g_repo / "arg_cli.py").write_text(
+        "import argparse\np = argparse.ArgumentParser()\ns = p.add_subparsers()\ns.add_parser('deploy')\n",
+        encoding="utf-8",
+    )
+    (g_repo / "click_adv.py").write_text(
+        "import click\n@click.group()\ndef root(): pass\n@root.group('db')\ndef db_grp(): pass\n"
+        "@db_grp.command('migrate')\ndef mig(): pass\n"
+        "@click.group()\ndef sub_g(): pass\n@sub_g.command('leaf')\ndef leaf_c(): pass\n"
+        "@click.command()\ndef ping(): pass\n@click.command()\ndef solo(): pass\n"
+        "root.add_command(sub_g, 'subg')\nsub_g.add_command(ping, 'subping')\n"
+        "root.add_command(lambda: None, 'anon')\nsub_g.add_command(lambda: None, 'subanon')\n",
+        encoding="utf-8",
+    )
+    (g_repo / "typer_sub_reg.py").write_text(
+        "import typer\nchild_app = typer.Typer(name='child')\nauto_app = typer.Typer(name='autoname')\n"
+        "@child_app.command('run')\ndef run_c(item: str = typer.Argument(...)): pass\n"
+        "@auto_app.command('go')\ndef go_c(): pass\n"
+        "def register(app):\n    sub_app.add_typer(child_app, name='child')\n",
+        encoding="utf-8",
+    )
+    (g_repo / "typer_auto2.py").write_text(
+        "import typer\nimp_auto = typer.Typer(name='impname')\n@imp_auto.command('hi')\ndef hi_c(): pass\n",
+        encoding="utf-8",
+    )
+    (g_repo / "typer_pos.py").write_text(
+        "import typer\nimport typer_sub_reg\nfrom typer_auto2 import imp_auto\n"
+        "app = typer.Typer()\nsub_app = typer.Typer(name='sub')\napp.add_typer(sub_app, name='sub')\n"
+        "app.add_typer(typer_sub_reg.auto_app)\napp.add_typer(imp_auto)\n"
+        "typer_sub_reg.register(app)\n"
+        "@app.command('build')\n"
+        "def build_cmd(project_id: str = typer.Argument(...), tag: str = typer.Argument('latest')):\n    pass\n",
+        encoding="utf-8",
+    )
+    (g_repo / "eidos" / "architecture" / "components" / "widget.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-WIDGET\ntitle: Widget\ncontainer: CNT-APP\nstatus: active\nsource_path: src/main.py\n---\n"
+        "= Widget\n\n== Public Surface\n* `Widget<Map<K, V>>.count[T]`\n* `Widget.plain`\n* `Widget.ready`\n* `WidgetId`\n",
+        encoding="utf-8",
+    )
+    # Wrong entity type for .adoc path ref + policies dir recreated after spec delete
+    (g_repo / "eidos" / "policies").mkdir(parents=True, exist_ok=True)
+    (g_repo / "eidos" / "policies" / "wrong.adoc").write_text(
+        "---\ntype: product/policy\nid: POL-WRONG-01\ntitle: Wrong\nstatus: draft\ncategory: quality\n---\n= Wrong\n",
+        encoding="utf-8",
+    )
+    (g_repo / "eidos" / "deltas").mkdir(parents=True, exist_ok=True)
+    (g_repo / "eidos" / "deltas" / "dlt-2026-099-ref.adoc").write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-099\ntitle: Bad Grad\nstatus: proposed\n"
+        "graduated_from: eidos/policies/wrong.adoc\n"
+        "intent:\n  kind: bug\n  motivation: Test .adoc ref type check.\n"
+        "mutations:\n  - operation: modify\n    target: CNT-APP\n---\n= Bad Grad\n",
+        encoding="utf-8",
+    )
+    (g_repo / "eidos" / "architecture" / "components" / "badref.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-BADREF\ntitle: BadRef\ncontainer: POL-WRONG-01\nstatus: draft\nsource_path: src/main.py\n---\n= BadRef\n",
+        encoding="utf-8",
+    )
+    (g_repo / "eidos" / "architecture" / "contracts" / "arg.adoc").write_text(
+        "---\ntype: tech/contract\nid: CTR-ARG\ntitle: Arg\nstatus: active\nprotocol: cli_args\ncontainer: CNT-APP\nspecification_file: arg_cli.py\n---\n= Arg\n=== `myarg other`\n",
+        encoding="utf-8",
+    )
+    (g_repo / "eidos" / "architecture" / "contracts" / "clickadv.adoc").write_text(
+        "---\ntype: tech/contract\nid: CTR-CLICKADV\ntitle: ClickAdv\nstatus: active\nprotocol: cli_args\ncontainer: CNT-APP\nspecification_file: click_adv.py\n---\n"
+        "= ClickAdv\n=== `root db`\n* **Sub-commands**:\n  - `root db wrong`: Wrong.\n"
+        "=== `root subg`\n* **Sub-commands**:\n  - `root subg leaf`: Leaf.\n",
+        encoding="utf-8",
+    )
+    (g_repo / "eidos" / "architecture" / "contracts" / "typerpos.adoc").write_text(
+        "---\ntype: tech/contract\nid: CTR-TYPERPOS\ntitle: TyperPos\nstatus: active\nprotocol: cli_args\ncontainer: CNT-APP\nspecification_file: typer_pos.py\n---\n"
+        "= TyperPos\n=== `tool build --flag <VAL> --verbose <wrong_name> [extra_opt]`\n=== `tool build <only_one>`\n",
+        encoding="utf-8",
+    )
+    rep_adv = validator.validate_directory(g_repo / "eidos")
+    adv_refs = "\n".join(rep_adv.broken_references)
+    assert "Circular design system inheritance" in adv_refs
+    assert "outside repository root" in adv_refs
+    assert "has type 'product/policy', expected product/exploration" in adv_refs
+    assert "deploy" in adv_refs
+    assert "solo" in adv_refs and "db migrate" in adv_refs
+    assert "autoname" in adv_refs and "impname" in adv_refs
+    assert "positional" in adv_refs
+
+
+def _verify_pol_005_coverage_json(coverage_json_path: Path, src_dir: Path, repo_root: Path) -> None:
+    """Enforce POL-005 strictly >90.0% statement coverage on every individual Python module under src/eidos/."""
+    import orjson
+
+    cov_data = orjson.loads(coverage_json_path.read_bytes())
+    files = cov_data.get("files", {})
+    offenders: list[tuple[str, float]] = []
+    for py_file in sorted(src_dir.rglob("*.py")):
+        rel = py_file.relative_to(repo_root).as_posix()
+        if rel == "src/eidos/_version.py" or rel.startswith("src/eidos/portal/frontend/"):
+            continue
+        entry = files.get(rel) or files.get(rel.replace("/", "\\"))
+        pct = float(entry.get("summary", {}).get("percent_covered", 0.0)) if isinstance(entry, dict) else 0.0
+        if pct <= 90.0:
+            offenders.append((rel, pct))
+    if offenders:
+        rows = "\n".join(f"  | {rel} | {pct:.2f}% |" for rel, pct in offenders)
+        raise AssertionError(
+            "POL-005 per-file statement coverage violation (every module must be strictly > 90.0%):\n"
+            "  | Module | Coverage |\n"
+            f"{rows}"
+        )
+
+
 def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
-    """Verify POL-005-STATEMENT-TEST-COVERAGE and INV-POL-005-STATEMENT-TEST-COVERAGE: policy spec, pyproject.toml coverage settings, and edge-case branches across core/cli/vcs/plugin modules."""
+    """Verify POL-005-STATEMENT-TEST-COVERAGE and INV-POL-005-STATEMENT-TEST-COVERAGE: policy spec, pyproject.toml coverage settings, CI per-file coverage.json enforcement, and edge-case branches across core/cli/vcs/plugin modules."""
     import importlib
     import importlib.metadata
     import subprocess
@@ -3925,13 +4888,59 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
         pyproj = tomllib.load(f)
     cov_cfg = pyproj.get("tool", {}).get("coverage", {})
     assert cov_cfg.get("run", {}).get("source") == ["src/eidos"]
+    assert "src/eidos/_version.py" in cov_cfg.get("run", {}).get("omit", [])
     assert cov_cfg.get("report", {}).get("fail_under", 0) >= 90
+
+    ci_workflow = (repo_root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "--cov-report=json:coverage.json" in ci_workflow
+    assert "pct <= 90.0" in ci_workflow
+
+    import orjson
+
+    src_eidos_dir = repo_root / "src/eidos"
+    real_modules = [
+        p.relative_to(repo_root).as_posix()
+        for p in sorted(src_eidos_dir.rglob("*.py"))
+        if p.relative_to(repo_root).as_posix() != "src/eidos/_version.py"
+        and not p.relative_to(repo_root).as_posix().startswith("src/eidos/portal/frontend/")
+    ]
+    assert len(real_modules) >= 30
+
+    cov_pass_json = tmp_path / "cov_pass.json"
+    cov_pass_files = {rel: {"summary": {"percent_covered": 90.1}} for rel in real_modules}
+    cov_pass_files["src/eidos/_version.py"] = {"summary": {"percent_covered": 0.0}}
+    cov_pass_json.write_bytes(orjson.dumps({"files": cov_pass_files}))
+    _verify_pol_005_coverage_json(cov_pass_json, src_eidos_dir, repo_root)
+
+    # Strict > 90.0% check: exact 90.0% boundary or subsidized 85.0% module or missing entry must fail!
+    cov_boundary_files = dict(cov_pass_files)
+    cov_boundary_files[real_modules[0]] = {"summary": {"percent_covered": 90.0}}
+    cov_boundary_json = tmp_path / "cov_boundary.json"
+    cov_boundary_json.write_bytes(orjson.dumps({"files": cov_boundary_files}))
+    with pytest.raises(AssertionError, match=r"strictly > 90\.0%"):
+        _verify_pol_005_coverage_json(cov_boundary_json, src_eidos_dir, repo_root)
+
+    cov_missing_files = {rel: {"summary": {"percent_covered": 99.5}} for rel in real_modules[1:]}
+    cov_missing_json = tmp_path / "cov_missing.json"
+    cov_missing_json.write_bytes(orjson.dumps({"files": cov_missing_files}))
+    with pytest.raises(AssertionError, match=real_modules[0]):
+        _verify_pol_005_coverage_json(cov_missing_json, src_eidos_dir, repo_root)
+
+    live_cov_json = repo_root / "coverage.json"
+    if live_cov_json.is_file():
+        _verify_pol_005_coverage_json(live_cov_json, src_eidos_dir, repo_root)
 
     # 2. src/eidos/__init__.py version fallback branches
     import eidos
 
+    assert eidos.resolve_runtime_version(use_cache=False)
     orig_ver_mod = sys.modules.get("eidos._version")
     try:
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            lambda *_a, **_kw: (_ for _ in ()).throw(OSError("git unavailable")),
+        )
         monkeypatch.setitem(sys.modules, "eidos._version", None)
         monkeypatch.setattr(importlib.metadata, "version", lambda _pkg: "9.9.9")
         importlib.reload(eidos)
@@ -3944,6 +4953,7 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
         importlib.reload(eidos)
         assert eidos.__version__ == "0.1.0"
     finally:
+        monkeypatch.undo()
         if orig_ver_mod is not None:
             sys.modules["eidos._version"] = orig_ver_mod
         importlib.reload(eidos)
@@ -3981,13 +4991,16 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
     assert (extra_leaf / ".gitkeep") in created_init
 
     bad_adoc = init_ws / "eidos" / "domains" / "bad.adoc"
-    bad_adoc.write_text("---\ntype: product/capability\nid: CAP-BAD-1\ntitle: Bad\nstatus: active\ndomain: DOM-MISSING\nversion: '1.0.0'\n---\n= Bad\n", encoding="utf-8")
+    bad_adoc.write_text(
+        "---\ntype: product/capability\nid: CAP-BAD-1\ntitle: Bad\nstatus: active\ndomain: DOM-MISSING\nversion: '1.0.0'\n---\n= Bad\n",
+        encoding="utf-8",
+    )
     ok_bad, msg_bad, _ = init_repository(init_ws, title="Edge Init", force=True)
     assert not ok_bad
     assert "failed validation" in msg_bad
 
     # 5. src/eidos/core/lifecycle/catalog.py edge cases
-    assert _format_yaml_scalar_value('"unclosed\'')
+    assert _format_yaml_scalar_value("\"unclosed'")
     assert _format_yaml_scalar_value("12345") == '"12345"'
     assert _split_yaml_inline_comment("'quoted # hash' # comment") == ("'quoted # hash'", " # comment")
     updated_raw = _set_frontmatter_scalar(
@@ -3997,19 +5010,29 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
     )
     assert "title: New" in updated_raw
     assert find_spec_by_id_or_path(init_ws / "eidos", "   ") is None
-    assert find_spec_by_id_or_path(init_ws / "eidos", "eidos/system.adoc") == (init_ws / "eidos" / "system.adoc").resolve()
+    assert (
+        find_spec_by_id_or_path(init_ws / "eidos", "eidos/system.adoc") == (init_ws / "eidos" / "system.adoc").resolve()
+    )
 
     dlt_dir = init_ws / "eidos" / "deltas"
     arch_dir = dlt_dir / "archive"
     arch_dir.mkdir(parents=True, exist_ok=True)
     dlt_active = dlt_dir / "dlt-2026-777-active-1111.adoc"
     dlt_archived = arch_dir / "dlt-2026-777-old-2222.adoc"
-    dlt_active.write_text("---\ntype: delta/mutation\nid: DLT-2026-777-ACTIVE-1111\ntitle: A\nstatus: proposed\nintent:\n  kind: feature\n  motivation: m\nmutations: []\n---\n= A\n", encoding="utf-8")
-    dlt_archived.write_text("---\ntype: delta/mutation\nid: DLT-2026-777-OLD-2222\ntitle: O\nstatus: applied\nintent:\n  kind: feature\n  motivation: m\nmutations: []\n---\n= O\n", encoding="utf-8")
+    dlt_active.write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-777-ACTIVE-1111\ntitle: A\nstatus: proposed\nintent:\n  kind: feature\n  motivation: m\nmutations: []\n---\n= A\n",
+        encoding="utf-8",
+    )
+    dlt_archived.write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-777-OLD-2222\ntitle: O\nstatus: applied\nintent:\n  kind: feature\n  motivation: m\nmutations: []\n---\n= O\n",
+        encoding="utf-8",
+    )
     assert find_spec_by_id_or_path(init_ws / "eidos", "DLT-2026-777") == dlt_active.resolve()
 
     malformed_applied_dlt = dlt_dir / "dlt-2026-778-malformed.adoc"
-    malformed_applied_dlt.write_text("---\nstatus: applied\n: bad_yaml: [\n---\nReferences SYS-EDGE-INIT\n", encoding="utf-8")
+    malformed_applied_dlt.write_text(
+        "---\nstatus: applied\n: bad_yaml: [\n---\nReferences SYS-EDGE-INIT\n", encoding="utf-8"
+    )
     refs = find_references_to_spec(init_ws / "eidos", "SYS-EDGE-INIT", init_ws / "eidos" / "system.adoc")
     assert malformed_applied_dlt.resolve() not in refs
 
@@ -4024,10 +5047,16 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
     assert list_specs(scaf_dir, type_filter="exp")
 
     assert _resolve_schema_node("not-a-dict", {}) == {}  # type: ignore[arg-type]
-    assert _resolve_schema_node({"$ref": "#/$defs/semver", "description": "override"}, {"semver": {"type": "string"}}) == {
+    assert _resolve_schema_node(
+        {"$ref": "#/$defs/semver", "description": "override"}, {"semver": {"type": "string"}}
+    ) == {
         "type": "string",
         "description": "override",
     }
+    assert _resolve_schema_node(
+        {"$ref": "#/$defs/a"},
+        {"a": {"$ref": "#/$defs/b"}, "b": {"$ref": "#/$defs/a", "type": "string"}},
+    )["type"] == "string"
     assert _synthesize_example_value("x", {"default": "dval"}, {}) == "dval"
     assert _synthesize_example_value("test_binding", {"type": "string"}, {}) == "tests/test_example.py::test_invariant"
     assert _synthesize_example_value("version", {"type": "string"}, {}) == "1.0.0"
@@ -4087,7 +5116,9 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
     monkeypatch.undo()
 
     # CLI index commands branches (search/find-symbol empty, semantic setup/sync/unknown)
-    res_no_search = cli_runner.invoke(app, ["index", "search", "zzzz_nonexistent_query_token_999", "--no-semantic", "--path", str(scaf_dir)])
+    res_no_search = cli_runner.invoke(
+        app, ["index", "search", "zzzz_nonexistent_query_token_999", "--no-semantic", "--path", str(scaf_dir)]
+    )
     assert res_no_search.exit_code == 0
     assert "No architectural specifications matched" in res_no_search.stdout
 
@@ -4103,7 +5134,12 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
     monkeypatch.setattr(
         scaf_idx,
         "setup_semantic",
-        lambda variant="quantized", force=False: {"variant": variant, "model_dir": str(scaf_dir), "downloaded": ["a"], "skipped": []},
+        lambda variant="quantized", force=False: {
+            "variant": variant,
+            "model_dir": str(scaf_dir),
+            "downloaded": ["a"],
+            "skipped": [],
+        },
     )
     monkeypatch.setattr(
         scaf_idx,
@@ -4208,7 +5244,9 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
     assert auditor._is_delta_applied(Path("eidos/deltas/nonexistent.adoc")) is False
 
     # Branch drift evaluation with path target in delta (non-uncommitted)
-    drift_branch_res = detect_drift(git_ws, base_ref="HEAD~1", head_ref="HEAD", eidos_dir=git_ws / "eidos", uncommitted=False)
+    drift_branch_res = detect_drift(
+        git_ws, base_ref="HEAD~1", head_ref="HEAD", eidos_dir=git_ws / "eidos", uncommitted=False
+    )
     assert drift_branch_res.workflow_mode == "planned"
 
     # Fallback candidate scan and shallow clone error in _resolve_base_and_merge_base

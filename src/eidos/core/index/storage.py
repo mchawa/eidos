@@ -9,7 +9,9 @@ from __future__ import annotations
 import contextlib
 import copy
 import hashlib
+import os
 import sqlite3
+from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -18,8 +20,8 @@ import orjson
 if TYPE_CHECKING:
     from eidos.core.spec.models import SpecDocument
 
-# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-115-HYBRID-SEMANTIC-8B5F).
-SCHEMA_VERSION = "2.18.0"
+# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-133).
+SCHEMA_VERSION = "2.19.0"
 
 # In-process parsed SpecDocument cache keyed by resolved Path -> (mtime_ns, st_size, sha256, SpecDocument)
 _PARSED_SPEC_MEM_CACHE: dict[Path, tuple[int, int, str, SpecDocument]] = {}
@@ -120,6 +122,7 @@ CREATE TABLE IF NOT EXISTS code_symbols (
     signature TEXT NOT NULL DEFAULT '',
     entity_id TEXT NOT NULL,
     is_primary INTEGER NOT NULL DEFAULT 1,
+    is_test INTEGER NOT NULL DEFAULT 0,
     UNIQUE (file_path, entity_id, kind, parent_symbol, symbol, line_start)
 );
 CREATE INDEX IF NOT EXISTS idx_code_symbols_symbol ON code_symbols(symbol);
@@ -147,6 +150,78 @@ CREATE VIRTUAL TABLE IF NOT EXISTS file_tokens_fts USING fts5(
 """
 
 
+def _db_lock_path(db_path: Path) -> Path:
+    """Return the advisory lockfile path (e.g. ``index.db.lock``) guarding DDL and WAL recovery."""
+    resolved = Path(db_path).resolve()
+    return Path(f"{resolved}.lock")
+
+
+@contextlib.contextmanager
+def _advisory_db_lock(db_path: Path, *, non_blocking: bool = False) -> Iterator[bool]:
+    """Acquire an OS advisory file lock on ``<db_path>.lock`` (``fcntl.flock`` on POSIX, ``msvcrt`` on Windows)."""
+    lock_path = _db_lock_path(db_path)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o666)
+    locked = False
+    try:
+        if os.name == "nt":  # pragma: no cover
+            import msvcrt
+
+            os.lseek(fd, 0, os.SEEK_SET)
+            if os.fstat(fd).st_size == 0:
+                os.write(fd, b"0")
+                os.lseek(fd, 0, os.SEEK_SET)
+            mode = msvcrt.LK_NBLCK if non_blocking else msvcrt.LK_LOCK
+            try:
+                msvcrt.locking(fd, mode, 1)
+                locked = True
+            except OSError:
+                if non_blocking:
+                    yield False
+                    return
+                raise
+        else:
+            import fcntl
+
+            flags = fcntl.LOCK_EX | (fcntl.LOCK_NB if non_blocking else 0)
+            try:
+                fcntl.flock(fd, flags)
+                locked = True
+            except (BlockingIOError, OSError):
+                if non_blocking:
+                    yield False
+                    return
+                raise
+        yield True
+    finally:
+        if locked:
+            with contextlib.suppress(OSError):
+                if os.name == "nt":  # pragma: no cover
+                    import msvcrt
+
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+        with contextlib.suppress(OSError):
+            os.close(fd)
+
+
+def _is_corrupt_database_error(exc: BaseException) -> bool:
+    """Return True only when ``exc`` indicates genuine SQLite database corruption (never transient locks/DDL)."""
+    corrupt_codes = {
+        getattr(sqlite3, "SQLITE_CORRUPT", 11),
+        getattr(sqlite3, "SQLITE_NOTADB", 26),
+    }
+    err_code = getattr(exc, "sqlite_errorcode", None)
+    if err_code in corrupt_codes:
+        return True
+    err_msg = str(exc).lower()
+    return any(tok in err_msg for tok in ("malformed", "not a database", "file is encrypted", "corrupt"))
+
+
 def _unlink_cache_files(db_path: Path) -> None:
     """Remove a corrupted SQLite cache database and its WAL/SHM sidecar files."""
     for candidate in (db_path, Path(f"{db_path}-wal"), Path(f"{db_path}-shm")):
@@ -155,8 +230,19 @@ def _unlink_cache_files(db_path: Path) -> None:
                 candidate.unlink()
 
 
-def ensure_cache_schema(conn: sqlite3.Connection) -> None:
-    """Ensure ``conn`` has the canonical ``SCHEMA_VERSION`` tables, dropping stale managed tables on version mismatch."""
+def _is_schema_current(conn: sqlite3.Connection) -> bool:
+    """Fast read-only check verifying ``conn`` already matches ``SCHEMA_VERSION`` with zero DDL statements."""
+    existing_tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';")}
+    user_tables = {t for t in existing_tables if not t.startswith(("sqlite_", "specs_fts_", "file_tokens_fts_"))}
+    if user_tables == set(_MANAGED_TABLES) and "metadata" in existing_tables:
+        row = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()
+        if row and row[0] == SCHEMA_VERSION:
+            return True
+    return False
+
+
+def _apply_cache_schema_ddl(conn: sqlite3.Connection) -> None:
+    """Initialize or migrate ``conn`` to ``SCHEMA_VERSION`` (caller holds advisory lock when file-backed)."""
     existing_tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';")}
     user_tables = {t for t in existing_tables if not t.startswith(("sqlite_", "specs_fts_", "file_tokens_fts_"))}
     if user_tables == set(_MANAGED_TABLES) and "metadata" in existing_tables:
@@ -180,33 +266,58 @@ def ensure_cache_schema(conn: sqlite3.Connection) -> None:
         )
 
 
+def ensure_cache_schema(conn: sqlite3.Connection, db_path: Path | None = None) -> None:
+    """Ensure ``conn`` has the canonical ``SCHEMA_VERSION`` tables, serializing DDL on ``index.db.lock``."""
+    if _is_schema_current(conn):
+        return
+    resolved_db = db_path
+    if resolved_db is None:
+        db_list = conn.execute("PRAGMA database_list;").fetchall()
+        main_file = str(db_list[0][2] or "") if db_list else ""
+        if main_file and main_file != ":memory:":
+            resolved_db = Path(main_file).resolve()
+    if resolved_db is not None:
+        with _advisory_db_lock(resolved_db, non_blocking=False):
+            _apply_cache_schema_ddl(conn)
+    else:
+        _apply_cache_schema_ddl(conn)
+
+
 def open_cache_connection(db_path: Path) -> sqlite3.Connection:
-    """Open a WAL-configured SQLite cache connection with unified schema versioning and corruption recovery."""
+    """Open a WAL-configured SQLite cache connection with file-locked DDL and safe corruption recovery."""
     db_path = Path(db_path).resolve()
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    for attempt in range(2):
+    for attempt in range(3):
         conn: sqlite3.Connection | None = None
         try:
             conn = sqlite3.connect(str(db_path), timeout=10.0, check_same_thread=False)
             conn.row_factory = sqlite3.Row
             jm_row = conn.execute("PRAGMA journal_mode;").fetchone()
             if not jm_row or str(jm_row[0]).lower() != "wal":
-                conn.execute("PRAGMA journal_mode = WAL;")
+                with _advisory_db_lock(db_path, non_blocking=False):
+                    jm_recheck = conn.execute("PRAGMA journal_mode;").fetchone()
+                    if not jm_recheck or str(jm_recheck[0]).lower() != "wal":
+                        conn.execute("PRAGMA journal_mode = WAL;")
             conn.execute("PRAGMA synchronous = NORMAL;")
             conn.execute("PRAGMA foreign_keys = ON;")
-            conn.execute("PRAGMA mmap_size = 268435456;")
-            ensure_cache_schema(conn)
+            ensure_cache_schema(conn, db_path=db_path)
             return conn
         except sqlite3.DatabaseError as exc:
             if conn is not None:
                 with contextlib.suppress(sqlite3.Error):
                     conn.close()
             err_msg = str(exc).lower()
-            is_transient_lock = isinstance(exc, sqlite3.OperationalError) and ("locked" in err_msg or "busy" in err_msg)
-            if attempt == 0 and not is_transient_lock:
-                _unlink_cache_files(db_path)
+            if _is_corrupt_database_error(exc) and attempt == 0:
+                with _advisory_db_lock(db_path, non_blocking=True) as acquired:
+                    if acquired:
+                        _unlink_cache_files(db_path)
+                        continue
+            if "schema" in err_msg and attempt < 2:
+                with _advisory_db_lock(db_path, non_blocking=False):
+                    pass
                 continue
             raise
+    raise sqlite3.OperationalError(f"Failed to initialize SQLite cache at {db_path}")  # pragma: no cover
 
 
 def clone_spec_document(doc: SpecDocument, file_path: Path | None = None) -> SpecDocument:

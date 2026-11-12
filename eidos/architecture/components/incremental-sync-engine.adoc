@@ -14,12 +14,12 @@ Synchronizes living specifications (`eidos/`), governed source files (`source_pa
 
 == Key Responsibilities & Collaborators
 * **Two-Tier Dirty Detection (`<5ms`)**: Scans `eidos/`, test suites, and governed `source_path` directories via single-pass `os.scandir` (`check_index_dirty`) while excluding nested child sub-project boundaries (`discover_nested_subproject_roots`), refreshing unchanged `mtime_ns` timestamps in-place when `SHA-256` digests match and re-parsing only modified files (`sync_index`).
-* **Entity, FTS & File-Token Indexing**: Populates `entities`, `specs_fts` (including child `INV-*` rows, embedded `DEC-*` decisions, and projected primary AST `code_symbols`), and `file_tokens_fts` (for `CMP-DELTA-AUDITOR` deletion audits), while excluding archived SpecDeltas (`eidos/deltas/archive/`) from `specs_fts`.
-* **Ownership Precedence & AST Dependency Edges**: Prioritizes standalone `tech/component` (`CMP-*`) claims ahead of `tech/container` (`CNT-*`) fallback in `_CodeOwnershipResolver` and derives intra-container `consumes_api` and inter-container `depends_on` edges from AST imports extracted by `CMP-AST-SYMBOL-INDEXER`.
+* **Entity, Method/Test Symbol & FTS Indexing**: Populates `entities`, `code_symbols` (including automated test symbols marked with `is_test = 1` from test suites alongside governed source symbols), `specs_fts` (using sync-scoped symbol state without module-global dicts and projecting `'method'` alongside `'class'`, `'function'`, `'interface'`, `'struct'`, and `'enum'`), and `file_tokens_fts`, while excluding archived SpecDeltas (`eidos/deltas/archive/`) from `specs_fts`.
+* **Ownership Precedence & Scalable Edge Reconstruction**: Prioritizes standalone `tech/component` (`CMP-*`) claims ahead of `tech/container` (`CNT-*`) fallback in `_CodeOwnershipResolver`, derives intra-container `consumes_api` and inter-container `depends_on` edges from AST imports, and uses batched `WHERE target_id IN (...)` lookups (`<= 500` parameters per batch) in `rebuild_spec_edges` to scale cleanly past `SQLITE_MAX_EXPR_DEPTH` (`1000`).
 
 == Public Surface
-* `check_index_dirty(index: ArchitecturalIndex) -> DirtyState`
-* `sync_index(index: ArchitecturalIndex, force: bool = False, strict: bool = False, dirty_state: DirtyState | None = None) -> SyncStats`
+* `check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]`
+* `sync_index(index: Any, force: bool = False, dirty_state: tuple[bool, list[Path], list[Path]] | None = None, strict: bool = False) -> IndexSyncStats`
 * `rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | None = None) -> None`
 * `build_spec_path_resolver(conn: sqlite3.Connection) -> Callable[[str], str]`
 

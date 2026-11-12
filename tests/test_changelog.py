@@ -567,3 +567,77 @@ def test_a10_changelog_applied_commit_casing_and_custom_output_file(tmp_path):
     docs_file = repo / "docs" / "changelog.md"
     assert docs_file.exists() and not docs_file.is_symlink()
     assert docs_file.read_text(encoding="utf-8") == custom_out.read_text(encoding="utf-8")
+
+
+def test_dlt_135_changelog_frontmatter_only_status_colliding_short_ids_and_sys_title(tmp_path):
+    """Verify DLT-2026-135 / INV-DELTA-CHANGELOG-GENERATION: prose 'status: applied' code blocks do not pin v0.1.0, colliding DLT-YYYY-NNN-* siblings do not suppress sibling commits, and SYS-* title renders dynamically."""
+    import subprocess
+
+    repo = tmp_path / "orbit-platform"
+    eidos_dir = repo / "eidos"
+    deltas_dir = eidos_dir / "deltas"
+    deltas_dir.mkdir(parents=True)
+
+    (eidos_dir / "system.adoc").write_text(
+        "---\n"
+        "type: product/system\n"
+        "id: SYS-ORBIT-001\n"
+        "title: Orbit Telemetry Platform\n"
+        "status: active\n"
+        "archetypes:\n"
+        "  - service\n"
+        "---\n= Orbit\n",
+        encoding="utf-8",
+    )
+
+    # Commit DLT-2026-119-ALPHA at v0.1.0 with frontmatter status: proposed, while prose body has 'status: applied'
+    alpha_file = deltas_dir / "dlt-2026-119-alpha.adoc"
+    alpha_file.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-119-ALPHA\n"
+        "title: Alpha Stream Router\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: feature\n"
+        "  motivation: Route alpha stream.\n"
+        "mutations:\n"
+        "  - operation: add\n"
+        "    target: CMP-ALPHA\n"
+        "---\n= Alpha\n\n[source,yaml]\n----\nstatus: applied\n----\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "dev@orbit.io"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Orbit Dev"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "chore: propose alpha with prose example"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "tag", "v0.1.0"], cwd=repo, check=True, capture_output=True)
+
+    # After v0.1.0, transition DLT-2026-119-ALPHA frontmatter to applied AND land a commit for sibling DLT-2026-119-BETA
+    alpha_file.write_text(
+        alpha_file.read_text(encoding="utf-8").replace("status: proposed", "status: applied", 1),
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "feat: apply DLT-2026-119-ALPHA"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "feat: add telemetry helper for DLT-2026-119-BETA"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+    gen = ChangelogGenerator(repo_root=repo, eidos_dir=eidos_dir)
+    md = gen.generate_changelog(include_unreleased=True)
+    assert "All notable changes to Orbit Telemetry Platform are documented in this file." in md
+    unreleased_part = md.split("## [0.1.0]", 1)[0] if "## [0.1.0]" in md else md
+    # DLT-2026-119-ALPHA must be in Unreleased (NOT falsely pinned to v0.1.0 by its prose code block!)
+    assert "DLT-2026-119-ALPHA" in unreleased_part
+    # Conventional commit mentioning sibling DLT-2026-119-BETA must NOT be dropped by DLT-2026-119 prefix of ALPHA!
+    assert "Add telemetry helper for DLT-2026-119-BETA" in unreleased_part
+
+    # Fallback when system.adoc is absent uses repo directory name
+    (eidos_dir / "system.adoc").unlink()
+    md_fallback = ChangelogGenerator(repo_root=repo, eidos_dir=eidos_dir).generate_changelog(include_unreleased=True)
+    assert "All notable changes to orbit-platform are documented in this file." in md_fallback

@@ -13,11 +13,11 @@ source_path: src/eidos/portal/builder.py
 Compiles self-contained, zero-backend static documentation portals (`index.html`, `data.json`, `favicon.svg`) for GitHub Pages, GitLab Pages, S3, and offline `file://` inspection (`eidos portal build`).
 
 == Key Responsibilities & Collaborators
-* **Static Payload Deduplication (`DEC-PORTAL-PAYLOAD-DEDUP-AND-CLIENT-BFS`)**: Strips duplicate prose strings from specialized entity collections (`_deduplicate_portal_payload`) so each specification body is serialized once in `data.specs`, hydrated client-side by `CMP-PORTAL-ASSETS`.
-* **Safe Inline Script Embedding**: Injects `window.__EIDOS_DATA__` into the single-file HTML template from `CMP-PORTAL-ASSETS` while escaping `</script>`, `U+2028`, and `U+2029` sequences.
+* **Chunked Local Static Export & Payload Deduplication (`DEC-PORTAL-PAYLOAD-DEDUP-AND-CLIENT-BFS`, `DEC-PORTAL-STRICT-SANITIZATION-AND-SSE-CHUNKING`)**: Deduplicates prose strings (`_deduplicate_portal_payload`) and by default (`single_file=False`) externalizes local `./assets/*` JS/CSS bundles and per-entity `./specs/<id>.json` body chunks alongside compact `index.html` and `data.json` files (while supporting `--single-file` / `single_file=True` to inline all assets and spec bodies into a single standalone `index.html` for `file://` archives).
+* **Safe Inline Script Embedding**: Escapes `<!--` as `\u003c!--` alongside `</` (`\u003c/`), `U+2028`, and `U+2029` when embedding `window.__EIDOS_DATA__` so HTML comments inside specification prose never corrupt script-data parsing.
 
 == Public Surface
-* `build_static_portal(eidos_dir: Path, output_dir: Path) -> Path`
+* `build_static_portal(eidos_dir: Path, output_dir: Path, single_file: bool = False) -> Path`
 * `_deduplicate_portal_payload(data: dict[str, Any]) -> dict[str, Any]`
 
 == Design Constraints & Operational Notes

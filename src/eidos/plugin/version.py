@@ -10,6 +10,7 @@ from typing import Any
 import orjson
 
 import eidos
+from eidos import resolve_runtime_version as resolve_runtime_version
 
 PYPI_PACKAGE_JSON_URL = "https://pypi.org/pypi/eidos-ai/json"
 _DEFAULT_URLOPEN = urllib.request.urlopen
@@ -191,6 +192,51 @@ def get_installed_plugin_version(project_dir: Path | None = None) -> str | None:
         return None
 
 
+def _collect_diverged_or_skipped_skills(root: Path, *, check_disk: bool = True) -> list[str]:
+    """Return repository-relative paths of skipped or locally modified SKILL.md files."""
+    from eidos.plugin.installer import (
+        ACTIVE_EIDOS_SKILLS,
+        MANIFEST_FILENAME,
+        _compute_sha256,
+        _read_manifest_skipped_files,
+        locate_plugin_bundle,
+    )
+
+    flagged: set[str] = set()
+    subdirs = (".agents", ".claude", ".aider")
+    for sub in subdirs:
+        for rel in _read_manifest_skipped_files(root / sub):
+            norm = rel.replace("\\", "/").lstrip("/")
+            flagged.add(norm if norm.startswith(f"{sub}/") else f"{sub}/{norm}")
+
+    if not check_disk:
+        return sorted(flagged)
+
+    try:
+        bundle_skills = locate_plugin_bundle() / "skills"
+    except FileNotFoundError:
+        return sorted(flagged)
+
+    if not bundle_skills.is_dir():
+        return sorted(flagged)
+
+    for sub in subdirs:
+        pdir = root / sub
+        skills_dir = pdir / "skills"
+        has_install = (pdir / MANIFEST_FILENAME).is_file() or skills_dir.is_symlink()
+        if not has_install or not skills_dir.exists():
+            continue
+        for skill_name in ACTIVE_EIDOS_SKILLS:
+            bundled_md = bundle_skills / skill_name / "SKILL.md"
+            installed_md = skills_dir / skill_name / "SKILL.md"
+            if not bundled_md.is_file():
+                continue
+            if not installed_md.is_file() or _compute_sha256(installed_md) != _compute_sha256(bundled_md):
+                flagged.add(f"{sub}/skills/{skill_name}/SKILL.md")
+
+    return sorted(flagged)
+
+
 def check_plugin_version_status(project_dir: Path | None = None) -> dict[str, Any]:
     """Check version status and Stop hook health between bundled plugin and installed project plugin."""
     from eidos.core.workspace.project import _has_eidos_markers, find_git_root, find_repo_root
@@ -209,6 +255,7 @@ def check_plugin_version_status(project_dir: Path | None = None) -> dict[str, An
 
     bundled = get_bundled_plugin_version()
     installed = get_installed_plugin_version(project_dir=root)
+    skipped_files: list[str] = []
 
     if installed is None:
         status = "not_installed"
@@ -218,7 +265,11 @@ def check_plugin_version_status(project_dir: Path | None = None) -> dict[str, An
         status_text = f"Installed version '{installed}' is invalid SemVer"
     else:
         cmp = compare_semver(installed, bundled)
-        if cmp == 0:
+        skipped_files = _collect_diverged_or_skipped_skills(root, check_disk=(cmp == 0))
+        if skipped_files:
+            status = "modified"
+            status_text = "Modified locally (run 'eidos plugin install <target> --force' to reconcile)"
+        elif cmp == 0:
             status = "up_to_date"
             status_text = "Up to date"
         elif cmp < 0:
@@ -273,6 +324,7 @@ def check_plugin_version_status(project_dir: Path | None = None) -> dict[str, An
         "installed_version": installed,
         "status": status,
         "status_text": status_text,
+        "skipped_files": skipped_files,
         "hooks_ok": hooks_ok,
         "hooks_status": hooks_status,
         "target_hooks": target_hooks,

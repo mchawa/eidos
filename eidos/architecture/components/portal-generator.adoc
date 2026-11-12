@@ -13,8 +13,8 @@ source_path: src/eidos/portal/generator.py
 Synthesizes all 16 living specification types, AST-derived component and container dependency graphs, W3C DTCG design token hierarchies, and SpecDelta impact blast radii into the unified Web Portal payload (`get_portal_data`) and auto-generated C4 Level 1–3 Mermaid diagrams.
 
 == Key Responsibilities & Collaborators
-* **Living Architecture & C4 Diagram Synthesis**: Consumes validated specifications from `CMP-SPEC-VALIDATOR` and directed graph edges (`consumes_api`, `depends_on`, `part_of`, `realizes`) from `CMP-GRAPH-STORAGE` to construct C4 Level 1 System Context, Level 2 Container, and Level 3 Component whitebox views and Mermaid diagrams.
-* **Product, Design & SpecDelta Aggregation**: Extracts domain missions, capability JTBDs, `INV-*` traceability records, embedded `DEC-*` decisions, W3C `tokens.json` design systems, and `compute_delta_impact` Kanban/Timeline models.
+* **Living Architecture & C4 Diagram Synthesis**: Consumes validated specifications from `CMP-SPEC-VALIDATOR` and directed graph edges (`consumes_api`, `depends_on`, `part_of`, `realizes`) from `CMP-GRAPH-STORAGE` to construct C4 Level 1 System Context (formatting `{name, role, protocol}` `external_systems` objects cleanly without raw Python dict `repr` strings), Level 2 Container, and Level 3 Component whitebox views, while HTML-escaping interpolated `client`/`title`/`action`/`screen` flow fields and stripping unsafe Mermaid `%%{init:...}%%` and `click ... call` directives.
+* **Product, Contained Design Tokens, Screen Hydration & Exploration Summaries**: Enforces `cand.resolve().is_relative_to(repo_root.resolve())` containment on `tokens.manifest` files, preserves Screen Specification AsciiDoc bodies for `"Inspect Screen Spec"`, extracts structured `exit_criteria` and `recommendation` summaries on `EXP-*` explorations, and builds `compute_delta_impact` Kanban/Timeline models.
 
 == Public Surface
 * `get_portal_data(eidos_dir: Path) -> dict[str, Any]`

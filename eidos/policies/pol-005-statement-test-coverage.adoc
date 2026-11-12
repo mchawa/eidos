@@ -7,7 +7,7 @@ category: testing
 severity: blocking
 invariants:
   - id: INV-POL-005-STATEMENT-TEST-COVERAGE
-    rule: "Every Python source module under src/eidos/ must maintain greater than 90% statement test coverage across the automated pytest suite, enforced by [tool.coverage] configuration in pyproject.toml and continuous test verification."
+    rule: "Every individual Python source module under src/eidos/ (excluding generated _version.py and portal frontend packaging scripts under src/eidos/portal/frontend/) must maintain strictly greater than 90.0% statement test coverage across the automated pytest suite, enforced by [tool.coverage] configuration in pyproject.toml and per-file coverage.json verification."
     test_binding: "tests/test_validator.py::test_pol_005_statement_test_coverage"
 ---
 = Policy: Minimum 90% Per-File Statement Test Coverage
@@ -19,6 +19,6 @@ High aggregate repository coverage can mask poorly tested modules when large, he
 
 == Enforcement Rules
 
-1. **Per-File Statement Coverage Floor (>90%)**: Every Python module under `src/eidos/` must maintain strictly greater than 90% statement coverage (`>= 91%` in `pytest --cov=src/eidos` reports).
-2. **Declarative Coverage Configuration**: `pyproject.toml` must declare `[tool.coverage.run]` (`source = ["src/eidos"]`) and `[tool.coverage.report]` (`fail_under = 90`).
-3. **Automated Invariant Verification**: Verified by `tests/test_validator.py::test_pol_005_statement_test_coverage` bound to `INV-POL-005-STATEMENT-TEST-COVERAGE`.
+1. **Per-File Statement Coverage Floor (>90.0%)**: Across `src/eidos/`, every Python module (excluding generated `src/eidos/_version.py` and frontend packaging scripts under `src/eidos/portal/frontend/`) must maintain strictly greater than `90.0%` statement coverage (`percent_covered > 90.0` per file in `coverage.json` from `pytest --cov=src/eidos --cov-report=json:coverage.json`).
+2. **Declarative Coverage Configuration**: `pyproject.toml` must declare `[tool.coverage.run]` (`source = ["src/eidos"]`, `omit = ["src/eidos/_version.py", "src/eidos/portal/frontend/*"]`) and `[tool.coverage.report]` (`fail_under = 90`).
+3. **Automated Invariant & CI Verification**: Verified per file via `coverage.json` in `tests/test_validator.py::test_pol_005_statement_test_coverage` (`INV-POL-005-STATEMENT-TEST-COVERAGE`) and `.github/workflows/ci.yml`.

@@ -20,7 +20,7 @@ properties:
     pattern: "^CAP-[A-Z0-9_-]+$"
     description: "Unique capability identifier following the CAP-<DOMAIN>-<NUMBER> convention (e.g. CAP-PROD-001)."
   title:
-    type: string
+    $ref: "#/$defs/non_empty_string"
     description: "Descriptive human-readable title of this capability."
   domain:
     $ref: "#/$defs/domain_ref"

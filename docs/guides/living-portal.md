@@ -20,13 +20,13 @@ Structured around a responsive left sidebar and URL hash deep-linking (`#/<view>
 
 ## Local Interactive Development
 
-To inspect your architecture locally with progressive live auto-reload (`GET /api/version` mtime polling and `GET /api/drift` uncommitted drift summaries):
+To inspect your architecture locally with real-time Server-Sent Events (`GET /api/events` streaming live updates across `eidos/`, `src/`, and `tests/`, `GET /api/drift` uncommitted drift summaries, and same-origin loopback `Host` header isolation):
 
 ```bash
 eidos portal serve --path eidos --port 8080
 ```
 
-Open `http://localhost:8080` in your web browser. Any changes made to your `.adoc` files in `eidos/` are automatically detected and refreshed in the portal.
+Open `http://localhost:8080` in your web browser. Any changes made to `eidos/`, `src/`, or `tests/` immediately update the live drift status badge and catalog views without manual page refreshes.
 
 ---
 
@@ -35,17 +35,22 @@ Open `http://localhost:8080` in your web browser. Any changes made to your `.ado
 You can export the entire portal as a static site that can be hosted on GitHub Pages, GitLab Pages, AWS S3, or opened in air-gapped environments:
 
 ```bash
+# Default chunked export (compact index.html + lazy local specs/<id>.json chunks):
 eidos portal build --path eidos --out public
+
+# Optional standalone single-file export (inlines all spec bodies for file:// archives):
+eidos portal build --path eidos --out public --single-file
 ```
 
-This creates a self-contained bundle with **zero external CDN dependencies**, **zero Node.js runtime requirement (`INV-PORTAL-ZERO-NODE-DEP`)**, and **deduplicated specification payloads (`~40–50%` smaller JSON re-hydrated client-side)**:
+This creates a self-contained bundle with **zero external CDN dependencies**, **zero Node.js runtime requirement (`INV-PORTAL-ZERO-NODE-DEP`)**, **strict Mermaid (`securityLevel: "strict"`) and DOMPurify (`SANITIZE_DOM`) XSS protection (`INV-PORTAL-XSS-AND-SERVER-ISOLATION`)**, and **lazy per-entity spec chunking**:
 
 ```text
 public/
-├── index.html       # Pre-compiled single-file React 19 / Tailwind v4 / MD3 SPA
-│                    # (inline Mermaid.js v11, @asciidoctor/core, Geist woff2 fonts & window.__EIDOS_DATA__)
+├── index.html       # Compact React 19 / Tailwind v4 / MD3 SPA shell (<400 KB in chunked mode)
+├── assets/          # Extracted local JS/CSS bundles (inlined into index.html with --single-file)
 ├── favicon.svg      # Vector portal icon
-└── data.json        # Deduplicated AST, C4 topology, directed graph edges & validation diagnostics
+├── data.json        # Catalog metadata, C4 topology, directed graph edges & validation diagnostics
+└── specs/           # Lazy-loaded per-entity AsciiDoc bodies (<entity-id>.json; omitted with --single-file)
 ```
 
 ---

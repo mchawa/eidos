@@ -1,0 +1,191 @@
+---
+type: delta/mutation
+id: DLT-2026-136-ENFORCE-NON-3715
+title: "Enforce Non-Empty v1 Schema Constraints, Add CLI Client Platform and Delta Show Command, and Enforce Per-File POL-005 Coverage"
+status: applied
+intent:
+  kind: enabler
+  severity: medium
+  motivation: "Close schema strictness gaps across all 16 v1 JSON Schemas (forbidding blank/whitespace titles, rules, routes, manifests, and empty code_paths arrays, and adding 'cli' to client.schema.yaml's platform enum), add a first-class 'eidos delta show <DLT-ID>' command so coding agents can inspect active and archived SpecDeltas without raw file reads while preserving the disjoint spec/delta CLI boundary, and align CI and test_pol_005_statement_test_coverage with POL-005-STATEMENT-TEST-COVERAGE by enforcing strictly >90% statement coverage on every individual Python source file under src/eidos/."
+vcs:
+  branch: main
+  base_commit: e1022b338ebd4a42d4774fa444ef35f6874b8acf
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: "Update assets/schemas/v1/common/defs.yaml and all 16 v1 schema files under assets/schemas/v1/ (plus eidos/architecture/containers/core.adoc, recording DEC-CORE-NON-EMPTY-SCHEMA-STRINGS-AND-DELTA-SHOW) to enforce non-empty, non-whitespace strings (minLength: 1, pattern: '\\S') on required prose/identifier/path fields and minItems: 1 on code_paths arrays, and add 'cli' to platform enum in assets/schemas/v1/design/client.schema.yaml."
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/core"
+          - "assets/schemas"
+        decisions.id:
+          - "DEC-CORE-NON-EMPTY-SCHEMA-STRINGS-AND-DELTA-SHOW"
+      body:
+        contains:
+          - "DEC-CORE-NON-EMPTY-SCHEMA-STRINGS-AND-DELTA-SHOW"
+          - "minLength"
+  - operation: modify
+    target: CMP-CLI-DELTA-COMMANDS
+    details: "Add delta_show_cmd ('eidos delta show <delta_id> [--json] [--path]') to src/eidos/cli/delta_commands.py and eidos/architecture/components/cli-delta-commands.adoc to inspect any active or archived SpecDelta's frontmatter, composable mutations, impact summary, and AsciiDoc body in Rich terminal or machine-readable JSON format."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/delta_commands.py"
+        status: "active"
+      body:
+        contains:
+          - "delta_show_cmd"
+          - "show"
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+    details: "Update spec_show_cmd() in src/eidos/cli/spec_commands.py and eidos/architecture/components/cli-spec-commands.adoc so passing a DLT-* identifier emits an actionable error directing the caller to 'eidos delta show <ID>'."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/spec_commands.py"
+        status: "active"
+      body:
+        contains:
+          - "eidos delta show"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Bump CTR-EIDOS-CLI to version 1.5.0 in eidos/architecture/contracts/cli.adoc and document the 'eidos delta show <delta_id> [--json] [--path <path>]' subcommand."
+    expect:
+      frontmatter:
+        version: "1.5.0"
+        status: "active"
+      body:
+        contains:
+          - "show <delta_id>"
+  - operation: modify
+    target: CAP-EXP-002
+    details: "Bump CAP-EXP-002 to version 1.3.0 in eidos/domains/experience-portal/capabilities/multi-design-systems.adoc and update INV-CLIENT-DESIGN-BINDING to cover 'cli' platform client manifests alongside web, mobile, desktop, tui, and multi-platform."
+    expect:
+      frontmatter:
+        version: "1.3.0"
+        technical.invariants.id:
+          - "INV-CLIENT-DESIGN-BINDING"
+      body:
+        contains:
+          - "cli"
+  - operation: modify
+    target: INV-CLIENT-DESIGN-BINDING
+    details: "Update INV-CLIENT-DESIGN-BINDING in CAP-EXP-002 to verify 'platform: cli' support in client.schema.yaml."
+    expect:
+      frontmatter:
+        rule: "cli"
+        test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Bump CAP-PROD-001 to version 1.11.0 in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc and update INV-SPEC-VALIDATION to enforce non-empty/non-whitespace schema strings and minItems: 1 on code_paths."
+    expect:
+      frontmatter:
+        version: "1.11.0"
+        technical.invariants.id:
+          - "INV-SPEC-VALIDATION"
+      body:
+        contains:
+          - "non-whitespace"
+  - operation: modify
+    target: INV-SPEC-VALIDATION
+    details: "Update INV-SPEC-VALIDATION in CAP-PROD-001 to reject empty or whitespace-only required strings and empty source_path arrays across all 16 v1 schemas."
+    expect:
+      frontmatter:
+        rule: "minLength"
+        test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
+  - operation: modify
+    target: CAP-PROD-002
+    details: "Bump CAP-PROD-002 to version 2.4.0 in eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc and add INV-DELTA-CLI-INSPECTION verifying 'eidos delta show' across active and archived SpecDeltas."
+    expect:
+      frontmatter:
+        version: "2.4.0"
+        technical.invariants.id:
+          - "INV-DELTA-CLI-INSPECTION"
+      body:
+        contains:
+          - "eidos delta show"
+  - operation: add
+    target: INV-DELTA-CLI-INSPECTION
+    details: "Bind INV-DELTA-CLI-INSPECTION to tests/test_delta_engine.py::test_delta_show_active_and_archived_cli."
+    expect:
+      frontmatter:
+        rule: "'eidos delta show <ID>' must resolve both active (eidos/deltas/) and archived (eidos/deltas/archive/) SpecDeltas by full ID, unambiguous prefix, or path and emit complete frontmatter, mutations, and body output in Rich and --json modes."
+        test_binding: "tests/test_delta_engine.py::test_delta_show_active_and_archived_cli"
+  - operation: modify
+    target: POL-005-STATEMENT-TEST-COVERAGE
+    details: "Update eidos/policies/pol-005-statement-test-coverage.adoc and INV-POL-005-STATEMENT-TEST-COVERAGE so test_pol_005_statement_test_coverage and CI verify per-file statement coverage strictly >90.0% across every individual Python source module under src/eidos/ (not merely aggregate repository average)."
+    expect:
+      frontmatter:
+        status: "active"
+        invariants.id:
+          - "INV-POL-005-STATEMENT-TEST-COVERAGE"
+      body:
+        contains:
+          - "every Python module"
+          - "coverage.json"
+  - operation: modify
+    target: INV-POL-005-STATEMENT-TEST-COVERAGE
+    details: "Update INV-POL-005-STATEMENT-TEST-COVERAGE in POL-005 to assert per-file percent_covered > 90.0 across every module under src/eidos/."
+    expect:
+      frontmatter:
+        rule: "individual"
+        test_binding: "tests/test_validator.py::test_pol_005_statement_test_coverage"
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: "Update docs/concepts/schema-glossary.md and eidos/architecture/components/docs-core-concepts.adoc to document non-empty v1 schema constraints and the 'cli' client platform enum value."
+    expect:
+      frontmatter:
+        source_path: "docs/concepts"
+        status: "active"
+      body:
+        contains:
+          - "schema-glossary.md"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Update docs/guides/cli.md and eidos/architecture/components/docs-user-guides.adoc to document 'eidos delta show' and updated SpecDelta inspection workflows."
+    expect:
+      frontmatter:
+        source_path: "docs/guides"
+        status: "active"
+      body:
+        contains:
+          - "eidos delta show"
+---
+= SpecDelta: Enforce Non-Empty v1 Schema Constraints, Add CLI Client Platform and Delta Show Command, and Enforce Per-File POL-005 Coverage
+:toc: left
+:icons: font
+:sectnums:
+
+== Problem Statement
+
+Reviewing `assets/schemas/v1/`, `CNT-EIDOS-CLI`, and `POL-005-STATEMENT-TEST-COVERAGE` identified three architectural and governance gaps:
+
+1. **Permissive Blank Strings, Empty `code_paths` & Missing `"cli"` Client Platform in `assets/schemas/v1/`**:
+   * Blank or whitespace-only strings (`title: ""`, `rule: "   "`, `motivation: ""`) and empty path arrays (`source_path: []` or `source_path: ""` in `assets/schemas/v1/common/defs.yaml:112-118`) pass all 16 v1 schemas because `minLength: 1` / `pattern: "\\S"` and `minItems: 1` are omitted.
+   * `assets/schemas/v1/design/client.schema.yaml:3` states `"Defines a client application surface (web, mobile, desktop, CLI)..."`, yet its closed `platform` enum (`L32-39`) lists only `["web", "mobile-ios", "mobile-android", "desktop", "tui", "multi-platform"]`, rejecting `"cli"`.
+2. **No CLI Command to Inspect SpecDeltas (`eidos delta show` Missing)**:
+   * `eidos spec show <DLT-ID>` (`src/eidos/cli/spec_commands.py`) intentionally rejects `delta/mutation` documents to keep `eidos spec` and `eidos delta` disjoint, but `eidos delta` (`src/eidos/cli/delta_commands.py`) exposes no `show` subcommand—forcing coding agents to fall back to raw filesystem reads.
+3. **Policy vs. Enforcement Drift on `POL-005-STATEMENT-TEST-COVERAGE`**:
+   * `eidos/policies/pol-005-statement-test-coverage.adoc:15-24` explicitly mandates **`>90%` statement coverage on every individual Python source file** under `src/eidos/`, yet `pyproject.toml` (`fail_under = 90`), `.github/workflows/ci.yml`, and `tests/test_validator.py::test_pol_005_statement_test_coverage` (`L3854-4301`) check only **aggregate** statement coverage, allowing individual modules to fall below `90%` while larger high-coverage modules subsidize the repository average.
+
+== Proposed Specification Changes
+
+* **Strict Non-Empty v1 Schemas & `"cli"` Client Platform (`CNT-EIDOS-CORE`, `CAP-PROD-001`, `CAP-EXP-002`, `CMP-DOCS-CORE-CONCEPTS`)**:
+  1. Introduce `$defs/non_empty_string` (`type: string`, `minLength: 1`, `pattern: "\\S"`) and update `$defs/code_paths` (`minLength: 1`, `pattern: "\\S"`, array `minItems: 1`) in `assets/schemas/v1/common/defs.yaml`, applying non-empty constraints across required string/list fields (`title`, `rule`, `motivation`, `decision`, `rationale`, `manifest`, `specification_file`, `route`, `action`, `outcome`, `owners`, `archetypes`) in all 16 v1 schemas.
+  2. Add `"cli"` to `properties.platform.enum` in `assets/schemas/v1/design/client.schema.yaml` and synchronize `docs/concepts/schema-glossary.md`.
+* **First-Class `eidos delta show` Subcommand (`CMP-CLI-DELTA-COMMANDS`, `CMP-CLI-SPEC-COMMANDS`, `CTR-EIDOS-CLI`, `CAP-PROD-002`, `CMP-DOCS-USER-GUIDES`)**:
+  1. Add `eidos delta show <delta_id> [--json] [--path <path>]` to `src/eidos/cli/delta_commands.py` resolving active (`eidos/deltas/`) and archived (`eidos/deltas/archive/`) SpecDeltas via `find_spec_by_id_or_path` and outputting structured frontmatter, composable `mutations`, and AsciiDoc body in Rich or `orjson` `--json` format.
+  2. Update `spec_show_cmd` in `src/eidos/cli/spec_commands.py` to direct `DLT-*` queries specifically to `eidos delta show <ID>`, update `assets/plugin_reference/skills/eidos-plan/SKILL.md` (within `INV-PLUGIN-SKILL-SIZE-CEILING` and `INV-PLUGIN-SKILL-CLI-PARITY`, covered via `CNT-EIDOS-PLUGIN` `(body-only optional command hint if needed)`), and synchronize `docs/guides/cli.md` + `tests/fixtures/cli_command_tree.json`.
+* **True Per-File `>90%` Statement Coverage Gate (`POL-005-STATEMENT-TEST-COVERAGE`, `INV-POL-005-STATEMENT-TEST-COVERAGE`)**:
+  1. Update `tests/test_validator.py::test_pol_005_statement_test_coverage` and `.github/workflows/ci.yml` (`--cov=src/eidos --cov-report=json`) to inspect `files[path]["summary"]["percent_covered"]` for every non-trivial `.py` module under `src/eidos/` (excluding generated `_version.py`) and fail with an explicit table of offending files whenever any file has `percent_covered <= 90.0`, adding targeted unit tests for any module currently below `90.0%`.
+
+== Implementation Plan
+
+1. **v1 JSON Schemas & Glossary Update (`assets/schemas/v1/`, `docs/concepts/schema-glossary.md`)**:
+   * Add `non_empty_string` and `minItems: 1` `code_paths` constraints in `assets/schemas/v1/common/defs.yaml` and across all 16 `*.schema.yaml` files, add `"cli"` to `assets/schemas/v1/design/client.schema.yaml`, and update `docs/concepts/schema-glossary.md` (`CMP-DOCS-CORE-CONCEPTS`; `CNT-EIDOS-DOCS` covered via child component).
+2. **`eidos delta show` Implementation (`src/eidos/cli/delta_commands.py`, `src/eidos/cli/spec_commands.py`, `docs/guides/cli.md`, `tests/fixtures/cli_command_tree.json`)**:
+   * Implement `delta_show_cmd` in `src/eidos/cli/delta_commands.py` (`CNT-EIDOS-CLI` covered via `CMP-CLI-DELTA-COMMANDS` and `CMP-CLI-SPEC-COMMANDS`), update the `DLT-*` redirect hint in `src/eidos/cli/spec_commands.py`, update `docs/guides/cli.md` (`CMP-DOCS-USER-GUIDES`), and regenerate `tests/fixtures/cli_command_tree.json`.
+3. **Per-File `POL-005` Coverage Gate (`tests/test_validator.py`, `.github/workflows/ci.yml` `(unmapped CI workflow)`, `pyproject.toml` `(unmapped packaging config)`)**:
+   * Update `test_pol_005_statement_test_coverage` in `tests/test_validator.py` and the pytest coverage step in `.github/workflows/ci.yml` to assert `percent_covered > 90.0` for every module under `src/eidos/` (excluding generated `src/eidos/_version.py` in `[tool.coverage.run]` `omit` in `pyproject.toml`), and add tests to bring every module under `src/eidos/` strictly above `90.0%`.
+4. **Living Specifications & Verification (`eidos/`, `tests/`)**:
+   * Move `DEC-CORE-NON-EMPTY-SCHEMA-STRINGS-AND-DELTA-SHOW` onto `CNT-EIDOS-CORE` when applying, and update `CMP-CLI-DELTA-COMMANDS`, `CMP-CLI-SPEC-COMMANDS`, `CTR-EIDOS-CLI` (`1.5.0`), `CAP-EXP-002` (`1.3.0`), `CAP-PROD-001` (`1.11.0`), `CAP-PROD-002` (`2.4.0`), `POL-005-STATEMENT-TEST-COVERAGE`, `CMP-DOCS-CORE-CONCEPTS`, and `CMP-DOCS-USER-GUIDES`.
+   * Run `eidos validate eidos --json`, `eidos delta verify DLT-2026-136 --json`, `eidos drift --uncommitted --json`, and `uv run pytest --cov=src/eidos`.

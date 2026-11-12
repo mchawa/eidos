@@ -13,17 +13,18 @@ source_path: src/eidos/core/lifecycle/delta_engine.py
 Manages the end-to-end SpecDelta (`DLT-*`) lifecycle: collision-free `<SLUG>-<4HEX>` blueprint creation, composable `operation` + `target` mutation normalization, Git-baseline and declarative `expect` post-condition verification, verify-gated status transitions, atomic application, and two-tier archive slimming.
 
 == Key Responsibilities & Collaborators
-* **Blueprint Authoring & Lifecycle State Machine**: Scaffolds `DLT-YYYY-NNN-<SLUG>-<4HEX>` files (`create_delta`) with auto-detected `vcs.branch` / `vcs.base_commit` resolved across arbitrary ancestor depths in monorepo sub-projects (`_resolve_git_repo_root` via `find_git_root`), lists and summarizes 5-state statuses (`proposed`, `in_review`, `approved`, `applied`, `rejected`), and enforces verify-gated transitions (`set_delta_status`, `apply_delta`).
-* **Git-Baseline & Declarative Post-Condition Verification**: Evaluates `mutations[]` (`add`, `modify`, `remove`, `deprecate`) against Git baseline blobs (`_resolve_git_baseline_sha`) and structured `expect.body` / `expect.frontmatter` assertions (`verify_delta_mutations`).
-* **Two-Tier Archive Partitioning**: Moves older terminal (`applied`/`rejected`) SpecDeltas and (`adopted`/`discarded`) Explorations into `eidos/deltas/archive/` and `eidos/explorations/archive/` (`archive_deltas`, `archive_explorations`) while slimming archived `.adoc` bodies.
+* **Blueprint Authoring & Lifecycle State Machine**: Allocates cross-branch collision-free `DLT-YYYY-NNN-<SLUG>-<4HEX>` identifiers (`generate_collision_free_delta_id`, inspecting local, archived, and Git branch refs alongside `slug_suffix`), scaffolds files (`create_delta`) with auto-detected `vcs.branch` / `vcs.base_commit`, and enforces verify-gated transitions (`set_delta_status`, `apply_delta`) while rejecting vacuous empty `mutations: []` lists.
+* **Git-Baseline & Declarative Post-Condition Verification**: Evaluates non-empty `mutations[]` across all four composable operations (`add`, `modify`, `remove`, `deprecate`) against CRLF-normalized, shallow-clone-safe Git baseline blobs (`_resolve_git_baseline_sha`) and structured `expect.body` / `expect.frontmatter` assertions (`verify_delta_mutations`, supporting `{"dotted.key": null}` key-removal checks and excluding `test_binding` from `_PROSE_EXPECT_FIELDS` so test bindings match exact strings).
+* **Lossless Two-Tier Archive Partitioning**: Moves older terminal (`applied`/`rejected`) SpecDeltas and (`adopted`/`discarded`) Explorations into `eidos/deltas/archive/` and `eidos/explorations/archive/` (`archive_deltas`, `archive_explorations`), preserving full multi-line paragraph and `===` subsection content before unlinking archived explorations.
 
 == Public Surface
-* `create_delta(eidos_dir: Path, raw_id: str, title: str, kind: str = "feature", slug: str | None = None) -> Path`
-* `verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool, str, dict[str, Any]]`
-* `apply_delta(eidos_dir: Path, delta_id_or_path: str, verify: bool = True) -> tuple[bool, str]`
+* `generate_collision_free_delta_id(eidos_dir: Path, raw_id: str | None = None, title: str = "", slug_suffix: bool = False) -> str`
+* `create_delta(eidos_dir: Path, raw_id: str = "auto", title: str = "Untitled SpecDelta", kind: str = "feature", slug_suffix: bool = False) -> Path`
+* `verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str, *, git_repo_root: Path | None = None, snapshot_root: Path | None = None, git_sub_prefix: str = "") -> tuple[bool, str, DeltaVerificationReport | None]`
+* `apply_delta(eidos_dir: Path, delta_id_or_path: str, verify: bool = True) -> tuple[bool, str, Path | None]`
 * `set_delta_status(...)`, `list_deltas(...)`, `get_delta_status_summary(...)`, `delete_delta(...)`
 * `archive_deltas(...)`, `archive_explorations(...)`, `normalize_delta_mutation(m: dict) -> dict`
 
 == Design Constraints & Operational Notes
-* **Stateless Git Baselines (`DEC-INDEX-STATELESS-DERIVED-CACHE`)**: Resolves pre-delta baselines strictly from Git commit history (`vcs.base_commit`) rather than local SQLite snapshot tables.
-* **Pre-Commit Catalog Validation**: `apply_delta` runs `CMP-SPEC-VALIDATOR` across `eidos/` before marking a SpecDelta `applied`.
+* **Stateless Git Baselines (`DEC-INDEX-STATELESS-DERIVED-CACHE`)**: Resolves pre-delta baselines strictly from Git commit history (`vcs.base_commit`) rather than local SQLite snapshot tables, including across isolated commit-range `eidos drift` snapshots.
+* **Pre-Apply Document Validation**: `apply_delta` validates the updated SpecDelta via `CMP-SPEC-VALIDATOR` (`validate_document`) before marking a SpecDelta `applied`.

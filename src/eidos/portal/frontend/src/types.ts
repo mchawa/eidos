@@ -305,6 +305,7 @@ export interface SpecScreen {
   mermaid?: string;
   description?: string;
   body?: string;
+  path?: string;
 }
 
 export interface SpecDesignSystemTokenItem {
@@ -341,6 +342,7 @@ export interface SpecDesignSystem {
   extends?: string | null;
   version?: string;
   tokens_file?: string;
+  tokens_warning?: string;
   tokens?: SpecDesignSystemTokens;
 }
 
@@ -354,6 +356,7 @@ export interface SpecExploration {
     | {
         max_duration?: string;
         benchmark?: string;
+        [key: string]: any;
       }
     | string[];
   findings?: string;
@@ -379,6 +382,7 @@ export interface SpecItem {
   filename: string;
   frontmatter: Record<string, any>;
   body: string;
+  body_chunk?: string;
   is_valid: boolean;
   errors?: string[];
 }
@@ -395,6 +399,22 @@ export interface SpecValidationSummary {
   valid_docs: number;
   schema_errors: Record<string, string[]>;
   broken_references: string[];
+}
+
+export interface SpecDriftStatus {
+  is_clean: boolean;
+  drift_detected: boolean;
+  workflow_mode?: string;
+  touched_components?: string[];
+  changed_files?: string[];
+  unmapped_files?: string[];
+  validation_passed?: boolean;
+  validation_errors?: string[];
+  uncovered_invariants?: string[];
+  orphan_invariants?: Array<{ test_id: string; invariant_id: string }>;
+  remediation_suggestions?: string[];
+  summary_markdown?: string;
+  error?: string;
 }
 
 export interface PortalData {

@@ -14,6 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { AsciiDocRenderer, useAsciiDocOutline } from "@/components/ui/AsciiDocRenderer";
 import { requestSpecNavigation } from "@/lib/specNav";
+import { useResolvedSpecBody } from "@/lib/specChunks";
 import { cn } from "@/lib/utils";
 
 export interface SpecReaderItem {
@@ -25,6 +26,7 @@ export interface SpecReaderItem {
   is_valid?: boolean;
   frontmatter?: Record<string, any>;
   body?: string;
+  body_chunk?: string;
 }
 
 export interface SpecReaderProps {
@@ -45,7 +47,13 @@ export function SpecReader({
   const [activeHeadingId, setActiveHeadingId] = React.useState<string>("");
 
   const stageRef = React.useRef<HTMLDivElement>(null);
-  const outline = useAsciiDocOutline(spec.body);
+  const { body: resolvedBody, frontmatter: loadedFrontmatter, loading: loadingChunk } =
+    useResolvedSpecBody(spec.id, spec.body, spec.body_chunk);
+  const effectiveFrontmatter = React.useMemo(
+    () => (loadedFrontmatter ? { ...(spec.frontmatter || {}), ...loadedFrontmatter } : spec.frontmatter),
+    [spec.frontmatter, loadedFrontmatter]
+  );
+  const outline = useAsciiDocOutline(resolvedBody);
 
   // Track active heading on scroll inside modal/scrollable container or window
   React.useEffect(() => {
@@ -110,7 +118,7 @@ export function SpecReader({
   };
 
   // Extract key metadata from frontmatter
-  const fm = spec.frontmatter || {};
+  const fm = effectiveFrontmatter || {};
   const domainBinding = fm.domain;
   const containerBinding = fm.container;
   const invariants = fm.blast_radius?.invariants_to_enforce || fm.invariants;
@@ -209,7 +217,7 @@ export function SpecReader({
         )}
 
         {/* Collapsible Raw Frontmatter Accordion (Clean, Non-Blocking) */}
-        {spec.frontmatter && (
+        {effectiveFrontmatter && (
           <div className="pt-2 border-t border-border/60">
             <button
               type="button"
@@ -230,7 +238,7 @@ export function SpecReader({
             {showRawFrontmatter && (
               <div className="mt-2 animate-in fade-in duration-200">
                 <pre className="p-4 rounded-xl bg-zinc-900 dark:bg-zinc-950 border border-border/80 font-mono text-xs text-zinc-100 overflow-x-auto max-h-60 overflow-y-auto leading-relaxed shadow-inner">
-                  {JSON.stringify(spec.frontmatter, null, 2)}
+                  {JSON.stringify(effectiveFrontmatter, null, 2)}
                 </pre>
               </div>
             )}
@@ -242,9 +250,15 @@ export function SpecReader({
       <div className="flex items-start gap-5">
         {/* Specification Prose Content */}
         <div className="flex-1 min-w-0">
-          {spec.body ? (
+          {loadingChunk ? (
+            <div className="p-8 rounded-2xl bg-card border border-border text-center text-muted-foreground italic">
+              Loading specification {spec.id}…
+            </div>
+          ) : resolvedBody ? (
             <AsciiDocRenderer
-              content={spec.body}
+              specId={spec.id}
+              bodyChunk={spec.body_chunk}
+              content={resolvedBody}
               title={spec.title}
             />
           ) : (

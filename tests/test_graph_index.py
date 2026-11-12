@@ -1324,7 +1324,7 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
     db_path = eidos_dir / ".cache" / "index.db"
     with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
-        assert ver == SCHEMA_VERSION == "2.18.0"
+        assert ver == SCHEMA_VERSION == "2.19.0"
         val_rows_before = conn.execute("SELECT COUNT(*) FROM spec_validation_cache;").fetchone()[0]
         assert val_rows_before == 1
 
@@ -2335,9 +2335,9 @@ def test_incremental_spec_sync_skips_unchanged_test_reparse_and_scopes_fts(tmp_p
         projected_targets: list[set[str] | None] = []
         orig_project = sync_mod._project_ast_code_symbols_into_fts
 
-        def _spy_project(c, target_entity_ids=None):
+        def _spy_project(c, target_entity_ids=None, **kwargs):
             projected_targets.append(set(target_entity_ids) if target_entity_ids is not None else None)
-            return orig_project(c, target_entity_ids=target_entity_ids)
+            return orig_project(c, target_entity_ids=target_entity_ids, **kwargs)
 
         monkeypatch.setattr(sync_mod, "_project_ast_code_symbols_into_fts", _spy_project)
 
@@ -2374,7 +2374,7 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
     from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 
-    assert SCHEMA_VERSION == "2.18.0"
+    assert SCHEMA_VERSION == "2.19.0"
     assert set(AstGrepIndexer.LANGUAGE_MAP.keys()) | {".proto", ".adoc"} <= _FILE_QUERY_EXTS
 
     # 1. Verify _ENTITY_ID_TOKEN_RE recognizes SYS-*, ARCH-*, PER-*, and underscore IDs
@@ -2549,7 +2549,7 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
     from eidos.portal.generator import get_portal_data
 
-    assert SCHEMA_VERSION == "2.18.0"
+    assert SCHEMA_VERSION == "2.19.0"
     assert _build_spec_catalog_with_invariants(tmp_path / "nonexistent_eidos") == ({}, {})
 
     init_repository(tmp_path, title="dlt-104-repo")
@@ -2681,11 +2681,11 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
     try:
         conn = idx._get_connection()
-        # Simulate upgrading from schema_version 2.11.0 -> 2.18.0
+        # Simulate upgrading from schema_version 2.11.0 -> 2.19.0
         conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '2.11.0');")
         conn.commit()
         ensure_cache_schema(conn)
-        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.18.0"
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.19.0"
 
         idx.sync(force=True)
 
@@ -2897,7 +2897,7 @@ def test_dlt_2026_105_c4_level_1_and_exploration_edges(tmp_path: Path) -> None:
         idx.close()
 
 
-def test_hybrid_semantic_rrf_and_deterministic_fallback(tmp_path: Path) -> None:
+def test_hybrid_semantic_rrf_and_deterministic_fallback(tmp_path: Path, monkeypatch) -> None:
     """Verify INV-AGENT-HYBRID-SEMANTIC-FALLBACK: spec-only SHA-256 caching in spec_embeddings across sync --force,
     right-padded Harrier sts_query formatting, tau_min=0.50 cosine gating, exact entity ID pinning,
     recommend_invariants_for_unbound_tests, and 100% deterministic fallback to FTS5 BM25 when spec_embeddings are absent."""
@@ -3207,6 +3207,123 @@ def test_hybrid_semantic_rrf_and_deterministic_fallback(tmp_path: Path) -> None:
     assert res_ctx.exit_code == 0
     assert "tier" in orjson.loads(res_ctx.output)
 
+    # 8. Verify pinned Harrier revision, Content-Length + SHA-256 verification, 3-file fp32 check,
+    #    and atomic semantic_sync.lock worker deduplication (DLT-2026-133 / INV-AGENT-HYBRID-SEMANTIC-FALLBACK)
+    import hashlib
+    import importlib.util
+    import io
+    import re
+    import subprocess
+    import urllib.request
+
+    import pytest
+
+    import eidos.core.index.semantic as sem_mod
+    from eidos.core.index.semantic import (
+        HARRIER_ARTIFACT_MANIFEST,
+        HARRIER_HF_BASE_URL,
+        HARRIER_HF_REVISION,
+        _detect_installed_variant,
+        _release_semantic_worker_lock,
+        _trigger_auto_semantic_refresh,
+        _try_acquire_semantic_worker_lock,
+        resolve_semantic_model_dir,
+        setup_semantic_model,
+    )
+
+    assert re.fullmatch(r"[0-9a-f]{40}", HARRIER_HF_REVISION) is not None
+    assert HARRIER_HF_BASE_URL.endswith(f"/resolve/{HARRIER_HF_REVISION}")
+    assert len(HARRIER_ARTIFACT_MANIFEST) >= 8
+
+    # 3-file fp32 check requires model.onnx, model.onnx_data, AND model.onnx_data_1
+    fp32_dir = tmp_path / "fp32_check"
+    (fp32_dir / "onnx").mkdir(parents=True, exist_ok=True)
+    (fp32_dir / "onnx" / "model.onnx").write_bytes(b"g")
+    (fp32_dir / "onnx" / "model.onnx_data").write_bytes(b"d0")
+    assert _detect_installed_variant(fp32_dir) is None
+    (fp32_dir / "onnx" / "model.onnx_data_1").write_bytes(b"d1")
+    assert _detect_installed_variant(fp32_dir) == "onnx/model.onnx"
+
+    # Truncated Content-Length and tampered SHA-256 must fail before replacing dest and clean up .part
+    good_payload = b"verified-harrier-artifact"
+    good_sha = hashlib.sha256(good_payload).hexdigest()
+    test_manifest = {
+        rel: (len(good_payload), good_sha)
+        for rel in (
+            "config.json",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "onnx/model_quantized.onnx",
+            "onnx/model_quantized.onnx_data",
+        )
+    }
+
+    class _MockHttpResp:
+        def __init__(self, body: bytes, content_length: int | None = None) -> None:
+            self._buf = io.BytesIO(body)
+            self.headers = {"Content-Length": str(len(body) if content_length is None else content_length)}
+
+        def read(self, n: int = -1) -> bytes:
+            return self._buf.read(n)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+    verify_eidos = tmp_path / "verify_dl_eidos"
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=60: _MockHttpResp(b"short", content_length=99))
+    with pytest.raises(ValueError, match="Truncated download"):
+        setup_semantic_model(verify_eidos, variant="quantized", expected_manifest=test_manifest)
+    assert list(resolve_semantic_model_dir(verify_eidos).rglob("*.part")) == []
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=60: _MockHttpResp(b"tampered-harrier-artifact"))
+    with pytest.raises(ValueError, match="SHA-256 verification failed"):
+        setup_semantic_model(verify_eidos, variant="quantized", expected_manifest=test_manifest)
+    assert list(resolve_semantic_model_dir(verify_eidos).rglob("*.part")) == []
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=60: _MockHttpResp(good_payload))
+    dl_ok = setup_semantic_model(verify_eidos, variant="quantized", expected_manifest=test_manifest)
+    assert len(dl_ok["downloaded"]) == 5
+
+    # Corrupting a cached file (zero bytes or tampered contents) forces re-download on next setup call
+    cfg_file = resolve_semantic_model_dir(verify_eidos) / "config.json"
+    cfg_file.write_bytes(b"")
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=60: _MockHttpResp(good_payload))
+    dl_healed = setup_semantic_model(verify_eidos, variant="quantized", expected_manifest=test_manifest)
+    assert dl_healed["downloaded"] == ["config.json"] and len(dl_healed["skipped"]) == 4
+
+    # Atomic non-blocking semantic_sync.lock prevents duplicate background worker Popen spawns
+    idx_lock_test = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
+    try:
+        conn_l = idx_lock_test._get_connection()
+        conn_l.execute("UPDATE spec_embeddings SET content_sha256 = 'force_stale' WHERE entity_id = 'CMP-HERMETIC-GUARD';")
+        conn_l.commit()
+        sem_mod._CUSTOM_ENCODE_FNS.pop(str(eidos_dir.resolve()), None)
+        m_dir_lock = resolve_semantic_model_dir(eidos_dir)
+        (m_dir_lock / "onnx").mkdir(parents=True, exist_ok=True)
+        (m_dir_lock / "tokenizer.json").write_text("{}", encoding="utf-8")
+        (m_dir_lock / "onnx" / "model_quantized.onnx").write_bytes(b"q")
+        (m_dir_lock / "onnx" / "model_quantized.onnx_data").write_bytes(b"qd")
+        monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
+        monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+        sem_mod._SUPPRESS_AUTO_SEMANTIC_REFRESH = 0
+
+        lock_file = eidos_dir / ".cache" / "semantic_sync.lock"
+        held_fd = _try_acquire_semantic_worker_lock(lock_file)
+        assert held_fd is not None
+        spawned_while_locked: list[list[str]] = []
+        monkeypatch.setattr(subprocess, "Popen", lambda args, **kw: spawned_while_locked.append(list(args)))
+        try:
+            assert _try_acquire_semantic_worker_lock(lock_file) is None
+            _trigger_auto_semantic_refresh(conn_l, eidos_dir, eidos_dir / ".cache" / "index.db")
+            assert spawned_while_locked == []
+        finally:
+            _release_semantic_worker_lock(held_fd, lock_file)
+    finally:
+        idx_lock_test.close()
+
 
 def test_dlt_2026_114_blast_radius_symbol_and_path_resolution() -> None:
     """Verify DLT-2026-114-RESOLVE-SYMBOLS-0327:
@@ -3340,6 +3457,8 @@ def test_semantic_engine_setup_onnx_protobuf_and_auto_refresh_coverage(tmp_path:
     assert _detect_installed_variant(m_dir) == "onnx/model_fp16.onnx"
     (m_dir / "onnx" / "model.onnx").write_bytes(b"fp32")
     (m_dir / "onnx" / "model.onnx_data").write_bytes(b"data")
+    assert _detect_installed_variant(m_dir) == "onnx/model_fp16.onnx"
+    (m_dir / "onnx" / "model.onnx_data_1").write_bytes(b"data1")
     assert _detect_installed_variant(m_dir) == "onnx/model.onnx"
     (m_dir / "onnx" / "model_quantized.onnx").write_bytes(b"quant")
     (m_dir / "onnx" / "model_quantized.onnx_data").write_bytes(b"data")
@@ -3419,9 +3538,13 @@ def test_semantic_engine_setup_onnx_protobuf_and_auto_refresh_coverage(tmp_path:
     monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=60: _FakeResp(b"artifact-bytes"))
     setup_dir = tmp_path / "setup_eidos"
     with _semantic_cli_progress(Console(quiet=True), mode="setup", enabled=True):
-        res_dl = setup_semantic_model(setup_dir, variant="quantized", force=False)
+        res_dl = setup_semantic_model(
+            setup_dir, variant="quantized", force=False, base_url="https://mirror.example/harrier"
+        )
     assert len(res_dl["downloaded"]) == 5 and res_dl["skipped"] == []
-    res_skip = setup_semantic_model(setup_dir, variant="quantized", force=False)
+    res_skip = setup_semantic_model(
+        setup_dir, variant="quantized", force=False, base_url="https://mirror.example/harrier"
+    )
     assert res_skip["downloaded"] == [] and len(res_skip["skipped"]) == 5
 
     with _semantic_cli_progress(Console(quiet=True), mode="sync", enabled=True) as sync_prog:
@@ -3602,3 +3725,419 @@ def test_semantic_engine_setup_onnx_protobuf_and_auto_refresh_coverage(tmp_path:
         _SESSION_CACHE.clear()
         _CUSTOM_ENCODE_FNS.clear()
         _ = cnt_p, builtins
+
+
+def test_concurrent_wal_lock_thread_isolation_and_large_edge_rebuild(tmp_path: Path, monkeypatch) -> None:
+    """Verify INV-INDEX-CONCURRENT-WAL-SAFETY: zero mmap SIGBUS risk, advisory index.db.lock protection
+    preserving live WAL sidecars on transient/contended errors, per-thread SQLite connections + multi-repo
+    singleton isolation, 50ms monotonic _last_synced_check debounce, >1,100 evict_ids chunked edge rebuild,
+    and FTS 'method' + is_test=1 symbol search."""
+    import fcntl
+    import hashlib
+    import os
+    import sqlite3
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    import pytest
+
+    import eidos.core.index.storage as storage_mod
+    import eidos.core.index.sync as sync_mod
+    from eidos.core.index.graph_index import (
+        _INDEX_INSTANCES,
+        _close_singleton_index,
+        get_architectural_index,
+    )
+    from eidos.core.index.storage import (
+        _PARSED_SPEC_MEM_CACHE,
+        _advisory_db_lock,
+        _db_lock_path,
+        _is_corrupt_database_error,
+        _reconstruct_spec_doc_from_json,
+        get_cached_spec_document,
+        load_spec_validation_cache,
+        load_test_binding_cache,
+        open_cache_connection,
+        save_spec_validation_cache,
+        save_test_binding_cache,
+    )
+    from eidos.core.index.sync import rebuild_spec_edges, sync_index
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
+    from eidos.core.spec.parser import dump_spec_document, parse_spec_file
+
+    # 1. Verify _FRESH_FTS_BASE_SYMBOLS global is eliminated from sync.py
+    assert not hasattr(sync_mod, "_FRESH_FTS_BASE_SYMBOLS")
+
+    # 2. Verify PRAGMA mmap_size is 0 (never 268435456) and index.db.lock is created
+    wal_db = tmp_path / "wal_safety" / ".cache" / "index.db"
+    conn0 = open_cache_connection(wal_db)
+    try:
+        mmap_val = conn0.execute("PRAGMA mmap_size;").fetchone()[0]
+        assert mmap_val == 0
+        assert _db_lock_path(wal_db).is_file()
+    finally:
+        conn0.close()
+
+    # 3. Transient 'database schema has changed' retries cleanly WITHOUT unlinking live index.db-wal
+    assert _is_corrupt_database_error(sqlite3.OperationalError("database schema has changed")) is False
+    assert _is_corrupt_database_error(sqlite3.DatabaseError("database disk image is malformed")) is True
+
+    # Hold an active WAL reader/writer connection so index.db-wal is a real live WAL sidecar
+    peer_conn = open_cache_connection(wal_db)
+    try:
+        peer_conn.execute("BEGIN IMMEDIATE;")
+        peer_conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('live_peer', '1');")
+        peer_conn.commit()
+        peer_conn.execute("BEGIN;")
+        _ = peer_conn.execute("SELECT value FROM metadata WHERE key = 'live_peer';").fetchone()
+        wal_sidecar = Path(f"{wal_db}-wal")
+        assert wal_sidecar.exists()
+
+        unlinked_calls: list[Path] = []
+        orig_unlink = storage_mod._unlink_cache_files
+        monkeypatch.setattr(storage_mod, "_unlink_cache_files", lambda p: (unlinked_calls.append(p), orig_unlink(p))[1])
+
+        orig_ensure_schema = storage_mod.ensure_cache_schema
+        transient_attempts = {"n": 0}
+
+        def _flaky_ensure_schema(c: sqlite3.Connection, db_path: Path | None = None) -> None:
+            transient_attempts["n"] += 1
+            if transient_attempts["n"] == 1:
+                raise sqlite3.OperationalError("database schema has changed")
+            orig_ensure_schema(c, db_path=db_path)
+
+        monkeypatch.setattr(storage_mod, "ensure_cache_schema", _flaky_ensure_schema)
+        conn_retry = open_cache_connection(wal_db)
+        try:
+            assert conn_retry.execute("SELECT value FROM metadata WHERE key = 'live_peer';").fetchone()[0] == "1"
+            assert wal_sidecar.exists()
+        finally:
+            conn_retry.close()
+        assert transient_attempts["n"] == 2
+        assert unlinked_calls == []
+        assert wal_sidecar.exists()
+        monkeypatch.setattr(storage_mod, "ensure_cache_schema", orig_ensure_schema)
+
+        # Contended exclusive lock on index.db.lock prevents unlinking cache files even on corruption error
+        lock_file = _db_lock_path(wal_db)
+        held_fd = os.open(str(lock_file), os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(held_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            monkeypatch.setattr(
+                storage_mod,
+                "ensure_cache_schema",
+                lambda _c, db_path=None: (_ for _ in ()).throw(
+                    sqlite3.DatabaseError("database disk image is malformed")
+                ),
+            )
+            with pytest.raises(sqlite3.DatabaseError, match="malformed"):
+                open_cache_connection(wal_db)
+            assert unlinked_calls == []
+            assert wal_sidecar.exists()
+        finally:
+            fcntl.flock(held_fd, fcntl.LOCK_UN)
+            os.close(held_fd)
+            monkeypatch.setattr(storage_mod, "ensure_cache_schema", orig_ensure_schema)
+    finally:
+        peer_conn.rollback()
+        peer_conn.close()
+
+    # Uncontended genuine corruption recovers cleanly under exclusive lock
+    corrupt_db = tmp_path / "corrupt_recover" / "index.db"
+    corrupt_db.parent.mkdir(parents=True, exist_ok=True)
+    corrupt_db.write_bytes(b"not-a-valid-sqlite3-header-at-all")
+    recovered_conn = open_cache_connection(corrupt_db)
+    try:
+        assert recovered_conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone() is not None
+        assert corrupt_db in unlinked_calls
+    finally:
+        recovered_conn.close()
+
+    with _advisory_db_lock(corrupt_db, non_blocking=False) as locked:
+        assert locked is True
+
+    # 4. Scaffold repo_a and repo_b to verify per-thread connections, multi-repo _INDEX_INSTANCES,
+    #    50ms _last_synced_check debounce, 'method' FTS projection, and is_test=1 symbol indexing
+    repo_a = tmp_path / "repo_a"
+    repo_b = tmp_path / "repo_b"
+    init_repository(repo_a, title="repo-a")
+    init_repository(repo_b, title="repo-b")
+    eidos_a = repo_a / "eidos"
+    eidos_b = repo_b / "eidos"
+
+    create_spec(eidos_a, "domain", "DOM-WAL", title="WAL Domain")
+    cnt_a = create_spec(eidos_a, "container", "CNT-WAL", title="WAL Container")
+    cmp_a = create_spec(eidos_a, "component", "CMP-WAL-SVC", title="WAL Service")
+
+    cnt_doc = parse_spec_file(cnt_a)
+    cnt_doc.frontmatter["domain"] = "DOM-WAL"
+    cnt_doc.frontmatter["source_path"] = "src/wal"
+    cnt_a.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_doc.body), encoding="utf-8")
+
+    cmp_doc = parse_spec_file(cmp_a)
+    cmp_doc.frontmatter["container"] = "CNT-WAL"
+    cmp_doc.frontmatter["source_path"] = ["src/wal/service.py"]
+    cmp_a.write_text(dump_spec_document(cmp_doc.frontmatter, cmp_doc.body), encoding="utf-8")
+
+    src_file = repo_a / "src" / "wal" / "service.py"
+    src_file.parent.mkdir(parents=True, exist_ok=True)
+    src_file.write_text(
+        "class WalCoordinator:\n"
+        "    def flush_checkpoint_frames(self) -> int:\n"
+        "        return 1\n",
+        encoding="utf-8",
+    )
+    test_file = repo_a / "tests" / "test_wal_service.py"
+    test_file.parent.mkdir(parents=True, exist_ok=True)
+    test_file.write_text(
+        "def test_wal_checkpoint_recovery_flow():\n"
+        "    assert True\n",
+        encoding="utf-8",
+    )
+
+    dom_b_spec = create_spec(eidos_b, "domain", "DOM-SECOND", title="Second Repo Domain")
+
+    _close_singleton_index()
+    try:
+        idx_a = get_architectural_index(repo_root=repo_a, eidos_dir=eidos_a)
+        idx_b = get_architectural_index(repo_root=repo_b, eidos_dir=eidos_b)
+        assert idx_a is not idx_b
+        assert eidos_a.resolve() in _INDEX_INSTANCES and eidos_b.resolve() in _INDEX_INSTANCES
+        assert get_architectural_index(repo_root=repo_a, eidos_dir=eidos_a) is idx_a
+
+        idx_a.sync(force=True)
+        idx_b.sync(force=True)
+
+        # Verify multi-thread queries use isolated per-thread sqlite3.Connection instances
+        barrier = threading.Barrier(4)
+
+        def _worker_query(_i: int) -> tuple[int, int]:
+            barrier.wait(timeout=5.0)
+            c = idx_a._get_connection()
+            hits = idx_a.query_fts("flush_checkpoint_frames", limit=5, use_semantic=False)
+            return id(c), len(hits)
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(pool.map(_worker_query, range(4)))
+        conn_ids = {cid for cid, _ in results}
+        assert len(conn_ids) == 4
+        assert all(hit_count >= 1 for _, hit_count in results)
+
+        # Verify 'method' symbol is projected into specs_fts.symbols and searchable
+        fts_sym_hits = idx_a.query_fts("flush_checkpoint_frames", limit=5, use_semantic=False)
+        assert any(h["id"] == "CMP-WAL-SVC" for h in fts_sym_hits)
+
+        # Verify find_symbol searches both production (is_test=0) and test (is_test=1) symbols with location metadata,
+        # while repo-map excludes is_test=1 test functions
+        prod_syms = idx_a.find_symbol("flush_checkpoint_frames")
+        assert any(
+            s["symbol"] == "flush_checkpoint_frames"
+            and s["is_test"] is False
+            and s["location"]["file"] == "src/wal/service.py"
+            and s["location"]["line_start"] == 2
+            for s in prod_syms
+        )
+        test_syms = idx_a.find_symbol("test_wal_checkpoint_recovery_flow")
+        assert any(
+            s["symbol"] == "test_wal_checkpoint_recovery_flow"
+            and s["is_test"] is True
+            and s["location"]["file"] == "tests/test_wal_service.py"
+            and s["location"]["line_start"] == 1
+            for s in test_syms
+        )
+        repo_map_md = idx_a.get_repo_map(max_tokens=1000)
+        assert "WalCoordinator" in repo_map_md
+        assert "test_wal_checkpoint_recovery_flow" not in repo_map_md
+
+        # Verify 50ms monotonic _last_synced_check debounce skips redundant is_dirty() scans
+        dirty_checks = {"count": 0}
+        orig_is_dirty = idx_a.is_dirty
+
+        def _spy_is_dirty() -> bool:
+            dirty_checks["count"] += 1
+            return orig_is_dirty()
+
+        monkeypatch.setattr(idx_a, "is_dirty", _spy_is_dirty)
+        idx_a._last_synced_check = 0.0
+        idx_a._ensure_synced()
+        assert dirty_checks["count"] == 1
+        idx_a._ensure_synced()
+        assert dirty_checks["count"] == 1
+        idx_a._last_synced_check = time.monotonic() - 1.0
+        idx_a._ensure_synced()
+        assert dirty_checks["count"] == 2
+
+        # 5. Verify rebuild_spec_edges handles >1,100 evict_ids in bounded chunks without SQLITE_MAX_EXPR_DEPTH error
+        conn_bulk = idx_a._get_connection()
+        bulk_evict_ids = [f"CMP-SYNTH-{i:04d}" for i in range(1150)]
+        with conn_bulk:
+            conn_bulk.executemany(
+                "INSERT OR REPLACE INTO edges (source_id, target_id, rel_type) VALUES ('CNT-WAL', ?, 'contains_component');",
+                [(eid,) for eid in bulk_evict_ids],
+            )
+        assert (
+            conn_bulk.execute("SELECT COUNT(*) FROM edges WHERE target_id LIKE 'CMP-SYNTH-%';").fetchone()[0] == 1150
+        )
+        rebuild_spec_edges(conn_bulk, updated_doc_ids=set(bulk_evict_ids))
+        remaining_bulk = conn_bulk.execute(
+            "SELECT COUNT(*) FROM edges WHERE target_id LIKE 'CMP-SYNTH-%';"
+        ).fetchone()[0]
+        assert remaining_bulk == 0
+        assert (
+            conn_bulk.execute(
+                "SELECT COUNT(*) FROM edges WHERE source_id = 'CNT-WAL' AND target_id = 'DOM-WAL';"
+            ).fetchone()[0]
+            == 1
+        )
+
+        # Closing idx_a closes all worker thread connections while leaving idx_b operational
+        idx_a.close()
+        assert len(idx_a._conns) == 0
+        assert len(idx_b.query_fts("Second", limit=5, use_semantic=False)) >= 1
+
+        # 6. Exercise storage.py content-addressed spec & test-binding caches and reconstruction helpers
+        assert _reconstruct_spec_doc_from_json(dom_b_spec, "[]") is None
+        assert _reconstruct_spec_doc_from_json(dom_b_spec, "not-valid-json") is None
+        valid_doc_json = (
+            '{"doc_id":"DOM-SECOND","doc_type":"product/domain",'
+            '"frontmatter":{"id":"DOM-SECOND","type":"product/domain"},"body":"body","title":"Second Repo Domain"}'
+        )
+        rec_doc = _reconstruct_spec_doc_from_json(dom_b_spec, valid_doc_json)
+        assert rec_doc is not None and rec_doc.doc_id == "DOM-SECOND"
+        assert get_cached_spec_document(tmp_path / "missing_spec_404.adoc") == (None, "", 0)
+
+        save_spec_validation_cache(wal_db, [], None)
+        dom_b_bytes = dom_b_spec.read_bytes()
+        dom_b_sha = hashlib.sha256(dom_b_bytes).hexdigest()
+        dom_b_st = dom_b_spec.stat()
+        save_spec_validation_cache(
+            wal_db,
+            [("eidos/domains/dom-second.adoc", dom_b_st.st_mtime_ns, dom_b_sha, "sch1", valid_doc_json)],
+        )
+        loaded_svc = load_spec_validation_cache(wal_db)
+        assert "eidos/domains/dom-second.adoc" in loaded_svc
+
+        # Hit cached_row by mtime_ns, then mem_hit by sha256 on newer mtime_ns, then cached_row by sha256
+        _PARSED_SPEC_MEM_CACHE.pop(dom_b_spec.resolve(), None)
+        d1, s1, _ = get_cached_spec_document(
+            dom_b_spec,
+            mtime_ns=dom_b_st.st_mtime_ns,
+            st_size=dom_b_st.st_size,
+            cached_row=loaded_svc["eidos/domains/dom-second.adoc"],
+        )
+        assert d1 is not None and s1 == dom_b_sha
+        d2, s2, _ = get_cached_spec_document(
+            dom_b_spec,
+            mtime_ns=dom_b_st.st_mtime_ns + 1000,
+            st_size=dom_b_st.st_size,
+        )
+        assert d2 is not None and s2 == dom_b_sha
+        _PARSED_SPEC_MEM_CACHE.pop(dom_b_spec.resolve(), None)
+        d3, s3, _ = get_cached_spec_document(
+            dom_b_spec,
+            mtime_ns=dom_b_st.st_mtime_ns + 2000,
+            st_size=dom_b_st.st_size,
+            cached_row=loaded_svc["eidos/domains/dom-second.adoc"],
+        )
+        assert d3 is not None and s3 == dom_b_sha
+        save_spec_validation_cache(wal_db, [], deleted_keys=["eidos/domains/dom-second.adoc"])
+        assert "eidos/domains/dom-second.adoc" not in load_spec_validation_cache(wal_db)
+
+        save_test_binding_cache(wal_db, [], None)
+        save_test_binding_cache(wal_db, [("tests/test_x.py", 123, "abc", "{}", "[]")])
+        assert "tests/test_x.py" in load_test_binding_cache(wal_db)
+        save_test_binding_cache(wal_db, [], deleted_keys=["tests/test_x.py"])
+        assert "tests/test_x.py" not in load_test_binding_cache(wal_db)
+
+        # 7. Exercise incremental sync collision, co-owner promotion, doc_id rename, and test_binding verification
+        inv_p = "INV" + "-"
+        inv_file_tok = f"{inv_p}SECOND-FILE-001"
+        inv_cls_tok = f"{inv_p}SECOND-CLS-001"
+        cnt_b = create_spec(eidos_b, "container", "CNT-SECOND", title="Second Container")
+        cnt_b_doc = parse_spec_file(cnt_b)
+        cnt_b_doc.frontmatter["domain"] = "DOM-SECOND"
+        cnt_b_doc.frontmatter["source_path"] = "src/second"
+        cnt_b.write_text(dump_spec_document(cnt_b_doc.frontmatter, cnt_b_doc.body), encoding="utf-8")
+
+        test_b_file = repo_b / "tests" / "test_second.py"
+        test_b_file.parent.mkdir(parents=True, exist_ok=True)
+        test_b_file.write_text(
+            f"# {inv_file_tok}\n"
+            "class TestSecondSuite:\n"
+            "    def test_cls_binding(self):\n"
+            f"        # {inv_cls_tok}\n"
+            "        assert True\n",
+            encoding="utf-8",
+        )
+
+        (repo_b / "src" / "second").mkdir(parents=True, exist_ok=True)
+        (repo_b / "src" / "second" / "b.py").write_text("def helper_b() -> int:\n    return 2\n", encoding="utf-8")
+        (repo_b / "src" / "second" / "a.py").write_text(
+            "from .b import helper_b\n\ndef run_a() -> int:\n    return helper_b()\n",
+            encoding="utf-8",
+        )
+
+        cmp_b1 = create_spec(eidos_b, "component", "CMP-SECOND-A", title="Second Component A")
+        cmp_b1_doc = parse_spec_file(cmp_b1)
+        cmp_b1_doc.frontmatter["container"] = "CNT-SECOND"
+        cmp_b1_doc.frontmatter["source_path"] = ["src/second/a.py"]
+        cmp_b1_doc.frontmatter["invariants"] = [
+            {"id": inv_file_tok, "rule": "File-level binding.", "test_binding": "tests/test_second.py"},
+            {
+                "id": inv_cls_tok,
+                "rule": "Class method suffix binding.",
+                "test_binding": "tests/test_second.py::test_cls_binding",
+            },
+        ]
+        cmp_b1.write_text(dump_spec_document(cmp_b1_doc.frontmatter, cmp_b1_doc.body), encoding="utf-8")
+        idx_b.sync(force=False)
+        sync_mod._TEST_BINDING_MEM_CACHE.clear()
+        sync_mod.index_test_bindings(
+            idx_b._get_connection(),
+            sync_mod.get_ast_indexer(),
+            test_b_file,
+            "tests/test_second.py",
+        )
+
+        # Duplicate entity ID collision (non-strict vs strict) + primary deletion promoting co-owner
+        dup_cmp = cmp_b1.with_name("cmp-second-a-dup.adoc")
+        dup_cmp.write_text(cmp_b1.read_text(encoding="utf-8"), encoding="utf-8")
+        dup_stats = sync_index(idx_b, force=False, strict=False)
+        assert any("CMP-SECOND-A" in m for m in dup_stats.duplicate_id_collisions)
+
+        dup_cmp.write_text(cmp_b1.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="Duplicate entity ID"):
+            sync_index(idx_b, force=False, strict=True)
+        # Non-strict sync records dup_cmp in indexed_files; deleting primary cmp_b1 promotes dup_cmp
+        sync_index(idx_b, force=False, strict=False)
+        cmp_b1.unlink()
+        idx_b.sync(force=False)
+        conn_b = idx_b._get_connection()
+        assert conn_b.execute("SELECT 1 FROM entities WHERE id = 'CMP-SECOND-A';").fetchone() is not None
+
+        # Duplicate invariant ID collision (non-strict vs strict) + frontmatter doc_id rename
+        cmp_b2 = create_spec(eidos_b, "component", "CMP-SECOND-B", title="Second Component B")
+        cmp_b2_doc = parse_spec_file(cmp_b2)
+        cmp_b2_doc.frontmatter["container"] = "CNT-SECOND"
+        cmp_b2_doc.frontmatter["source_path"] = ["src/second/b.py"]
+        cmp_b2_doc.frontmatter["invariants"] = [
+            {"id": inv_file_tok, "rule": "Colliding invariant.", "test_binding": "tests/test_second.py"}
+        ]
+        cmp_b2.write_text(dump_spec_document(cmp_b2_doc.frontmatter, cmp_b2_doc.body), encoding="utf-8")
+        inv_dup_stats = sync_index(idx_b, force=False, strict=False)
+        assert any(inv_file_tok in m for m in inv_dup_stats.duplicate_id_collisions)
+
+        cmp_b2.write_text(cmp_b2.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="Duplicate invariant ID"):
+            sync_index(idx_b, force=False, strict=True)
+
+        cmp_b2_doc.frontmatter["id"] = "CMP-SECOND-B-RENAMED"
+        cmp_b2_doc.frontmatter["invariants"] = []
+        cmp_b2.write_text(dump_spec_document(cmp_b2_doc.frontmatter, cmp_b2_doc.body), encoding="utf-8")
+        idx_b.sync(force=False)
+        assert conn_b.execute("SELECT 1 FROM entities WHERE id = 'CMP-SECOND-B';").fetchone() is None
+        assert conn_b.execute("SELECT 1 FROM entities WHERE id = 'CMP-SECOND-B-RENAMED';").fetchone() is not None
+    finally:
+        _close_singleton_index()

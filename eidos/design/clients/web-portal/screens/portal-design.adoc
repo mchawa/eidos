@@ -35,5 +35,5 @@ The Design Systems View (`SCR-PORTAL-DESIGN`) connects business capabilities wit
 * **Multi-Design Systems Catalog (DS-*)**: Registered design systems, base inheritance, and client brand overrides.
 * **W3C DTCG Tokens Studio & Recursive W3C Token Tree**: Visual swatches for brand palettes, neutral surfaces, functional feedback colors, spacing scales, and typography, paired with a generic recursive W3C DTCG token tree explorer with search filtering and multi-system `DS-*` selector tabs.
 * **UI Component Contracts (UIC-*)**: Visual component manifests with variants, supported interaction states, and accessibility invariants (WCAG, ARIA, keyboard navigation).
-* **Screen State Machines (SCR-*)**: Mermaid-powered state machine diagrams detailing screen transitions.
+* **Screen State Machines (SCR-*)**: Mermaid-powered state machine diagrams detailing screen transitions alongside hydrated AsciiDoc specification reader drawers (`Inspect Screen Spec`).
 

@@ -46,18 +46,25 @@ function pathSegments(path: string): string[] {
 
 /** Resolve a raw xref target to a spec of the catalog (by ID first, then by relative path suffix). */
 export function resolveSpecTarget<T extends SpecLike>(specs: T[], rawTarget: string): T | undefined {
-  const target = rawTarget.trim().replace(/^#/, "");
+  const target = rawTarget.trim().replace(/^#/, "").replace(/\\/g, "/");
   if (!target) return undefined;
 
   const byId = specs.find((s) => s.id === target) ?? specs.find((s) => s.id.toLowerCase() === target.toLowerCase());
   if (byId) return byId;
 
-  if (!isSpecDocumentPath(target)) return undefined;
-  const wanted = pathSegments(target);
+  const eidosIdx = target.lastIndexOf("/eidos/");
+  const normalizedDocTarget =
+    eidosIdx >= 0
+      ? target.slice(eidosIdx + 1)
+      : target.startsWith("/") && !target.startsWith("//")
+      ? target.replace(/^\/+/, "")
+      : target;
+  if (!isSpecDocumentPath(normalizedDocTarget)) return undefined;
+  const wanted = pathSegments(normalizedDocTarget);
   if (wanted.length === 0) return undefined;
 
   const matches = specs.filter((s) => {
-    const have = pathSegments(s.path);
+    const have = pathSegments(s.path.replace(/\\/g, "/"));
     if (have.length < wanted.length) return false;
     return wanted.every((seg, i) => have[have.length - wanted.length + i] === seg);
   });

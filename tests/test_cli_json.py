@@ -217,7 +217,7 @@ def test_cli_contract_json_and_create_flags(tmp_path):
     )
     assert res_clt.exit_code == 0
     clt_content = (eidos_dir / "design" / "clients" / "mobile" / "client.adoc").read_text(encoding="utf-8")
-    assert "design_system: DS-CORE" in clt_content
+    assert "design_system: DS-API" in clt_content
 
     res_ctr = runner.invoke(
         app,
@@ -424,10 +424,11 @@ def test_cli_error_exit_codes_and_negative_json_contracts(tmp_path):
 
     runner.invoke(app, ["delta", "create", "DLT-2026-991", "-t", "No Deletions Delta", "--path", str(ref_ws)])
     assert runner.invoke(app, ["delta", "status", "DLT-2026-991", "--path", str(ref_ws)]).exit_code == 0
+    assert runner.invoke(app, ["delta", "show", "DLT-2026-991", "--path", str(ref_ws), "--json"]).exit_code == 0
     res_audit_nodel = runner.invoke(app, ["delta", "audit", "DLT-2026-991", "--path", str(ref_ws)])
     assert res_audit_nodel.exit_code == 0
     assert "No deletion or deprecation mutations found" in res_audit_nodel.stdout
-    assert runner.invoke(app, ["delta", "verify", "DLT-2026-991", "--path", str(ref_ws)]).exit_code == 0
+    assert runner.invoke(app, ["delta", "verify", "DLT-2026-991", "--path", str(ref_ws)]).exit_code == 1
 
     # portal serve & build on missing directory return exit_code 1
     assert runner.invoke(app, ["portal", "serve", "--path", str(missing_dir)]).exit_code == 1

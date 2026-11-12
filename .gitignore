@@ -14,6 +14,9 @@ ENV/
 .coverage
 .coverage.*
 coverage.xml
+coverage.json
+coverage.md
+junit.xml
 htmlcov/
 
 # Node & Frontend dependencies
@@ -36,9 +39,6 @@ site/
 # Local agent plugins installation
 .cursor/
 .claude/
-.claude-plugin/
-**/.claude-plugin/
-**/.mcp.json
 .agents/*
 !.agents/skills
 .aider*
@@ -49,10 +49,10 @@ opencode.json
 .codex/
 .vscode/
 
-# GitHub Copilot plugin artifacts
+# GitHub Copilot plugin & hook artifacts
 .github/skills/
 .github/copilot/
-.github/plugin/
+.github/hooks/
 .github/copilot-instructions.md
 
 # Dynamic VCS version file

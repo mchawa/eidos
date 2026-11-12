@@ -22,6 +22,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
 import { AsciiDocRenderer } from "@/components/ui/AsciiDocRenderer";
+import { hasSpecBodyOrChunk } from "@/lib/specChunks";
 import { requestSpecNavigation } from "@/lib/specNav";
 import { cn } from "@/lib/utils";
 import type { PortalData, SpecDelta, SpecMutation } from "@/types";
@@ -797,13 +798,13 @@ export function DeltasView({
             )}
 
             {/* Living Specification Body rendered via AsciiDocRenderer */}
-            {selectedDelta.body && (
+            {hasSpecBodyOrChunk(selectedDelta.id, selectedDelta.body) && (
               <div className="space-y-2 pt-2 border-t border-border/60">
                 <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                   <BookOpen className="h-3.5 w-3.5 text-purple-400" />
                   Living Specification Document (`DLT-*`)
                 </h4>
-                <AsciiDocRenderer content={selectedDelta.body} />
+                <AsciiDocRenderer specId={selectedDelta.id} content={selectedDelta.body || ""} />
               </div>
             )}
           </div>

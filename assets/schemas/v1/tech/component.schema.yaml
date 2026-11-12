@@ -19,7 +19,7 @@ properties:
     pattern: "^CMP-[A-Z0-9_-]+$"
     description: "Unique C4 Level 3 Component identifier following CMP-<NAME> (e.g. CMP-SPEC-PARSER, CMP-AUTH-SERVICE)."
   title:
-    type: string
+    $ref: "#/$defs/non_empty_string"
     description: "Human-readable display title of the component."
   container:
     $ref: "#/$defs/container_ref"

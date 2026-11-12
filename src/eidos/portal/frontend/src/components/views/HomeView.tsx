@@ -10,21 +10,37 @@ import {
   Lightbulb,
   FileWarning,
   Link2Off,
+  Activity,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { requestSpecNavigation } from "@/lib/specNav";
-import type { PortalData } from "@/types";
+import type { PortalData, SpecDriftStatus } from "@/types";
 
 export interface HomeViewProps {
   data: PortalData;
+  driftStatus?: SpecDriftStatus | null;
+  isLiveMode?: boolean;
   onNavigateTab: (tab: any) => void;
   onInspectSpec: (spec: any) => void;
 }
 
-export function HomeView({ data, onNavigateTab, onInspectSpec }: HomeViewProps) {
+function normalizeSchemaErrorPath(rawPath: string): string {
+  const slash = (rawPath || "").replace(/\\/g, "/");
+  const idx = slash.lastIndexOf("/eidos/");
+  if (idx >= 0) return slash.slice(idx + 1);
+  return slash.replace(/^\.\//, "");
+}
+
+export function HomeView({
+  data,
+  driftStatus,
+  isLiveMode = false,
+  onNavigateTab,
+  onInspectSpec,
+}: HomeViewProps) {
   const { overview, validation } = data;
   const [diagnosticsOpen, setDiagnosticsOpen] = React.useState(false);
   const activeDeltasCount =
@@ -35,6 +51,15 @@ export function HomeView({ data, onNavigateTab, onInspectSpec }: HomeViewProps) 
   const schemaErrorEntries = Object.entries(validation?.schema_errors || {});
   const brokenRefs = validation?.broken_references || [];
   const invalidSpecs = (data.specs || []).filter((s) => s.is_valid === false);
+
+  const driftClean = driftStatus
+    ? Boolean(driftStatus.is_clean && !driftStatus.drift_detected && !driftStatus.error)
+    : Boolean(overview.is_clean);
+  const driftImpactedFiles = [
+    ...(driftStatus?.changed_files || []),
+    ...(driftStatus?.unmapped_files || []),
+  ];
+  const driftTouchedComponents = driftStatus?.touched_components || [];
 
   const metricCards = [
     {
@@ -114,6 +139,86 @@ export function HomeView({ data, onNavigateTab, onInspectSpec }: HomeViewProps) 
           </p>
         </div>
       </div>
+
+      {/* Live Workspace Drift Status Card */}
+      <Card id="workspaceDriftCard" className="border-border/80">
+        <CardContent className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div
+              className={`h-10 w-10 rounded-2xl flex items-center justify-center shrink-0 ${
+                driftClean
+                  ? "bg-emerald-500/10 text-emerald-500"
+                  : "bg-amber-500/10 text-amber-500"
+              }`}
+            >
+              <Activity className="h-5 w-5" />
+            </div>
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-sm font-bold text-foreground tracking-tight">
+                  Workspace Drift Status
+                </h2>
+                <Badge variant={driftClean ? "success" : "warning"}>
+                  {driftStatus
+                    ? driftStatus.error
+                      ? "Drift Check Failed"
+                      : driftClean
+                      ? "Clean"
+                      : "Drift Detected"
+                    : overview.is_clean
+                    ? "Clean"
+                    : "Attention"}
+                </Badge>
+                {isLiveMode && (
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    SSE Live Stream
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {driftStatus?.error
+                  ? `Drift check failed closed: ${driftStatus.error}`
+                  : driftStatus
+                  ? driftClean
+                    ? "Governed source paths, tests, and living specifications are synchronized with zero architectural drift."
+                    : `${driftImpactedFiles.length} impacted file(s) across ${driftTouchedComponents.length} governed component(s) require spec synchronization.`
+                  : overview.is_clean
+                  ? "Static specification snapshot verified with zero validation or cross-reference errors."
+                  : "Specification snapshot reports validation or cross-reference attention."}
+              </p>
+              {driftTouchedComponents.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  {driftTouchedComponents.slice(0, 6).map((cid) => (
+                    <button
+                      key={cid}
+                      type="button"
+                      onClick={() => requestSpecNavigation(cid)}
+                      className="font-mono text-[10px] px-2 py-0.5 rounded-md bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/25 cursor-pointer"
+                    >
+                      {cid}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {driftStatus && (
+              <span className="font-mono text-xs px-2.5 py-1 rounded-xl bg-muted/50 text-muted-foreground border border-border/60">
+                {driftImpactedFiles.length} Impacted File{driftImpactedFiles.length === 1 ? "" : "s"}
+              </span>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDiagnosticsOpen(true)}
+              className="text-xs"
+            >
+              Details
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Metrics Row (UIC-PORTAL-METRIC-CARD) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
@@ -270,28 +375,31 @@ export function HomeView({ data, onNavigateTab, onInspectSpec }: HomeViewProps) 
                 Schema Validation Errors ({schemaErrorEntries.length})
               </h4>
               <div className="space-y-2">
-                {schemaErrorEntries.map(([path, errs]) => (
-                  <div
-                    key={path}
-                    className="p-3 rounded-xl border border-rose-500/30 bg-rose-500/5 space-y-1"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDiagnosticsOpen(false);
-                        requestSpecNavigation(path);
-                      }}
-                      className="font-mono font-bold text-rose-400 hover:underline cursor-pointer text-left"
+                {schemaErrorEntries.map(([path, errs]) => {
+                  const normPath = normalizeSchemaErrorPath(path);
+                  return (
+                    <div
+                      key={path}
+                      className="p-3 rounded-xl border border-rose-500/30 bg-rose-500/5 space-y-1"
                     >
-                      {path}
-                    </button>
-                    <ul className="list-disc pl-4 text-muted-foreground space-y-0.5">
-                      {(errs || []).map((msg, i) => (
-                        <li key={i}>{msg}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDiagnosticsOpen(false);
+                          requestSpecNavigation(normPath);
+                        }}
+                        className="font-mono font-bold text-rose-400 hover:underline cursor-pointer text-left"
+                      >
+                        {normPath}
+                      </button>
+                      <ul className="list-disc pl-4 text-muted-foreground space-y-0.5">
+                        {(errs || []).map((msg, i) => (
+                          <li key={i}>{msg}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

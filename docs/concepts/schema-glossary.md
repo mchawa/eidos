@@ -28,7 +28,7 @@ This glossary details all **16 document schemas** (plus shared `$defs` in `commo
 | `delta/mutation` | `DLT-*` | `deltas/dlt-*.adoc` (`archive/`) | `delta/delta.schema.yaml` | Planned Mode semantic mutations, `expect:` post-conditions (including dot-paths), blast radius, and tombstones. |
 
 > [!NOTE]
-> **Shared Definitions (`assets/schemas/v1/common/defs.yaml`) & CLI Schema Introspection**: Reusable definitions for `#/$defs/decision` (`DEC-*`), `#/$defs/invariant` (`INV-*` with `test_binding`), `#/$defs/lifecycle_status`, `#/$defs/delta_status`, `#/$defs/exploration_status`, `#/$defs/code_paths`, `#/$defs/contracts_block`, `#/$defs/external_design_references`, and `x-eidos-ref` entity references are automatically injected across schemas by `SpecValidator`. Each specification's JSON Schema path is automatically derived from `type`. Run `eidos spec schema [type] [--json]` at any time to inspect required/optional keys, nested sub-schemas, and valid YAML frontmatter templates.
+> **Shared Definitions (`assets/schemas/v1/common/defs.yaml`) & CLI Schema Introspection**: Reusable definitions for `#/$defs/non_empty_string` (`minLength: 1`, `pattern: "\\S"`, forbidding blank or whitespace-only prose/identifiers/paths), `#/$defs/decision` (`DEC-*`), `#/$defs/invariant` (`INV-*` with `test_binding`), `#/$defs/lifecycle_status`, `#/$defs/delta_status`, `#/$defs/exploration_status`, `#/$defs/code_paths` (`minItems: 1` non-whitespace paths or `{a,b}` brace globs), `#/$defs/contracts_block`, `#/$defs/external_design_references`, and `x-eidos-ref` entity references are automatically injected across schemas by `SpecValidator`. Each specification's JSON Schema path is automatically derived from `type`. Run `eidos spec schema [type] [--json]` at any time to inspect required/optional keys, nested sub-schemas, and valid YAML frontmatter templates.
 
 ---
 
@@ -38,7 +38,7 @@ This glossary details all **16 document schemas** (plus shared `$defs` in `commo
 * **Schema**: `schemas/v1/product/system.schema.yaml`
 * **ID Convention**: `SYS-<NAME>-<NUMBER>` (e.g., `SYS-EIDOS-001`)
 * **Location**: `eidos/system.adoc`
-* **Required Properties**: `type`, `id`, `title`, `archetypes`
+* **Required Properties**: `type`, `id`, `title`, `status`, `archetypes`
 * **Intent**: Anchors the root system identity and archetypes in YAML frontmatter while product vision, target users, value proposition, and technical stack profile live in the AsciiDoc prose body.
 
 ```yaml
@@ -59,7 +59,7 @@ archetypes:
 * **Schema**: `schemas/v1/product/domain.schema.yaml`
 * **ID Convention**: `DOM-<NAME>` (e.g., `DOM-SPEC-ENGINE`, `DOM-AUTH`)
 * **Location**: `eidos/domains/<domain-name>/domain.adoc`
-* **Required Properties**: `type`, `id`, `title`, `classification`
+* **Required Properties**: `type`, `id`, `title`, `status`, `classification`
 * **Intent**: Implements Domain-Driven Design (DDD) bounded contexts. Classifies domains as `core`, `supporting`, or `generic`, with architectural boundaries and ubiquitous language glossary documented in the AsciiDoc body.
 
 ```yaml
@@ -119,7 +119,7 @@ technical:
 * **Schema**: `schemas/v1/product/policy.schema.yaml`
 * **ID Convention**: `POL-<NUMBER>-<NAME>` (e.g., `POL-001-GIT-SOURCE-OF-TRUTH`)
 * **Location**: `eidos/policies/POL-*.adoc`
-* **Required Properties**: `type`, `id`, `title`, `category`, `severity`, `invariants`
+* **Required Properties**: `type`, `id`, `title`, `status`, `category`, `invariants`
 * **Intent**: Declarative system-wide governance laws (governance, architectural, security, compliance, testing) enforced via test-bound invariants (`INV-*`).
 
 ```yaml
@@ -143,7 +143,7 @@ invariants:
 * **Schema**: `schemas/v1/product/persona.schema.yaml`
 * **ID Convention**: `PER-<NAME>` (e.g., `PER-PRODUCT-LEAD`, `PER-AUTONOMOUS-AGENT`)
 * **Location**: `eidos/personas/*.adoc`
-* **Required Properties**: `type`, `id`, `title`, `role_type`
+* **Required Properties**: `type`, `id`, `title`, `status`, `role_type`
 * **Intent**: Captures the role type (`role_type`) of human users and autonomous AI coding agents in frontmatter, with goals and pain points documented in the AsciiDoc prose body.
 
 ```yaml
@@ -186,7 +186,7 @@ decision:
 * **Schema**: `schemas/v1/tech/architecture.schema.yaml`
 * **ID Convention**: `ARCH-<NAME>-<NUMBER>` (e.g., `ARCH-EIDOS-001`)
 * **Location**: `eidos/architecture/system-architecture.adoc`
-* **Required Properties**: `type`, `id`, `title`, `c4_context`
+* **Required Properties**: `type`, `id`, `title`, `status`, `c4_context`
 * **Intent**: Global architectural baseline combining Arc42 (Sections 1–12) in the AsciiDoc prose body with C4 Level 1 System Context (`c4_context`) and system-wide `decisions:` (`DEC-*`) in frontmatter (C4 Level 2 container topology is derived automatically from `CNT-*` specs). **Strictly replaces ADRs**.
 
 ```yaml
@@ -212,7 +212,7 @@ c4_context:
 * **Schema**: `schemas/v1/tech/container.schema.yaml`
 * **ID Convention**: `CNT-<NAME>` (e.g., `CNT-EIDOS-CORE`, `CNT-EIDOS-CLI`)
 * **Location**: `eidos/architecture/containers/<name>.adoc`
-* **Required Properties**: `type`, `id`, `title`, `container_type`, `runtime`, `source_path`
+* **Required Properties**: `type`, `id`, `title`, `status`, `container_type`, `runtime`, `source_path`
 * **Intent**: C4 Level 2 Container manifest (deployable unit, library, service, or CLI). Declares provided/consumed interface contracts (`CTR-*`), container invariants (`INV-*`), and embedded architectural decisions (`DEC-*`). Standalone C4 Level 3 components (`eidos/architecture/components/*.adoc`) link bottom-up via their own `container: CNT-*` property.
 
 ```yaml
@@ -272,7 +272,7 @@ invariants:
 * **Schema**: `schemas/v1/tech/contract.schema.yaml`
 * **ID Convention**: `CTR-<NAME>` (e.g., `CTR-EIDOS-CLI`, `CTR-EIDOS-PORTAL`)
 * **Location**: `eidos/architecture/contracts/<name>.adoc`
-* **Required Properties**: `type`, `id`, `title`, `protocol`, `container`, `specification_file`
+* **Required Properties**: `type`, `id`, `title`, `status`, `protocol`, `container`
 * **Intent**: Formal interface protocol boundary contract owned by a C4 Level 2 Container (`CNT-*`, `INV-INTERFACE-BOUNDARY-GOVERNANCE`). Binds APIs, CLI signatures, or RPC services to concrete schemas or implementation entrypoints.
 
 ```yaml
@@ -281,7 +281,7 @@ type: tech/contract
 id: CTR-EIDOS-CLI
 title: "Eidos CLI Interface Contract"
 status: active # draft | planned | active | deprecated | retired
-protocol: cli_args # openapi_3_1 | protobuf_grpc | graphql | asyncapi | cli_args | json_schema | http_json
+protocol: cli_args # openapi | protobuf | graphql | asyncapi | json_schema | json_rpc_stdio | python_protocol | cli_args
 container: "CNT-EIDOS-CLI"
 specification_file: "src/eidos/cli/main.py"
 ---
@@ -305,7 +305,7 @@ id: DS-ACME
 title: "Acme Enterprise Theme"
 status: active # draft | planned | active | deprecated | retired
 extends: "DS-CORE"
-override_mode: "token_and_component" # token_only | token_and_component | full_custom
+override_mode: "token_and_component" # token_only | token_and_component | standalone
 tokens:
   spec_format: "w3c_design_tokens"
   manifest: "tokens.json"
@@ -372,7 +372,7 @@ states:
 * **ID Convention**: `CLT-<NAME>` (e.g., `CLT-WEB-PORTAL`, `CLT-MOBILE-APP`)
 * **Location**: `eidos/design/clients/<client-name>/client.adoc`
 * **Required Properties**: `type`, `id`, `title`, `status`, `platform`, `design_system`
-* **Intent**: Client application platform or tenant surface manifest. Encapsulates runtime platform (`web`, `mobile-ios`, `mobile-android`, `desktop`, `tui`), binds primary design systems and themes, links to C4 containers (`CNT-*`), and organizes owned screens and interaction flows. Referenced from outside by `product/capability.experience.clients`.
+* **Intent**: Client application platform or tenant surface manifest. Encapsulates runtime platform (`web`, `mobile-ios`, `mobile-android`, `desktop`, `tui`, `cli`, `multi-platform`), binds primary design systems and themes, links to C4 containers (`CNT-*`), and organizes owned screens and interaction flows. Referenced from outside by `product/capability.experience.clients`.
 
 ```yaml
 ---
@@ -428,7 +428,7 @@ steps:
 * **ID Convention**: `DLT-<YEAR>-<NUMBER>` (e.g., `DLT-2026-005`)
 * **Location**: `eidos/deltas/dlt-*.adoc` (or `eidos/deltas/archive/dlt-*.adoc` after archiving)
 * **Required Properties**: `type`, `id`, `title`, `status`, `intent`, `mutations`
-* **Intent**: Declarative mutation artifact for Planned Mode. Documents planned architectural changes (`intent.kind`: `feature`, `enabler`, or `bug`), composable `mutations[].operation` (`add | modify | remove | deprecate`) paired with prefix-validated `target`, and optional `expect:` post-conditions (supporting nested dot-path `frontmatter:` keys and comment-stripped `body:` assertions), plus `tombstone` deletion audit exemptions (while `affects` and `blast_radius` are derived automatically from the knowledge graph). Reconciled in-place upon completion (`status: applied`) and slimmed into `eidos/deltas/archive/` via `eidos delta archive --keep-recent 15` (with `vcs.applied_commit` and `vcs.release_tag`).
+* **Intent**: Declarative mutation artifact for Planned Mode. Documents planned architectural changes (`intent.kind`: `feature`, `enabler`, or `bug`), composable `mutations[].operation` (`add | modify | remove | deprecate`) paired with prefix-validated `target`, and optional `expect:` post-conditions (supporting nested dot-path `frontmatter:` keys and comment-stripped `body:` assertions), plus `tombstone` deletion audit exemptions (while `affects` and `blast_radius` are derived automatically from the knowledge graph). Reconciled in-place upon completion (`status: applied`) and slimmed into `eidos/deltas/archive/` via `eidos delta archive --keep-recent 15`.
 
 ```yaml
 ---

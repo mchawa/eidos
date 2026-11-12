@@ -63,6 +63,11 @@ def build_site_cmd(
         "-o",
         help="Target output directory for the static site (defaults to ./site).",
     ),
+    single_file: bool = typer.Option(
+        False,
+        "--single-file",
+        help="Inline all JS, CSS, and spec bodies into a single standalone index.html file.",
+    ),
 ):
     """Export the Eidos Living Web Portal as a self-contained static web site."""
     target = resolve_cli_eidos_dir(target_path)
@@ -70,7 +75,9 @@ def build_site_cmd(
         console.print(f"[bold red]Error:[/bold red] Specifications directory '{target}' not found.")
         raise typer.Exit(code=1)
 
-    generated_dir = build_static_portal(eidos_dir=target, output_dir=out_dir)
+    generated_dir = build_static_portal(eidos_dir=target, output_dir=out_dir, single_file=single_file)
     console.print(f"[bold green]✓ Successfully generated static portal at:[/bold green] {generated_dir.resolve()}")
+    if single_file:
+        console.print("  Mode: single-file standalone HTML")
     console.print(f"  Entrypoint: {generated_dir / 'index.html'}")
     console.print(f"  Data payload: {generated_dir / 'data.json'}")

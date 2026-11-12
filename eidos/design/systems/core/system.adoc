@@ -21,7 +21,7 @@ theme_capabilities:
 == 1. Design Principles & Tokens Foundation
 The Eidos Core Design System (`DS-CORE`) defines the visual language, typography scales, spacing units, and color semantic tokens for the Eidos Living Web Portal and all agent interaction interfaces.
 
-All tokens strictly conform to the W3C Design Tokens Community Group (DTCG) specification.
+All tokens strictly conform to the W3C Design Tokens Community Group (DTCG) specification in a repository-relative `tokens.json` manifest strictly contained within `repo_root` (`is_relative_to`).
 
 == 2. Color Modes & Visual Density Adaptation
 The system provides zero-dependency CSS variable mapping supporting native dark mode (default) and high-legibility light mode, synchronized across all portal views, C4 diagram renderers, and SpecDelta Kanban boards.

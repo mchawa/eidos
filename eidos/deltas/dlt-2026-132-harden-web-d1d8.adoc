@@ -1,0 +1,293 @@
+---
+type: delta/mutation
+id: DLT-2026-132-HARDEN-WEB-D1D8
+title: "Harden Web Portal XSS and Token Path Containment, Repair C4 and UI Views, and Add SSE Live Drift with Chunked Export"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Eliminate stored/reflected DOM XSS, DOM clobbering, tokens.manifest path traversal, and cross-origin/DNS-rebinding exposure across the Living Web Portal; repair broken C4 Level 1 external_systems object rendering, missing Screen Spec bodies in DesignView, hardcoded empty exploration exit_criteria/recommendations, absolute schema_errors navigation paths, and C4 pan-drag click misfires; wire real-time Server-Sent Events (SSE) live drift monitoring (/api/events + /api/drift) and interactive C4 node blast-radius highlighting; and externalize static portal spec bodies and code-split heavy assets so large catalogs load fast without breaking air-gapped offline operation."
+vcs:
+  branch: main
+  base_commit: e1022b338ebd4a42d4774fa444ef35f6874b8acf
+mutations:
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+    details: "Update src/eidos/portal/frontend/src/lib/mermaid.ts (buildMermaidConfig -> securityLevel: 'strict'), src/eidos/portal/frontend/src/lib/asciidoc.ts (ASCIIDOC_ATTRIBUTES idprefix: 'spec-', SANITIZE_CONFIG SANITIZE_DOM: true, protocol-relative // external link rel='noopener noreferrer' hardening), ArchitectureView.tsx (replace catch innerHTML with safe text/JSX error state, guard handleDiagramClick with hasMovedRef.current after pan-drag, bind C4 click drill-down via DOM listeners, and highlight 1-hop/2-hop blast-radius nodes directly on the C4 SVG canvas), DesignView.tsx / App.tsx (hydrate screen bodies for Inspect Screen Spec, subscribe to /api/events SSE + /api/drift, and lazy-load local specs/<id>.json chunks when body is externalized), and HomeView.tsx (render live /api/drift badge and navigate repo-relative schema_errors)."
+    expect:
+      frontmatter:
+        container: "CNT-EIDOS-PORTAL"
+        status: "active"
+      body:
+        contains:
+          - "securityLevel: \"strict\""
+          - "SANITIZE_DOM"
+          - "/api/events"
+          - "blast-radius"
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+    details: "Update src/eidos/portal/generator.py and eidos/architecture/components/portal-generator.adoc so _extract_design_systems() enforces cand.resolve().is_relative_to(repo_root.resolve()) on tokens.manifest, _extract_or_generate_flow_mermaid() HTML-escapes interpolated client/title/action/screen fields and strips unsafe directives, _generate_c4_context_mermaid() parses {name, role, protocol} external_systems dicts cleanly instead of str(ext), _extract_design_systems() includes/hydrates screen AsciiDoc body strings, and exploration extraction populates structured exit_criteria and recommendation summaries."
+    expect:
+      frontmatter:
+        container: "CNT-EIDOS-PORTAL"
+        source_path: "src/eidos/portal/generator.py"
+      body:
+        contains:
+          - "is_relative_to"
+          - "external_systems"
+          - "exit_criteria"
+  - operation: modify
+    target: CMP-PORTAL-SERVER
+    details: "Update src/eidos/portal/server.py and eidos/architecture/components/portal-server.adoc to remove Access-Control-Allow-Origin: * from EidosPortalHandler._send_json(), validate incoming Host headers against the bound host:port (mitigating DNS rebinding), include governed src/ and tests/ trees in _compute_eidos_mtime_snapshot(), fail closed (is_clean: False with error details) on exceptions in _get_cached_drift(), and serve real-time Server-Sent Events on GET /api/events whenever eidos/, src/, or tests/ change."
+    expect:
+      frontmatter:
+        container: "CNT-EIDOS-PORTAL"
+        source_path: "src/eidos/portal/server.py"
+      body:
+        contains:
+          - "Host"
+          - "/api/events"
+          - "_get_cached_drift"
+  - operation: modify
+    target: CMP-PORTAL-BUILDER
+    details: "Update build_static_portal() in src/eidos/portal/builder.py and eidos/architecture/components/portal-builder.adoc to escape '<!--' as '\\u003c!--' alongside '</' in safe_json, emit hashed/per-entity local spec chunks under specs/<id>.json + externalized local JS/CSS bundles by default (shrinking index.html below 400 KB while loading zero remote subresources), and preserve an opt-in '--single-file' mode for standalone file:// archives."
+    expect:
+      frontmatter:
+        container: "CNT-EIDOS-PORTAL"
+        source_path: "src/eidos/portal/builder.py"
+      body:
+        contains:
+          - "\\u003c!--"
+          - "specs/"
+          - "--single-file"
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: "Update _validate_design_systems() and validate_directory() in src/eidos/core/spec/validator.py and eidos/architecture/components/spec-validator.adoc to reject tokens.manifest paths escaping repo_root (not cand.resolve().is_relative_to(repo_root.resolve())) and store repo-relative path keys in ValidationReport.schema_errors so portal click-to-navigate resolves offending specs."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/spec/validator.py"
+        status: "active"
+      body:
+        contains:
+          - "tokens.manifest"
+          - "is_relative_to"
+          - "schema_errors"
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+    details: "Update eidos/architecture/containers/portal.adoc to record DEC-PORTAL-STRICT-SANITIZATION-AND-SSE-CHUNKING and document strict XSS sanitization, loopback Host/CORS isolation, SSE live drift streaming (/api/events), and chunked local static builds."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-PORTAL-STRICT-SANITIZATION-AND-SSE-CHUNKING"
+      body:
+        contains:
+          - "DEC-PORTAL-STRICT-SANITIZATION-AND-SSE-CHUNKING"
+          - "/api/events"
+          - "securityLevel"
+  - operation: modify
+    target: CTR-EIDOS-PORTAL
+    details: "Set version 1.1.0 on CTR-EIDOS-PORTAL in eidos/architecture/contracts/portal.adoc and document GET /api/events (text/event-stream SSE workspace/drift notifications), Host header validation, and same-origin loopback response policy."
+    expect:
+      frontmatter:
+        version: "1.1.0"
+        container: "CNT-EIDOS-PORTAL"
+        specification_file: "src/eidos/portal/server.py"
+      body:
+        contains:
+          - "/api/events"
+          - "text/event-stream"
+          - "Host"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Update 'eidos portal build' in eidos/architecture/contracts/cli.adoc (bumping version to 1.5.0) to document chunked default static output and the optional '--single-file' flag."
+    expect:
+      frontmatter:
+        version: "1.5.0"
+        status: "active"
+      body:
+        contains:
+          - "--single-file"
+  - operation: modify
+    target: CMP-CLI-PORTAL-COMMANDS
+    details: "Update src/eidos/cli/portal_commands.py and eidos/architecture/components/cli-portal-commands.adoc to forward '--single-file' to build_static_portal()."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/portal_commands.py"
+        status: "active"
+      body:
+        contains:
+          - "--single-file"
+  - operation: modify
+    target: DS-CORE
+    details: "Update eidos/design/systems/core/system.adoc and assets/schemas/v1/design/system.schema.yaml (covered via CNT-EIDOS-CORE) to document repository-contained relative tokens.manifest security constraints."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "tokens.json"
+          - "repository-relative"
+  - operation: modify
+    target: SCR-PORTAL-HOME
+    details: "Update eidos/design/clients/web-portal/screens/portal-home.adoc to document live SSE-backed uncommitted drift status (/api/drift + /api/events) and clickable repo-relative schema_errors navigation."
+    expect:
+      frontmatter:
+        route: "/"
+        status: "active"
+      body:
+        contains:
+          - "/api/drift"
+          - "/api/events"
+          - "schema_errors"
+  - operation: modify
+    target: SCR-PORTAL-ARCHITECTURE
+    details: "Update eidos/design/clients/web-portal/screens/portal-architecture.adoc to document direct C4 SVG node blast-radius highlighting, pan-drag click suppression, and structured C4 Level 1 external_systems rendering."
+    expect:
+      frontmatter:
+        route: "/architecture"
+        status: "active"
+      body:
+        contains:
+          - "external_systems"
+          - "Blast Radius"
+  - operation: modify
+    target: SCR-PORTAL-DESIGN
+    details: "Update eidos/design/clients/web-portal/screens/portal-design.adoc to document hydrated Screen Specification AsciiDoc body inspection ('Inspect Screen Spec')."
+    expect:
+      frontmatter:
+        route: "/design"
+        status: "active"
+      body:
+        contains:
+          - "Inspect Screen Spec"
+  - operation: modify
+    target: SCR-PORTAL-EXPLORATIONS
+    details: "Update eidos/design/clients/web-portal/screens/portal-explorations.adoc to document extracted exit_criteria and recommendation fields on exploration cards."
+    expect:
+      frontmatter:
+        route: "/explorations"
+        status: "active"
+      body:
+        contains:
+          - "exit_criteria"
+          - "recommendation"
+  - operation: modify
+    target: CAP-EXP-001
+    details: "Bump CAP-EXP-001 to version 1.2.0 in eidos/domains/experience-portal/capabilities/living-web-portal.adoc, update INV-PORTAL-STATIC-SCALABILITY, and add INV-PORTAL-XSS-AND-SERVER-ISOLATION and INV-PORTAL-LIVE-DRIFT-SSE."
+    expect:
+      frontmatter:
+        version: "1.2.0"
+        technical.invariants.id:
+          - "INV-PORTAL-STATIC-SCALABILITY"
+          - "INV-PORTAL-XSS-AND-SERVER-ISOLATION"
+          - "INV-PORTAL-LIVE-DRIFT-SSE"
+      body:
+        contains:
+          - "/api/events"
+          - "securityLevel"
+  - operation: modify
+    target: CAP-EXP-002
+    details: "Bump CAP-EXP-002 to version 1.3.0 in eidos/domains/experience-portal/capabilities/multi-design-systems.adoc and update INV-W3C-DTCG-COMPLIANCE to enforce repo_root path containment on tokens.manifest."
+    expect:
+      frontmatter:
+        version: "1.3.0"
+        technical.invariants.id:
+          - "INV-W3C-DTCG-COMPLIANCE"
+      body:
+        contains:
+          - "is_relative_to"
+  - operation: modify
+    target: INV-W3C-DTCG-COMPLIANCE
+    details: "Update INV-W3C-DTCG-COMPLIANCE in CAP-EXP-002 to require tokens.manifest to resolve strictly inside repo_root."
+    expect:
+      frontmatter:
+        rule: "is_relative_to"
+        test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
+  - operation: modify
+    target: INV-PORTAL-STATIC-SCALABILITY
+    details: "Update INV-PORTAL-STATIC-SCALABILITY in CAP-EXP-001 to cover '\\u003c!--' script-state escaping and lazy local spec-body chunking alongside '--single-file' export."
+    expect:
+      frontmatter:
+        rule: "specs/"
+        test_binding: "tests/test_portal.py::test_portal_static_scalability_and_deep_linking"
+  - operation: add
+    target: INV-PORTAL-XSS-AND-SERVER-ISOLATION
+    details: "Bind INV-PORTAL-XSS-AND-SERVER-ISOLATION to tests/test_portal.py::test_portal_xss_sanitization_path_containment_and_host_cors_isolation."
+    expect:
+      frontmatter:
+        rule: "The Living Web Portal must render Mermaid diagrams under securityLevel 'strict', sanitize AsciiDoc HTML with DOMPurify SANITIZE_DOM=true and idprefix='spec-', escape HTML/comment delimiters in flow diagrams and embedded JSON, reject tokens.manifest paths resolving outside repo_root, omit wildcard CORS headers, and reject mismatched Host headers on eidos portal serve."
+        test_binding: "tests/test_portal.py::test_portal_xss_sanitization_path_containment_and_host_cors_isolation"
+  - operation: add
+    target: INV-PORTAL-LIVE-DRIFT-SSE
+    details: "Bind INV-PORTAL-LIVE-DRIFT-SSE to tests/test_portal.py::test_portal_live_drift_sse_c4_context_and_screen_hydration."
+    expect:
+      frontmatter:
+        rule: "eidos portal serve must track eidos/, src/, and tests/ modifications in its snapshot cache, fail closed on _get_cached_drift errors, stream live updates via GET /api/events (SSE) wired to /api/drift in the UI, format object-typed external_systems in C4 Level 1 diagrams without Python dict reprs, and hydrate Screen Spec bodies and Exploration exit_criteria/recommendations."
+        test_binding: "tests/test_portal.py::test_portal_live_drift_sse_c4_context_and_screen_hydration"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Update docs/guides/living-portal.md, docs/guides/cli.md, and eidos/architecture/components/docs-user-guides.adoc to document chunked vs --single-file portal builds, SSE live drift monitoring, and loopback security."
+    expect:
+      frontmatter:
+        source_path: "docs/guides"
+        status: "active"
+      body:
+        contains:
+          - "--single-file"
+          - "/api/events"
+---
+= SpecDelta: Harden Web Portal XSS and Token Path Containment, Repair C4 and UI Views, and Add SSE Live Drift with Chunked Export
+:toc: left
+:icons: font
+:sectnums:
+
+== Problem Statement
+
+Deep inspection of `CNT-EIDOS-PORTAL` (`src/eidos/portal/`) and `CMP-SPEC-VALIDATOR` (`src/eidos/core/spec/validator.py`) surfaced security vulnerabilities, broken UI views, and static bundle scalability limits:
+
+1. **Stored / Reflected DOM XSS, DOM Clobbering & Script-Data Breakage (`HIGH`)**:
+   * `buildMermaidConfig` (`src/eidos/portal/frontend/src/lib/mermaid.ts:19-46`) sets `securityLevel: "loose"` (`L26`), disabling Mermaid's internal DOMPurify sanitizer while `MermaidDiagram.tsx:154` and `ArchitectureView.tsx:450` assign SVG output directly to `.innerHTML`.
+   * `_extract_or_generate_flow_mermaid` (`src/eidos/portal/generator.py:1332-1381`) embeds raw `[mermaid]` blocks verbatim and interpolates unescaped `client`, `title`, `action`, and `screen` strings into HTML node labels (`L1357-1380`).
+   * `ArchitectureView.tsx:463-465` writes unescaped `String(err)` into `diagramRef.current.innerHTML` on Mermaid parse failure.
+   * `renderAsciiDoc` (`src/eidos/portal/frontend/src/lib/asciidoc.ts:41, 56, 155`) sets `idprefix: ""` and `SANITIZE_DOM: false` (allowing spec headings or passthrough blocks to clobber global DOM IDs) and checks only `/^https?:\/\//i` for external links, missing protocol-relative `//...` URLs.
+   * `build_static_portal` (`src/eidos/portal/builder.py:98-104`) escapes `</` inside inline `<script>` JSON (`safe_json`) but omits `<!--`, which breaks HTML script-data state parsing (`SyntaxError` / blank-page DoS) when spec prose contains `<!--` + `<script>`.
+2. **Arbitrary JSON File Disclosure via `tokens.manifest` Path Traversal (`HIGH`)**:
+   * `_extract_design_systems` (`src/eidos/portal/generator.py:598-610`) and `_validate_design_systems` (`src/eidos/core/spec/validator.py:1188`) resolve `tokens.manifest` via path joining without checking `cand.resolve().is_relative_to(repo_root.resolve())` (and `assets/schemas/v1/design/system.schema.yaml:54-56` accepts arbitrary strings), allowing `../../...` or absolute paths in a PR to bundle runner host JSON files into published `index.html` and `data.json`.
+3. **Cross-Origin Private Spec Exfiltration (`CORS: *`) & DNS Rebinding (`MEDIUM-HIGH`)**:
+   * `EidosPortalHandler._send_json` (`src/eidos/portal/server.py:243`) sends `Access-Control-Allow-Origin: *` on every JSON endpoint (`/api/data`, `/api/drift`, `/api/validate`) with zero `Host` header validation, allowing any untrusted browser tab to exfiltrate private specs and uncommitted drift from `http://127.0.0.1:3000`.
+4. **Broken C4 Level 1 Diagram, Dead UI Sections & Disconnected Live Drift**:
+   * `_generate_c4_context_mermaid` (`generator.py:748-756`) calls `html.escape(str(ext))` on `{name, role, protocol}` objects (`architecture.schema.yaml:51-65`), rendering raw Python dict `repr` strings in C4 Level 1 diagrams.
+   * `screens` omit `body` (`generator.py:707-719` and `hydratePortalData` in `App.tsx:24-46`), so `"Inspect Screen Spec"` in `DesignView.tsx:951` never renders; `explorations` hardcode `exit_criteria: {}` and `recommendation: ""` (`generator.py:443-445`); `ValidationReport.schema_errors` (`validator.py:321`) uses `str(file_path)` absolute keys, breaking `HomeView.tsx:282` -> `specNav.ts:30` click navigation; and `ArchitectureView.tsx:374` omits `if (hasMovedRef.current) return;`, firing C4 drill-down on pan-drag release.
+   * `_compute_eidos_mtime_snapshot` (`server.py:21-41`) ignores `src/` and `tests/`, `_get_cached_drift` (`server.py:115-128`) fails open (`is_clean: True`), and the React frontend never fetches `/api/drift` despite `SCR-PORTAL-HOME` (`portal-home.adoc:30`) specifying live drift visibility.
+5. **Monolithic Static Portal Payload (`6.73 MB` `index.html`)**:
+   * `build_static_portal` (`builder.py:83-115`) combines a `4.74 MB` single-file JS/CSS bundle (`assets/portal/bundle.html.gz`) with `1.99 MB` of inlined JSON (`580 KB` of `.adoc` bodies across 231 specs) plus a duplicate `data.json`, which balloons past `25+ MB` at 2,000 specs.
+
+== Proposed Specification Changes
+
+* **Eliminate Portal XSS, DOM Clobbering & Path Traversal (`CMP-PORTAL-ASSETS`, `CMP-PORTAL-GENERATOR`, `CMP-PORTAL-BUILDER`, `CMP-SPEC-VALIDATOR`, `DS-CORE`, `INV-PORTAL-XSS-AND-SERVER-ISOLATION`, `INV-W3C-DTCG-COMPLIANCE`)**:
+  1. Switch `buildMermaidConfig` (`mermaid.ts`) to `securityLevel: "strict"` and attach C4 node click drill-down handlers via post-render DOM event delegation on `[id*="CNT-"], [id*="CMP-"], [id*="SYS-"]` SVG groups rather than Mermaid inline JS callbacks.
+  2. HTML-escape all interpolated fields (`client`, `title`, `action`, `screen`) and strip `%%{init:...}%%` / `click ... call` directives in `_extract_or_generate_flow_mermaid` (`generator.py`), render Mermaid syntax errors via React text nodes (never `.innerHTML`) in `ArchitectureView.tsx`, set `idprefix: "spec-"` and `SANITIZE_DOM: true` plus `^(?:https?:)?//` external link `rel="noopener noreferrer"` hardening in `asciidoc.ts`, and escape `<!--` as `\u003c!--` in `builder.py`.
+  3. Enforce `cand.resolve().is_relative_to(repo_root.resolve())` (rejecting symlinks or `..` escaping `repo_root`) in `_extract_design_systems` (`generator.py`) and `_validate_design_systems` (`validator.py`), and disallow absolute/parent traversal patterns on `tokens.manifest` in `assets/schemas/v1/design/system.schema.yaml`.
+* **Harden `eidos portal serve` & Stream Real-Time SSE Drift (`CMP-PORTAL-SERVER`, `CTR-EIDOS-PORTAL`, `SCR-PORTAL-HOME`, `INV-PORTAL-LIVE-DRIFT-SSE`)**:
+  1. Remove `Access-Control-Allow-Origin: *` from `EidosPortalHandler._send_json` and validate the HTTP `Host` header against the server's bound `host:port` (plus `localhost`/`127.0.0.1`/`[::1]` equivalents when bound to loopback), returning `403 Forbidden` on mismatch.
+  2. Include governed `src/` (`source_path`) and `tests/` directories in `_compute_eidos_mtime_snapshot`, fail closed (`is_clean: False`, `drift_detected: True`, `error: ...`) on exceptions in `_get_cached_drift`, expose `GET /api/events` (`text/event-stream` SSE) pushing version and drift invalidation events, and wire `/api/events` + `/api/drift` into `App.tsx` and `HomeView.tsx`.
+* **Repair C4 Context, Screen Reader, Explorations, Schema Error Links, Pan-Drag & C4 Blast-Radius Highlighting (`CMP-PORTAL-GENERATOR`, `CMP-PORTAL-ASSETS`, `SCR-PORTAL-ARCHITECTURE`, `SCR-PORTAL-DESIGN`, `SCR-PORTAL-EXPLORATIONS`)**:
+  1. Format `{name, role, protocol}` dicts in `_generate_c4_context_mermaid` (`generator.py`) into clean Mermaid C4 labels/edges; hydrate `screen.body` from `data.specs` in `hydratePortalData` (`App.tsx`); extract `exit_criteria` bullets/prose and `decision.outcome` recommendations in `generator.py`; emit repo-relative keys in `ValidationReport.schema_errors` (`validator.py`); guard `handleDiagramClick` in `ArchitectureView.tsx` with `if (hasMovedRef.current) return;`; and apply interactive CSS/SVG highlight classes (`1-hop`, `2-hop`, `dimmed`) directly onto C4 diagram nodes when the Blast Radius Simulator is active.
+* **Chunked Local Static Export (`CMP-PORTAL-BUILDER`, `CMP-CLI-PORTAL-COMMANDS`, `CTR-EIDOS-CLI`, `INV-PORTAL-STATIC-SCALABILITY`)**:
+  1. Default `eidos portal build` to emit a lean `<400 KB` `index.html`, code-split local `./assets/*.js` / `./assets/*.css` chunks (lazy-loading Mermaid and Asciidoctor from local relative files with zero remote URLs, preserving `INV-PORTAL-AIR-GAPPED-BUNDLE`), compact `data.json` index metadata, and lazy per-spec `./specs/<id>.json` body chunks fetched on SpecReader open, while providing `eidos portal build --single-file` (and keeping `assets/portal/bundle.html.gz` `<= 5 MiB` uncompressed) for single-file `file://` portability.
+
+== Implementation Plan
+
+1. **Backend Security, Path Containment & Data Synthesis (`src/eidos/portal/generator.py`, `src/eidos/portal/server.py`, `src/eidos/portal/builder.py`, `src/eidos/cli/portal_commands.py`, `src/eidos/core/spec/validator.py`, `assets/schemas/v1/design/system.schema.yaml`)**:
+   * Enforce `cand.resolve().is_relative_to(repo_root.resolve())` on `tokens.manifest` in `generator.py` and `validator.py` (`CNT-EIDOS-CORE` covered via `CMP-SPEC-VALIDATOR`, including `system.schema.yaml`), and normalize `ValidationReport.schema_errors` keys to repo-relative POSIX paths.
+   * Escape all Mermaid flow label fields and strip unsafe Mermaid directives in `generator.py`, format `{name, role, protocol}` objects in `_generate_c4_context_mermaid`, and extract exploration `exit_criteria` and `recommendation` summaries.
+   * Remove wildcard CORS, enforce `Host` header validation, expand `_compute_eidos_mtime_snapshot` to governed `src/` and `tests/` files, make `_get_cached_drift` fail closed, and add `GET /api/events` SSE streaming in `server.py`.
+   * Escape `<!--` as `\u003c!--` in `builder.py`, implement chunked local static export (`specs/<id>.json` + code-split local `./assets/*`) as default on `build_static_portal(..., single_file: bool = False)`, and wire `--single-file` in `src/eidos/cli/portal_commands.py` (`CMP-CLI-PORTAL-COMMANDS`).
+2. **Frontend Sanitization, SSE Drift, C4 Blast-Radius & Bundle Build (`src/eidos/portal/frontend/src/`, `assets/portal/bundle.html.gz`)**:
+   * Update `mermaid.ts` (`securityLevel: "strict"`), `asciidoc.ts` (`idprefix: "spec-"`, `SANITIZE_DOM: true`, protocol-relative link hardening), `ArchitectureView.tsx` (safe JSX error banner, `if (hasMovedRef.current) return;` pan-drag guard, DOM-delegated C4 node clicks, and SVG blast-radius node highlighting), `App.tsx` (hydrate `screens` bodies, subscribe to `/api/events` SSE + `/api/drift`, lazy-fetch `./specs/<id>.json`), and `HomeView.tsx` (live drift status badge + clickable `schema_errors`).
+   * Preserve all existing DOM invariant anchors (`#c4LevelSwitcher`, `#btnC4Level1`–`3`, `#c4Breadcrumbs`, `#c4ContainerSelect`, `#c4DiagramContainer`, `#c4ActiveDiagram`, `#c4InspectorDrawer`, `"Interactive Blast Radius Simulator"`, `"Validation & Governance Diagnostics"`) and rebuild `assets/portal/bundle.html.gz` (`<= 5 MiB` uncompressed, zero remote subresources per `INV-PORTAL-AIR-GAPPED-BUNDLE`).
+3. **Living Specifications, Docs & Invariant Verification (`eidos/`, `docs/guides/`, `tests/`)**:
+   * Move `DEC-PORTAL-STRICT-SANITIZATION-AND-SSE-CHUNKING` onto `CNT-EIDOS-PORTAL` when applying, update `CMP-PORTAL-ASSETS`, `CMP-PORTAL-GENERATOR`, `CMP-PORTAL-SERVER`, `CMP-PORTAL-BUILDER`, `CMP-CLI-PORTAL-COMMANDS`, `CMP-SPEC-VALIDATOR`, `CTR-EIDOS-PORTAL` (`1.1.0`), `CTR-EIDOS-CLI` (`1.5.0`), `DS-CORE`, `SCR-PORTAL-HOME`, `SCR-PORTAL-ARCHITECTURE`, `SCR-PORTAL-DESIGN`, `SCR-PORTAL-EXPLORATIONS`, `CAP-EXP-001` (`1.2.0`), `CAP-EXP-002` (`1.3.0`), and `CMP-DOCS-USER-GUIDES` (`CNT-EIDOS-CLI` and `CNT-EIDOS-DOCS` covered via modified child components; `CLT-WEB-PORTAL` unchanged, covered via `SCR-PORTAL-*`), and regenerate `tests/fixtures/cli_command_tree.json`.
+   * Add/update `tests/test_portal.py::test_portal_xss_sanitization_path_containment_and_host_cors_isolation`, `tests/test_portal.py::test_portal_live_drift_sse_c4_context_and_screen_hydration`, `tests/test_portal.py::test_portal_static_scalability_and_deep_linking`, and `tests/test_validator.py::test_validate_eidos_specifications` (`>90%` per-file coverage per `POL-005`), then run `eidos validate eidos --json`, `eidos delta verify DLT-2026-132 --json`, and `eidos drift --uncommitted --json`.

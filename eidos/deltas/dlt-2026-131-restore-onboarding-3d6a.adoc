@@ -1,0 +1,252 @@
+---
+type: delta/mutation
+id: DLT-2026-131-RESTORE-ONBOARDING-3D6A
+title: "Restore Onboarding Governance, Harden Skill Installer, and Scope Stop Hooks to Session Edits"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: high
+  motivation: "Restore the accidentally overwritten root AGENTS.md managed block in Eidos's own repository; eliminate silent stale-skill version lies on non-force upgrades, .aider.conf.yml YAML comment destruction, symlinked .agents/skills batch-install aborts, and dangling uninstall references in CMP-PLUGIN-INSTALLER; fix GitHub Copilot camelCase stopHookActive infinite loops, migrate Cline from non-blocking TaskComplete to cancellable PreToolUse on attempt_completion, and scope Stop hook drift gating to session-modified files in CMP-HOOK-RUNNER; and add editable Git-tag version accuracy and AGENTS.md managed-block health verification to eidos doctor."
+vcs:
+  branch: main
+  base_commit: e1022b338ebd4a42d4774fa444ef35f6874b8acf
+tombstone:
+  search_tokens:
+    - ".clinerules/hooks/TaskComplete"
+  allowed_reasons:
+    - path: "CHANGELOG.md"
+      reason: "Historical release notes referencing pre-DLT-2026-131 hook paths."
+    - path: "docs/changelog.md"
+      reason: "Historical changelog documentation."
+    - path: "eidos/deltas/"
+      reason: "Historical SpecDeltas predating DLT-2026-131."
+    - path: "eidos/explorations/"
+      reason: "Historical exploration documents."
+mutations:
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    details: "Update src/eidos/plugin/installer.py, src/eidos/plugin/version.py, src/eidos/plugin/managed_block.py, and eidos/architecture/components/plugin-installer.adoc so non-force installs/updates never stamp bundled_ver as 'up_to_date' when modified SKILL.md files were skipped (reporting 'modified' / skipped_files in .eidos-manifest.json and check_plugin_version_status()), _update_project_aider_conf() edits .aider.conf.yml line-preservingly without stripping user YAML comments, symlinked .agents/skills pointing to assets/plugin_reference/skills is treated as canonical in-sync rather than raising FileExistsError and aborting install/update all, uninstall_plugin() prunes uninstalled targets from root AGENTS.md, CLAUDE.md (@AGENTS.md), and .aider.conf.yml, Cline hooks wire .clinerules/hooks/PreToolUse (attempt_completion) + SessionStart baseline hooks, and check_cli_update_status() / resolve_runtime_version() resolve accurate Git-tag versions in editable checkouts and check root AGENTS.md managed block integrity."
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/plugin/installer.py"
+          - "src/eidos/plugin/version.py"
+          - "src/eidos/plugin/managed_block.py"
+        status: "active"
+      body:
+        contains:
+          - ".clinerules/hooks/PreToolUse"
+          - "attempt_completion"
+          - "skipped_files"
+          - "read_managed_block"
+        not_contains:
+          - ".clinerules/hooks/TaskComplete"
+  - operation: modify
+    target: CMP-HOOK-RUNNER
+    details: "Update src/eidos/plugin/hooks.py and eidos/architecture/components/hook-runner.adoc so _detect_hook_client() and _is_retry_or_non_normal_stop() honor both snake_case stop_hook_active and camelCase stopHookActive (fixing GitHub Copilot agentStop infinite loops), handle Cline PreToolUse payloads targeting attempt_completion with a 1-turn retry guard (immediately returning {'cancel': false} for all non-attempt_completion tools), and snapshot/compare working-tree baselines per session in gitignored eidos/.cache/hook_baselines/ so handle_stop_hook() allows zero-edit Q&A turns on pre-existing dirty worktrees."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/plugin/hooks.py"
+        status: "active"
+      body:
+        contains:
+          - "stopHookActive"
+          - "attempt_completion"
+          - "hook_baselines"
+        not_contains:
+          - "hookName != \"TaskComplete\""
+  - operation: modify
+    target: CMP-HOOK-MANAGER
+    details: "Update src/eidos/plugin/validator.py and eidos/architecture/components/hook-manager.adoc to allow optional lightweight SessionStart / UserPromptSubmit baseline-snapshot hook entries alongside Stop in hooks.json while still forbidding heavy drift gates on intermediate edit events."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/plugin/validator.py"
+        status: "active"
+      body:
+        contains:
+          - "hooks.json"
+          - "SessionStart"
+          - "INV-HOOK-CLI-NATIVE"
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+    details: "Update doctor_cmd() in src/eidos/cli/doctor_hook_commands.py and eidos/architecture/components/cli-doctor-hooks.adoc to verify root AGENTS.md managed block integrity (find_managed_block / read_managed_block) when Agent Skills or manifests are present, and fail when wiped or malformed AGENTS.md blocks are detected."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/doctor_hook_commands.py"
+        status: "active"
+      body:
+        contains:
+          - "agents_md"
+          - "hooks_ok"
+  - operation: modify
+    target: CMP-CLI-PLUGIN-COMMANDS
+    details: "Update plugin_version() in src/eidos/cli/plugin_commands.py and eidos/architecture/components/cli-plugin-commands.adoc to render a truthful 'Modified' sync status badge and '--force' reconciliation guidance when check_plugin_version_status() reports status == 'modified'."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/plugin_commands.py"
+        status: "active"
+      body:
+        contains:
+          - "modified"
+          - "--force"
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    details: "Update classify_changed_files() in src/eidos/vcs/diff.py and eidos/architecture/components/drift-detector.adoc so modifications to root AGENTS.md, CLAUDE.md, .aider.conf.yml, and .agents/skills/**/SKILL.md are validated for managed-block/skill integrity rather than silently bypassing governance as generic doc_files when Eidos Agent Skills are installed."
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/vcs/drift.py"
+          - "src/eidos/vcs/diff.py"
+          - "src/eidos/vcs/invariants.py"
+          - "src/eidos/vcs/structural.py"
+          - "src/eidos/vcs/report.py"
+        status: "active"
+      body:
+        contains:
+          - "AGENTS.md"
+          - "classify_changed_files"
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Update eidos/architecture/containers/plugin.adoc to record DEC-PLUGIN-TURN-SCOPED-STOP-GATE and document Cline PreToolUse (attempt_completion) hook wiring, Copilot stopHookActive retry detection, truthful non-force upgrade status reporting, comment-preserving .aider.conf.yml updates, and symlink-tolerant batch target installation."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-PLUGIN-TURN-SCOPED-STOP-GATE"
+      body:
+        contains:
+          - "DEC-PLUGIN-TURN-SCOPED-STOP-GATE"
+          - ".clinerules/hooks/PreToolUse"
+          - "stopHookActive"
+        not_contains:
+          - ".clinerules/hooks/TaskComplete"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Bump CTR-EIDOS-CLI to version 1.5.0 in eidos/architecture/contracts/cli.adoc to document root AGENTS.md managed-block health reporting, Cline .clinerules/hooks/PreToolUse (attempt_completion) hook configuration, and session-baseline turn scoping on 'eidos hook'."
+    expect:
+      frontmatter:
+        version: "1.5.0"
+        status: "active"
+      body:
+        contains:
+          - "agents_md"
+          - ".clinerules/hooks/PreToolUse"
+        not_contains:
+          - ".clinerules/hooks/TaskComplete"
+  - operation: modify
+    target: CAP-AGENT-001
+    details: "Bump CAP-AGENT-001 to version 1.15.0 in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc, update INV-AGENT-DRIFT-HOOK and INV-DOCTOR-UPDATE-CHECK, and add INV-PLUGIN-INSTALL-TRUTHFULNESS and INV-DOCTOR-ONBOARDING-INTEGRITY."
+    expect:
+      frontmatter:
+        version: "1.15.0"
+        status: "active"
+        technical.invariants.id:
+          - "INV-AGENT-DRIFT-HOOK"
+          - "INV-DOCTOR-UPDATE-CHECK"
+          - "INV-PLUGIN-INSTALL-TRUTHFULNESS"
+          - "INV-DOCTOR-ONBOARDING-INTEGRITY"
+      body:
+        contains:
+          - ".clinerules/hooks/PreToolUse"
+          - "stopHookActive"
+        not_contains:
+          - ".clinerules/hooks/TaskComplete"
+  - operation: modify
+    target: INV-AGENT-DRIFT-HOOK
+    details: "Update INV-AGENT-DRIFT-HOOK in CAP-AGENT-001 so handle_stop_hook honors camelCase stopHookActive, gates Cline via PreToolUse on attempt_completion, and skips drift blocking when zero files changed relative to the session baseline."
+    expect:
+      frontmatter:
+        rule: "stopHookActive"
+        test_binding: "tests/test_plugin.py::test_drift_hook_stop_event_drift_detected"
+  - operation: modify
+    target: INV-DOCTOR-UPDATE-CHECK
+    details: "Update INV-DOCTOR-UPDATE-CHECK in CAP-AGENT-001 to enforce accurate editable-checkout Git-tag version resolution."
+    expect:
+      frontmatter:
+        rule: "editable"
+        test_binding: "tests/test_plugin.py::test_cli_doctor_update_check"
+  - operation: add
+    target: INV-PLUGIN-INSTALL-TRUTHFULNESS
+    details: "Bind INV-PLUGIN-INSTALL-TRUTHFULNESS to tests/test_plugin.py::test_installer_truthful_version_comments_symlinks_and_uninstall."
+    expect:
+      frontmatter:
+        rule: "Non-force skill installations that skip locally modified SKILL.md files must report 'modified' rather than 'up_to_date', preserve YAML comments in .aider.conf.yml, tolerate canonical self-hosted .agents/skills symlinks across 'install all' and 'update all', and prune uninstalled target references from AGENTS.md, CLAUDE.md, and .aider.conf.yml."
+        test_binding: "tests/test_plugin.py::test_installer_truthful_version_comments_symlinks_and_uninstall"
+  - operation: add
+    target: INV-DOCTOR-ONBOARDING-INTEGRITY
+    details: "Bind INV-DOCTOR-ONBOARDING-INTEGRITY to tests/test_plugin.py::test_doctor_detects_wiped_agents_md."
+    expect:
+      frontmatter:
+        rule: "eidos doctor must verify that the root AGENTS.md managed block (<!-- eidos:begin agents-md ... -->) is intact whenever Agent Skills or .eidos-manifest.json are present unless explicitly opted out via <!-- eidos:agents-md off -->."
+        test_binding: "tests/test_plugin.py::test_doctor_detects_wiped_agents_md"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Update docs/guides/cli.md, docs/guides/agent-plugin.md, and eidos/architecture/components/docs-user-guides.adoc to document AGENTS.md managed-block health checks, Cline .clinerules/hooks/PreToolUse (attempt_completion) hook wiring, and session-scoped Stop hooks."
+    expect:
+      frontmatter:
+        source_path: "docs/guides"
+        status: "active"
+      body:
+        contains:
+          - ".clinerules/hooks/PreToolUse"
+        not_contains:
+          - ".clinerules/hooks/TaskComplete"
+---
+= SpecDelta: Restore Onboarding Governance, Harden Skill Installer, and Scope Stop Hooks to Session Edits
+:toc: left
+:icons: font
+:sectnums:
+
+== Problem Statement
+
+Auditing Eidos's dogfooded workspace and `CNT-EIDOS-PLUGIN` (`src/eidos/plugin/`), `CMP-CLI-DOCTOR-HOOKS` (`src/eidos/cli/doctor_hook_commands.py`), and `CMP-DRIFT-DETECTOR` (`src/eidos/vcs/diff.py`) uncovered live onboarding regressions and concrete installer/hook bugs:
+
+1. **Live Dogfooding Regressions Undetected by `validate`, `drift`, and `doctor`**:
+   * Commit `429202a` overwrote the root `AGENTS.md` `<!-- eidos:begin agents-md ... -->` ... `<!-- eidos:end agents-md -->` managed block (`src/eidos/plugin/managed_block.py:85-91`) with the 8-byte string `project\n`. Because `classify_changed_files` (`src/eidos/vcs/diff.py:545-578`) classifies `AGENTS.md` as a generic `doc_file` and `doctor_cmd` (`src/eidos/cli/doctor_hook_commands.py:36-185`) never calls `read_managed_block(root / "AGENTS.md", "agents-md")`, all three governance gates reported green while every AI coding assistant lost its Eidos workspace rules.
+2. **Silent Stale-Skill Version Lie & Fragile Installer Edge Cases (`src/eidos/plugin/installer.py`)**:
+   * **False `"up_to_date"` on non-force upgrade**: `_copy_skills_flat` (`installer.py:249-252`) skips modified `SKILL.md` files when `force=False`, yet `_write_installation_manifest` (`installer.py:189-193`, invoked at `L1023`) unconditionally writes `bundled_ver` into `.eidos-manifest.json`. Consequently, `check_plugin_version_status()` (`version.py`) and `eidos doctor` falsely report `"up_to_date"` while stale skills remain on disk.
+   * **YAML comment destruction in `.aider.conf.yml`**: `_update_project_aider_conf` (`installer.py:388-413`) round-trips `.aider.conf.yml` through `safe_load_yaml` + `safe_dump_yaml`, wiping all user comments and formatting.
+   * **Symlinked `.agents/skills` aborts `install all` / `update all`**: When `.agents/skills` is a symlink (such as Eidos's own `.agents/skills -> ../assets/plugin_reference/skills`), `dest_skills_root.is_symlink()` raises `FileExistsError` at `installer.py:229`, aborting `install_plugin(ALL)` (`L1405-1413`) and `update_plugin(ALL)` (`L1460-1475`) before remaining targets (`claude`, `aider`, etc.) are processed.
+   * **Dangling pointers on `uninstall_plugin`**: `uninstall_plugin` (`installer.py:1240-1263`) deletes `.agents/skills`, `.claude/skills`, or `.aider/skills` while leaving dangling target references inside `AGENTS.md`, `CLAUDE.md` (`@AGENTS.md`), and `.aider.conf.yml` (`read: [AGENTS.md]`).
+3. **Stop Hook Infinite Loops, Non-Blocking Cline Hook, & Dirty-Worktree Q&A Hijacking (`src/eidos/plugin/hooks.py`)**:
+   * **GitHub Copilot `agentStop` infinite loop**: Copilot passes camelCase `"stopHookActive": true` alongside `"cwd"`. `_detect_hook_client` (`hooks.py:22`) classifies it as `"standard"`, and `_is_retry_or_non_normal_stop` (`hooks.py:49`) checks only snake_case `payload.get("stop_hook_active")`, so the 1-turn circuit-breaker never trips.
+   * **Cline `TaskComplete` cannot block completion**: Cline's `TaskComplete` hook (`installer.py:726-736`, `hooks.py:20, 48, 59`) is a post-completion notification rather than a cancellable gate; gating premature task completion in Cline requires `.clinerules/hooks/PreToolUse` targeting `preToolUse.tool == "attempt_completion"` with a retry guard.
+   * **Read-only Q&A hijacking on dirty worktrees**: `handle_stop_hook` (`hooks.py:82-135`) runs `detect_drift(uncommitted=True)` unconditionally even when the agent made zero file edits during the turn, trapping conversational Q&A turns whenever the developer already has uncommitted WIP on disk.
+4. **Stale Editable Version in `eidos doctor` (`doctor_hook_commands.py`, `src/eidos/__init__.py`)**:
+   * Editable installs read a stale generated `_version.py` (`0.21.2.dev2`) when new Git tags (`v0.23.0`) have been created without reinstalling the editable package.
+
+== Proposed Specification Changes
+
+* **Restore Repository Dogfooding & Enforce Onboarding Health (`CMP-CLI-DOCTOR-HOOKS`, `CMP-DRIFT-DETECTOR`, `INV-DOCTOR-ONBOARDING-INTEGRITY`)**:
+  1. Re-project the canonical `agents-md` managed block into Eidos's root `AGENTS.md` (`antigravity:.agents/skills`, keeping `AGENTS.md` template `<= 250` words and rendered block `<= 320` words per `INV-PLUGIN-SKILL-SIZE-CEILING`).
+  2. Teach `eidos doctor` (`doctor_cmd`) to verify root `AGENTS.md` managed block integrity via `read_managed_block` (unless opted out with `<!-- eidos:agents-md off -->`) and resolve live Git tag versions in editable checkouts (`src/eidos/__init__.py` / `src/eidos/plugin/version.py`).
+  3. Update `classify_changed_files` in `src/eidos/vcs/diff.py` (`CMP-DRIFT-DETECTOR`) and drift/doctor checks so wiping a managed `AGENTS.md` block or editing installed `.agents/skills/**/SKILL.md` in an Eidos-enabled repository triggers governance verification instead of silently passing as `doc_files`.
+* **Harden `CMP-PLUGIN-INSTALLER` (`INV-PLUGIN-INSTALL-TRUTHFULNESS`)**:
+  1. Record `skipped_files` (and actual on-disk SHA-256 digests) in `.eidos-manifest.json` when `_copy_skills_flat(..., force=False)` skips locally modified `SKILL.md` files, and make `check_plugin_version_status()` report `status: "modified"` (not `"up_to_date"`) until reconciled via `eidos plugin install <target> --force`.
+  2. Replace destructive YAML re-serialization in `_update_project_aider_conf` (and add `_remove_project_aider_conf`) with comment-preserving text/line editing on `.aider.conf.yml`.
+  3. In `_copy_skills_flat`, `install_plugin`, and `update_plugin`, treat a symlinked `dest_skills_root` whose resolved target equals `source_skills_dir.resolve()` (self-hosted Eidos repository) as valid and in-sync, and isolate per-target exceptions in `install all` / `update all` so remaining targets still execute before raising aggregated errors.
+  4. Update `uninstall_plugin` to prune the uninstalled target from `AGENTS.md` (`targets=...`, removing the managed block completely when zero targets remain), remove the `claude-import` block from `CLAUDE.md` when uninstalling `claude`, and remove `AGENTS.md` from `.aider.conf.yml` when uninstalling `aider` (if no other Eidos targets remain).
+* **Turn-Aware Stop Hooks, Copilot `stopHookActive`, & Cline `PreToolUse` (`CMP-HOOK-RUNNER`, `CMP-HOOK-MANAGER`, `CNT-EIDOS-PLUGIN`, `DEC-PLUGIN-TURN-SCOPED-STOP-GATE`)**:
+  1. Check `bool(payload.get("stop_hook_active") or payload.get("stopHookActive"))` in `_is_retry_or_non_normal_stop` and `_detect_hook_client` (`hooks.py`).
+  2. Migrate Cline's opt-in `--hooks` wiring from `.clinerules/hooks/TaskComplete` to `.clinerules/hooks/PreToolUse` (`TARGET_HOOK_PATHS["cline"] = ".clinerules/hooks/PreToolUse"`): inspect `payload.get("preToolUse", {}).get("toolName") or payload.get("tool")` and immediately return `{"cancel": False}` when the tool is not `"attempt_completion"`, gating only `attempt_completion` with a 1-turn retry guard.
+  3. Implement ephemeral session baseline snapshots in `eidos/.cache/hook_baselines/<session_id>.json` (populated on `SessionStart` / `UserPromptSubmit` or client modified-file metadata, with automatic TTL cleanup) so `handle_stop_hook` immediately allows completion when the current agent session modified zero governed files since turn start.
+
+== Implementation Plan
+
+1. **Plugin Installer, Comment-Safe Aider Config, Symlink Handling & Version Resolution (`src/eidos/plugin/installer.py`, `src/eidos/plugin/version.py`, `src/eidos/plugin/managed_block.py`, plus `src/eidos/__init__.py` `(unmapped package version init; body-only)`)**:
+   * Update `_copy_skills_flat` and `_write_installation_manifest` to record `skipped_files` and on-disk SHA-256 hashes when `force=False` skips modified skills, and update `check_plugin_version_status` in `version.py` to return `"modified"` when any skill was skipped or diverges from `bundled_ver`.
+   * Rewrite `_update_project_aider_conf` and add `_remove_project_aider_conf` in `installer.py` using line-preserving edits that retain `#` comments and formatting in `.aider.conf.yml`.
+   * Allow self-hosted symlinks (`dest_skills_root.resolve() == source_skills_dir.resolve()`) in `_copy_skills_flat` and collect per-target errors across `PluginInstallTarget.ALL` loops in `install_plugin` and `update_plugin`.
+   * Update `uninstall_plugin` and `managed_block.py` to remove uninstalled targets from `AGENTS.md` (removing the block when `targets` becomes empty), `CLAUDE.md`, and `.aider.conf.yml`.
+   * Update `version.py` / `src/eidos/__init__.py` so editable checkouts in a Git repository resolve exact `git describe --tags` versions when `_version.py` lags behind Git tags, while honoring `POL-005` (`>90%` per-file statement coverage).
+2. **Stop Hook Runner, Cline `PreToolUse` Gate & Hook Validator (`src/eidos/plugin/hooks.py`, `src/eidos/plugin/validator.py`)**:
+   * Update `_detect_hook_client` and `_is_retry_or_non_normal_stop` in `hooks.py` to honor camelCase `stopHookActive`.
+   * Wire Cline `--hooks` to `.clinerules/hooks/PreToolUse` (`attempt_completion` filter + 1-turn retry marker) and `.clinerules/hooks/TaskStart` session baseline capture.
+   * Add session-baseline capture (`SessionStart` / `UserPromptSubmit` -> `eidos/.cache/hook_baselines/`) and diff comparison in `hooks.py` so zero-edit Q&A turns on dirty worktrees return allow immediately, and update `validator.py` (`CMP-HOOK-MANAGER`) to accept optional `SessionStart` / `UserPromptSubmit` baseline hooks in `hooks.json` (`assets/plugin_reference/hooks.json`, covered via `CNT-EIDOS-PLUGIN`).
+3. **Doctor Onboarding Governance (`src/eidos/cli/doctor_hook_commands.py`, `src/eidos/vcs/diff.py`, root `AGENTS.md` `(unmapped root onboarding artifact)`)**:
+   * Add `checks.agents_md` in `doctor_cmd` (`doctor_hook_commands.py`) verifying `read_managed_block(git_root / "AGENTS.md", "agents-md")`, and update `classify_changed_files` in `src/eidos/vcs/diff.py` (`CMP-DRIFT-DETECTOR` — `CNT-EIDOS-VCS` `(covered via CMP-DRIFT-DETECTOR)`).
+   * Restore root `AGENTS.md` via `eidos plugin install antigravity` (respecting `INV-PLUGIN-SKILL-SIZE-CEILING`: template `<= 250` words, rendered `<= 320` words, and `INV-PLUGIN-SKILL-CLI-PARITY`).
+4. **Living Specifications, Documentation & Invariant Tests (`eidos/`, `docs/guides/`, `tests/`)**:
+   * Move `DEC-PLUGIN-TURN-SCOPED-STOP-GATE` onto `CNT-EIDOS-PLUGIN` when applying, update `CMP-PLUGIN-INSTALLER`, `CMP-HOOK-RUNNER`, `CMP-HOOK-MANAGER`, `CMP-CLI-DOCTOR-HOOKS`, `CMP-DRIFT-DETECTOR`, `CTR-EIDOS-CLI` (`1.5.0`), `CAP-AGENT-001` (`1.15.0`), and `CMP-DOCS-USER-GUIDES` (`docs/guides/cli.md`, `docs/guides/agent-plugin.md`; `CNT-EIDOS-CLI` and `CNT-EIDOS-DOCS` covered via their modified child components), and update `tests/fixtures/cli_command_tree.json`.
+   * Add/update `tests/test_plugin.py::test_drift_hook_stop_event_drift_detected`, `tests/test_plugin.py::test_cli_doctor_update_check`, `tests/test_plugin.py::test_installer_truthful_version_comments_symlinks_and_uninstall`, and `tests/test_plugin.py::test_doctor_detects_wiped_agents_md`, then verify with `eidos validate eidos --json`, `eidos delta verify DLT-2026-131 --json`, `eidos delta audit DLT-2026-131 --strict --json`, and `eidos drift --uncommitted --json`.

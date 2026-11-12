@@ -16,6 +16,18 @@ export function loadMermaid(): Promise<MermaidApi> {
   return mermaidPromise;
 }
 
+export function sanitizeMermaidCode(rawCode: string): string {
+  const withoutDirectives = (rawCode || "").replace(/%%\{[\s\S]*?\}%%/g, "");
+  return withoutDirectives
+    .split("\n")
+    .filter(
+      (line) =>
+        !/^\s*click\s+.*(?:\bcall\b|(?:javascript|data|vbscript)\s*:)/i.test(line)
+    )
+    .join("\n")
+    .trim();
+}
+
 export function buildMermaidConfig(dark: boolean): MermaidConfig {
   return {
     startOnLoad: false,
@@ -23,7 +35,7 @@ export function buildMermaidConfig(dark: boolean): MermaidConfig {
     // see vite.config.ts). dagre is what the C4 click handlers and the portal's diagrams are designed around.
     layout: "dagre",
     theme: dark ? "dark" : "default",
-    securityLevel: "loose",
+    securityLevel: "strict",
     fontFamily: "Geist, Inter, system-ui, sans-serif",
     themeVariables: dark
       ? {

@@ -55,6 +55,26 @@ decisions:
       - option: "Download a separate Harrier ONNX model copy or install duplicate .agents/skills/ and AGENTS.md into every sub-project"
         reason_rejected: "Duplicates 600MB-2.4GB of identical read-only ONNX model weights, in-memory ONNX Runtime sessions, and agent skill/instruction files across every sub-project in the monorepo."
     graduated_from: DLT-2026-123-SUPPORT-INDEPENDENT-1928
+  - id: DEC-CORE-STRICT-DELTA-AND-SURFACE-VERIFICATION
+    title: "Enforce Non-Empty Mutation Verification, Parent-First Path Inference, and Brace-Glob Workspace Ownership"
+    decision: "Reject empty mutations: [] lists in verify_delta_mutations and apply_delta, evaluate expect: post-conditions across all four composable operations (add, modify, deprecate, remove) with exact test_binding matching and null key-deletion assertions, resolve infer_entity_type_from_path from canonical parent directories ahead of filename stem prefixes, preserve Git-tracked source files regardless of STANDARD_EXCLUDED_DIRS segment names, and support {a,b} brace expansion uniformly across source_path validation, ownership regexes, and context slicing."
+    rationale: "Allowing 0-mutation SpecDeltas to verify as True undermines Planned Mode auditability, stem-first path inference misclassifies components like CMP-FLOW-ENGINE (flow-engine.adoc) as design/flow, dropping Git-tracked files under packages/site/ or compiler/target/ blinds indexing and drift, and inconsistent brace-glob support breaks TypeScript/React multi-extension source_path patterns."
+    rejected_alternatives:
+      - option: "Allow mutations: [] on applied SpecDeltas for documentation-only changes"
+        reason_rejected: "Documentation-only edits belong in Direct Mode; SpecDeltas exist specifically to govern declarative catalog mutations."
+      - option: "Keep filename stem prefix matching ahead of directory layout in infer_entity_type_from_path"
+        reason_rejected: "scaffolder.py strips 'cmp-' from component filenames under eidos/architecture/components/, guaranteeing collisions whenever a component slug starts with flow-, scr-, cap-, or dom-."
+    graduated_from: DLT-2026-135-FIX-CONTRACT-6A95
+  - id: DEC-CORE-NON-EMPTY-SCHEMA-STRINGS-AND-DELTA-SHOW
+    title: "Enforce Non-Whitespace String & Non-Empty Array Constraints in v1 Schemas and Expose eidos delta show"
+    decision: "Define reusable non_empty_string (minLength: 1, pattern: '\\S') and non-empty code_paths (minItems: 1) definitions in assets/schemas/v1/common/defs.yaml referenced across all 16 v1 schemas, add 'cli' to design/client.schema.yaml platform enum, expose 'eidos delta show <ID_OR_PATH> [--json] [--path]' in CMP-CLI-DELTA-COMMANDS while keeping 'eidos spec' and 'eidos delta' disjoint, and verify per-file coverage (>90.0% on every src/eidos/**/*.py module) in test_pol_005_statement_test_coverage and CI."
+    rationale: "Allowing title: '', rule: '   ', or source_path: [] passes JSON Schema validation while producing vacuous governance artifacts; omitting 'cli' contradicts client.schema.yaml's own description; providing 'eidos delta show' eliminates raw file-read fallbacks without muddying 'eidos spec'; and aggregate-only coverage (fail_under = 90) allows individual modules to fall below 90% in violation of POL-005."
+    rejected_alternatives:
+      - option: "Weaken POL-005-STATEMENT-TEST-COVERAGE from per-file >90% to aggregate >90%"
+        reason_rejected: "Aggregate coverage lets large high-coverage modules mask low-coverage CLI, VCS, or portal modules—the exact failure mode POL-005 was authored to prevent."
+      - option: "Overload eidos spec show to accept DLT-* SpecDeltas directly"
+        reason_rejected: "Breaks CNT-EIDOS-CLI's intentional disjoint boundary between living catalog specifications (eidos spec) and mutation plans (eidos delta)."
+    graduated_from: DLT-2026-136-ENFORCE-NON-3715
 
 contracts:
   provides: []
@@ -69,9 +89,9 @@ This container represents the foundational library under `src/eidos/core/` (`spe
 == Internal Structure & Key Mechanisms
 `CNT-EIDOS-CORE` is structured into three internal subpackages plus the packaged `assets/schemas/v1/` schema bundle:
 
-* **Specification Parsing & Validation (`src/eidos/core/spec/`)**: Parses AsciiDoc documents with YAML frontmatter via Rust-backed `fastyaml-rs`, projects frontmatter into typed Pydantic domain models (`FrontmatterModel`), and validates all 16 v1 document types against JSON Schema Draft 2020-12 (`jsonschema`), recursive `x-eidos-ref` cross-references, bidirectional multi-protocol `CTR-*` contract parity, W3C DTCG token manifests, and AST-verified `INV-*` test bindings.
-* **Specification & SpecDelta Lifecycle (`src/eidos/core/lifecycle/`)**: Orchestrates greenfield repository initialization (`init_repository`), minimal draft blueprint generation from externalized `.template.adoc` templates, reference-safe catalog deletion, SpecDelta state transitions (`proposed` -> `in_review` -> `approved` -> `applied` / `rejected`), Git-baseline post-condition verification across both single-root repos and nested monorepo sub-projects, index-scoped tombstone deletion auditing, two-tier archiving (`eidos/deltas/archive/`), and Keep a Changelog compilation.
-* **Workspace & Asset Resolution (`src/eidos/core/workspace/`)**: Resolves repository roots (`eidos/`), enclosing `.git` worktree roots (`find_git_root`), independent monorepo sub-project boundaries (`discover_nested_subproject_roots`), glob-based `source_path` ownership rules, standard excluded directories, and bundled schema/template assets across editable checkouts and wheel installations.
+* **Specification Parsing & Validation (`src/eidos/core/spec/`, `DEC-CORE-NON-EMPTY-SCHEMA-STRINGS-AND-DELTA-SHOW`, `DEC-CORE-STRICT-DELTA-AND-SURFACE-VERIFICATION`)**: Parses AsciiDoc documents with YAML frontmatter via Rust-backed `fastyaml-rs` (tolerating trailing `---` document end markers and surfacing `UnicodeDecodeError` cleanly), resolves entity types parent-directory-first, and validates all 16 v1 document types against JSON Schema Draft 2020-12 (`minLength: 1` / non-whitespace `non_empty_string`, `minItems: 1` `code_paths`, and `"cli"` client platform), recursive `x-eidos-ref` cross-references, bidirectional multi-protocol `CTR-*` contract parity (`cli_args` imported sub-apps, `openapi`, `protobuf` messages/enums, `graphql`, `python_protocol`), per-class `== Public Surface` AST parity, repository-contained `tokens.manifest` files, and active `file::symbol` `INV-*` test bindings.
+* **Specification & SpecDelta Lifecycle (`src/eidos/core/lifecycle/`, `DEC-CORE-STRICT-DELTA-AND-SURFACE-VERIFICATION`)**: Orchestrates greenfield repository initialization (`init_repository`), live catalog-aware blueprint generation without nonexistent placeholder IDs, quote-safe YAML scalar updates, ambiguity-checked ID lookups, cross-branch collision-free SpecDelta IDs, non-empty `mutations` verification across `add`/`modify`/`deprecate`/`remove` (with CRLF-normalized and shallow-clone-safe baselines), lossless multi-line exploration archiving, tombstone pattern auditing, and dynamic `SYS-*` Keep a Changelog compilation.
+* **Workspace & Asset Resolution (`src/eidos/core/workspace/`)**: Resolves repository roots (`eidos/`), enclosing `.git` worktree roots (`find_git_root`), cached `.gitignore`-aware monorepo sub-project boundaries (`discover_nested_subproject_roots`), `{a,b}` brace-glob `source_path` ownership rules, Git-tracked file preservation inside excluded directory names, repo-relative `.agents` filtering, and bundled schema/template assets.
 
 == Quality Attributes & Operational Policies
 * **Stateless Git-Native Execution (`POL-001`)**: Operates statelessly over the Git working tree and commit graph; `eidos/.cache/index.db` is strictly an ephemeral, disposable acceleration cache.

@@ -13,14 +13,14 @@ source_path: src/eidos/core/workspace/project.py
 Discovers repository, monorepo sub-project, and living specification roots (`eidos/`), locates the enclosing `.git` worktree root (`find_git_root`), evaluates glob-based `source_path` ownership specificity, classifies polyglot test suites, and enumerates Git-tracked non-vendored workspace files while isolating nested child sub-projects (`discover_nested_subproject_roots`).
 
 == Key Responsibilities & Collaborators
-* **Workspace, Sub-Project & Git Root Discovery**: Locates the nearest governing specification root and sub-project `repo_root` (`find_repo_root`, `resolve_spec_and_repo_roots`) across nested subdirectories and custom `--path` targets while ignoring cache-only `eidos/` directories that lack specification markers, resolves the enclosing `.git` worktree root across arbitrary ancestor depths (`find_git_root`), and identifies independent child sub-project boundaries (`discover_nested_subproject_roots`).
-* **Path Ownership & Glob Specificity**: Scores literal directory-prefix specificity ahead of wildcards (`match_path_pattern`, `extract_entity_paths`) so `CMP-INCREMENTAL-SYNC-ENGINE` and `CMP-DRIFT-DETECTOR` bind source files deterministically to their most specific `CMP-*` or `CNT-*` owner.
-* **Tracked & Test File Filtering**: Enumerates non-ignored files (`get_tracked_files`, `is_generated_or_vendored`) via `find_git_root` across both top-level repositories and nested sub-projects while excluding `STANDARD_EXCLUDED_DIRS`, nested child sub-project roots, and `linguist-generated` / `linguist-vendored` `.gitattributes` entries.
+* **Workspace, Sub-Project & Cached Git Root Discovery**: Locates the nearest governing specification root and sub-project `repo_root` (`find_repo_root`, `resolve_spec_and_repo_roots`) across nested subdirectories, evaluates `.agents` exclusions strictly relative to `repo_root` (never breaking checkouts cloned under `~/.agents/...`), resolves the enclosing `.git` worktree root (`find_git_root`), and caches `.gitignore`-pruned child sub-project boundaries (`discover_nested_subproject_roots`).
+* **Brace-Glob Path Ownership & Specificity**: Expands `{a,b}` brace alternations in `_glob_to_anchored_regex` (`expand_brace_globs`) and scores literal directory-prefix specificity ahead of wildcards (`match_path_pattern`, `extract_entity_paths`) so `CMP-INCREMENTAL-SYNC-ENGINE` and `CMP-DRIFT-DETECTOR` bind source files deterministically to their most specific `CMP-*` or `CNT-*` owner.
+* **Git-Tracked Preservation & Test File Filtering**: Preserves explicitly Git-tracked files returned by `git ls-files` even when an internal directory segment matches `STANDARD_EXCLUDED_DIRS` (`target`, `build`, `site`, `out`, `dist`, `vendor`), while excluding untracked `STANDARD_EXCLUDED_DIRS`, nested child sub-project roots, and `linguist-generated` / `linguist-vendored` `.gitattributes` entries.
 
 == Public Surface
 * `find_git_root(start_dir: Path | None = None) -> Path | None`, `find_repo_root(start_dir: Path | None = None) -> Path`
 * `resolve_spec_and_repo_roots(root_dir: Path, doc_path: Path | None = None) -> tuple[Path, Path]`, `discover_nested_subproject_roots(repo_root: Path) -> list[Path]`
-* `load_project(root_dir: Path) -> EidosProject`
+* `load_project(start_dir: Path | None = None, eidos_dir: Path | None = None, repo_root: Path | None = None) -> ProjectConfig`
 * `match_path_pattern(rel_path: str, pattern: str) -> int`, `extract_entity_paths(frontmatter: dict) -> list[str]`
 * `is_polyglot_test_file(rel_path: str) -> bool`, `is_generated_or_vendored(repo_root: Path, rel_paths: Iterable[str]) -> set[str]`, `get_tracked_files(repo_root: Path) -> set[str]`
 

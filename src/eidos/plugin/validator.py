@@ -126,9 +126,18 @@ def validate_plugin_package(plugin_dir: Path, version: str | None = None) -> Plu
             if not isinstance(hooks_data, dict):
                 report.add_error("Invalid 'hooks.json': root must be a dictionary of hook configurations.")
             else:
-                valid_events = {"PreToolUse", "PostToolUse", "PreInvocation", "PostInvocation", "Stop", "enabled"}
+                valid_events = {
+                    "SessionStart",
+                    "UserPromptSubmit",
+                    "PreToolUse",
+                    "PostToolUse",
+                    "PreInvocation",
+                    "PostInvocation",
+                    "Stop",
+                    "enabled",
+                }
                 hook_allowed_events = {
-                    "eidos-drift-gate": {"Stop"},
+                    "eidos-drift-gate": {"SessionStart", "UserPromptSubmit", "Stop"},
                 }
                 for hook_name, hook_spec in hooks_data.items():
                     if not isinstance(hook_spec, dict):
@@ -178,9 +187,13 @@ def _verify_hook_command(
     report: PluginValidationReport,
 ) -> None:
     cmd = handler.get("command")
-    if not cmd:
+    if not cmd or not isinstance(cmd, str):
         report.add_error(f"Hook '{hook_name}' event '{event_key}' handler missing required 'command' field.")
         return
+    if hook_name == "eidos-drift-gate" and not re.search(r"(?:^|\s)eidos\s+hook(?:\s|$)", cmd.strip()):
+        report.add_error(
+            f"Hook '{hook_name}' event '{event_key}' violates INV-HOOK-CLI-NATIVE: expected native 'eidos hook' command."
+        )
     tokens = cmd.split()
     for token in tokens:
         cleaned = token.lstrip("./")

@@ -24,12 +24,13 @@ decisions:
 Extracts rank-ordered, token-budgeted architectural subgraph slices (`ArchitecturalContextSlice`) across `anchor` (`<=300` tokens), `guardrails` (`<=1000` tokens), and `deep` (`<=2500` tokens) tiers in both Markdown and `orjson` JSON formats for AI coding agents.
 
 == Key Responsibilities & Collaborators
-* **Multi-Entry & Glob Context Slicing (`DEC-CONTEXT-GLOB-AND-GUARDRAIL-RETENTION`)**: Resolves context queries by file path, comma-separated file list, or quoted glob pattern (`--file`, expanding `*`, `?`, `[` across existing workspace files and planned paths under existing directories or `fnmatch`-matched `symbol_mappings` prefixes), entity ID (`--component`), or natural-language task (`--task`) using `CMP-FTS-QUERY-ENGINE` and `CMP-GRAPH-TRAVERSAL-ENGINE`, expanding matched containers, standalone components, capabilities, contracts, invariants, policies, personas, and design entities (`CLT-*`, `UIC-*`, `SCR-*`, `FLOW-*`), and projecting compact `domain_path`, bound `design` (`CLT-*`/`DS-*`) pointers, capability `file_path`/`personas`/`policies`/`experience`, and policy `category`/`file_path` in `guardrails` and `deep` tiers.
+* **Multi-Entry & Brace-Glob Context Resolution (`DEC-CONTEXT-GLOB-AND-GUARDRAIL-RETENTION`)**: Resolves context queries by file path, comma-separated file list, or quoted glob pattern (`--file`, expanding `*`, `?`, `[`, and `{a,b}` brace alternations via `expand_brace_globs` and `split_brace_aware_csv` across existing workspace files and planned paths under existing directories or `symbol_mappings` prefixes), entity ID (`--component`), or natural-language task (`--task`).
 * **Calibrated Token Budgeting & Guardrail-Preserving Compaction (`DEC-CONTEXT-GLOB-AND-GUARDRAIL-RETENTION`)**: Estimates tokens using structure-aware calibration (`~3.0` chars/token for code/YAML/JSON vs. `~4.0` chars/token for prose), ranks capability `INV-*` guardrails by lexical overlap with queried file/component tokens, and applies progressive Stage 1a prose compression (`_compact_prose` followed by `_compact_primary_decisions` tail `DEC-*` compaction, deferring `_compact_metadata` to Stage 3) *before* evicting 1-hop capability `INV-*` or `POL-*` guardrails while retaining compact primary `DEC-*` summaries.
 
 == Public Surface
 * `ArchitecturalContextSlice`, `TieredContextSlice`
 * `build_tiered_context_slice(index: ArchitecturalIndex, files: list[str] | str | None = None, component: str | None = None, task: str | None = None, tier: str = "guardrails", use_semantic: bool = True) -> TieredContextSlice`
+* `expand_brace_globs(pattern: str) -> list[str]`, `split_brace_aware_csv(raw: str) -> list[str]`
 * `get_context_slice(...) -> ArchitecturalContextSlice`
 * `collect_component_decisions(comp: dict) -> list[dict]`, `format_decisions_markdown(...) -> list[str]`
 

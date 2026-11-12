@@ -38,6 +38,7 @@ class BlockStatus(enum.StrEnum):
     CREATED = "created"
     APPENDED = "appended"
     UPDATED = "updated"
+    REMOVED = "removed"
     UNCHANGED = "unchanged"
     MODIFIED = "modified"
     OPTED_OUT = "opted_out"
@@ -47,7 +48,13 @@ class BlockStatus(enum.StrEnum):
     @property
     def written(self) -> bool:
         """Return True when the file content reflects the latest rendered block."""
-        return self in (BlockStatus.CREATED, BlockStatus.APPENDED, BlockStatus.UPDATED, BlockStatus.UNCHANGED)
+        return self in (
+            BlockStatus.CREATED,
+            BlockStatus.APPENDED,
+            BlockStatus.UPDATED,
+            BlockStatus.REMOVED,
+            BlockStatus.UNCHANGED,
+        )
 
 
 @dataclass
@@ -180,6 +187,20 @@ def read_managed_block(path: Path, name: str) -> ParsedBlock | None:
     return find_managed_block(raw.decode("utf-8"), name)
 
 
+def is_managed_block_opted_out(path: Path, name: str) -> bool:
+    """Return True if `path` contains an active `<!-- eidos:<name> off -->` opt-out marker outside fenced blocks."""
+    if not path.is_file():
+        return False
+    try:
+        raw = path.read_bytes()
+        if raw.startswith(_UTF8_BOM):
+            raw = raw[len(_UTF8_BOM) :]
+        text = raw.decode("utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+    return bool(_opt_out_re(name).search(_mask_fenced_code_blocks(text)))
+
+
 def render_managed_block(name: str, inner: str, targets: Mapping[str, str] | None = None) -> str:
     """Render a complete managed block (begin marker, inner content, end marker) without a trailing newline."""
     if not inner.endswith("\n"):
@@ -294,3 +315,93 @@ def upsert_managed_block(
 
     _atomic_write(path, (_UTF8_BOM if has_bom else b"") + new_text.encode("utf-8"))
     return BlockResult(status, path, targets=targets)
+
+
+def remove_managed_block(
+    path: Path,
+    name: str,
+    *,
+    content: str | Callable[[Mapping[str, str]], str] | None = None,
+    remove_target: str | None = None,
+    keep_target: Callable[[str, str], bool] | None = None,
+    unlink_if_empty: bool = True,
+    force: bool = False,
+    root: Path | None = None,
+) -> BlockResult:
+    """Prune target(s) from a managed block or remove the block completely (unlinking `path` if empty)."""
+    if not _NAME_RE.match(name):
+        raise ValueError(f"Invalid managed block name: {name!r}")
+    _refuse_symlink(path, root)
+    if not path.is_file():
+        return BlockResult(BlockStatus.UNCHANGED, path)
+
+    raw = path.read_bytes()
+    has_bom = raw.startswith(_UTF8_BOM)
+    if has_bom:
+        raw = raw[len(_UTF8_BOM) :]
+    text = raw.decode("utf-8")
+    newline = "\r\n" if "\r\n" in text else "\n"
+
+    if _opt_out_re(name).search(_mask_fenced_code_blocks(text)):
+        return BlockResult(BlockStatus.OPTED_OUT, path, detail=f"opt-out marker <!-- eidos:{name} off --> present")
+
+    try:
+        block = find_managed_block(text, name)
+    except ValueError as exc:
+        return BlockResult(BlockStatus.MALFORMED, path, detail=str(exc))
+
+    if block is None:
+        return BlockResult(BlockStatus.UNCHANGED, path)
+
+    if remove_target is not None or keep_target is not None:
+        targets = {
+            t: d
+            for t, d in block.targets.items()
+            if (remove_target is None or t != remove_target) and (keep_target is None or keep_target(t, d))
+        }
+        targets = dict(sorted(targets.items()))
+        if targets and content is not None:
+            hand_edited = block.sha is None or block.sha != content_hash(block.inner)
+            if hand_edited and not force:
+                return BlockResult(
+                    BlockStatus.MODIFIED,
+                    path,
+                    targets=dict(block.targets),
+                    detail="block content was edited by hand; re-run 'eidos plugin install <target> --force' to overwrite",
+                )
+            inner = content(targets) if callable(content) else content
+            rendered = render_managed_block(name, inner.replace("\r\n", "\n"), targets).replace("\n", newline)
+            if text[block.start : block.end] == rendered:
+                return BlockResult(BlockStatus.UNCHANGED, path, targets=targets)
+            new_text = text[: block.start] + rendered + text[block.end :]
+            _atomic_write(path, (_UTF8_BOM if has_bom else b"") + new_text.encode("utf-8"))
+            return BlockResult(BlockStatus.UPDATED, path, targets=targets)
+
+    before = text[: block.start]
+    after = text[block.end :]
+    if after.startswith("\r\n"):
+        after = after[2:]
+    elif after.startswith("\n"):
+        after = after[1:]
+
+    if not before.strip() and not after.strip():
+        if unlink_if_empty:
+            with contextlib.suppress(OSError):
+                path.unlink()
+            return BlockResult(BlockStatus.REMOVED, path, targets={})
+        new_text = ""
+    elif not after:
+        if before.endswith(newline + newline):
+            before = before[: -len(newline)]
+        new_text = before
+    elif not before:
+        if after.startswith(newline):
+            after = after[len(newline) :]
+        new_text = after
+    else:
+        if before.endswith(newline + newline) and after.startswith(newline):
+            after = after[len(newline) :]
+        new_text = before + after
+
+    _atomic_write(path, (_UTF8_BOM if has_bom else b"") + new_text.encode("utf-8"))
+    return BlockResult(BlockStatus.REMOVED, path, targets={})

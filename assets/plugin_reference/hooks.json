@@ -1,5 +1,12 @@
 {
   "eidos-drift-gate": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "eidos hook",
+        "timeout": 10
+      }
+    ],
     "Stop": [
       {
         "type": "command",

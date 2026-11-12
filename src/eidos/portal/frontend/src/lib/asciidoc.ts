@@ -37,8 +37,8 @@ export function slugify(text: string): string {
 }
 
 const ASCIIDOC_ATTRIBUTES = {
-  // Heading ids mirror the portal slug convention (`problem-statement`, not `_problem_statement`).
-  idprefix: "",
+  // Prefix heading ids with `spec-` so author headings can never clobber portal shell DOM ids.
+  idprefix: "spec-",
   idseparator: "-",
   // The reader renders its own sticky "On This Page" outline.
   "toc!": "",
@@ -52,8 +52,8 @@ const ASCIIDOC_ATTRIBUTES = {
 const SANITIZE_CONFIG = {
   FORBID_TAGS: ["style", "link", "meta", "iframe", "frame", "frameset", "object", "embed", "form", "input", "button", "svg", "math", "base"],
   FORBID_ATTR: ["style", "srcset"],
-  // Section ids such as `title` or `location` must survive; heading anchors are part of the contract.
-  SANITIZE_DOM: false,
+  // Prevent DOM clobbering of window/document globals via passthrough markup while `spec-` preserves heading ids.
+  SANITIZE_DOM: true,
 };
 
 function textOf(html: string): string {
@@ -87,7 +87,10 @@ function decorate(root: HTMLElement): void {
   // Document title + section headings: scroll margin and copyable anchor links.
   root.querySelectorAll<HTMLElement>("h1, h2, h3, h4").forEach((h) => {
     h.classList.add("spec-heading");
-    if (!h.id && h.tagName === "H1") h.id = slugify(h.textContent || "");
+    if (!h.id && h.tagName === "H1") {
+      const slug = slugify(h.textContent || "");
+      h.id = slug ? `spec-${slug}` : "spec-document-title";
+    }
     if (h.id && (h.tagName === "H2" || h.tagName === "H3")) {
       const a = document.createElement("a");
       a.className = "heading-anchor-link";
@@ -128,8 +131,8 @@ function decorate(root: HTMLElement): void {
   });
 
   // Links: in-portal spec navigation, in-page anchors, external hardening.
-  const ids = new Set<string>();
-  root.querySelectorAll<HTMLElement>("[id]").forEach((el) => ids.add(el.id));
+  const elById = new Map<string, HTMLElement>();
+  root.querySelectorAll<HTMLElement>("[id]").forEach((el) => elById.set(el.id, el));
 
   root.querySelectorAll<HTMLAnchorElement>("a[href]").forEach((a) => {
     if (a.classList.contains("heading-anchor-link")) return;
@@ -137,7 +140,18 @@ function decorate(root: HTMLElement): void {
 
     if (href.startsWith("#")) {
       const frag = decodeURIComponent(href.slice(1));
-      if (ids.has(frag)) return; // in-page anchor
+      if (elById.has(frag)) return; // in-page anchor
+      const prefixedFrag = `spec-${frag}`;
+      const prefixedEl = elById.get(prefixedFrag);
+      if (prefixedEl) {
+        a.setAttribute("href", `#${encodeURIComponent(prefixedFrag)}`);
+        const text = a.textContent || "";
+        if (text === `[${frag}]`) {
+          const cleanHeading = (prefixedEl.textContent || "").replace(/#$/, "").trim();
+          a.textContent = cleanHeading || frag;
+        }
+        return;
+      }
       if (looksLikeSpecId(frag)) {
         markSpecLink(a, frag);
         // Asciidoctor renders unresolved <<ID>> references as "[ID]".
@@ -152,7 +166,7 @@ function decorate(root: HTMLElement): void {
       return;
     }
 
-    if (/^https?:\/\//i.test(href)) {
+    if (/^(?:https?:)?\/\//i.test(href)) {
       a.target = "_blank";
       a.rel = "noopener noreferrer";
       a.classList.add("adoc-external-link");

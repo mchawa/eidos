@@ -43,8 +43,71 @@ _GLOB_EXCLUDED_DIRS = frozenset(
 )
 
 
+def split_brace_aware_csv(raw: str) -> list[str]:
+    """Split comma-separated file patterns only on commas outside balanced ``{a,b}`` brace groups."""
+    if not raw:
+        return []
+    parts: list[str] = []
+    buf: list[str] = []
+    depth = 0
+    for idx, ch in enumerate(raw):
+        if ch == "{":
+            if "}" in raw[idx + 1 :]:
+                depth += 1
+            buf.append(ch)
+        elif ch == "}" and depth > 0:
+            depth -= 1
+            buf.append(ch)
+        elif ch == "," and depth == 0:
+            item = "".join(buf).strip()
+            if item:
+                parts.append(item)
+            buf.clear()
+        else:
+            buf.append(ch)
+    tail = "".join(buf).strip()
+    if tail:
+        parts.append(tail)
+    return parts
+
+
+def expand_brace_globs(pattern: str) -> list[str]:
+    """Deterministically expand balanced ``{a,b}`` brace groups containing commas."""
+    if "{" not in pattern or "}" not in pattern:
+        return [pattern]
+    depth = 0
+    start_idx = -1
+    options: list[str] = []
+    opt_start = 0
+    for idx, ch in enumerate(pattern):
+        if ch == "{":
+            if depth == 0:
+                start_idx = idx
+                opt_start = idx + 1
+                options = []
+            depth += 1
+        elif ch == "}" and depth > 0:
+            depth -= 1
+            if depth == 0 and start_idx != -1:
+                options.append(pattern[opt_start:idx])
+                if len(options) >= 2:
+                    prefix = pattern[:start_idx]
+                    suffix = pattern[idx + 1 :]
+                    expanded: list[str] = []
+                    for opt in options:
+                        for sub in expand_brace_globs(f"{prefix}{opt}{suffix}"):
+                            if sub not in expanded:
+                                expanded.append(sub)
+                    return expanded
+                start_idx = -1
+        elif ch == "," and depth == 1:
+            options.append(pattern[opt_start:idx])
+            opt_start = idx + 1
+    return [pattern]
+
+
 def _has_glob_magic(path_str: str) -> bool:
-    return any(ch in path_str for ch in "*?[")
+    return any(ch in path_str for ch in "*?[") or len(expand_brace_globs(path_str)) > 1
 
 
 def _concretize_glob_segment(seg: str) -> str:
@@ -57,9 +120,35 @@ def _concretize_glob_segment(seg: str) -> str:
 
 def _expand_context_file_pattern(root: Path, conn: Any, pattern: str) -> list[str]:
     """Deterministically expand a repo-relative glob pattern across existing files and planned governed paths."""
+    brace_variants = expand_brace_globs(pattern)
+    if len(brace_variants) > 1:
+        resolved_root = root.resolve()
+        existing_union: list[str] = []
+        for variant in brace_variants:
+            for m in _expand_single_context_file_pattern(resolved_root, conn, variant, existing_only=True):
+                if m not in existing_union:
+                    existing_union.append(m)
+        if existing_union:
+            return sorted(existing_union)
+        planned_union: list[str] = []
+        for variant in brace_variants:
+            for m in _expand_single_context_file_pattern(resolved_root, conn, variant, existing_only=False):
+                if m not in planned_union:
+                    planned_union.append(m)
+        return sorted(planned_union)
+    return _expand_single_context_file_pattern(root.resolve(), conn, pattern, existing_only=False)
+
+
+def _expand_single_context_file_pattern(
+    resolved_root: Path,
+    conn: Any,
+    pattern: str,
+    *,
+    existing_only: bool = False,
+) -> list[str]:
+    """Expand a single brace-free glob pattern against existing files or planned governed paths."""
     import posixpath
 
-    resolved_root = root.resolve()
     root_posix = resolved_root.as_posix().rstrip("/")
     root_prefix = f"{root_posix}/"
     raw_pat = pattern.strip().replace("\\", "/")
@@ -102,7 +191,7 @@ def _expand_context_file_pattern(root: Path, conn: Any, pattern: str) -> list[st
     except (OSError, ValueError, NotImplementedError):
         existing_matches = []
 
-    if existing_matches:
+    if existing_matches or existing_only:
         return sorted(dict.fromkeys(existing_matches))
 
     # Fallback for planned not-yet-created files in proposed SpecDeltas:
@@ -326,6 +415,7 @@ class ArchitecturalContextSlice:
         compact_decisions = bool(getattr(self, "_compact_decisions", False))
         compact_primary_decisions = bool(getattr(self, "_compact_primary_decisions", False))
         compact_metadata = bool(getattr(self, "_compact_metadata", False))
+        drop_anchor_decisions = bool(getattr(self, "_drop_anchor_decisions", False))
         lines = [
             f"# 🧭 Eidos Architectural Context Slice ({self.tier.upper()} Tier)",
             "",
@@ -427,7 +517,7 @@ class ArchitecturalContextSlice:
                 and not (self.tier != "deep" and len(self.components) > 4)
             ):
                 decisions = collect_component_decisions(comp)
-                if decisions and not (self.tier == "anchor" and compact_decisions and len(decisions) > 6):
+                if decisions and not (self.tier == "anchor" and drop_anchor_decisions):
                     heavy_primary_guardrails = (
                         self.tier == "guardrails"
                         and compact_primary_decisions
@@ -439,7 +529,12 @@ class ArchitecturalContextSlice:
                         or (compact_prose and idx_comp > 0)
                         or compact_decisions
                     )
-                    compact_tail = compact_primary_decisions and idx_comp == 0 and not compact_decs
+                    compact_tail = (
+                        compact_primary_decisions
+                        and idx_comp == 0
+                        and not compact_decs
+                        and (self.tier != "deep" or len(decisions) > 3)
+                    )
                     if self.tier == "anchor" and compact_decisions:
                         max_dec_items: int | None = 1
                     elif self.tier == "guardrails" and compact_prose and idx_comp > 0:
@@ -592,6 +687,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
     _compact_primary_decisions: bool = False
     _compact_prose: bool = False
     _compact_metadata: bool = False
+    _drop_anchor_decisions: bool = False
 
     @staticmethod
     def _clip(text: str, limit: int) -> str:
@@ -730,7 +826,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
         is_secondary = self._is_secondary_dependency(cid)
         if self.tier == "anchor":
             base_keys: tuple[str, ...] = ("type", "container_type", "runtime", "source_path", "domain", "container")
-        elif is_secondary and self._compact_prose and len(self.components) > 4:
+        elif is_secondary and (self._compact_prose or len(self.components) > 4):
             base_keys = ("type", "source_path", "domain", "container", "file_path")
         else:
             base_keys = (
@@ -753,8 +849,13 @@ class TieredContextSlice(ArchitecturalContextSlice):
                     out["domain_path"] = comp["domain_path"]
                 if comp.get("design") and not (self._compact_prose and index_in_slice > 0):
                     out["design"] = comp["design"]
-            if comp.get("contracts"):
-                out["contracts"] = comp["contracts"]
+            raw_contracts = comp.get("contracts")
+            if isinstance(raw_contracts, dict):
+                clean_contracts = {k: v for k, v in raw_contracts.items() if v}
+                if clean_contracts:
+                    out["contracts"] = clean_contracts
+            elif raw_contracts:
+                out["contracts"] = raw_contracts
             if comp.get("invariants"):
                 out["invariants"] = [
                     {
@@ -775,13 +876,18 @@ class TieredContextSlice(ArchitecturalContextSlice):
             and not (self.tier != "deep" and len(self.components) > 4)
         ):
             decisions = collect_component_decisions(comp)
-            if decisions and not (self.tier == "anchor" and self._compact_decisions and len(decisions) > 6):
+            if decisions and not (self.tier == "anchor" and self._drop_anchor_decisions):
                 compact_decs = (
                     (self.tier == "guardrails" and index_in_slice > 0)
                     or (self._compact_prose and index_in_slice > 0)
                     or self._compact_decisions
                 )
-                compact_tail = self._compact_primary_decisions and index_in_slice == 0 and not compact_decs
+                compact_tail = (
+                    self._compact_primary_decisions
+                    and index_in_slice == 0
+                    and not compact_decs
+                    and (self.tier != "deep" or len(decisions) > 3)
+                )
                 out["decisions"] = self._project_decisions(
                     decisions,
                     compact=compact_decs,
@@ -950,6 +1056,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
             self._compact_primary_decisions,
             self._compact_prose,
             self._compact_metadata,
+            self._drop_anchor_decisions,
             len(self.components),
             len(self.contracts),
             len(self.capabilities),
@@ -1114,6 +1221,9 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 self._pop_item(self.contracts)
             if self._exceeds_budget(budget) and not self._compact_decisions:
                 self._compact_decisions = True
+                self._invalidate_budget_cache()
+            if self._exceeds_budget(budget) and not self._drop_anchor_decisions:
+                self._drop_anchor_decisions = True
                 self._invalidate_budget_cache()
             self._prune_matched_reasons()
             self._invalidate_budget_cache()
@@ -1471,7 +1581,7 @@ def build_tiered_context_slice(
     for f in raw_files:
         if not f:
             continue
-        for sub in str(f).split(","):
+        for sub in split_brace_aware_csv(str(f)):
             sub_clean = sub.strip()
             if not sub_clean:
                 continue

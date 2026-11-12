@@ -66,13 +66,27 @@ class _StructuralAddition:
     removed_symbol_names: list[str] | None = None
 
 
+_OVERLOAD_SUFFIX_RE = re.compile(r"(?<=[A-Za-z0-9_$])[#(\[:].*$")
+
+
+def _clean_symbol_name(diff: Any, key: tuple[Any, ...]) -> str:
+    """Resolve a human-readable qualified symbol name from a symbol-map key, stripping any overload disambiguator."""
+    try:
+        raw_name = str(diff.qualified_name(key))
+    except (AttributeError, TypeError, ValueError, IndexError):
+        parent = str(key[1]) if len(key) >= 3 and key[1] else ""
+        base = str(key[2]) if len(key) >= 3 else str(key[-1])
+        raw_name = f"{parent}.{base}" if parent else base
+    return _OVERLOAD_SUFFIX_RE.sub("", raw_name).strip()
+
+
 class _SymbolMapCache:
     """Parses each (file, side) version at most once per drift run."""
 
     def __init__(self, versions: dict[str, tuple[str | None, str | None]]) -> None:
         self._versions = versions
-        self._maps: dict[tuple[str, int], dict[tuple[str, str, str], str]] = {}
-        self._boundary_maps: dict[tuple[str, int], dict[tuple[str, str, str], str]] = {}
+        self._maps: dict[tuple[str, int], dict[tuple[Any, ...], str]] = {}
+        self._boundary_maps: dict[tuple[str, int], dict[tuple[Any, ...], str]] = {}
 
     @staticmethod
     def supports(cf: str) -> bool:
@@ -83,7 +97,7 @@ class _SymbolMapCache:
     def versions_of(self, cf: str) -> tuple[str | None, str | None]:
         return self._versions.get(cf, (None, None))
 
-    def get(self, cf: str, side: int) -> dict[tuple[str, str, str], str]:
+    def get(self, cf: str, side: int) -> dict[tuple[Any, ...], str]:
         """Public symbol map of ``cf`` at ``side`` (0 = old, 1 = new)."""
         from eidos.core.index.ast_indexer import public_symbol_map
 
@@ -92,7 +106,7 @@ class _SymbolMapCache:
             self._maps[key] = public_symbol_map(self.versions_of(cf)[side], cf)
         return self._maps[key]
 
-    def get_boundary(self, cf: str, side: int) -> dict[tuple[str, str, str], str]:
+    def get_boundary(self, cf: str, side: int) -> dict[tuple[Any, ...], str]:
         """Boundary-exported symbol map of ``cf`` at ``side`` (0 = old, 1 = new)."""
         from eidos.core.index.ast_indexer import boundary_symbol_map
 
@@ -168,9 +182,11 @@ def _structural_addition_for(
         return _StructuralAddition(
             file=cf,
             reasons=[f"added file '{cf}'"],
-            symbol_names=[diff.qualified_name(k) for k in diff.added],
+            symbol_names=list(dict.fromkeys(_clean_symbol_name(diff, k) for k in diff.added)),
             is_new_file=True,
-            boundary_symbol_names=[diff.qualified_name(k) for k in getattr(diff, "boundary_added", diff.added)],
+            boundary_symbol_names=list(
+                dict.fromkeys(_clean_symbol_name(diff, k) for k in getattr(diff, "boundary_added", diff.added))
+            ),
             removed_symbol_names=[],
         )
     diff = smap.diff(cf, old_from=moved_from) if moved_from else (symbol_diff or smap.diff(cf))
@@ -179,21 +195,27 @@ def _structural_addition_for(
     for other_cf in smap._versions:
         if (other_cf == cf or Path(other_cf).parent == cf_parent) and smap.supports(other_cf):
             for k in smap.get(other_cf, 1):
-                still_present.add(diff.qualified_name(k))
-    removed_keys = [k for k in getattr(diff, "removed", ()) if diff.qualified_name(k) not in still_present]
-    removed_names = [diff.qualified_name(k) for k in removed_keys]
+                still_present.add(_clean_symbol_name(diff, k))
+    removed_keys = [k for k in getattr(diff, "removed", ()) if _clean_symbol_name(diff, k) not in still_present]
+    removed_names = list(dict.fromkeys(_clean_symbol_name(diff, k) for k in removed_keys))
     if not diff.added and not removed_names:
         return None
-    reasons = [
-        *[f"added {k[0]} '{diff.qualified_name(k)}'" for k in diff.added],
-        *[f"removed {k[0]} '{diff.qualified_name(k)}'" for k in removed_keys],
-    ]
+    reasons = list(
+        dict.fromkeys(
+            [
+                *[f"added {k[0]} '{_clean_symbol_name(diff, k)}'" for k in diff.added],
+                *[f"removed {k[0]} '{_clean_symbol_name(diff, k)}'" for k in removed_keys],
+            ]
+        )
+    )
     return _StructuralAddition(
         file=cf,
         reasons=reasons,
-        symbol_names=[diff.qualified_name(k) for k in diff.added],
+        symbol_names=list(dict.fromkeys(_clean_symbol_name(diff, k) for k in diff.added)),
         is_new_file=False,
-        boundary_symbol_names=[diff.qualified_name(k) for k in getattr(diff, "boundary_added", diff.added)],
+        boundary_symbol_names=list(
+            dict.fromkeys(_clean_symbol_name(diff, k) for k in getattr(diff, "boundary_added", diff.added))
+        ),
         removed_symbol_names=removed_names,
     )
 

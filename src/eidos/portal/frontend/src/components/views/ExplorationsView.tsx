@@ -21,6 +21,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
 import { AsciiDocRenderer } from "@/components/ui/AsciiDocRenderer";
+import { hasSpecBodyOrChunk } from "@/lib/specChunks";
 import { cn } from "@/lib/utils";
 import type { PortalData, SpecExploration } from "@/types";
 
@@ -320,6 +321,12 @@ export function ExplorationsView({
           {filteredExplorations.map((exp) => {
             const deltas = getExplorationDeltas(exp);
             const findings = getExplorationFindings(exp);
+            const recommendation = getExplorationRecommendation(exp);
+            const exitCriteriaCount = Array.isArray(exp.exit_criteria)
+              ? exp.exit_criteria.length
+              : exp.exit_criteria
+              ? Object.keys(exp.exit_criteria).length
+              : 0;
             return (
               <Card
                 key={exp.id}
@@ -380,8 +387,17 @@ export function ExplorationsView({
                       "{findings}"
                     </p>
                   )}
+                  {recommendation && recommendation !== exp.status && recommendation !== findings && (
+                    <p className="text-xs text-muted-foreground line-clamp-1 leading-relaxed">
+                      <span className="font-semibold text-foreground">Recommendation: </span>
+                      {recommendation}
+                    </p>
+                  )}
 
-                  <div className="flex flex-wrap items-center justify-end gap-2 text-[11px] font-mono text-muted-foreground">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-muted-foreground">
+                    <span>
+                      {exitCriteriaCount > 0 ? `${exitCriteriaCount} exit criteria` : ""}
+                    </span>
                     <span className="flex items-center gap-1 text-primary font-sans font-medium group-hover:translate-x-0.5 transition-transform text-xs">
                       Inspect Investigation <ArrowRight className="h-3.5 w-3.5" />
                     </span>
@@ -496,7 +512,12 @@ export function ExplorationsView({
               )}
 
               {/* Exit Criteria */}
-              {selectedExp.exit_criteria && (
+              {(Array.isArray(selectedExp.exit_criteria)
+                ? selectedExp.exit_criteria.length > 0
+                : Boolean(
+                    selectedExp.exit_criteria &&
+                      Object.keys(selectedExp.exit_criteria).length > 0
+                  )) && (
                 <div className="space-y-2">
                   <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                     <Gauge className="h-4 w-4 text-indigo-400" />
@@ -512,39 +533,35 @@ export function ExplorationsView({
                     </div>
                   ) : (
                     <div className="p-3.5 rounded-2xl bg-muted/20 border border-border/60 text-xs grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {selectedExp.exit_criteria.max_duration && (
-                        <div className="space-y-0.5">
+                      {Object.entries(selectedExp.exit_criteria || {}).map(([key, val]) => (
+                        <div
+                          key={key}
+                          className={cn(
+                            "space-y-0.5",
+                            key === "benchmark" && "sm:col-span-2"
+                          )}
+                        >
                           <span className="text-[10px] font-semibold text-muted-foreground uppercase">
-                            Max Duration
-                          </span>
-                          <p className="font-mono font-bold text-foreground">
-                            {selectedExp.exit_criteria.max_duration}
-                          </p>
-                        </div>
-                      )}
-                      {selectedExp.exit_criteria.benchmark && (
-                        <div className="space-y-0.5 sm:col-span-2">
-                          <span className="text-[10px] font-semibold text-muted-foreground uppercase">
-                            Validation Benchmark
+                            {key.replace(/_/g, " ")}
                           </span>
                           <p className="font-mono text-xs text-foreground bg-muted/40 p-2 rounded-xl">
-                            {selectedExp.exit_criteria.benchmark}
+                            {typeof val === "object" ? JSON.stringify(val) : String(val)}
                           </p>
                         </div>
-                      )}
+                      ))}
                     </div>
                   )}
                 </div>
               )}
 
               {/* Full Living Specification Document */}
-              {selectedExp.body && (
+              {hasSpecBodyOrChunk(selectedExp.id, selectedExp.body) && (
                 <div className="space-y-2 pt-2 border-t border-border/60">
                   <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                     <BookOpen className="h-3.5 w-3.5 text-purple-400" />
                     Living Specification Document (`EXP-*`)
                   </h4>
-                  <AsciiDocRenderer content={selectedExp.body} />
+                  <AsciiDocRenderer specId={selectedExp.id} content={selectedExp.body || ""} />
                 </div>
               )}
             </div>

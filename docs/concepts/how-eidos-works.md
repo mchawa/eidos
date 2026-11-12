@@ -23,7 +23,7 @@ sequenceDiagram
     Dev->>CLI: 1. eidos context -f src/... (or -t "task prompt")
     CLI->>Index: Lazy dirty check (mtime_ns + SHA-256 in <5ms)
     Index->>Git: Incrementally re-index modified specs, AST symbols & tests
-    Index-->>CLI: Rank-ordered, token-budgeted slice (anchor / guardrails / deep)
+    Index-->>CLI: Sub-millisecond rank-ordered context slice (anchor / guardrails / deep)
     CLI-->>Dev: Owning CNT-*/CMP-*, contracts (CTR-*), capabilities (CAP-*), invariants (INV-*), decisions (DEC-*)
 
     Note over Dev,Git: 2. Select Workflow Mode: Direct Mode (localized) vs. Planned Mode (SpecDelta DLT-*)
@@ -36,7 +36,7 @@ sequenceDiagram
 ```
 
 ### Why This Loop Eliminates Architectural Drift
-1. **Before Writing Code (Context Slicing)**: Instead of stuffing thousands of lines of raw markdown into an LLM context window, `eidos context` queries the embedded SQLite knowledge graph (`eidos/.cache/index.db`) and extracts only the exact containers, components, contracts, active invariants, and historical design decisions (`DEC-*`) governing the target files or task.
+1. **Before Writing Code (Token-Budgeted Context Slicing)**: Instead of stuffing thousands of lines of raw markdown into an LLM context window, `eidos context` queries the embedded SQLite knowledge graph (`eidos/.cache/index.db`) in `<5ms` and extracts the exact containers, components, contracts, capabilities, active invariants, and embedded `DEC-*` architectural decisions governing the target files or task.
 2. **During Implementation (Dual Workflow Co-Evolution)**:
     * **Direct Mode**: For bug fixes and single-container refactors, engineers and agents update code, tests, and the owning `.adoc` specification in the same commit.
     * **Planned Mode**: For cross-container features, new containers, or breaking contract changes, changes are declared upfront in a **SpecDelta (`DLT-*`)** with verifiable `mutations:` and `expect:` post-conditions.
@@ -129,10 +129,10 @@ The index engine is decomposed into 6 focused modules under `src/eidos/core/inde
 
 | Module | Component ID | Responsibility |
 | :--- | :--- | :--- |
-| `storage.py` | `CMP-GRAPH-STORAGE` | Canonical authority for `SCHEMA_VERSION` (`2.18.0`), DDL initialization, WAL pragmas, stateless drop-and-rebuild migration on version mismatch (preserving `spec_embeddings` across `sync --force`), corruption recovery, and unified `orjson`-backed `SpecDocument` / test-binding cache helpers. |
+| `storage.py` | `CMP-GRAPH-STORAGE` | Canonical authority for `SCHEMA_VERSION` (`2.19.0`), DDL initialization, WAL pragmas, stateless drop-and-rebuild migration on version mismatch (preserving `spec_embeddings` across `sync --force`), corruption recovery, and unified `orjson`-backed `SpecDocument` / test-binding cache helpers. |
 | `sync.py` | `CMP-INCREMENTAL-SYNC-ENGINE` | Two-tier `mtime_ns` + `SHA-256` dirty detection across `_GOVERNED_TEXT_EXTS`, path-keyed entity eviction on ID rename, canonical unidirectional edge reconstruction (including C4 Level 1 `ARCH-*`/`SYS-*`, exploration `graduated_to`, and AST-derived `consumes_api`/`depends_on` edges), `file_tokens_fts` inverted token indexing, AST symbol FTS projection, and source ownership reconciliation. |
 | `query.py` | `CMP-FTS-QUERY-ENGINE` & `CMP-GRAPH-TRAVERSAL-ENGINE` | Two-tier (`AND` conjunction before `OR` fallback) positional column-weighted FTS5 BM25 search with deterministic architectural synonym expansion and opt-in Hybrid RRF fusion, identifier de-compounding, symbol lookup via unified `all_mappings` CTE, indexed catalog reconstruction (`query_spec_catalog_in_db`), and hub-scoped recursive CTE `k`-hop blast-radius (`resolve_blast_radius_targets`) and SpecDelta impact (`compute_delta_impact_in_db`) traversal. |
-| `context.py` | `CMP-TIERED-CONTEXT-COMPRESSOR` | Rank-ordered, token-budgeted context slicing across `anchor` (`<=300` tokens), `guardrails` (`<=1000` tokens), and `deep` (`<=2500` tokens) tiers with direct-container priority and YAML/code-calibrated token estimation. |
+| `context.py` | `CMP-TIERED-CONTEXT-COMPRESSOR` | Rank-ordered, token-budgeted context slicing across `anchor` (`<=300` tokens), `guardrails` (`<=1000` tokens), and `deep` (`<=2500` tokens) tiers, and `{a,b}` brace-glob matching. |
 | `semantic.py` | `CMP-SEMANTIC-EMBEDDING-ENGINE` | Opt-in local CPU ONNX embedding engine (`microsoft/harrier-oss-v1-0.6b` INT8 quantized ONNX, 1024-dim L2-normalized Float32 vectors using the `sts_query` prompt prefix), content-addressed `spec_embeddings` caching, and Gated Weighted Reciprocal Rank Fusion (`fuse_hybrid_rrf`). |
 | `ast_indexer.py` | `CMP-AST-SYMBOL-INDEXER` | Unified polyglot AST symbol, import, and test-binding extraction via `AstGrepIndexer` (`ast-grep-py` `SgRoot`) across all 17 supported languages (Python, TS, TSX, JS, JSX, Go, Rust, Java, Kotlin, C, C++, C#, Ruby, PHP, Swift, Vue, and Svelte). |
 
@@ -149,7 +149,7 @@ The SQLite database is a **100% stateless, derived cache (`DEC-INDEX-STATELESS-D
 8. **`spec_validation_cache`**: Content-addressed cache of parsed `SpecDocument` payloads and JSON Schema validation verdicts keyed by `mtime_ns`, file SHA-256, and schema SHA-256.
 9. **`test_binding_cache`**: Content-addressed cache of AST-extracted test functions (`func` and `Class::method`) and referenced `INV-*` / `POL-*` tokens per test file.
 10. **`spec_embeddings`**: Content-addressed cache of 1024-dim L2-normalized Float32 Harrier ONNX embeddings keyed by `entity_id`, `content_sha256` (computed strictly over specification text), and `model_id`.
-11. **`metadata`**: Canonical `SCHEMA_VERSION` (`2.18.0`) and cache lifecycle state.
+11. **`metadata`**: Canonical `SCHEMA_VERSION` (`2.19.0`) and cache lifecycle state.
 
 #### How Lazy Incremental Sync Works (`<5ms`)
 Before every CLI query (`eidos context`, `eidos index`, `eidos spec list`), `_ensure_synced()` runs `check_index_dirty()`:
@@ -207,8 +207,8 @@ flowchart LR
     * **Direct Mode** (no active `DLT-*` in diff): Verifies that for every touched container/component with structural changes, either its own `.adoc` specification or a specification within its **component-scoped 1-hop knowledge graph neighborhood** (`CAP-*`, `CTR-*`, `CNT-*`, `CMP-*`—explicitly excluding global `POL-*` and `PER-*` edges so editing one policy never rubber-stamps the whole repo) was substantively updated.
 7. **Specification Schema & Referential Integrity Gate (`validator.py`)**:
     * Runs the full 3-pass `SpecValidator` suite over `eidos/`. Before code changes can merge, Eidos guarantees that all specification documents conform to JSON schemas, cross-references resolve, declared container `source_path` and contract `specification_file` targets exist on disk, and contracts maintain bidirectional parity.
-8. **Polyglot Static Invariant Test Verification (`invariants.py`, `DLT-2026-078`)**:
-    * Scans every `INV-*` invariant across capabilities (`CAP-*`), policies (`POL-*`), containers (`CNT-*`), and standalone components (`CMP-*`).
+8. **Polyglot Static Invariant Test Verification (`invariants.py`, `DLT-2026-078`, `DLT-2026-134`)**:
+    * Scans every `INV-*` invariant across capabilities (`CAP-*`), policies (`POL-*`), containers (`CNT-*`), standalone components (`CMP-*`), and UI components (`UIC-*` under `eidos/design/`).
     * Uses Git-tracked file enumeration (`get_tracked_files`), `test_binding_cache`, and `ast-grep` across **Python (`.py`), TypeScript/JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`), Go (`_test.go`), Rust (`.rs`), Java (`.java`), and Kotlin (`.kt`, `.kts`)** to verify that:
         1. The file in `test_binding: path/to/test_file::test_func` (or `path/to/test_file::TestClass::test_method`) exists.
         2. The target test function or method is defined in the AST.
@@ -227,21 +227,21 @@ In **Planned Mode**, architectural changes are governed by **SpecDeltas (`eidos/
 * **Index-Driven Spec-Scoped Deletion Auditing (`eidos delta audit <ID>`, `DLT-2026-107`)**: When a SpecDelta removes or deprecates an entity, `AuditEngine` queries the synced `ArchitecturalIndex` (`file_tokens_fts` and `indexed_files`) in sub-millisecond time—with zero `git ls-files` subprocesses or full-repository `os.walk` scans—and classifies every occurrence across governed files by `doc_type`:
     * **Approved References**: Current or historical `DLT-*` / `EXP-*` records (`self_delta`, `historical_ledger` resolved in O(1) from `entities`), negative assertions or docstrings in `code/test`, cleanup routines, or matches for `tombstone.allowed_reasons` and inline `# eidos:tombstone` / `# eidos:allow-retired` annotations.
     * **Active Leaks**: Unacknowledged live references in active specifications (`active_spec_leak`, `critical`) or governed source/test files (`active_code_leak`, `high`; `--strict` exits with code `1`).
-* **Two-Tier `--keep-recent 15` Archive & Slimming Lifecycle (`eidos delta archive`, `DLT-2026-106`)**: To prevent top-level directory clutter, FTS5 search noise, and portal payload bloat as projects mature, `eidos delta archive [--keep-recent 15]` retains all active SpecDeltas/Explorations plus the 15 most recent terminal items (`applied`/`rejected` and `adopted`/`discarded`) in `eidos/deltas/` and `eidos/explorations/`, moving older terminal records into `eidos/deltas/archive/` and `eidos/explorations/archive/` as slimmed, schema-valid `.adoc` files (`~88%` byte reduction, stamping `vcs.applied_commit` and `vcs.release_tag`). `eidos delta changelog` combines Git release tags with applied and archived SpecDeltas to compile a Keep a Changelog compliant `CHANGELOG.md` and `docs/changelog.md`.
+* **Two-Tier `--keep-recent 15` Archive & Slimming Lifecycle (`eidos delta archive`, `DLT-2026-106`)**: To prevent top-level directory clutter, FTS5 search noise, and portal payload bloat as projects mature, `eidos delta archive [--keep-recent 15]` retains all active SpecDeltas/Explorations plus the 15 most recent terminal items (`applied`/`rejected` and `adopted`/`discarded`) in `eidos/deltas/` and `eidos/explorations/`, moving older terminal records into `eidos/deltas/archive/` and `eidos/explorations/archive/` as slimmed, schema-valid `.adoc` files (`~88%` byte reduction). `eidos delta changelog` combines Git release tags with applied and archived SpecDeltas to compile a Keep a Changelog compliant `CHANGELOG.md` and `docs/changelog.md`.
 
 ---
 
-### 3.5 Agent Harnesses, Agent Skills & Stateless Stop Hook (`CNT-EIDOS-PLUGIN`)
+### 3.5 Agent Harnesses, Agent Skills & Turn-Scoped Stop Hook (`CNT-EIDOS-PLUGIN`)
 
-Eidos integrates with AI coding assistants through a declarative `TargetAdapter` pipeline (`src/eidos/plugin/installer.py`) and a stateless CLI-native `Stop` lifecycle hook (`src/eidos/plugin/hooks.py`):
+Eidos integrates with AI coding assistants through a declarative `TargetAdapter` pipeline (`src/eidos/plugin/installer.py`) and a turn-scoped CLI-native `Stop` / `PreToolUse` lifecycle hook (`src/eidos/plugin/hooks.py`):
 
 1. **Manifest-Tracked Multi-Harness Skill Projection (`eidos plugin install <target> [--hooks]`)**:
-    * Projects **4 cohesive Discovery-First Agent Skills** (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops` from `assets/plugin_reference/skills/`) and the root `AGENTS.md` managed block across all 9 supported coding assistants: `.agents/skills/` for Antigravity, Cursor, GitHub Copilot, OpenAI Codex, Cline, Kilo Code, and OpenCode; `.claude/skills/` for Claude Code; and `.aider/skills/` (plus `.aider.conf.yml` `read:`) for Aider.
-    * When `--hooks` is passed on `eidos plugin install` (disabled by default, and preserved automatically on `eidos plugin update`), non-destructively wires each of the 6 hook-capable targets' native `Stop` / `TaskComplete` hook configuration (`.agents/hooks.json`, `.claude/settings.json`, `.cursor/hooks.json` with `loop_limit: 1`, `.clinerules/hooks/TaskComplete`, `.github/hooks/hooks.json`, and `.codex/hooks.json`).
-    * Records SHA-256 file digests and per-target hook intent (`hooks: true/false`) in `.eidos-manifest.json` so `eidos doctor` verifies hook health against installation intent and `eidos plugin update` / `eidos plugin uninstall` never clobber user-owned files or custom instructions.
-2. **Stateless 1-Turn `Stop` / `TaskComplete` Hook (`eidos hook`)**:
-    * When an AI agent finishes its turn (`Stop` / `TaskComplete` event), `eidos hook` runs `detect_drift(uncommitted=True)`—evaluating specification schemas, cross-reference integrity, invariant test bindings, and spec-to-code synchronization in a single pass.
-    * Emits each client's native 1-turn continuation payload (`decision: "continue"` in Antigravity, `followup_message` in Cursor, `cancel: true` with `contextModification`/`errorMessage` in Cline, and `decision: "block"` in Claude Code, GitHub Copilot, and OpenAI Codex) on the first stop when issues exist, or a clean allow response on retry using each client's built-in in-memory `stdin` retry counter (`executionNum`, `loop_count`, `hookName`, `stop_hook_active`)—requiring zero state files or per-edit subprocesses.
+    * Projects **4 cohesive Discovery-First Agent Skills** (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops` from `assets/plugin_reference/skills/`) and the root `AGENTS.md` managed block across all 9 supported coding assistants: `.agents/skills/` for Antigravity, Cursor, GitHub Copilot, OpenAI Codex, Cline, Kilo Code, and OpenCode; `.claude/skills/` for Claude Code; and `.aider/skills/` (plus comment-preserving `.aider.conf.yml` `read:`) for Aider.
+    * When `--hooks` is passed on `eidos plugin install` (disabled by default, and preserved automatically on `eidos plugin update`), non-destructively wires each of the 6 hook-capable targets' native `Stop` / `PreToolUse` hook configuration (`.agents/hooks.json`, `.claude/settings.json`, `.cursor/hooks.json` with `loop_limit: 1`, `.clinerules/hooks/PreToolUse` gating `attempt_completion`, `.github/hooks/hooks.json`, and `.codex/hooks.json`).
+    * Records SHA-256 file digests, `skipped_files` (reporting `"modified"` when non-force installs skip locally edited skills), and per-target hook intent (`hooks: true/false`) in `.eidos-manifest.json` so `eidos doctor` verifies hook and `AGENTS.md` health against installation intent.
+2. **Turn-Scoped 1-Turn `Stop` / `PreToolUse` Hook (`eidos hook`)**:
+    * Captures a lightweight session baseline in `eidos/.cache/hook_baselines/` on session start so read-only Q&A turns on pre-existing dirty worktrees return allow immediately when zero governed files changed during the session.
+    * When governed files changed (`Stop` or Cline `PreToolUse` on `attempt_completion`), `eidos hook` runs `detect_drift(uncommitted=True)` and emits each client's native 1-turn continuation payload on the first stop when issues exist, or a clean allow response on retry honoring both `stop_hook_active` and `stopHookActive`.
 
 ---
 
@@ -250,6 +250,6 @@ Eidos integrates with AI coding assistants through a declarative `TargetAdapter`
 The interactive Living Web Portal (`eidos portal serve` and `eidos portal build`) compiles all 16 specification types and the SQLite knowledge graph into a single-page visual architecture explorer:
 
 * **Zero Node.js Runtime Dependency (`INV-PORTAL-ZERO-NODE-DEP`)**: The frontend (React 19, Tailwind CSS v4, Material Design 3, Mermaid.js v11, and `@asciidoctor/core`) is pre-compiled at package build time into a deterministic gzip-compressed asset (`assets/portal/bundle.html.gz`, `<5 MiB` uncompressed budget).
-* **100% Air-Gapped Bundle (`INV-PORTAL-AIR-GAPPED-BUNDLE`)**: All scripts, stylesheets, and Geist/Geist Mono `woff2` fonts are embedded inline. The generated portal makes zero requests to external CDNs, working offline and over `file://` or internal corporate networks.
-* **Static-First Scalability & Deep Linking (`INV-PORTAL-STATIC-SCALABILITY`, `DLT-2026-108`)**: `StaticSiteBuilder` deduplicates specification bodies in `window.__EIDOS_DATA__` and `data.json` (`~40–50%` payload reduction, re-hydrated client-side from `data.specs`) and exports pre-computed graph `edges` and `validation` diagnostics. Every view, C4 container whitebox, contract, SpecDelta, and SpecReader drawer is synchronized with `window.location.hash` (`#/<view>/<entity-id>`) for zero-config deep linking on static hosts, while `eidos portal serve` provides progressive live auto-reload via lightweight `GET /api/version` mtime polling and `GET /api/drift`.
+* **100% Air-Gapped Bundle (`INV-PORTAL-AIR-GAPPED-BUNDLE`)**: All scripts, stylesheets, and Geist/Geist Mono `woff2` fonts are packaged locally with zero requests to external CDNs, working offline in air-gapped corporate networks (`eidos portal build` emits local `./assets/*` + `./specs/<id>.json` chunks by default, or a single self-contained `index.html` for `file://` viewing with `--single-file`).
+* **Static-First Scalability, XSS Isolation & Deep Linking (`INV-PORTAL-STATIC-SCALABILITY`, `INV-PORTAL-XSS-AND-SERVER-ISOLATION`)**: `StaticSiteBuilder` lazy-loads per-entity `specs/<id>.json` AsciiDoc chunks on demand (or deduplicates inline bodies with `--single-file`) and exports pre-computed graph `edges` and `validation` diagnostics. Every view, C4 container whitebox, contract, SpecDelta, and SpecReader drawer is synchronized with `window.location.hash` (`#/<view>/<entity-id>`) for zero-config deep linking on static hosts, while `eidos portal serve` streams real-time workspace updates over Server-Sent Events (`GET /api/events`) alongside `GET /api/version` and fail-closed `GET /api/drift`.
 * **Hierarchical C4 Drill-Down, Blast Radius Simulator & Contract Explorer (`INV-PORTAL-INTERACTIVE-C4`)**: `PortalGenerator` synthesizes C4 Level 1 System Context, tiered Level 2 Container diagrams with explicit and AST-derived dependency edges, clickable Level 3 Component Whitebox views, an interactive client-side 1–2 hop **Blast Radius Simulator**, a first-class **Boundary Interface Contracts (`CTR-*`)** explorer, and a **Multi-Design System & Recursive W3C Token Tree** browser.

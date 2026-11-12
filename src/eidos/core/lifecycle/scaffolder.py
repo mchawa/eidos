@@ -1,12 +1,12 @@
 """Lifecycle management, blueprint scaffolding, and deletion for Eidos living specifications (CMP-LIFECYCLE-SCAFFOLDER)."""
 
 import contextlib
+import re
 from pathlib import Path
 from typing import Any
 
 from eidos.core.lifecycle.catalog import (
     VALID_SPEC_TYPES,
-    _build_spec_catalog,
     _render_spec,
     _single_line,
     find_references_to_spec,
@@ -17,6 +17,27 @@ from eidos.core.lifecycle.design_engine import DESIGN_SPEC_KEYS, build_design_sp
 from eidos.core.spec.parser import parse_spec_file
 from eidos.core.spec.validator import SpecValidator
 from eidos.core.workspace.assets import render_spec_template
+
+
+def _scan_live_specs_by_id(eidos_dir: Path) -> dict[str, tuple[Path, str, dict[str, Any]]]:
+    """Scan live .adoc files under eidos_dir directly without warming or mutating ArchitecturalIndex."""
+    if not eidos_dir.is_dir():
+        return {}
+    specs_by_id: dict[str, tuple[Path, str, dict[str, Any]]] = {}
+    resolved_root = eidos_dir.resolve()
+    for p in sorted(eidos_dir.rglob("*.adoc")):
+        if p.is_symlink() or not p.is_file():
+            continue
+        if p.name.startswith("_") or p.name.lower() == "readme.adoc":
+            continue
+        with contextlib.suppress(ValueError):
+            rel_parts = p.resolve().relative_to(resolved_root).parts
+            if any(part in (".cache", "deltas", "archive") for part in rel_parts):
+                continue
+        doc = parse_spec_file(p)
+        if doc.doc_id and doc.doc_type and doc.doc_id != "SYS-UNINITIALIZED" and doc.doc_type != "delta/mutation":
+            specs_by_id[doc.doc_id] = (p.resolve(), doc.doc_type, doc.frontmatter)
+    return specs_by_id
 
 
 def create_spec(
@@ -79,13 +100,31 @@ def create_spec(
     fm: dict[str, Any]
     body: str
 
-    def _catalog() -> dict[str, tuple[Path, str, dict[str, Any]]]:
-        specs_by_id, _ = _build_spec_catalog(eidos_dir)
-        return specs_by_id
+    specs_by_id = _scan_live_specs_by_id(eidos_dir)
 
     def _first_of_type(dtype: str, fallback: str) -> str:
-        ids = sorted(i for i, (_, dt, _) in _catalog().items() if dt == dtype)
+        ids = sorted(i for i, (_, dt, _) in specs_by_id.items() if dt == dtype)
         return ids[0] if ids else fallback
+
+    def _derive_project_stem() -> str:
+        for dtype, pfx in (
+            ("product/system", "SYS-"),
+            ("product/domain", "DOM-"),
+            ("tech/container", "CNT-"),
+            ("design/system", "DS-"),
+        ):
+            ids = sorted(i for i, (_, dt, _) in specs_by_id.items() if dt == dtype)
+            if ids:
+                raw_stem = ids[0].upper().removeprefix(pfx)
+                trimmed = re.sub(r"-\d+$", "", raw_stem) if dtype == "product/system" else raw_stem
+                cleaned = re.sub(r"[^A-Z0-9_-]+", "-", (trimmed or raw_stem)).strip("-_")
+                if cleaned:
+                    return cleaned
+        resolved_dir = eidos_dir.resolve()
+        raw_name = resolved_dir.parent.name if resolved_dir.name == "eidos" else resolved_dir.name
+        return re.sub(r"[^A-Z0-9]+", "-", raw_name.upper()).strip("-") or "APP"
+
+    project_stem = _derive_project_stem()
 
     tokens_existed = False
     if canonical_key == "design-system":
@@ -106,29 +145,25 @@ def create_spec(
     elif canonical_key == "architecture":
         dest_dir = eidos_dir / "architecture"
         dest_file = dest_dir / "system-architecture.adoc"
-        actor_ref = _first_of_type("product/persona", "PER-USER")
+        existing_personas = sorted(pid for pid, (_, dt, _) in specs_by_id.items() if dt == "product/persona")
         fm = {
             "type": "tech/architecture",
             "id": doc_id,
             "title": title,
             "status": "draft",
             "c4_context": {
-                "actors": [actor_ref],
+                "actors": [existing_personas[0]] if existing_personas else [],
             },
         }
         body = render_spec_template("tech/architecture", heading=heading)
 
     elif canonical_key == "capability":
-        specs_by_id = _catalog()
         existing_domains = sorted(did for did, (_, dt, _) in specs_by_id.items() if dt == "product/domain")
-        resolved_domain = existing_domains[0] if existing_domains else "DOM-CORE"
+        resolved_domain = existing_domains[0] if existing_domains else f"DOM-{project_stem}"
         domain_slug = resolved_domain.lower().removeprefix("dom-")
 
         existing_cnts = sorted(cid for cid, (_, dt, _) in specs_by_id.items() if dt == "tech/container")
-        cnt_ref = existing_cnts[0] if existing_cnts else "CNT-CORE"
-
         existing_personas = sorted(pid for pid, (_, dt, _) in specs_by_id.items() if dt == "product/persona")
-        persona_ref = existing_personas[0] if existing_personas else "PER-USER"
 
         exact_dom_dir = eidos_dir / "domains" / domain_slug
         if exact_dom_dir.is_dir():
@@ -143,12 +178,11 @@ def create_spec(
             "title": title,
             "domain": resolved_domain,
             "status": "draft",
-            "business": {
-                "personas": [persona_ref],
-            },
-            "technical": {
-                "containers": [cnt_ref],
-            },
+        }
+        if existing_personas:
+            fm["business"] = {"personas": [existing_personas[0]]}
+        fm["technical"] = {
+            "containers": [existing_cnts[0]] if existing_cnts else [],
         }
         body = render_spec_template("product/capability", heading=heading)
 
@@ -187,7 +221,7 @@ def create_spec(
     elif canonical_key == "contract":
         dest_dir = eidos_dir / "architecture" / "contracts"
         dest_file = dest_dir / f"{slug}.adoc"
-        cnt_owner = _first_of_type("tech/contract_cnt", _first_of_type("tech/container", "CNT-CORE"))
+        cnt_owner = _first_of_type("tech/container", f"CNT-{project_stem}")
         fm = {
             "type": "tech/contract",
             "id": doc_id,
@@ -216,7 +250,7 @@ def create_spec(
         # INV-COMPONENT-CENTRALIZATION-MANDATE: dedicated components live in eidos/architecture/components/
         dest_dir = eidos_dir / "architecture" / "components"
         dest_file = dest_dir / f"{slug.removeprefix('cmp-')}.adoc"
-        parent_cnt = _first_of_type("tech/container", "CNT-CORE")
+        parent_cnt = _first_of_type("tech/container", f"CNT-{project_stem}")
         fm = {
             "type": "tech/component",
             "id": doc_id,
@@ -247,8 +281,8 @@ def create_spec(
             for arch_p in archive_dir.glob("*.adoc"):
                 if arch_p.stem.lower().replace("_", "-") == slug:
                     raise FileExistsError(f"Specification document already exists in archive at: {arch_p}")
-        if doc_id in _catalog():
-            existing_p = _catalog()[doc_id][0]
+        if doc_id in specs_by_id:
+            existing_p = specs_by_id[doc_id][0]
             raise FileExistsError(f"Specification document '{doc_id}' already exists at: {existing_p}")
         fm = {
             "type": "product/exploration",
@@ -259,7 +293,7 @@ def create_spec(
         body = render_spec_template("product/exploration", heading=heading)
 
     elif canonical_key in DESIGN_SPEC_KEYS:
-        resolved_design_system = _first_of_type("design/system", "DS-CORE")
+        resolved_design_system = _first_of_type("design/system", f"DS-{project_stem}")
         dest_dir, dest_file, fm, body = build_design_spec(
             canonical_key,
             eidos_dir=eidos_dir,
@@ -304,7 +338,10 @@ def create_spec(
 
 def delete_spec(eidos_dir: Path, target: str, force: bool = False) -> tuple[bool, str, list[Path]]:
     """Safely delete a living specification document with cross-reference safety checks (rejecting SpecDeltas)."""
-    file_path = find_spec_by_id_or_path(eidos_dir, target)
+    try:
+        file_path = find_spec_by_id_or_path(eidos_dir, target)
+    except ValueError as exc:
+        return False, str(exc), []
     if not file_path:
         return False, f"Specification '{target}' not found under '{eidos_dir}'.", []
 
@@ -354,7 +391,7 @@ def list_specs(
     from eidos.core.index.graph_index import get_architectural_index
 
     eidos_resolved = eidos_dir.resolve()
-    idx = get_architectural_index(eidos_dir=eidos_dir)
+    idx = get_architectural_index(eidos_dir=eidos_dir, force_new=True)
     all_entities = idx.get_entities()
     results = []
 
@@ -411,15 +448,19 @@ def _resolve_schema_node(node: dict[str, Any], defs: dict[str, Any]) -> dict[str
     """Resolve top-level $ref to #/$defs/... if present while preserving sibling annotations."""
     if not isinstance(node, dict):
         return {}
-    ref = node.get("$ref")
-    if isinstance(ref, str) and ref.startswith("#/$defs/"):
-        def_key = ref.removeprefix("#/$defs/")
+    current = dict(node)
+    seen: set[str] = set()
+    while isinstance(current.get("$ref"), str) and str(current["$ref"]).startswith("#/$defs/"):
+        def_key = str(current["$ref"]).removeprefix("#/$defs/")
+        if def_key in seen:
+            break
+        seen.add(def_key)
         resolved = dict(defs.get(def_key) or {})
-        for k, v in node.items():
+        for k, v in current.items():
             if k != "$ref":
                 resolved[k] = v
-        return resolved
-    return dict(node)
+        current = resolved
+    return current
 
 
 def _extract_id_prefix(id_pattern: str) -> str:

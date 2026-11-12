@@ -1,6 +1,7 @@
 """Tests for the Eidos Living Web Portal, generator, HTTP server, and static site builder."""
 
 import re
+import subprocess
 import threading
 import time
 import urllib.error
@@ -167,21 +168,27 @@ def test_static_portal_builder(tmp_path: Path):
     assert "<!DOCTYPE html>" in index_html
     assert "window.__EIDOS_DATA__ =" in index_html
     assert "SYS-EIDOS-001" in index_html
-
-    # Verify Modernized Single-File React 19 / Tailwind v4 / MD3 SPA in compiled output
     assert '<div id="root"></div>' in index_html
-    assert "<script" in index_html
-    assert "<style" in index_html
-    assert "mermaid" in index_html
-    # Self-contained zero-external asset invariants
-    assert _external_asset_elements(index_html) == []
-    # The embedded bundle (excluding the per-repository data payload injected below) stays inside the single-file
-    # size budget. The former 1.5 MB cap predates the embedded Mermaid / Asciidoctor.js / Geist fonts (DLT-2026-041).
-    assert len(PORTAL_HTML_TEMPLATE.encode("utf-8")) <= PORTAL_BUNDLE_BUDGET_BYTES
-    assert len(index_html) > len(PORTAL_HTML_TEMPLATE)
-    # build-site must inject the data payload as its own <script>, not into an inline JS string literal.
+    assert len(index_file.read_bytes()) < 400 * 1024
+    assert _remote_subresources(index_html) == []
+    assert list((out_dir / "assets").glob("portal-*.js"))
+    assert list((out_dir / "assets").glob("portal-*.css"))
+    assert len(list((out_dir / "specs").glob("*.json"))) >= 30
     assert index_html.count("window.__EIDOS_DATA__ =") == 1
     assert "</script>\n</head>" in index_html
+
+    # Verify opt-in --single-file mode preserves self-contained single-HTML output for file:// archives
+    single_dir = tmp_path / "single_file_site"
+    build_static_portal(Path("eidos"), single_dir, single_file=True)
+    single_html = (single_dir / "index.html").read_text(encoding="utf-8")
+    assert '<div id="root"></div>' in single_html
+    assert "<script" in single_html
+    assert "<style" in single_html
+    assert "mermaid" in single_html
+    assert _external_asset_elements(single_html) == []
+    assert len(PORTAL_HTML_TEMPLATE.encode("utf-8")) <= PORTAL_BUNDLE_BUDGET_BYTES
+    assert len(single_html) > len(PORTAL_HTML_TEMPLATE)
+    assert not (single_dir / "specs").exists()
 
     json_data = orjson.loads(data_file.read_bytes())
     assert json_data["overview"]["system_id"] == "SYS-EIDOS-001"
@@ -1763,6 +1770,35 @@ def test_portal_static_scalability_and_deep_linking(tmp_path: Path):
     assert "edges" in built_json and len(built_json["edges"]) > 0
     assert "validation" in built_json and "is_clean" in built_json["validation"]
     assert all(not c.get("body") for c in built_json["capabilities"])
+    assert all(not s.get("body") for s in built_json["screens"])
+
+    # Verify default chunked export keeps index.html < 400 KB, emits specs/<id>.json chunks, and escapes <!--
+    chunked_index = (out_dir / "index.html").read_text(encoding="utf-8")
+    assert len((out_dir / "index.html").read_bytes()) < 400 * 1024
+    assert "specs/" in chunked_index
+    assert (out_dir / "specs" / "SYS-EIDOS-001.json").is_file()
+    sys_chunk = orjson.loads((out_dir / "specs" / "SYS-EIDOS-001.json").read_bytes())
+    assert sys_chunk["id"] == "SYS-EIDOS-001"
+    assert len(sys_chunk["body"]) > 50
+
+    from eidos.portal.builder import _serialize_script_json
+
+    escaped_json = _serialize_script_json({"note": "<!-- <script>alert(1)</script> -->\u2028\u2029"})
+    assert "<!--" not in escaped_json
+    assert "\\u003c!--" in escaped_json
+    assert "</script>" not in escaped_json
+    assert "<\\/script>" in escaped_json
+    assert "\u2028" not in escaped_json and "\u2029" not in escaped_json
+
+    # Verify CLI --single-file flag emits standalone single-HTML output
+    cli_single_out = tmp_path / "cli_single"
+    res_single = runner.invoke(
+        app,
+        ["portal", "build", "--path", "eidos", "--out", str(cli_single_out), "--single-file"],
+    )
+    assert res_single.exit_code == 0, res_single.output
+    assert "single-file" in res_single.stdout
+    assert _external_asset_elements((cli_single_out / "index.html").read_text(encoding="utf-8")) == []
 
     # Verify live HTTP server /api/version and /api/drift endpoints
     EidosPortalHandler.eidos_dir = Path("eidos")
@@ -1801,3 +1837,452 @@ def test_portal_static_scalability_and_deep_linking(tmp_path: Path):
     assert "deltas/archive/" in PORTAL_HTML_TEMPLATE
     assert "explorations/archive/" in PORTAL_HTML_TEMPLATE
     assert all("is_archived" in e for e in raw_data["explorations"])
+
+
+def test_portal_xss_sanitization_path_containment_and_host_cors_isolation(tmp_path: Path):
+    """Verify INV-PORTAL-XSS-AND-SERVER-ISOLATION:
+    - Mermaid strict securityLevel, DOMPurify SANITIZE_DOM, and spec- idprefix in compiled portal bundle
+    - ArchitectureView avoids error .innerHTML, suppresses pan-drag clicks, and highlights blast-radius nodes
+    - _extract_or_generate_flow_mermaid escapes HTML/quotes and strips unsafe Mermaid directives
+    - _extract_design_systems blocks tokens.manifest path traversal / outside symlinks via is_relative_to(repo_root)
+    - EidosPortalHandler omits wildcard CORS, sends isolation headers, and blocks Host rebinding + cross-site /api/*
+    """
+    import http.client
+
+    from eidos.portal.generator import _extract_or_generate_flow_mermaid
+    from eidos.portal.server import EidosPortalHandler, PortalThreadingHTTPServer
+
+    # 1. Compiled frontend bundle & source security invariants
+    assert (
+        "securityLevel:`strict`" in PORTAL_HTML_TEMPLATE
+        or 'securityLevel:"strict"' in PORTAL_HTML_TEMPLATE
+        or 'securityLevel: "strict"' in PORTAL_HTML_TEMPLATE
+    )
+    assert "SANITIZE_DOM" in PORTAL_HTML_TEMPLATE
+    assert "spec-" in PORTAL_HTML_TEMPLATE
+
+    arch_view_src = Path(
+        "src/eidos/portal/frontend/src/components/views/ArchitectureView.tsx"
+    ).read_text(encoding="utf-8")
+    assert "String(err)" not in arch_view_src or "innerHTML" not in arch_view_src.split("catch")[1]
+    assert "if (hasMovedRef.current) return;" in arch_view_src
+    assert "blast-radius-1-hop" in arch_view_src and "blast-radius-2-hop" in arch_view_src
+    assert "blast-radius-1-hop" in PORTAL_HTML_TEMPLATE
+
+    # 2. Flow Mermaid XSS escaping & directive stripping
+    xss_payload = '<img src=x onerror="alert(1)">'
+    seq_mermaid = _extract_or_generate_flow_mermaid(
+        "FLOW-XSS-SEQ",
+        "cross_client",
+        [
+            {
+                "step": 1,
+                "client": f"CLT-{xss_payload}",
+                "title": f"Step {xss_payload}",
+                "action": f"Run {xss_payload}",
+                "outcome": f"Done {xss_payload}",
+            }
+        ],
+        "",
+    )
+    assert "<img" not in seq_mermaid
+    assert "&lt;img" in seq_mermaid
+
+    journey_mermaid = _extract_or_generate_flow_mermaid(
+        "FLOW-XSS-JOURNEY",
+        "screen_journey",
+        [
+            {
+                "step": 1,
+                "screen": f"SCR-{xss_payload}",
+                "title": f'Click "{xss_payload}"',
+                "action": f"Submit {xss_payload}",
+            }
+        ],
+        "",
+    )
+    assert "<img" not in journey_mermaid
+    assert "&lt;img" in journey_mermaid
+
+    raw_mermaid = _extract_or_generate_flow_mermaid(
+        "FLOW-RAW-UNSAFE",
+        "screen_journey",
+        [],
+        '=== Diagram\n[mermaid]\n----\n%%{init: {"securityLevel": "loose"}}%%\nflowchart TD\n  A["Ok"] --> B["Next"]\n  click A call evilCallback()\n  click B "javascript:alert(1)"\n----\n',
+    )
+    assert "securityLevel" not in raw_mermaid
+    assert "call evilCallback" not in raw_mermaid
+    assert "javascript:" not in raw_mermaid
+    assert 'A["Ok"] --> B["Next"]' in raw_mermaid
+
+    # 3. tokens.manifest repository path containment (parent traversal, absolute path, outside symlink)
+    outside_secret = tmp_path / "outside_secret.json"
+    outside_secret.write_text('{"secret": {"$value": "TOP_SECRET_HOST_TOKEN"}}', encoding="utf-8")
+
+    repo_root = tmp_path / "isolated_repo"
+    ds_dir = repo_root / "eidos" / "design" / "systems" / "core"
+    ds_dir.mkdir(parents=True)
+    (repo_root / "eidos" / "system.adoc").write_text(
+        '---\ntype: architecture/system\nid: SYS-ISO-001\ntitle: "Isolated"\nstatus: active\n---\n= Isolated\n',
+        encoding="utf-8",
+    )
+    # Sibling tokens.json must NOT be loaded if explicit tokens.manifest escapes repo_root
+    (ds_dir / "tokens.json").write_text(
+        '{"fallback": {"$value": "SHOULD_NOT_LOAD_ON_TRAVERSAL"}}', encoding="utf-8"
+    )
+    escape_symlink = ds_dir / "symlink_tokens.json"
+    escape_symlink.symlink_to(outside_secret)
+
+    for idx, manifest_ref in enumerate(
+        [
+            "../../../../../outside_secret.json",
+            str(outside_secret),
+            "symlink_tokens.json",
+        ]
+    ):
+        (ds_dir / "system.adoc").write_text(
+            f'---\ntype: design/system\nid: DS-ISO-{idx}\ntitle: "DS {idx}"\nstatus: active\n'
+            f'tokens:\n  format: w3c-dtcg\n  manifest: "{manifest_ref}"\n---\n= DS\n',
+            encoding="utf-8",
+        )
+        iso_data = get_portal_data(repo_root / "eidos")
+        raw_dump = orjson.dumps(iso_data).decode("utf-8")
+        assert "TOP_SECRET_HOST_TOKEN" not in raw_dump
+        assert "SHOULD_NOT_LOAD_ON_TRAVERSAL" not in raw_dump
+        ds_entry = iso_data["design_systems"][0]
+        assert ds_entry["tokens"] == {}
+        assert "outside repository root" in ds_entry.get("tokens_warning", "")
+
+    # 4. Server CORS removal, security headers, Host validation & Sec-Fetch-Site isolation
+    prev_eidos_dir = EidosPortalHandler.eidos_dir
+    EidosPortalHandler.eidos_dir = repo_root / "eidos"
+    httpd = PortalThreadingHTTPServer(("127.0.0.1", 0), EidosPortalHandler)
+    port = httpd.server_address[1]
+    srv_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    srv_thread.start()
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request("GET", "/api/data", headers={"Host": f"127.0.0.1:{port}"})
+        res = conn.getresponse()
+        res.read()
+        assert res.status == 200
+        assert res.getheader("Access-Control-Allow-Origin") is None
+        assert res.getheader("X-Content-Type-Options") == "nosniff"
+        assert res.getheader("Cross-Origin-Resource-Policy") == "same-origin"
+        assert res.getheader("X-Frame-Options") == "DENY"
+        assert "frame-ancestors 'none'" in (res.getheader("Content-Security-Policy") or "")
+        conn.close()
+
+        # DNS rebinding Host header -> 403 Forbidden
+        conn_rebind = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn_rebind.request("GET", "/api/data", headers={"Host": f"evil.attacker.example:{port}"})
+        res_rebind = conn_rebind.getresponse()
+        res_rebind.read()
+        assert res_rebind.status == 403
+        conn_rebind.close()
+
+        # Wrong port in Host header -> 403 Forbidden
+        conn_port = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn_port.request("GET", "/api/data", headers={"Host": "127.0.0.1:65530"})
+        res_port = conn_port.getresponse()
+        res_port.read()
+        assert res_port.status == 403
+        conn_port.close()
+
+        # Cross-site browser fetch on /api/* -> 403 Forbidden
+        conn_cs = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn_cs.request(
+            "POST",
+            "/api/validate",
+            headers={"Host": f"localhost:{port}", "Sec-Fetch-Site": "cross-site"},
+        )
+        res_cs = conn_cs.getresponse()
+        res_cs.read()
+        assert res_cs.status == 403
+        conn_cs.close()
+
+        # IPv6 loopback [::1]:port and bare localhost Host headers are accepted; malformed Host headers -> 403
+        for good_host in (f"[::1]:{port}", "localhost", "[::1]"):
+            c_ok = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            c_ok.request("GET", "/health", headers={"Host": good_host})
+            r_ok = c_ok.getresponse()
+            r_ok.read()
+            assert r_ok.status == 200
+            c_ok.close()
+
+        for bad_host in ("", "127.0.0.1/evil", "[::1", "[::1]:abc", "127.0.0.1:notaport"):
+            c_bad = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            c_bad.request("GET", "/health", headers={"Host": bad_host})
+            r_bad = c_bad.getresponse()
+            r_bad.read()
+            assert r_bad.status == 403
+            c_bad.close()
+
+        # POST error paths: unknown route -> 404, invalid JSON -> 400, excessive Content-Length -> 400
+        c_post404 = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        c_post404.request("POST", "/api/unknown", headers={"Host": f"127.0.0.1:{port}"})
+        r_post404 = c_post404.getresponse()
+        r_post404.read()
+        assert r_post404.status == 404
+        c_post404.close()
+
+        c_post_json = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        c_post_json.request(
+            "POST",
+            "/api/validate",
+            body=b"{invalid",
+            headers={"Host": f"127.0.0.1:{port}", "Content-Length": "8"},
+        )
+        r_post_json = c_post_json.getresponse()
+        r_post_json.read()
+        assert r_post_json.status == 400
+        c_post_json.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        EidosPortalHandler.eidos_dir = prev_eidos_dir
+
+    # Unit-check _is_allowed_host on 0.0.0.0 and explicit interface bindings
+    dummy_handler = object.__new__(EidosPortalHandler)
+    dummy_srv = type("DummySrv", (), {"server_address": ("0.0.0.0", 3000), "portal_bound_host": "0.0.0.0"})()
+    dummy_handler.server = dummy_srv
+    assert dummy_handler._is_allowed_host("localhost:3000") is True
+    assert dummy_handler._is_allowed_host("evil.example:3000") is False
+    dummy_srv2 = type("DummySrv2", (), {"server_address": ("10.1.2.3", 3000), "portal_bound_host": "mybox.local"})()
+    dummy_handler.server = dummy_srv2
+    assert dummy_handler._is_allowed_host("mybox.local:3000") is True
+    assert dummy_handler._is_allowed_host("10.1.2.3:3000") is True
+    assert dummy_handler._is_allowed_host("other.local:3000") is False
+
+
+def test_portal_live_drift_sse_c4_context_and_screen_hydration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Verify INV-PORTAL-LIVE-DRIFT-SSE:
+    - _compute_eidos_mtime_snapshot tracks governed src/ and tests/ trees alongside eidos/
+    - _get_cached_drift fails closed (is_clean=False, drift_detected=True, error=...) on exceptions
+    - GET /api/events streams text/event-stream SSE status frames on initial connect and live src/ edits
+    - _generate_c4_context_mermaid formats {name, role, protocol} external_systems dicts cleanly
+    - get_portal_data hydrates screen bodies, repo-relative schema_errors, and exploration exit_criteria/recommendations
+    """
+    import eidos.cli.portal_commands as portal_cmd_mod
+    import eidos.vcs.drift as drift_mod
+    from eidos.portal.generator import (
+        _extract_exploration_fields,
+        _generate_c4_context_mermaid,
+        _to_repo_rel_posix,
+    )
+    from eidos.portal.server import (
+        EidosPortalHandler,
+        PortalThreadingHTTPServer,
+        _compute_eidos_mtime_snapshot,
+    )
+
+    assert _compute_eidos_mtime_snapshot(tmp_path / "missing_eidos") == (0, 0, 0)
+    assert _to_repo_rel_posix("./eidos/system.adoc", tmp_path.resolve()) == "eidos/system.adoc"
+    assert _to_repo_rel_posix(Path("/nonexistent_outside_root/x.adoc"), tmp_path.resolve()) == "/nonexistent_outside_root/x.adoc"
+
+    ec_dict, f_dict, rec_dict = _extract_exploration_fields(
+        {"exit_criteria": {"max_duration": "2d", "benchmark": "<50ms"}},
+        "== Outcome & Learnings\n* *Recommendation*: Adopt chunked static export.\n* Zero regressions observed.\n",
+        {},
+        "adopted",
+        [],
+        "",
+    )
+    assert isinstance(ec_dict, dict) and ec_dict["max_duration"] == "2d"
+    assert f_dict == "Zero regressions observed."
+    assert rec_dict == "Adopt chunked static export."
+
+    ec_list, _, rec_inline = _extract_exploration_fields(
+        {"exit_criteria": ["p95 < 10ms"]},
+        "* *Recommendation*: Keep strict mode.\n",
+        {},
+        "",
+        ["DLT-2026-999"],
+        "Fast",
+    )
+    assert ec_list == ["p95 < 10ms"]
+    assert rec_inline == "Keep strict mode."
+
+    # 1. Governed src/ and tests/ mtime snapshot invalidation
+    ws = tmp_path / "live_ws"
+    (ws / "eidos" / "explorations").mkdir(parents=True)
+    (ws / "eidos" / "domains" / "core" / "capabilities").mkdir(parents=True)
+    (ws / "eidos" / "architecture" / "containers").mkdir(parents=True)
+    (ws / "src" / "pkg").mkdir(parents=True)
+    (ws / "tests").mkdir(parents=True)
+    inv_live_uncov = "INV-" + "PORTAL-LIVE-UNCOV"
+    inv_live_orphan = "INV-" + "PORTAL-LIVE-ORPHAN"
+    (ws / "eidos" / "system.adoc").write_text(
+        '---\ntype: product/system\nid: SYS-LIVE-001\ntitle: "Live WS"\nstatus: active\n---\n= Live\n',
+        encoding="utf-8",
+    )
+    (ws / "eidos" / "domains" / "core" / "domain.adoc").write_text(
+        '---\ntype: product/domain\nid: DOM-LIVE\ntitle: "Live Domain"\nstatus: active\n---\n= Domain\n',
+        encoding="utf-8",
+    )
+    (ws / "eidos" / "architecture" / "containers" / "live.adoc").write_text(
+        '---\ntype: tech/container\nid: CNT-LIVE\ntitle: "Live Container"\nstatus: active\n'
+        'container_type: service\nruntime: "Python 3.12"\ndomain: DOM-LIVE\nsource_path: src/pkg\n---\n= Live\n',
+        encoding="utf-8",
+    )
+    (ws / "eidos" / "domains" / "core" / "capabilities" / "live-cap.adoc").write_text(
+        f'---\ntype: product/capability\nid: CAP-LIVE-001\ntitle: "Live Cap"\nstatus: active\ndomain: DOM-LIVE\n'
+        f'technical:\n  containers:\n    - CNT-LIVE\n  invariants:\n    - id: {inv_live_uncov}\n'
+        f'      rule: "Must track live drift invariants."\n'
+        f'      test_binding: "tests/test_mod.py::test_missing_live_binding"\n---\n= Live Cap\n',
+        encoding="utf-8",
+    )
+    (ws / "eidos" / "explorations" / "exp-001.adoc").write_text(
+        '---\ntype: product/exploration\nid: EXP-LIVE-001\ntitle: "Spike"\nstatus: adopted\n'
+        'hypothesis: "Test SSE"\ndecision:\n  outcome: adopted\n  resulting_deltas:\n    - DLT-2026-001\n'
+        '  learnings: "SSE works"\n---\n= Spike\n\n== 1. Scope\n* *Exit Criteria*: Sub-second drift push.\n\n'
+        '== 4. Exit Criteria\n* Zero hanging daemon threads.\n',
+        encoding="utf-8",
+    )
+    src_file = ws / "src" / "pkg" / "mod.py"
+    test_file = ws / "tests" / "test_mod.py"
+    src_file.write_text("VALUE = 1\n", encoding="utf-8")
+    test_file.write_text(f"def test_v():\n    # {inv_live_orphan}\n    assert True\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=ws, check=True)
+    subprocess.run(["git", "config", "user.email", "test@eidos.local"], cwd=ws, check=True)
+    subprocess.run(["git", "config", "user.name", "Eidos Test"], cwd=ws, check=True)
+    subprocess.run(["git", "add", "."], cwd=ws, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init live ws"], cwd=ws, check=True)
+
+    snap0 = _compute_eidos_mtime_snapshot(ws / "eidos")
+    time.sleep(0.01)
+    src_file.write_text("VALUE = 22\n", encoding="utf-8")
+    snap1 = _compute_eidos_mtime_snapshot(ws / "eidos")
+    assert snap1 != snap0
+
+    time.sleep(0.01)
+    test_file.write_text(f"def test_v():\n    # {inv_live_orphan}\n    assert 1 == 1\n", encoding="utf-8")
+    snap2 = _compute_eidos_mtime_snapshot(ws / "eidos")
+    assert snap2 != snap1
+    (ws / "src" / "unmapped_live.py").write_text("EXTRA = 1\n", encoding="utf-8")
+
+    # 2. _get_cached_drift fails closed on error & GET /api/events streams live SSE updates
+    prev_eidos_dir = EidosPortalHandler.eidos_dir
+    EidosPortalHandler.eidos_dir = ws / "eidos"
+    EidosPortalHandler._cached_drift_key = None
+    EidosPortalHandler._cached_drift_res = None
+
+    httpd = PortalThreadingHTTPServer(("127.0.0.1", 0), EidosPortalHandler)
+    port = httpd.server_address[1]
+    srv_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    srv_thread.start()
+    try:
+        # Initial SSE frame via ?once=1
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/events?once=1", timeout=5) as sse_res:
+            assert sse_res.status == 200
+            assert "text/event-stream" in (sse_res.headers.get("Content-Type") or "")
+            raw_sse = sse_res.read().decode("utf-8")
+            assert "event: status" in raw_sse
+            data_lines = [ln[6:] for ln in raw_sse.splitlines() if ln.startswith("data: ")]
+            assert len(data_lines) == 1
+            first_event = orjson.loads(data_lines[0])
+            assert "version" in first_event and "drift" in first_event
+            first_drift = first_event["drift"]
+            assert first_drift["workflow_mode"] == "direct"
+            assert "src/pkg/mod.py" in first_drift["changed_files"]
+            assert "src/unmapped_live.py" in first_drift["unmapped_files"]
+            assert inv_live_uncov in first_drift["uncovered_invariants"]
+            assert any(
+                o["invariant_id"] == inv_live_orphan and "test_mod.py" in o["test_id"]
+                for o in first_drift["orphan_invariants"]
+            )
+
+        # Streaming SSE update when governed src/ file mutates (?max_events=2)
+        def _mutate_src_soon() -> None:
+            time.sleep(0.25)
+            src_file.write_text("VALUE = 333\n", encoding="utf-8")
+
+        mut_thread = threading.Thread(target=_mutate_src_soon, daemon=True)
+        mut_thread.start()
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/api/events?max_events=2", timeout=5
+        ) as sse_stream:
+            stream_body = sse_stream.read().decode("utf-8")
+            frames = [ln[6:] for ln in stream_body.splitlines() if ln.startswith("data: ")]
+            assert len(frames) == 2
+            ev0 = orjson.loads(frames[0])
+            ev1 = orjson.loads(frames[1])
+            assert ev1["version"] != ev0["version"]
+
+        # Fail-closed drift verification when detect_drift raises
+        def _boom(*_a, **_kw):
+            raise RuntimeError("simulated git failure")
+
+        monkeypatch.setattr(drift_mod, "detect_drift", _boom)
+        EidosPortalHandler._cached_drift_key = None
+        EidosPortalHandler._cached_drift_res = None
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/drift", timeout=5) as drift_res:
+            drift_json = orjson.loads(drift_res.read())
+            assert drift_json["is_clean"] is False
+            assert drift_json["drift_detected"] is True
+            assert "simulated git failure" in drift_json.get("error", "")
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        EidosPortalHandler.eidos_dir = prev_eidos_dir
+
+    # 3. C4 Level 1 external_systems dict & string formatting without Python reprs
+    c4_ctx = _generate_c4_context_mermaid(
+        [{"id": "PER-USER", "title": "End User", "role": "Customer"}],
+        "SYS-CTX-001",
+        "Context Demo",
+        [
+            None,
+            "",
+            {
+                "name": "Stripe Billing",
+                "role": "Payment Gateway",
+                "protocol": "HTTPS Webhook",
+            },
+            "Legacy Mainframe",
+        ],
+    )
+    assert "{'name':" not in c4_ctx
+    assert "Stripe Billing" in c4_ctx
+    assert "Payment Gateway" in c4_ctx
+    assert "HTTPS Webhook" in c4_ctx
+    assert "Legacy Mainframe" in c4_ctx
+
+    # 4. Exploration exit_criteria/recommendation extraction & Screen body hydration
+    ws_portal = get_portal_data(ws / "eidos")
+    exp = ws_portal["explorations"][0]
+    assert exp["exit_criteria"]
+    assert "Sub-second drift push." in exp["exit_criteria"]
+    assert "DLT-2026-001" in exp["recommendation"]
+
+    live_portal = get_portal_data(Path("eidos"))
+    assert len(live_portal["screens"]) >= 6
+    assert all(isinstance(s.get("body"), str) and len(s["body"]) > 20 for s in live_portal["screens"])
+    assert any(e.get("exit_criteria") for e in live_portal["explorations"])
+    assert any(e.get("recommendation") for e in live_portal["explorations"])
+    for err_key in live_portal["validation"]["schema_errors"]:
+        assert not Path(err_key).is_absolute()
+
+    # 5. CLI portal serve/build path validation & serve_cmd delegation
+    missing_dir = tmp_path / "does_not_exist_eidos"
+    res_bad_serve = runner.invoke(app, ["portal", "serve", "--path", str(missing_dir)])
+    assert res_bad_serve.exit_code == 1
+    res_bad_build = runner.invoke(app, ["portal", "build", "--path", str(missing_dir)])
+    assert res_bad_build.exit_code == 1
+
+    served_args: list[tuple[Path, str, int, bool]] = []
+    monkeypatch.setattr(
+        portal_cmd_mod,
+        "run_portal_server",
+        lambda eidos_dir, host, port, open_browser: served_args.append((eidos_dir, host, port, open_browser)),
+    )
+    res_ok_serve = runner.invoke(
+        app,
+        ["portal", "serve", "--path", str(ws / "eidos"), "--host", "127.0.0.1", "--port", "3123"],
+    )
+    assert res_ok_serve.exit_code == 0, res_ok_serve.output
+    assert len(served_args) == 1 and served_args[0][2] == 3123
+
+

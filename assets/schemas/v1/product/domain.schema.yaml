@@ -19,7 +19,7 @@ properties:
     pattern: "^DOM-[A-Z0-9_-]+$"
     description: "Unique domain identifier following the DOM-<NAME> convention (e.g. DOM-PRODUCT-CORE)."
   title:
-    type: string
+    $ref: "#/$defs/non_empty_string"
     description: "Human-readable title of the domain or bounded context."
   status:
     $ref: "#/$defs/lifecycle_status"
@@ -38,9 +38,10 @@ properties:
       - "platform"
   owners:
     type: array
+    minItems: 1
     description: "Teams, roles, or individuals accountable for this bounded context (optional)."
     items:
-      type: string
+      $ref: "#/$defs/non_empty_string"
   decisions:
     type: array
     description: "In-place domain and architectural decisions recorded on this domain specification (POL-001)."

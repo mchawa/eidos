@@ -12,6 +12,7 @@ Graduated from EXP-2026-009 via DLT-2026-115-HYBRID-SEMANTIC-8B5F (DEC-INDEX-HYB
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import importlib.util
 import math
@@ -27,13 +28,28 @@ from typing import Any
 import orjson
 
 HARRIER_MODEL_ID = "onnx-community/harrier-oss-v1-0.6b-ONNX"
-HARRIER_HF_BASE_URL = "https://huggingface.co/onnx-community/harrier-oss-v1-0.6b-ONNX/resolve/main"
+HARRIER_HF_REVISION = "e4daffa011e666dcd2ff2a3c6c05084090ac314d"
+HARRIER_HF_BASE_URL = f"https://huggingface.co/{HARRIER_MODEL_ID}/resolve/{HARRIER_HF_REVISION}"
 HARRIER_EMBEDDING_DIM = 1024
 HARRIER_PAD_TOKEN_ID = 151643
 HARRIER_PAD_TOKEN = "<|endoftext|>"
 HARRIER_MAX_LENGTH = 32768
 HARRIER_DOC_MAX_LENGTH = 4096
 HARRIER_MAX_BATCH_TOKENS = 2048
+
+# Immutable artifact manifest (size_bytes, sha256) pinned to HARRIER_HF_REVISION (DLT-2026-133)
+HARRIER_ARTIFACT_MANIFEST: dict[str, tuple[int, str]] = {
+    "config.json": (1530, "c55e075ac57223f7442ef1755051e9bd212e0d4ff2ed68694037f5a21dba7eeb"),
+    "tokenizer.json": (9117473, "2320ebaed2032c36f5c539cb8531d0642a10024e164f1d81ebbe163b259e3ba5"),
+    "tokenizer_config.json": (4650, "e1c8a5341a350885510d652a3a303beabf3a76ef745af6c6b4c3f0d815ccfb5c"),
+    "onnx/model_quantized.onnx": (393942, "3c7c03247bf681338ea079ca3875fa48d6b339bacd3abb6b7ce81afa5a357861"),
+    "onnx/model_quantized.onnx_data": (706117632, "95e9e447398ba3ef59d54888c820ee8c1b80e4373c56cc5d09b2358ee25d893c"),
+    "onnx/model.onnx": (299981, "46e6d18455f25b2ebe9bccdc0fe3bf2a36442796ecc0991141c12c1f098f27b9"),
+    "onnx/model.onnx_data": (2094723072, "1f936ece1604ac0117e808f9db9959e3e8b6b860d44d1a6ecf55a5353ee2d55c"),
+    "onnx/model.onnx_data_1": (306225152, "5b2a43d2df8ba4706d44769c023f2627309a8e48ec0fea70e92afc1a974e169f"),
+    "onnx/model_fp16.onnx": (286948, "460cf6e8d8da587e60976b1e36bb5e433c79e5af9681dbab48abad9353d4957c"),
+    "onnx/model_fp16.onnx_data": (1200474112, "b6e76ada3c256d01a39f5896d3cb96d78fcdf566927da0d9445cc9c999e96069"),
+}
 
 # Pre-trained canonical MTEB sts_query instruction prefix (config_sentence_transformers.json)
 HARRIER_STS_INSTRUCTION = "Instruct: Retrieve semantically similar text\nQuery: "
@@ -158,18 +174,10 @@ def resolve_semantic_model_dir(eidos_dir: Path) -> Path:
 
 def _detect_installed_variant(model_dir: Path) -> str | None:
     """Return the preferred ONNX graph relative path present in ``model_dir``."""
-    quant_path = model_dir / "onnx" / "model_quantized.onnx"
-    quant_data = model_dir / "onnx" / "model_quantized.onnx_data"
-    if quant_path.is_file() and quant_data.is_file():
-        return "onnx/model_quantized.onnx"
-    fp32_path = model_dir / "onnx" / "model.onnx"
-    fp32_data = model_dir / "onnx" / "model.onnx_data"
-    if fp32_path.is_file() and fp32_data.is_file():
-        return "onnx/model.onnx"
-    fp16_path = model_dir / "onnx" / "model_fp16.onnx"
-    fp16_data = model_dir / "onnx" / "model_fp16.onnx_data"
-    if fp16_path.is_file() and fp16_data.is_file():
-        return "onnx/model_fp16.onnx"
+    for variant_key in ("quantized", "fp32", "fp16"):
+        req_files = _VARIANT_FILES[variant_key]
+        if all((model_dir / rel).is_file() and (model_dir / rel).stat().st_size > 0 for rel in req_files):
+            return req_files[0]
     return None
 
 
@@ -514,11 +522,68 @@ _ACTIVE_PROGRESS_CALLBACK: Callable[[dict[str, Any]], None] | None = None
 _SUPPRESS_AUTO_SEMANTIC_REFRESH: int = 0
 
 
+def _try_acquire_semantic_worker_lock(lock_path: Path) -> int | None:
+    """Atomically acquire ``semantic_sync.lock`` via non-blocking ``flock`` / ``O_EXCL`` before worker spawn."""
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":  # pragma: no cover
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o666)
+        except OSError:
+            return None
+        with contextlib.suppress(OSError):
+            os.write(fd, f"{os.getpid()}\n".encode())
+        return fd
+
+    import fcntl
+
+    try:
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o666)
+    except OSError:
+        return None
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        os.ftruncate(fd, 0)
+        os.lseek(fd, 0, os.SEEK_SET)
+        os.write(fd, f"{os.getpid()}\n".encode())
+        return fd
+    except (BlockingIOError, OSError):
+        with contextlib.suppress(OSError):
+            os.close(fd)
+        return None
+
+
+def _release_semantic_worker_lock(fd: int, lock_path: Path) -> None:
+    """Release and unlink ``semantic_sync.lock`` on failed worker startup."""
+    if os.name != "nt":
+        import fcntl
+
+        with contextlib.suppress(OSError):
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    with contextlib.suppress(OSError):
+        os.close(fd)
+    with contextlib.suppress(OSError):
+        lock_path.unlink(missing_ok=True)
+
+
 def _is_semantic_sync_locked_by_other(eidos_dir: Path) -> bool:
-    """Return True if another live process currently holds ``eidos/.cache/semantic_sync.lock``."""
+    """Return True if another live process or open descriptor currently holds ``eidos/.cache/semantic_sync.lock``."""
     lock_path = Path(eidos_dir).resolve() / ".cache" / "semantic_sync.lock"
     if not lock_path.is_file():
         return False
+    if os.name != "nt":
+        import fcntl
+
+        probe_fd: int | None = None
+        try:
+            probe_fd = os.open(str(lock_path), os.O_RDWR)
+            fcntl.flock(probe_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(probe_fd, fcntl.LOCK_UN)
+        except (BlockingIOError, OSError):
+            return True
+        finally:
+            if probe_fd is not None:
+                with contextlib.suppress(OSError):
+                    os.close(probe_fd)
     try:
         pid_val = int(lock_path.read_text(encoding="utf-8").strip())
         if pid_val == os.getpid():
@@ -652,11 +717,66 @@ class _semantic_cli_progress:
             self._task_id = None
 
 
+def _hash_file_sha256(path: Path) -> str:
+    """Compute hex SHA-256 digest of ``path`` in 1 MiB chunks."""
+    hasher = hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(1024 * 1024)
+            if not chunk:
+                break
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def _is_cached_artifact_verified(
+    dest: Path,
+    rel_path: str,
+    expected_entry: tuple[int | None, str] | None,
+    sidecar_records: dict[str, dict[str, Any]],
+) -> tuple[bool, bool]:
+    """Return ``(is_valid, sidecar_dirty)`` for a cached Harrier artifact."""
+    if not dest.is_file():
+        return False, False
+    try:
+        st = dest.stat()
+    except OSError:
+        return False, False
+    if st.st_size <= 0:
+        return False, False
+    if expected_entry is None:
+        return True, False
+    exp_size, exp_sha256 = expected_entry
+    norm_exp_sha = (exp_sha256 or "").strip().lower()
+    if exp_size is not None and st.st_size != exp_size:
+        return False, False
+    if not norm_exp_sha:
+        return True, False
+    rec = sidecar_records.get(rel_path)
+    if (
+        isinstance(rec, dict)
+        and rec.get("size") == st.st_size
+        and rec.get("mtime_ns") == st.st_mtime_ns
+        and str(rec.get("sha256") or "").lower() == norm_exp_sha
+    ):
+        return True, False
+    actual_sha = _hash_file_sha256(dest)
+    if actual_sha != norm_exp_sha:
+        return False, False
+    sidecar_records[rel_path] = {
+        "size": st.st_size,
+        "mtime_ns": st.st_mtime_ns,
+        "sha256": actual_sha,
+    }
+    return True, True
+
+
 def setup_semantic_model(
     eidos_dir: Path,
     variant: str = "quantized",
     force: bool = False,
     base_url: str = HARRIER_HF_BASE_URL,
+    expected_manifest: dict[str, tuple[int | None, str]] | None = None,
 ) -> dict[str, Any]:
     """Download Harrier-OSS-v1-0.6B ONNX artifacts into ``eidos/.cache/models/harrier-oss-v1-0.6b/``."""
     norm_variant = (variant or "quantized").strip().lower()
@@ -678,6 +798,20 @@ def setup_semantic_model(
     except Exception:
         pass
 
+    manifest: dict[str, tuple[int | None, str]] = (
+        dict(expected_manifest)
+        if expected_manifest is not None
+        else (dict(HARRIER_ARTIFACT_MANIFEST) if base_url.rstrip("/") == HARRIER_HF_BASE_URL.rstrip("/") else {})
+    )
+    sidecar_path = model_dir / ".manifest.json"
+    sidecar_records: dict[str, dict[str, Any]] = {}
+    if sidecar_path.is_file():
+        with contextlib.suppress(OSError, ValueError, TypeError):
+            loaded = orjson.loads(sidecar_path.read_bytes())
+            if isinstance(loaded, dict):
+                sidecar_records = {str(k): v for k, v in loaded.items() if isinstance(v, dict)}
+    sidecar_dirty = False
+
     rel_files = (*_METADATA_FILES, *_VARIANT_FILES[norm_variant])
     downloaded: list[str] = []
     skipped: list[str] = []
@@ -686,37 +820,89 @@ def setup_semantic_model(
     for idx, rel_path in enumerate(rel_files, start=1):
         dest = model_dir / rel_path
         dest.parent.mkdir(parents=True, exist_ok=True)
-        if dest.is_file() and dest.stat().st_size > 0 and not force:
-            skipped.append(rel_path)
-            continue
+        expected_entry = manifest.get(rel_path)
+        if not force:
+            valid_cached, marked_dirty = _is_cached_artifact_verified(dest, rel_path, expected_entry, sidecar_records)
+            if marked_dirty:
+                sidecar_dirty = True
+            if valid_cached:
+                skipped.append(rel_path)
+                continue
+
         url = f"{base_url.rstrip('/')}/{rel_path}"
         tmp_dest = dest.with_suffix(dest.suffix + ".part")
         req = urllib.request.Request(url, headers={"User-Agent": "eidos-ai/semantic-setup"})
-        with urllib.request.urlopen(req, timeout=60) as resp, open(tmp_dest, "wb") as out_f:
-            content_len_hdr = getattr(resp, "headers", {}).get("Content-Length") if hasattr(resp, "headers") else None
-            total_bytes = int(content_len_hdr) if content_len_hdr and str(content_len_hdr).isdigit() else None
-            if progress_cb is not None:
-                progress_cb(
-                    {
-                        "phase": "file_start",
-                        "file": rel_path,
-                        "file_index": idx,
-                        "total_files": len(rel_files),
-                        "total_bytes": total_bytes,
-                    }
+        hasher = hashlib.sha256()
+        bytes_read = 0
+        total_bytes: int | None = None
+        hdr_sha256 = ""
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp, open(tmp_dest, "wb") as out_f:
+                headers = getattr(resp, "headers", None) or {}
+                content_len_hdr = headers.get("Content-Length") if hasattr(headers, "get") else None
+                total_bytes = (
+                    int(content_len_hdr) if content_len_hdr is not None and str(content_len_hdr).strip().isdigit() else None
                 )
-            while True:
-                chunk = resp.read(1024 * 1024)
-                if not chunk:
-                    break
-                out_f.write(chunk)
+                if hasattr(headers, "get"):
+                    raw_etag = str(headers.get("X-Checksum-Sha256") or headers.get("X-Linked-Etag") or "").strip().strip('"')
+                    if len(raw_etag) == 64 and all(c in "0123456789abcdefABCDEF" for c in raw_etag):
+                        hdr_sha256 = raw_etag.lower()
                 if progress_cb is not None:
-                    progress_cb({"phase": "file_chunk", "file": rel_path, "bytes": len(chunk)})
-        tmp_dest.replace(dest)
-        downloaded.append(rel_path)
+                    progress_cb(
+                        {
+                            "phase": "file_start",
+                            "file": rel_path,
+                            "file_index": idx,
+                            "total_files": len(rel_files),
+                            "total_bytes": total_bytes,
+                        }
+                    )
+                while True:
+                    chunk = resp.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    out_f.write(chunk)
+                    hasher.update(chunk)
+                    bytes_read += len(chunk)
+                    if progress_cb is not None:
+                        progress_cb({"phase": "file_chunk", "file": rel_path, "bytes": len(chunk)})
+
+            if total_bytes is not None and bytes_read != total_bytes:
+                raise ValueError(
+                    f"Truncated download for '{rel_path}': Content-Length={total_bytes}, received={bytes_read} bytes."
+                )
+            exp_size = expected_entry[0] if expected_entry is not None else None
+            exp_sha = (expected_entry[1].strip().lower() if expected_entry is not None and expected_entry[1] else "") or hdr_sha256
+            if exp_size is not None and bytes_read != exp_size:
+                raise ValueError(
+                    f"Size mismatch for '{rel_path}': expected {exp_size} bytes, received {bytes_read} bytes."
+                )
+            actual_sha = hasher.hexdigest()
+            if exp_sha and actual_sha != exp_sha:
+                raise ValueError(
+                    f"SHA-256 verification failed for '{rel_path}': expected {exp_sha}, got {actual_sha}."
+                )
+            tmp_dest.replace(dest)
+            st_final = dest.stat()
+            sidecar_records[rel_path] = {
+                "size": st_final.st_size,
+                "mtime_ns": st_final.st_mtime_ns,
+                "sha256": actual_sha,
+            }
+            sidecar_dirty = True
+            downloaded.append(rel_path)
+        except Exception:
+            with contextlib.suppress(OSError):
+                tmp_dest.unlink(missing_ok=True)
+            raise
+
+    if sidecar_dirty:
+        with contextlib.suppress(OSError):
+            sidecar_path.write_bytes(orjson.dumps(sidecar_records, option=orjson.OPT_INDENT_2))
 
     return {
         "model_id": HARRIER_MODEL_ID,
+        "revision": HARRIER_HF_REVISION,
         "variant": norm_variant,
         "model_dir": str(model_dir),
         "downloaded": downloaded,
@@ -981,33 +1167,54 @@ def _trigger_auto_semantic_refresh(
             return
 
         lock_path = resolved_eidos / ".cache" / "semantic_sync.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_fd = _try_acquire_semantic_worker_lock(lock_path)
+        if lock_fd is None:
+            return
         import subprocess
         import sys
 
-        worker_code = (
-            "import os, pathlib, sqlite3; "
-            "from eidos.core.index.semantic import sync_spec_embeddings; "
-            f"lock = pathlib.Path({str(lock_path)!r}); "
-            "lock.parent.mkdir(parents=True, exist_ok=True); "
-            "lock.write_text(str(os.getpid()), encoding='utf-8'); "
-            "conn = sqlite3.connect("
-            f"{str(Path(db_path).resolve())!r}, timeout=30.0"
-            "); "
-            "conn.execute('PRAGMA journal_mode=WAL;'); "
-            "conn.execute('PRAGMA busy_timeout=30000;'); "
-            "try:\n"
-            f"    sync_spec_embeddings(conn, pathlib.Path({str(resolved_eidos)!r}), force=False)\n"
-            "finally:\n"
-            "    conn.close()\n"
-            "    lock.unlink(missing_ok=True)\n"
-        )
-        subprocess.Popen(
-            [sys.executable, "-c", worker_code],
-            start_new_session=True,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        popen_succeeded = False
+        try:
+            worker_code = (
+                "import os, pathlib, sqlite3; "
+                "from eidos.core.index.semantic import sync_spec_embeddings; "
+                f"lock = pathlib.Path({str(lock_path)!r}); "
+                "lock.parent.mkdir(parents=True, exist_ok=True); "
+                "lock.write_text(str(os.getpid()), encoding='utf-8'); "
+                "conn = sqlite3.connect("
+                f"{str(Path(db_path).resolve())!r}, timeout=30.0"
+                "); "
+                "conn.execute('PRAGMA journal_mode=WAL;'); "
+                "conn.execute('PRAGMA busy_timeout=30000;'); "
+                "try:\n"
+                f"    sync_spec_embeddings(conn, pathlib.Path({str(resolved_eidos)!r}), force=False)\n"
+                "finally:\n"
+                "    conn.close()\n"
+                "    lock.unlink(missing_ok=True)\n"
+            )
+            popen_kwargs: dict[str, Any] = {
+                "start_new_session": True,
+                "stdin": subprocess.DEVNULL,
+                "stdout": subprocess.DEVNULL,
+                "stderr": subprocess.DEVNULL,
+            }
+            if os.name != "nt":
+                popen_kwargs["pass_fds"] = (lock_fd,)
+            proc = subprocess.Popen([sys.executable, "-c", worker_code], **popen_kwargs)
+            popen_succeeded = True
+            child_pid = getattr(proc, "pid", None)
+            if isinstance(child_pid, int) and child_pid > 0:
+                with contextlib.suppress(OSError):
+                    os.ftruncate(lock_fd, 0)
+                    os.lseek(lock_fd, 0, os.SEEK_SET)
+                    os.write(lock_fd, f"{child_pid}\n".encode())
+        finally:
+            if not popen_succeeded:
+                _release_semantic_worker_lock(lock_fd, lock_path)
+            else:
+                with contextlib.suppress(OSError):
+                    os.close(lock_fd)
     except Exception:
         return
 

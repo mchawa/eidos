@@ -13,9 +13,14 @@ from typing import Any
 
 import orjson
 
-from eidos.core.spec.parser import YamlError, safe_dump_yaml, safe_load_yaml
 from eidos.core.workspace.assets import get_plugin_reference_dir
-from eidos.plugin.managed_block import BlockResult, BlockStatus, upsert_managed_block
+from eidos.plugin.managed_block import (
+    BlockResult,
+    BlockStatus,
+    read_managed_block,
+    remove_managed_block,
+    upsert_managed_block,
+)
 from eidos.plugin.version import (
     get_bundled_plugin_version,
     get_installed_plugin_version,
@@ -28,7 +33,7 @@ class PluginInstallTarget(enum.StrEnum):
     CLAUDE = "claude"  # Claude Code skills (.claude/skills), opt-in Stop hook (.claude/settings.json), CLAUDE.md @AGENTS.md
     CURSOR = "cursor"  # Configures .agents/skills + opt-in .cursor/hooks.json (loop_limit: 1)
     AIDER = "aider"  # Configures .aider/skills and adds AGENTS.md to .aider.conf.yml read:
-    CLINE = "cline"  # Configures .agents/skills + opt-in .clinerules/hooks/TaskComplete
+    CLINE = "cline"  # Configures .agents/skills + opt-in .clinerules/hooks/PreToolUse (attempt_completion)
     KILOCODE = "kilocode"  # Configures .agents/skills; reads root AGENTS.md natively
     OPEN_CODE = "open-code"  # Configures .agents/skills; reads root AGENTS.md natively
     CODEX = "codex"  # Configures .agents/skills + opt-in .codex/hooks.json
@@ -127,6 +132,18 @@ def _compute_sha256(file_path: Path) -> str:
     return h.hexdigest()
 
 
+def _has_symlink_between(child: Path, ancestor: Path) -> bool:
+    """Return True if `child` or any directory between `child` and `ancestor` is a symlink."""
+    if child.is_symlink():
+        return True
+    for parent in child.parents:
+        if parent == ancestor:
+            break
+        if parent.is_symlink():
+            return True
+    return False
+
+
 def _read_manifest_targets(target_dir: Path) -> dict[str, dict[str, Any]]:
     """Read per-target installation metadata ('targets') from target_dir/.eidos-manifest.json."""
     manifest_file = target_dir / MANIFEST_FILENAME
@@ -146,12 +163,29 @@ def _read_manifest_targets(target_dir: Path) -> dict[str, dict[str, Any]]:
     return {}
 
 
+def _read_manifest_skipped_files(target_dir: Path) -> list[str]:
+    """Read 'skipped_files' recorded during non-force upgrades from target_dir/.eidos-manifest.json."""
+    manifest_file = target_dir / MANIFEST_FILENAME
+    if not manifest_file.is_file():
+        return []
+    try:
+        data = orjson.loads(manifest_file.read_bytes())
+        skipped = data.get("skipped_files") if isinstance(data, dict) else None
+        if isinstance(skipped, list):
+            return sorted({str(item) for item in skipped if isinstance(item, str) and item.strip()})
+    except (OSError, orjson.JSONDecodeError, ValueError):
+        pass
+    return []
+
+
 def _write_installation_manifest(
     target_dir: Path,
     created_files: list[Path] | None = None,
     target_name: str | None = None,
     hooks: bool = False,
     launcher: str = "eidos",
+    skipped_files: list[Path] | None = None,
+    force: bool = False,
 ) -> Path:
     """Generate .eidos-manifest.json in target_dir storing relative file paths, SHA-256 digests, and target metadata."""
     _check_not_symlink(target_dir)
@@ -160,6 +194,7 @@ def _write_installation_manifest(
 
     existing_files: dict[str, str] = {}
     existing_targets: dict[str, dict[str, Any]] = {}
+    existing_skipped: set[str] = set()
     if manifest_file.exists():
         try:
             old_data = orjson.loads(manifest_file.read_bytes())
@@ -169,16 +204,22 @@ def _write_installation_manifest(
                     for k, v in old_targets.items():
                         if isinstance(k, str) and isinstance(v, dict):
                             existing_targets[k] = dict(v)
+                old_skipped = old_data.get("skipped_files")
+                if isinstance(old_skipped, list) and not force and skipped_files is None:
+                    for item in old_skipped:
+                        if isinstance(item, str) and item.strip():
+                            existing_skipped.add(item)
                 if created_files is not None:
                     old_files = old_data.get("files", {})
                     if isinstance(old_files, dict):
                         for rel_path, digest in old_files.items():
                             candidate = target_dir / rel_path
-                            if candidate.is_file() and not candidate.is_symlink():
+                            if candidate.is_file() and not _has_symlink_between(candidate, target_dir):
                                 existing_files[rel_path] = str(digest)
         except (OSError, orjson.JSONDecodeError, ValueError):
             existing_files = {}
             existing_targets = {}
+            existing_skipped = set()
 
     if target_name is not None:
         existing_targets[target_name] = {
@@ -186,22 +227,40 @@ def _write_installation_manifest(
             "launcher": launcher,
         }
 
+    rel_skipped: set[str] = set() if force else set(existing_skipped)
+    if skipped_files is not None and not force:
+        for sf in sorted(skipped_files):
+            try:
+                rel_s = str(sf.relative_to(target_dir))
+            except ValueError:
+                continue
+            if rel_s in SHARED_USER_FILES or _has_symlink_between(sf, target_dir):
+                continue
+            if sf.is_file():
+                existing_files[rel_s] = _compute_sha256(sf)
+                rel_skipped.add(rel_s)
+
     manifest_data: dict[str, Any] = {
         "version": get_bundled_plugin_version(),
         "files": existing_files,
+        "skipped_files": sorted(rel_skipped),
         "targets": dict(sorted(existing_targets.items())),
     }
     if created_files is not None:
         file_list = [f for f in created_files if f.is_file() and f.resolve() != manifest_file.resolve()]
     else:
-        file_list = [f for f in target_dir.rglob("*") if f.is_file() and f.name != MANIFEST_FILENAME]
+        file_list = [
+            f
+            for f in target_dir.rglob("*")
+            if f.is_file() and f.name != MANIFEST_FILENAME and not _has_symlink_between(f, target_dir)
+        ]
 
     for f in sorted(file_list):
         try:
             rel = str(f.relative_to(target_dir))
         except ValueError:
             continue
-        if rel in SHARED_USER_FILES:
+        if rel in SHARED_USER_FILES or _has_symlink_between(f, target_dir):
             continue
         manifest_data["files"][rel] = _compute_sha256(f)
 
@@ -216,7 +275,7 @@ def _prune_empty_dirs(root_dir: Path) -> None:
         return
     for dirpath, _dirnames, _filenames in os.walk(root_dir, topdown=False):
         d = Path(dirpath)
-        if d != root_dir:
+        if d != root_dir and not d.is_symlink():
             try:
                 if not any(d.iterdir()):
                     d.rmdir()
@@ -224,11 +283,29 @@ def _prune_empty_dirs(root_dir: Path) -> None:
                 pass
 
 
-def _copy_skills_flat(source_dir: Path, target_skills_dir: Path, force: bool = False) -> list[Path]:
+def _is_canonical_skills_symlink(source_skills: Path, target_skills_dir: Path) -> bool:
+    """Return True if `target_skills_dir` is a symlink resolving directly to `source_skills`."""
+    if not target_skills_dir.is_symlink() or not source_skills.exists():
+        return False
+    try:
+        return target_skills_dir.resolve() == source_skills.resolve()
+    except OSError:
+        return False
+
+
+def _copy_skills_flat(
+    source_dir: Path,
+    target_skills_dir: Path,
+    force: bool = False,
+    skipped_out: list[Path] | None = None,
+) -> list[Path]:
     """Copy individual skills from source bundle into target_skills_dir/<skill-name>/."""
+    source_skills = source_dir / "skills" if (source_dir / "skills").exists() else source_dir
+    if _is_canonical_skills_symlink(source_skills, target_skills_dir):
+        return []
+
     _check_not_symlink(target_skills_dir)
 
-    source_skills = source_dir / "skills" if (source_dir / "skills").exists() else source_dir
     if not source_skills.exists():
         return []
 
@@ -249,6 +326,8 @@ def _copy_skills_flat(source_dir: Path, target_skills_dir: Path, force: bool = F
                     if dest_file.exists() and not force:
                         if _compute_sha256(dest_file) == _compute_sha256(file_path):
                             created.append(dest_file)
+                        elif skipped_out is not None:
+                            skipped_out.append(dest_file)
                         continue
                     dest_file.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(file_path, dest_file)
@@ -275,8 +354,69 @@ def _is_eidos_stop_hook_entry(entry: Any) -> bool:
     return False
 
 
+def _upsert_nested_command_hook(hooks_dict: dict[str, Any], event_name: str, eidos_sub_hook: dict[str, Any]) -> None:
+    """Upsert an Eidos command sub-hook inside a Claude/Codex `hooks[event_name]` matcher list."""
+    ev_list = hooks_dict.get(event_name)
+    if not isinstance(ev_list, list):
+        ev_list = []
+
+    new_list: list[Any] = []
+    replaced = False
+    for entry in ev_list:
+        if _is_eidos_stop_hook_entry(entry) and isinstance(entry, dict) and isinstance(entry.get("hooks"), list):
+            new_sub_hooks: list[Any] = []
+            for h in entry["hooks"]:
+                if isinstance(h, dict) and _is_eidos_hook_command(h.get("command")):
+                    if not replaced:
+                        new_sub_hooks.append(eidos_sub_hook)
+                        replaced = True
+                else:
+                    new_sub_hooks.append(h)
+            if new_sub_hooks:
+                new_list.append({**entry, "hooks": new_sub_hooks})
+        else:
+            new_list.append(entry)
+
+    if not replaced:
+        new_list.append({"hooks": [eidos_sub_hook]})
+    hooks_dict[event_name] = new_list
+
+
+def _remove_nested_command_hook(hooks_dict: dict[str, Any], event_name: str) -> bool:
+    """Remove Eidos command sub-hooks from a Claude/Codex `hooks[event_name]` matcher list."""
+    ev_list = hooks_dict.get(event_name)
+    if not isinstance(ev_list, list):
+        return False
+
+    changed = False
+    new_list: list[Any] = []
+    for entry in ev_list:
+        if isinstance(entry, dict) and isinstance(entry.get("hooks"), list):
+            kept_sub = [
+                h
+                for h in entry["hooks"]
+                if not (isinstance(h, dict) and _is_eidos_hook_command(h.get("command")))
+            ]
+            if len(kept_sub) != len(entry["hooks"]):
+                changed = True
+            if kept_sub:
+                new_list.append({**entry, "hooks": kept_sub})
+        elif _is_eidos_stop_hook_entry(entry):
+            changed = True
+        else:
+            new_list.append(entry)
+
+    if new_list:
+        hooks_dict[event_name] = new_list
+    else:
+        hooks_dict.pop(event_name, None)
+        if ev_list:
+            changed = True
+    return changed
+
+
 def _update_project_claude_settings(file_path: Path, launcher: str = "eidos") -> Path:
-    """Safely update project-level .claude/settings.json to register the Eidos Stop hook."""
+    """Safely update project-level .claude/settings.json to register Eidos SessionStart and Stop hooks."""
     _check_not_symlink(file_path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     data: dict[str, Any] = {}
@@ -290,47 +430,18 @@ def _update_project_claude_settings(file_path: Path, launcher: str = "eidos") ->
 
     bundled_ver = get_bundled_plugin_version()
     hook_cmd = f"uvx --from eidos-ai=={bundled_ver} eidos hook" if launcher == "uvx" else "eidos hook"
-    eidos_sub_hook = {
-        "type": "command",
-        "command": hook_cmd,
-        "timeout": 30,
-    }
-
     if not isinstance(data.get("hooks"), dict):
         data["hooks"] = {}
     hooks_dict: dict[str, Any] = data["hooks"]
 
-    stop_list = hooks_dict.get("Stop")
-    if not isinstance(stop_list, list):
-        stop_list = []
-
-    new_stop_list: list[Any] = []
-    replaced = False
-    for entry in stop_list:
-        if _is_eidos_stop_hook_entry(entry) and isinstance(entry, dict) and isinstance(entry.get("hooks"), list):
-            new_sub_hooks: list[Any] = []
-            for h in entry["hooks"]:
-                if isinstance(h, dict) and _is_eidos_hook_command(h.get("command")):
-                    if not replaced:
-                        new_sub_hooks.append(eidos_sub_hook)
-                        replaced = True
-                else:
-                    new_sub_hooks.append(h)
-            if new_sub_hooks:
-                new_stop_list.append({**entry, "hooks": new_sub_hooks})
-        else:
-            new_stop_list.append(entry)
-
-    if not replaced:
-        new_stop_list.append({"hooks": [eidos_sub_hook]})
-
-    hooks_dict["Stop"] = new_stop_list
+    _upsert_nested_command_hook(hooks_dict, "SessionStart", {"type": "command", "command": hook_cmd, "timeout": 10})
+    _upsert_nested_command_hook(hooks_dict, "Stop", {"type": "command", "command": hook_cmd, "timeout": 30})
     file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
     return file_path
 
 
 def _remove_project_claude_settings(file_path: Path) -> bool:
-    """Safely remove Eidos Stop hook from project-level .claude/settings.json."""
+    """Safely remove Eidos SessionStart and Stop hooks from project-level .claude/settings.json."""
     if not file_path.exists():
         return False
     try:
@@ -343,31 +454,9 @@ def _remove_project_claude_settings(file_path: Path) -> bool:
     changed = False
     hooks_dict = data.get("hooks")
     if isinstance(hooks_dict, dict):
-        stop_list = hooks_dict.get("Stop")
-        if isinstance(stop_list, list):
-            new_stop_list: list[Any] = []
-            for entry in stop_list:
-                if isinstance(entry, dict) and isinstance(entry.get("hooks"), list):
-                    kept_sub = [
-                        h
-                        for h in entry["hooks"]
-                        if not (isinstance(h, dict) and _is_eidos_hook_command(h.get("command")))
-                    ]
-                    if len(kept_sub) != len(entry["hooks"]):
-                        changed = True
-                    if kept_sub:
-                        new_stop_list.append({**entry, "hooks": kept_sub})
-                elif _is_eidos_stop_hook_entry(entry):
-                    changed = True
-                else:
-                    new_stop_list.append(entry)
-
-            if new_stop_list:
-                hooks_dict["Stop"] = new_stop_list
-            else:
-                hooks_dict.pop("Stop", None)
+        for ev_name in ("SessionStart", "UserPromptSubmit", "Stop"):
+            if _remove_nested_command_hook(hooks_dict, ev_name):
                 changed = True
-
         if not hooks_dict:
             data.pop("hooks", None)
 
@@ -385,43 +474,265 @@ def _remove_project_claude_settings(file_path: Path) -> bool:
     return True
 
 
+_TOP_READ_KEY_RE = re.compile(r"^read[ \t]*:(?P<rest>.*)$")
+_LIST_ITEM_RE = re.compile(r"^(?P<indent>[ \t]*)-[ \t]*(?P<item>.*)$")
+_TOP_KEY_LINE_RE = re.compile(r"^[^\s#-][^:]*:")
+
+
+def _split_yaml_value_and_comment(raw: str) -> tuple[str, str]:
+    """Split a single-line YAML scalar/flow value into `(value_part, inline_comment_with_leading_ws)`."""
+    in_single = False
+    in_double = False
+    escaped = False
+    for idx, ch in enumerate(raw):
+        if escaped:
+            escaped = False
+            continue
+        if ch == "\\" and in_double:
+            escaped = True
+            continue
+        if ch == "'" and not in_double:
+            in_single = not in_single
+        elif ch == '"' and not in_single:
+            in_double = not in_double
+        elif ch == "#" and not in_single and not in_double and (idx == 0 or raw[idx - 1] in (" ", "\t")):
+            ws_start = idx
+            while ws_start > 0 and raw[ws_start - 1] in (" ", "\t"):
+                ws_start -= 1
+            return raw[:ws_start].strip(), raw[ws_start:]
+    return raw.strip(), ""
+
+
+def _unquote_yaml_scalar(val: str) -> str:
+    """Strip matching surrounding single or double YAML quotes from a scalar token."""
+    cleaned = val.strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in ("'", '"'):
+        return cleaned[1:-1]
+    return cleaned
+
+
 def _update_project_aider_conf(file_path: Path, conventions_path: str = AGENTS_MD_FILENAME) -> Path:
-    """Ensure an instructions file (default: the root AGENTS.md) is listed under 'read' in .aider.conf.yml."""
+    """Ensure `conventions_path` is listed under `read:` in `.aider.conf.yml` while preserving all YAML `#` comments."""
     _check_not_symlink(file_path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
-    data = {}
-    if file_path.exists():
-        try:
-            with open(file_path, encoding="utf-8") as f:
-                loaded = safe_load_yaml(f)
-                if isinstance(loaded, dict):
-                    data = loaded
-        except (OSError, YamlError):
-            data = {}
+    text = file_path.read_text(encoding="utf-8") if file_path.exists() else ""
+    nl = "\r\n" if "\r\n" in text else "\n"
 
-    read_list = data.get("read", [])
-    if not isinstance(read_list, list):
-        read_list = [read_list] if read_list else []
+    if not text.strip():
+        file_path.write_text(f"read:{nl}  - {conventions_path}{nl}", encoding="utf-8")
+        return file_path
 
-    if conventions_path not in read_list:
-        read_list.append(conventions_path)
+    lines = text.splitlines(keepends=True)
+    for idx, line in enumerate(lines):
+        stripped_nl = line.rstrip("\r\n")
+        m_read = _TOP_READ_KEY_RE.match(stripped_nl)
+        if not m_read:
+            continue
 
-    data["read"] = read_list
+        val_str, inline_comment = _split_yaml_value_and_comment(m_read.group("rest"))
+        if val_str.startswith("[") and val_str.endswith("]"):
+            inner_flow = val_str[1:-1]
+            raw_tokens = [tok.strip() for tok in inner_flow.split(",") if tok.strip()]
+            unquoted = [_unquote_yaml_scalar(tok) for tok in raw_tokens]
+            if conventions_path in unquoted:
+                return file_path
+            new_flow = ", ".join([*raw_tokens, conventions_path])
+            lines[idx] = f"read: [{new_flow}]{inline_comment}{nl}"
+            file_path.write_text("".join(lines), encoding="utf-8")
+            return file_path
 
-    with open(file_path, "w", encoding="utf-8") as f:
-        safe_dump_yaml(data, f)
+        if val_str and val_str not in ("null", "~"):
+            if _unquote_yaml_scalar(val_str) == conventions_path:
+                return file_path
+            lines[idx : idx + 1] = [
+                f"read:{inline_comment}{nl}",
+                f"  - {val_str}{nl}",
+                f"  - {conventions_path}{nl}",
+            ]
+            file_path.write_text("".join(lines), encoding="utf-8")
+            return file_path
+
+        item_positions: list[tuple[int, str, str]] = []
+        scan_idx = idx + 1
+        while scan_idx < len(lines):
+            s_line = lines[scan_idx].rstrip("\r\n")
+            s_trim = s_line.strip()
+            if not s_trim or s_trim.startswith("#"):
+                scan_idx += 1
+                continue
+            m_item = _LIST_ITEM_RE.match(s_line)
+            if m_item:
+                item_val, _ = _split_yaml_value_and_comment(m_item.group("item"))
+                item_positions.append((scan_idx, m_item.group("indent"), _unquote_yaml_scalar(item_val)))
+                scan_idx += 1
+                continue
+            if _TOP_KEY_LINE_RE.match(s_line) or not s_line.startswith((" ", "\t")):
+                break
+            scan_idx += 1
+
+        if any(item_scalar == conventions_path for _, _, item_scalar in item_positions):
+            return file_path
+
+        if item_positions:
+            last_pos, last_indent, _ = item_positions[-1]
+            use_indent = last_indent if last_indent else "  "
+            lines.insert(last_pos + 1, f"{use_indent}- {conventions_path}{nl}")
+        else:
+            lines[idx] = f"read:{inline_comment}{nl}"
+            lines.insert(idx + 1, f"  - {conventions_path}{nl}")
+        file_path.write_text("".join(lines), encoding="utf-8")
+        return file_path
+
+    prefix = text if text.endswith(("\n", "\r\n")) else text + nl
+    file_path.write_text(f"{prefix}read:{nl}  - {conventions_path}{nl}", encoding="utf-8")
     return file_path
 
 
+def _remove_project_aider_conf(file_path: Path, conventions_path: str = AGENTS_MD_FILENAME) -> bool:
+    """Remove `conventions_path` from `read:` in `.aider.conf.yml` while preserving user `#` comments and keys."""
+    if not file_path.exists() or file_path.is_symlink():
+        return False
+    try:
+        text = file_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+    nl = "\r\n" if "\r\n" in text else "\n"
+    lines = text.splitlines(keepends=True)
+    changed = False
+
+    for idx, line in enumerate(lines):
+        stripped_nl = line.rstrip("\r\n")
+        m_read = _TOP_READ_KEY_RE.match(stripped_nl)
+        if not m_read:
+            continue
+
+        val_str, inline_comment = _split_yaml_value_and_comment(m_read.group("rest"))
+        if val_str.startswith("[") and val_str.endswith("]"):
+            inner_flow = val_str[1:-1]
+            raw_tokens = [tok.strip() for tok in inner_flow.split(",") if tok.strip()]
+            kept_tokens = [tok for tok in raw_tokens if _unquote_yaml_scalar(tok) != conventions_path]
+            if len(kept_tokens) == len(raw_tokens):
+                return False
+            changed = True
+            if kept_tokens:
+                lines[idx] = f"read: [{', '.join(kept_tokens)}]{inline_comment}{nl}"
+            elif inline_comment.strip():
+                lines[idx] = f"{inline_comment.lstrip()}{nl}"
+            else:
+                del lines[idx]
+            break
+
+        if val_str and val_str not in ("null", "~"):
+            if _unquote_yaml_scalar(val_str) != conventions_path:
+                return False
+            changed = True
+            if inline_comment.strip():
+                lines[idx] = f"{inline_comment.lstrip()}{nl}"
+            else:
+                del lines[idx]
+            break
+
+        item_positions: list[tuple[int, str]] = []
+        scan_idx = idx + 1
+        while scan_idx < len(lines):
+            s_line = lines[scan_idx].rstrip("\r\n")
+            s_trim = s_line.strip()
+            if not s_trim or s_trim.startswith("#"):
+                scan_idx += 1
+                continue
+            m_item = _LIST_ITEM_RE.match(s_line)
+            if m_item:
+                item_val, _ = _split_yaml_value_and_comment(m_item.group("item"))
+                item_positions.append((scan_idx, _unquote_yaml_scalar(item_val)))
+                scan_idx += 1
+                continue
+            if _TOP_KEY_LINE_RE.match(s_line) or not s_line.startswith((" ", "\t")):
+                break
+            scan_idx += 1
+
+        remove_indices = [pos for pos, scalar in item_positions if scalar == conventions_path]
+        if not remove_indices:
+            return False
+        changed = True
+        remaining_count = len(item_positions) - len(remove_indices)
+        for pos in reversed(remove_indices):
+            del lines[pos]
+        if remaining_count == 0:
+            if inline_comment.strip():
+                lines[idx] = f"{inline_comment.lstrip()}{nl}"
+            else:
+                del lines[idx]
+        break
+
+    if not changed:
+        return False
+
+    new_text = "".join(lines)
+    if not new_text.strip():
+        file_path.unlink()
+    else:
+        file_path.write_text(new_text, encoding="utf-8")
+    return True
+
+
+def _is_eidos_cursor_hook_entry(entry: Any) -> bool:
+    """Return True if a Cursor hook entry invokes 'eidos hook'."""
+    return isinstance(entry, dict) and _is_eidos_hook_command(entry.get("command"))
+
+
 def _is_eidos_copilot_hook_entry(entry: Any) -> bool:
-    """Return True if a GitHub Copilot agentStop hook entry invokes 'eidos hook'."""
+    """Return True if a GitHub Copilot hook entry invokes 'eidos hook'."""
     if not isinstance(entry, dict):
         return False
     return any(_is_eidos_hook_command(entry.get(k)) for k in ("bash", "powershell", "command"))
 
 
+def _upsert_flat_command_hook(
+    hooks_dict: dict[str, Any],
+    event_name: str,
+    eidos_entry: dict[str, Any],
+    match_fn: Callable[[Any], bool],
+) -> None:
+    """Upsert an Eidos hook entry in a flat event array (Cursor or GitHub Copilot)."""
+    ev_list = hooks_dict.get(event_name)
+    if not isinstance(ev_list, list):
+        ev_list = []
+
+    new_list: list[Any] = []
+    replaced = False
+    for entry in ev_list:
+        if match_fn(entry) and isinstance(entry, dict):
+            if not replaced:
+                new_list.append({**entry, **eidos_entry})
+                replaced = True
+        else:
+            new_list.append(entry)
+    if not replaced:
+        new_list.append(eidos_entry)
+    hooks_dict[event_name] = new_list
+
+
+def _remove_flat_command_hook(
+    hooks_dict: dict[str, Any],
+    event_name: str,
+    match_fn: Callable[[Any], bool],
+) -> bool:
+    """Remove Eidos hook entries from a flat event array (Cursor or GitHub Copilot)."""
+    ev_list = hooks_dict.get(event_name)
+    if not isinstance(ev_list, list):
+        return False
+    new_list = [entry for entry in ev_list if not match_fn(entry)]
+    changed = len(new_list) != len(ev_list)
+    if new_list:
+        hooks_dict[event_name] = new_list
+    else:
+        hooks_dict.pop(event_name, None)
+    return changed
+
+
 def _update_project_cursor_hooks(file_path: Path, launcher: str = "eidos") -> Path:
-    """Safely update project-level .cursor/hooks.json to register the Eidos stop hook with loop_limit: 1."""
+    """Safely update project-level .cursor/hooks.json to register Eidos sessionStart and stop hooks."""
     _check_not_symlink(file_path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     data: dict[str, Any] = {}
@@ -438,39 +749,18 @@ def _update_project_cursor_hooks(file_path: Path, launcher: str = "eidos") -> Pa
 
     bundled_ver = get_bundled_plugin_version()
     hook_cmd = f"uvx --from eidos-ai=={bundled_ver} eidos hook" if launcher == "uvx" else "eidos hook"
-    eidos_entry = {
-        "command": hook_cmd,
-        "loop_limit": 1,
-    }
-
     if not isinstance(data.get("hooks"), dict):
         data["hooks"] = {}
     hooks_dict: dict[str, Any] = data["hooks"]
 
-    stop_list = hooks_dict.get("stop")
-    if not isinstance(stop_list, list):
-        stop_list = []
-
-    new_stop_list: list[Any] = []
-    replaced = False
-    for entry in stop_list:
-        if isinstance(entry, dict) and _is_eidos_hook_command(entry.get("command")):
-            if not replaced:
-                new_stop_list.append({**entry, **eidos_entry})
-                replaced = True
-        else:
-            new_stop_list.append(entry)
-
-    if not replaced:
-        new_stop_list.append(eidos_entry)
-
-    hooks_dict["stop"] = new_stop_list
+    _upsert_flat_command_hook(hooks_dict, "sessionStart", {"command": hook_cmd}, _is_eidos_cursor_hook_entry)
+    _upsert_flat_command_hook(hooks_dict, "stop", {"command": hook_cmd, "loop_limit": 1}, _is_eidos_cursor_hook_entry)
     file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
     return file_path
 
 
 def _remove_project_cursor_hooks(file_path: Path) -> bool:
-    """Safely remove Eidos stop hook from project-level .cursor/hooks.json."""
+    """Safely remove Eidos hooks from project-level .cursor/hooks.json."""
     if not file_path.exists():
         return False
     try:
@@ -483,19 +773,9 @@ def _remove_project_cursor_hooks(file_path: Path) -> bool:
     changed = False
     hooks_dict = data.get("hooks")
     if isinstance(hooks_dict, dict):
-        stop_list = hooks_dict.get("stop")
-        if isinstance(stop_list, list):
-            new_stop_list = [
-                entry
-                for entry in stop_list
-                if not (isinstance(entry, dict) and _is_eidos_hook_command(entry.get("command")))
-            ]
-            if len(new_stop_list) != len(stop_list):
+        for ev_name in ("sessionStart", "beforeSubmitPrompt", "stop"):
+            if _remove_flat_command_hook(hooks_dict, ev_name, _is_eidos_cursor_hook_entry):
                 changed = True
-            if new_stop_list:
-                hooks_dict["stop"] = new_stop_list
-            else:
-                hooks_dict.pop("stop", None)
         if not hooks_dict:
             data.pop("hooks", None)
 
@@ -514,7 +794,7 @@ def _remove_project_cursor_hooks(file_path: Path) -> bool:
 
 
 def _update_project_copilot_hooks(file_path: Path, launcher: str = "eidos") -> Path:
-    """Safely update project-level .github/hooks/hooks.json to register the Eidos agentStop hook."""
+    """Safely update project-level .github/hooks/hooks.json to register Eidos sessionStart and agentStop hooks."""
     _check_not_symlink(file_path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     data: dict[str, Any] = {}
@@ -531,41 +811,28 @@ def _update_project_copilot_hooks(file_path: Path, launcher: str = "eidos") -> P
 
     bundled_ver = get_bundled_plugin_version()
     hook_cmd = f"uvx --from eidos-ai=={bundled_ver} eidos hook" if launcher == "uvx" else "eidos hook"
-    eidos_entry = {
-        "type": "command",
-        "bash": hook_cmd,
-        "powershell": hook_cmd,
-        "timeoutSec": 30,
-    }
-
     if not isinstance(data.get("hooks"), dict):
         data["hooks"] = {}
     hooks_dict: dict[str, Any] = data["hooks"]
 
-    stop_list = hooks_dict.get("agentStop")
-    if not isinstance(stop_list, list):
-        stop_list = []
-
-    new_stop_list: list[Any] = []
-    replaced = False
-    for entry in stop_list:
-        if _is_eidos_copilot_hook_entry(entry) and isinstance(entry, dict):
-            if not replaced:
-                new_stop_list.append({**entry, **eidos_entry})
-                replaced = True
-        else:
-            new_stop_list.append(entry)
-
-    if not replaced:
-        new_stop_list.append(eidos_entry)
-
-    hooks_dict["agentStop"] = new_stop_list
+    _upsert_flat_command_hook(
+        hooks_dict,
+        "sessionStart",
+        {"type": "command", "bash": hook_cmd, "powershell": hook_cmd, "timeoutSec": 10},
+        _is_eidos_copilot_hook_entry,
+    )
+    _upsert_flat_command_hook(
+        hooks_dict,
+        "agentStop",
+        {"type": "command", "bash": hook_cmd, "powershell": hook_cmd, "timeoutSec": 30},
+        _is_eidos_copilot_hook_entry,
+    )
     file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
     return file_path
 
 
 def _remove_project_copilot_hooks(file_path: Path) -> bool:
-    """Safely remove Eidos agentStop hook from project-level .github/hooks/hooks.json."""
+    """Safely remove Eidos hooks from project-level .github/hooks/hooks.json."""
     if not file_path.exists():
         return False
     try:
@@ -578,15 +845,9 @@ def _remove_project_copilot_hooks(file_path: Path) -> bool:
     changed = False
     hooks_dict = data.get("hooks")
     if isinstance(hooks_dict, dict):
-        stop_list = hooks_dict.get("agentStop")
-        if isinstance(stop_list, list):
-            new_stop_list = [entry for entry in stop_list if not _is_eidos_copilot_hook_entry(entry)]
-            if len(new_stop_list) != len(stop_list):
+        for ev_name in ("sessionStart", "userPromptSubmitted", "agentStop"):
+            if _remove_flat_command_hook(hooks_dict, ev_name, _is_eidos_copilot_hook_entry):
                 changed = True
-            if new_stop_list:
-                hooks_dict["agentStop"] = new_stop_list
-            else:
-                hooks_dict.pop("agentStop", None)
         if not hooks_dict:
             data.pop("hooks", None)
 
@@ -605,7 +866,7 @@ def _remove_project_copilot_hooks(file_path: Path) -> bool:
 
 
 def _update_project_codex_hooks(file_path: Path, launcher: str = "eidos") -> Path:
-    """Safely update project-level .codex/hooks.json to register the Eidos Stop hook."""
+    """Safely update project-level .codex/hooks.json to register Eidos SessionStart and Stop hooks."""
     _check_not_symlink(file_path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     data: dict[str, Any] = {}
@@ -619,47 +880,18 @@ def _update_project_codex_hooks(file_path: Path, launcher: str = "eidos") -> Pat
 
     bundled_ver = get_bundled_plugin_version()
     hook_cmd = f"uvx --from eidos-ai=={bundled_ver} eidos hook" if launcher == "uvx" else "eidos hook"
-    eidos_sub_hook = {
-        "type": "command",
-        "command": hook_cmd,
-        "timeout": 30,
-    }
-
     if not isinstance(data.get("hooks"), dict):
         data["hooks"] = {}
     hooks_dict: dict[str, Any] = data["hooks"]
 
-    stop_list = hooks_dict.get("Stop")
-    if not isinstance(stop_list, list):
-        stop_list = []
-
-    new_stop_list: list[Any] = []
-    replaced = False
-    for entry in stop_list:
-        if _is_eidos_stop_hook_entry(entry) and isinstance(entry, dict) and isinstance(entry.get("hooks"), list):
-            new_sub_hooks: list[Any] = []
-            for h in entry["hooks"]:
-                if isinstance(h, dict) and _is_eidos_hook_command(h.get("command")):
-                    if not replaced:
-                        new_sub_hooks.append(eidos_sub_hook)
-                        replaced = True
-                else:
-                    new_sub_hooks.append(h)
-            if new_sub_hooks:
-                new_stop_list.append({**entry, "hooks": new_sub_hooks})
-        else:
-            new_stop_list.append(entry)
-
-    if not replaced:
-        new_stop_list.append({"hooks": [eidos_sub_hook]})
-
-    hooks_dict["Stop"] = new_stop_list
+    _upsert_nested_command_hook(hooks_dict, "SessionStart", {"type": "command", "command": hook_cmd, "timeout": 10})
+    _upsert_nested_command_hook(hooks_dict, "Stop", {"type": "command", "command": hook_cmd, "timeout": 30})
     file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
     return file_path
 
 
 def _remove_project_codex_hooks(file_path: Path) -> bool:
-    """Safely remove Eidos Stop hook from project-level .codex/hooks.json."""
+    """Safely remove Eidos SessionStart and Stop hooks from project-level .codex/hooks.json."""
     if not file_path.exists():
         return False
     try:
@@ -672,31 +904,9 @@ def _remove_project_codex_hooks(file_path: Path) -> bool:
     changed = False
     hooks_dict = data.get("hooks")
     if isinstance(hooks_dict, dict):
-        stop_list = hooks_dict.get("Stop")
-        if isinstance(stop_list, list):
-            new_stop_list: list[Any] = []
-            for entry in stop_list:
-                if isinstance(entry, dict) and isinstance(entry.get("hooks"), list):
-                    kept_sub = [
-                        h
-                        for h in entry["hooks"]
-                        if not (isinstance(h, dict) and _is_eidos_hook_command(h.get("command")))
-                    ]
-                    if len(kept_sub) != len(entry["hooks"]):
-                        changed = True
-                    if kept_sub:
-                        new_stop_list.append({**entry, "hooks": kept_sub})
-                elif _is_eidos_stop_hook_entry(entry):
-                    changed = True
-                else:
-                    new_stop_list.append(entry)
-
-            if new_stop_list:
-                hooks_dict["Stop"] = new_stop_list
-            else:
-                hooks_dict.pop("Stop", None)
+        for ev_name in ("SessionStart", "UserPromptSubmit", "Stop"):
+            if _remove_nested_command_hook(hooks_dict, ev_name):
                 changed = True
-
         if not hooks_dict:
             data.pop("hooks", None)
 
@@ -724,12 +934,12 @@ def _is_eidos_cline_hook_script(text: str) -> bool:
 
 
 def _update_project_cline_hooks(file_path: Path, launcher: str = "eidos") -> Path:
-    """Safely write or update project-level .clinerules/hooks/TaskComplete executable script for Cline."""
+    """Safely write or update project-level .clinerules/hooks/PreToolUse (attempt_completion) executable script."""
     _check_not_symlink(file_path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     bundled_ver = get_bundled_plugin_version()
     hook_cmd = f"uvx --from eidos-ai=={bundled_ver} eidos hook" if launcher == "uvx" else "eidos hook"
-    script = f"#!/usr/bin/env sh\n# Managed by Eidos (eidos-drift-gate)\nexec {hook_cmd}\n"
+    script = f"#!/usr/bin/env sh\n# Managed by Eidos (eidos-drift-gate / attempt_completion)\nexec {hook_cmd}\n"
     file_path.write_text(script, encoding="utf-8")
     with contextlib.suppress(OSError):
         file_path.chmod(0o755)
@@ -737,7 +947,7 @@ def _update_project_cline_hooks(file_path: Path, launcher: str = "eidos") -> Pat
 
 
 def _remove_project_cline_hooks(file_path: Path) -> bool:
-    """Safely remove Eidos TaskComplete hook script from project-level .clinerules/hooks/TaskComplete."""
+    """Safely remove an Eidos-managed Cline hook script from .clinerules/hooks/."""
     if not file_path.exists() or file_path.is_symlink():
         return False
     try:
@@ -755,7 +965,7 @@ def _remove_project_cline_hooks(file_path: Path) -> bool:
 
 
 def _update_project_antigravity_hooks(file_path: Path, launcher: str = "eidos") -> Path:
-    """Safely update project-level .agents/hooks.json to register the Eidos Stop hook for Antigravity."""
+    """Safely update project-level .agents/hooks.json to register Eidos SessionStart and Stop hooks."""
     _check_not_symlink(file_path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     data: dict[str, Any] = {}
@@ -770,13 +980,20 @@ def _update_project_antigravity_hooks(file_path: Path, launcher: str = "eidos") 
     bundled_ver = get_bundled_plugin_version()
     hook_cmd = f"uvx --from eidos-ai=={bundled_ver} eidos hook" if launcher == "uvx" else "eidos hook"
     data["eidos-drift-gate"] = {
+        "SessionStart": [
+            {
+                "type": "command",
+                "command": hook_cmd,
+                "timeout": 10,
+            }
+        ],
         "Stop": [
             {
                 "type": "command",
                 "command": hook_cmd,
                 "timeout": 30,
             }
-        ]
+        ],
     }
     file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
     return file_path
@@ -816,7 +1033,7 @@ TARGET_HOOK_PATHS: dict[str, str] = {
     "antigravity": ".agents/hooks.json",
     "claude": ".claude/settings.json",
     "cursor": ".cursor/hooks.json",
-    "cline": ".clinerules/hooks/TaskComplete",
+    "cline": ".clinerules/hooks/PreToolUse",
     "copilot": ".github/hooks/hooks.json",
     "codex": ".codex/hooks.json",
 }
@@ -864,6 +1081,38 @@ def check_target_hook_health(root: Path, target_name: str, hooks_expected: bool)
                 "hook_file": hook_rel,
                 "detail": f"{target_name}: Eidos Stop hook missing, non-executable, or misconfigured in '{hook_rel}'",
             }
+        task_start_rel = ".clinerules/hooks/TaskStart"
+        task_start_path = root / task_start_rel
+        manifest_file = root / ".agents" / MANIFEST_FILENAME
+        task_start_expected = False
+        if manifest_file.is_file():
+            with contextlib.suppress(OSError, orjson.JSONDecodeError, ValueError):
+                m_data = orjson.loads(manifest_file.read_bytes())
+                if isinstance(m_data, dict):
+                    t_meta = (m_data.get("targets") or {}).get("cline")
+                    if isinstance(t_meta, dict) and bool(t_meta.get("hooks")):
+                        task_start_expected = True
+        if task_start_expected or task_start_path.exists():
+            if not task_start_path.is_file():
+                return {
+                    "ok": False,
+                    "expected": True,
+                    "status": "missing",
+                    "hook_file": task_start_rel,
+                    "detail": f"{target_name}: TaskStart baseline hook '{task_start_rel}' is missing (originally installed with --hooks)",
+                }
+            ts_text = ""
+            with contextlib.suppress(OSError):
+                ts_text = task_start_path.read_text(encoding="utf-8", errors="replace")
+            ts_exec = os.name == "nt" or os.access(task_start_path, os.X_OK)
+            if not _is_eidos_cline_hook_script(ts_text) or not ts_exec:
+                return {
+                    "ok": False,
+                    "expected": True,
+                    "status": "corrupted",
+                    "hook_file": task_start_rel,
+                    "detail": f"{target_name}: Eidos TaskStart baseline hook non-executable or misconfigured in '{task_start_rel}'",
+                }
         return {
             "ok": True,
             "expected": True,
@@ -964,6 +1213,8 @@ def _uninstall_from_manifest(target_dir: Path, target_name: str | None = None) -
         if rel_path in SHARED_USER_FILES:
             continue
         f_path = target_dir / rel_path
+        if f_path.parent != target_dir and _has_symlink_between(f_path.parent, target_dir):
+            continue
         if f_path.is_symlink() or f_path.is_file():
             with contextlib.suppress(OSError):
                 f_path.unlink()
@@ -980,7 +1231,7 @@ def _uninstall_from_manifest(target_dir: Path, target_name: str | None = None) -
 
     _prune_empty_dirs(target_dir)
 
-    if target_dir.exists() and not any(target_dir.iterdir()):
+    if target_dir.exists() and not target_dir.is_symlink() and not any(target_dir.iterdir()):
         with contextlib.suppress(OSError):
             target_dir.rmdir()
 
@@ -996,7 +1247,7 @@ def _prune_empty_dirs_list(root: Path, rel_dirs: tuple[str, ...]) -> None:
     """Prune empty directories in order if they exist and contain no entries."""
     for rel in rel_dirs:
         d = root / rel
-        if d.exists() and d.is_dir() and not any(d.iterdir()):
+        if d.exists() and not d.is_symlink() and d.is_dir() and not any(d.iterdir()):
             with contextlib.suppress(OSError):
                 d.rmdir()
 
@@ -1051,12 +1302,23 @@ def _codex_configure_hooks(root: Path, launcher: str, hooks: bool) -> list[Path]
 
 
 def _cline_configure_hooks(root: Path, launcher: str, hooks: bool) -> list[Path]:
-    cline_hook = root / ".clinerules" / "hooks" / "TaskComplete"
+    hooks_dir = root / ".clinerules" / "hooks"
+    pre_tool_hook = hooks_dir / "PreToolUse"
+    task_start_hook = hooks_dir / "TaskStart"
     if hooks:
-        _update_project_cline_hooks(cline_hook, launcher=launcher)
-        return [cline_hook]
-    _remove_project_cline_hooks(cline_hook)
+        _update_project_cline_hooks(pre_tool_hook, launcher=launcher)
+        _update_project_cline_hooks(task_start_hook, launcher=launcher)
+        return [pre_tool_hook, task_start_hook]
+    _remove_project_cline_hooks(pre_tool_hook)
+    _remove_project_cline_hooks(task_start_hook)
     return []
+
+
+def _cline_extra_uninstall(root: Path) -> bool:
+    hooks_dir = root / ".clinerules" / "hooks"
+    r1 = _remove_project_cline_hooks(hooks_dir / "PreToolUse")
+    r2 = _remove_project_cline_hooks(hooks_dir / "TaskStart")
+    return bool(r1 or r2)
 
 
 # ---------------------------------------------------------------------------
@@ -1117,6 +1379,29 @@ def project_agents_md_block(
         return BlockResult(BlockStatus.SKIPPED, agents_md, detail=str(exc))
 
 
+def prune_agents_md_block(root: Path, target_name: str) -> BlockResult | None:
+    """Prune `target_name` from the root AGENTS.md block, removing the block (and empty AGENTS.md) when zero targets remain."""
+    agents_md = root / AGENTS_MD_FILENAME
+    if not agents_md.exists() or agents_md.is_symlink():
+        return None
+    template: str | None = None
+    with contextlib.suppress(FileNotFoundError):
+        template = _load_agents_md_template(locate_plugin_bundle())
+    renderer = (lambda targets: render_agents_md_block(template, dict(targets))) if template is not None else None
+    try:
+        return remove_managed_block(
+            agents_md,
+            AGENTS_MD_BLOCK,
+            content=renderer,
+            remove_target=target_name,
+            keep_target=lambda t, d: _is_target_still_installed(root, t, d),
+            unlink_if_empty=True,
+            root=root,
+        )
+    except FileExistsError as exc:
+        return BlockResult(BlockStatus.SKIPPED, agents_md, detail=str(exc))
+
+
 def project_claude_import_block(root: Path, force: bool = False) -> BlockResult | None:
     """Upsert a one-line '@AGENTS.md' import block into the root CLAUDE.md (skipped if the user already imports it)."""
     claude_md = root / CLAUDE_MD_FILENAME
@@ -1130,10 +1415,21 @@ def project_claude_import_block(root: Path, force: bool = False) -> BlockResult 
         )
     if claude_md.is_file():
         text = claude_md.read_text(encoding="utf-8", errors="replace")
-        if CLAUDE_IMPORT_BLOCK not in text and _CLAUDE_AGENTS_IMPORT_RE.search(text):
+        if read_managed_block(claude_md, CLAUDE_IMPORT_BLOCK) is None and _CLAUDE_AGENTS_IMPORT_RE.search(text):
             return None
     try:
         return upsert_managed_block(claude_md, CLAUDE_IMPORT_BLOCK, "@AGENTS.md\n", force=force, root=root)
+    except FileExistsError as exc:
+        return BlockResult(BlockStatus.SKIPPED, claude_md, detail=str(exc))
+
+
+def remove_claude_import_block(root: Path) -> BlockResult | None:
+    """Remove the Eidos '@AGENTS.md' import block from CLAUDE.md (unlinking CLAUDE.md if empty)."""
+    claude_md = root / CLAUDE_MD_FILENAME
+    if not claude_md.exists() or claude_md.is_symlink():
+        return None
+    try:
+        return remove_managed_block(claude_md, CLAUDE_IMPORT_BLOCK, unlink_if_empty=True, root=root)
     except FileExistsError as exc:
         return BlockResult(BlockStatus.SKIPPED, claude_md, detail=str(exc))
 
@@ -1190,6 +1486,7 @@ class TargetAdapter:
         supports_hooks = self.configure_hooks is not None
         effective_hooks = bool(hooks and supports_hooks)
         created: list[Path] = []
+        skipped: list[Path] = []
         plugin_dir = (root / self.plugin_subdir) if self.plugin_subdir else None
 
         if plugin_dir is not None:
@@ -1202,7 +1499,7 @@ class TargetAdapter:
             created.extend(self.configure_hooks(root, launcher, effective_hooks))
 
         if self.skills_subdir is not None:
-            created.extend(_copy_skills_flat(source_dir, root / self.skills_subdir, force=force))
+            created.extend(_copy_skills_flat(source_dir, root / self.skills_subdir, force=force, skipped_out=skipped))
 
         if plugin_dir is not None:
             manifest = _write_installation_manifest(
@@ -1211,10 +1508,17 @@ class TargetAdapter:
                 target_name=self.name,
                 hooks=effective_hooks,
                 launcher=launcher,
+                skipped_files=skipped,
+                force=force,
             )
             created.append(manifest)
 
         message = self.install_message
+        if skipped:
+            message += (
+                f" Warning: {len(skipped)} locally modified skill file(s) skipped; "
+                f"run 'eidos plugin install {self.name} --force' to overwrite."
+            )
         skills_dir = self.skills_dir()
         if skills_dir is not None:
             agents_result = project_agents_md_block(root, source_dir, self.name, skills_dir, force=overwrite_blocks)
@@ -1249,6 +1553,15 @@ class TargetAdapter:
             was_removed = True
 
         _prune_empty_dirs_list(root, self.prune_dirs)
+
+        agents_res = prune_agents_md_block(root, self.name)
+        if agents_res is not None and agents_res.status in (BlockStatus.REMOVED, BlockStatus.UPDATED):
+            was_removed = True
+
+        if self.claude_import:
+            claude_res = remove_claude_import_block(root)
+            if claude_res is not None and claude_res.status is BlockStatus.REMOVED:
+                was_removed = True
 
         dest_rel = self.uninstall_destination_subdir or self.plugin_subdir or self.install_destination_subdir or ""
         destination = (root / dest_rel) if dest_rel else root
@@ -1328,13 +1641,14 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
         post_install_hook=lambda root, _src, _force, _l: [
             _update_project_aider_conf(root / ".aider.conf.yml", AGENTS_MD_FILENAME),
         ],
+        extra_uninstall_hook=lambda root: _remove_project_aider_conf(root / ".aider.conf.yml", AGENTS_MD_FILENAME),
     ),
     PluginInstallTarget.CLINE: _make_agents_skills_adapter(
         PluginInstallTarget.CLINE,
         "cline",
         "Cline",
         configure_hooks=_cline_configure_hooks,
-        extra_uninstall_hook=lambda root: _remove_project_cline_hooks(root / ".clinerules" / "hooks" / "TaskComplete"),
+        extra_uninstall_hook=_cline_extra_uninstall,
     ),
     PluginInstallTarget.KILOCODE: _make_agents_skills_adapter(PluginInstallTarget.KILOCODE, "kilocode", "Kilo Code"),
     PluginInstallTarget.OPEN_CODE: _make_agents_skills_adapter(PluginInstallTarget.OPEN_CODE, "open-code", "OpenCode"),
@@ -1384,6 +1698,16 @@ def _all_concrete_targets() -> list[PluginInstallTarget]:
     ]
 
 
+def _raise_batch_errors(errors: list[tuple[str, Exception]]) -> None:
+    """Raise a consolidated error summary after processing all batch targets."""
+    if not errors:
+        return
+    summary = "; ".join(f"{name}: {exc}" for name, exc in errors)
+    if any(isinstance(exc, FileExistsError) for _, exc in errors):
+        raise FileExistsError(summary)
+    raise RuntimeError(summary)
+
+
 def install_plugin(
     target: PluginInstallTarget,
     project_dir: Path | None = None,
@@ -1400,17 +1724,29 @@ def install_plugin(
     source_dir = locate_plugin_bundle()
     root = _resolve_plugin_project_root(project_dir)
     overwrite_blocks = force if force_blocks is None else force_blocks
-    results = []
+    results: list[InstallResult] = []
+    batch_mode = target == PluginInstallTarget.ALL
+    errors: list[tuple[str, Exception]] = []
 
-    targets_to_run = _all_concrete_targets() if target == PluginInstallTarget.ALL else [target]
+    targets_to_run = _all_concrete_targets() if batch_mode else [target]
 
     for t in targets_to_run:
         adapter = TARGET_ADAPTERS.get(t)
-        if adapter is not None:
+        if adapter is None:
+            continue
+        if not batch_mode:
             results.append(
                 adapter.install(root, source_dir, force, launcher, force_blocks=overwrite_blocks, hooks=hooks)
             )
+            continue
+        try:
+            results.append(
+                adapter.install(root, source_dir, force, launcher, force_blocks=overwrite_blocks, hooks=hooks)
+            )
+        except Exception as exc:
+            errors.append((adapter.name, exc))
 
+    _raise_batch_errors(errors)
     return results
 
 
@@ -1420,15 +1756,25 @@ def uninstall_plugin(
 ) -> list[UninstallResult]:
     """Uninstall / remove the Eidos agent plugin strictly from project scope (at the enclosing Git root)."""
     root = _resolve_plugin_project_root(project_dir)
-    results = []
+    results: list[UninstallResult] = []
+    batch_mode = target == PluginInstallTarget.ALL
+    errors: list[tuple[str, Exception]] = []
 
-    targets_to_run = _all_concrete_targets() if target == PluginInstallTarget.ALL else [target]
+    targets_to_run = _all_concrete_targets() if batch_mode else [target]
 
     for t in targets_to_run:
         adapter = TARGET_ADAPTERS.get(t)
-        if adapter is not None:
+        if adapter is None:
+            continue
+        if not batch_mode:
             results.append(adapter.uninstall(root))
+            continue
+        try:
+            results.append(adapter.uninstall(root))
+        except Exception as exc:
+            errors.append((adapter.name, exc))
 
+    _raise_batch_errors(errors)
     return results
 
 
@@ -1457,12 +1803,17 @@ def update_plugin(
     bundled_version = get_bundled_plugin_version()
     root = _resolve_plugin_project_root(project_dir)
     source_dir = locate_plugin_bundle()
-    targets_to_run = _all_concrete_targets() if target == PluginInstallTarget.ALL else [target]
+    batch_mode = target == PluginInstallTarget.ALL
+    targets_to_run = _all_concrete_targets() if batch_mode else [target]
     results: list[InstallResult] = []
+    errors: list[tuple[str, Exception]] = []
+
     for t in targets_to_run:
         adapter = TARGET_ADAPTERS.get(t)
-        if adapter is not None:
-            effective_hooks = _resolve_saved_hook_preference(root, adapter.name)
+        if adapter is None:
+            continue
+        effective_hooks = _resolve_saved_hook_preference(root, adapter.name)
+        if not batch_mode:
             results.append(
                 adapter.install(
                     root,
@@ -1473,4 +1824,20 @@ def update_plugin(
                     hooks=effective_hooks,
                 )
             )
+            continue
+        try:
+            results.append(
+                adapter.install(
+                    root,
+                    source_dir,
+                    force=True,
+                    launcher=launcher,
+                    force_blocks=False,
+                    hooks=effective_hooks,
+                )
+            )
+        except Exception as exc:
+            errors.append((adapter.name, exc))
+
+    _raise_batch_errors(errors)
     return prev_version, bundled_version, results

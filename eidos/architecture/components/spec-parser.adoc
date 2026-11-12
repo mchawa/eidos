@@ -13,9 +13,9 @@ source_path: src/eidos/core/spec/parser.py
 Extracts and serializes YAML frontmatter and AsciiDoc body prose from `.adoc` specification files using Rust-backed `fastyaml-rs` (`fast_yaml`) and block-scalar-safe frontmatter splitting.
 
 == Key Responsibilities & Collaborators
-* **Fast YAML Deserialization & Dumping**: Wraps `fast_yaml` in safe loader/dumper helpers (`safe_load_yaml`, `safe_dump_yaml`) with consistent `YamlError` diagnostics.
+* **Fast YAML Deserialization & Dumping**: Wraps `fast_yaml` in safe loader/dumper helpers (`safe_load_yaml`, `safe_dump_yaml`) with consistent `YamlError` diagnostics, stripping trailing `None` documents emitted when single-document YAML streams end with a trailing `---` or `...` marker.
 * **Frontmatter & Body Separation**: Splits leading `---` YAML frontmatter blocks from AsciiDoc body content (`split_frontmatter_and_body`) without misinterpreting `---` horizontal rules inside multiline YAML block scalars or AsciiDoc prose.
-* **SpecDocument Hydration**: Produces normalized `SpecDocument` instances (`parse_spec_file`, `dump_spec_document`) backed by `CMP-DOMAIN-MODELS`.
+* **Resilient `SpecDocument` Hydration**: Produces normalized `SpecDocument` instances (`parse_spec_file`, `dump_spec_document`) backed by `CMP-DOMAIN-MODELS`, catching `UnicodeDecodeError` and `OSError` cleanly into structured `SpecDocument.parse_errors` instead of crashing catalog loads.
 
 == Public Surface
 * `parse_spec_file(file_path: Path) -> SpecDocument`

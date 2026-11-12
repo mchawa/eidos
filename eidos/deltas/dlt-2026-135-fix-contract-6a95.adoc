@@ -1,0 +1,276 @@
+---
+type: delta/mutation
+id: DLT-2026-135-FIX-CONTRACT-6A95
+title: "Fix Contract and Public Surface Parity, YAML and Workspace Edge Cases, and SpecDelta Lifecycle Verification"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: high
+  motivation: "Eliminate false positives and false passes in gRPC/protobuf, OpenAPI, cli_args, and == Public Surface contract/AST validation; harden YAML frontmatter scalar updates, trailing document-end markers, invalid UTF-8 handling, parent-directory-first entity type inference, Git-tracked excluded-dir preservation, repo-relative .agents checks, cached monorepo discovery, and {a,b} brace globs; and fix SpecDelta ID branch collisions, ambiguous/broad prefix lookups, vacuous mutations: [] verification, shallow/CRLF baseline hashing, expect: post-conditions on remove/deprecate/null/test_binding, destructive exploration archiving, tombstone pattern schema parity, changelog misattribution/hardcoded branding, and invalid scaffolder fallback IDs."
+vcs:
+  branch: main
+  base_commit: e1022b338ebd4a42d4774fa444ef35f6874b8acf
+mutations:
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: "Update src/eidos/core/spec/validator.py and eidos/architecture/components/spec-validator.adoc to: (1) require backticked code spans for gRPC rpc/service extraction and verify message/enum definitions for protocol: protobuf; (2) add a left boundary to OpenAPI forward route matching and require HTTP method verbs (or OpenAPI route table context) on reverse route matching so backticked filesystem paths never false-fail; (3) support '::' qualified symbols, generics (<T>, [T]), multi-keyword headers (pub fn, export async function, export class, Go receivers), and class-scoped method maps in == Public Surface verification; (4) continue Click/argparse cli_args extraction when typer helpers are imported without Typer() apps and resolve imported add_typer(sub_mod.app, name='sub') sub-apps across modules; and (5) expand {a,b} brace globs in _resolve_source_path()."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/spec/validator.py"
+        status: "active"
+      body:
+        contains:
+          - "protobuf"
+          - "Public Surface"
+          - "add_typer"
+          - "brace"
+  - operation: modify
+    target: CMP-SPEC-PARSER
+    details: "Update safe_load_yaml() and parse_spec_file() in src/eidos/core/spec/parser.py and eidos/architecture/components/spec-parser.adoc to ignore trailing None documents produced by trailing '---'/'...' YAML end markers and catch UnicodeDecodeError cleanly as a structured parse error without crashing load_project()."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/spec/parser.py"
+        status: "active"
+      body:
+        contains:
+          - "safe_load_yaml"
+          - "UnicodeDecodeError"
+  - operation: modify
+    target: CMP-DOMAIN-MODELS
+    details: "Update infer_entity_type_from_path() in src/eidos/core/spec/models.py and eidos/architecture/components/domain-models.adoc to inspect canonical parent directories (architecture/components, architecture/containers, architecture/contracts, design/flows, screens, policies, personas, explorations, deltas) before stem-prefix fallback so eidos/architecture/components/flow-engine.adoc resolves to CMP-FLOW-ENGINE (tech/component)."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/spec/models.py"
+        status: "active"
+      body:
+        contains:
+          - "infer_entity_type_from_path"
+          - "architecture/components"
+  - operation: modify
+    target: CMP-PROJECT-RESOLVER
+    details: "Update src/eidos/core/workspace/project.py and eidos/architecture/components/project-resolver.adoc so Git-tracked files returned by git ls-files are not dropped when an internal directory segment matches STANDARD_EXCLUDED_DIRS (target, build, site, out, dist, vendor), _is_inside_plugin_or_assets() checks '.agents' strictly relative to repo_root rather than absolute path.parts, discover_nested_subproject_roots() caches results per root and prunes gitignored trees, and _glob_to_anchored_regex() expands {a,b} brace patterns."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/workspace/project.py"
+        status: "active"
+      body:
+        contains:
+          - "STANDARD_EXCLUDED_DIRS"
+          - "discover_nested_subproject_roots"
+          - "_glob_to_anchored_regex"
+  - operation: modify
+    target: CMP-CLI-CONTEXT-COMMAND
+    details: "Update comma splitting in src/eidos/cli/context_command.py and eidos/architecture/components/cli-context-command.adoc to split '--file' arguments only on top-level commas outside '{...}' brace groups (e.g. 'src/**/*.{ts,tsx}')."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/context_command.py"
+        status: "active"
+      body:
+        contains:
+          - "{ts,tsx}"
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+    details: "Update '--file' glob expansion in src/eidos/core/index/context.py and eidos/architecture/components/tiered-context-compressor.adoc to expand '{a,b}' brace globs deterministically alongside '*', '?', and '['."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/context.py"
+        status: "active"
+      body:
+        contains:
+          - "{a,b}"
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+    details: "Update src/eidos/core/lifecycle/delta_engine.py and eidos/architecture/components/delta-engine.adoc to: (1) incorporate slug_suffix and visible Git branch delta refs in generate_collision_free_delta_id(); (2) reject vacuous empty mutations: [] in verify_delta_mutations() and apply_delta(); (3) handle shallow-clone history and normalize CRLF -> LF line endings when computing baseline digests; (4) evaluate expect: post-conditions on remove and deprecate mutations, support {'dotted.key': null} key-removal assertions, and remove 'test_binding' from _PROSE_EXPECT_FIELDS so test_binding matches exact strings; and (5) extract complete multi-line section bodies (including '===' subheadings up to the next '== ' heading) in archive_explorations() before unlinking source files."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/lifecycle/delta_engine.py"
+        status: "active"
+      body:
+        contains:
+          - "generate_collision_free_delta_id"
+          - "archive_explorations"
+          - "_PROSE_EXPECT_FIELDS"
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+    details: "Update src/eidos/core/lifecycle/catalog.py and src/eidos/core/lifecycle/scaffolder.py (plus eidos/architecture/components/lifecycle-scaffolder.adoc) so _set_frontmatter_scalar() parses/updates top-level YAML keys without corrupting multiline quoted scalars, find_spec_by_id_or_path() raises an explicit ambiguity error listing colliding candidates and rejects bare year-only prefixes ('DLT-2026'), and create_spec() resolves real catalog IDs (or omits optional reference fields) instead of injecting nonexistent PER-USER, DOM-CORE, CNT-CORE, or DS-CORE placeholders."
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/core/lifecycle/scaffolder.py"
+          - "src/eidos/core/lifecycle/catalog.py"
+        status: "active"
+      body:
+        contains:
+          - "_set_frontmatter_scalar"
+          - "find_spec_by_id_or_path"
+          - "create_spec"
+  - operation: modify
+    target: CMP-DELTA-AUDITOR
+    details: "Update assets/schemas/v1/delta/delta.schema.yaml and eidos/architecture/components/delta-auditor.adoc to permit optional 'pattern' on tombstone.allowed_reasons[] items, matching AuditEngine._is_exempted() in src/eidos/core/lifecycle/audit.py."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/lifecycle/audit.py"
+        status: "active"
+      body:
+        contains:
+          - "allowed_reasons"
+          - "pattern"
+  - operation: modify
+    target: CMP-CHANGELOG-GENERATOR
+    details: "Update src/eidos/core/lifecycle/changelog.py and eidos/architecture/components/changelog-generator.adoc to verify 'status: applied' strictly inside parsed YAML frontmatter rather than matching prose code blocks via git log -G, key and deduplicate deltas by full canonical ID without short_id prefix collisions, and render the project name dynamically from the repository's SYS-* specification (falling back to the repository directory name) instead of hardcoding 'Eidos'."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/lifecycle/changelog.py"
+        status: "active"
+      body:
+        contains:
+          - "SYS-*"
+          - "frontmatter"
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: "Update eidos/architecture/containers/core.adoc to record DEC-CORE-STRICT-DELTA-AND-SURFACE-VERIFICATION and document brace-glob workspace ownership, parent-first entity path inference, and strict SpecDelta lifecycle verification."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-CORE-STRICT-DELTA-AND-SURFACE-VERIFICATION"
+      body:
+        contains:
+          - "DEC-CORE-STRICT-DELTA-AND-SURFACE-VERIFICATION"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Bump CAP-PROD-001 to version 1.11.0 in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc and update INV-SPEC-VALIDATION, INV-SPEC-GRAPH-INTEGRITY, INV-ENGINE-GENERICITY, and INV-FOREIGN-REPO-E2E."
+    expect:
+      frontmatter:
+        version: "1.11.0"
+        technical.invariants.id:
+          - "INV-SPEC-VALIDATION"
+          - "INV-SPEC-GRAPH-INTEGRITY"
+          - "INV-ENGINE-GENERICITY"
+          - "INV-FOREIGN-REPO-E2E"
+      body:
+        contains:
+          - "brace"
+          - "Public Surface"
+  - operation: modify
+    target: CAP-PROD-002
+    details: "Bump CAP-PROD-002 to version 2.4.0 in eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc and update INV-MUTATION-REVERSIBILITY, INV-DELTA-VERIFY-MODIFICATION-EVIDENCE, INV-DELTA-EXPLORATION-ARCHIVE-LEDGER, and INV-DELTA-CHANGELOG-GENERATION."
+    expect:
+      frontmatter:
+        version: "2.4.0"
+        technical.invariants.id:
+          - "INV-MUTATION-REVERSIBILITY"
+          - "INV-DELTA-VERIFY-MODIFICATION-EVIDENCE"
+          - "INV-DELTA-EXPLORATION-ARCHIVE-LEDGER"
+          - "INV-DELTA-CHANGELOG-GENERATION"
+      body:
+        contains:
+          - "mutations: []"
+          - "archive_explorations"
+  - operation: modify
+    target: INV-SPEC-VALIDATION
+    details: "Update INV-SPEC-VALIDATION in CAP-PROD-001 to cover trailing '---' YAML markers and graceful UnicodeDecodeError diagnostics."
+    expect:
+      frontmatter:
+        rule: "UnicodeDecodeError"
+        test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
+  - operation: modify
+    target: INV-SPEC-GRAPH-INTEGRITY
+    details: "Update INV-SPEC-GRAPH-INTEGRITY in CAP-PROD-001 to cover backtick-scoped gRPC/protobuf message+enum parity, bounded OpenAPI route regexes, '::'/generic/per-class Public Surface verification, imported Typer sub-apps, parent-first path inference, and {a,b} brace globs."
+    expect:
+      frontmatter:
+        rule: "protobuf"
+        test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
+  - operation: modify
+    target: INV-ENGINE-GENERICITY
+    details: "Update INV-ENGINE-GENERICITY in CAP-PROD-001 to verify dynamic SYS-* project titles in changelog.py and valid catalog-aware blueprints in scaffolder.py."
+    expect:
+      frontmatter:
+        rule: "changelog"
+        test_binding: "tests/test_scaffolder.py::test_engine_genericity_zero_self_references"
+  - operation: modify
+    target: INV-FOREIGN-REPO-E2E
+    details: "Update INV-FOREIGN-REPO-E2E in CAP-PROD-001 to verify checkouts under ~/.agents/ parent paths and Git-tracked files inside target/build/site/vendor subdirectories."
+    expect:
+      frontmatter:
+        rule: ".agents"
+        test_binding: "tests/test_scaffolder.py::test_foreign_repo_end_to_end_workflow"
+  - operation: modify
+    target: INV-MUTATION-REVERSIBILITY
+    details: "Update INV-MUTATION-REVERSIBILITY in CAP-PROD-002 to reject empty mutations: [] lists and scalar-corrupting multiline YAML edits."
+    expect:
+      frontmatter:
+        rule: "non-empty mutations"
+        test_binding: "tests/test_delta_engine.py::test_delta_execute_and_verify_lifecycle"
+  - operation: modify
+    target: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+    details: "Update INV-DELTA-VERIFY-MODIFICATION-EVIDENCE in CAP-PROD-002 to enforce expect: on remove/deprecate, null dotted-key deletion assertions, exact test_binding matching, and CRLF/shallow-clone safe baseline digests."
+    expect:
+      frontmatter:
+        rule: "CRLF"
+        test_binding: "tests/test_delta_engine.py::test_delta_verify_requires_modification_evidence"
+  - operation: modify
+    target: INV-DELTA-EXPLORATION-ARCHIVE-LEDGER
+    details: "Update INV-DELTA-EXPLORATION-ARCHIVE-LEDGER in CAP-PROD-002 to preserve full multi-paragraph and '===' subsection content during exploration archiving."
+    expect:
+      frontmatter:
+        rule: "multi-line"
+        test_binding: "tests/test_delta_engine.py::test_delta_and_exploration_archive_lifecycle"
+  - operation: modify
+    target: INV-DELTA-CHANGELOG-GENERATION
+    details: "Update INV-DELTA-CHANGELOG-GENERATION in CAP-PROD-002 to verify frontmatter-scoped status transitions, collision-free delta IDs, and dynamic SYS-* project headers."
+    expect:
+      frontmatter:
+        rule: "frontmatter"
+        test_binding: "tests/test_changelog.py::test_delta_changelog_generation"
+---
+= SpecDelta: Fix Contract and Public Surface Parity, YAML and Workspace Edge Cases, and SpecDelta Lifecycle Verification
+:toc: left
+:icons: font
+:sectnums:
+
+== Problem Statement
+
+Deep inspection of `CNT-EIDOS-CORE` (`src/eidos/core/`), `CMP-CLI-CONTEXT-COMMAND`, and `CMP-TIERED-CONTEXT-COMPRESSOR` surfaced parser, validator, workspace, and SpecDelta lifecycle bugs:
+
+1. **Contract & `== Public Surface` Parity False Positives / False Passes (`src/eidos/core/spec/validator.py`)**:
+   * **gRPC / Protobuf (`L2334-2397`)**: `(?:`|\b)(?:rpc|service)\s+([A-Za-z_][A-Za-z0-9_]*)\b` matches plain English words (`"service layer"`, `"rpc retries"`), while `protocol: protobuf` ignores `message` and `enum` definitions completely.
+   * **OpenAPI routes (`L2268-2285`)**: Forward route matching lacks a left boundary (`` `GET /v2/users` `` false-passes undocumented `/users`), while reverse route matching flags any backticked slash path (`` `/etc/eidos/config` ``) as an undocumented endpoint.
+   * **`== Public Surface` AST parity (`L2552-2590`)**: Stops at the first `:` of Rust/C++ `::` (`crate::parser::parse()` looks up `crate`; `RenderGraph::DoesNotExist()` false-passes if `RenderGraph` exists), skips generics (`parse<T>()`, `def first[T]()`) and multi-keyword headers (`pub fn`, `export async function`, `export class`, Go `func (s *Server) Start()`), and pools `defined_classes` and `defined_methods` flatly across all files so `ClassA.method_from_ClassB` false-passes.
+   * **`cli_args` parity (`L1406-1663`)**: Importing helpers from `typer` without instantiating `typer.Typer()` hits `if not typer_app_vars: return` (`L1447`), skipping Click/argparse checks; `add_typer(sub_mod.app, name="sub")` (`L1619, 1663`) initializes an empty `subcommands_by_group["sub"] = set()` without resolving `sub_mod.app`.
+2. **YAML Frontmatter Surgery, Parser Edge Cases & Entity Path Collisions (`catalog.py`, `parser.py`, `models.py`)**:
+   * `_set_frontmatter_scalar` (`src/eidos/core/lifecycle/catalog.py:110-152`) regex-replaces raw lines without tracking YAML scalar context, corrupting multiline quoted strings containing `status:` at column 0.
+   * `safe_load_yaml` (`src/eidos/core/spec/parser.py:33-40`) rejects single-document YAML files ending with a trailing `---` marker (`safe_load_all` yields `[doc, None]`), and `parse_spec_file` (`L117-119`) raises uncaught `UnicodeDecodeError` (`ValueError`), crashing `load_project()`.
+   * `infer_entity_type_from_path` (`src/eidos/core/spec/models.py:80-101`) checks `resolve_entity_prefix_meta(stem_upper)` before parent directories, misclassifying `eidos/architecture/components/flow-engine.adoc` (`CMP-FLOW-ENGINE`) as `('FLOW-', 'design/flow', 'FLOW-ENGINE')`.
+3. **SpecDelta Lifecycle, Archive Data Loss, Audit Schema Mismatch, Changelog & Scaffolder Bugs (`src/eidos/core/lifecycle/`)**:
+   * `generate_collision_free_delta_id` (`delta_engine.py:248-310`) ignores `slug_suffix` (`_ = slug_suffix`) and allocates sequence numbers from local files only; when branch collisions occur (`DLT-2026-119-*`), `find_spec_by_id_or_path` (`catalog.py:219-224`) returns `None` (`"not found"`) instead of reporting ambiguity, while `eidos delta delete DLT-2026` dangerously matches if only one `2026` delta is unarchived.
+   * Empty `mutations: []` (`delta_engine.py:1150-1152`) verifies vacuously as `True` on `verify` and `apply`.
+   * Shallow clones (`fetch-depth: 1`) fall back to `HEAD` in `_compute_fallback_revs` (`delta_engine.py:515-605`), falsely failing `cur_sha == base_sha` (`UNMODIFIED`), while Windows `core.autocrlf=true` (`LF` in `git show` vs `CRLF` in `read_bytes()`) false-passes untouched files.
+   * `expect:` is ignored on `remove`/`deprecate` (`delta_engine.py:942-969`), `{"technical.components": null}` fails on deleted dotted keys (`L837`), and `test_binding` is listed in `_PROSE_EXPECT_FIELDS` (`L642`), substring-matching `test_a` against `test_a_other`.
+   * `archive_explorations` (`delta_engine.py:1306-1352`) uses `([^=\n][^\n]+)` to capture at most **one line** of Hypothesis and Findings (and `""` before `===`) before `p.unlink()` permanently deletes the exploration.
+   * `audit.py:583-615` reads `tombstone.allowed_reasons[].pattern`, which `assets/schemas/v1/delta/delta.schema.yaml:204-216` forbids via `additionalProperties: false`.
+   * `changelog.py` (`L147, 353, 408`) matches `status: applied` inside prose code blocks, drops colliding `short_id` siblings, and hardcodes `"All notable changes to Eidos are documented in this file."` into external user repositories; `scaffolder.py` (`L109-287`) injects nonexistent `PER-USER`, `DOM-CORE`, `CNT-CORE`, and `DS-CORE` IDs.
+4. **Workspace Filtering & Brace-Glob Blind Spots (`src/eidos/core/workspace/project.py`)**:
+   * `STANDARD_EXCLUDED_DIRS` (`project.py:437`) drops Git-tracked files whose path contains `target`, `build`, `site`, `out`, `dist`, or `vendor` (e.g. `src/compiler/target/x86.rs` or `packages/site/src/App.tsx`); `_is_inside_plugin_or_assets` (`L108-118`) checks `".agents"` on absolute `path.parts` (breaking repos cloned under `~/.agents/...`); `discover_nested_subproject_roots` (`L146-162`) runs uncached `os.walk` ignoring `.gitignore`; and `{a,b}` brace globs fail in `_glob_to_anchored_regex` (`project.py:605-652`), `_resolve_source_path` (`validator.py:844`), and `context_command.py:58`.
+
+== Proposed Specification Changes
+
+* **Accurate Multi-Protocol Contract & `== Public Surface` Parity (`CMP-SPEC-VALIDATOR`, `INV-SPEC-GRAPH-INTEGRITY`)**:
+  1. Require backticks for gRPC `rpc`/`service` prose extraction and validate `message`/`enum` symbols for `protocol: protobuf`; anchor OpenAPI forward route regexes on the left and require HTTP method verbs (or route-table context) for reverse route checks; parse `::`, `<T>`/`[T]`, multi-keyword modifiers, Go receivers, and per-class method maps (`dict[str, set[str]]`) in `== Public Surface`; keep Click/argparse active alongside `typer` utility imports and resolve imported `add_typer(sub_mod.app, name=...)` AST targets.
+* **Resilient YAML/UTF-8 Parsing, Parent-First Path Inference & Brace-Glob Workspace Discovery (`CMP-SPEC-PARSER`, `CMP-DOMAIN-MODELS`, `CMP-PROJECT-RESOLVER`, `CMP-CLI-CONTEXT-COMMAND`, `CMP-TIERED-CONTEXT-COMPRESSOR`)**:
+  1. Strip trailing `None` documents in `safe_load_yaml`, catch `UnicodeDecodeError` into `SpecDocument.parse_errors`, check canonical parent directories ahead of stem prefixes in `infer_entity_type_from_path`, preserve `git ls-files` tracked paths in `project.py`, evaluate `.agents` relative to `repo_root`, cache `.gitignore`-filtered `discover_nested_subproject_roots`, and expand `{a,b}` brace globs across `project.py`, `validator.py`, `context.py`, and brace-aware `-f` splitting in `context_command.py`.
+* **Hardened SpecDelta Lifecycle, Lossless Exploration Archiving, Schema-Aligned Tombstones & Generic Scaffolder/Changelog (`CMP-DELTA-ENGINE`, `CMP-LIFECYCLE-SCAFFOLDER`, `CMP-DELTA-AUDITOR`, `CMP-CHANGELOG-GENERATOR`, `CNT-EIDOS-CORE`)**:
+  1. Parse YAML structure safely in `_set_frontmatter_scalar`, raise explicit ambiguity errors and reject bare `DLT-YYYY` prefixes in `find_spec_by_id_or_path`, consult Git branch refs + `slug_suffix` in `generate_collision_free_delta_id`, reject empty `mutations: []` on `verify`/`apply`, normalize CRLF digests and handle shallow clones in `delta_engine.py`, evaluate `expect:` on `remove`/`deprecate` with `null` key deletion and exact `test_binding` comparison, preserve full multi-line sections in `archive_explorations`, allow `tombstone.allowed_reasons[].pattern` in `delta.schema.yaml`, verify frontmatter `status: applied` + dynamic `SYS-*` project titles in `changelog.py`, and populate valid catalog references in `scaffolder.py`.
+
+== Implementation Plan
+
+1. **Validator, Parser, Models & Workspace Fixes (`src/eidos/core/spec/validator.py`, `src/eidos/core/spec/parser.py`, `src/eidos/core/spec/models.py`, `src/eidos/core/workspace/project.py`, `src/eidos/cli/context_command.py`, `src/eidos/core/index/context.py`)**:
+   * Implement gRPC/protobuf, OpenAPI, `== Public Surface`, `cli_args` imported sub-app, and `_resolve_source_path` `{a,b}` fixes in `validator.py`.
+   * Handle trailing `---` `None` documents and `UnicodeDecodeError` in `parser.py`, reorder parent-directory checks ahead of stem prefixes in `models.py`, and update tracked-file preservation, repo-relative `.agents` checks, cached `discover_nested_subproject_roots`, and `{a,b}` brace globs across `project.py`, `context.py`, and `context_command.py` (`CNT-EIDOS-CLI` and `CNT-EIDOS-INDEX` covered via `CMP-CLI-CONTEXT-COMMAND` and `CMP-TIERED-CONTEXT-COMPRESSOR`).
+2. **Lifecycle Engine, Catalog, Audit Schema, Changelog & Scaffolder Fixes (`src/eidos/core/lifecycle/delta_engine.py`, `src/eidos/core/lifecycle/catalog.py`, `src/eidos/core/lifecycle/audit.py`, `src/eidos/core/lifecycle/changelog.py`, `src/eidos/core/lifecycle/scaffolder.py`, `assets/schemas/v1/delta/delta.schema.yaml`)**:
+   * Harden `_set_frontmatter_scalar` and `find_spec_by_id_or_path` in `catalog.py`; fix `generate_collision_free_delta_id`, empty `mutations: []` rejection, shallow/CRLF digests, `expect:` on `remove`/`deprecate`/`null`/exact `test_binding`, and full-section `archive_explorations` in `delta_engine.py`.
+   * Add `pattern` to `tombstone.allowed_reasons.items` in `delta.schema.yaml`, fix frontmatter status verification, full-ID keying, and dynamic `SYS-*` title lookup in `changelog.py`, and resolve real catalog IDs (or omit optional refs) in `scaffolder.py`.
+3. **Living Specifications & Invariant Tests (`eidos/`, `tests/`)**:
+   * Move `DEC-CORE-STRICT-DELTA-AND-SURFACE-VERIFICATION` onto `CNT-EIDOS-CORE` when applying, and update `CMP-SPEC-VALIDATOR`, `CMP-SPEC-PARSER`, `CMP-DOMAIN-MODELS`, `CMP-PROJECT-RESOLVER`, `CMP-CLI-CONTEXT-COMMAND`, `CMP-TIERED-CONTEXT-COMPRESSOR`, `CMP-DELTA-ENGINE`, `CMP-LIFECYCLE-SCAFFOLDER`, `CMP-DELTA-AUDITOR`, `CMP-CHANGELOG-GENERATOR`, `CAP-PROD-001` (`1.11.0`), and `CAP-PROD-002` (`2.4.0`) (`docs/concepts/schema-glossary.md` `(body-only optional property note if needed; verify INV-DOCS-SYNCHRONIZATION)`).
+   * Extend `tests/test_validator.py::test_validate_eidos_specifications`, `tests/test_scaffolder.py::test_engine_genericity_zero_self_references`, `tests/test_scaffolder.py::test_foreign_repo_end_to_end_workflow`, `tests/test_delta_engine.py::test_delta_execute_and_verify_lifecycle`, `tests/test_delta_engine.py::test_delta_verify_requires_modification_evidence`, `tests/test_delta_engine.py::test_delta_and_exploration_archive_lifecycle`, `tests/test_audit.py`, and `tests/test_changelog.py::test_delta_changelog_generation` (`>90%` per-file coverage per `POL-005`), then run `eidos validate eidos --json`, `eidos delta verify DLT-2026-135 --json`, and `eidos drift --uncommitted --json`.

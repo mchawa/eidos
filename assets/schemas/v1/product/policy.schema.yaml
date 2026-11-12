@@ -20,7 +20,7 @@ properties:
     pattern: "^POL-[A-Z0-9_-]+$"
     description: "Unique policy identifier following the POL-<NUMBER>-<NAME> convention (e.g. POL-001-GIT-SOURCE-OF-TRUTH)."
   title:
-    type: string
+    $ref: "#/$defs/non_empty_string"
     description: "Short human-readable title of the policy."
   status:
     $ref: "#/$defs/lifecycle_status"

@@ -218,16 +218,39 @@ def spec_show_cmd(
 ):
     """Display frontmatter metadata and preview of a living specification document."""
     eidos_dir = resolve_cli_eidos_dir(path)
-    file_path = find_spec_by_id_or_path(eidos_dir, target)
+    target_clean = target.strip()
+    if target_clean.upper().startswith("DLT-"):
+        try:
+            dlt_path = find_spec_by_id_or_path(eidos_dir / "deltas", target_clean, include_archived=True) or (
+                find_spec_by_id_or_path(eidos_dir, target_clean, include_archived=True)
+            )
+        except ValueError as exc:
+            console.print(
+                f"[bold red]Error:[/bold red] {exc} Use `eidos delta show <ID>` with a specific SpecDelta ID."
+            )
+            raise typer.Exit(code=1) from exc
+        resolved_id = (parse_spec_file(dlt_path).doc_id if dlt_path else None) or target_clean
+        console.print(
+            f"[bold red]Error:[/bold red] '{resolved_id}' is a SpecDelta (`delta/mutation`). "
+            f"Use `eidos delta show {resolved_id}`, `eidos delta status {resolved_id}`, or `eidos delta verify {resolved_id}` instead."
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        file_path = find_spec_by_id_or_path(eidos_dir, target)
+    except ValueError as exc:
+        console.print(f"[bold red]Error:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
     if not file_path:
         console.print(f"[bold red]Error:[/bold red] Specification '{target}' not found under '{eidos_dir}'.")
         raise typer.Exit(code=1)
 
     doc = parse_spec_file(file_path)
     if doc.doc_type == "delta/mutation":
+        resolved_id = doc.doc_id or target_clean
         console.print(
-            f"[bold red]Error:[/bold red] '{doc.doc_id}' is a SpecDelta (`delta/mutation`). "
-            f"Use `eidos delta status {doc.doc_id}` or `eidos delta verify {doc.doc_id}` instead."
+            f"[bold red]Error:[/bold red] '{resolved_id}' is a SpecDelta (`delta/mutation`). "
+            f"Use `eidos delta show {resolved_id}`, `eidos delta status {resolved_id}`, or `eidos delta verify {resolved_id}` instead."
         )
         raise typer.Exit(code=1)
 

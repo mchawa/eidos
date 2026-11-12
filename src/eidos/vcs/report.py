@@ -148,7 +148,7 @@ def build_drift_remediation_and_summary(
         )
         for oid, loc in orphan_invariants[:5]:
             remediation.append(
-                f"• {oid} referenced in '{loc}' is not declared in any capability, policy, or component."
+                f"• {oid} referenced in '{loc}' is not declared in any capability, policy, or component (CNT-*, CMP-*, UIC-*)."
             )
 
     summary_lines = [

@@ -13,7 +13,7 @@ source_path: src/eidos/core/spec/models.py
 Defines the canonical entity prefix registry (`ENTITY_PREFIX_REGISTRY`), typed Pydantic frontmatter models (`FrontmatterModel`), and domain data structures representing parsed living specifications and validation reports.
 
 == Key Responsibilities & Collaborators
-* **Single Source of Truth Registry**: Maps all 16 v1 document types (`product/*`, `tech/*`, `design/*`, `delta/mutation`) to their ID prefixes, JSON Schema paths (`TYPE_TO_SCHEMA_NAME`), and canonical directory conventions.
+* **Single Source of Truth Registry & Parent-First Path Inference**: Maps all 16 v1 document types (`product/*`, `tech/*`, `design/*`, `delta/mutation`) to their ID prefixes, JSON Schema paths (`TYPE_TO_SCHEMA_NAME`), and canonical directory conventions, resolving `infer_entity_type_from_path` from canonical parent directories (`architecture/components`, `architecture/containers`, `architecture/contracts`, `design/flows`, `screens`, `policies`, `personas`, `explorations`, `deltas`) ahead of filename stem-prefix fallback so slugs such as `architecture/components/flow-engine.adoc` resolve cleanly to `CMP-FLOW-ENGINE`.
 * **Typed Frontmatter Projection**: Normalizes raw YAML frontmatter dicts into immutable-friendly Pydantic models (`FrontmatterModel`, `InvariantModel`, `DecisionModel`, `DeltaMutationModel`) consumed by `CMP-SPEC-PARSER`, `CMP-SPEC-VALIDATOR`, and `CMP-INCREMENTAL-SYNC-ENGINE`.
 
 == Public Surface

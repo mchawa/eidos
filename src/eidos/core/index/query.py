@@ -686,10 +686,10 @@ def resolve_symbol_or_path_in_db(conn: sqlite3.Connection, query: str) -> list[d
             WITH all_mappings(symbol, entity_id, kind) AS (
                 SELECT symbol, entity_id, kind FROM symbol_mappings
                 UNION
-                SELECT symbol, entity_id, kind FROM code_symbols WHERE kind != 'import'
+                SELECT symbol, entity_id, kind FROM code_symbols WHERE kind != 'import' AND is_test = 0
                 UNION
                 SELECT parent_symbol || '.' || symbol, entity_id, 'method'
-                FROM code_symbols WHERE kind != 'import' AND parent_symbol != ''
+                FROM code_symbols WHERE kind != 'import' AND is_test = 0 AND parent_symbol != ''
             )
             SELECT s.symbol, s.entity_id, s.kind, e.type, e.title, e.file_path, e.data_json
             FROM all_mappings s
@@ -848,7 +848,7 @@ def find_symbol_in_db(
     query: str,
     limit: int = 20,
 ) -> list[dict[str, Any]]:
-    """Locate symbol matches and their associated living component specs across the Code Graph."""
+    """Locate symbol matches and their associated living component or automated test specs across the Code Graph."""
     q_norm = (query or "").strip()
     if not q_norm:
         return []
@@ -858,22 +858,25 @@ def find_symbol_in_db(
     q_alt_like = f"%{_escape_like(q_alt)}%"
     cursor.execute(
         """
-        WITH all_mappings(symbol, entity_id, kind) AS (
-            SELECT symbol, entity_id, kind FROM symbol_mappings
+        WITH all_mappings(symbol, entity_id, kind, is_test) AS (
+            SELECT symbol, entity_id, kind, 0 AS is_test FROM symbol_mappings
             UNION
-            SELECT symbol, entity_id, kind FROM code_symbols WHERE kind != 'import'
+            SELECT symbol, entity_id, kind, is_test FROM code_symbols WHERE kind != 'import'
             UNION
-            SELECT parent_symbol || '.' || symbol, entity_id, 'method'
+            SELECT parent_symbol || '.' || symbol, entity_id, 'method', is_test
             FROM code_symbols WHERE kind != 'import' AND parent_symbol != ''
         )
-        SELECT s.symbol, s.entity_id, s.kind, e.title, e.type, e.file_path
+        SELECT s.symbol, s.entity_id, s.kind, s.is_test, e.title, e.type, e.file_path
         FROM all_mappings s
-        JOIN entities e ON e.id = s.entity_id
-        WHERE s.symbol = ?
-           OR s.symbol = ?
-           OR s.symbol LIKE ? ESCAPE '\\'
-           OR s.symbol LIKE ? ESCAPE '\\'
-        ORDER BY CASE WHEN s.symbol IN (?, ?) THEN 0 ELSE 1 END, length(s.symbol) ASC, s.symbol ASC
+        LEFT JOIN entities e ON e.id = s.entity_id
+        WHERE (e.id IS NOT NULL OR s.is_test = 1)
+          AND (
+              s.symbol = ?
+              OR s.symbol = ?
+              OR s.symbol LIKE ? ESCAPE '\\'
+              OR s.symbol LIKE ? ESCAPE '\\'
+          )
+        ORDER BY CASE WHEN s.symbol IN (?, ?) THEN 0 ELSE 1 END, s.is_test ASC, length(s.symbol) ASC, s.symbol ASC
         LIMIT ?;
         """,
         (q_norm, q_alt, q_norm_like, q_alt_like, q_norm, q_alt, limit),
@@ -881,14 +884,17 @@ def find_symbol_in_db(
     results: list[dict[str, Any]] = []
     seen_loc_keys: set[tuple[str, str, str, int]] = set()
     for r in cursor.fetchall():
+        is_test_flag = bool(r["is_test"])
         base = {
             "symbol": r["symbol"],
             "entity_id": r["entity_id"],
             "kind": r["kind"],
-            "title": r["title"],
-            "type": r["type"],
-            # Spec path of the owning entity (unchanged meaning); source coordinates live in 'location'.
+            "title": r["title"] or ("Automated Test Suite" if is_test_flag else r["entity_id"]),
+            "type": r["type"] or ("code/test" if is_test_flag else ""),
+            # Spec path of the owning entity (or test file path for standalone automated test symbols);
+            # source coordinates live in 'location'.
             "file_path": r["file_path"],
+            "is_test": is_test_flag,
         }
         locations = (
             []
@@ -900,9 +906,10 @@ def find_symbol_in_db(
                 loc_key = (r["entity_id"], r["kind"], str(loc.get("file") or ""), int(loc.get("line_start") or 0))
                 if loc_key not in seen_loc_keys:
                     seen_loc_keys.add(loc_key)
-                    results.append({**base, "location": loc})
+                    row_fp = base["file_path"] or str(loc.get("file") or "")
+                    results.append({**base, "file_path": row_fp, "location": loc})
         else:
-            results.append({**base, "location": None})
+            results.append({**base, "file_path": base["file_path"] or "", "location": None})
     return results[:limit]
 
 
@@ -916,7 +923,7 @@ def generate_repo_map_from_db(conn: sqlite3.Connection, max_tokens: int = 1500) 
         """
         SELECT file_path, symbol, kind, parent_symbol, line_start, line_end, signature
         FROM code_symbols
-        WHERE is_primary = 1
+        WHERE is_primary = 1 AND is_test = 0
         ORDER BY file_path, id;
         """
     ).fetchall()

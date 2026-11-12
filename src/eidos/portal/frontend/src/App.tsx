@@ -8,8 +8,9 @@ import { BusinessView } from "@/components/views/BusinessView";
 import { DesignView } from "@/components/views/DesignView";
 import { ExplorationsView } from "@/components/views/ExplorationsView";
 import { CommandDialog, type CommandItem } from "@/components/ui/command";
-import type { PortalData } from "@/types";
+import type { PortalData, SpecDriftStatus } from "@/types";
 import { SPEC_NAV_EVENT, resolveSpecTarget, type SpecNavDetail } from "@/lib/specNav";
+import { loadSpecChunk, registerSpecChunks } from "@/lib/specChunks";
 
 const VALID_TABS = new Set<TabKey>([
   "home",
@@ -22,23 +23,24 @@ const VALID_TABS = new Set<TabKey>([
 ]);
 
 function hydratePortalData(raw: PortalData): PortalData {
+  registerSpecChunks(raw.specs || []);
   const bodyById = new Map<string, string>();
   (raw.specs || []).forEach((s) => {
-    if (s.id && typeof s.body === "string") {
+    if (s.id && typeof s.body === "string" && s.body.length > 0) {
       bodyById.set(s.id, s.body);
     }
   });
 
   const withDesc = <T extends { id: string; description?: string }>(items: T[] = []): T[] =>
     items.map((item) =>
-      item.description === undefined && bodyById.has(item.id)
+      !item.description && bodyById.has(item.id)
         ? { ...item, description: bodyById.get(item.id) }
         : item
     );
 
   const withBody = <T extends { id: string; body?: string }>(items: T[] = []): T[] =>
     items.map((item) =>
-      item.body === undefined && bodyById.has(item.id)
+      !item.body && bodyById.has(item.id)
         ? { ...item, body: bodyById.get(item.id) }
         : item
     );
@@ -46,7 +48,7 @@ function hydratePortalData(raw: PortalData): PortalData {
   const hydratedComponents = withDesc(raw.components || []).map((c) => ({
     ...c,
     internal_components: (c.internal_components || []).map((ic) =>
-      ic.description === undefined && bodyById.has(ic.id)
+      !ic.description && bodyById.has(ic.id)
         ? { ...ic, description: bodyById.get(ic.id) }
         : ic
     ),
@@ -74,6 +76,7 @@ function hydratePortalData(raw: PortalData): PortalData {
     policies: withBody(raw.policies || []),
     explorations: withBody(raw.explorations || []),
     clients: withBody(raw.clients || []),
+    screens: withBody(raw.screens || []),
     flows: withBody(raw.flows || []),
     ui_components: withBody(raw.ui_components || []),
     deltas: hydratedDeltas,
@@ -115,6 +118,7 @@ export function App() {
   const [selectedBusiness, setSelectedBusiness] = React.useState<{ id: string; nonce: number } | null>(null);
   const [selectedDesign, setSelectedDesign] = React.useState<{ id: string; nonce: number } | null>(null);
   const [liveSyncActive, setLiveSyncActive] = React.useState<boolean>(!isStaticBundle);
+  const [driftStatus, setDriftStatus] = React.useState<SpecDriftStatus | null>(null);
 
   const setActiveTab = React.useCallback((tab: TabKey, entityId?: string) => {
     setActiveTabState(tab);
@@ -223,33 +227,137 @@ export function App() {
     }
   }, [data, isStaticBundle]);
 
-  // Progressive mtime polling strictly when window.__EIDOS_DATA__ is absent (DEC-PORTAL-PROGRESSIVE-MTIME-POLLING)
+  // Hydrate lazily fetched static ./specs/<id>.json chunks into PortalData state on deep-link / entity selection
+  React.useEffect(() => {
+    if (!isStaticBundle) return;
+    const activeEntityId =
+      focusSpec?.id ||
+      selectedDelta?.id ||
+      selectedComponent?.id ||
+      selectedExploration?.id ||
+      selectedBusiness?.id ||
+      selectedDesign?.id;
+    if (!activeEntityId) return;
+    let cancelled = false;
+    loadSpecChunk(activeEntityId).then((loaded) => {
+      if (cancelled || !loaded) return;
+      setData((prev) => {
+        if (!prev) return prev;
+        const idx = prev.specs.findIndex((s) => s.id === loaded.id);
+        if (idx < 0 || (prev.specs[idx].body && prev.specs[idx].body.length > 0)) {
+          return prev;
+        }
+        const nextSpecs = prev.specs.slice();
+        nextSpecs[idx] = {
+          ...nextSpecs[idx],
+          body: loaded.body,
+          frontmatter: loaded.frontmatter || nextSpecs[idx].frontmatter,
+        };
+        return hydratePortalData({ ...prev, specs: nextSpecs });
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isStaticBundle,
+    focusSpec?.id,
+    selectedDelta?.id,
+    selectedComponent?.id,
+    selectedExploration?.id,
+    selectedBusiness?.id,
+    selectedDesign?.id,
+  ]);
+
+  // Real-time SSE live drift & version sync (/api/events) with graceful fallback to /api/version + /api/drift polling
   React.useEffect(() => {
     if (isStaticBundle) return;
     let lastSig = "";
     let cancelled = false;
-    const timer = window.setInterval(() => {
+    let fallbackTimer: number | undefined;
+    let eventSource: EventSource | null = null;
+
+    const applyVersionPayload = (ver: any) => {
+      if (!ver || cancelled) return;
+      const sig = `${ver.count}:${ver.max_mtime_ns}:${ver.total_size}`;
+      if (lastSig && lastSig !== sig) {
+        fetch("/api/data")
+          .then((r) => (r.ok ? r.json() : null))
+          .then((payload: PortalData | null) => {
+            if (!cancelled && payload) setData(hydratePortalData(payload));
+          })
+          .catch(() => {});
+      }
+      lastSig = sig;
+      setLiveSyncActive(true);
+    };
+
+    const pollOnce = () => {
       fetch("/api/version")
         .then((r) => (r.ok ? r.json() : null))
         .then((ver) => {
-          if (!ver || cancelled) return;
-          const sig = `${ver.count}:${ver.max_mtime_ns}:${ver.total_size}`;
-          if (lastSig && lastSig !== sig) {
-            fetch("/api/data")
-              .then((r) => r.json())
-              .then((payload: PortalData) => {
-                if (!cancelled) setData(hydratePortalData(payload));
-              })
-              .catch(() => {});
-          }
-          lastSig = sig;
-          setLiveSyncActive(true);
+          if (ver) applyVersionPayload(ver);
         })
-        .catch(() => setLiveSyncActive(false));
-    }, 3000);
+        .catch(() => {
+          if (!cancelled) setLiveSyncActive(false);
+        });
+      fetch("/api/drift")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((drift: SpecDriftStatus | null) => {
+          if (!cancelled && drift) setDriftStatus(drift);
+        })
+        .catch(() => {});
+    };
+
+    const startFallbackPolling = () => {
+      if (cancelled || fallbackTimer !== undefined) return;
+      pollOnce();
+      fallbackTimer = window.setInterval(pollOnce, 3000);
+    };
+
+    if (typeof window.EventSource === "function") {
+      try {
+        eventSource = new window.EventSource("/api/events");
+        const handleStreamEvent = (ev: MessageEvent) => {
+          if (cancelled || !ev.data) return;
+          try {
+            const parsed = JSON.parse(ev.data);
+            if (parsed.drift) {
+              setDriftStatus(parsed.drift as SpecDriftStatus);
+            }
+            if (parsed.version) {
+              applyVersionPayload(parsed.version);
+            } else {
+              setLiveSyncActive(true);
+            }
+          } catch {
+            // Ignore malformed SSE frame
+          }
+        };
+        eventSource.addEventListener("status", handleStreamEvent as EventListener);
+        eventSource.onmessage = handleStreamEvent;
+        eventSource.onerror = () => {
+          if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+          }
+          startFallbackPolling();
+        };
+      } catch {
+        startFallbackPolling();
+      }
+    } else {
+      startFallbackPolling();
+    }
+
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      if (eventSource) {
+        eventSource.close();
+      }
+      if (fallbackTimer !== undefined) {
+        window.clearInterval(fallbackTimer);
+      }
     };
   }, [isStaticBundle]);
 
@@ -566,13 +674,28 @@ export function App() {
             </span>
           </div>
           {!isStaticBundle && (
-            <div className="flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground">
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  liveSyncActive ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
-                }`}
-              />
-              <span>{liveSyncActive ? "Live Sync" : "Offline"}</span>
+            <div className="flex items-center gap-3 text-[11px] font-mono text-muted-foreground">
+              {driftStatus && (
+                <span
+                  className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold ${
+                    driftStatus.is_clean && !driftStatus.drift_detected
+                      ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/25"
+                      : "bg-amber-500/10 text-amber-500 border-amber-500/25"
+                  }`}
+                >
+                  {driftStatus.is_clean && !driftStatus.drift_detected
+                    ? "Workspace Clean"
+                    : "Drift Detected"}
+                </span>
+              )}
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    liveSyncActive ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
+                  }`}
+                />
+                <span>{liveSyncActive ? "Live Sync" : "Offline"}</span>
+              </div>
             </div>
           )}
         </header>
@@ -582,6 +705,8 @@ export function App() {
           {activeTab === "home" && (
             <HomeView
               data={data}
+              driftStatus={driftStatus}
+              isLiveMode={!isStaticBundle}
               onNavigateTab={(t: TabKey) => setActiveTab(t)}
               onInspectSpec={(spec: any) => {
                 if (spec?.id) {

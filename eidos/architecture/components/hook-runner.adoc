@@ -10,15 +10,16 @@ source_path: src/eidos/plugin/hooks.py
 :toc: left
 
 == Responsibility
-Executes the stateless CLI-native `Stop` lifecycle hook (`eidos hook`), running uncommitted drift and validation checks at the end of an agent turn and emitting client-aware 1-turn capped continuation feedback (`DEC-PLUGIN-STATELESS-SINGLE-STOP-HOOK`, `DEC-PLUGIN-HOOK-CAPABLE-TARGETS`).
+Executes the session-baseline-aware CLI-native `Stop` and Cline `PreToolUse` (`attempt_completion`) lifecycle hooks (`eidos hook`), short-circuiting zero-edit Q&A turns on pre-existing dirty worktrees and emitting client-aware 1-turn capped continuation feedback (`DEC-PLUGIN-TURN-SCOPED-STOP-GATE`, `DEC-PLUGIN-HOOK-CAPABLE-TARGETS`).
 
 == Key Responsibilities & Collaborators
-* **Stateless Client-Aware Stop Gate Execution**: Resolves the nearest governing sub-project `repo_root` and `eidos/` directory (`find_workspace_root` supporting `"cwd"`, `"workspaceRoot"`, `"workspace_root"`, `"workspacePaths"`, Cursor `"workspace_roots"`, and Cline `"workspaceRoots"`, plus `find_repo_root`), invokes `CMP-DRIFT-DETECTOR` (`detect_drift(uncommitted=True)` and `generate_remediation_prompt`), and inspects the client's in-memory retry counter on `stdin` (`executionNum` and `terminationReason` for Antigravity, `loop_count` and `status` for Cursor, `hookName` for Cline, and `stop_hook_active` for Claude Code, GitHub Copilot, and OpenAI Codex). Returns a clean allow response (`{"decision": "allow"}` for Antigravity, `{"cancel": false}` for Cline, and `{}` for Cursor, Claude Code, Copilot, and Codex) when clean, on the retry turn (`executionNum > 1`, `loop_count > 0`, `hookName != "TaskComplete"`, or `stop_hook_active` is truthy), or on internal errors, and emits a 1-turn continuation prompt (`{"decision": "continue", "reason": msg}` for Antigravity, `{"followup_message": msg}` for Cursor, `{"cancel": true, "contextModification": msg, "errorMessage": msg}` for Cline, and `{"decision": "block", "reason": msg}` for Claude Code, Copilot, and Codex) on the first stop turn when drift, validation, or invariant issues exist.
+* **Session-Scoped Client-Aware Stop Gate Execution**: Resolves the nearest governing sub-project `repo_root` and `eidos/` directory (`find_workspace_root`), captures working-tree baselines (`git status --porcelain=v1 -z` + SHA-256 file digests) under gitignored `eidos/.cache/hook_baselines/` on `SessionStart` / `UserPromptSubmit` / `TaskStart`, and short-circuits drift blocking only when zero governed files (`code_files`, `spec_files`, `delta_files`, `test_files`, or `onboarding_files`) changed relative to the session baseline. Honors both snake_case `stop_hook_active` and camelCase `stopHookActive` retry flags (preventing GitHub Copilot `agentStop` infinite loops), immediately returns `{"cancel": false}` on Cline `PreToolUse` calls for tools other than `attempt_completion`, and invokes `CMP-DRIFT-DETECTOR` (`detect_drift(uncommitted=True)`) on the first completion attempt when governed edits exist.
 
 == Public Surface
-* `find_workspace_root(payload: dict[str, Any], explicit_root: Path | None = None) -> Path`
-* `handle_stop_hook(payload: dict[str, Any], explicit_root: Path | None = None) -> dict[str, Any]`
-* `execute_hook(repo_root: Path | None = None) -> int`
+* `find_workspace_root(payload: dict[str, Any] | None = None) -> Path`
+* `capture_session_baseline(payload: dict[str, Any], workspace_root: Path) -> dict[str, Any]`
+* `handle_stop_hook(payload: dict[str, Any], workspace_root: Path, event: str | None = None) -> dict[str, Any]`
+* `execute_hook(path: Path | None = None, repo_root: Path | None = None, stdin_data: str | None = None, event: str | None = None) -> int`
 
 == Design Constraints & Operational Notes
-* **Zero Local Hook State (`DEC-PLUGIN-STATELESS-SINGLE-STOP-HOOK`, `DEC-PLUGIN-HOOK-CAPABLE-TARGETS`)**: Maintains no local fingerprint files or SQLite hook snapshots; 1-turn continuation capping relies strictly on each coding client's built-in in-memory `stdin` retry counter (`executionNum`, `loop_count`, `hookName`, `stop_hook_active`), preventing infinite agent retry loops across coding harnesses.
+* **Turn-Scoped Retry & Dirty-Worktree Safety (`DEC-PLUGIN-TURN-SCOPED-STOP-GATE`)**: Caps continuation prompts to 1 retry turn via client `stdin` flags (`executionNum`, `loop_count`, `stop_hook_active`, `stopHookActive`) plus state-digest tracking for Cline `attempt_completion`, and stores ephemeral session baselines strictly inside gitignored `eidos/.cache/hook_baselines/`.

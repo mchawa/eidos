@@ -326,7 +326,7 @@
         "kind": "TyperOption",
         "required": false,
         "default": "None",
-        "help": "Target source file path(s), comma-separated paths, or quoted glob patterns (e.g. 'apps/*/Dockerfile').",
+        "help": "Target source file path(s), comma-separated paths, or quoted glob patterns (e.g. 'src/**/*.{ts,tsx}').",
         "panel": null,
         "envvar": "None",
         "type": "STRING"
@@ -760,6 +760,7 @@
   {
     "order": [
       "list",
+      "show",
       "create",
       "verify",
       "audit",
@@ -772,7 +773,7 @@
     "path": [
       "delta"
     ],
-    "help": "Manage SpecDeltas through their mutation lifecycle (list, create, status, verify, audit, apply, archive, delete, changelog).",
+    "help": "Manage SpecDeltas through their mutation lifecycle (list, show, create, status, verify, audit, apply, archive, delete, changelog).",
     "hidden": false,
     "panel": "Living Catalog & Mutations",
     "params": []
@@ -841,6 +842,61 @@
         "required": false,
         "default": "False",
         "help": "Output machine-readable JSON delta list.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "delta",
+      "show"
+    ],
+    "help": "Display frontmatter metadata, composable mutations, and AsciiDoc body of an active or archived SpecDelta.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "delta_id",
+        "opts": [
+          "delta_id"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": true,
+        "default": "None",
+        "help": "SpecDelta ID (e.g. DLT-2026-001), unambiguous prefix, or path.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "eidos",
+        "help": "Path to eidos directory.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Output machine-readable JSON SpecDelta document.",
         "panel": null,
         "envvar": "None",
         "type": "BOOL"
@@ -2019,6 +2075,20 @@
         "panel": null,
         "envvar": "None",
         "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "single_file",
+        "opts": [
+          "--single-file"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Inline all JS, CSS, and spec bodies into a single standalone index.html file.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
       }
     ]
   },

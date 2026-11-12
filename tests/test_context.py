@@ -862,3 +862,93 @@ def test_consolidated_entity_prefix_registry_and_excluded_dirs() -> None:  # eid
     assert infer_entity_type_from_path("eidos/system.adoc") == ("SYS-", "product/system", "SYS-SYSTEM")
     assert is_polyglot_test_file("tests/test_unit.py") is True
     assert is_polyglot_test_file("src/app/test_helpers.py") is False
+
+
+def test_context_brace_globs_and_csv_splitting(tmp_path, monkeypatch) -> None:
+    """Verify DLT-2026-135: brace-aware CSV splitting (`split_brace_aware_csv`) and `{a,b}` brace-glob
+    expansion (`expand_brace_globs`) in `eidos context -f` across repo root and nested subdirectories."""
+    import orjson
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.core.index.context import expand_brace_globs, split_brace_aware_csv
+    from eidos.core.index.graph_index import _close_singleton_index
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
+    from eidos.core.spec.parser import dump_spec_document, parse_spec_file
+
+    assert split_brace_aware_csv("src/**/*.{ts,tsx},src/billing/charge.py") == [
+        "src/**/*.{ts,tsx}",
+        "src/billing/charge.py",
+    ]
+    assert expand_brace_globs("src/auth/*.{ts,tsx}") == ["src/auth/*.ts", "src/auth/*.tsx"]
+    assert expand_brace_globs("pkg/{api,{v1,v2}}/*.go") == [
+        "pkg/api/*.go",
+        "pkg/v1/*.go",
+        "pkg/v2/*.go",
+    ]
+    assert expand_brace_globs("src/{single}/index.ts") == ["src/{single}/index.ts"]
+
+    repo = tmp_path / "brace_repo"
+    init_repository(repo, title="brace-repo")
+    eidos_dir = repo / "eidos"
+
+    create_spec(eidos_dir, "domain", "DOM-AUTH", title="Authentication Domain")
+    create_spec(eidos_dir, "domain", "DOM-BILLING", title="Billing Domain")
+    cnt_auth = create_spec(eidos_dir, "container", "CNT-AUTH", title="Auth Service")
+    cnt_bill = create_spec(eidos_dir, "container", "CNT-BILLING", title="Billing Service")
+    cmp_auth = create_spec(eidos_dir, "component", "CMP-AUTH-WEB", title="Auth Web Handler")
+    cmp_bill = create_spec(eidos_dir, "component", "CMP-BILLING-CORE", title="Billing Core")
+
+    for spec_path, dom, src_path in (
+        (cnt_auth, "DOM-AUTH", "src/auth"),
+        (cnt_bill, "DOM-BILLING", "src/billing"),
+    ):
+        doc = parse_spec_file(spec_path)
+        doc.frontmatter["domain"] = dom
+        doc.frontmatter["source_path"] = src_path
+        spec_path.write_text(dump_spec_document(doc.frontmatter, doc.body), encoding="utf-8")
+
+    doc = parse_spec_file(cmp_auth)
+    doc.frontmatter["container"] = "CNT-AUTH"
+    doc.frontmatter["source_path"] = ["src/auth/*.ts", "src/auth/*.tsx"]
+    cmp_auth.write_text(dump_spec_document(doc.frontmatter, doc.body), encoding="utf-8")
+
+    doc = parse_spec_file(cmp_bill)
+    doc.frontmatter["container"] = "CNT-BILLING"
+    doc.frontmatter["source_path"] = ["src/billing/charge.py"]
+    cmp_bill.write_text(dump_spec_document(doc.frontmatter, doc.body), encoding="utf-8")
+
+    (repo / "src" / "auth").mkdir(parents=True, exist_ok=True)
+    (repo / "src" / "auth" / "login.ts").write_text(
+        "export function loginUser(u: string): boolean { return !!u; }\n",
+        encoding="utf-8",
+    )
+    (repo / "src" / "auth" / "LoginView.tsx").write_text(
+        "export function LoginView() { return null; }\n",
+        encoding="utf-8",
+    )
+    (repo / "src" / "billing").mkdir(parents=True, exist_ok=True)
+    (repo / "src" / "billing" / "charge.py").write_text(
+        "def charge(cents: int) -> bool:\n    return cents > 0\n",
+        encoding="utf-8",
+    )
+
+    _close_singleton_index()
+    try:
+        runner = CliRunner()
+        ctx_res = runner.invoke(
+            app,
+            ["context", "-f", "src/auth/*.{ts,tsx},src/billing/charge.py", "--path", str(eidos_dir), "--json"],
+        )
+        assert ctx_res.exit_code == 0
+        ctx_json = orjson.loads(ctx_res.stdout)
+        ctx_comp_ids = {c["id"] for c in ctx_json["components"]}
+        assert {"CMP-AUTH-WEB", "CMP-BILLING-CORE"} <= ctx_comp_ids
+
+        monkeypatch.chdir(repo / "src" / "auth")
+        sub_res = runner.invoke(app, ["context", "-f", "*.{ts,tsx}", "--json"])
+        assert sub_res.exit_code == 0
+        assert "CMP-AUTH-WEB" in {c["id"] for c in orjson.loads(sub_res.stdout)["components"]}
+    finally:
+        _close_singleton_index()

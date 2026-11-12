@@ -4,6 +4,12 @@ description: "Shared JSON Schema $defs for decisions, invariants, lifecycle stat
 type: object
 additionalProperties: false
 $defs:
+  non_empty_string:
+    type: string
+    minLength: 1
+    pattern: "\\S"
+    description: "Non-empty string containing at least one non-whitespace character."
+
   decision:
     type: object
     additionalProperties: false
@@ -18,13 +24,13 @@ $defs:
         pattern: "^DEC-[A-Z0-9_-]+$"
         description: "Globally unique architectural decision identifier following DEC-<NAME> (e.g. DEC-INDEX-SQLITE-WAL)."
       title:
-        type: string
+        $ref: "#/$defs/non_empty_string"
         description: "Concise human-readable title summarizing the architectural decision."
       decision:
-        type: string
+        $ref: "#/$defs/non_empty_string"
         description: "Normative statement of the chosen design, technology, or system boundary."
       rationale:
-        type: string
+        $ref: "#/$defs/non_empty_string"
         description: "Architectural reasoning and trade-offs explaining why this decision was made."
       rejected_alternatives:
         type: array
@@ -37,10 +43,10 @@ $defs:
             - reason_rejected
           properties:
             option:
-              type: string
+              $ref: "#/$defs/non_empty_string"
               description: "Name or summary of the rejected alternative option."
             reason_rejected:
-              type: string
+              $ref: "#/$defs/non_empty_string"
               description: "Architectural or operational reason why this option was rejected."
       graduated_from:
         type: string
@@ -67,10 +73,10 @@ $defs:
         pattern: "^INV-[A-Z0-9_-]+$"
         description: "Unique invariant identifier following INV-<NAME> (e.g. INV-SPEC-VALIDATION)."
       rule:
-        type: string
+        $ref: "#/$defs/non_empty_string"
         description: "Formal normative requirement statement (RFC 2119)."
       test_binding:
-        type: string
+        $ref: "#/$defs/non_empty_string"
         description: "Relative test path and test function verifying this invariant (e.g. 'tests/test_validator.py::test_rule'). Optional during draft, mandatory for active specifications."
 
   lifecycle_status:
@@ -111,10 +117,11 @@ $defs:
 
   code_paths:
     oneOf:
-      - type: string
+      - $ref: "#/$defs/non_empty_string"
       - type: array
+        minItems: 1
         items:
-          type: string
+          $ref: "#/$defs/non_empty_string"
     description: "Relative file path(s), directory path(s), or glob pattern(s) from repository root to the implementation source code."
 
   system_ref:
@@ -294,20 +301,19 @@ $defs:
       - name
     properties:
       name:
-        type: string
+        $ref: "#/$defs/non_empty_string"
         description: "Identifier or name of the variant or state."
       description:
-        type: string
+        $ref: "#/$defs/non_empty_string"
         description: "Visual, behavioral, or usage specification."
 
   state_entry:
     oneOf:
-      - type: string
+      - $ref: "#/$defs/non_empty_string"
       - $ref: "#/$defs/named_descriptor"
 
   external_design_references:
     type: object
     description: "Open map of upstream design tools, team libraries, frames, or documentation URLs."
     additionalProperties:
-      type: string
-
+      $ref: "#/$defs/non_empty_string"

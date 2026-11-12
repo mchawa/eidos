@@ -13,16 +13,16 @@ source_path: src/eidos/core/index/ast_indexer.py
 Extracts polyglot AST code symbols (`CodeSymbol`), cross-file import specifiers (`extract_imports`), public boundary symbol diffs, and invariant test bindings across 17 supported languages using `ast-grep-py` (`SgRoot`).
 
 == Key Responsibilities & Collaborators
-* **17-Language Structural AST Extraction (`AstGrepIndexer`)**: Parses Python, TypeScript, TSX, JavaScript, JSX, Go, Rust, Java, Kotlin, C, C++, C#, Ruby, PHP, Swift, Vue, and Svelte source files into `CodeSymbol` records with exact `line_start`/`line_end` coordinates, decorator/attribute prefixes, length-preserving C/C++ `*_API` / `*_EXPORT` macro normalization (`_blank_cpp_export_macros`), and language-native visibility flags (`is_public`, distinguishing public C++ `static` class/struct methods and `access_specifier` sections from translation-unit-local `static` free functions).
-* **Boundary Symbol Diffing & Import Extraction**: Computes public/boundary symbol maps (`public_symbol_map`, `boundary_symbol_map`, `diff_public_symbols`) for `CMP-DRIFT-DETECTOR` and extracts syntax-tree import targets (`extract_imports`) for `CMP-INCREMENTAL-SYNC-ENGINE`.
-* **Polyglot Test-Binding Resolution**: Identifies test functions, class-qualified test methods (`Class::method`), parameterized tests (`test.each`, `Deno.test`, Go `t.Run`, Rust `#[rstest]`/`#[tokio::test]`), and `eidos:fixture` exemptions (`extract_test_file_cache_payload`).
+* **17-Language Structural AST & Interface Member Extraction (`AstGrepIndexer`)**: Parses Python, TypeScript, TSX, JavaScript, JSX, Go, Rust, Java, Kotlin, C, C++, C#, Ruby, PHP, Swift, Vue, and Svelte source files into `CodeSymbol` records with exact `line_start`/`line_end` coordinates, interface/trait member signatures across TypeScript (`method_signature`, `property_signature`, `function_signature`), Go (`interface_type` specs), Rust (`trait_item` / `function_signature_item`), Java, and C#, length-preserving C/C++ macro normalization, and language-native visibility flags (`is_public`, including Rust `pub trait` / `impl Trait for Type` items and C# `public interface` members).
+* **Overload-Safe Boundary Symbol Diffing & Import Extraction**: Disambiguates overloaded method/function keys in `public_symbol_map` and `boundary_symbol_map` with normalized parameter arity/signature suffixes so subsequent overload declarations never overwrite earlier ones, and extracts syntax-tree import targets (`extract_imports`) for `CMP-INCREMENTAL-SYNC-ENGINE`.
+* **Polyglot Test-Binding & Exact Token Resolution**: Identifies active test functions and `Class::method` targets while excluding disabled test modifiers (`test.skip`, `it.skip`, `test.todo`, `test.fixme`, `xit`, `xtest`) and suite-only `describe(...)` wrappers in `_extract_ts_test_call_title`, and extracts exact `INV-*` / `POL-*` tokens via `INV_OR_POL_TOKEN_RE` (preserving trailing lowercase prose suffixes without colliding on uppercase suffix IDs).
 
 == Public Surface
 * `CodeSymbol`, `AstGrepIndexer`, `get_ast_indexer() -> AstGrepIndexer`
 * `AstGrepIndexer.extract_symbols(file_path: Path, content: str | None = None) -> list[CodeSymbol]`
 * `AstGrepIndexer.extract_imports(file_path: Path, content: str | None = None) -> list[str]`
-* `AstGrepIndexer.list_test_functions(file_path: Path, content: str | None = None) -> set[str]`
-* `extract_test_file_cache_payload(ast_idx: Any, file_path: Path, content: str) -> tuple[dict[str, list[str]], list[str]]`
+* `AstGrepIndexer.list_test_functions(file_path: Path | str, content: str | None = None) -> dict[str, str]`
+* `extract_test_file_cache_payload(rel_path: str, content: str, ast_idx: Any = None) -> tuple[dict[str, list[str]], list[str], str, str]`
 
 == Design Constraints & Operational Notes
 * **Zero Regex False Positives on Supported Languages**: Ignores commented-out definitions, string literals, and nested local helper closures by walking the concrete `SgRoot` syntax tree after length-preserving C/C++ export macro blanking.

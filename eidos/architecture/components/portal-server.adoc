@@ -10,14 +10,14 @@ source_path: src/eidos/portal/server.py
 :toc: left
 
 == Responsibility
-Hosts the local multi-threaded HTTP preview server (`eidos portal serve`) exposing the interactive Web Portal SPA and `orjson`-serialized JSON API endpoints (`/api/data`, `/api/version`, `/api/drift`, `/api/validate`, `/api/specs/{id}`) with mtime-snapshot response caching.
+Hosts the same-origin isolated multi-threaded HTTP + Server-Sent Events preview server (`eidos portal serve`) exposing the interactive Web Portal SPA, `orjson`-serialized JSON API endpoints (`/api/data`, `/api/overview`, `/api/version`, `/api/drift`, `/api/validate`), and real-time `GET /api/events` SSE notifications.
 
 == Key Responsibilities & Collaborators
-* **Live API & Progressive Mtime Polling (`DEC-PORTAL-PROGRESSIVE-MTIME-POLLING`)**: Serves pre-compiled SPA assets from `CMP-PORTAL-ASSETS`, caches `CMP-PORTAL-GENERATOR` payloads keyed by `eidos/` file mtime snapshots under a thread lock (`_cache_lock`), and exposes `/api/version` for 3-second browser live reload and `/api/drift` for uncommitted drift status via `CMP-DRIFT-DETECTOR`.
+* **Same-Origin Isolation, SSE Live Drift & Full-Workspace Snapshot Caching (`DEC-PORTAL-STRICT-SANITIZATION-AND-SSE-CHUNKING`)**: Validates incoming HTTP `Host` headers against the bound `host:port` (blocking DNS rebinding), rejects `Sec-Fetch-Site: cross-site` requests with zero wildcard CORS headers, tracks `eidos/`, governed `src/`, and `tests/` trees in `_compute_eidos_mtime_snapshot`, fails closed (`is_clean: False`) on exceptions in `_get_cached_drift`, and streams `event: status` SSE updates over `/api/events`.
 
 == Public Surface
-* `run_portal_server(eidos_dir: Path, host: str = "127.0.0.1", port: int = 8080, open_browser: bool = True) -> None`
+* `run_portal_server(eidos_dir: Path, host: str = "127.0.0.1", port: int = 3000, open_browser: bool = False) -> None`
 * `EidosPortalHandler`
 
 == Design Constraints & Operational Notes
-* **Path Traversal Guard**: Validates all `/api/specs/{id}` and static asset paths with `Path.is_relative_to` before reading from disk.
+* **Path Traversal & Same-Origin Guard**: Validates all static asset fallback paths with `Path.is_relative_to` before reading from disk and enforces loopback `Host` header + `Sec-Fetch-Site` isolation across every route.

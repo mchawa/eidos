@@ -67,7 +67,7 @@ All 16 Eidos v1 schemas enforce `additionalProperties: false` at both the top le
 
 ### 2.1 System Context (`eidos/system.adoc`)
 * **`type: product/system`** (`id: SYS-*`).
-* **Required keys**: `type`, `id`, `title`, `archetypes` (non-empty list of system archetype slugs); optional `status`, `decisions`. Business vision, target users, value proposition, and technical profile are authored in the AsciiDoc prose body.
+* **Required keys**: `type`, `id`, `title`, `status`, `archetypes` (non-empty list of system archetype slugs); optional `version`, `decisions`. Business vision, target users, value proposition, and technical profile are authored in the AsciiDoc prose body.
 
 ```yaml
 ---
@@ -151,7 +151,7 @@ role_type: "admin" # end_user | admin | human_engineer | autonomous_agent
 
 ### 3.1 Arc42 Master Architecture (`eidos/architecture/system-architecture.adoc`)
 * **`type: tech/architecture`** (`id: ARCH-*`).
-* **Required keys**: `type`, `id`, `title`, `c4_context: { actors, external_systems }`; optional `status`, `decisions`. Solution strategy, C4 Level 2 container narrative, cross-cutting concepts, deployment view, and quality requirements are authored in the AsciiDoc prose body (C4 Level 2 container topology is derived automatically from `CNT-*` specs).
+* **Required keys**: `type`, `id`, `title`, `status`, `c4_context: { actors, external_systems }`; optional `version`, `decisions`. Solution strategy, C4 Level 2 container narrative, cross-cutting concepts, deployment view, and quality requirements are authored in the AsciiDoc prose body (C4 Level 2 container topology is derived automatically from `CNT-*` specs).
 
 ```yaml
 ---
@@ -272,13 +272,13 @@ Record non-obvious trade-offs and rejected alternatives in the `decisions:` arra
 
 ## 4. Multi-Design Systems & Client UX (`DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`)
 
-For repositories with web, mobile, desktop, or TUI frontends, model UX specifications under `eidos/design/` as pure reusable definitions referenced from `product/capability.experience` and `design/client`:
+For repositories with web, mobile, desktop, CLI, or TUI frontends, model UX specifications under `eidos/design/` as pure reusable definitions referenced from `product/capability.experience` and `design/client`:
 
 | Type & ID Prefix | Canonical Path | Required Keys | Key Optional Properties |
 | :--- | :--- | :--- | :--- |
 | **`design/system` (`DS-*`)** | `eidos/design/systems/<slug>/system.adoc` | `type`, `id`, `title`, `status`, `tokens: { spec_format: "w3c_design_tokens", manifest: "tokens.json" }` | `brand_name`, `extends` (`DS-*`), `override_mode`, `theme_capabilities: { color_modes, density_modes }`, `external_references`, `decisions` |
 | **`design/ui-component` (`UIC-*`)** | `eidos/design/systems/<slug>/components/<comp>.adoc` | `type`, `id`, `title`, `design_system` (`DS-*`), `status` | `category`, `implements` (`UIC-*`), `variants: [{name, description}]`, `states`, `invariants`, `external_references`, `decisions` |
-| **`design/client` (`CLT-*`)** | `eidos/design/clients/<app>/client.adoc` | `type`, `id`, `title`, `status`, `platform` (`web`, `mobile-ios`, `mobile-android`, `desktop`, `tui`, `multi-platform`), `design_system` | `container` (`CNT-*`), `screens` (`SCR-*`), `flows` (`FLOW-*`), `decisions` |
+| **`design/client` (`CLT-*`)** | `eidos/design/clients/<app>/client.adoc` | `type`, `id`, `title`, `status`, `platform` (`web`, `mobile-ios`, `mobile-android`, `desktop`, `cli`, `tui`, `multi-platform`), `design_system` | `container` (`CNT-*`), `screens` (`SCR-*`), `flows` (`FLOW-*`), `decisions` |
 | **`design/screen` (`SCR-*`)** | `eidos/design/clients/<app>/screens/<screen>.adoc` | `type`, `id`, `title`, `route`, `status` | `slots`, `states: [{name, description}]`, `external_references`, `decisions` |
 | **`design/flow` (`FLOW-*`)** | `eidos/design/flows/<flow>.adoc` | `type`, `id`, `title`, `status`, `steps: [{step, title, screen, client, action, outcome}]` | `flow_type` (`client_internal`, `cross_client`), `decisions` |
 

@@ -15,7 +15,7 @@ source_path:
 Root Typer CLI application (`src/eidos/cli/main.py`) and shared workspace resolution helpers (`src/eidos/cli/_shared.py`) that mount all subcommand modules, handle `--version` / `eidos info` (reporting the 16 loaded v1 schemas, 9 supported AI coding harnesses, and `agentskills.io` Agent Skills standard), and resolve the governing `eidos/` specification directory.
 
 == Key Responsibilities & Collaborators
-* **Root Command Registration**: Mounts `init`, `validate`, `spec`, `delta`, `context`, `index`, `drift`, `portal`, `plugin`, `doctor`, and `hook` subcommand groups onto the root `app` Typer instance (`CTR-EIDOS-CLI`).
+* **Root Command Registration & Deterministic Ordering**: Mounts `init`, `validate`, `spec`, `delta`, `context`, `index`, `drift`, `portal`, `plugin`, `doctor`, and `hook` onto the root `app` Typer instance in deterministic panel and help order (`CTR-EIDOS-CLI`).
 * **Shared Workspace & Sub-Project Resolution (`_shared.py`)**: Resolves `--path` arguments and auto-discovers the nearest governing sub-project `eidos/` specification directory (`resolve_cli_eidos_dir`, `has_eidos_markers`) walking upward from `CWD`, explicit `--path` (whether pointing to `<subproject>` or `<subproject>/eidos`), or target `hint_files` while ignoring cache-only `eidos/` directories.
 
 == Public Surface

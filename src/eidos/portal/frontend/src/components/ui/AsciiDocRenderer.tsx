@@ -8,12 +8,15 @@ import {
   type RenderedAsciiDoc,
 } from "@/lib/asciidoc";
 import { requestSpecNavigation } from "@/lib/specNav";
+import { useResolvedSpecBody } from "@/lib/specChunks";
 
 export { slugify, extractAsciiDocOutline };
 export type { AsciiDocOutlineItem };
 
 export interface AsciiDocRendererProps {
   content: string;
+  specId?: string;
+  bodyChunk?: string;
   className?: string;
   title?: string;
   fontSize?: "compact" | "comfortable" | "large";
@@ -74,17 +77,32 @@ function copyCodeFrom(button: HTMLElement) {
   }, 2000);
 }
 
-export function AsciiDocRenderer({ content, className, onNavigateSpec }: AsciiDocRendererProps) {
+export function AsciiDocRenderer({
+  content,
+  specId,
+  bodyChunk,
+  className,
+  onNavigateSpec,
+}: AsciiDocRendererProps) {
+  const { body: resolvedContent, loading: chunkLoading } = useResolvedSpecBody(
+    specId,
+    content,
+    bodyChunk
+  );
   const [state, setState] = React.useState<RenderState>({ status: "loading" });
 
   React.useEffect(() => {
     let cancelled = false;
-    if (!content) {
+    if (chunkLoading) {
+      setState({ status: "loading" });
+      return;
+    }
+    if (!resolvedContent) {
       setState({ status: "ready", result: { html: "", outline: [] } });
       return;
     }
     setState((prev) => (prev.status === "ready" ? prev : { status: "loading" }));
-    renderAsciiDocCached(content)
+    renderAsciiDocCached(resolvedContent)
       .then((result) => {
         if (!cancelled) setState({ status: "ready", result });
       })
@@ -97,7 +115,7 @@ export function AsciiDocRenderer({ content, className, onNavigateSpec }: AsciiDo
     return () => {
       cancelled = true;
     };
-  }, [content]);
+  }, [resolvedContent, chunkLoading]);
 
   const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;

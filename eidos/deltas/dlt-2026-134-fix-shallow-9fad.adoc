@@ -1,0 +1,182 @@
+---
+type: delta/mutation
+id: DLT-2026-134-FIX-SHALLOW-9FAD
+title: "Fix Shallow-Clone and Commit-Range VCS Drift, Enforce Planned-Mode Mutations, and Verify Design UI Component Invariants"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Eliminate silent zero-diff false passes in fetch-depth: 1 shallow CI clones and linked Git worktrees, porcelain path-quoting bypasses on filenames with spaces, executable code exemptions under docs/, planned-mode SpecDelta coverage/verification bypasses, working-tree vs --head commit-range mismatches, omitted UIC-* (design/ui-component) invariant verification, contradictory test_binding: N/A/TBD rules, and greedy INV-* regex / skipped-test false passes across CNT-EIDOS-VCS, CNT-EIDOS-CORE, and CNT-EIDOS-INDEX."
+vcs:
+  branch: main
+  base_commit: e1022b338ebd4a42d4774fa444ef35f6874b8acf
+mutations:
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    details: "Update src/eidos/vcs/diff.py, src/eidos/vcs/drift.py, and src/eidos/vcs/invariants.py (plus eidos/architecture/components/drift-detector.adoc) to: (1) detect shallow clones via 'git rev-parse --is-shallow-repository' (working in linked Git worktrees) and fail closed instead of diffing HEAD..HEAD when cand_sha == head_sha in fetch-depth: 1 clones; (2) parse uncommitted files via 'git status --porcelain=v1 -z' so paths containing spaces or quotes never fall into other_files; (3) classify executable code files (.py, .ts, .tsx, .js, .go, .rs, etc.) under docs/ as code_files unless owned as pure documentation; (4) remove the planned-mode 'continue' bypass in drift.py so newly applied SpecDeltas execute DeltaEngine.verify_delta_mutations() and _spec_coverage_verdict(); (5) evaluate specs, ownership, and invariants from the '--head' Git tree rather than the working tree when '--base'/'--head' are supplied without '--uncommitted'; (6) add spec_root / 'design' to scan_roots in invariants.py so UIC-* invariants are verified and never flagged as orphans; and (7) use exact uppercase-bounded INV-* token regexes."
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/vcs/drift.py"
+          - "src/eidos/vcs/diff.py"
+          - "src/eidos/vcs/invariants.py"
+          - "src/eidos/vcs/structural.py"
+          - "src/eidos/vcs/report.py"
+        status: "active"
+      body:
+        contains:
+          - "--is-shallow-repository"
+          - "--porcelain=v1 -z"
+          - "verify_delta_mutations"
+          - "design"
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: "Update invariant test_binding validation in src/eidos/core/spec/validator.py and eidos/architecture/components/spec-validator.adoc to reject empty, 'N/A', 'TBD', 'NONE', and symbol-less bare file paths on status: active specifications (permitting 'TBD' strictly on draft/planned specs and non-applied SpecDeltas), matching invariants.py and POL-002."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/spec/validator.py"
+        status: "active"
+      body:
+        contains:
+          - "test_binding"
+          - "status: active"
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+    details: "Update INV_OR_POL_TOKEN_RE and _extract_ts_test_call_title() in src/eidos/core/index/ast_indexer.py and eidos/architecture/components/ast-symbol-indexer.adoc so lowercase prose suffixes (e.g. 'INV-AUTH-001-compliant') extract 'INV-AUTH-001' while uppercase extensions ('INV-AUTH-1-EXTENDED') do not false-match 'INV-AUTH-1', and exclude disabled test modifiers (test.skip, it.skip, test.todo, test.fixme, xit, xtest) and suite-only describe(...) wrappers from valid test-symbol bindings."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/ast_indexer.py"
+        status: "active"
+      body:
+        contains:
+          - "INV_OR_POL_TOKEN_RE"
+          - "test.skip"
+          - "test.todo"
+  - operation: modify
+    target: CNT-EIDOS-VCS
+    details: "Update eidos/architecture/containers/vcs.adoc to record DEC-VCS-UNIFIED-TEST-BINDING-SEMANTICS and document worktree-safe shallow-clone detection, NUL-delimited Git porcelain parsing, Git-tree commit-range evaluation, automatic verify_delta_mutations enforcement on applied deltas, and design/ UIC-* invariant scanning."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-VCS-UNIFIED-TEST-BINDING-SEMANTICS"
+      body:
+        contains:
+          - "DEC-VCS-UNIFIED-TEST-BINDING-SEMANTICS"
+          - "--is-shallow-repository"
+          - "UIC-*"
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Update assets/plugin_reference/skills/eidos-plan/SKILL.md (within INV-PLUGIN-SKILL-SIZE-CEILING and INV-PLUGIN-SKILL-CLI-PARITY) and eidos/architecture/containers/plugin.adoc so expect.frontmatter.test_binding guidance requires file::func on active specs and permits TBD only prior to delta application (removing N/A)."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "agentskills.io"
+  - operation: modify
+    target: CAP-VCS-001
+    details: "Bump CAP-VCS-001 to version 1.12.0 in eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc, update INV-DRIFT-DETECTION-ACCURACY, and add INV-DRIFT-SHALLOW-AND-COMMIT-TREE-FIDELITY and INV-DRIFT-UIC-AND-SKIPPED-TEST-GUARD."
+    expect:
+      frontmatter:
+        version: "1.12.0"
+        technical.invariants.id:
+          - "INV-DRIFT-DETECTION-ACCURACY"
+          - "INV-DRIFT-SHALLOW-AND-COMMIT-TREE-FIDELITY"
+          - "INV-DRIFT-UIC-AND-SKIPPED-TEST-GUARD"
+      body:
+        contains:
+          - "--is-shallow-repository"
+          - "verify_delta_mutations"
+          - "UIC-*"
+  - operation: modify
+    target: POL-002-INVARIANT-TEST-ENFORCEMENT
+    details: "Update eidos/policies/POL-002-invariant-test-enforcement.adoc and INV-POL-002-INVARIANT-TEST-ENFORCEMENT to include UI Components (UIC-*) explicitly alongside Capabilities, Policies, Containers, Components, and SpecDeltas, and forbid N/A, TBD, or bare file paths without ::symbol on active specifications."
+    expect:
+      frontmatter:
+        status: "active"
+        invariants.id:
+          - "INV-POL-002-INVARIANT-TEST-ENFORCEMENT"
+      body:
+        contains:
+          - "UIC-*"
+          - "file::func"
+  - operation: modify
+    target: INV-POL-002-INVARIANT-TEST-ENFORCEMENT
+    details: "Update INV-POL-002-INVARIANT-TEST-ENFORCEMENT in POL-002 to cover UIC-* invariants and reject N/A, TBD, and bare file bindings on active specs."
+    expect:
+      frontmatter:
+        rule: "UIC-*"
+        test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
+  - operation: modify
+    target: INV-DRIFT-DETECTION-ACCURACY
+    details: "Update INV-DRIFT-DETECTION-ACCURACY in CAP-VCS-001 to include design/ UIC-* invariants, NUL-delimited Git status parsing, and planned-mode mutation/coverage verification."
+    expect:
+      frontmatter:
+        rule: "design"
+        test_binding: "tests/test_drift.py::test_drift_detection_code_without_specs"
+  - operation: add
+    target: INV-DRIFT-SHALLOW-AND-COMMIT-TREE-FIDELITY
+    details: "Bind INV-DRIFT-SHALLOW-AND-COMMIT-TREE-FIDELITY to tests/test_drift.py::test_shallow_clone_worktree_and_commit_range_tree_isolation."
+    expect:
+      frontmatter:
+        rule: "eidos drift must detect shallow repositories across standard checkouts and linked Git worktrees via 'git rev-parse --is-shallow-repository' (failing closed instead of diffing HEAD..HEAD on fetch-depth: 1 pushes), parse uncommitted paths via NUL-delimited 'git status --porcelain=v1 -z', and evaluate specifications and invariants from the '--head' commit tree rather than the dirty working tree when '--base'/'--head' are specified."
+        test_binding: "tests/test_drift.py::test_shallow_clone_worktree_and_commit_range_tree_isolation"
+  - operation: add
+    target: INV-DRIFT-UIC-AND-SKIPPED-TEST-GUARD
+    details: "Bind INV-DRIFT-UIC-AND-SKIPPED-TEST-GUARD to tests/test_drift.py::test_uic_invariants_planned_delta_verify_and_skipped_test_rejection."
+    expect:
+      frontmatter:
+        rule: "eidos drift must scan eidos/design/ for UIC-* invariants, enforce verify_delta_mutations and _spec_coverage_verdict on applied SpecDeltas without planned-mode short-circuiting, match INV-* tokens cleanly across lowercase prose suffixes without colliding on uppercase suffix IDs, and reject disabled test modifiers (.skip, .todo, .fixme) and suite-only describe(...) blocks as test bindings."
+        test_binding: "tests/test_drift.py::test_uic_invariants_planned_delta_verify_and_skipped_test_rejection"
+---
+= SpecDelta: Fix Shallow-Clone and Commit-Range VCS Drift, Enforce Planned-Mode Mutations, and Verify Design UI Component Invariants
+:toc: left
+:icons: font
+:sectnums:
+
+== Problem Statement
+
+Auditing `CNT-EIDOS-VCS` (`src/eidos/vcs/`), `CMP-SPEC-VALIDATOR` (`src/eidos/core/spec/validator.py`), and `CMP-AST-SYMBOL-INDEXER` (`src/eidos/core/index/ast_indexer.py`) revealed critical silent-pass paths in `eidos drift` and contradictions in static invariant verification:
+
+1. **Shallow CI Clone (`fetch-depth: 1`) Silent Zero-Diff Pass & Worktree Blindness (`src/eidos/vcs/diff.py`)**:
+   * On push to `main` in a `fetch-depth: 1` CI checkout (`diff.py:135-145`), `cand_sha == head_sha`, `git rev-parse HEAD~1` fails (`returncode != 0`, so `L144` does not `continue`), `git merge-base` returns `HEAD`, and `eidos drift` diffs `HEAD..HEAD` (`0` files -> `is_clean: True`) without ever reaching the shallow-clone error at `L188-199`.
+   * Furthermore, `(git_root / ".git" / "shallow").exists()` (`L189`) fails inside linked Git worktrees where `.git` is a pointer file rather than a directory.
+2. **Planned-Mode SpecDelta Bypass & Commit-Range Dirty-Worktree Contamination (`src/eidos/vcs/drift.py`)**:
+   * Any `proposed` SpecDelta—or a newly created `applied` SpecDelta where `old_dc is None`—naming `CNT-*`/`CMP-*` in `mutations` hits `continue` at `drift.py:406, 446`, bypassing `_spec_coverage_verdict` (`trivial_spec_diff`, `missing_anchor`, `stale_removed_symbol`) and never invoking `DeltaEngine.verify_delta_mutations`.
+   * When `--base A --head B` is supplied without `--uncommitted` (`drift.py:243-248`), `detect_drift` diffs Git blobs for code changes but validates specifications, ownership, and invariants from the **dirty working tree on disk** (`L551-563`).
+3. **Unquoted Porcelain Spaces & Blanket `docs/` Code Exemption (`src/eidos/vcs/diff.py`)**:
+   * `git status --porcelain` without `-z` (`diff.py:310-325`) wraps paths containing spaces in double quotes (`"src/my mod.py"`), turning `Path(f).suffix` into `'.py"'` -> `other_files` and bypassing uncommitted drift.
+   * `parts[0] == "docs"` (`diff.py:545-578`) classifies executable `.py`/`.ts`/`.tsx` files under `docs/` as `doc_files`.
+4. **Omitted `UIC-*` Invariants, `test_binding: N/A` Contradiction, & Token/Skip Bugs (`invariants.py`, `validator.py`, `ast_indexer.py`)**:
+   * `scan_roots` (`src/eidos/vcs/invariants.py:440-444`) scans `policies`, `domains`, and `architecture`, omitting `design`. Consequently, `UIC-*` (`design/ui-component`) invariants are never verified, and tests referencing `# INV-UIC-*` fail `eidos drift` as **orphan invariants**.
+   * `eidos-plan/SKILL.md:173` and `delta.schema.yaml:175` list `N/A` alongside `TBD`, `validator.py:1087-1114` silently skips `N/A`, `TBD`, `NONE`, empty strings, and bare file paths without `::symbol` even on `status: active` specs, and `_verify_single_invariant` (`invariants.py:230-238`) then flags `N/A` under `Uncovered Invariants` (`report.py:139-143`).
+   * `INV_OR_POL_TOKEN_RE` (`ast_indexer.py:24`) greedily consumes lowercase prose suffixes (`INV-AUTH-001-compliant` fails to match `INV-AUTH-001`), `\b{iid}\b` (`invariants.py:280, 310`) falsely matches `INV-AUTH-1-EXTENDED`, and `_extract_ts_test_call_title` (`ast_indexer.py:692-701`) accepts `test.skip`, `test.todo`, `test.fixme`, and suite-level `describe(...)` calls as valid invariant test symbols.
+
+== Proposed Specification Changes
+
+* **Worktree-Safe Shallow Detection, `-z` Porcelain Parsing & `docs/` Code Classification (`CMP-DRIFT-DETECTOR`, `INV-DRIFT-SHALLOW-AND-COMMIT-TREE-FIDELITY`)**:
+  1. Replace `(git_root / ".git" / "shallow").exists()` with `git rev-parse --is-shallow-repository` in `diff.py`, and when `cand_sha == head_sha` and `HEAD~1` is unresolvable in a shallow clone, fail closed (`DriftError`) with actionable `fetch-depth: 0` guidance instead of diffing `HEAD..HEAD`.
+  2. Switch uncommitted status collection in `diff.py` to `git status --porcelain=v1 -z` (`\0`-delimited, handling rename pairs properly).
+  3. Restrict `docs/` `doc_files` classification in `classify_changed_files` to documentation/static extensions (`.md`, `.adoc`, `.rst`, `.txt`, `.png`, `.svg`, `.yml`/`.toml` site configs) so executable code under `docs/` is classified as `code_files`.
+* **Planned-Mode Mutation Verification & `--head` Commit-Tree Isolation (`CMP-DRIFT-DETECTOR`, `CNT-EIDOS-VCS`, `DEC-VCS-UNIFIED-TEST-BINDING-SEMANTICS`)**:
+  1. Remove the `continue` short-circuit in `drift.py` for `status: applied` SpecDeltas: automatically run `DeltaEngine.verify_delta_mutations` on deltas applied in the changeset and enforce `_spec_coverage_verdict` (`trivial_spec_diff`, `missing_anchor`, `stale_removed_symbol`) across touched components.
+  2. When `--base` / `--head` are supplied (`uncommitted=False`), materialize `--head`'s `eidos/` and referenced `source_path`/`test_binding` blobs into an ephemeral snapshot (or Git-tree reader) so uncommitted local edits never pollute commit-range CI checks.
+* **`UIC-*` Invariants, Unified `test_binding` Rules & Token/Skip Hardening (`CMP-DRIFT-DETECTOR`, `CMP-SPEC-VALIDATOR`, `CMP-AST-SYMBOL-INDEXER`, `POL-002-INVARIANT-TEST-ENFORCEMENT`, `CNT-EIDOS-PLUGIN`, `INV-DRIFT-UIC-AND-SKIPPED-TEST-GUARD`)**:
+  1. Add `spec_root / "design"` to `scan_roots` in `invariants.py`.
+  2. Enforce concrete `file::symbol` `test_binding` values on all `status: active` specs across `validator.py` and `invariants.py` (allowing `TBD` strictly on `draft | planned` specs and `proposed | in_review | approved` SpecDeltas, and removing `N/A` from `assets/schemas/v1/delta/delta.schema.yaml` and `assets/plugin_reference/skills/eidos-plan/SKILL.md` while keeping skill word counts below `INV-PLUGIN-SKILL-SIZE-CEILING`).
+  3. Update `INV_OR_POL_TOKEN_RE` in `ast_indexer.py` and invariant boundary checks in `invariants.py` to match `(?<![A-Z0-9_-])((?:INV|POL)-[A-Z0-9]+(?:-[A-Z0-9]+)*)(?![A-Z0-9_]|-[A-Z0-9])` (allowing trailing lowercase prose like `-compliant` while rejecting `-EXTENDED`), and exclude `.skip`, `.todo`, `.fixme`, `xit`, `xtest`, and non-test `describe(...)` wrappers in `_extract_ts_test_call_title` (preserving `DEC-VCS-STATIC-INVARIANT-TRACEABILITY` with zero AST `assert` inspection).
+
+== Implementation Plan
+
+1. **VCS Diff, Commit-Tree Isolation & Planned-Mode Enforcement (`src/eidos/vcs/diff.py`, `src/eidos/vcs/drift.py`, `src/eidos/vcs/invariants.py`, `src/eidos/vcs/report.py`)**:
+   * Implement `_is_shallow_repo(git_root)` via `git rev-parse --is-shallow-repository`, fail closed when `cand_sha == head_sha` on a shallow single-commit history, parse `git status --porcelain=v1 -z`, and tighten `docs/` classification in `diff.py`.
+   * Enforce `verify_delta_mutations` + `_spec_coverage_verdict` on newly applied deltas and `--head` Git-tree snapshot evaluation when `uncommitted=False` in `drift.py`.
+   * Add `spec_root / "design"` to `scan_roots` and update token boundary matching in `invariants.py`.
+2. **Validator `test_binding` Alignment, AST Token/Skip Guards & Skill Sync (`src/eidos/core/spec/validator.py`, `src/eidos/core/index/ast_indexer.py`, `assets/schemas/v1/delta/delta.schema.yaml`, `assets/plugin_reference/skills/eidos-plan/SKILL.md`)**:
+   * Reject `N/A`, `TBD`, `NONE`, empty strings, and bare file paths without `::` on `status: active` specs in `validator.py`, and remove `|N/A` from `delta.schema.yaml` (`CNT-EIDOS-CORE` covered via `CMP-SPEC-VALIDATOR`) and `eidos-plan/SKILL.md` (covered via `CNT-EIDOS-PLUGIN`; verify `INV-PLUGIN-SKILL-SIZE-CEILING` and `INV-PLUGIN-SKILL-CLI-PARITY`).
+   * Update `INV_OR_POL_TOKEN_RE` and `_extract_ts_test_call_title` in `ast_indexer.py` (`CNT-EIDOS-INDEX` covered via `CMP-AST-SYMBOL-INDEXER`).
+3. **Living Specifications & Invariant Tests (`eidos/`, `tests/`)**:
+   * Move `DEC-VCS-UNIFIED-TEST-BINDING-SEMANTICS` onto `CNT-EIDOS-VCS` when applying, and update `CMP-DRIFT-DETECTOR`, `CMP-SPEC-VALIDATOR`, `CMP-AST-SYMBOL-INDEXER`, `CNT-EIDOS-PLUGIN`, `CAP-VCS-001` (`1.12.0`), and `POL-002-INVARIANT-TEST-ENFORCEMENT`.
+   * Add/update `tests/test_drift.py::test_shallow_clone_worktree_and_commit_range_tree_isolation`, `tests/test_drift.py::test_uic_invariants_planned_delta_verify_and_skipped_test_rejection`, `tests/test_drift.py::test_drift_detection_code_without_specs`, and `tests/test_validator.py::test_validate_eidos_specifications` (`>90%` per-file coverage per `POL-005`), then run `eidos validate eidos --json`, `eidos delta verify DLT-2026-134 --json`, and `eidos drift --uncommitted --json`.

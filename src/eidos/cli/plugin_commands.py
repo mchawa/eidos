@@ -155,6 +155,8 @@ def plugin_version(
     status = status_info["status"]
     if status == "up_to_date":
         status_badge = "[bold green]✓ Up to date[/bold green]"
+    elif status == "modified":
+        status_badge = f"[bold yellow]✎ Modified ({status_info['status_text']})[/bold yellow]"
     elif status == "outdated":
         status_badge = f"[bold yellow]▲ Outdated ({status_info['status_text']})[/bold yellow]"
     elif status == "newer":
@@ -171,6 +173,10 @@ def plugin_version(
     if status == "outdated":
         console.print(
             "\n[bold yellow]Update Available:[/bold yellow] Run [bold green]eidos plugin update <target>[/bold green] to upgrade to the latest bundled version.\n"
+        )
+    elif status == "modified":
+        console.print(
+            "\n[bold yellow]Local Modifications Detected:[/bold yellow] Run [bold green]eidos plugin install <target> --force[/bold green] to reconcile skipped skill files with the bundled version.\n"
         )
     elif status == "not_installed":
         console.print(

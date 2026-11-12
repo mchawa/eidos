@@ -10,7 +10,60 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from eidos.core.spec.parser import parse_spec_file
+from eidos.core.spec.parser import extract_frontmatter, parse_spec_file
+
+
+def _frontmatter_status_and_id(raw_text: str) -> tuple[str, str]:
+    """Extract normalized (status_lower, id_upper) strictly from YAML frontmatter."""
+    fm, _, err = extract_frontmatter(raw_text)
+    if err or not isinstance(fm, dict):
+        return "", ""
+    status = str(fm.get("status") or "").strip().lower()
+    doc_id = str(fm.get("id") or "").strip().upper()
+    return status, doc_id
+
+
+def _git_batch_read_blobs(repo_root: Path, specs: list[str]) -> dict[str, str | None]:
+    """Read multiple '<rev>:<path>' git blobs in a single `git cat-file --batch` call."""
+    if not specs:
+        return {}
+    unique_specs = list(dict.fromkeys(specs))
+    results: dict[str, str | None] = {}
+    with contextlib.suppress(OSError, subprocess.SubprocessError):
+        proc = subprocess.run(
+            ["git", "cat-file", "--batch"],
+            input=("\n".join(unique_specs) + "\n").encode("utf-8"),
+            cwd=repo_root,
+            capture_output=True,
+            check=False,
+        )
+        if proc.returncode != 0 and not proc.stdout:
+            return {}
+        buf = proc.stdout
+        pos = 0
+        n = len(buf)
+        for spec in unique_specs:
+            nl = buf.find(b"\n", pos)
+            if nl == -1:
+                break
+            header = buf[pos:nl].decode("utf-8", errors="replace")
+            pos = nl + 1
+            if header.endswith(" missing"):
+                results[spec] = None
+                continue
+            parts = header.rsplit(" ", 2)
+            if len(parts) != 3:
+                break
+            try:
+                size = int(parts[2])
+            except ValueError:
+                break
+            blob_bytes = buf[pos : pos + size]
+            pos += size
+            if pos < n and buf[pos : pos + 1] == b"\n":
+                pos += 1
+            results[spec] = blob_bytes.decode("utf-8", errors="replace")
+    return results
 
 
 @dataclass
@@ -135,16 +188,36 @@ class ChangelogGenerator:
         except (OSError, subprocess.SubprocessError):
             return []
 
-    def _batch_resolve_delta_commits(self, deltas_dir: Path) -> dict[Path, str]:
-        """Resolve earliest Git commit SHA where status: applied was set for delta files."""
+    def _resolve_project_name(self) -> str:
+        """Resolve human-readable project name from SYS-* in system.adoc, falling back to repo directory name."""
+        candidates: list[Path] = []
+        sys_file = self.eidos_dir / "system.adoc"
+        if sys_file.is_file() and not sys_file.is_symlink():
+            candidates.append(sys_file)
+        if self.eidos_dir.is_dir():
+            for p in sorted(self.eidos_dir.glob("*.adoc")):
+                if p not in candidates and p.is_file() and not p.is_symlink():
+                    candidates.append(p)
+        for cand in candidates:
+            with contextlib.suppress(Exception):
+                doc = parse_spec_file(cand)
+                if doc.doc_type == "product/system":
+                    title = str(doc.frontmatter.get("title") or doc.title or "").strip()
+                    if title:
+                        return title
+        return self.root.name or "this project"
+
+    def _batch_resolve_delta_commits(self, deltas_dir: Path) -> tuple[dict[Path, str], dict[str, str]]:
+        """Resolve earliest Git commit SHA where YAML frontmatter status: applied was set for delta files."""
         commits_by_path: dict[Path, str] = {}
+        commits_by_id: dict[str, str] = {}
         with contextlib.suppress(OSError, subprocess.SubprocessError, ValueError):
             rel_deltas = str(deltas_dir.resolve().relative_to(self.root)).replace("\\", "/")
             output = subprocess.check_output(
                 [
                     "git",
                     "log",
-                    "-G^status[ \t]*:[ \t]*['\"]?applied",
+                    "--reverse",
                     "--name-only",
                     "--format=COMMIT:%H",
                     "--",
@@ -154,6 +227,7 @@ class ChangelogGenerator:
                 text=True,
                 stderr=subprocess.DEVNULL,
             )
+            events: list[tuple[str, str]] = []
             current_sha = ""
             for raw_line in output.splitlines():
                 line = raw_line.strip()
@@ -161,41 +235,101 @@ class ChangelogGenerator:
                     continue
                 if line.startswith("COMMIT:"):
                     current_sha = line[7:].strip()
-                elif current_sha:
-                    full_p = (self.root / line).resolve()
-                    fname = Path(line).name
-                    hot_p = (deltas_dir / fname).resolve()
-                    archive_p = (deltas_dir / "archive" / fname).resolve()
-                    commits_by_path[full_p] = current_sha
-                    commits_by_path[hot_p] = current_sha
-                    commits_by_path[archive_p] = current_sha
+                elif current_sha and line.lower().endswith(".adoc"):
+                    events.append((current_sha, line))
 
-            diff_out = subprocess.check_output(
-                ["git", "diff", "HEAD", "--unified=0", "--", rel_deltas],
+            blob_specs = [f"{sha}:{rel_line}" for sha, rel_line in events]
+            blobs = _git_batch_read_blobs(self.root, blob_specs)
+
+            applied_by_fname: dict[str, str] = {}
+            paths_by_fname: dict[str, set[Path]] = {}
+            ids_by_fname: dict[str, set[str]] = {}
+
+            for sha, rel_line in events:
+                blob_text = blobs.get(f"{sha}:{rel_line}")
+                if blob_text is None:
+                    continue
+                fname = Path(rel_line).name
+                fname_key = fname.lower()
+                full_p = (self.root / rel_line).resolve()
+                hot_p = (deltas_dir / fname).resolve()
+                archive_p = (deltas_dir / "archive" / fname).resolve()
+                paths_by_fname.setdefault(fname_key, set()).update((full_p, hot_p, archive_p))
+
+                fm_status, fm_id = _frontmatter_status_and_id(blob_text)
+                if fm_id:
+                    ids_by_fname.setdefault(fname_key, set()).add(fm_id)
+                if fm_status == "applied":
+                    applied_by_fname.setdefault(fname_key, sha)
+                    if fm_id:
+                        commits_by_id.setdefault(fm_id, applied_by_fname[fname_key])
+                elif fm_status:
+                    applied_by_fname.pop(fname_key, None)
+                    if fm_id:
+                        commits_by_id.pop(fm_id, None)
+
+            for fname_key, sha in applied_by_fname.items():
+                for p in paths_by_fname.get(fname_key, set()):
+                    commits_by_path[p] = sha
+                for fid in ids_by_fname.get(fname_key, set()):
+                    commits_by_id.setdefault(fid, sha)
+
+            # Detect deltas that transitioned to frontmatter status: applied only in the uncommitted working tree
+            diff_names_out = subprocess.check_output(
+                ["git", "diff", "HEAD", "--name-only", "--", rel_deltas],
                 cwd=self.root,
                 text=True,
                 stderr=subprocess.DEVNULL,
             )
-            diff_file: Path | None = None
-            status_applied_add_re = re.compile(r"^\+status[ \t]*:[ \t]*['\"]?applied\b", re.IGNORECASE)
-            status_applied_del_re = re.compile(r"^-status[ \t]*:[ \t]*['\"]?applied\b", re.IGNORECASE)
-            added_applied_files: list[Path] = []
-            removed_applied_names: set[str] = set()
-            src_file_name = ""
-            for raw_line in diff_out.splitlines():
-                if raw_line.startswith("--- a/"):
-                    src_file_name = Path(raw_line[6:].strip()).name.lower()
-                elif raw_line.startswith("+++ b/"):
-                    rel_f = raw_line[6:].strip()
-                    diff_file = (self.root / rel_f).resolve()
-                elif status_applied_del_re.search(raw_line) and src_file_name:
-                    removed_applied_names.add(src_file_name)
-                elif diff_file is not None and status_applied_add_re.search(raw_line):
-                    added_applied_files.append(diff_file)
-            for af in added_applied_files:
-                if af.name.lower() not in removed_applied_names:
-                    commits_by_path.pop(af, None)
-        return commits_by_path
+            dirty_rel_files = [ln.strip() for ln in diff_names_out.splitlines() if ln.strip().lower().endswith(".adoc")]
+            if dirty_rel_files:
+                head_specs: list[str] = []
+                dirty_candidates: list[tuple[str, list[str]]] = []
+                for rel_f in dirty_rel_files:
+                    fname = Path(rel_f).name
+                    cands = list(
+                        dict.fromkeys(
+                            [
+                                rel_f.replace("\\", "/"),
+                                f"{rel_deltas}/{fname}",
+                                f"{rel_deltas}/archive/{fname}",
+                            ]
+                        )
+                    )
+                    row_specs = [f"HEAD:{c}" for c in cands]
+                    head_specs.extend(row_specs)
+                    dirty_candidates.append((rel_f, row_specs))
+                head_blobs = _git_batch_read_blobs(self.root, head_specs)
+                for rel_f, row_specs in dirty_candidates:
+                    was_applied_at_head = False
+                    head_ids: set[str] = set()
+                    for sp in row_specs:
+                        htext = head_blobs.get(sp)
+                        if htext is not None:
+                            hst, hid = _frontmatter_status_and_id(htext)
+                            if hid:
+                                head_ids.add(hid)
+                            if hst == "applied":
+                                was_applied_at_head = True
+                    if not was_applied_at_head:
+                        fname = Path(rel_f).name
+                        fname_key = fname.lower()
+                        for p in (
+                            (self.root / rel_f).resolve(),
+                            (deltas_dir / fname).resolve(),
+                            (deltas_dir / "archive" / fname).resolve(),
+                            *paths_by_fname.get(fname_key, set()),
+                        ):
+                            commits_by_path.pop(p, None)
+                        disk_p = (self.root / rel_f).resolve()
+                        if disk_p.is_file():
+                            with contextlib.suppress(OSError):
+                                _, disk_id = _frontmatter_status_and_id(disk_p.read_text(encoding="utf-8"))
+                                if disk_id:
+                                    head_ids.add(disk_id)
+                        for hid in head_ids | ids_by_fname.get(fname_key, set()):
+                            commits_by_id.pop(hid, None)
+        return commits_by_path, commits_by_id
 
     def _get_tag_ancestors(self, tag_name: str) -> set[str]:
         """Return cached set of all commit SHAs reachable from tag_name via a single git rev-list query."""
@@ -220,11 +354,16 @@ class ChangelogGenerator:
 
         delta_files = sorted(
             [p for p in deltas_dir.rglob("*.adoc") if p.is_file() and not p.is_symlink()],
-            key=lambda p: (p.name.lower(), str(p.relative_to(deltas_dir)).lower()),
+            key=lambda p: (
+                0 if "archive" not in p.relative_to(deltas_dir).parts else 1,
+                p.name.lower(),
+                str(p.relative_to(deltas_dir)).lower(),
+            ),
         )
-        batched_commits = self._batch_resolve_delta_commits(deltas_dir)
+        batched_commits, commits_by_id = self._batch_resolve_delta_commits(deltas_dir)
 
         results: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
         for df in delta_files:
             try:
                 doc = parse_spec_file(df)
@@ -236,7 +375,12 @@ class ChangelogGenerator:
                 status = str(fm.get("status", "proposed")).strip().lower()
                 if status != "applied":
                     continue
-                delta_id = str(fm.get("id") or df.stem.upper())
+                delta_id = str(fm.get("id") or df.stem.upper()).strip()
+                canonical_id = delta_id.upper()
+                if canonical_id in seen_ids:
+                    continue
+                seen_ids.add(canonical_id)
+
                 title = str(fm.get("title") or "")
                 intent = fm.get("intent") or {}
                 kind = str(intent.get("kind") or "feature") if isinstance(intent, dict) else "feature"
@@ -249,7 +393,7 @@ class ChangelogGenerator:
                 else:
                     summary = ""
 
-                commit = batched_commits.get(df.resolve(), "")
+                commit = batched_commits.get(df.resolve()) or commits_by_id.get(canonical_id, "")
 
                 results.append(
                     {
@@ -268,6 +412,7 @@ class ChangelogGenerator:
             except Exception:
                 continue
 
+        results.sort(key=lambda item: str(item["id"]).lower())
         return results
 
     def _resolve_delta_release(self, commit: str, tags: list[dict[str, str]]) -> str:
@@ -348,9 +493,10 @@ class ChangelogGenerator:
                 sections.append(sec)
 
         # Assemble markdown document
+        project_name = self._resolve_project_name()
         header = (
             "# Changelog\n\n"
-            "All notable changes to Eidos are documented in this file.\n\n"
+            f"All notable changes to {project_name} are documented in this file.\n\n"
             "The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),\n"
             "and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).\n\n"
             "Every major feature and architectural mutation is directly backed by an immutable\n"
@@ -404,13 +550,26 @@ class ChangelogGenerator:
 
         # Check if already mentioned by a delta ID in the section
         if existing_deltas:
+            short_counts: dict[str, int] = {}
             for d in existing_deltas:
-                short_id = "-".join(d["id"].split("-")[:3])
-                if (
-                    d["id"] in clean
-                    or (short_id and short_id in clean)
-                    or (d["title"] and d["title"].lower() in clean.lower())
-                ):
+                sid = "-".join(str(d.get("id") or "").split("-")[:3]).upper()
+                if sid:
+                    short_counts[sid] = short_counts.get(sid, 0) + 1
+            for d in existing_deltas:
+                full_id = str(d.get("id") or "").strip()
+                short_id = "-".join(full_id.split("-")[:3])
+                full_match = bool(
+                    full_id
+                    and re.search(rf"(?<![A-Za-z0-9_-]){re.escape(full_id)}(?![A-Za-z0-9_-])", clean, re.IGNORECASE)
+                )
+                short_match = bool(
+                    short_id
+                    and short_counts.get(short_id.upper(), 0) == 1
+                    and re.search(rf"(?<![A-Za-z0-9_-]){re.escape(short_id)}(?![A-Za-z0-9_-])", clean, re.IGNORECASE)
+                )
+                title_val = str(d.get("title") or "").strip()
+                title_match = bool(title_val and title_val.lower() in clean.lower())
+                if full_match or short_match or title_match:
                     return
 
         # Format and categorize by conventional commit prefix

@@ -77,10 +77,6 @@ def infer_entity_type_from_path(rel_path: str | Path) -> tuple[str, str, str] | 
     parent_upper = path_obj.parent.name.upper()
     norm_parts = [p.lower() for p in path_obj.parts]
 
-    p_meta = resolve_entity_prefix_meta(stem_upper)
-    if p_meta is not None:
-        return p_meta[0], p_meta[2], stem_upper
-
     def _prefixed(pfx: str, token: str) -> tuple[str, str, str]:
         return pfx, ENTITY_PREFIX_REGISTRY[pfx][1], token if token.startswith(pfx) else f"{pfx}{token}"
 
@@ -119,6 +115,12 @@ def infer_entity_type_from_path(rel_path: str | Path) -> tuple[str, str, str] | 
         return _prefixed("DOM-", dom_tok)
     if stem_upper == "SYSTEM":
         return ("SYS-", "product/system", "SYS-SYSTEM")
+
+    p_meta = resolve_entity_prefix_meta(stem_upper)
+    if p_meta is not None:
+        return p_meta[0], p_meta[2], stem_upper
+    if stem_upper.startswith("DLT-"):
+        return ("DLT-", "delta/mutation", stem_upper)
     return None
 
 
@@ -406,6 +408,10 @@ class SpecDocument:
     _model: FrontmatterModel | None = None
 
     @property
+    def parse_errors(self) -> list[str]:
+        return self.errors
+
+    @property
     def is_valid(self) -> bool:
         return len(self.errors) == 0
 
@@ -424,12 +430,27 @@ class SpecDocument:
         return self.as_model()
 
 
+class _SchemaErrorsMap(dict[str, list[str]]):
+    """Repo-relative schema error mapping with fallback .get() lookup for resolved Path strings."""
+
+    def get(self, key: str, default: Any = None) -> Any:
+        if key in self:
+            return self[key]
+        if isinstance(key, str) and ("/" in key or "\\" in key):
+            norm = key.replace("\\", "/")
+            if norm.startswith("/") or (len(norm) > 2 and norm[1] == ":"):
+                for k, v in self.items():
+                    if k and not k.startswith("/") and norm.endswith(f"/{k}"):
+                        return v
+        return default
+
+
 @dataclass
 class ValidationReport:
     """Consolidated validation report for all specifications in a repository."""
 
     documents: list[SpecDocument] = field(default_factory=list)
-    schema_errors: dict[str, list[str]] = field(default_factory=dict)
+    schema_errors: dict[str, list[str]] = field(default_factory=_SchemaErrorsMap)
     broken_references: list[str] = field(default_factory=list)
     entity_index: dict[str, SpecDocument] = field(default_factory=dict)
 

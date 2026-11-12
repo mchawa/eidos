@@ -314,14 +314,17 @@ def test_plugin_install_and_uninstall_cursor(tmp_path):
     assert not (tmp_path / ".cursor" / "hooks.json").exists()
     assert "targets=cursor:.agents/skills" in (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
 
-    # Opt-in hooks=True creates .cursor/hooks.json with version: 1 and loop_limit: 1
+    # Opt-in hooks=True creates .cursor/hooks.json with version: 1, sessionStart, and stop (loop_limit: 1)
     install_plugin(target=PluginInstallTarget.CURSOR, project_dir=tmp_path, force=True, hooks=True)
     cursor_hooks_file = tmp_path / ".cursor" / "hooks.json"
     assert cursor_hooks_file.exists()
     cursor_hooks = orjson.loads(cursor_hooks_file.read_bytes())
     assert cursor_hooks == {
         "version": 1,
-        "hooks": {"stop": [{"command": "eidos hook", "loop_limit": 1}]},
+        "hooks": {
+            "sessionStart": [{"command": "eidos hook"}],
+            "stop": [{"command": "eidos hook", "loop_limit": 1}],
+        },
     }
 
     # Coexistence with user hook in .cursor/hooks.json and uvx launcher upgrade
@@ -361,24 +364,26 @@ def test_plugin_install_and_uninstall_aider(tmp_path):
     uninst = uninstall_plugin(target=PluginInstallTarget.AIDER, project_dir=tmp_path)
     assert len(uninst) == 1 and uninst[0].success
     assert not (tmp_path / ".aider").exists()
+    assert not (tmp_path / ".aider.conf.yml").exists()
 
 
 def test_plugin_install_and_uninstall_cline_kilocode_opencode(tmp_path):
-    """Verify Cline, Kilo Code, and OpenCode install skills into .agents/skills/ and update root AGENTS.md (plus opt-in Cline TaskComplete hook)."""
+    """Verify Cline, Kilo Code, and OpenCode install skills into .agents/skills/ and update root AGENTS.md (plus opt-in Cline PreToolUse hook)."""
     for target in (PluginInstallTarget.CLINE, PluginInstallTarget.KILOCODE, PluginInstallTarget.OPEN_CODE):
         ws = tmp_path / target.value
         ws.mkdir()
         results = install_plugin(target=target, project_dir=ws, force=True)
         assert len(results) == 1 and results[0].success
         assert (ws / ".agents" / "skills" / "eidos" / "SKILL.md").exists()
-        assert not (ws / ".clinerules" / "hooks" / "TaskComplete").exists()
+        assert not (ws / ".clinerules" / "hooks" / "PreToolUse").exists()
         assert f"targets={target.value}:.agents/skills" in (ws / "AGENTS.md").read_text(encoding="utf-8")
 
         if target == PluginInstallTarget.CLINE:
             install_plugin(target=target, project_dir=ws, force=True, hooks=True)
-            cline_hook = ws / ".clinerules" / "hooks" / "TaskComplete"
+            cline_hook = ws / ".clinerules" / "hooks" / "PreToolUse"
             assert cline_hook.is_file()
             assert "exec eidos hook" in cline_hook.read_text(encoding="utf-8")
+            assert (ws / ".clinerules" / "hooks" / "TaskStart").is_file()
 
         uninst = uninstall_plugin(target=target, project_dir=ws)
         assert len(uninst) == 1 and uninst[0].success
@@ -406,7 +411,10 @@ def test_plugin_install_and_uninstall_codex(tmp_path):
     codex_hooks_file = tmp_path / ".codex" / "hooks.json"
     assert codex_hooks_file.exists()
     assert orjson.loads(codex_hooks_file.read_bytes()) == {
-        "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "eidos hook", "timeout": 30}]}]}
+        "hooks": {
+            "SessionStart": [{"hooks": [{"type": "command", "command": "eidos hook", "timeout": 10}]}],
+            "Stop": [{"hooks": [{"type": "command", "command": "eidos hook", "timeout": 30}]}],
+        }
     }
 
     # Verify version detection
@@ -444,6 +452,14 @@ def test_plugin_install_and_uninstall_copilot(tmp_path):
     assert orjson.loads(copilot_hooks_file.read_bytes()) == {
         "version": 1,
         "hooks": {
+            "sessionStart": [
+                {
+                    "type": "command",
+                    "bash": "eidos hook",
+                    "powershell": "eidos hook",
+                    "timeoutSec": 10,
+                }
+            ],
             "agentStop": [
                 {
                     "type": "command",
@@ -451,7 +467,7 @@ def test_plugin_install_and_uninstall_copilot(tmp_path):
                     "powershell": "eidos hook",
                     "timeoutSec": 30,
                 }
-            ]
+            ],
         },
     }
 
@@ -489,7 +505,7 @@ def test_plugin_install_and_uninstall_all_targets(tmp_path):
     assert (tmp_path / ".agents" / "hooks.json").exists()
     assert (tmp_path / ".cursor" / "hooks.json").exists()
     assert (tmp_path / ".claude" / "settings.json").exists()
-    assert (tmp_path / ".clinerules" / "hooks" / "TaskComplete").exists()
+    assert (tmp_path / ".clinerules" / "hooks" / "PreToolUse").exists()
     assert (tmp_path / ".codex" / "hooks.json").exists()
     assert (tmp_path / ".github" / "hooks" / "hooks.json").exists()
     assert (tmp_path / ".agents" / "skills" / "eidos" / "SKILL.md").exists()
@@ -503,11 +519,14 @@ def test_plugin_install_and_uninstall_all_targets(tmp_path):
     assert not (tmp_path / ".agents" / "hooks.json").exists()
     assert not (tmp_path / ".cursor" / "hooks.json").exists()
     assert not (tmp_path / ".claude" / "settings.json").exists()
-    assert not (tmp_path / ".clinerules" / "hooks" / "TaskComplete").exists()
+    assert not (tmp_path / ".clinerules" / "hooks" / "PreToolUse").exists()
     assert not (tmp_path / ".codex" / "hooks.json").exists()
     assert not (tmp_path / ".github" / "hooks" / "hooks.json").exists()
     assert not (tmp_path / ".agents" / "skills").exists()
     assert not (tmp_path / ".aider").exists()
+    assert not (tmp_path / "AGENTS.md").exists()
+    assert not (tmp_path / "CLAUDE.md").exists()
+    assert not (tmp_path / ".aider.conf.yml").exists()
 
 
 def test_cli_install_new_agent_shortcuts(tmp_path):
@@ -747,22 +766,29 @@ def test_plugin_hooks_conformance():
 
     assert set(hooks_data.keys()) == {"eidos-drift-gate"}
     drift_gate = hooks_data["eidos-drift-gate"]
-    assert set(drift_gate.keys()) == {"Stop"}
+    assert set(drift_gate.keys()) == {"SessionStart", "Stop"}
+    assert drift_gate["SessionStart"] == [{"type": "command", "command": "eidos hook", "timeout": 10}]
     assert drift_gate["Stop"] == [{"type": "command", "command": "eidos hook", "timeout": 30}]
 
 
-def test_cli_lint_command():
+def test_cli_lint_command(tmp_path):
     """Verify 'eidos validate' CLI command executes and root 'eidos lint' shortcut is removed (CTR-EIDOS-CLI)."""
-    res_removed = runner.invoke(app, ["lint", "eidos"])
+    from eidos.core.lifecycle.initializer import init_repository
+
+    init_repository(tmp_path, title="Validate CLI Test")
+    res_removed = runner.invoke(app, ["lint", str(tmp_path / "eidos")])
     assert res_removed.exit_code != 0
 
-    res = runner.invoke(app, ["validate", "eidos"])
+    res = runner.invoke(app, ["validate", str(tmp_path / "eidos")])
     assert res.exit_code == 0
     assert "Success! All" in res.stdout
 
 
-def test_drift_hook_stop_event_drift_detected(tmp_path):
-    """Verify stateless Stop hook blocks/continues for 1 turn when drift or spec validation issues exist, and allows on retry (INV-AGENT-DRIFT-HOOK)."""
+def test_drift_hook_stop_event_drift_detected(tmp_path, monkeypatch):
+    """Verify INV-AGENT-DRIFT-HOOK: Stop hook honors camelCase stopHookActive, gates Cline PreToolUse strictly on attempt_completion, and short-circuits zero-edit Q&A turns via session baselines."""
+    import eidos.vcs.drift as drift_mod
+    from eidos.plugin.hooks import handle_stop_hook
+
     eidos_dir = tmp_path / "eidos"
     eidos_dir.mkdir()
     valid_spec = eidos_dir / "policy.adoc"
@@ -807,6 +833,150 @@ def test_drift_hook_stop_event_drift_detected(tmp_path):
     res_retry = runner.invoke(app, ["hook"], input=retry_payload)
     assert res_retry.exit_code == 0
     assert orjson.loads(res_retry.stdout) == {"decision": "allow"}
+
+    # GitHub Copilot camelCase stopHookActive circuit-breaker prevents infinite agentStop retry loops
+    copilot_first = {"stopHookActive": False, "cwd": str(tmp_path)}
+    copilot_retry = {"stopHookActive": True, "cwd": str(tmp_path)}
+    assert handle_stop_hook(copilot_first, tmp_path)["decision"] == "block"
+    assert handle_stop_hook(copilot_retry, tmp_path) == {}
+
+    # Cline PreToolUse: non-attempt_completion tool calls return {"cancel": False} WITHOUT calling detect_drift
+    real_detect_drift = drift_mod.detect_drift
+    drift_calls = 0
+
+    def _counted_detect_drift(*args, **kwargs):
+        nonlocal drift_calls
+        drift_calls += 1
+        return real_detect_drift(*args, **kwargs)
+
+    monkeypatch.setattr("eidos.plugin.hooks.detect_drift", _counted_detect_drift)
+    cline_read = {
+        "clineVersion": "3.36.0",
+        "hookName": "PreToolUse",
+        "taskId": "cline-task-1",
+        "preToolUse": {"toolName": "read_file"},
+        "workspaceRoots": [str(tmp_path)],
+    }
+    assert handle_stop_hook(cline_read, tmp_path) == {"cancel": False}
+    assert drift_calls == 0
+
+    # Cline PreToolUse on attempt_completion blocks on turn 1 and allows on consecutive retry of same state
+    cline_complete = {
+        "clineVersion": "3.36.0",
+        "hookName": "PreToolUse",
+        "taskId": "cline-task-1",
+        "preToolUse": {"tool": "attempt_completion"},
+        "workspaceRoots": [str(tmp_path)],
+    }
+    res_cline_1 = handle_stop_hook(cline_complete, tmp_path)
+    assert res_cline_1["cancel"] is True
+    assert "⚠️ [Eidos Stop Hook]" in res_cline_1["errorMessage"]
+    assert drift_calls == 1
+    assert handle_stop_hook(cline_complete, tmp_path) == {"cancel": False}
+
+    # Explicit client empty or doc-only modified_files / editedFiles short-circuits without running detect_drift
+    drift_calls = 0
+    assert handle_stop_hook({"stop_hook_active": False, "cwd": str(tmp_path), "modified_files": []}, tmp_path) == {}
+    assert handle_stop_hook({"stop_hook_active": False, "cwd": str(tmp_path), "editedFiles": ["   "]}, tmp_path) == {}
+    assert (
+        handle_stop_hook({"stop_hook_active": False, "cwd": str(tmp_path), "modified_files": ["README.md"]}, tmp_path)
+        == {}
+    )
+    assert drift_calls == 0
+
+    # Session-scoped baseline (SessionStart / UserPromptSubmit): pre-existing dirty worktree Q&A turn passes through,
+    # whereas editing a governed file during the session triggers the Stop drift gate.
+    import os
+
+    from eidos.plugin.hooks import _prune_stale_baselines, capture_session_baseline
+
+    _prune_stale_baselines(tmp_path / "nonexistent_baselines_dir")
+    assert capture_session_baseline({"cwd": str(tmp_path / "no_eidos")}, tmp_path / "no_eidos") == {}
+
+    sess_start = orjson.dumps(
+        {
+            "hook_event_name": "SessionStart",
+            "session_id": "sess-qa-dirty",
+            "cwd": str(tmp_path),
+        }
+    ).decode("utf-8")
+    res_sess = runner.invoke(app, ["hook"], input=sess_start)
+    assert res_sess.exit_code == 0
+    assert orjson.loads(res_sess.stdout) == {}
+    baseline_dir = eidos_dir / ".cache" / "hook_baselines"
+    assert any(baseline_dir.glob("*.json"))
+
+    # Stale baseline file (>24h old) is pruned automatically
+    stale_file = baseline_dir / "session_stale.json"
+    stale_file.write_text("{}", encoding="utf-8")
+    old_ts = 1000.0
+    os.utime(stale_file, (old_ts, old_ts))
+    _prune_stale_baselines(baseline_dir)
+    assert not stale_file.exists()
+
+    drift_calls = 0
+    res_qa_stop = handle_stop_hook(
+        {"hook_event_name": "Stop", "session_id": "sess-qa-dirty", "stop_hook_active": False, "cwd": str(tmp_path)},
+        tmp_path,
+    )
+    assert res_qa_stop == {}
+    assert drift_calls == 0
+
+    # Doc-only change after SessionStart still short-circuits without blocking
+    (tmp_path / "README.md").write_text("# Notes\n", encoding="utf-8")
+    assert (
+        handle_stop_hook(
+            {"hook_event_name": "Stop", "session_id": "sess-qa-dirty", "stop_hook_active": False, "cwd": str(tmp_path)},
+            tmp_path,
+        )
+        == {}
+    )
+    assert drift_calls == 0
+
+    # Corrupt baseline file falls back safely to full detect_drift; symlink/deleted/renamed files snapshot cleanly
+    (tmp_path / "link_note.md").symlink_to("README.md")
+    subprocess.run(["git", "add", "README.md"], cwd=tmp_path, capture_output=True, check=True)
+    subprocess.run(["git", "commit", "-qm", "readme"], cwd=tmp_path, capture_output=True, check=True)
+    subprocess.run(["git", "mv", "README.md", "GUIDE.md"], cwd=tmp_path, capture_output=True, check=True)
+    capture_session_baseline({"session_id": "sess-edge"}, tmp_path)
+    (tmp_path / "GUIDE.md").unlink()
+    capture_session_baseline({"session_id": "sess-edge-del"}, tmp_path)
+
+    corrupt_bf = baseline_dir / "session_default.json"
+    corrupt_bf.write_text("{bad-json", encoding="utf-8")
+    assert handle_stop_hook({"stop_hook_active": False, "cwd": str(tmp_path)}, tmp_path)["decision"] == "block"
+
+    # Non-git Cline workspace uses stat-based state digest & recovers from corrupt retry marker
+    non_git_ws = tmp_path / "non_git_cline"
+    (non_git_ws / "eidos").mkdir(parents=True)
+    (non_git_ws / "eidos" / "bad.adoc").write_text("---\ntype: product/policy\nid: BAD\n---\n", encoding="utf-8")
+    ng_payload = {
+        "clineVersion": "3.36.0",
+        "hookName": "PreToolUse",
+        "preToolUse": {"toolName": "attempt_completion"},
+        "workspaceRoots": [str(non_git_ws)],
+    }
+    from eidos.plugin import hooks as hooks_mod
+    from eidos.plugin.hooks import _cline_retry_filename
+
+    orig_snap = hooks_mod._snapshot_dirty_worktree
+    monkeypatch.setattr(hooks_mod, "_snapshot_dirty_worktree", lambda _r: None)
+    assert handle_stop_hook(ng_payload, non_git_ws)["cancel"] is True
+    assert handle_stop_hook(ng_payload, non_git_ws) == {"cancel": False}
+    ng_marker_dir = non_git_ws / "eidos" / ".cache" / "hook_baselines"
+    ng_marker_dir.mkdir(parents=True, exist_ok=True)
+    (ng_marker_dir / _cline_retry_filename(ng_payload, non_git_ws.resolve())).write_text("{corrupt", encoding="utf-8")
+    assert handle_stop_hook(ng_payload, non_git_ws)["cancel"] is True
+    monkeypatch.setattr(hooks_mod, "_snapshot_dirty_worktree", orig_snap)
+
+    # Now the agent modifies a governed file during the session -> Stop blocks!
+    (src_dir / "new_edit.py").write_text("def added_in_session(): return 42\n", encoding="utf-8")
+    res_edit_stop = handle_stop_hook(
+        {"hook_event_name": "Stop", "session_id": "sess-qa-dirty", "stop_hook_active": False, "cwd": str(tmp_path)},
+        tmp_path,
+    )
+    assert res_edit_stop["decision"] == "block"
+    assert "src/new_edit.py" in res_edit_stop["reason"]
 
     # Also verify invalid spec produces a validation reason on turn 1
     (eidos_dir / "invalid.adoc").write_text(
@@ -894,10 +1064,19 @@ def test_stateless_stop_hook_no_cache_or_block_loop(tmp_path):
     assert handle_stop_hook(cur_turn2, tmp_path) == {}
     assert handle_stop_hook(cur_aborted, tmp_path) == {}
 
-    # 3. Cline: TaskComplete -> cancel: True, contextModification, errorMessage; non-TaskComplete or retry -> cancel: False
+    # 3. Cline: PreToolUse on attempt_completion -> cancel: True; non-attempt_completion or retry -> cancel: False
     cline_turn1 = {
         "clineVersion": "3.36.0",
-        "hookName": "TaskComplete",
+        "hookName": "PreToolUse",
+        "taskId": "stateless-cline-1",
+        "preToolUse": {"toolName": "attempt_completion"},
+        "workspaceRoots": [str(tmp_path)],
+    }
+    cline_other_tool = {
+        "clineVersion": "3.36.0",
+        "hookName": "PreToolUse",
+        "taskId": "stateless-cline-1",
+        "preToolUse": {"toolName": "write_to_file"},
         "workspaceRoots": [str(tmp_path)],
     }
     cline_cancel_event = {
@@ -906,10 +1085,12 @@ def test_stateless_stop_hook_no_cache_or_block_loop(tmp_path):
         "workspaceRoots": [str(tmp_path)],
     }
     assert find_workspace_root(cline_turn1) == tmp_path.resolve()
+    assert handle_stop_hook(cline_other_tool, tmp_path) == {"cancel": False}
     res_cline1 = handle_stop_hook(cline_turn1, tmp_path)
     assert res_cline1["cancel"] is True
     assert "⚠️ [Eidos Stop Hook]" in res_cline1["contextModification"]
     assert "⚠️ [Eidos Stop Hook]" in res_cline1["errorMessage"]
+    assert handle_stop_hook(cline_turn1, tmp_path) == {"cancel": False}
     assert handle_stop_hook(cline_cancel_event, tmp_path) == {"cancel": False}
 
     # 4. Claude Code, GitHub Copilot, OpenAI Codex: stop_hook_active falsy -> block; truthy -> {}
@@ -924,6 +1105,15 @@ def test_stateless_stop_hook_no_cache_or_block_loop(tmp_path):
 
 def test_cli_doctor_command(tmp_path, monkeypatch):
     """Verify 'eidos doctor' and 'eidos doctor --json' CLI health check, custom --path, and virtualenv fallback (DLT-2026-024, DLT-2026-070)."""
+    from eidos.core.lifecycle.initializer import init_repository
+
+    doc_ws = tmp_path / "doctor_default_ws"
+    doc_ws.mkdir(parents=True)
+    init_repository(doc_ws, title="Doctor Default WS")
+    subprocess.run(["git", "init"], cwd=doc_ws, capture_output=True, check=True)
+    install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=doc_ws, force=True)
+    monkeypatch.chdir(doc_ws)
+
     res = runner.invoke(app, ["doctor"])
     assert res.exit_code == 0
     assert "Eidos Environment & Workspace Doctor" in res.stdout
@@ -947,10 +1137,10 @@ def test_cli_doctor_command(tmp_path, monkeypatch):
     assert venv_data["checks"]["cli_binary"]["on_path"] is False
 
     # Custom --path specification directory resolution inside a git repository
-    import subprocess
-
-    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
-    custom_specs = tmp_path / "custom_specs"
+    custom_ws = tmp_path / "custom_ws"
+    custom_ws.mkdir(parents=True)
+    subprocess.run(["git", "init"], cwd=custom_ws, capture_output=True, check=True)
+    custom_specs = custom_ws / "custom_specs"
     custom_specs.mkdir(parents=True)
     (custom_specs / "system.adoc").write_text(
         """---
@@ -973,13 +1163,22 @@ archetypes:
     assert custom_data["checks"]["living_specs"]["valid_docs"] == 1
 
 
-def test_cli_doctor_update_check(monkeypatch):
-    """Verify INV-DOCTOR-UPDATE-CHECK: eidos doctor checks PyPI via check_cli_update_status and reports updates non-blockingly."""
+def test_cli_doctor_update_check(tmp_path, monkeypatch):
+    """Verify INV-DOCTOR-UPDATE-CHECK: eidos doctor checks PyPI via check_cli_update_status and resolves editable Git-tag versions accurately."""
     import io
     import urllib.error
 
     import eidos
+    from eidos import _parse_git_describe_version, resolve_runtime_version
+    from eidos.core.lifecycle.initializer import init_repository
     from eidos.plugin.version import check_cli_update_status
+
+    doc_ws = tmp_path / "doctor_upd_ws"
+    doc_ws.mkdir(parents=True)
+    init_repository(doc_ws, title="Doctor Update WS")
+    subprocess.run(["git", "init"], cwd=doc_ws, capture_output=True, check=True)
+    install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=doc_ws, force=True)
+    monkeypatch.chdir(doc_ws)
 
     class _FakeResp(io.BytesIO):
         def __enter__(self):
@@ -1038,7 +1237,87 @@ def test_cli_doctor_update_check(monkeypatch):
     assert dev_outdated["status"] == "update_available"
     assert dev_outdated["update_available"] is True
 
-    # 4. Offline / URLError / TimeoutError / malformed payload / EIDOS_NO_UPDATE_CHECK fallback
+    # 4. EIDOS_NO_UPDATE_CHECK=1 skips PyPI HTTP checks cleanly (SKIPPED in Rich table, status == "offline")
+    def _forbid_network(*_a, **_kw):
+        raise AssertionError("EIDOS_NO_UPDATE_CHECK=1 must not make network requests")
+
+    monkeypatch.setattr("eidos.plugin.version.urllib.request.urlopen", _forbid_network)
+    monkeypatch.setenv("EIDOS_NO_UPDATE_CHECK", "1")
+    res_env_skip_table = runner.invoke(app, ["doctor"])
+    assert res_env_skip_table.exit_code == 0
+    assert "SKIPPED" in res_env_skip_table.stdout
+
+    res_env_skip_json = runner.invoke(app, ["doctor", "--json"])
+    assert res_env_skip_json.exit_code == 0
+    env_skip_data = orjson.loads(res_env_skip_json.stdout)
+    assert env_skip_data["healthy"] is True
+    assert env_skip_data["checks"]["cli_update"]["status"] == "offline"
+    assert env_skip_data["checks"]["cli_update"]["update_available"] is False
+    monkeypatch.delenv("EIDOS_NO_UPDATE_CHECK", raising=False)
+
+    # 5. Editable Git-tag version accuracy (resolve_runtime_version)
+    assert _parse_git_describe_version("v0.23.0") == "0.23.0"
+    assert _parse_git_describe_version("v0.23.0-4-g1234abc") == "0.23.1.dev4"
+    assert _parse_git_describe_version("v0.24.0-rc.1") == "0.24.0-rc.1"
+    assert _parse_git_describe_version("v0.24.0-rc.1-2-gdeadbeef") == "0.24.0-rc.1.dev2"
+    assert _parse_git_describe_version("not-a-tag") is None
+    assert _parse_git_describe_version("v1.0.0-0-g1234567") == "1.0.0"
+
+    fake_checkout = tmp_path / "editable_repo"
+    fake_pkg = fake_checkout / "src" / "eidos"
+    fake_pkg.mkdir(parents=True)
+    (fake_checkout / "pyproject.toml").write_text("[project]\nname = 'eidos-ai'\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=fake_checkout, check=True)
+    subprocess.run(["git", "config", "user.email", "t@eidos.ai"], cwd=fake_checkout, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=fake_checkout, check=True)
+    subprocess.run(["git", "add", "pyproject.toml"], cwd=fake_checkout, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=fake_checkout, check=True)
+    subprocess.run(["git", "tag", "v0.23.0"], cwd=fake_checkout, check=True)
+    assert resolve_runtime_version(pkg_root=fake_pkg, use_cache=False) == "0.23.0"
+
+    (fake_checkout / "README.md").write_text("next\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=fake_checkout, check=True)
+    subprocess.run(["git", "commit", "-qm", "post tag"], cwd=fake_checkout, check=True)
+    assert resolve_runtime_version(pkg_root=fake_pkg, use_cache=False) == "0.23.1.dev1"
+
+    # Non-editable directory falls back cleanly without git overhead, and default call uses module cache
+    import importlib
+    import importlib.metadata
+
+    importlib.reload(eidos)
+    non_editable_pkg = tmp_path / "wheel_site" / "eidos"
+    non_editable_pkg.mkdir(parents=True)
+    assert eidos.resolve_runtime_version(pkg_root=non_editable_pkg, use_cache=False) == eidos._fallback_package_version()
+    assert eidos.resolve_runtime_version() == eidos.__version__
+    assert eidos._parse_git_describe_version("") is None
+    assert eidos._parse_git_describe_version("foo-2-g1234abc") is None
+
+    orig_import_module = importlib.import_module
+    monkeypatch.setattr(
+        importlib,
+        "import_module",
+        lambda name, *a, **kw: (_ for _ in ()).throw(ImportError("no _version"))
+        if name == "eidos._version"
+        else orig_import_module(name, *a, **kw),
+    )
+    assert isinstance(eidos._fallback_package_version(), str)
+    monkeypatch.setattr(
+        importlib.metadata,
+        "version",
+        lambda _pkg: (_ for _ in ()).throw(importlib.metadata.PackageNotFoundError("eidos-ai")),
+    )
+    assert eidos._fallback_package_version() == "0.1.0"
+    monkeypatch.setattr(importlib, "import_module", orig_import_module)
+
+    orig_subproc_run = subprocess.run
+    monkeypatch.setattr(
+        "eidos.subprocess.run",
+        lambda *a, **kw: (_ for _ in ()).throw(OSError("git missing")),
+    )
+    assert eidos.resolve_runtime_version(pkg_root=fake_pkg, use_cache=False) == eidos._fallback_package_version()
+    monkeypatch.setattr("eidos.subprocess.run", orig_subproc_run)
+
+    # 6. Offline / URLError / TimeoutError / malformed payload / EIDOS_NO_UPDATE_CHECK fallback
     def _raise_url_error(req, timeout=2.0):
         raise urllib.error.URLError("network unreachable")
 
@@ -1086,7 +1365,7 @@ def test_hooks_are_cli_native():
                 elif "command" in entry:
                     commands.append(entry["command"])
 
-    assert commands == ["eidos hook"]
+    assert commands == ["eidos hook", "eidos hook"]
     for cmd in commands:
         assert cmd == "eidos hook" or cmd.startswith("eidos hook "), f"Expected native 'eidos hook' command, got: {cmd}"
         assert ".py" not in cmd and ".sh" not in cmd
@@ -1941,6 +2220,12 @@ def test_hook_schema_validation_and_non_duplicate_skills(tmp_path):
 def test_group_d1_d2_d3_regressions(tmp_path, monkeypatch):  # eidos:fixture
     """Regression suite for Group D1 (doctor/hook CLI), D2 (CLI path & output bugs), and D3 (installer & hooks)."""  # eidos:fixture
     # --- D1.1: eidos doctor exits 1 when agent_plugin check is not ok (e.g. outdated) ---
+    from eidos.core.lifecycle.initializer import init_repository
+
+    d1_ws = tmp_path / "d1_doctor_ws"
+    d1_ws.mkdir(parents=True)
+    init_repository(d1_ws, title="D1 Doctor WS")
+    subprocess.run(["git", "init"], cwd=d1_ws, capture_output=True, check=True)
     monkeypatch.setattr(
         "eidos.cli.doctor_hook_commands.check_plugin_version_status",
         lambda project_dir=None: {
@@ -1949,7 +2234,7 @@ def test_group_d1_d2_d3_regressions(tmp_path, monkeypatch):  # eidos:fixture
             "bundled_version": "0.8.2",
         },
     )
-    res_doc = runner.invoke(app, ["doctor", "--json"])
+    res_doc = runner.invoke(app, ["doctor", "--path", str(d1_ws), "--json"])
     assert res_doc.exit_code == 1
     doc_payload = orjson.loads(res_doc.stdout)
     assert doc_payload["healthy"] is False
@@ -2465,7 +2750,9 @@ def test_claude_import_block(tmp_path):
     merged = (user_ws / "CLAUDE.md").read_text(encoding="utf-8")
     assert merged.startswith(user_claude) and "\n@AGENTS.md\n" in merged
     uninstall_plugin(target=PluginInstallTarget.CLAUDE, project_dir=user_ws)
-    assert (user_ws / "CLAUDE.md").read_text(encoding="utf-8") == merged  # left in place by design
+    assert (user_ws / "CLAUDE.md").read_text(encoding="utf-8") == user_claude
+    uninstall_plugin(target=PluginInstallTarget.CLAUDE, project_dir=fresh)
+    assert not (fresh / "CLAUDE.md").exists()
 
     already = tmp_path / "already"
     already.mkdir()
@@ -2571,11 +2858,11 @@ def test_opt_in_hooks_flag_and_doctor_hook_health_reporting(tmp_path):
     assert doc_after_disable.exit_code == 0
     assert orjson.loads(doc_after_disable.stdout)["checks"]["agent_plugin"]["hooks_status"] == "disabled"
 
-    # 5. Cline with --hooks installs executable .clinerules/hooks/TaskComplete, preserves it on update, and fails doctor if corrupted
+    # 5. Cline with --hooks installs executable PreToolUse hook, preserves it on update, and fails doctor if corrupted
     runner.invoke(app, ["plugin", "uninstall", "cursor", "--project-dir", str(tmp_path)])
     res_cline_hooks = runner.invoke(app, ["plugin", "install", "cline", "--hooks", "--project-dir", str(tmp_path)])
     assert res_cline_hooks.exit_code == 0
-    cline_hook = tmp_path / ".clinerules" / "hooks" / "TaskComplete"
+    cline_hook = tmp_path / ".clinerules" / "hooks" / "PreToolUse"
     assert cline_hook.is_file()
     assert runner.invoke(app, ["plugin", "update", "cline", "--project-dir", str(tmp_path)]).exit_code == 0
     assert cline_hook.is_file()
@@ -2684,4 +2971,450 @@ def test_eidos_plan_skill_blast_radius_reconciliation_rules():
     plan_section = dlt_body.split("== Implementation Plan", 1)[1]
     assert "CNT-BILLING-API" in plan_section
     assert "covered via `CMP-WEBHOOK-VERIFIER`" in plan_section or "covered via CMP-WEBHOOK-VERIFIER" in plan_section
+
+
+def test_installer_truthful_version_comments_symlinks_and_uninstall(tmp_path):
+    """Verify INV-PLUGIN-INSTALL-TRUTHFULNESS: non-force upgrades report 'modified' when SKILL.md files are skipped,
+    .aider.conf.yml preserves YAML comments, canonical .agents/skills symlinks work across 'install all' and 'update all'
+    with per-target fault isolation, and uninstall prunes references cleanly."""
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.plugin.installer import (
+        _compute_sha256,
+        _remove_project_aider_conf,
+        _update_project_aider_conf,
+        locate_plugin_bundle,
+        update_plugin,
+    )
+
+    # 1. Non-force install skipping locally modified SKILL.md reports 'modified' (never 'up_to_date')
+    ws = tmp_path / "truthful_ws"
+    ws.mkdir()
+    init_repository(ws, title="Truthful WS")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=ws, check=True)
+    install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=ws, force=True)
+    assert check_plugin_version_status(project_dir=ws)["status"] == "up_to_date"
+
+    skill_md = ws / ".agents" / "skills" / "eidos" / "SKILL.md"
+    skill_md.write_text(skill_md.read_text(encoding="utf-8") + "\n# Local developer customization\n", encoding="utf-8")
+    custom_sha = _compute_sha256(skill_md)
+
+    # On-disk divergence immediately flips status to 'modified'
+    diverged_st = check_plugin_version_status(project_dir=ws)
+    assert diverged_st["status"] == "modified"
+    assert ".agents/skills/eidos/SKILL.md" in diverged_st["skipped_files"]
+    assert "--force" in diverged_st["status_text"]
+
+    # Non-force reinstall skips the modified file, records skipped_files + actual hash, and keeps status == 'modified'
+    non_force_res = install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=ws, force=False)
+    assert len(non_force_res) == 1
+    assert "--force" in non_force_res[0].message
+    manifest = orjson.loads((ws / ".agents" / ".eidos-manifest.json").read_bytes())
+    assert manifest["skipped_files"] == ["skills/eidos/SKILL.md"]
+    assert manifest["files"]["skills/eidos/SKILL.md"] == custom_sha
+
+    st_after_skip = check_plugin_version_status(project_dir=ws)
+    assert st_after_skip["status"] == "modified"
+    assert st_after_skip["status"] != "up_to_date"
+
+    doc_mod = runner.invoke(app, ["doctor", "--path", str(ws), "--json"])
+    assert doc_mod.exit_code == 1
+    doc_mod_data = orjson.loads(doc_mod.stdout)
+    assert doc_mod_data["checks"]["agent_plugin"]["status"] == "modified"
+    assert ".agents/skills/eidos/SKILL.md" in doc_mod_data["checks"]["agent_plugin"]["skipped_files"]
+
+    doc_mod_txt = runner.invoke(app, ["doctor", "--path", str(ws)])
+    assert doc_mod_txt.exit_code == 1
+    assert "MODIFIED" in doc_mod_txt.stdout
+    assert "--force" in doc_mod_txt.stdout
+
+    ver_mod_txt = runner.invoke(app, ["plugin", "version", "--project-dir", str(ws)])
+    assert ver_mod_txt.exit_code == 0
+    assert "Modified" in ver_mod_txt.stdout
+    assert "--force" in ver_mod_txt.stdout
+
+    # Force install reconciles the skill, clears skipped_files, and restores 'up_to_date'
+    install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=ws, force=True)
+    manifest_reconciled = orjson.loads((ws / ".agents" / ".eidos-manifest.json").read_bytes())
+    assert manifest_reconciled["skipped_files"] == []
+    assert check_plugin_version_status(project_dir=ws)["status"] == "up_to_date"
+
+    # 2. Comment-preserving .aider.conf.yml updates across scalar, flow-list, empty, and block-list forms + cleanup
+    aider_conf = tmp_path / "aider_comments" / ".aider.conf.yml"
+    aider_conf.parent.mkdir(parents=True)
+    initial_aider = (
+        "# Team Aider defaults\n"
+        "model: claude-3-7-sonnet # inline model comment\n\n"
+        "# Existing read docs\n"
+        "read: [CONVENTIONS.md, ARCHITECTURE.md] # keep inline comment\n"
+        "auto-commits: false\n"
+    )
+    aider_conf.write_text(initial_aider, encoding="utf-8")
+    _update_project_aider_conf(aider_conf, "AGENTS.md")
+    after_flow = aider_conf.read_text(encoding="utf-8")
+    assert "# Team Aider defaults" in after_flow
+    assert "# inline model comment" in after_flow
+    assert "# Existing read docs" in after_flow
+    assert "# keep inline comment" in after_flow
+    assert "CONVENTIONS.md" in after_flow and "ARCHITECTURE.md" in after_flow and "AGENTS.md" in after_flow
+    assert "auto-commits: false" in after_flow
+
+    # Removing AGENTS.md preserves comments and remaining flow-list entries
+    assert _remove_project_aider_conf(aider_conf, "AGENTS.md") is True
+    removed_flow = aider_conf.read_text(encoding="utf-8")
+    assert "AGENTS.md" not in removed_flow
+    assert "# Team Aider defaults" in removed_flow
+    assert "# keep inline comment" in removed_flow
+    assert "CONVENTIONS.md" in removed_flow and "ARCHITECTURE.md" in removed_flow
+
+    # Empty read: key + comment preservation on add & remove
+    aider_conf.write_text("# Header\nread: # trailing\nlint: true\n", encoding="utf-8")
+    _update_project_aider_conf(aider_conf, "AGENTS.md")
+    txt_empty_added = aider_conf.read_text(encoding="utf-8")
+    assert "# Header" in txt_empty_added and "AGENTS.md" in txt_empty_added and "lint: true" in txt_empty_added
+    assert _remove_project_aider_conf(aider_conf, "AGENTS.md") is True
+    txt_empty_removed = aider_conf.read_text(encoding="utf-8")
+    assert "# Header" in txt_empty_removed and "AGENTS.md" not in txt_empty_removed and "lint: true" in txt_empty_removed
+
+    # Sole read: [AGENTS.md] unlinks file cleanly; also cover quoted scalars, CRLF, comments, & idempotent re-runs
+    sole_conf = tmp_path / "sole_aider" / ".aider.conf.yml"
+    sole_conf.parent.mkdir(parents=True)
+    sole_conf.write_text("read: [AGENTS.md]\n", encoding="utf-8")
+    assert _remove_project_aider_conf(sole_conf, "AGENTS.md") is True
+    assert not sole_conf.exists()
+    assert _remove_project_aider_conf(sole_conf, "AGENTS.md") is False
+
+    quoted_conf = tmp_path / "quoted_aider" / ".aider.conf.yml"
+    quoted_conf.parent.mkdir(parents=True)
+    quoted_conf.write_text('model: "sonnet \\"#1\\"" # keep\r\nread: \'AGENTS.md\' # inline\r\n', encoding="utf-8")
+    _update_project_aider_conf(quoted_conf, "AGENTS.md")  # already present as quoted scalar
+    assert _remove_project_aider_conf(quoted_conf, "OTHER.md") is False
+    assert _remove_project_aider_conf(quoted_conf, "AGENTS.md") is True
+    assert "# inline" in quoted_conf.read_text(encoding="utf-8")
+
+    flow_comment_conf = tmp_path / "flow_comment" / ".aider.conf.yml"
+    flow_comment_conf.parent.mkdir(parents=True)
+    flow_comment_conf.write_text("read: [AGENTS.md] # sole-with-comment\n", encoding="utf-8")
+    _update_project_aider_conf(flow_comment_conf, "AGENTS.md")  # already in flow list
+    assert _remove_project_aider_conf(flow_comment_conf, "OTHER.md") is False
+    assert _remove_project_aider_conf(flow_comment_conf, "AGENTS.md") is True
+    assert "# sole-with-comment" in flow_comment_conf.read_text(encoding="utf-8")
+
+    block_conf = tmp_path / "block_aider" / ".aider.conf.yml"
+    block_conf.parent.mkdir(parents=True)
+    block_conf.write_text("model: opus\n", encoding="utf-8")  # no read: key yet
+    _update_project_aider_conf(block_conf, "CONVENTIONS.md")
+    # Insert a comment inside the block list and append AGENTS.md
+    block_conf.write_text("read: # list-comment\n  # item-comment\n  - CONVENTIONS.md\nmodel: opus\n", encoding="utf-8")
+    _update_project_aider_conf(block_conf, "AGENTS.md")
+    _update_project_aider_conf(block_conf, "AGENTS.md")  # already in block list
+    assert _remove_project_aider_conf(block_conf, "MISSING.md") is False
+    assert _remove_project_aider_conf(block_conf, "CONVENTIONS.md") is True
+    assert _remove_project_aider_conf(block_conf, "AGENTS.md") is True
+    assert "# list-comment" in block_conf.read_text(encoding="utf-8")
+
+    # Also exercise managed_block.remove_managed_block & check_target_hook_health edge branches
+    from eidos.plugin.installer import _resolve_saved_hook_preference, check_target_hook_health
+    from eidos.plugin.managed_block import BlockStatus, remove_managed_block, upsert_managed_block
+
+    mb_dir = tmp_path / "mb_edges"
+    mb_dir.mkdir()
+    with pytest.raises(ValueError, match="Invalid managed block name"):
+        remove_managed_block(mb_dir / "AGENTS.md", "Bad Name")
+    assert remove_managed_block(mb_dir / "missing.md", "agents-md").status is BlockStatus.UNCHANGED
+
+    opted_file = mb_dir / "opted.md"
+    opted_file.write_text("<!-- eidos:agents-md off -->\n", encoding="utf-8")
+    assert remove_managed_block(opted_file, "agents-md").status is BlockStatus.OPTED_OUT
+
+    mal_file = mb_dir / "malformed.md"
+    mal_file.write_text("<!-- eidos:begin agents-md v=1 -->\n", encoding="utf-8")
+    assert remove_managed_block(mal_file, "agents-md").status is BlockStatus.MALFORMED
+
+    plain_file = mb_dir / "plain.md"
+    plain_file.write_text("# Plain\n", encoding="utf-8")
+    assert remove_managed_block(plain_file, "agents-md").status is BlockStatus.UNCHANGED
+
+    bom_file = mb_dir / "bom.md"
+    upsert_managed_block(bom_file, "agents-md", "Body\n", target="cursor", skills_dir=".agents/skills")
+    upsert_managed_block(bom_file, "agents-md", "Body\n", target="claude", skills_dir=".claude/skills")
+    upsert_managed_block(bom_file, "agents-md", "Body\n", target="codex", skills_dir=".agents/skills")
+    bom_raw = b"\xef\xbb\xbf# Header\r\n\r\n" + bom_file.read_bytes().replace(b"\n", b"\r\n") + b"\r\n# Footer\r\n"
+    bom_file.write_bytes(bom_raw)
+    assert (
+        remove_managed_block(bom_file, "agents-md", content=lambda _t: "Body\n", remove_target="claude").status
+        is BlockStatus.UPDATED
+    )
+    # Hand-edited block refuses prune without force
+    bom_file.write_bytes(bom_file.read_bytes().replace(b"Body", b"Edited"))
+    assert (
+        remove_managed_block(bom_file, "agents-md", content=lambda _t: "Body\n", remove_target="cursor").status
+        is BlockStatus.MODIFIED
+    )
+    assert remove_managed_block(bom_file, "agents-md").status is BlockStatus.REMOVED
+    assert "# Header" in bom_file.read_text(encoding="utf-8") and "# Footer" in bom_file.read_text(encoding="utf-8")
+
+    keep_empty = mb_dir / "keep_empty.md"
+    upsert_managed_block(keep_empty, "agents-md", "Body\n")
+    assert remove_managed_block(keep_empty, "agents-md", unlink_if_empty=False).status is BlockStatus.REMOVED
+    assert keep_empty.is_file() and keep_empty.read_text(encoding="utf-8") == ""
+
+    # Hook health diagnostics across all JSON hook targets + unmanifested Cline PreToolUse hook preference detection
+    hh_ws = tmp_path / "hook_health_edges"
+    install_plugin(target=PluginInstallTarget.ALL, project_dir=hh_ws, force=True, hooks=True)
+    for t_name, rel_h in (
+        ("antigravity", ".agents/hooks.json"),
+        ("claude", ".claude/settings.json"),
+        ("codex", ".codex/hooks.json"),
+        ("cursor", ".cursor/hooks.json"),
+        ("copilot", ".github/hooks/hooks.json"),
+    ):
+        assert check_target_hook_health(hh_ws, t_name, hooks_expected=True)["status"] == "active"
+        hp = hh_ws / rel_h
+        hp.write_text("[]", encoding="utf-8")
+        assert check_target_hook_health(hh_ws, t_name, hooks_expected=True)["status"] == "invalid"
+        hp.write_text("{}", encoding="utf-8")
+        assert check_target_hook_health(hh_ws, t_name, hooks_expected=True)["status"] == "corrupted"
+
+    cline_pref_ws = tmp_path / "cline_pref_ws"
+    cline_hook = cline_pref_ws / ".clinerules" / "hooks" / "PreToolUse"
+    cline_hook.parent.mkdir(parents=True)
+    cline_hook.write_text("#!/usr/bin/env sh\nexec eidos hook\n", encoding="utf-8")
+    cline_hook.chmod(0o755)
+    assert _resolve_saved_hook_preference(cline_pref_ws, "cline") is True
+
+    cline_full_ws = tmp_path / "cline_full_ws"
+    install_plugin(target=PluginInstallTarget.CLINE, project_dir=cline_full_ws, force=True, hooks=True)
+    assert check_target_hook_health(cline_full_ws, "cline", hooks_expected=True)["status"] == "active"
+    ts_hook = cline_full_ws / ".clinerules" / "hooks" / "TaskStart"
+    ts_hook.write_text("#!/usr/bin/env sh\necho custom\n", encoding="utf-8")
+    ts_hook.chmod(0o755)
+    assert check_target_hook_health(cline_full_ws, "cline", hooks_expected=True)["status"] == "corrupted"
+    ts_hook.unlink()
+    assert check_target_hook_health(cline_full_ws, "cline", hooks_expected=True)["status"] == "missing"
+
+    # 3. Canonical self-hosted .agents/skills symlink succeeds in 'install all' and 'update all',
+    #    while external symlinks fail per-target without aborting sibling targets ('claude', 'aider').
+    self_ws = tmp_path / "self_hosted_ws"
+    (self_ws / ".agents").mkdir(parents=True)
+    bundle_skills = locate_plugin_bundle() / "skills"
+    (self_ws / ".agents" / "skills").symlink_to(bundle_skills)
+
+    all_res = install_plugin(target=PluginInstallTarget.ALL, project_dir=self_ws, force=False, hooks=True)
+    assert len(all_res) == 9
+    assert (self_ws / ".agents" / "skills").is_symlink()
+    assert "<!-- eidos:begin agents-md " in (self_ws / "AGENTS.md").read_text(encoding="utf-8")
+    assert (self_ws / ".claude" / "skills" / "eidos" / "SKILL.md").is_file()
+    assert (self_ws / ".aider" / "skills" / "eidos" / "SKILL.md").is_file()
+
+    _prev_v, _curr_v, upd_res = update_plugin(target=PluginInstallTarget.ALL, project_dir=self_ws)
+    assert len(upd_res) == 9
+    assert (self_ws / ".agents" / "skills").is_symlink()
+
+    ext_ws = tmp_path / "external_symlink_ws"
+    outside_skills = tmp_path / "outside_skills"
+    outside_skills.mkdir()
+    (ext_ws / ".agents").mkdir(parents=True)
+    (ext_ws / ".agents" / "skills").symlink_to(outside_skills)
+
+    with pytest.raises(FileExistsError):
+        install_plugin(target=PluginInstallTarget.ALL, project_dir=ext_ws, force=True)
+    # Fault isolation: claude and aider still installed despite .agents/skills external symlink failure!
+    assert (ext_ws / ".claude" / "skills" / "eidos" / "SKILL.md").is_file()
+    assert (ext_ws / ".aider" / "skills" / "eidos" / "SKILL.md").is_file()
+
+    with pytest.raises(FileExistsError):
+        update_plugin(target=PluginInstallTarget.ALL, project_dir=ext_ws)
+
+    # 4. Clean uninstall_plugin target pruning across AGENTS.md, CLAUDE.md, .aider.conf.yml, and Cline hooks
+    prune_ws = tmp_path / "prune_ws"
+    prune_ws.mkdir()
+    for t in (
+        PluginInstallTarget.ANTIGRAVITY,
+        PluginInstallTarget.CLAUDE,
+        PluginInstallTarget.AIDER,
+        PluginInstallTarget.CLINE,
+    ):
+        install_plugin(target=t, project_dir=prune_ws, force=True, hooks=True)
+
+    agents_before = (prune_ws / "AGENTS.md").read_text(encoding="utf-8")
+    for t_key in ("antigravity", "claude", "aider", "cline"):
+        assert f"{t_key}:" in agents_before
+
+    uninstall_plugin(target=PluginInstallTarget.CLAUDE, project_dir=prune_ws)
+    assert not (prune_ws / "CLAUDE.md").exists()
+    assert "claude:" not in (prune_ws / "AGENTS.md").read_text(encoding="utf-8")
+
+    uninstall_plugin(target=PluginInstallTarget.AIDER, project_dir=prune_ws)
+    assert not (prune_ws / ".aider.conf.yml").exists()
+    assert "aider:" not in (prune_ws / "AGENTS.md").read_text(encoding="utf-8")
+
+    uninstall_plugin(target=PluginInstallTarget.CLINE, project_dir=prune_ws)
+    assert not (prune_ws / ".clinerules" / "hooks" / "PreToolUse").exists()
+    assert not (prune_ws / ".clinerules" / "hooks" / "TaskStart").exists()
+    assert "cline:" not in (prune_ws / "AGENTS.md").read_text(encoding="utf-8")
+    assert "antigravity:.agents/skills" in (prune_ws / "AGENTS.md").read_text(encoding="utf-8")
+
+    uninstall_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=prune_ws)
+    assert not (prune_ws / "AGENTS.md").exists()
+
+
+def test_doctor_detects_wiped_agents_md(tmp_path):
+    """Verify INV-DOCTOR-ONBOARDING-INTEGRITY: eidos doctor verifies the root AGENTS.md managed block whenever
+    Agent Skills or .eidos-manifest.json exist (unless opted out via <!-- eidos:agents-md off -->)."""
+    from eidos.core.lifecycle.initializer import init_repository
+
+    ws = tmp_path / "onboarding_doc_ws"
+    ws.mkdir()
+    init_repository(ws, title="Onboarding Doctor WS")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=ws, check=True)
+
+    # Before installing skills: agents_md status is not_installed and doctor is healthy
+    res_pre = runner.invoke(app, ["doctor", "--path", str(ws), "--json"])
+    assert res_pre.exit_code == 0
+    pre_data = orjson.loads(res_pre.stdout)
+    assert pre_data["healthy"] is True
+    assert pre_data["checks"]["agents_md"]["status"] == "not_installed"
+    assert pre_data["checks"]["agents_md"]["agents_md_ok"] is True
+
+    # Install skills -> healthy with valid managed block
+    install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=ws, force=True)
+    res_ok = runner.invoke(app, ["doctor", "--path", str(ws), "--json"])
+    assert res_ok.exit_code == 0
+    ok_data = orjson.loads(res_ok.stdout)
+    assert ok_data["healthy"] is True
+    assert ok_data["checks"]["agents_md"]["ok"] is True
+    assert ok_data["checks"]["agents_md"]["status"] == "valid"
+    assert ok_data["checks"]["agents_md"]["agents_md_ok"] is True
+
+    # 1. Wiped AGENTS.md ("project\n") -> fails doctor in both JSON and Rich table modes
+    (ws / "AGENTS.md").write_text("project\n", encoding="utf-8")
+    res_wiped = runner.invoke(app, ["doctor", "--path", str(ws), "--json"])
+    assert res_wiped.exit_code == 1
+    wiped_data = orjson.loads(res_wiped.stdout)
+    assert wiped_data["healthy"] is False
+    assert wiped_data["checks"]["agents_md"]["ok"] is False
+    assert wiped_data["checks"]["agents_md"]["agents_md_ok"] is False
+    assert wiped_data["checks"]["agents_md"]["status"] == "missing_block"
+
+    res_wiped_txt = runner.invoke(app, ["doctor", "--path", str(ws)])
+    assert res_wiped_txt.exit_code == 1
+    assert "Onboarding Governance" in res_wiped_txt.stdout
+    assert "FAIL" in res_wiped_txt.stdout
+
+    # 2. Missing AGENTS.md file -> fails doctor with missing_file
+    (ws / "AGENTS.md").unlink()
+    res_missing = runner.invoke(app, ["doctor", "--path", str(ws), "--json"])
+    assert res_missing.exit_code == 1
+    assert orjson.loads(res_missing.stdout)["checks"]["agents_md"]["status"] == "missing_file"
+
+    # 3. Malformed AGENTS.md markers -> fails doctor with malformed
+    (ws / "AGENTS.md").write_text("<!-- eidos:begin agents-md v=1 -->\ndangling\n", encoding="utf-8")
+    res_malformed = runner.invoke(app, ["doctor", "--path", str(ws), "--json"])
+    assert res_malformed.exit_code == 1
+    assert orjson.loads(res_malformed.stdout)["checks"]["agents_md"]["status"] == "malformed"
+
+    # 4. Explicit opt-out <!-- eidos:agents-md off --> -> passes doctor cleanly
+    (ws / "AGENTS.md").write_text("# Custom Team Guide\n<!-- eidos:agents-md off -->\n", encoding="utf-8")
+    res_optout = runner.invoke(app, ["doctor", "--path", str(ws), "--json"])
+    assert res_optout.exit_code == 0
+    optout_data = orjson.loads(res_optout.stdout)
+    assert optout_data["healthy"] is True
+    assert optout_data["checks"]["agents_md"]["status"] == "opted_out"
+    assert optout_data["checks"]["agents_md"]["agents_md_ok"] is True
+
+    res_optout_txt = runner.invoke(app, ["doctor", "--path", str(ws)])
+    assert res_optout_txt.exit_code == 0
+    assert "OPTED OUT" in res_optout_txt.stdout
+
+    # 5. Restoring canonical AGENTS.md restores full health
+    (ws / "AGENTS.md").unlink()
+    install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=ws, force=True)
+    res_clean = runner.invoke(app, ["doctor", "--path", str(ws), "--json"])
+    assert res_clean.exit_code == 0
+    assert orjson.loads(res_clean.stdout)["healthy"] is True
+
+    # 6. Session-baseline Stop hook blocks wiped AGENTS.md (onboarding_files) while allowing pure README.md edits
+    from eidos.plugin.hooks import capture_session_baseline, handle_stop_hook
+
+    subprocess.run(["git", "config", "user.email", "test@eidos.dev"], cwd=ws, check=True)
+    subprocess.run(["git", "config", "user.name", "Eidos Test"], cwd=ws, check=True)
+    subprocess.run(["git", "add", "."], cwd=ws, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "baseline"], cwd=ws, check=True)
+
+    sess_payload = {"session_id": "sess-onboarding-guard"}
+    capture_session_baseline(sess_payload, ws)
+
+    (ws / "README.md").write_text("# Docs note\n", encoding="utf-8")
+    assert handle_stop_hook(sess_payload, ws) == {}
+
+    (ws / "AGENTS.md").write_text("project\n", encoding="utf-8")
+    blocked = handle_stop_hook(sess_payload, ws)
+    assert blocked.get("decision") == "block"
+    assert "AGENTS.md" in blocked.get("reason", "")
+
+
+def test_plugin_cli_error_and_partial_failure_branches(tmp_path, monkeypatch):
+    """Cover plugin_commands.py error/failure exit paths across install, uninstall, and update."""
+    import types
+
+    import eidos.cli.plugin_commands as plugin_cmd_mod
+
+    # Partial failure result (success=False) in install and update
+    monkeypatch.setattr(
+        plugin_cmd_mod,
+        "install_plugin",
+        lambda **_kw: [
+            types.SimpleNamespace(
+                target="claude",
+                scope="project",
+                destination=tmp_path,
+                success=False,
+                message="simulated target skip",
+            )
+        ],
+    )
+    res_inst_partial = runner.invoke(app, ["plugin", "install", "claude", "-p", str(tmp_path)])
+    assert res_inst_partial.exit_code == 0
+    assert "simulated target skip" in res_inst_partial.stdout
+
+    monkeypatch.setattr(
+        plugin_cmd_mod,
+        "update_plugin",
+        lambda **_kw: (
+            "0.22.0",
+            "0.23.0",
+            [
+                types.SimpleNamespace(
+                    target="claude",
+                    scope="project",
+                    destination=tmp_path,
+                    success=False,
+                    message="simulated update skip",
+                )
+            ],
+        ),
+    )
+    res_upd_partial = runner.invoke(app, ["plugin", "update", "claude", "-p", str(tmp_path)])
+    assert res_upd_partial.exit_code == 0
+    assert "simulated update skip" in res_upd_partial.stdout
+
+    # Generic Exception / FileExistsError exit code 1 paths
+    def _raise_runtime(**_kw):
+        raise RuntimeError("boom-plugin")
+
+    def _raise_exists(**_kw):
+        raise FileExistsError("already-there")
+
+    monkeypatch.setattr(plugin_cmd_mod, "install_plugin", _raise_runtime)
+    assert runner.invoke(app, ["plugin", "install", "claude", "-p", str(tmp_path)]).exit_code == 1
+
+    monkeypatch.setattr(plugin_cmd_mod, "uninstall_plugin", _raise_runtime)
+    assert runner.invoke(app, ["plugin", "uninstall", "claude", "-p", str(tmp_path)]).exit_code == 1
+
+    monkeypatch.setattr(plugin_cmd_mod, "update_plugin", _raise_exists)
+    assert runner.invoke(app, ["plugin", "update", "claude", "-p", str(tmp_path)]).exit_code == 1
+
+    monkeypatch.setattr(plugin_cmd_mod, "update_plugin", _raise_runtime)
+    assert runner.invoke(app, ["plugin", "update", "claude", "-p", str(tmp_path)]).exit_code == 1
+
 

@@ -1,0 +1,192 @@
+---
+type: delta/mutation
+id: DLT-2026-133-HARDEN-SQLITE-187E
+title: "Harden SQLite WAL Concurrency, Verify Harrier Semantic Downloads, and Deepen Polyglot AST Symbol Indexing"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: high
+  motivation: "Eliminate multi-agent SQLite WAL unlink split-brain corruption, mmap SIGBUS hazards, cross-thread connection sharing, global FTS dict races, and SQLITE_MAX_EXPR_DEPTH edge-eviction bottlenecks in CNT-EIDOS-INDEX; enforce pinned HuggingFace commit revisions, SHA-256 + Content-Length verification, complete fp32 file checks, and atomic background worker locking in CMP-SEMANTIC-EMBEDDING-ENGINE; and index polyglot interface/trait member signatures, overloaded method arity, Rust/C# trait/interface visibility, FTS method symbols, and automated test symbols in CMP-AST-SYMBOL-INDEXER and CMP-FTS-QUERY-ENGINE."
+vcs:
+  branch: main
+  base_commit: e1022b338ebd4a42d4774fa444ef35f6874b8acf
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    details: "Update open_cache_connection() in src/eidos/core/index/storage.py and ArchitecturalIndex / get_architectural_index() in src/eidos/core/index/graph_index.py (plus eidos/architecture/components/graph-storage.adoc) to remove PRAGMA mmap_size, serialize DDL initialization and recovery via an advisory lockfile (index.db.lock) so _unlink_cache_files() runs only on confirmed SQLITE_CORRUPT / SQLITE_NOTADB when exclusive lock acquisition succeeds, replace the shared check_same_thread=False connection with per-thread threading.local() connections, and consult _last_synced_check in _ensure_synced() to debounce back-to-back in-process dirty checks."
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/core/index/storage.py"
+          - "src/eidos/core/index/graph_index.py"
+        status: "active"
+      body:
+        contains:
+          - "threading.local"
+          - "index.db.lock"
+          - "_last_synced_check"
+        not_contains:
+          - "mmap_size = 268435456"
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    details: "Update src/eidos/core/index/sync.py and eidos/architecture/components/incremental-sync-engine.adoc to replace the module-global _FRESH_FTS_BASE_SYMBOLS dict with sync-scoped local state, replace the unbounded OR-chained instr(data_json, ?) query in rebuild_spec_edges() with batched edge-table / temp-set lookups avoiding SQLITE_MAX_EXPR_DEPTH (1000) and O(N*M) scans, include 'method' in _project_ast_code_symbols_into_fts(), and persist indexed test symbols (is_test = 1) from automated test directories in code_symbols (bumping SCHEMA_VERSION)."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/sync.py"
+        status: "active"
+      body:
+        contains:
+          - "is_test"
+          - "'method'"
+          - "rebuild_spec_edges"
+        not_contains:
+          - "_FRESH_FTS_BASE_SYMBOLS"
+  - operation: modify
+    target: CMP-SEMANTIC-EMBEDDING-ENGINE
+    details: "Update setup_semantic_model(), _detect_installed_variant(), and _trigger_auto_semantic_refresh() in src/eidos/core/index/semantic.py and eidos/architecture/components/semantic-embedding-engine.adoc to pin an immutable HuggingFace commit SHA for Harrier-OSS-v1-0.6B, verify Content-Length byte counts and expected per-file SHA-256 digests before atomic tmp_dest.replace(dest) (re-downloading corrupted/truncated files), check all 3 required fp32 artifacts (including model.onnx_data_1) in _detect_installed_variant(), and acquire semantic_sync.lock atomically via non-blocking flock / O_CREAT | O_EXCL prior to spawning background worker processes."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/semantic.py"
+        status: "active"
+      body:
+        contains:
+          - "SHA-256"
+          - "Content-Length"
+          - "model.onnx_data_1"
+          - "semantic_sync.lock"
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+    details: "Update src/eidos/core/index/ast_indexer.py and eidos/architecture/components/ast-symbol-indexer.adoc to extract interface/trait/protocol member signatures across TypeScript (method_signature, property_signature, function_signature), Go (interface_type method/embedded specs), Rust (trait_item / function_signature_item), Java, and C# so interface body changes trigger structural diffs; key public_symbol_map with normalized parameter arity/signature suffixes so overloaded methods/functions never overwrite earlier declarations; and mark Rust pub trait / impl Trait for Type items and C# public interface members as is_public = True."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/ast_indexer.py"
+        status: "active"
+      body:
+        contains:
+          - "method_signature"
+          - "interface_type"
+          - "function_signature_item"
+          - "overload"
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+    details: "Update find_symbol_in_db() in src/eidos/core/index/query.py and eidos/architecture/components/fts-query-engine.adoc to surface indexed class methods and automated test symbols (is_test = 1, e.g. 'eidos index find-symbol test_') alongside governed component source symbols."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/query.py"
+        status: "active"
+      body:
+        contains:
+          - "find_symbol_in_db"
+          - "is_test"
+          - "method"
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+    details: "Update eidos/architecture/containers/index.adoc to record DEC-INDEX-FLOCK-WAL-AND-PINNED-ONNX, reflect the bumped SQLite SCHEMA_VERSION, and document thread-local connections, bounded edge rebuilds, pinned SHA-256 ONNX model verification, and test/method symbol indexing."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-INDEX-FLOCK-WAL-AND-PINNED-ONNX"
+      body:
+        contains:
+          - "DEC-INDEX-FLOCK-WAL-AND-PINNED-ONNX"
+          - "threading.local"
+          - "SHA-256"
+  - operation: modify
+    target: CAP-AGENT-002
+    details: "Bump CAP-AGENT-002 to version 1.4.0 in eidos/domains/agent-intelligence/capabilities/cap-agent-002.adoc, update INV-INDEX-POLYGLOT-SYMBOL-PRECISION, and add INV-INDEX-CONCURRENT-WAL-SAFETY."
+    expect:
+      frontmatter:
+        version: "1.4.0"
+        technical.invariants.id:
+          - "INV-INDEX-POLYGLOT-SYMBOL-PRECISION"
+          - "INV-INDEX-CONCURRENT-WAL-SAFETY"
+      body:
+        contains:
+          - "interface"
+          - "overload"
+          - "test_"
+  - operation: modify
+    target: CAP-AGENT-001
+    details: "Bump CAP-AGENT-001 to version 1.15.0 in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc and update INV-AGENT-HYBRID-SEMANTIC-FALLBACK to enforce pinned revision SHAs, SHA-256 + Content-Length verification, 3-file fp32 detection, and atomic semantic_sync.lock acquisition."
+    expect:
+      frontmatter:
+        version: "1.15.0"
+        technical.invariants.id:
+          - "INV-AGENT-HYBRID-SEMANTIC-FALLBACK"
+      body:
+        contains:
+          - "SHA-256"
+          - "semantic_sync.lock"
+  - operation: modify
+    target: INV-INDEX-POLYGLOT-SYMBOL-PRECISION
+    details: "Extend INV-INDEX-POLYGLOT-SYMBOL-PRECISION in CAP-AGENT-002 to require interface/trait member signature indexing, overload-safe symbol keys, Rust trait/impl and C# interface public visibility, FTS method indexing, and test symbol discovery via find-symbol."
+    expect:
+      frontmatter:
+        rule: "overload"
+        test_binding: "tests/test_ast_indexer.py::test_inv_index_polyglot_symbol_precision"
+  - operation: modify
+    target: INV-AGENT-HYBRID-SEMANTIC-FALLBACK
+    details: "Extend INV-AGENT-HYBRID-SEMANTIC-FALLBACK in CAP-AGENT-001 to verify pinned HuggingFace commit SHAs, SHA-256 + Content-Length download verification, 3-file fp32 completeness, and atomic worker lock acquisition."
+    expect:
+      frontmatter:
+        rule: "SHA-256"
+        test_binding: "tests/test_graph_index.py::test_hybrid_semantic_rrf_and_deterministic_fallback"
+  - operation: add
+    target: INV-INDEX-CONCURRENT-WAL-SAFETY
+    details: "Bind INV-INDEX-CONCURRENT-WAL-SAFETY to tests/test_graph_index.py::test_concurrent_wal_lock_thread_isolation_and_large_edge_rebuild."
+    expect:
+      frontmatter:
+        rule: "open_cache_connection and ArchitecturalIndex must coordinate DDL and corruption recovery via an advisory lockfile without PRAGMA mmap_size or unlinking active WAL sidecars on transient schema-change errors, isolate SQLite connections per thread, debounce in-process _ensure_synced checks via _last_synced_check, and rebuild >1,000 spec edges without hitting SQLITE_MAX_EXPR_DEPTH."
+        test_binding: "tests/test_graph_index.py::test_concurrent_wal_lock_thread_isolation_and_large_edge_rebuild"
+---
+= SpecDelta: Harden SQLite WAL Concurrency, Verify Harrier Semantic Downloads, and Deepen Polyglot AST Symbol Indexing
+:toc: left
+:icons: font
+:sectnums:
+
+== Problem Statement
+
+Deep inspection of `CNT-EIDOS-INDEX` (`src/eidos/core/index/`) identified multi-agent SQLite concurrency hazards, unverified semantic model download paths, scalability limits above 1,000 specs, and polyglot AST indexing blind spots:
+
+1. **Multi-Agent SQLite WAL Unlink Corruption, `SIGBUS` & Thread Races (`HIGH`)**:
+   * `open_cache_connection` (`src/eidos/core/index/storage.py:183-209`) enables `PRAGMA mmap_size = 268435456` (`256 MB`, `L197`), executes `_CACHE_SCHEMA_DDL` (`L176`), and on *any* `sqlite3.DatabaseError` lacking `"locked"`/`"busy"` (such as a concurrent `database schema has changed` error during parallel DDL), calls `_unlink_cache_files` (`storage.py:150-156`) to `unlink()` `index.db`, `index.db-wal`, and `index.db-shm` while sibling processes (parallel subagents, `eidos portal serve`, or the semantic refresh worker) hold open file descriptors and `mmap` mappings—severing POSIX WAL shared-memory lock coordination and risking `SIGBUS`.
+   * `get_architectural_index` (`src/eidos/core/index/graph_index.py:444-471`) shares a single unlocked `check_same_thread=False` SQLite connection across threads (and closes `_INDEX_INSTANCE._conn` under active callers when `repo_root` changes), `_FRESH_FTS_BASE_SYMBOLS` (`src/eidos/core/index/sync.py:2221`) mutates a module-global dictionary during sync, and `self._last_synced_check` (`graph_index.py:165`, `sync.py:1521, 2217`) is written in three places and never read in `_ensure_synced` (`graph_index.py:160-165`).
+   * `rebuild_spec_edges` (`sync.py:835-841`) builds `" OR ".join("instr(data_json, ?) > 0" for _ in evict_ids)`, exceeding SQLite's `SQLITE_MAX_EXPR_DEPTH` (`1000`) when >=1,000 specs sync at once and performing O(N*M) full JSON scans.
+2. **Unverified ~600 MB Harrier ONNX Model Downloads & Non-Atomic Worker Lock (`MEDIUM-HIGH`)**:
+   * `setup_semantic_model` (`src/eidos/core/index/semantic.py:30, 686-716`) downloads ONNX weights from mutable `/resolve/main` HuggingFace URLs with no pinned commit SHA, no SHA-256 verification, and no `bytes_read == Content-Length` check before `tmp_dest.replace(dest)` (`L715`), while skipping any cached file with `st_size > 0` (`L689`) on future runs—permanently caching truncated weights after a dropped connection.
+   * `_detect_installed_variant` (`semantic.py:165-168`) checks only 2 of the 3 required `fp32` files (omitting `model.onnx_data_1`), and `_trigger_auto_semantic_refresh` (`semantic.py:980-1010`) checks `semantic_sync.lock` via `read_text()` + `os.kill(pid, 0)` without acquiring an atomic lock prior to `subprocess.Popen`, allowing concurrent CLI calls to spawn duplicate 600 MB ONNX worker processes.
+3. **Polyglot AST Blind Spots & Missing Method/Test Symbol Search (`ast_indexer.py`, `sync.py`, `query.py`)**:
+   * `_extract_header_signature` (`ast_indexer.py`) strips `{...}` bodies on TypeScript and Go `interface` declarations without indexing member signatures (`method_signature`, `property_signature`, `interface_type` specs), so breaking interface edits report `has_structural_changes == False`.
+   * Overloaded methods/functions in TypeScript, Java, C#, C++, and Kotlin key `public_symbol_map` by `Class.method` without parameter arity/types, silently overwriting earlier overloads.
+   * Rust `pub trait` / `impl Trait for Type` items (including `function_signature_item`) and C# `public interface` members (`ast_indexer.py:1620-1625`) are marked `is_public = False` because per-member `pub`/`public` keywords are omitted or forbidden by those languages.
+   * `_project_ast_code_symbols_into_fts` (`sync.py:2244, 2266`) filters `kind IN ('class', 'function', 'interface', 'struct', 'enum')`, omitting `'method'`, and `sync.py` never indexes `tests/` symbols into `code_symbols`, causing `eidos index find-symbol "test_" --json` (instructed in `eidos-ops/SKILL.md:53`) to return `0` test symbols.
+
+== Proposed Specification Changes
+
+* **File-Locked SQLite WAL Lifecycle, Thread-Local Connections & Scalable Edge Rebuilds (`CMP-GRAPH-STORAGE`, `CMP-INCREMENTAL-SYNC-ENGINE`, `CNT-EIDOS-INDEX`, `DEC-INDEX-FLOCK-WAL-AND-PINNED-ONNX`, `INV-INDEX-CONCURRENT-WAL-SAFETY`)**:
+  1. Remove `PRAGMA mmap_size` in `open_cache_connection` (`storage.py`), guard schema initialization/migration with an advisory lockfile (`eidos/.cache/index.db.lock`), and restrict `_unlink_cache_files` strictly to confirmed `SQLITE_CORRUPT` / `SQLITE_NOTADB` errors while holding an exclusive non-blocking lock.
+  2. Replace the shared `check_same_thread=False` connection in `ArchitecturalIndex` (`graph_index.py`) with `threading.local()` per-thread connections and key `_INDEX_INSTANCES` by normalized `eidos_dir` instead of closing an active instance across threads; read `_last_synced_check` in `_ensure_synced` with a short monotonic TTL window (`50ms`) to debounce repeated in-process queries.
+  3. Pass FTS base symbol maps explicitly during `sync()` instead of mutating module-global `_FRESH_FTS_BASE_SYMBOLS`, and rewrite `rebuild_spec_edges` (`sync.py`) to query existing `edges` (`WHERE target_id IN (...)` chunked in batches of `<= 500` or via a `TEMP` table) instead of `OR`-chaining `instr(data_json, ?)`.
+* **Pinned Revision SHA, SHA-256 Digest Verification & Atomic Worker Lock (`CMP-SEMANTIC-EMBEDDING-ENGINE`, `INV-AGENT-HYBRID-SEMANTIC-FALLBACK`)**:
+  1. Pin `HARRIER_HF_REVISION` to an immutable 40-char commit SHA in `semantic.py`, store expected file sizes and SHA-256 digests for all `fp16`, `fp32` (including `model.onnx_data_1`), `int8`, and tokenizer files, verify `bytes_read == expected_length` and `sha256 == expected_sha256` before `tmp_dest.replace(dest)`, and verify all 3 `fp32` files in `_detect_installed_variant`.
+  2. Acquire `semantic_sync.lock` atomically via `fcntl.flock(..., LOCK_EX | LOCK_NB)` (inherited by or handed off cleanly to the worker) so concurrent CLI processes never spawn duplicate ONNX refresh workers.
+* **Polyglot Interface/Trait Signatures, Overload Keys, Method FTS & Test Symbol Discovery (`CMP-AST-SYMBOL-INDEXER`, `CMP-INCREMENTAL-SYNC-ENGINE`, `CMP-FTS-QUERY-ENGINE`, `INV-INDEX-POLYGLOT-SYMBOL-PRECISION`)**:
+  1. Extract child member signatures for TypeScript, Go, Rust, Java, and C# interfaces/traits (folding member signatures into the parent interface's structural signature and/or emitting child `method` symbols), include normalized parameter arity/types in `public_symbol_map` keys for overloaded declarations (including TypeScript `method_signature` / `function_signature`), and propagate enclosing `pub trait` / `impl Trait for Type` (Rust) and `public interface` (C#) visibility (`is_public = True`).
+  2. Add `'method'` to `_project_ast_code_symbols_into_fts` (`sync.py`), add `is_test INTEGER NOT NULL DEFAULT 0` to `code_symbols` (bumping `SCHEMA_VERSION` in `storage.py`), index polyglot test functions/methods from `tests/` with `is_test = 1` (excluding them from non-test `repo-map` budgets while exposing them in `find_symbol_in_db`), and surface source `location` metadata in `eidos index find-symbol`.
+
+== Implementation Plan
+
+1. **SQLite Concurrency, Per-Thread Connections & Edge Rebuild (`src/eidos/core/index/storage.py`, `src/eidos/core/index/graph_index.py`, `src/eidos/core/index/sync.py`)**:
+   * Remove `PRAGMA mmap_size` in `storage.py`, add cross-platform advisory lock helpers on `index.db.lock`, bump `SCHEMA_VERSION` for `code_symbols.is_test`, and restrict `_unlink_cache_files` to verified `SQLITE_CORRUPT` / `SQLITE_NOTADB` under exclusive lock.
+   * Refactor `ArchitecturalIndex` and `get_architectural_index` in `graph_index.py` to manage per-thread `sqlite3.Connection` objects via `threading.local()`, key cached index instances by resolved `eidos_dir`, and debounce back-to-back in-process `_ensure_synced` calls via `_last_synced_check`.
+   * Remove `_FRESH_FTS_BASE_SYMBOLS` in `sync.py` and replace the `OR`-chained `instr(data_json, ?)` query in `rebuild_spec_edges` with batched `edges` / `TEMP` table lookups (`<= 500` parameters per batch).
+2. **Semantic Model Integrity & Worker Locking (`src/eidos/core/index/semantic.py`)**:
+   * Pin `HARRIER_HF_REVISION` commit SHA and per-artifact `(size_bytes, sha256)` manifest in `semantic.py`, enforce `Content-Length` and SHA-256 checks in `setup_semantic_model`, check `model.onnx_data_1` in `_detect_installed_variant`, and enforce atomic non-blocking lock acquisition on `semantic_sync.lock` in `_trigger_auto_semantic_refresh`.
+3. **Polyglot AST Signatures, Overloads, Visibility & Test/Method Search (`src/eidos/core/index/ast_indexer.py`, `src/eidos/core/index/sync.py`, `src/eidos/core/index/query.py` (`CMP-GRAPH-TRAVERSAL-ENGINE` `(unchanged co-owner of query.py; covered via CMP-FTS-QUERY-ENGINE)`))**:
+   * Extend `ast_indexer.py` to capture TS/Go/Rust/Java/C# interface/trait member signatures, disambiguate overloaded symbol keys by normalized parameter list/arity, and set `is_public = True` on Rust `pub trait` / `impl Trait for Type` items and C# `public interface` members (`src/eidos/vcs/structural.py` `(body-only caller if key format is consumed transparently; covered via CNT-EIDOS-VCS tests)`).
+   * Include `'method'` in `_project_ast_code_symbols_into_fts` (`sync.py`), index test symbols (`is_test = 1`) during incremental sync, and include `is_test` / `'method'` symbols in `find_symbol_in_db` (`query.py`).
+4. **Living Specifications & Invariant Tests (`eidos/`, `tests/`)**:
+   * Move `DEC-INDEX-FLOCK-WAL-AND-PINNED-ONNX` onto `CNT-EIDOS-INDEX` when applying, and update `CMP-GRAPH-STORAGE`, `CMP-INCREMENTAL-SYNC-ENGINE`, `CMP-SEMANTIC-EMBEDDING-ENGINE`, `CMP-AST-SYMBOL-INDEXER`, `CMP-FTS-QUERY-ENGINE`, `CAP-AGENT-002` (`1.4.0`), and `CAP-AGENT-001` (`1.15.0`).
+   * Add/update `tests/test_graph_index.py::test_concurrent_wal_lock_thread_isolation_and_large_edge_rebuild`, `tests/test_graph_index.py::test_hybrid_semantic_rrf_and_deterministic_fallback`, and `tests/test_ast_indexer.py::test_inv_index_polyglot_symbol_precision` (`>90%` per-file coverage per `POL-005`), then run `eidos validate eidos --json`, `eidos delta verify DLT-2026-133 --json`, and `eidos drift --uncommitted --json`.

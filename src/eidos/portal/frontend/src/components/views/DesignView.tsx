@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
 import { AsciiDocRenderer } from "@/components/ui/AsciiDocRenderer";
 import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
+import { hasSpecBodyOrChunk } from "@/lib/specChunks";
 import { cn } from "@/lib/utils";
 import type {
   PortalData,
@@ -67,7 +68,12 @@ export function DesignView({
   const [selectedVariantByComp, setSelectedVariantByComp] = React.useState<Record<string, string>>({});
   const [copiedToken, setCopiedToken] = React.useState<string | null>(null);
   const [flowsLayout, setFlowsLayout] = React.useState<"split" | "stacked">("split");
-  const [inspectingItem, setInspectingItem] = React.useState<{ title: string; subtitle?: string; body?: string } | null>(null);
+  const [inspectingItem, setInspectingItem] = React.useState<{
+    id?: string;
+    title: string;
+    subtitle?: string;
+    body?: string;
+  } | null>(null);
 
   React.useEffect(() => {
     if (!initialSelectedId) return;
@@ -92,8 +98,9 @@ export function DesignView({
     const uic = ui_components.find((u) => u.id === initialSelectedId);
     if (uic) {
       setActiveTab("components");
-      if (uic.body) {
+      if (hasSpecBodyOrChunk(uic.id, uic.body)) {
         setInspectingItem({
+          id: uic.id,
           title: uic.title || uic.id,
           subtitle: `${uic.id} • ${uic.category || "UI Component"}`,
           body: uic.body,
@@ -104,8 +111,9 @@ export function DesignView({
     const fl = flows.find((f) => f.id === initialSelectedId);
     if (fl) {
       setActiveTab("flows");
-      if (fl.body) {
+      if (hasSpecBodyOrChunk(fl.id, fl.body)) {
         setInspectingItem({
+          id: fl.id,
           title: fl.title || fl.id,
           subtitle: `${fl.id} • ${fl.flow_type || "Flow"}`,
           body: fl.body,
@@ -721,12 +729,13 @@ export function DesignView({
               </div>
 
               {/* Client Spec Inspector Trigger */}
-              {activeClient.body && (
+              {hasSpecBodyOrChunk(activeClient.id, activeClient.body) && (
                 <div className="pt-2 flex justify-end">
                   <button
                     type="button"
                     onClick={() =>
                       setInspectingItem({
+                        id: activeClient.id,
                         title: activeClient.title || activeClient.id,
                         subtitle: `${activeClient.id} • ${activeClient.platform || "web"}`,
                         body: activeClient.body,
@@ -869,11 +878,12 @@ export function DesignView({
                       </span>
                     )}
 
-                    {comp.body && (
+                    {hasSpecBodyOrChunk(comp.id, comp.body) && (
                       <button
                         type="button"
                         onClick={() =>
                           setInspectingItem({
+                            id: comp.id,
                             title: comp.title || comp.id,
                             subtitle: `${comp.id} • ${comp.category || "UI Component"}`,
                             body: comp.body,
@@ -948,11 +958,12 @@ export function DesignView({
                   </h4>
                 </div>
                 <div className="flex items-center gap-2">
-                  {activeScreen.body && (
+                  {hasSpecBodyOrChunk(activeScreen.id, activeScreen.body) && (
                     <button
                       type="button"
                       onClick={() =>
                         setInspectingItem({
+                          id: activeScreen.id,
                           title: activeScreen.title || activeScreen.id,
                           subtitle: `${activeScreen.id} • Route: ${activeScreen.route}`,
                           body: activeScreen.body,
@@ -1281,7 +1292,11 @@ export function DesignView({
         maxWidth="6xl"
       >
         <div className="space-y-3">
-          <AsciiDocRenderer content={inspectingItem?.body || ""} title={inspectingItem?.title} />
+          <AsciiDocRenderer
+            specId={inspectingItem?.id}
+            content={inspectingItem?.body || ""}
+            title={inspectingItem?.title}
+          />
         </div>
       </Sheet>
     </div>

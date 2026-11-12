@@ -19,7 +19,7 @@ properties:
     pattern: "^ARCH-[A-Z0-9_-]+$"
     description: "Unique architecture document identifier (e.g. ARCH-EIDOS-001)."
   title:
-    type: string
+    $ref: "#/$defs/non_empty_string"
     description: "Human-readable title of the system architecture specification."
   status:
     $ref: "#/$defs/lifecycle_status"
@@ -48,13 +48,13 @@ properties:
             - role
           properties:
             name:
-              type: string
+              $ref: "#/$defs/non_empty_string"
               description: "Name of the external system (e.g. 'Git Repository / CI Pipeline', 'Stripe Gateway')."
             role:
-              type: string
+              $ref: "#/$defs/non_empty_string"
               description: "How the system interacts with this external entity."
             protocol:
-              type: string
+              $ref: "#/$defs/non_empty_string"
               description: "Communication protocol (e.g. 'Git CLI', 'OAuth2', 'Kafka Topic')."
   decisions:
     type: array

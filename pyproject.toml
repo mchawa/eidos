@@ -89,6 +89,10 @@ markers = [
 
 [tool.coverage.run]
 source = ["src/eidos"]
+omit = [
+    "src/eidos/_version.py",
+    "src/eidos/portal/frontend/*",
+]
 
 [tool.coverage.report]
 fail_under = 90

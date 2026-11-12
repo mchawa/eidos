@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { renderAsciiDoc, extractAsciiDocOutline } from "@/lib/asciidoc";
+import { buildMermaidConfig, sanitizeMermaidCode } from "@/lib/mermaid";
 import { isSpecDocumentPath, looksLikeSpecId, resolveSpecTarget } from "@/lib/specNav";
 
 // Build-time only (Vitest + jsdom). The shipped portal bundle needs no Node.js (INV-PORTAL-ZERO-NODE-DEP).
@@ -94,7 +95,7 @@ describe("INV-PORTAL-READING-ERGONOMICS: Asciidoctor.js reader", () => {
         "== Links",
         "",
         "See xref:CNT-DEMO-CORE[the core], <<CAP-EXP-001>>, link:../personas/product-lead.adoc[Persona], ",
-        "xref:containers/core.adoc[Core container], <<links>> and https://example.com[Example].",
+        "xref:containers/core.adoc[Core container], <<links>>, link://cdn.example.com/doc[ProtoRel] and https://example.com[Example].",
         "",
       ].join("\n"),
     );
@@ -108,11 +109,14 @@ describe("INV-PORTAL-READING-ERGONOMICS: Asciidoctor.js reader", () => {
       expect(a.getAttribute("href")).toMatch(/^#spec\//);
       expect(a.hasAttribute("target")).toBe(false);
     }
-    // In-page anchor stays an anchor; external links open safely in a new tab.
-    expect(tpl.content.querySelector('a[href="#links"]')?.hasAttribute("data-spec-ref")).toBe(false);
+    // In-page anchor uses `spec-` prefixed heading id and stays an anchor; external & protocol-relative links open safely.
+    expect(tpl.content.querySelector('a[href="#spec-links"]')?.hasAttribute("data-spec-ref")).toBe(false);
     const ext = tpl.content.querySelector('a[href="https://example.com"]');
     expect(ext?.getAttribute("target")).toBe("_blank");
-    expect(ext?.getAttribute("rel")).toContain("noopener");
+    expect(ext?.getAttribute("rel")).toBe("noopener noreferrer");
+    const protoRel = tpl.content.querySelector('a[href="//cdn.example.com/doc"]');
+    expect(protoRel?.getAttribute("target")).toBe("_blank");
+    expect(protoRel?.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
   test("spec targets resolve against the catalog by id and by relative path", () => {
@@ -124,6 +128,7 @@ describe("INV-PORTAL-READING-ERGONOMICS: Asciidoctor.js reader", () => {
     expect(resolveSpecTarget(specs, "CNT-DEMO-CORE")?.id).toBe("CNT-DEMO-CORE");
     expect(resolveSpecTarget(specs, "#cnt-demo-core")?.id).toBe("CNT-DEMO-CORE");
     expect(resolveSpecTarget(specs, "../personas/product-lead.adoc")?.id).toBe("PER-PRODUCT-LEAD");
+    expect(resolveSpecTarget(specs, "/work/repo/eidos/architecture/containers/core.adoc")?.id).toBe("CNT-DEMO-CORE");
     expect(resolveSpecTarget(specs, "containers/core.html")?.id).toBe("CNT-DEMO-CORE");
     expect(resolveSpecTarget(specs, "../system.adoc#vision")?.id).toBe("SYS-DEMO-001");
     expect(resolveSpecTarget(specs, "nope.adoc")).toBeUndefined();
@@ -132,13 +137,15 @@ describe("INV-PORTAL-READING-ERGONOMICS: Asciidoctor.js reader", () => {
     expect(isSpecDocumentPath("https://x.io/a.adoc")).toBe(false);
   });
 
-  test("secure mode: include:: is not resolved and raw HTML passthrough is sanitized", async () => {
+  test("secure mode: include:: is not resolved, raw HTML is sanitized, and DOM clobbering is blocked", async () => {
     const { html } = await renderAsciiDoc(
       [
+        "== c4DiagramContainer",
+        "",
         "include::/etc/passwd[]",
         "",
         "++++",
-        '<script>window.__pwned = true</script><img src=x onerror="window.__pwned = true"><iframe src="https://evil.example"></iframe><style>@import url(https://evil.example/x.css)</style>',
+        '<script>window.__pwned = true</script><img src=x onerror="window.__pwned = true"><iframe src="https://evil.example"></iframe><style>@import url(https://evil.example/x.css)</style><a id="location" name="cookie" href="https://evil.example">clobber</a>',
         "++++",
         "",
         "link:javascript:alert(1)[click]",
@@ -147,8 +154,28 @@ describe("INV-PORTAL-READING-ERGONOMICS: Asciidoctor.js reader", () => {
     );
     expect(html).not.toContain("root:x:");
     expect(html).not.toMatch(/<script|<iframe|<style|onerror/i);
-    expect(html).not.toMatch(/evil\.example/);
+    expect(html).not.toMatch(/id="location"|name="cookie"/i);
+    expect(html).not.toContain('id="c4diagramcontainer"');
+    expect(html).toContain('id="spec-c4diagramcontainer"');
     expect(html).not.toMatch(/href="javascript:/i);
+  });
+
+  test("INV-PORTAL-XSS-AND-SERVER-ISOLATION: Mermaid config enforces strict securityLevel and strips unsafe directives", () => {
+    expect(buildMermaidConfig(true).securityLevel).toBe("strict");
+    expect(buildMermaidConfig(false).securityLevel).toBe("strict");
+    const sanitized = sanitizeMermaidCode(
+      [
+        '%%{init: {"securityLevel": "loose"}}%%',
+        "flowchart TD",
+        '  A["Safe"] --> B["Node"]',
+        "  click A call alert()",
+        '  click B "javascript:alert(1)"',
+      ].join("\n"),
+    );
+    expect(sanitized).not.toContain("securityLevel");
+    expect(sanitized).not.toContain("call alert");
+    expect(sanitized).not.toContain("javascript:");
+    expect(sanitized).toContain('A["Safe"] --> B["Node"]');
   });
 
   test("outline ids equal the rendered heading ids (levels 2 and 3)", async () => {
@@ -256,7 +283,7 @@ describe("Mermaid sources from generator.py parse with the bundled mermaid", () 
   test("INV-PORTAL-INTERACTIVE-C4: every C4 / screen / flow diagram passes mermaid.parse()", async () => {
     expect(sources).not.toBeNull();
     const mermaid = (await import("mermaid")).default;
-    mermaid.initialize({ startOnLoad: false, securityLevel: "loose" });
+    mermaid.initialize({ startOnLoad: false, securityLevel: "strict" });
     const entries = Object.entries(sources!);
     expect(entries.length).toBeGreaterThanOrEqual(8);
     const failures: string[] = [];

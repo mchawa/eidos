@@ -24,7 +24,7 @@ states:
 The Technical Explorations View (`SCR-PORTAL-EXPLORATIONS`) tracks hypothesis-driven architectural research and spikes:
 * **Hypotheses & Questions**: Documents core problem statements and research questions under investigation.
 * **Empirical Spikes**: Tracks targeted proof-of-concept tasks and sandboxed Git branch validations.
-* **Exit Criteria**: Enforces explicit time-boxing and validation benchmarks.
+* **Exit Criteria & Recommendations**: Enforces explicit time-boxing, hydrated `exit_criteria` checklists, and structured `recommendation` summaries extracted from exploration specifications.
 * **Decisions & Learnings**: Displays outcomes (`adopted`, `discarded`, `proposed`) and empirical takeaways, plus an `Archived` status filter pill and badge for archived explorations under `explorations/archive/`.
 * **Resulting SpecDelta Bridge**: 1-click navigation into resulting Planned Mode mutations (`DLT-*`).
 * **Detailed AsciiDoc Specification Inspection**: Centered modal inspection with complete rendered AsciiDoc rationale.

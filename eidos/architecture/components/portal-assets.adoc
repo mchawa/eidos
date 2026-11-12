@@ -18,8 +18,8 @@ Packages and lazily loads the pre-compiled single-file React 19, Tailwind v4, As
 
 == Key Responsibilities & Collaborators
 * **Lazy Gzip Asset Delivery (`assets.py`)**: Decompresses and caches `assets/portal/bundle.html.gz` and `assets/portal/favicon.svg` on first access (`get_portal_html_template`, `get_portal_favicon_svg`) for `CMP-PORTAL-SERVER` and `CMP-PORTAL-BUILDER`.
-* **Interactive SPA Views (`frontend/src/`)**: Implements URL hash deep-linking (`DEC-PORTAL-HASH-ROUTING`), client-side payload re-hydration (`hydratePortalData`), C4 Level 1–3 whitebox drill-down, interactive Blast Radius Simulator, `CTR-*` Contract Explorer, Validation Diagnostics, SpecDelta Kanban/Timeline, and W3C Token Studio.
-* **Build & Wheel Hook Verification (`build_assets.py`, `hatch_build.py`)**: Compiles the Vite single-file bundle, verifies zero remote URLs (`INV-PORTAL-AIR-GAPPED-BUNDLE`), and synchronizes bundle assets during Hatch wheel builds.
+* **Strict Sanitization, SSE Live Drift & Interactive SPA Views (`frontend/src/`)**: Configures Mermaid with `securityLevel: "strict"` (`mermaid.ts`), enforces DOMPurify `SANITIZE_DOM: true`, `idprefix: "spec-"`, and protocol-relative `//` external link hardening (`asciidoc.ts`), renders Mermaid errors via safe JSX text nodes, guards pan-drag C4 click misfires (`hasMovedRef.current`), binds C4 drill-down clicks via post-render DOM delegation, highlights 1-hop and 2-hop blast-radius nodes directly on the C4 SVG canvas (`ArchitectureView.tsx`), hydrates `screens` bodies for `"Inspect Screen Spec"` (`DesignView.tsx`), subscribes to `/api/events` SSE + `/api/drift` for live workspace drift badges and clickable repo-relative `schema_errors` (`App.tsx`, `HomeView.tsx`), and lazy-fetches externalized local `./specs/<id>.json` chunks (`specChunks.ts`).
+* **Build & Wheel Hook Verification (`build_assets.py`, `hatch_build.py`)**: Compiles the Vite bundle (`<= 5 MiB` uncompressed), verifies zero remote URLs (`INV-PORTAL-AIR-GAPPED-BUNDLE`), and synchronizes bundle assets during Hatch wheel builds.
 
 == Public Surface
 * `get_portal_html_template() -> str`, `get_portal_favicon_svg() -> str`

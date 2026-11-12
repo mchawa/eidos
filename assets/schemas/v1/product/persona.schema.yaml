@@ -19,7 +19,7 @@ properties:
     pattern: "^PER-[A-Z0-9_-]+$"
     description: "Unique persona identifier following the PER-<ROLE> convention (e.g. PER-PRODUCT-LEAD, PER-END-USER)."
   title:
-    type: string
+    $ref: "#/$defs/non_empty_string"
     description: "Descriptive title of the persona role (e.g. 'Product Lead', 'Workspace Admin', 'Shopper', 'Autonomous Agent')."
   status:
     $ref: "#/$defs/lifecycle_status"

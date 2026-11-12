@@ -75,8 +75,9 @@ eidos index blast-radius CNT-BILLING-API --depth 2 --json
 # 2. Scaffold SpecDelta (auto-generates ID, slug, 4-hex suffix, vcs.branch/base_commit; commands accept short prefixes)
 eidos delta create --title "Add Webhook Signature Verification Contract" --kind feature
 
-# 3. Inspect active SpecDeltas or transition status (proposed | in_review | approved | applied | rejected)
+# 3. Inspect active/archived SpecDeltas or transition status (proposed | in_review | approved | applied | rejected)
 eidos delta list --status active --json
+eidos delta show DLT-2026-015 --json
 eidos delta status DLT-2026-015 in_review
 
 # 4. Populate mutations + Implementation Plan, then slice EVERY planned file or QUOTED glob bottom-up
@@ -169,8 +170,8 @@ Prevent spoofed billing webhooks via HMAC-SHA256 timestamped signature verificat
 
 ### 2.3 Composable `operation` + `target` & `expect:` Post-Conditions
 
-Every entity supports `operation: add | modify | deprecate | remove`, except `SYS-*`/`ARCH-*` (`add`, `modify` only) and `INV-*` (`add`, `modify`, `remove`). For `add` and `modify`, `eidos delta verify` checks baseline digest modification and `expect:` assertions:
-* **`expect.frontmatter`**: Match `version` (SemVer), `status` (`draft | planned | active | deprecated | retired`), `severity` (`blocking | warning | advisory`), `category`, `source_path` (path or list subset), `rule` (substring), `test_binding` (`file::func`, `N/A`, `TBD`), or **any frontmatter key / dot-separated nested path** (e.g., `technical.components: ["CMP-WEBHOOK-VERIFIER"]`, `decisions.id: ["DEC-BILL-002"]`, `invariants.id: ["INV-BILL-WEBHOOK-SIG"]`, `custom: { k: v }`).
+Every entity supports `operation: add | modify | deprecate | remove`, except `SYS-*`/`ARCH-*` (`add`, `modify` only) and `INV-*` (`add`, `modify`, `remove`). `eidos delta verify` checks baseline digest modification (for `modify`) and `expect:` assertions across all operations:
+* **`expect.frontmatter`**: Match `version` (SemVer), `status` (`draft | planned | active | deprecated | retired`), `severity` (`blocking | warning | advisory`), `category`, `source_path` (path or list subset), `rule` (substring), `test_binding` (exact `file::func` on active specs, `TBD` pre-apply), `null` (deleted key), or **any frontmatter key / dot-separated nested path** (e.g., `technical.components: ["CMP-WEBHOOK-VERIFIER"]`, `decisions.id: ["DEC-BILL-002"]`, `invariants.id: ["INV-BILL-WEBHOOK-SIG"]`, `custom: { k: v }`).
 * **`expect.body`** (comment-stripped AsciiDoc): `contains` and `not_contains` (string or list of substrings).
 * **`tombstone:` (Optional top-level block on `remove`/`deprecate`)**: `tombstone: { search_tokens: ["LegacySymbol"], allowed_reasons: [{ path: "CHANGELOG.md", reason: "Historical note" }] }` exempts historical references in `eidos delta audit <ID> --strict`.
 

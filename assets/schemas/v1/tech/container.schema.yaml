@@ -21,24 +21,24 @@ properties:
     pattern: "^CNT-[A-Z0-9_-]+$"
     description: "Unique C4 Container identifier following CNT-<NAME> (e.g. CNT-CORE, CNT-CLI)."
   title:
-    type: string
+    $ref: "#/$defs/non_empty_string"
     description: "Human-readable display title of the container/package."
   status:
     $ref: "#/$defs/lifecycle_status"
   version:
     $ref: "#/$defs/semver"
   container_type:
-    type: string
+    $ref: "#/$defs/non_empty_string"
     description: "The C4 Container classification: service, library, cli_app, frontend_spa, background_worker, ml_pipeline, daemon, database, driver, or custom slug."
   runtime:
-    type: string
+    $ref: "#/$defs/non_empty_string"
     description: "Execution environment and primary framework (e.g. 'Python 3.12 / Typer / Hatchling', 'TypeScript / React', 'Rust / Tokio')."
   source_path:
     $ref: "#/$defs/code_paths"
   domain:
     $ref: "#/$defs/domain_ref"
   tier:
-    type: string
+    $ref: "#/$defs/non_empty_string"
     description: "Architectural tier classification (optional: presentation, service, core, persistence, or custom tier slug)."
   contracts:
     $ref: "#/$defs/contracts_block"

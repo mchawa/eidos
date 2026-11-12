@@ -13,12 +13,12 @@ source_path: src/eidos/cli/portal_commands.py
 Implements the `eidos portal` subcommand group (`serve`, `build`) for launching the interactive local Living Architecture Web Portal or compiling a self-contained static site bundle.
 
 == Key Responsibilities & Collaborators
-* **Portal Server & Builder Dispatch**: Resolves the `eidos/` directory via `CMP-CLI-APP` (`resolve_cli_eidos_dir`) and delegates live HTTP serving (`eidos portal serve`) to `CMP-PORTAL-SERVER` and static compilation (`eidos portal build`) to `CMP-PORTAL-BUILDER`.
+* **Portal Server & Builder Dispatch**: Resolves the `eidos/` directory via `CMP-CLI-APP` (`resolve_cli_eidos_dir`) and delegates live HTTP/SSE serving (`eidos portal serve`) to `CMP-PORTAL-SERVER` and chunked or `--single-file` static compilation (`eidos portal build`) to `CMP-PORTAL-BUILDER`.
 
 == Public Surface
 * `portal_app: typer.Typer`
-* `serve_cmd(path: Path, host: str, port: int, open_browser: bool) -> None`
-* `build_site_cmd(path: Path, out: Path) -> None`
+* `serve_cmd(target_path: Path | None, host: str, port: int, open_browser: bool) -> None`
+* `build_site_cmd(target_path: Path | None, out_dir: Path, single_file: bool) -> None`
 
 == Design Constraints & Operational Notes
 * **Zero-Node Runtime Execution (`INV-PORTAL-ZERO-NODE-DEP`)**: Both `serve` and `build` run strictly from pre-compiled assets via `CMP-PORTAL-ASSETS` without requiring Node.js at runtime.

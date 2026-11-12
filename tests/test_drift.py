@@ -63,6 +63,8 @@ def _synthetic_substantive_versions(
         )
     if rel_path.endswith(".adoc"):
         if "/deltas/" in f"/{rel_path}":
+            if "/deltas/archive/" in f"/{rel_path}":
+                new_txt = new_txt.replace("status: applied", "status: proposed", 1)
             return (None, new_txt)
         return (new_txt, new_txt + "\nUpdated specification details.\n")
     return (
@@ -71,9 +73,14 @@ def _synthetic_substantive_versions(
     )
 
 
-def test_drift_detection_code_without_specs(monkeypatch):
+def test_drift_detection_code_without_specs(monkeypatch, tmp_path):
     """Verify INV-DRIFT-DETECTION-ACCURACY: drift is detected when code changes without living spec updates."""
-    # Mock get_git_diff_files to simulate un-synchronized code edits
+    import subprocess as sp
+
+    from eidos.plugin.managed_block import render_managed_block
+    from eidos.vcs.diff import get_git_diff_files
+
+    # 1. Mock get_git_diff_files to simulate un-synchronized code edits
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
         lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: [
@@ -89,6 +96,135 @@ def test_drift_detection_code_without_specs(monkeypatch):
     assert len(result.remediation_suggestions) > 0
     assert any("co-evolve bound DOM-*, PER-*, POL-*, and design/* specs" in r for r in result.remediation_suggestions)
     assert "DRIFT DETECTED" in result.summary_markdown
+
+    # 2. Executable code under docs/ (docs/helper.py, docs/widget.ts) -> code_files & drift,
+    #    while static documentation/assets under docs/ stay in doc_files
+    docs_cls = classify_changed_files(
+        ["docs/helper.py", "docs/widget.ts", "docs/guide.md", "docs/site.yml", "AGENTS.md"]
+    )
+    assert "docs/helper.py" in docs_cls.code_files
+    assert "docs/widget.ts" in docs_cls.code_files
+    assert "docs/guide.md" in docs_cls.doc_files
+    assert "docs/site.yml" in docs_cls.doc_files
+    assert "AGENTS.md" in docs_cls.onboarding_files
+
+    monkeypatch.setattr(
+        "eidos.vcs.drift.get_git_diff_files",
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: [
+            "docs/helper.py",
+        ],
+    )
+    res_docs_code = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+    assert res_docs_code.drift_detected is True
+    assert res_docs_code.is_clean is False
+    assert "docs/helper.py" in res_docs_code.classification.code_files
+
+    # 3. NUL-delimited `git status --porcelain=v1 -z` & `AGENTS.md` onboarding governance in a real tmp_path repo
+    from eidos.core.lifecycle.initializer import init_repository
+
+    monkeypatch.undo()
+    repo = tmp_path / "gov_repo"
+    init_repository(repo, title="gov-test")
+    git_env = {
+        "PATH": "/usr/bin:/bin:/usr/local/bin",
+        "GIT_AUTHOR_NAME": "Test",
+        "GIT_AUTHOR_EMAIL": "t@eidos.dev",
+        "GIT_COMMITTER_NAME": "Test",
+        "GIT_COMMITTER_EMAIL": "t@eidos.dev",
+    }
+    sp.run(["git", "init", "-b", "main"], cwd=repo, env=git_env, check=True, capture_output=True)
+    (repo / "src" / "app").mkdir(parents=True, exist_ok=True)
+    (repo / "src" / "app" / "old space.py").write_text("def greet() -> str:\n    return 'hi'\n", encoding="utf-8")
+    (repo / "eidos" / "architecture" / "containers").mkdir(parents=True, exist_ok=True)
+    (repo / "eidos" / "architecture" / "containers" / "app.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-APP\n"
+        "title: App\n"
+        "status: active\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "source_path: src/app\n"
+        "---\n"
+        "= App\n\n`greet`\n",
+        encoding="utf-8",
+    )
+    managed_agents = render_managed_block("agents-md", "# Eidos Managed Onboarding\nAlways run `eidos drift`.\n")
+    managed_claude = render_managed_block("claude-import", "@AGENTS.md\n")
+    (repo / "AGENTS.md").write_text(managed_agents, encoding="utf-8")
+    (repo / "CLAUDE.md").write_text(managed_claude, encoding="utf-8")
+    (repo / ".aider.conf.yml").write_text("read:\n  - AGENTS.md\n", encoding="utf-8")
+    for sdir in (".agents/skills/eidos", ".claude/skills/eidos", ".aider/skills/eidos"):
+        (repo / sdir).mkdir(parents=True, exist_ok=True)
+        (repo / sdir / "SKILL.md").write_text(
+            "---\nname: eidos\ndescription: Core Eidos workflow.\n---\n# Eidos\n",
+            encoding="utf-8",
+        )
+    (repo / ".agents" / ".eidos-manifest.json").write_text('{"version": "0.1.0"}\n', encoding="utf-8")
+    sp.run(["git", "add", "."], cwd=repo, env=git_env, check=True, capture_output=True)
+    sp.run(["git", "commit", "-m", "init"], cwd=repo, env=git_env, check=True, capture_output=True)
+
+    # Rename a tracked file with spaces + add an untracked file with spaces & quotes
+    sp.run(
+        ["git", "mv", "src/app/old space.py", "src/app/renamed space.py"],
+        cwd=repo,
+        env=git_env,
+        check=True,
+        capture_output=True,
+    )
+    (repo / "src" / "app" / "renamed space.py").write_text(
+        "def greet() -> str:\n    return 'hi'\n\ndef extra_fn() -> int:\n    return 1\n",
+        encoding="utf-8",
+    )
+    (repo / "src" / "app" / 'my "quoted" mod.py').write_text("def quoted_fn() -> int:\n    return 2\n", encoding="utf-8")
+
+    uncommitted_paths = get_git_diff_files(repo, uncommitted=True)
+    assert "src/app/renamed space.py" in uncommitted_paths
+    assert 'src/app/my "quoted" mod.py' in uncommitted_paths
+    assert not any(p.startswith('"') for p in uncommitted_paths)
+    space_cls = classify_changed_files(uncommitted_paths, repo_root=repo, eidos_dir=repo / "eidos")
+    assert "src/app/renamed space.py" in space_cls.code_files
+    assert 'src/app/my "quoted" mod.py' in space_cls.code_files
+    assert space_cls.other_files == []
+
+    res_space = detect_drift(repo_root=repo, eidos_dir=repo / "eidos", uncommitted=True)
+    assert res_space.drift_detected is True
+    assert res_space.is_clean is False
+
+    # Reset code edits and test AGENTS.md managed-block wipe + SKILL.md / CLAUDE.md / .aider.conf.yml checks
+    sp.run(["git", "reset", "--hard", "HEAD"], cwd=repo, env=git_env, check=True, capture_output=True)
+    (repo / "src" / "app" / 'my "quoted" mod.py').unlink(missing_ok=True)
+
+    (repo / "AGENTS.md").write_text("project\n", encoding="utf-8")
+    (repo / ".agents" / "skills" / "eidos" / "SKILL.md").write_text("# Corrupted without frontmatter\n", encoding="utf-8")
+    (repo / "CLAUDE.md").write_text("# Wiped import\n", encoding="utf-8")
+    (repo / ".aider.conf.yml").write_text("model: sonnet\n", encoding="utf-8")
+
+    res_ob_wipe = detect_drift(repo_root=repo, eidos_dir=repo / "eidos", uncommitted=True)
+    assert res_ob_wipe.drift_detected is True
+    assert res_ob_wipe.is_clean is False
+    assert "AGENTS.md" in res_ob_wipe.validation_report.schema_errors
+    assert ".agents/skills/eidos/SKILL.md" in res_ob_wipe.validation_report.schema_errors
+    assert "CLAUDE.md" in res_ob_wipe.validation_report.schema_errors
+    assert ".aider.conf.yml" in res_ob_wipe.validation_report.schema_errors
+    assert any("AGENTS.md" in err for err in res_ob_wipe.validation_errors)
+
+    # Also test malformed managed block markers & deleted SKILL.md while .eidos-manifest.json is active
+    (repo / "AGENTS.md").write_text("<!-- eidos:begin agents-md -->\nunclosed block\n", encoding="utf-8")
+    (repo / "CLAUDE.md").write_text("<!-- eidos:begin claude-import -->\nunclosed claude block\n", encoding="utf-8")
+    (repo / ".agents" / "skills" / "eidos" / "SKILL.md").unlink()
+    res_ob_malformed = detect_drift(repo_root=repo, eidos_dir=repo / "eidos", uncommitted=True)
+    assert res_ob_malformed.drift_detected is True
+    assert "AGENTS.md" in res_ob_malformed.validation_report.schema_errors
+    assert "CLAUDE.md" in res_ob_malformed.validation_report.schema_errors
+    assert ".agents/skills/eidos/SKILL.md" in res_ob_malformed.validation_report.schema_errors
+
+    # Explicit opt-out marker `<!-- eidos:agents-md off -->` allows custom AGENTS.md without drift
+    sp.run(["git", "checkout", "--", ".agents", "CLAUDE.md", ".aider.conf.yml"], cwd=repo, env=git_env, check=True)
+    (repo / "AGENTS.md").write_text("<!-- eidos:agents-md off -->\nCustom manual instructions.\n", encoding="utf-8")
+    res_ob_optout = detect_drift(repo_root=repo, eidos_dir=repo / "eidos", uncommitted=True)
+    assert res_ob_optout.drift_detected is False
+    assert res_ob_optout.is_clean is True
 
 
 def test_pr_check_gate_pass_direct(monkeypatch):
@@ -121,7 +257,12 @@ def test_pr_check_gate_pass_planned(monkeypatch):
     _patch_versions(
         monkeypatch,
         lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: (
-            (None, (Path.cwd() / rel_path).read_text(encoding="utf-8"))
+            (
+                None,
+                (Path.cwd() / rel_path)
+                .read_text(encoding="utf-8")
+                .replace("status: applied", "status: proposed", 1),
+            )
             if "dlt-2026-010" in rel_path
             else (
                 (Path.cwd() / rel_path).read_text(encoding="utf-8"),
@@ -728,7 +869,12 @@ def test_uncovered_delta_drift_detection(monkeypatch):
     _patch_versions(
         monkeypatch,
         lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: (
-            (None, (Path.cwd() / rel_path).read_text(encoding="utf-8"))
+            (
+                None,
+                (Path.cwd() / rel_path)
+                .read_text(encoding="utf-8")
+                .replace("status: applied", "status: proposed", 1),
+            )
             if "dlt-2026-001" in rel_path
             else (_OLD_CSS, _TOKEN_CSS)
         ),
@@ -3881,10 +4027,11 @@ def test_dlt_2026_110_batch_git_slug_ids_and_unified_test_binding_cache(tmp_path
     assert find_spec_by_id_or_path(eidos_dir, "DLT-2026-110-BATCHED-GIT") == d1_path
     assert find_spec_by_id_or_path(eidos_dir, gen_id) == d1_path
 
-    # Ambiguous bare prefix returns None when two deltas share DLT-2026-110
+    # Ambiguous bare prefix raises ValueError when two deltas share DLT-2026-110
     d2_path = create_delta(eidos_dir, "DLT-2026-110", title="Second Parallel Feature")
     assert d2_path != d1_path
-    assert find_spec_by_id_or_path(eidos_dir, "DLT-2026-110") is None
+    with pytest.raises(ValueError, match="Ambiguous specification prefix"):
+        find_spec_by_id_or_path(eidos_dir, "DLT-2026-110")
     assert find_spec_by_id_or_path(eidos_dir, "DLT-2026-110-BATCHED-GIT") == d1_path
     assert find_spec_by_id_or_path(eidos_dir, "DLT-2026-110-SECOND-PARALLEL") == d2_path
 
@@ -4192,7 +4339,15 @@ def test_invariants_catalog_recommendations_and_uncached_branches(tmp_path: Path
         assert any(c["id"] == "CTR-COV" for c in catalog["contracts"])
         assert any(p["id"] == "POL-COV-001" for p in catalog["policies"])
 
-        # 5. recommend_invariants_for_unbound_tests with Path repo_root, empty test_binding_cache, and explicit list forms
+        # 5. recommend_invariants_for_unbound_tests with warm cache, empty cache, and explicit list forms
+        from eidos.vcs.invariants import _load_or_update_test_binding_cache
+
+        _load_or_update_test_binding_cache(repo, eidos_dir=eidos_dir)
+        recs_from_warm_cache = recommend_invariants_for_unbound_tests(
+            idx, eidos_dir=eidos_dir, top_k=2, use_semantic=False
+        )
+        assert "tests/test_cov.py::test_unbound_coverage_rule" in recs_from_warm_cache
+
         conn = idx._get_connection()
         conn.execute("DELETE FROM test_binding_cache;")
         conn.commit()
@@ -4227,3 +4382,767 @@ def test_invariants_catalog_recommendations_and_uncached_branches(tmp_path: Path
     finally:
         idx.close()
         _ = monkeypatch
+
+
+def test_shallow_clone_worktree_and_commit_range_tree_isolation(tmp_path):
+    """Verify INV-DRIFT-SHALLOW-AND-COMMIT-TREE-FIDELITY: shallow clone/worktree fail-closed detection and --head commit-tree isolation."""
+    import subprocess as sp
+
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.vcs.diff import (
+        GitResolutionError,
+        _git_commit_count,
+        _is_shallow_repository,
+        _resolve_base_and_merge_base,
+        _resolve_base_ref,
+        batch_read_git_blobs,
+        get_git_diff_files,
+    )
+
+    git_env = {
+        "PATH": "/usr/bin:/bin:/usr/local/bin",
+        "GIT_AUTHOR_NAME": "Test",
+        "GIT_AUTHOR_EMAIL": "t@eidos.dev",
+        "GIT_COMMITTER_NAME": "Test",
+        "GIT_COMMITTER_EMAIL": "t@eidos.dev",
+    }
+
+    # 1. Build multi-commit upstream repository
+    upstream = tmp_path / "upstream"
+    init_repository(upstream, title="iso-test")
+    sp.run(["git", "init", "-b", "main"], cwd=upstream, env=git_env, check=True, capture_output=True)
+    (upstream / "src").mkdir(exist_ok=True)
+    (upstream / "tests").mkdir(exist_ok=True)
+    (upstream / "eidos" / "architecture" / "containers").mkdir(parents=True, exist_ok=True)
+    (upstream / "eidos" / "architecture" / "containers" / "svc.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-SVC\n"
+        "title: Service\n"
+        "status: active\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "source_path: src\n"
+        "invariants:\n"
+        "  - id: INV-SVC-001\n"  # eidos:fixture
+        "    rule: Service handles ping\n"
+        "    test_binding: tests/test_svc.py::test_svc_ping\n"
+        "---\n"
+        "= Service\n\nProvides `ping`.\n",
+        encoding="utf-8",
+    )
+    (upstream / "src" / "service.py").write_text("def ping() -> str:\n    return 'pong'\n", encoding="utf-8")
+    (upstream / "tests" / "test_svc.py").write_text(
+        "def test_svc_ping():\n"
+        "    # INV-SVC-001\n"  # eidos:fixture
+        "    assert True\n",
+        encoding="utf-8",
+    )
+    sp.run(["git", "add", "."], cwd=upstream, env=git_env, check=True, capture_output=True)
+    sp.run(["git", "commit", "-m", "commit 1"], cwd=upstream, env=git_env, check=True, capture_output=True)
+
+    # Commit 2: cleanly co-evolve code + container spec
+    (upstream / "src" / "service.py").write_text(
+        "def ping() -> str:\n    return 'pong'\n\ndef health() -> bool:\n    return True\n",
+        encoding="utf-8",
+    )
+    (upstream / "eidos" / "architecture" / "containers" / "svc.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-SVC\n"
+        "title: Service\n"
+        "status: active\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "source_path: src\n"
+        "invariants:\n"
+        "  - id: INV-SVC-001\n"  # eidos:fixture
+        "    rule: Service handles ping and health\n"
+        "    test_binding: tests/test_svc.py::test_svc_ping\n"
+        "---\n"
+        "= Service\n\nProvides `ping` and `health` endpoints.\n",
+        encoding="utf-8",
+    )
+    sp.run(["git", "add", "."], cwd=upstream, env=git_env, check=True, capture_output=True)
+    sp.run(["git", "commit", "-m", "commit 2 clean"], cwd=upstream, env=git_env, check=True, capture_output=True)
+    assert _is_shallow_repository(upstream) is False
+    assert _git_commit_count(upstream, "HEAD") == 2
+
+    # 2. Real shallow clone (`git clone --depth 1`) where origin/main == HEAD MUST fail closed
+    shallow_dir = tmp_path / "shallow_clone"
+    sp.run(
+        ["git", "clone", "--depth", "1", f"file://{upstream}", str(shallow_dir)],
+        env=git_env,
+        check=True,
+        capture_output=True,
+    )
+    assert _is_shallow_repository(shallow_dir) is True
+    with pytest.raises(GitResolutionError, match="fetch-depth: 0"):
+        _resolve_base_ref(shallow_dir, None)
+    with pytest.raises(GitResolutionError, match="fetch-depth: 0"):
+        _resolve_base_and_merge_base(shallow_dir, None, "origin/main")
+    with pytest.raises(GitResolutionError, match="fetch-depth: 0"):
+        detect_drift(repo_root=shallow_dir, eidos_dir=shallow_dir / "eidos", uncommitted=False)
+
+    # 3. Linked Git worktree from shallow clone (where `.git` is a pointer file, not a directory) MUST also fail closed
+    worktree_dir = tmp_path / "shallow_worktree"
+    sp.run(
+        ["git", "worktree", "add", "-b", "ci-wt", str(worktree_dir), "HEAD"],
+        cwd=shallow_dir,
+        env=git_env,
+        check=True,
+        capture_output=True,
+    )
+    assert (worktree_dir / ".git").is_file()
+    assert _is_shallow_repository(worktree_dir) is True
+    with pytest.raises(GitResolutionError, match="fetch-depth: 0"):
+        detect_drift(repo_root=worktree_dir, eidos_dir=worktree_dir / "eidos", uncommitted=False)
+
+    # Also verify synthetic `gitdir:` + `commondir/shallow` fallback when `git rev-parse` exits non-zero
+    synth_wt = tmp_path / "synth_wt"
+    synth_common = tmp_path / "synth_common"
+    synth_gitdir = synth_common / "worktrees" / "wt1"
+    synth_wt.mkdir()
+    synth_gitdir.mkdir(parents=True)
+    (synth_common / "shallow").write_text("deadbeef\n", encoding="utf-8")
+    (synth_gitdir / "commondir").write_text("../..\n", encoding="utf-8")
+    (synth_wt / ".git").write_text(f"gitdir: {synth_gitdir}\n", encoding="utf-8")
+    assert _is_shallow_repository(synth_wt) is True
+
+    synth_wt2 = tmp_path / "synth_wt2"
+    (synth_wt2 / "rel_gitdir").mkdir(parents=True)
+    (synth_wt2 / "rel_gitdir" / "shallow").write_text("deadbeef\n", encoding="utf-8")
+    (synth_wt2 / ".git").write_text("gitdir: rel_gitdir\n", encoding="utf-8")
+    assert _is_shallow_repository(synth_wt2) is True
+
+    # Exercise shallow fallback scan in `_resolve_base_and_merge_base` when `origin/main` has no merge-base with `main`
+    sp.run(["git", "checkout", "--orphan", "shallow-orphan"], cwd=shallow_dir, env=git_env, check=True, capture_output=True)
+    (shallow_dir / "ORPHAN.txt").write_text("x\n", encoding="utf-8")
+    sp.run(["git", "add", "ORPHAN.txt"], cwd=shallow_dir, env=git_env, check=True, capture_output=True)
+    sp.run(["git", "commit", "-m", "shallow orphan"], cwd=shallow_dir, env=git_env, check=True, capture_output=True)
+    sp.run(["git", "update-ref", "refs/remotes/origin/main", "HEAD"], cwd=shallow_dir, env=git_env, check=True, capture_output=True)
+    sp.run(["git", "checkout", "main"], cwd=shallow_dir, env=git_env, check=True, capture_output=True)
+    with pytest.raises(GitResolutionError, match="fetch-depth: 0"):
+        _resolve_base_and_merge_base(shallow_dir, None, "HEAD")
+
+    # 4. Genuine single-root-commit non-shallow repository + orphan branch fallback scan in _resolve_base_and_merge_base
+    single_repo = tmp_path / "single_commit_repo"
+    single_repo.mkdir()
+    sp.run(["git", "init", "-b", "main"], cwd=single_repo, env=git_env, check=True, capture_output=True)
+    (single_repo / "README.md").write_text("# Root\n", encoding="utf-8")
+    sp.run(["git", "add", "README.md"], cwd=single_repo, env=git_env, check=True, capture_output=True)
+    sp.run(["git", "commit", "-m", "initial"], cwd=single_repo, env=git_env, check=True, capture_output=True)
+    sp.run(
+        ["git", "update-ref", "refs/remotes/origin/main", "HEAD"],
+        cwd=single_repo,
+        env=git_env,
+        check=True,
+        capture_output=True,
+    )
+    assert _is_shallow_repository(single_repo) is False
+    assert _git_commit_count(single_repo, "HEAD") == 1
+    res_base, res_mb, fell_back = _resolve_base_and_merge_base(single_repo, None, "HEAD")
+    assert res_base == "origin/main"
+    assert res_mb is not None
+    assert fell_back is False
+
+    # Create an unrelated orphan branch for `origin/main` so `_resolve_base_and_merge_base` exercises fallback scan to `main`
+    sp.run(["git", "checkout", "--orphan", "unrelated-origin"], cwd=single_repo, env=git_env, check=True, capture_output=True)
+    (single_repo / "README.md").write_text("# Unrelated\n", encoding="utf-8")
+    sp.run(["git", "add", "README.md"], cwd=single_repo, env=git_env, check=True, capture_output=True)
+    sp.run(["git", "commit", "-m", "orphan"], cwd=single_repo, env=git_env, check=True, capture_output=True)
+    sp.run(
+        ["git", "update-ref", "refs/remotes/origin/main", "HEAD"],
+        cwd=single_repo,
+        env=git_env,
+        check=True,
+        capture_output=True,
+    )
+    sp.run(["git", "checkout", "-b", "feature", "main"], cwd=single_repo, env=git_env, check=True, capture_output=True)
+    (single_repo / "README.md").write_text("# Feature\n", encoding="utf-8")
+    sp.run(["git", "add", "README.md"], cwd=single_repo, env=git_env, check=True, capture_output=True)
+    sp.run(["git", "commit", "-m", "feat"], cwd=single_repo, env=git_env, check=True, capture_output=True)
+    fb_base, fb_mb, fb_fell = _resolve_base_and_merge_base(single_repo, None, "HEAD")
+    assert fb_base == "main"
+    assert fb_mb is not None
+    assert fb_fell is False
+
+    # Exercise explicit `head_ref != "HEAD"` branches in `_resolve_base_and_merge_base` + batch blob edge cases
+    from eidos.vcs.diff import _get_files_versions_batch
+
+    assert batch_read_git_blobs(single_repo, []) == {}
+    assert _get_files_versions_batch(single_repo, []) == {}
+    ub_base, ub_mb, ub_fell = _resolve_base_and_merge_base(single_repo, None, "unrelated-origin")
+    assert ub_base == "origin/main"
+    assert ub_mb is not None
+    assert ub_fell is False
+
+    sp.run(["git", "branch", "-f", "main", "HEAD"], cwd=single_repo, env=git_env, check=True, capture_output=True)
+    fb2_base, fb2_mb, fb2_fell = _resolve_base_and_merge_base(single_repo, None, "main")
+    assert fb2_base == "HEAD~1" and fb2_mb is not None and fb2_fell is False
+
+    sp.run(["git", "checkout", "unrelated-origin"], cwd=single_repo, env=git_env, check=True, capture_output=True)
+    (single_repo / "README.md").write_text("# Unrelated 2\n", encoding="utf-8")
+    sp.run(["git", "add", "README.md"], cwd=single_repo, env=git_env, check=True, capture_output=True)
+    sp.run(["git", "commit", "-m", "orphan 2"], cwd=single_repo, env=git_env, check=True, capture_output=True)
+    sp.run(["git", "update-ref", "refs/remotes/origin/main", "HEAD"], cwd=single_repo, env=git_env, check=True, capture_output=True)
+    sp.run(["git", "checkout", "feature"], cwd=single_repo, env=git_env, check=True, capture_output=True)
+    fb3_base, fb3_mb, fb3_fell = _resolve_base_and_merge_base(single_repo, None, "unrelated-origin")
+    assert fb3_base is None and fb3_mb is None and fb3_fell is True
+
+    # 5. `--base HEAD~1 --head HEAD` (`uncommitted=False`) commit-tree snapshot isolation:
+    #    (a) Dirty broken uncommitted working tree MUST NOT contaminate clean `HEAD` evaluation!
+    (upstream / "tests" / "test_svc.py").write_text(
+        "def test_svc_ping():\n"
+        "    # INV-DIRTY-WORKTREE-ORPHAN\n"  # eidos:fixture
+        "    assert True\n",
+        encoding="utf-8",
+    )
+    (upstream / "eidos" / "architecture" / "containers" / "svc.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-SVC\n"
+        "title: Service\n"
+        "status: active\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "source_path: src\n"
+        "relationships:\n"
+        "  - target: CNT-DOES-NOT-EXIST\n"
+        "    type: uses\n"
+        "invariants:\n"
+        "  - id: INV-SVC-001\n"  # eidos:fixture
+        "    rule: Broken in dirty worktree\n"
+        "    test_binding: tests/test_svc.py::test_svc_ping\n"
+        "---\n"
+        "= Service\n",
+        encoding="utf-8",
+    )
+    res_dirty_wt = detect_drift(repo_root=upstream, eidos_dir=upstream / "eidos", uncommitted=True)
+    assert res_dirty_wt.is_clean is False
+
+    res_head_isolated = detect_drift(
+        repo_root=upstream,
+        eidos_dir=upstream / "eidos",
+        base_ref="HEAD~1",
+        head_ref="HEAD",
+        uncommitted=False,
+    )
+    assert res_head_isolated.drift_detected is False
+    assert res_head_isolated.is_clean is True
+    assert res_head_isolated.uncovered_invariants == []
+    assert res_head_isolated.orphan_invariants == []
+
+    #    (b) Breakage committed in `HEAD` MUST still be caught even when locally fixed in the dirty working tree!
+    sp.run(["git", "add", "."], cwd=upstream, env=git_env, check=True, capture_output=True)
+    sp.run(["git", "commit", "-m", "commit 3 broken head"], cwd=upstream, env=git_env, check=True, capture_output=True)
+
+    # Fix working tree locally without committing
+    (upstream / "tests" / "test_svc.py").write_text(
+        "def test_svc_ping():\n"
+        "    # INV-SVC-001\n"  # eidos:fixture
+        "    assert True\n",
+        encoding="utf-8",
+    )
+    (upstream / "eidos" / "architecture" / "containers" / "svc.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-SVC\n"
+        "title: Service\n"
+        "status: active\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "source_path: src\n"
+        "invariants:\n"
+        "  - id: INV-SVC-001\n"  # eidos:fixture
+        "    rule: Service handles ping and health\n"
+        "    test_binding: tests/test_svc.py::test_svc_ping\n"
+        "---\n"
+        "= Service\n\nProvides `ping` and `health` endpoints.\n",
+        encoding="utf-8",
+    )
+    res_broken_head = detect_drift(
+        repo_root=upstream,
+        eidos_dir=upstream / "eidos",
+        base_ref="HEAD~1",
+        head_ref="HEAD",
+        uncommitted=False,
+    )
+    assert res_broken_head.is_clean is False
+    assert {i.invariant_id for i in res_broken_head.uncovered_invariants} == {"INV-SVC-001"}  # eidos:fixture
+    assert {o[0] for o in res_broken_head.orphan_invariants} == {"INV-DIRTY-WORKTREE-ORPHAN"}  # eidos:fixture
+    assert not res_broken_head.validation_report.is_clean
+    assert "eidos_head_" not in res_broken_head.summary_markdown
+    assert all("eidos_head_" not in i.spec_path for i in res_broken_head.invariants)
+    assert all("eidos_head_" not in loc for _, loc in res_broken_head.orphan_invariants)
+
+    # 6. Subproject path scoping (`repo_root != git_root`) in monorepo Git repository
+    mono = tmp_path / "monorepo"
+    sub = mono / "services" / "billing"
+    init_repository(sub, title="billing-sub")
+    (sub / "src").mkdir(parents=True, exist_ok=True)
+    (mono / "services" / "other").mkdir(parents=True, exist_ok=True)
+    sp.run(["git", "init", "-b", "main"], cwd=mono, env=git_env, check=True, capture_output=True)
+    (sub / "src" / "charge.py").write_text("def charge() -> int:\n    return 1\n", encoding="utf-8")
+    (mono / "services" / "other" / "ignore.py").write_text("X = 1\n", encoding="utf-8")
+    sp.run(["git", "add", "."], cwd=mono, env=git_env, check=True, capture_output=True)
+    sp.run(["git", "commit", "-m", "mono c1"], cwd=mono, env=git_env, check=True, capture_output=True)
+    (sub / "src" / "charge.py").write_text("def charge() -> int:\n    return 2\n", encoding="utf-8")
+    (mono / "services" / "other" / "ignore.py").write_text("X = 2\n", encoding="utf-8")
+    sp.run(["git", "add", "."], cwd=mono, env=git_env, check=True, capture_output=True)
+    sp.run(["git", "commit", "-m", "mono c2"], cwd=mono, env=git_env, check=True, capture_output=True)
+    sub_diff = get_git_diff_files(sub, base_ref="HEAD~1", head_ref="HEAD", uncommitted=False)
+    assert sub_diff == ["src/charge.py"]
+    blobs = batch_read_git_blobs(sub, [("HEAD", "src/charge.py"), ("HEAD", "src/missing.py")])
+    assert "return 2" in (blobs[("HEAD", "src/charge.py")] or "")
+    assert blobs[("HEAD", "src/missing.py")] is None
+    sub_drift = detect_drift(repo_root=sub, eidos_dir=sub / "eidos", base_ref="HEAD~1", head_ref="HEAD", uncommitted=False)
+    assert sub_drift.classification.code_files == ["src/charge.py"]
+
+
+def test_uic_invariants_planned_delta_verify_and_skipped_test_rejection(tmp_path):
+    """Verify INV-DRIFT-UIC-AND-SKIPPED-TEST-GUARD: design UIC-* invariants, applied SpecDelta verification, exact INV-* boundaries, and skipped-test rejection."""
+    import subprocess as sp
+    from types import SimpleNamespace
+
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
+    from eidos.vcs.invariants import (
+        _verify_single_invariant,
+        detect_orphan_invariants,
+        extract_invariants_and_verify,
+    )
+    from eidos.vcs.structural import _SpecDiffInspector, _structural_addition_for, _SymbolMapCache
+
+    git_env = {
+        "PATH": "/usr/bin:/bin:/usr/local/bin",
+        "GIT_AUTHOR_NAME": "Test",
+        "GIT_AUTHOR_EMAIL": "t@eidos.dev",
+        "GIT_COMMITTER_NAME": "Test",
+        "GIT_COMMITTER_EMAIL": "t@eidos.dev",
+    }
+
+    # 1. UIC-* (`design/ui-component`) invariant scanning, exact INV-* boundaries, and TS/JS skipped/suite rejection
+    repo = tmp_path / "uic_repo"
+    init_repository(repo, title="uic-test")
+    ds_spec = create_spec(repo / "eidos", "design-system", "DS-CORE", title="Core Design System")
+    ds_spec.write_text(
+        ds_spec.read_text(encoding="utf-8").replace("status: draft", "status: active", 1),
+        encoding="utf-8",
+    )
+    uic_dir = ds_spec.parent / "components"
+    cnt_dir = repo / "eidos" / "architecture" / "containers"
+    dlt_dir = repo / "eidos" / "deltas"
+    src_dir = repo / "src" / "core"
+    tests_dir = repo / "tests"
+    for d in (uic_dir, cnt_dir, dlt_dir, src_dir, tests_dir):
+        d.mkdir(parents=True, exist_ok=True)
+
+    sp.run(["git", "init", "-b", "main"], cwd=repo, env=git_env, check=True, capture_output=True)
+
+    (uic_dir / "nav-bar.adoc").write_text(
+        "---\n"
+        "type: design/ui-component\n"
+        "id: UIC-NAV-BAR\n"
+        "title: Navigation Bar\n"
+        "design_system: DS-CORE\n"
+        "status: active\n"
+        "invariants:\n"
+        "  - id: INV-UIC-NAV-FOCUS\n"  # eidos:fixture
+        "    rule: Nav bar traps keyboard focus when drawer opens\n"
+        "    test_binding: tests/nav.test.ts::traps keyboard focus\n"
+        "  - id: INV-UIC-NAV-UNCOVERED\n"  # eidos:fixture
+        "    rule: Nav bar announces active route\n"
+        "    test_binding: tests/nav.test.ts::announces route\n"
+        "  - id: INV-AUTH-001\n"  # eidos:fixture
+        "    rule: Session badge enforces auth rule\n"
+        "    test_binding: tests/nav.test.ts::checks compliant prose suffix\n"
+        "  - id: INV-AUTH-1\n"  # eidos:fixture
+        "    rule: Must not match INV-AUTH-1-EXTENDED\n"  # eidos:fixture
+        "    test_binding: tests/nav.test.ts::checks extended uppercase id\n"
+        "  - id: INV-SKIP-GUARD\n"  # eidos:fixture
+        "    rule: Must reject skipped/todo/fixme/describe bindings\n"
+        "    test_binding: tests/skip.test.ts::skipped test case\n"
+        "---\n"
+        "= Navigation Bar\n",
+        encoding="utf-8",
+    )
+    (uic_dir / "planned-modal.adoc").write_text(
+        "---\n"
+        "type: design/ui-component\n"
+        "id: UIC-PLANNED-MODAL\n"
+        "title: Planned Modal\n"
+        "design_system: DS-CORE\n"
+        "status: planned\n"
+        "invariants:\n"
+        "  - id: INV-UIC-PLANNED-TBD\n"  # eidos:fixture
+        "    rule: Pending modal rule\n"
+        "    test_binding: TBD\n"
+        "---\n"
+        "= Planned Modal\n",
+        encoding="utf-8",
+    )
+    (uic_dir / "deprecated-widget.adoc").write_text(
+        "---\n"
+        "type: design/ui-component\n"
+        "id: UIC-OLD-WIDGET\n"
+        "title: Old Widget\n"
+        "design_system: DS-CORE\n"
+        "status: deprecated\n"
+        "invariants:\n"
+        "  - id: INV-UIC-DEPRECATED-IGNORED\n"  # eidos:fixture
+        "    rule: Retired widget rule\n"
+        "    test_binding: tests/missing.test.ts::gone\n"
+        "---\n"
+        "= Old Widget\n",
+        encoding="utf-8",
+    )
+    (tests_dir / "nav.test.ts").write_text(
+        'test("traps keyboard focus", () => {\n'
+        "  // INV-UIC-NAV-FOCUS\n"  # eidos:fixture
+        "  expect(true).toBe(true);\n"
+        "});\n\n"
+        'test("checks compliant prose suffix", () => {\n'
+        "  // Enforces INV-AUTH-001-compliant session rendering\n"  # eidos:fixture
+        "  expect(true).toBe(true);\n"
+        "});\n\n"
+        'test("checks extended uppercase id", () => {\n'
+        "  // References INV-AUTH-1-EXTENDED only\n"  # eidos:fixture
+        "  expect(true).toBe(true);\n"
+        "});\n",
+        encoding="utf-8",
+    )
+    skip_ts_content = (
+        "// INV-SKIP-GUARD\n"  # eidos:fixture
+        'describe("suite wrapper only", () => {\n'
+        "  // Preceding comment on skipped test\n"
+        '  test.skip("skipped \\"escaped\\" test case", () => {\n'
+        "    // INV-SKIP-GUARD\n"  # eidos:fixture
+        "  });\n"
+        '  test.skip("skipped test case", () => {\n'
+        "    // INV-SKIP-GUARD\n"  # eidos:fixture
+        "  });\n"
+        '  it.skip("it skipped", () => {\n'
+        "    // INV-SKIP-GUARD\n"  # eidos:fixture
+        "  });\n"
+        '  test.todo("todo case");\n'
+        '  test.fixme("fixme case", () => {\n'
+        "    // INV-SKIP-GUARD\n"  # eidos:fixture
+        "  });\n"
+        '  xit("xit disabled", () => {\n'
+        "    // INV-SKIP-GUARD\n"  # eidos:fixture
+        "  });\n"
+        '  xtest("xtest disabled", () => {\n'
+        "    // INV-SKIP-GUARD\n"  # eidos:fixture
+        "  });\n"
+        '  test("unrelated active test", () => {\n'
+        "    expect(1).toBe(1);\n"
+        "  });\n"
+        "});\n"
+    )
+    (tests_dir / "skip.test.ts").write_text(skip_ts_content, encoding="utf-8")
+
+    traces = extract_invariants_and_verify(repo / "eidos", repo)
+    by_id = {t.invariant_id: t for t in traces}
+    assert "INV-UIC-DEPRECATED-IGNORED" not in by_id  # eidos:fixture
+    assert by_id["INV-UIC-PLANNED-TBD"].has_test_coverage is True  # eidos:fixture
+    assert by_id["INV-UIC-NAV-FOCUS"].has_test_coverage is True  # eidos:fixture
+    assert by_id["INV-UIC-NAV-UNCOVERED"].has_test_coverage is False  # eidos:fixture
+    assert by_id["INV-AUTH-001"].has_test_coverage is True  # eidos:fixture
+    assert by_id["INV-AUTH-1"].has_test_coverage is False  # eidos:fixture
+    assert by_id["INV-SKIP-GUARD"].has_test_coverage is False  # eidos:fixture
+
+    # Also verify uncached raw-string fallback rejects disabled TS/JS modifiers and uppercase ID extensions
+    raw_map = {
+        "tests/skip.test.ts": skip_ts_content,
+        "tests/nav.test.ts": (tests_dir / "nav.test.ts").read_text(encoding="utf-8"),
+    }
+    assert _verify_single_invariant("INV-SKIP-GUARD", "tests/skip.test.ts::skipped test case", repo, raw_map, {}) == []  # eidos:fixture
+    assert _verify_single_invariant("INV-SKIP-GUARD", "tests/skip.test.ts", repo, raw_map, {}) == []  # eidos:fixture
+    assert _verify_single_invariant("INV-SKIP-GUARD", None, repo, raw_map, {}) == []  # eidos:fixture
+    assert _verify_single_invariant(
+        "INV-AUTH-001", "tests/nav.test.ts::checks compliant prose suffix", repo, raw_map, {}  # eidos:fixture
+    ) == ["tests/nav.test.ts::checks compliant prose suffix"]
+    assert (
+        _verify_single_invariant("INV-AUTH-1", "tests/nav.test.ts::checks extended uppercase id", repo, raw_map, {})  # eidos:fixture
+        == []
+    )
+
+    # Verify INV-UIC-NAV-FOCUS is NOT flagged as orphan, while undeclared INV-AUTH-1-EXTENDED IS flagged as orphan  # eidos:fixture
+    orphans = detect_orphan_invariants(repo, {t.invariant_id for t in traces}, eidos_dir=repo / "eidos")
+    orphan_ids = {oid for oid, _ in orphans}
+    assert "INV-UIC-NAV-FOCUS" not in orphan_ids  # eidos:fixture
+    assert "INV-AUTH-001" not in orphan_ids  # eidos:fixture
+    assert "INV-AUTH-1-EXTENDED" in orphan_ids  # eidos:fixture
+
+    # 2. Planned-mode `status: applied` SpecDelta verification & `_spec_coverage_verdict` enforcement
+    (uic_dir / "nav-bar.adoc").write_text(
+        "---\n"
+        "type: design/ui-component\n"
+        "id: UIC-NAV-BAR\n"
+        "title: Navigation Bar\n"
+        "design_system: DS-CORE\n"
+        "status: active\n"
+        "invariants:\n"
+        "  - id: INV-UIC-NAV-FOCUS\n"  # eidos:fixture
+        "    rule: Nav bar traps keyboard focus when drawer opens\n"
+        "    test_binding: tests/nav.test.ts::traps keyboard focus\n"
+        "---\n"
+        "= Navigation Bar\n",
+        encoding="utf-8",
+    )
+    (uic_dir / "planned-modal.adoc").unlink()
+    (uic_dir / "deprecated-widget.adoc").unlink()
+    (tests_dir / "nav.test.ts").write_text(
+        'test("traps keyboard focus", () => {\n'
+        "  // INV-UIC-NAV-FOCUS\n"  # eidos:fixture
+        "  expect(true).toBe(true);\n"
+        "});\n",
+        encoding="utf-8",
+    )
+    (tests_dir / "skip.test.ts").unlink()
+    (cnt_dir / "core.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-CORE\n"
+        "title: Core Service\n"
+        "status: active\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "source_path: src/core\n"
+        "---\n"
+        "= Core Service\n\nProvides `boot`.\n",
+        encoding="utf-8",
+    )
+    (src_dir / "mod.py").write_text("def boot() -> bool:\n    return True\n", encoding="utf-8")
+    sp.run(["git", "add", "."], cwd=repo, env=git_env, check=True, capture_output=True)
+    sp.run(["git", "commit", "-m", "baseline uic + core"], cwd=repo, env=git_env, check=True, capture_output=True)
+
+    delta_header = (
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-900-PLAN\n"
+        "title: Planned Export Feature\n"
+        "status: {status}\n"
+        "intent:\n"
+        "  kind: feature\n"
+        "  severity: medium\n"
+        "  motivation: Add export_bundle capability\n"
+        "mutations:\n"
+        "  - operation: modify\n"
+        "    target: {target}\n"
+        "    details: Update Core Service\n"
+        "    expect:\n"
+        "      body:\n"
+        "        contains:\n"
+        "          - {needle}\n"
+        "---\n"
+        "= SpecDelta: Planned Export Feature\n"
+    )
+
+    # (a) `status: proposed` SpecDelta-only authoring (no code_files) passes cleanly in Planned Mode
+    (dlt_dir / "dlt-2026-900-plan.adoc").write_text(
+        delta_header.format(status="proposed", target="architecture/containers/core.adoc", needle="export_bundle"),
+        encoding="utf-8",
+    )
+    res_proposed_only = detect_drift(repo_root=repo, eidos_dir=repo / "eidos", uncommitted=True)
+    assert res_proposed_only.workflow_mode == "planned"
+    assert res_proposed_only.drift_detected is False
+    assert res_proposed_only.is_clean is True
+
+    # (b) `status: applied` SpecDelta with unfulfilled mutation (`export_bundle` missing from CNT-CORE) MUST fail!
+    (dlt_dir / "dlt-2026-900-plan.adoc").write_text(
+        delta_header.format(status="applied", target="CNT-CORE", needle="export_bundle"),
+        encoding="utf-8",
+    )
+    res_applied_unfulfilled = detect_drift(repo_root=repo, eidos_dir=repo / "eidos", uncommitted=True)
+    assert res_applied_unfulfilled.workflow_mode == "planned"
+    assert res_applied_unfulfilled.drift_detected is True
+    assert res_applied_unfulfilled.is_clean is False
+    assert any("Unfulfilled SpecDelta mutation" in msg for msg in res_applied_unfulfilled.validation_errors)
+
+    # (c) `status: applied` SpecDelta with fulfilled mutation ("Core Service") alongside a new public
+    #     function `export_bundle` in `src/core/mod.py` NOT anchored in `core.adoc` MUST NOT bypass `_spec_coverage_verdict`!
+    (dlt_dir / "dlt-2026-900-plan.adoc").write_text(
+        delta_header.format(status="applied", target="CNT-CORE", needle="Core Service"),
+        encoding="utf-8",
+    )
+    (src_dir / "mod.py").write_text(
+        "def boot() -> bool:\n    return True\n\ndef export_bundle() -> bytes:\n    return b'ok'\n",
+        encoding="utf-8",
+    )
+    (cnt_dir / "core.adoc").write_text(
+        (cnt_dir / "core.adoc").read_text(encoding="utf-8") + "\n// comment-only edit\n",
+        encoding="utf-8",
+    )
+    res_applied_trivial = detect_drift(repo_root=repo, eidos_dir=repo / "eidos", uncommitted=True)
+    assert res_applied_trivial.drift_detected is True
+    assert res_applied_trivial.is_clean is False
+    assert any(r["file"] == "src/core/mod.py" for r in res_applied_trivial.trivially_covered_files)
+
+    # (d) Fulfill both the SpecDelta mutation AND substantive `export_bundle` anchor in `core.adoc` -> CLEAN!
+    (cnt_dir / "core.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-CORE\n"
+        "title: Core Service\n"
+        "status: active\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "source_path: src/core\n"
+        "---\n"
+        "= Core Service\n\nProvides `boot` and `export_bundle`.\n",
+        encoding="utf-8",
+    )
+    res_applied_clean = detect_drift(repo_root=repo, eidos_dir=repo / "eidos", uncommitted=True)
+    assert res_applied_clean.workflow_mode == "planned"
+    assert res_applied_clean.drift_detected is False
+    assert res_applied_clean.is_clean is True
+
+    # (e) Commit-range Planned Mode with path-based target (`architecture/containers/core.adoc`) resolves cleanly
+    (dlt_dir / "dlt-2026-900-plan.adoc").write_text(
+        delta_header.format(status="proposed", target="architecture/containers/core.adoc", needle="export_bundle"),
+        encoding="utf-8",
+    )
+    sp.run(["git", "add", "."], cwd=repo, env=git_env, check=True, capture_output=True)
+    sp.run(["git", "commit", "-m", "planned commit range"], cwd=repo, env=git_env, check=True, capture_output=True)
+    res_commit_planned = detect_drift(
+        repo_root=repo, eidos_dir=repo / "eidos", base_ref="HEAD~1", head_ref="HEAD", uncommitted=False
+    )
+    assert res_commit_planned.workflow_mode == "planned"
+    assert res_commit_planned.drift_detected is False
+    assert res_commit_planned.is_clean is True
+
+    # (f) `--strict` body-only edit covered by pre-apply SpecDelta vs uncovered trivial edit without delta,
+    #     plus pre-existing `status: applied` delta prose edit & non-governed onboarding file no-op
+    (dlt_dir / "dlt-2026-900-plan.adoc").write_text(
+        delta_header.format(status="proposed", target="CNT-CORE", needle="export_bundle") + "\nStrict note.\n",
+        encoding="utf-8",
+    )
+    (src_dir / "mod.py").write_text(
+        "def boot() -> bool:\n    return bool(1)\n\ndef export_bundle() -> bytes:\n    return b'ok'\n",
+        encoding="utf-8",
+    )
+    res_strict_covered = detect_drift(repo_root=repo, eidos_dir=repo / "eidos", uncommitted=True, strict=True)
+    assert res_strict_covered.drift_detected is False
+
+    (dlt_dir / "dlt-2026-900-plan.adoc").write_text(
+        delta_header.format(status="applied", target="CNT-CORE", needle="export_bundle"),
+        encoding="utf-8",
+    )
+    sp.run(["git", "add", "."], cwd=repo, env=git_env, check=True, capture_output=True)
+    sp.run(["git", "commit", "-m", "apply delta"], cwd=repo, env=git_env, check=True, capture_output=True)
+
+    # Editing prose on an already-applied delta + non-governed AGENTS.md/CLAUDE.md/SKILL.md + strict body-only trivial spec edit
+    (dlt_dir / "dlt-2026-900-plan.adoc").write_text(
+        (dlt_dir / "dlt-2026-900-plan.adoc").read_text(encoding="utf-8") + "\nArchived note.\n",
+        encoding="utf-8",
+    )
+    (repo / "AGENTS.md").write_text("# Unmanaged notes\n", encoding="utf-8")
+    (repo / "CLAUDE.md").write_text("# Unmanaged claude\n", encoding="utf-8")
+    (repo / ".agents" / "skills" / "custom").mkdir(parents=True, exist_ok=True)
+    # Remove .agents/skills right after checking non-governedrepo via _has_eidos_onboarding
+    from eidos.vcs.drift import _has_eidos_onboarding, _materialize_head_snapshot
+
+    empty_probe = tmp_path / "empty_probe"
+    empty_probe.mkdir()
+    assert _has_eidos_onboarding(empty_probe) is False
+    (empty_probe / ".cursor").mkdir()
+    (empty_probe / ".cursor" / ".eidos-manifest.json").write_text("{}\n", encoding="utf-8")
+    assert _has_eidos_onboarding(empty_probe) is True
+    assert _materialize_head_snapshot(repo, tmp_path, repo / "eidos", "eidos", "HEAD") is None
+    assert _materialize_head_snapshot(repo, repo, repo / "eidos", "eidos", "INVALID_REF_DOES_NOT_EXIST") is None
+
+    import shutil
+
+    shutil.rmtree(repo / ".agents")
+    (src_dir / "mod.py").write_text(
+        "def boot() -> bool:\n    return bool(2)\n\ndef export_bundle() -> bytes:\n    return b'ok'\n",
+        encoding="utf-8",
+    )
+    (cnt_dir / "core.adoc").write_text(
+        (cnt_dir / "core.adoc").read_text(encoding="utf-8") + "\n// strict trivial comment\n",
+        encoding="utf-8",
+    )
+    res_strict_trivial = detect_drift(repo_root=repo, eidos_dir=repo / "eidos", uncommitted=True, strict=True)
+    assert res_strict_trivial.drift_detected is True
+    assert any(r["file"] == "src/core/mod.py" for r in res_strict_trivial.trivially_covered_files)
+    assert "AGENTS.md" not in res_strict_trivial.validation_report.schema_errors
+    assert "CLAUDE.md" not in res_strict_trivial.validation_report.schema_errors
+
+    # 3. Overload-disambiguated keys in `_structural_addition_for` & `_SpecChangeInspector` edge branches
+    smap = _SymbolMapCache({"src/core/mod.ts": ("export function fmt(x: number): string { return ''; }", "export function fmt(x: string): string { return x; }")})
+    smap._maps[("src/core/mod.ts", 0)] = {
+        ("function", "fmt#1"): "1",
+        ("function", "fmt#2"): "2",
+    }
+    smap._maps[("src/core/mod.ts", 1)] = {
+        ("function", "fmt#1"): "1",
+        ("function", "parse(raw:string)"): "3",
+        ("function", "parse(raw:bytes)"): "4",
+    }
+    fake_diff = SimpleNamespace(
+        added=[("function", "parse(raw:string)"), ("function", "parse(raw:bytes)")],
+        boundary_added=[("function", "parse(raw:string)"), ("function", "parse(raw:bytes)")],
+        removed=[("function", "fmt#2")],
+    )
+    add_info = _structural_addition_for("src/core/mod.ts", smap, symbol_diff=fake_diff)
+    assert add_info is not None
+    assert add_info.symbol_names == ["parse"]
+    assert add_info.boundary_symbol_names == ["parse"]
+    assert add_info.removed_symbol_names == []
+
+    spec_vers = {
+        "bad.json": ("{bad", "{bad2"),
+        "bad.yaml": (":\n  - [unclosed", ":\n  - [changed"),
+    }
+    insp = _SpecDiffInspector(repo, None, "HEAD", True, versions_fn=lambda s: spec_vers.get(s, (None, None)))
+    assert insp.is_substantive("bad.json") is True
+    assert insp.is_substantive("bad.yaml") is True
+    assert insp.head_content("architecture/containers/core.adoc") is not None
+    assert insp.has_stale_removed_symbols("architecture/containers/core.adoc", ["export_bundle"]) is True
+
+    # 4. Commit-range detect_drift rejects newly-applied SpecDelta with unfulfilled 'modify' lacking expect:
+    #    and evicts temporary eidos_head_* snapshot instances from gi._INDEX_INSTANCES
+    import subprocess
+
+    import eidos.core.index.graph_index as gi
+
+    cr_repo = tmp_path / "commit_range_delta_repo"
+    cr_repo.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=cr_repo, check=True)
+    subprocess.run(["git", "config", "user.email", "test@eidos.dev"], cwd=cr_repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Eidos Test"], cwd=cr_repo, check=True)
+    (cr_repo / "src").mkdir()
+    (cr_repo / "src" / "app.py").write_text("def run() -> int:\n    return 1\n", encoding="utf-8")
+    cr_eidos = cr_repo / "eidos"
+    (cr_eidos / "architecture" / "containers").mkdir(parents=True)
+    (cr_eidos / "deltas").mkdir(parents=True)
+    (cr_eidos / "system.adoc").write_text(
+        "---\ntype: product/system\nid: SYS-CR-001\ntitle: CR Sys\nstatus: active\narchetypes:\n  - cli\n---\n= CR Sys\n",
+        encoding="utf-8",
+    )
+    (cr_eidos / "architecture" / "containers" / "app.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-CR-APP\ntitle: CR App\nstatus: active\ncontainer_type: library\nruntime: Python 3.12\nsource_path: src\n---\n= CR App\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=cr_repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "initial"], cwd=cr_repo, check=True)
+    base_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=cr_repo, text=True).strip()
+
+    # Commit an applied SpecDelta claiming 'modify CNT-CR-APP' without actually modifying app.adoc
+    (cr_eidos / "deltas" / "dlt-2026-999-unmodified.adoc").write_text(
+        f"---\ntype: delta/mutation\nid: DLT-2026-999\ntitle: Unfulfilled Modify\nstatus: applied\nvcs:\n  branch: main\n  base_commit: {base_sha}\nintent:\n  kind: enabler\n  motivation: Test commit-range baseline check\nmutations:\n  - operation: modify\n    target: CNT-CR-APP\n    details: Should fail when CNT-CR-APP was never touched\n---\n= SpecDelta\n\n== Problem Statement\nTest.\n\n== Proposed Specification Changes\nTest.\n\n== Implementation Plan\n1. Test.\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=cr_repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "apply unfulfilled delta"], cwd=cr_repo, check=True)
+
+    res_cr = detect_drift(repo_root=cr_repo, base_ref="HEAD~1", head_ref="HEAD", uncommitted=False)
+    assert res_cr.is_clean is False
+    assert res_cr.drift_detected is True
+    dlt_errs = res_cr.validation_report.schema_errors.get("eidos/deltas/dlt-2026-999-unmodified.adoc", [])
+    assert any("digest matches pre-delta baseline" in msg for msg in dlt_errs)
+    assert not any("eidos_head_" in str(k) for k in gi._INDEX_INSTANCES)
+
+

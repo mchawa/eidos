@@ -105,11 +105,84 @@ class ProjectConfig:
     )
 
 
-def _is_inside_plugin_or_assets(path: Path) -> bool:
-    """Return True if path is inside a .agents, plugins, or assets bundle directory."""
-    parts = path.parts
+_AGENT_BUNDLE_SUBDIRS = frozenset(
+    {
+        "plugins",
+        "skills",
+        "rules",
+        "workflows",
+        "agents",
+        "hooks",
+        "commands",
+    }
+)
+_GIT_TRACKED_EXCLUDED_DIRS = frozenset(
+    {
+        ".git",
+        ".venv",
+        "venv",
+        "node_modules",
+        "__pycache__",
+        ".eidos",
+        ".cache",
+        ".ruff_cache",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".tox",
+        ".nox",
+    }
+)
+_SUBPROJECT_ROOTS_CACHE: dict[Path, tuple[tuple[tuple[str, int], ...], list[Path]]] = {}
+
+
+def clear_subproject_roots_cache() -> None:
+    """Clear the in-memory discover_nested_subproject_roots cache."""
+    _SUBPROJECT_ROOTS_CACHE.clear()
+
+
+def _infer_enclosing_repo_root_for_plugin_check(resolved_path: Path) -> Path | None:
+    """Find an enclosing Git or project root so ancestor '.agents' folders above repo_root are ignored."""
+    git_root = find_git_root(resolved_path)
+    if git_root is not None:
+        return git_root
+
+    candidates = [resolved_path, *resolved_path.parents] if resolved_path.is_dir() else list(resolved_path.parents)
+    for anc in reversed(candidates):
+        if any((anc / marker).exists() for marker in _REPO_MARKERS) or (anc / "src").is_dir():
+            return anc
+        eidos_dir = anc / "eidos"
+        if anc.name != ".agents" and _has_eidos_markers(eidos_dir):
+            return anc
+    return None
+
+
+def _is_inside_plugin_or_assets(path: Path, repo_root: Path | None = None) -> bool:
+    """Return True if path is inside a repository-relative .agents, plugins, or assets bundle directory."""
+    resolved_path = path.resolve()
+    effective_root = (
+        repo_root.resolve() if repo_root is not None else _infer_enclosing_repo_root_for_plugin_check(resolved_path)
+    )
+    if effective_root is not None:
+        try:
+            parts = resolved_path.relative_to(effective_root).parts
+        except ValueError:
+            return False
+        for idx, part in enumerate(parts):
+            if part == ".agents":
+                return True
+            if part == "plugins" and idx > 0 and parts[idx - 1] in (".agents", ".claude", ".cursor"):
+                return True
+            if (
+                part == "assets"
+                and idx + 1 < len(parts)
+                and parts[idx + 1] in ("plugin_reference", "schemas", "templates")
+            ):
+                return True
+        return False
+
+    parts = resolved_path.parts
     for idx, part in enumerate(parts):
-        if part == ".agents":
+        if part == ".agents" and idx + 1 < len(parts) and parts[idx + 1] in _AGENT_BUNDLE_SUBDIRS:
             return True
         if part == "plugins" and idx > 0 and parts[idx - 1] in (".agents", ".claude", ".cursor"):
             return True
@@ -125,8 +198,7 @@ def _has_eidos_markers(cand: Path) -> bool:
     if (cand / "system.adoc").is_file() or any((cand / sub).is_dir() for sub in _SPEC_SUBDIRS):
         return True
     return any(
-        p.is_file() and not p.name.startswith("_") and p.name.lower() != "readme.adoc"
-        for p in cand.glob("*.adoc")
+        p.is_file() and not p.name.startswith("_") and p.name.lower() != "readme.adoc" for p in cand.glob("*.adoc")
     )
 
 
@@ -143,23 +215,67 @@ def find_git_root(start_dir: Path | None = None) -> Path | None:
     return None
 
 
+def _subproject_cache_signature(root: Path, skip_dirs: set[str]) -> tuple[tuple[str, int], ...]:
+    """Build a lightweight directory mtime signature for root and its immediate candidate subdirectories."""
+    sig: list[tuple[str, int]] = []
+    try:
+        sig.append((".", root.stat().st_mtime_ns))
+        for entry in sorted(os.scandir(root), key=lambda e: e.name):
+            if entry.is_dir(follow_symlinks=False) and entry.name not in skip_dirs and not entry.name.startswith("."):
+                sig.append((entry.name, entry.stat(follow_symlinks=False).st_mtime_ns))
+    except OSError:
+        pass
+    return tuple(sig)
+
+
+def _list_gitignored_dirs(root: Path) -> set[Path]:
+    """Return resolved gitignored directories under root so os.walk prunes them without descending."""
+    if find_git_root(root) is None:
+        return set()
+    try:
+        res = subprocess.run(
+            ["git", "ls-files", "--others", "-i", "--exclude-standard", "--directory", "-z"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res.returncode == 0 and res.stdout:
+            return {(root / item.rstrip("/")).resolve() for item in res.stdout.split("\0") if item.strip()}
+    except OSError:
+        pass
+    return set()
+
+
 def discover_nested_subproject_roots(repo_root: Path) -> list[Path]:
     """Return resolved child directories under repo_root that contain their own independent eidos/ specification root."""
     root = repo_root.resolve()
     if not root.is_dir():
         return []
-    nested: list[Path] = []
     skip_dirs = STANDARD_EXCLUDED_DIRS | {"eidos", "assets", "docs", "tests", "test", "__tests__"}
+    sig = _subproject_cache_signature(root, skip_dirs)
+    cached = _SUBPROJECT_ROOTS_CACHE.get(root)
+    if cached is not None and cached[0] == sig and all((p / "eidos").is_dir() for p in cached[1]):
+        return list(cached[1])
+
+    ignored_dirs = _list_gitignored_dirs(root)
+    nested: list[Path] = []
     for dirpath, dirnames, _filenames in os.walk(root):
         cur = Path(dirpath)
         if cur != root:
             eidos_cand = cur / "eidos"
-            if _has_eidos_markers(eidos_cand) and not _is_inside_plugin_or_assets(eidos_cand):
+            if _has_eidos_markers(eidos_cand) and not _is_inside_plugin_or_assets(eidos_cand, repo_root=root):
                 nested.append(cur.resolve())
                 dirnames[:] = []
                 continue
-        dirnames[:] = [d for d in dirnames if d not in skip_dirs and not d.startswith(".")]
-    return sorted(nested)
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d not in skip_dirs and not d.startswith(".") and (cur / d).resolve() not in ignored_dirs
+        ]
+    result = sorted(nested)
+    _SUBPROJECT_ROOTS_CACHE[root] = (sig, result)
+    return list(result)
 
 
 def find_repo_root(start_dir: Path | None = None) -> Path:
@@ -399,10 +515,10 @@ def is_generated_or_vendored(repo_root: Path, rel_paths: list[str] | str | Path)
     return skipped
 
 
-def _has_excluded_dir_part(rel_path: str) -> bool:
-    """Return True if any directory component of rel_path is in STANDARD_EXCLUDED_DIRS."""
+def _has_excluded_dir_part(rel_path: str, excluded: set[str] | frozenset[str] = STANDARD_EXCLUDED_DIRS) -> bool:
+    """Return True if any directory component of rel_path is in excluded."""
     parts = rel_path.replace("\\", "/").split("/")
-    return any(part in STANDARD_EXCLUDED_DIRS for part in parts[:-1])
+    return any(part in excluded for part in parts[:-1])
 
 
 def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[str]:
@@ -412,21 +528,14 @@ def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[s
         return []
     nested_roots = discover_nested_subproject_roots(root)
     nested_prefixes: tuple[str, ...] = tuple(
-        f"{nr.relative_to(root).as_posix().strip('/')}/"
-        for nr in nested_roots
-        if nr.is_relative_to(root)
+        f"{nr.relative_to(root).as_posix().strip('/')}/" for nr in nested_roots if nr.is_relative_to(root)
     )
 
     if find_git_root(root) is not None:
         files: set[str] = set()
         try:
-            cmd = (
-                ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"]
-                if include_untracked
-                else ["git", "ls-files", "-z"]
-            )
             tracked = subprocess.run(
-                cmd,
+                ["git", "ls-files", "-z"],
                 cwd=root,
                 capture_output=True,
                 text=True,
@@ -434,13 +543,31 @@ def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[s
             )
             if tracked.returncode == 0:
                 for item in tracked.stdout.split("\0"):
-                    if not item or _has_excluded_dir_part(item):
+                    if not item or _has_excluded_dir_part(item, _GIT_TRACKED_EXCLUDED_DIRS):
                         continue
                     norm_item = item.replace("\\", "/")
                     if nested_prefixes and norm_item.startswith(nested_prefixes):
                         continue
                     if (root / item).is_file():
                         files.add(norm_item)
+
+                if include_untracked:
+                    untracked = subprocess.run(
+                        ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+                        cwd=root,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    if untracked.returncode == 0:
+                        for item in untracked.stdout.split("\0"):
+                            if not item or _has_excluded_dir_part(item, STANDARD_EXCLUDED_DIRS):
+                                continue
+                            norm_item = item.replace("\\", "/")
+                            if nested_prefixes and norm_item.startswith(nested_prefixes):
+                                continue
+                            if (root / item).is_file():
+                                files.add(norm_item)
 
                 if not files:
                     return []
@@ -602,13 +729,69 @@ def _normalize_rel_path(raw: str) -> str:
     return s.lstrip("/")
 
 
-def _glob_to_anchored_regex(glob_pat: str) -> str:
-    """Convert a POSIX path glob pattern into a full-path anchored regex where '*' does not cross '/'."""
+def _parse_first_brace_group(pat: str, start: int = 0) -> tuple[int, int, list[str]] | None:
+    """Find the first valid '{a,b}' brace group starting at or after start; returns (open_idx, close_idx, options)."""
+    n = len(pat)
+    idx = start
+    while idx < n:
+        if pat[idx] == "{":
+            depth = 1
+            j = idx + 1
+            parts: list[str] = []
+            seg_start = j
+            while j < n and depth > 0:
+                ch = pat[j]
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        parts.append(pat[seg_start:j])
+                        break
+                elif ch == "," and depth == 1:
+                    parts.append(pat[seg_start:j])
+                    seg_start = j + 1
+                j += 1
+            if depth == 0 and len(parts) >= 2:
+                return idx, j, parts
+        idx += 1
+    return None
+
+
+def has_brace_glob(pat: str) -> bool:
+    """Return True if pat contains a valid '{a,b}' brace expansion group."""
+    return _parse_first_brace_group(pat, 0) is not None
+
+
+def expand_brace_globs(pattern: str) -> list[str]:
+    """Deterministically expand '{a,b}' brace expressions (including nested/multiple groups) into concrete patterns."""
+    parsed = _parse_first_brace_group(pattern, 0)
+    if parsed is None:
+        return [pattern]
+    open_idx, close_idx, options = parsed
+    prefix = pattern[:open_idx]
+    suffix = pattern[close_idx + 1 :]
+    expanded: list[str] = []
+    seen: set[str] = set()
+    for opt in options:
+        for tail in expand_brace_globs(f"{prefix}{opt}{suffix}"):
+            if tail not in seen:
+                seen.add(tail)
+                expanded.append(tail)
+    return expanded
+
+
+def _is_glob_segment_or_pattern(pat: str) -> bool:
+    return any(ch in pat for ch in ("*", "?", "[")) or has_brace_glob(pat)
+
+
+def _glob_fragment_to_regex(glob_pat: str) -> str:
+    """Convert a POSIX path glob fragment (supporting **, *, ?, [...], and {a,b}) into an unanchored regex."""
     import re
 
     i = 0
     n = len(glob_pat)
-    out = ["^"]
+    out: list[str] = []
     while i < n:
         if glob_pat[i : i + 4] == "/**/":
             out.append("(?:/|/.+/)")
@@ -628,6 +811,16 @@ def _glob_to_anchored_regex(glob_pat: str) -> str:
         elif glob_pat[i] == "?":
             out.append("[^/]")
             i += 1
+        elif glob_pat[i] == "{":
+            brace = _parse_first_brace_group(glob_pat, i)
+            if brace is not None and brace[0] == i:
+                _, close_idx, options = brace
+                alt_regexes = [_glob_fragment_to_regex(opt) for opt in options]
+                out.append(f"(?:{'|'.join(alt_regexes)})")
+                i = close_idx + 1
+            else:
+                out.append(re.escape("{"))
+                i += 1
         elif glob_pat[i] == "[":
             j = i + 1
             if j < n and glob_pat[j] in ("!", "^"):
@@ -648,8 +841,12 @@ def _glob_to_anchored_regex(glob_pat: str) -> str:
         else:
             out.append(re.escape(glob_pat[i]))
             i += 1
-    out.append("$")
     return "".join(out)
+
+
+def _glob_to_anchored_regex(glob_pat: str) -> str:
+    """Convert a POSIX path glob pattern into a full-path anchored regex where '*' does not cross '/'."""
+    return f"^{_glob_fragment_to_regex(glob_pat)}$"
 
 
 def match_path_pattern(rel_file: str, pattern: str) -> int:
@@ -667,12 +864,14 @@ def match_path_pattern(rel_file: str, pattern: str) -> int:
     if not norm_file or not norm_pat:
         return 0
 
+    is_glob = _is_glob_segment_or_pattern(norm_pat)
+
     # 1. Exact file match
-    if not any(ch in norm_pat for ch in ("*", "?", "[")) and norm_file == norm_pat:
+    if not is_glob and norm_file == norm_pat:
         return 2000 + len(norm_pat)
 
     # 2. Directory prefix without glob wildcards
-    if not any(ch in norm_pat for ch in ("*", "?", "[")):
+    if not is_glob:
         prefix = norm_pat.rstrip("/")
         if norm_file.startswith(prefix + "/"):
             return 500 + len(prefix)
@@ -682,7 +881,7 @@ def match_path_pattern(rel_file: str, pattern: str) -> int:
     parts = [p for p in norm_pat.split("/") if p]
     leading_parts: list[str] = []
     for idx, seg in enumerate(parts):
-        if any(ch in seg for ch in ("*", "?", "[")):
+        if _is_glob_segment_or_pattern(seg):
             break
         # A single segment with no '/' has no directory prefix (it's a filename)
         if idx < len(parts) - 1:
@@ -690,10 +889,11 @@ def match_path_pattern(rel_file: str, pattern: str) -> int:
     leading_dir_prefix = "/".join(leading_parts)
     has_leading_dir = bool(leading_dir_prefix) and "/" in norm_pat
     tail_segments = parts[len(leading_parts) :]
-    tail_literals = "".join(ch for seg in tail_segments for ch in seg if ch not in "*?[]/")
+    meta_chars = "*?[]{},/" if has_brace_glob(norm_pat) else "*?[]/"
+    tail_literals = "".join(ch for seg in tail_segments for ch in seg if ch not in meta_chars)
 
     # Handle 'dir/**' recursive directory prefix
-    if norm_pat.endswith("/**") and not any(ch in norm_pat[:-3] for ch in ("*", "?", "[")):
+    if norm_pat.endswith("/**") and not _is_glob_segment_or_pattern(norm_pat[:-3]):
         base_dir = norm_pat[:-3].rstrip("/")
         if norm_file == base_dir or norm_file.startswith(base_dir + "/"):
             return (500 if has_leading_dir else 100) + len(base_dir)

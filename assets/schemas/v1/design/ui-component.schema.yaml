@@ -19,7 +19,7 @@ properties:
     pattern: "^UIC-[A-Z0-9_-]+$"
     description: "Unique UI component identifier following the UIC-<NAME> convention (e.g. UIC-CORE-BUTTON, UIC-ACME-HEADER)."
   title:
-    type: string
+    $ref: "#/$defs/non_empty_string"
     description: "Display title of the component (e.g. 'Primary Button', 'Enterprise Header')."
   design_system:
     $ref: "#/$defs/design_system_ref"

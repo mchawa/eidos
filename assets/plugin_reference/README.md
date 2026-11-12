@@ -4,7 +4,7 @@ This directory contains the official **Eidos Agent Skills** reference bundle, st
 
 ## Contents
 
-- `hooks.json` — Reference stateless `Stop` lifecycle hook (`eidos-drift-gate` invoking `eidos hook`) verifying specification validity, invariant test bindings, and spec-to-code synchronization.
+- `hooks.json` — Reference session-baseline (`SessionStart`) and turn-scoped `Stop` lifecycle hook (`eidos-drift-gate` invoking `eidos hook`) verifying specification validity, invariant test bindings, and spec-to-code synchronization.
 - `skills/` — 4 cohesive workflow-aligned Agent Skills conforming to [agentskills.io](https://agentskills.io):
   - `eidos/SKILL.md` — **Master Orchestrator, Context & Drift**: Workflow routing (Direct vs. Planned Mode), tiered context slicing (`eidos context`), and continuous drift detection (`eidos drift`).
   - `eidos-spec/SKILL.md` — **Living Specification & Invariant Authoring**: Product domains (`DOM-*`), capabilities (`CAP-*`), personas (`PER-*`), Arc42/C4 architecture (`CNT-*`, standalone `CMP-*`, `CTR-*`, embedded `decisions:`), Multi-Design Systems (`DS-*`, W3C tokens, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`), and policies/invariants (`POL-*`, `INV-*` with polyglot `file::func` test bindings).

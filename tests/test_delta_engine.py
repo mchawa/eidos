@@ -270,7 +270,7 @@ def test_delta_execute_and_verify_lifecycle(tmp_path):
     dlt_invalid.write_text(
         dlt_invalid.read_text(encoding="utf-8").replace(
             "mutations: []",
-            "unknown_top_level_key: invalid\nmutations: []",
+            "unknown_top_level_key: invalid\nmutations:\n  - operation: add\n    target: CAP-INVOICE-GEN",
         ),
         encoding="utf-8",
     )
@@ -278,6 +278,36 @@ def test_delta_execute_and_verify_lifecycle(tmp_path):
     assert ok_inv is False
     assert "failed validation" in msg_inv
     assert parse_spec_file(dlt_invalid).frontmatter.get("status") == "proposed"
+
+    # 5. Empty mutations: [] must be rejected on both verify_delta_mutations and apply_delta (INV-MUTATION-REVERSIBILITY)
+    create_delta(eidos_dir, "DLT-2026-058", title="Empty Mutations Guard")
+    ok_emp_ver, msg_emp_ver, rep_emp = verify_delta_mutations(eidos_dir, "DLT-2026-058")
+    assert ok_emp_ver is False
+    assert "declares zero mutations" in msg_emp_ver
+    assert rep_emp is not None and rep_emp.is_verified is False
+    ok_emp_app, msg_emp_app, _ = apply_delta(eidos_dir, "DLT-2026-058", verify=False)
+    assert ok_emp_app is False
+    assert "declares zero mutations" in msg_emp_app
+
+    # 6. Cross-branch sequence allocation + slug_suffix on auto IDs
+    branch_ws = tmp_path / "branch_alloc_ws"
+    init_repository(branch_ws, title="Branch Alloc")
+    subprocess.run(["git", "init", "-b", "main"], cwd=branch_ws, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "dev@example.com"], cwd=branch_ws, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Dev"], cwd=branch_ws, check=True, capture_output=True)
+    create_delta(branch_ws / "eidos", "DLT-2026-001", title="Base Delta")
+    subprocess.run(["git", "add", "."], cwd=branch_ws, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "base"], cwd=branch_ws, check=True, capture_output=True)
+    subprocess.run(["git", "checkout", "-b", "feat/other"], cwd=branch_ws, check=True, capture_output=True)
+    create_delta(branch_ws / "eidos", "DLT-2026-002", title="Other Branch Delta")
+    subprocess.run(["git", "add", "."], cwd=branch_ws, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "other branch delta"], cwd=branch_ws, check=True, capture_output=True)
+    subprocess.run(["git", "checkout", "main"], cwd=branch_ws, check=True, capture_output=True)
+
+    next_id = generate_collision_free_delta_id(
+        branch_ws / "eidos", "auto", title="Main Branch Feature", slug_suffix=True
+    )
+    assert next_id.startswith("DLT-") and "-003-MAIN-BRANCH-" in next_id
 
 
 def test_delta_apply_cli_with_verify(tmp_path):
@@ -574,7 +604,7 @@ def test_delta_verify_requires_modification_evidence(tmp_path):
     # Edge case: non-dict target guard in _resolve_frontmatter_path
     assert _resolve_frontmatter_path(None, "a.b") == (False, None)  # type: ignore[arg-type]
 
-    # Edge case: top-level null (None) succeeds when key is absent, but unresolved dot-path null fails
+    # Edge case: top-level and nested dotted null (None) succeed when key is absent, and malformed dot-path fails
     ok_top_none = _evaluate_declarative_postcondition(
         {"expect": {"frontmatter": {"absent_top_level_key": None}}},
         "CNT-CORE-SVC",
@@ -591,8 +621,19 @@ def test_delta_verify_requires_modification_evidence(tmp_path):
         {},
         diagnostics=diag_dot_none,
     )
-    assert ok_dot_none is False
-    assert any("frontmatter.absent_parent.child" in d for d in diag_dot_none)
+    assert ok_dot_none is True
+    assert diag_dot_none == []
+
+    diag_bad_dot: list[str] = []
+    ok_bad_dot = _evaluate_declarative_postcondition(
+        {"expect": {"frontmatter": {"absent_parent..child": None}}},
+        "CNT-CORE-SVC",
+        specs_lookup,
+        {},
+        diagnostics=diag_bad_dot,
+    )
+    assert ok_bad_dot is False
+    assert any("absent_parent..child" in d for d in diag_bad_dot)
 
     # Verify non-matching dot-path and missing intermediate dot-path fail with clear diagnostics
     dlt_nested_doc.frontmatter["mutations"][0]["expect"]["frontmatter"]["decisions.id"] = "DEC-DOES-NOT-EXIST"
@@ -610,6 +651,120 @@ def test_delta_verify_requires_modification_evidence(tmp_path):
     assert "frontmatter.nonexistent.nested.path expected 'val', got None" in (
         rep_nested_missing.mutations[0].failure_reason or ""
     )
+
+    # 8. Exact test_binding matching (no substring false-pass), null key deletion, expect on deprecate/remove, CRLF normalization, and shallow clones
+    cap_tb_doc = parse_spec_file(cap_path)
+    cap_tb_doc.frontmatter["technical"]["components"] = ["CMP-TARGET"]
+    cap_tb_doc.frontmatter["technical"]["invariants"] = [
+        {
+            "id": "INV-DELTA-VERIFY-MODIFICATION-EVIDENCE",
+            "rule": "Updated invariant rule.",
+            "test_binding": "tests/test_delta_engine.py::test_delta_verify_requires_modification_evidence_extra",
+        }
+    ]
+    cap_path.write_text(dump_spec_document(cap_tb_doc.frontmatter, cap_tb_doc.body), encoding="utf-8")
+
+    dlt_exact = create_delta(eidos_dir, "DLT-2026-104", title="Exact Binding And Null Deletion")
+    dlt_exact_doc = parse_spec_file(dlt_exact)
+    dlt_exact_doc.frontmatter["mutations"] = [
+        {
+            "operation": "modify",
+            "target": "INV-DELTA-VERIFY-MODIFICATION-EVIDENCE",
+            "expect": {
+                "frontmatter": {
+                    "test_binding": "tests/test_delta_engine.py::test_delta_verify_requires_modification_evidence",
+                }
+            },
+        },
+        {
+            "operation": "modify",
+            "target": "CAP-CORE-001",
+            "expect": {
+                "frontmatter": {
+                    "technical.components": None,
+                }
+            },
+        },
+        {
+            "operation": "deprecate",
+            "target": "CAP-OTHER-001",
+            "expect": {
+                "body": {
+                    "contains": "Sunset notice documented.",
+                }
+            },
+        },
+    ]
+    dlt_exact.write_text(dump_spec_document(dlt_exact_doc.frontmatter, dlt_exact_doc.body), encoding="utf-8")
+    other_cap_path.write_text(
+        _set_frontmatter_scalar(other_cap_path.read_text(encoding="utf-8"), "status", "deprecated"),
+        encoding="utf-8",
+    )
+    ok_ex_fail, _, rep_ex_fail = verify_delta_mutations(eidos_dir, "DLT-2026-104")
+    assert ok_ex_fail is False
+    assert all(not m.verified for m in rep_ex_fail.mutations)
+
+    # Fulfill exact test_binding, delete technical.components key, and add deprecation prose
+    cap_tb_doc = parse_spec_file(cap_path)
+    cap_tb_doc.frontmatter["technical"].pop("components", None)
+    cap_tb_doc.frontmatter["technical"]["invariants"][0]["test_binding"] = (
+        "tests/test_delta_engine.py::test_delta_verify_requires_modification_evidence"
+    )
+    cap_path.write_text(dump_spec_document(cap_tb_doc.frontmatter, cap_tb_doc.body), encoding="utf-8")
+    other_cap_path.write_text(
+        other_cap_path.read_text(encoding="utf-8") + "\nSunset notice documented.\n",
+        encoding="utf-8",
+    )
+    ok_ex_pass, _, _ = verify_delta_mutations(eidos_dir, "DLT-2026-104")
+    assert ok_ex_pass is True
+
+    # CRLF-only change from Git baseline must still report UNMODIFIED
+    crlf_ws = tmp_path / "crlf_ws"
+    init_repository(crlf_ws, title="CRLF Repo")
+    crlf_pol = create_spec(crlf_ws / "eidos", "policy", "POL-CRLF-001", title="CRLF Policy")
+    _commit_git_baseline(crlf_ws)
+    crlf_dlt = create_delta(crlf_ws / "eidos", "DLT-2026-105", title="CRLF Check")
+    crlf_dlt.write_text(
+        crlf_dlt.read_text(encoding="utf-8").replace(
+            "mutations: []",
+            "mutations:\n  - operation: modify\n    target: POL-CRLF-001\n",
+        ),
+        encoding="utf-8",
+    )
+    lf_bytes = crlf_pol.read_bytes()
+    crlf_pol.write_bytes(lf_bytes.replace(b"\n", b"\r\n"))
+    ok_crlf, _, rep_crlf = verify_delta_mutations(crlf_ws / "eidos", "DLT-2026-105")
+    assert ok_crlf is False
+    assert rep_crlf.mutations[0].status == "UNMODIFIED"
+
+    # Shallow single-commit clone (depth=1) with committed delta must not false-fail as UNMODIFIED
+    shallow_origin = tmp_path / "shallow_origin"
+    init_repository(shallow_origin, title="Shallow Origin")
+    sh_pol = create_spec(shallow_origin / "eidos", "policy", "POL-SHALLOW-001", title="Shallow Policy")
+    _commit_git_baseline(shallow_origin)
+    sh_pol.write_text(
+        sh_pol.read_text(encoding="utf-8").replace("Normative rule for Shallow Policy.", "Updated in second commit."),
+        encoding="utf-8",
+    )
+    sh_dlt = create_delta(shallow_origin / "eidos", "DLT-2026-106", title="Shallow Commit")
+    sh_dlt.write_text(
+        sh_dlt.read_text(encoding="utf-8").replace(
+            "mutations: []",
+            "mutations:\n  - operation: modify\n    target: POL-SHALLOW-001\n",
+        ),
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=shallow_origin, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "second commit"], cwd=shallow_origin, check=True, capture_output=True)
+    shallow_clone = tmp_path / "shallow_clone"
+    subprocess.run(
+        ["git", "clone", "--depth", "1", f"file://{shallow_origin}", str(shallow_clone)],
+        check=True,
+        capture_output=True,
+    )
+    ok_shallow, _, rep_shallow = verify_delta_mutations(shallow_clone / "eidos", "DLT-2026-106")
+    assert ok_shallow is True
+    assert rep_shallow.mutations[0].status == "MODIFIED"
 
 
 def test_delta_schema_operation_coverage_and_git_baseline_fallback(tmp_path):
@@ -1207,7 +1362,7 @@ def test_dlt_2026_083_baseline_retention_across_schema_rebuild(tmp_path):
         conn.commit()
         ensure_cache_schema(conn)
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
-        assert ver == SCHEMA_VERSION == "2.18.0"
+        assert ver == SCHEMA_VERSION
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';").fetchall()}
         assert "retired_legacy_table" not in tables
         assert set(_MANAGED_TABLES) <= tables
@@ -1540,8 +1695,10 @@ def test_delta_and_exploration_archive_lifecycle(tmp_path: Path):
         body = (
             f"= Exploration: Spike {i}\n\n"
             f"== Core Hypothesis\nWe believe spike {i} improves latency.\n\n"
+            f"Second paragraph of hypothesis for spike {i}.\n\n"
             f"== Experiment Design & Methodology\nVerbose experiment tables and logs to strip.\n\n"
-            f"== Findings & Learnings\n* Observed 3x speedup in spike {i}.\n\n"
+            f"== Findings & Learnings\n* Observed 3x speedup in spike {i}.\n* Verified memory bounds.\n\n"
+            f"=== Benchmark Breakdown\nDetailed sub-section retained in archive for spike {i}.\n\n"
             f"== Decision & Next Steps\nGraduated to {dlt_ids[i]}.\n"
         )
         e_file.write_text(dump_spec_document(doc.frontmatter, body), encoding="utf-8")
@@ -1597,10 +1754,14 @@ def test_delta_and_exploration_archive_lifecycle(tmp_path: Path):
     assert "Verbose design scaffolding" not in parsed_arch_dlt.body
     assert "xylophonearchivedalpha" in parsed_arch_dlt.frontmatter["intent"]["motivation"]
 
-    # Verify slimmed Exploration body retains Core Hypothesis and Findings & Learnings
+    # Verify slimmed Exploration body retains full multi-line Core Hypothesis, bullet lists, and === subheadings
     parsed_arch_exp = parse_spec_file(arch_exp_1)
     assert "== Core Hypothesis" in parsed_arch_exp.body
+    assert "Second paragraph of hypothesis for spike 1." in parsed_arch_exp.body
     assert "== Findings & Learnings" in parsed_arch_exp.body
+    assert "* Verified memory bounds." in parsed_arch_exp.body
+    assert "=== Benchmark Breakdown" in parsed_arch_exp.body
+    assert "Detailed sub-section retained in archive for spike 1." in parsed_arch_exp.body
     assert "Verbose experiment tables" not in parsed_arch_exp.body
 
     # 3. SpecValidator validates all specs (including archived ones and resulting_deltas cross-references)
@@ -1661,3 +1822,329 @@ def test_delta_and_exploration_archive_lifecycle(tmp_path: Path):
     assert "## [0.1.0]" in changelog_after
     assert dlt_ids[1] in changelog_after
     assert dlt_ids[2] in changelog_after
+
+
+def test_delta_show_active_and_archived_cli(tmp_path):
+    """Verify INV-DELTA-CLI-INSPECTION: 'eidos delta show' inspects active and archived SpecDeltas in Rich and --json modes while preserving the disjoint spec/delta boundary."""
+    init_repository(tmp_path, title="Delta Show Workspace")
+    eidos_dir = tmp_path / "eidos"
+    cnt_path = create_spec(eidos_dir, "container", "CNT-SHOW", title="Show Container")
+
+    active_dlt = create_delta(eidos_dir, "DLT-2026-001", title="Active Show Delta")
+    active_doc = parse_spec_file(active_dlt)
+    active_id = str(active_doc.doc_id)
+    active_doc.frontmatter["mutations"] = [
+        {"operation": "modify", "target": "CNT-SHOW", "details": "Inspect active delta via CLI."}
+    ]
+    active_body = "= Active Show Delta\n\n== Problem Statement\n[source,yaml]\n----\nstatus: proposed\n----\n"
+    active_dlt.write_text(dump_spec_document(active_doc.frontmatter, active_body), encoding="utf-8")
+
+    arch_dir = eidos_dir / "deltas" / "archive"
+    arch_dir.mkdir(parents=True, exist_ok=True)
+    arch_dlt = arch_dir / "dlt-2026-002-archived-show.adoc"
+    arch_dlt.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-002-ARCHIVED-SHOW\n"
+        "title: Archived Show Delta\n"
+        "status: applied\n"
+        "intent:\n"
+        "  kind: enabler\n"
+        "  motivation: Historical archived SpecDelta.\n"
+        "mutations:\n"
+        "  - operation: add\n"
+        "    target: CNT-SHOW\n"
+        "---\n"
+        "= Archived Show Delta\n\nRetained summary.\n",
+        encoding="utf-8",
+    )
+
+    # 1. Active SpecDelta via prefix in --json and Rich modes
+    res_active_json = runner.invoke(app, ["delta", "show", "DLT-2026-001", "--path", str(eidos_dir), "--json"])
+    assert res_active_json.exit_code == 0, res_active_json.output
+    active_payload = orjson.loads(res_active_json.output)
+    assert active_payload["id"] == active_id
+    assert active_payload["status"] == "proposed"
+    assert active_payload["is_archived"] is False
+    assert active_payload["mutations"][0]["target"] == "CNT-SHOW"
+    assert "[source,yaml]" in active_payload["body"]
+
+    res_active_rich = runner.invoke(app, ["delta", "show", active_id, "--path", str(eidos_dir)])
+    assert res_active_rich.exit_code == 0, res_active_rich.output
+    assert active_id in res_active_rich.output
+    assert "CNT-SHOW" in res_active_rich.output
+    assert "[source,yaml]" in res_active_rich.output
+
+    # 2. Archived SpecDelta via prefix and explicit path in --json and Rich modes
+    res_arch_json = runner.invoke(app, ["delta", "show", "DLT-2026-002", "--path", str(eidos_dir), "--json"])
+    assert res_arch_json.exit_code == 0, res_arch_json.output
+    arch_payload = orjson.loads(res_arch_json.output)
+    assert arch_payload["id"] == "DLT-2026-002-ARCHIVED-SHOW"
+    assert arch_payload["status"] == "applied"
+    assert arch_payload["is_archived"] is True
+    assert "Retained summary." in arch_payload["body"]
+
+    res_arch_rich = runner.invoke(app, ["delta", "show", str(arch_dlt), "--path", str(eidos_dir)])
+    assert res_arch_rich.exit_code == 0, res_arch_rich.output
+    assert "yes" in res_arch_rich.output
+
+    # 3. Disjoint boundary & error cases: living spec, missing delta, ambiguous prefix, and spec show DLT-* redirect
+    res_living = runner.invoke(app, ["delta", "show", "CNT-SHOW", "--path", str(eidos_dir), "--json"])
+    assert res_living.exit_code == 1
+    assert "eidos spec show CNT-SHOW" in orjson.loads(res_living.output)["error"]
+    res_living_rich = runner.invoke(app, ["delta", "show", str(cnt_path), "--path", str(eidos_dir)])
+    assert res_living_rich.exit_code == 1
+    assert "eidos spec show CNT-SHOW" in res_living_rich.output
+
+    res_missing = runner.invoke(app, ["delta", "show", "DLT-2026-999", "--path", str(eidos_dir), "--json"])
+    assert res_missing.exit_code == 1
+    assert "not found" in orjson.loads(res_missing.output)["error"]
+    res_missing_rich = runner.invoke(app, ["delta", "show", "DLT-2026-999", "--path", str(eidos_dir)])
+    assert res_missing_rich.exit_code == 1
+
+    create_delta(eidos_dir, "DLT-2026-010-ONE", title="Collision One")
+    create_delta(eidos_dir, "DLT-2026-010-TWO", title="Collision Two")
+    res_ambig = runner.invoke(app, ["delta", "show", "DLT-2026-010", "--path", str(eidos_dir), "--json"])
+    assert res_ambig.exit_code == 1
+    assert "Ambiguous" in orjson.loads(res_ambig.output)["error"]
+    res_ambig_rich = runner.invoke(app, ["delta", "show", "DLT-2026-010", "--path", str(eidos_dir)])
+    assert res_ambig_rich.exit_code == 1
+    res_status_ambig = runner.invoke(app, ["delta", "status", "DLT-2026-010", "--path", str(eidos_dir), "--json"])
+    assert res_status_ambig.exit_code == 1
+
+    res_spec_redirect = runner.invoke(app, ["spec", "show", "DLT-2026-002", "--path", str(eidos_dir)])
+    assert res_spec_redirect.exit_code == 1
+    assert "eidos delta show DLT-2026-002-ARCHIVED-SHOW" in res_spec_redirect.output
+    res_spec_ambig = runner.invoke(app, ["spec", "show", "DLT-2026-010", "--path", str(eidos_dir)])
+    assert res_spec_ambig.exit_code == 1
+    assert "eidos delta show" in res_spec_ambig.output
+
+
+def test_delta_engine_and_cli_lifecycle_branches(tmp_path):
+    """Exercise remaining lifecycle branches in delta_engine.py and delta_commands.py."""
+    import orjson
+    import pytest
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.core.lifecycle.delta_engine import (
+        archive_deltas,
+        archive_explorations,
+        create_delta,
+        delete_delta,
+        set_delta_status,
+        verify_delta_mutations,
+    )
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
+    from eidos.core.spec.parser import parse_spec_file
+
+    ws = tmp_path / "lifecycle_ws"
+    init_repository(ws, title="Lifecycle WS")
+    eidos_dir = ws / "eidos"
+
+    # Negative keep_recent validation & missing explorations dir
+    with pytest.raises(ValueError):
+        archive_explorations(eidos_dir, keep_recent=-1)
+    with pytest.raises(ValueError):
+        archive_deltas(eidos_dir, keep_recent=-1)
+    empty_exp_res = archive_explorations(tmp_path / "bare_eidos", keep_recent=0)
+    assert empty_exp_res["archived_count"] == 0
+
+    # Inline *Hypothesis:* / *Findings:* fallback in archive_explorations
+    exp_f = create_spec(eidos_dir, "exploration", "EXP-2026-010", "Inline Labels Spike")
+    exp_f.write_text(
+        "---\ntype: product/exploration\nid: EXP-2026-010\ntitle: Inline Labels Spike\nstatus: discarded\n"
+        "decision:\n  outcome: discarded\n---\n= Spike\n\n"
+        "*Hypothesis:* Inline hypothesis paragraph.\n\n*Findings:* Inline findings paragraph.\n",
+        encoding="utf-8",
+    )
+    exp_arch_res = archive_explorations(eidos_dir, keep_recent=0)
+    assert exp_arch_res["archived_count"] == 1
+    archived_exp_body = (eidos_dir / "explorations" / "archive" / exp_f.name).read_text(encoding="utf-8")
+    assert "Inline hypothesis paragraph." in archived_exp_body
+    assert "Inline findings paragraph." in archived_exp_body
+
+    # Create domain, capability, policy, architecture specs for mutation matrix
+    create_spec(eidos_dir, "domain", "DOM-CORE-LC", "Core")
+    cap_f = create_spec(eidos_dir, "capability", "CAP-LC-001", "Lifecycle Cap")
+    pol_f = create_spec(eidos_dir, "policy", "POL-LC-001", "Lifecycle Pol")
+    pol_f.write_text(
+        "---\ntype: product/policy\nid: POL-LC-001\ntitle: Lifecycle Pol\nstatus: draft\ncategory: quality\n"
+        "invariants:\n  - id: INV-" + "LC-KEEP\n    rule: Keep rule.\n    test_binding: TBD\n---\n= Pol\n",
+        encoding="utf-8",
+    )
+
+    # delete_delta & set_delta_status error/transition branches
+    ok_miss, _, _ = delete_delta(eidos_dir, "DLT-2026-999")
+    assert not ok_miss
+    ok_not_dlt, msg_not_dlt, _ = delete_delta(eidos_dir, "POL-LC-001")
+    assert not ok_not_dlt and "living specification" in msg_not_dlt
+    ok_bad_st, _, _, _ = set_delta_status(eidos_dir, "DLT-2026-999", "bogus_state")
+    assert not ok_bad_st
+    ok_miss_st, _, _, _ = set_delta_status(eidos_dir, "DLT-2026-999", "in_review")
+    assert not ok_miss_st
+    ok_pol_st, _, _, _ = set_delta_status(eidos_dir, str(pol_f), "in_review")
+    assert not ok_pol_st
+
+    # Verify matrix of invariant & spec operations in verify_delta_mutations
+    dlt_matrix = eidos_dir / "deltas" / "dlt-2026-020-matrix.adoc"
+    dlt_matrix.parent.mkdir(parents=True, exist_ok=True)
+    dlt_matrix.write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-020\ntitle: Matrix\nstatus: proposed\n"
+        "intent:\n  kind: enabler\n  motivation: Exercise mutation matrix.\n"
+        "mutations:\n"
+        "  - operation: deprecate\n    target: INV-" + "LC-KEEP\n"
+        "  - operation: remove\n    target: INV-" + "LC-KEEP\n"
+        "  - operation: add\n    target: INV-" + "LC-MISSING\n"
+        "  - operation: modify\n    target: INV-" + "LC-MISSING\n"
+        "  - operation: deprecate\n    target: CAP-LC-001\n"
+        "  - operation: modify\n    target: SYS-SYSTEM\n"
+        "---\n= Matrix\n",
+        encoding="utf-8",
+    )
+    ver_ok, _, ver_rep = verify_delta_mutations(eidos_dir, "DLT-2026-020")
+    assert not ver_ok and ver_rep is not None
+    statuses = {f"{m.action}:{m.target}": m.status for m in ver_rep.mutations}
+    assert statuses["deprecate:INV-" + "LC-KEEP"] == "UNSUPPORTED_ACTION"
+    assert statuses["remove:INV-" + "LC-KEEP"] == "STILL_PRESENT"
+    assert statuses["add:INV-" + "LC-MISSING"] == "MISSING"
+    assert statuses["modify:INV-" + "LC-MISSING"] == "MISSING"
+    assert statuses["deprecate:CAP-LC-001"] == "ACTIVE_NOT_DEPRECATED"
+
+    # Unverified applied status transition rejected
+    ok_app_blk, _, _, _ = set_delta_status(eidos_dir, "DLT-2026-020", "applied")
+    assert not ok_app_blk
+
+    # Valid delta lifecycle via CLI (`delta list`, `delta status`, `delta verify`, `delta audit`, `delta archive`, `delta delete`)
+    runner = CliRunner()
+    dlt_ok = create_delta(eidos_dir, "DLT-2026-021", title="CLI Flow Delta")
+    cap_f.write_text(cap_f.read_text(encoding="utf-8").replace("status: draft", "status: deprecated"), encoding="utf-8")
+    dlt_ok.write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-021\ntitle: CLI Flow Delta\nstatus: proposed\n"
+        "graduated_from: EXP-2026-010\n"
+        "intent:\n  kind: enabler\n  motivation: Deprecate CAP-LC-001.\n"
+        "decisions:\n  - id: DEC-001\n    title: Deprecate\n    decision: Mark deprecated.\n    rationale: Superseded.\n"
+        "tombstone:\n  allowed_reasons:\n    - path: eidos/capabilities/cap-lc-001.adoc\n      reason: Retained deprecated spec.\n"
+        "mutations:\n"
+        "  - operation: deprecate\n    target: CAP-LC-001\n"
+        "  - operation: remove\n    target: INV-" + "LC-GONE\n"
+        "  - operation: add\n    target: INV-" + "LC-KEEP\n"
+        "  - operation: modify\n    target: INV-" + "LC-KEEP\n"
+        "    expect:\n      frontmatter:\n        rule: Keep rule.\n---\n= CLI Flow\n",
+        encoding="utf-8",
+    )
+
+    # Simulated Git worktree `.git` file + commondir + packed-refs in generate_collision_free_delta_id
+    from eidos.core.lifecycle.delta_engine import generate_collision_free_delta_id
+
+    wt_repo = tmp_path / "wt_repo"
+    wt_git_common = tmp_path / "wt_common_git"
+    wt_git_leaf = wt_git_common / "worktrees" / "wt1"
+    (wt_repo / "eidos" / "deltas").mkdir(parents=True)
+    wt_git_leaf.mkdir(parents=True)
+    (wt_repo / ".git").write_text(f"gitdir: {wt_git_leaf}\n", encoding="utf-8")
+    (wt_git_leaf / "commondir").write_text("../..\n", encoding="utf-8")
+    (wt_git_leaf / "HEAD").write_text("ref: refs/heads/feat\n", encoding="utf-8")
+    (wt_git_common / "refs" / "heads").mkdir(parents=True)
+    (wt_git_common / "refs" / "heads" / "main").write_text("0" * 40 + "\n", encoding="utf-8")
+    (wt_git_common / "packed-refs").write_text(
+        "# pack-refs\n" + "1" * 40 + " refs/remotes/origin/main\n", encoding="utf-8"
+    )
+    gen_wt_id = generate_collision_free_delta_id(wt_repo / "eidos", raw_id="auto-slug", title="Worktree Check Branch")
+    assert gen_wt_id.startswith("DLT-")
+
+    assert runner.invoke(app, ["delta", "list", "--path", str(eidos_dir)]).exit_code == 0
+    res_dl_json = runner.invoke(app, ["delta", "list", "--path", str(eidos_dir), "--json"])
+    assert res_dl_json.exit_code == 0 and orjson.loads(res_dl_json.stdout)["count"] >= 2
+
+    # Status dashboard + single delta status + status transition (Rich & --json)
+    assert runner.invoke(app, ["delta", "status", "--path", str(eidos_dir)]).exit_code == 0
+    assert runner.invoke(app, ["delta", "status", "--path", str(eidos_dir), "--json"]).exit_code == 0
+    assert runner.invoke(app, ["delta", "status", "DLT-2026-021", "--path", str(eidos_dir)]).exit_code == 0
+    assert runner.invoke(app, ["delta", "status", "DLT-2026-021", "--path", str(eidos_dir), "--json"]).exit_code == 0
+    assert runner.invoke(app, ["delta", "status", "DLT-2026-021", "in_review", "--path", str(eidos_dir)]).exit_code == 0
+    assert (
+        runner.invoke(
+            app, ["delta", "status", "DLT-2026-021", "approved", "--path", str(eidos_dir), "--json"]
+        ).exit_code
+        == 0
+    )
+    assert runner.invoke(app, ["delta", "status", "DLT-2026-999", "--path", str(eidos_dir), "--json"]).exit_code == 1
+
+    # Verify & apply via CLI (Rich & --json)
+    assert runner.invoke(app, ["delta", "verify", "DLT-2026-020", "--path", str(eidos_dir)]).exit_code == 1
+    assert runner.invoke(app, ["delta", "verify", "DLT-2026-020", "--path", str(eidos_dir), "--json"]).exit_code == 1
+    assert runner.invoke(app, ["delta", "verify", "DLT-2026-021", "--path", str(eidos_dir)]).exit_code == 0
+    assert runner.invoke(app, ["delta", "verify", "DLT-2026-021", "--path", str(eidos_dir), "--json"]).exit_code == 0
+    assert runner.invoke(app, ["delta", "apply", "DLT-2026-021", "--path", str(eidos_dir), "--json"]).exit_code == 0
+
+    # Audit NO_DELETIONS + ERROR + deprecation audit via CLI
+    dlt_add_only = eidos_dir / "deltas" / "dlt-2026-022-add.adoc"
+    dlt_add_only.write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-022\ntitle: Add Only\nstatus: proposed\n"
+        "intent:\n  kind: feature\n  motivation: Add DOM.\nmutations:\n  - operation: add\n    target: DOM-CORE-LC\n---\n= Add\n",
+        encoding="utf-8",
+    )
+    assert runner.invoke(app, ["delta", "audit", "DLT-2026-022", "--path", str(eidos_dir)]).exit_code == 0
+    assert runner.invoke(app, ["delta", "audit", "DLT-2026-022", "--path", str(eidos_dir), "--json"]).exit_code == 0
+    assert runner.invoke(app, ["delta", "audit", "DLT-2026-999", "--path", str(eidos_dir)]).exit_code == 1
+    assert runner.invoke(app, ["delta", "audit", "DLT-2026-021", "--path", str(eidos_dir)]).exit_code == 0
+
+    # Archive dry-run & live run via CLI (preserving graduated_from, tombstone, decisions)
+    assert (
+        runner.invoke(app, ["delta", "archive", "--keep-recent", "0", "--dry-run", "--path", str(eidos_dir)]).exit_code
+        == 0
+    )
+    assert runner.invoke(app, ["delta", "archive", "--keep-recent", "0", "--path", str(eidos_dir)]).exit_code == 0
+    arch_dlt = parse_spec_file(eidos_dir / "deltas" / "archive" / dlt_ok.name)
+    assert arch_dlt.frontmatter.get("graduated_from") == "EXP-2026-010"
+    assert arch_dlt.frontmatter.get("tombstone") and arch_dlt.frontmatter.get("decisions")
+    assert runner.invoke(app, ["delta", "show", "DLT-2026-021", "--path", str(eidos_dir)]).exit_code == 0
+    assert runner.invoke(app, ["delta", "show", "DLT-2026-021", "--json", "--path", str(eidos_dir)]).exit_code == 0
+    assert runner.invoke(app, ["delta", "show", "DLT-2026-999", "--json", "--path", str(eidos_dir)]).exit_code == 1
+    assert runner.invoke(app, ["delta", "verify", "DLT-2026-999", "--path", str(eidos_dir)]).exit_code == 1
+    assert runner.invoke(app, ["delta", "verify", "DLT-2026-999", "--json", "--path", str(eidos_dir)]).exit_code == 1
+    assert runner.invoke(app, ["delta", "status", "DLT-2026-999", "--path", str(eidos_dir)]).exit_code == 1
+    assert runner.invoke(app, ["delta", "delete", "DLT-2026-022", "--path", str(eidos_dir)]).exit_code == 0
+
+    # Archived collision avoidance, ambiguous lookup in delete/status, reference guard on delete, and Git fallback revisions
+    dup_arch_file = create_delta(eidos_dir, "DLT-2026-021", title="Duplicate Archived")
+    assert dup_arch_file.name != dlt_ok.name
+    dlt_amb_a = eidos_dir / "deltas" / "dlt-2026-080-alpha.adoc"
+    dlt_amb_b = eidos_dir / "deltas" / "dlt-2026-080-beta.adoc"
+    dlt_amb_a.write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-080-ALPHA\ntitle: Alpha\nstatus: proposed\n"
+        "intent:\n  kind: bug\n  motivation: Amb A.\nmutations:\n  - operation: modify\n    target: POL-LC-001\n---\n= A\n",
+        encoding="utf-8",
+    )
+    dlt_amb_b.write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-080-BETA\ntitle: Beta\nstatus: proposed\n"
+        "intent:\n  kind: bug\n  motivation: Amb B referencing DLT-2026-080-ALPHA.\nmutations:\n  - operation: modify\n    target: POL-LC-001\n---\n"
+        "= B\nSee DLT-2026-080-ALPHA.\n",
+        encoding="utf-8",
+    )
+    assert not delete_delta(eidos_dir, "DLT-2026-080")[0]
+    assert not set_delta_status(eidos_dir, "DLT-2026-080", "in_review")[0]
+    assert not delete_delta(eidos_dir, "DLT-2026-080-ALPHA", force=False)[0]
+
+    import subprocess
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "add", "eidos/policies"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "c1"], cwd=ws, check=True, capture_output=True)
+    pol_f.write_text(pol_f.read_text(encoding="utf-8") + "\nUpdated body.\n", encoding="utf-8")
+    dlt_git_fb = eidos_dir / "deltas" / "dlt-2026-081-gitfb.adoc"
+    dlt_git_fb.write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-081\ntitle: Git FB\nstatus: proposed\n"
+        "vcs:\n  base_commit: deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n"
+        "intent:\n  kind: bug\n  motivation: Fallback rev check.\n"
+        "mutations:\n  - operation: modify\n    target: POL-LC-001\n---\n= Git FB\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", str(dlt_git_fb)], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "c2"], cwd=ws, check=True, capture_output=True)
+    fb_ok, _, _ = verify_delta_mutations(eidos_dir, "DLT-2026-081")
+    assert fb_ok

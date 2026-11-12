@@ -13,12 +13,12 @@ source_path: src/eidos/core/lifecycle/audit.py
 Audits the reverse-dependency blast radius and residual token leaks for entities removed or deprecated by SpecDeltas (`operation: remove | deprecate`), classifying findings into active spec leaks, active code leaks, and historical archive references using the indexed `file_tokens_fts` table.
 
 == Key Responsibilities & Collaborators
-* **Index-Driven Tombstone & Token Scanning (`DEC-AUDIT-INDEX-SCOPED-DISCOVERY`)**: Queries `file_tokens_fts` and `indexed_files` in `CMP-GRAPH-STORAGE` (`index.db`) to locate governed specification, source, and test files referencing removed/deprecated targets or `tombstones.forbidden_patterns` in sub-millisecond time.
-* **Leak Classification & Graph Integrity**: Distinguishes blocking `active_spec_leak` and `active_code_leak` findings from acknowledged historical references (`applied`/`rejected` SpecDeltas and `adopted`/`discarded` Explorations) and verifies zero dangling graph edges.
+* **Index-Driven Tombstone & Token Scanning (`DEC-AUDIT-INDEX-SCOPED-DISCOVERY`)**: Queries `file_tokens_fts` and `indexed_files` in `CMP-GRAPH-STORAGE` (`index.db`) to locate governed specification, source, and test files referencing removed/deprecated targets or `tombstone.search_tokens` in sub-millisecond time.
+* **Leak Classification, Tombstone `allowed_reasons` & Graph Integrity**: Evaluates `tombstone.allowed_reasons` (`path` prefix/exact matches and optional `pattern` substring/regex filters) alongside acknowledged historical references (`applied`/`rejected` SpecDeltas and `adopted`/`discarded` Explorations) to distinguish blocking `active_spec_leak` and `active_code_leak` findings, and verifies zero dangling graph edges.
 
 == Public Surface
-* `AuditEngine(repo_root: Path, eidos_dir: Path | None = None)`
-* `AuditEngine.audit_delta(delta_id_or_path: str, strict: bool = False) -> DeltaAuditResult`
+* `AuditEngine(repo_root: Path | None = None, eidos_dir: Path | None = None)`
+* `AuditEngine.audit_delta(delta_id_or_path: str) -> DeltaAuditResult`
 * `DeltaAuditResult`, `DeltaAuditResult.to_dict() -> dict[str, Any]`, `DeltaAuditResult.to_json() -> str`
 
 == Design Constraints & Operational Notes

@@ -11,10 +11,157 @@ from eidos.core.spec.validator import SpecValidator
 from eidos.core.workspace.project import load_project
 
 
+def _to_repo_rel_posix(raw_path: str | Path, repo_root_resolved: Path) -> str:
+    """Normalize a path to a repository-relative POSIX string when inside repo_root."""
+    p = Path(raw_path)
+    if p.is_absolute():
+        try:
+            resolved = p.resolve()
+            if resolved.is_relative_to(repo_root_resolved):
+                return resolved.relative_to(repo_root_resolved).as_posix()
+        except OSError:
+            pass
+        if p.is_relative_to(repo_root_resolved):
+            return p.relative_to(repo_root_resolved).as_posix()
+        return p.as_posix()
+    posix_str = p.as_posix()
+    while posix_str.startswith("./"):
+        posix_str = posix_str[2:]
+    return posix_str
+
+
+def _extract_exploration_fields(
+    fm: dict[str, Any],
+    body: str,
+    decision_dict: dict[str, Any],
+    outcome: str,
+    resulting_deltas: list[str],
+    findings: str,
+) -> tuple[dict[str, Any] | list[str], str, str]:
+    """Extract structured exit_criteria, refined findings, and recommendation from an exploration spec."""
+    body_text = body or ""
+
+    # 1. Exit criteria: frontmatter takes precedence when populated, else parse body sections/bullets
+    exit_criteria: dict[str, Any] | list[str] = []
+    raw_ec = fm.get("exit_criteria")
+    if isinstance(raw_ec, dict) and raw_ec:
+        exit_criteria = {str(k): v for k, v in raw_ec.items() if v is not None and str(v).strip()}
+    elif isinstance(raw_ec, list) and raw_ec:
+        exit_criteria = [str(item).strip() for item in raw_ec if str(item).strip()]
+    elif isinstance(raw_ec, str) and raw_ec.strip():
+        exit_criteria = [raw_ec.strip()]
+
+    if not exit_criteria:
+        criteria_items: list[str] = []
+        # Inline bullet form: `* *Exit Criteria*: ...` possibly followed by nested `** ...` bullets
+        m_inline_ec = re.search(
+            r"^[ \t]*\*?[ \t]*\*Exit Criteria:?\*:?[ \t]*(.*)((?:\n[ \t]*\*{2,}[ \t]+.+|\n[ \t]+[-*][ \t]+.+)*)",
+            body_text,
+            re.MULTILINE | re.IGNORECASE,
+        )
+        if m_inline_ec:
+            inline_head = " ".join(m_inline_ec.group(1).split()).strip()
+            nested_block = m_inline_ec.group(2) or ""
+            for line in nested_block.splitlines():
+                m_sub = re.match(r"^[ \t]*(?:\*+|[-.])[ \t]+(.+)$", line)
+                if m_sub:
+                    cleaned = " ".join(m_sub.group(1).split()).strip()
+                    if cleaned:
+                        criteria_items.append(cleaned)
+            if inline_head and not criteria_items:
+                criteria_items.append(inline_head)
+
+        if not criteria_items:
+            # Section form: `== ... Exit Criteria ...`
+            m_sec_ec = re.search(
+                r"^==+[ \t]+[^\n]*Exit Criteria[^\n]*\n+(.*?)(?=\n==+[ \t]+|\Z)",
+                body_text,
+                re.MULTILINE | re.DOTALL | re.IGNORECASE,
+            )
+            if m_sec_ec:
+                sec_body = m_sec_ec.group(1)
+                for line in sec_body.splitlines():
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith(("//", "----", "[")):
+                        continue
+                    if re.match(r"^\*?[ \t]*\*Hypothesis:?\*:?", stripped, re.IGNORECASE):
+                        continue
+                    m_bul = re.match(r"^(?:\*+|[-.]|\d+\.)[ \t]+(.+)$", stripped)
+                    if m_bul:
+                        val = re.sub(r"^\*Exit Criteria:?\*:?[ \t]*", "", m_bul.group(1), flags=re.IGNORECASE).strip()
+                        if val and not re.match(r"^\*Hypothesis:?\*:?", val, re.IGNORECASE):
+                            criteria_items.append(" ".join(val.split()))
+                if not criteria_items:
+                    for line in sec_body.splitlines():
+                        stripped = line.strip()
+                        if (
+                            stripped
+                            and not stripped.startswith(("//", "----", "[", "|"))
+                            and not re.match(r"^\*?[ \t]*\*Hypothesis:?\*:?", stripped, re.IGNORECASE)
+                        ):
+                            criteria_items.append(" ".join(stripped.split()))
+        exit_criteria = criteria_items
+
+    # 2. Outcome & Learnings section enrichment (populates findings and recommendation)
+    m_outcome_sec = re.search(
+        r"^==+[ \t]+[^\n]*(?:Outcome[ \t]*(?:&|and)[ \t]*Learnings|Outcome|Learnings|Recommendation)[^\n]*\n+(.*?)(?=\n==+[ \t]+|\Z)",
+        body_text,
+        re.MULTILINE | re.DOTALL | re.IGNORECASE,
+    )
+    outcome_prose_lines: list[str] = []
+    explicit_rec = str(decision_dict.get("recommendation") or fm.get("recommendation") or "").strip()
+
+    if not explicit_rec:
+        m_rec_inline = re.search(
+            r"^[ \t]*(?:\*+[ \t]+)?\*(?:Recommendation|Decision):?\*:?[ \t]*([^\n]+)",
+            body_text,
+            re.MULTILINE | re.IGNORECASE,
+        )
+        if m_rec_inline:
+            explicit_rec = " ".join(m_rec_inline.group(1).split()).strip()
+
+    if m_outcome_sec:
+        for line in m_outcome_sec.group(1).splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith(("//", "----", "[", "|")):
+                continue
+            cleaned = re.sub(r"^(?:\*+|[-.]|\d+\.)[ \t]+", "", stripped).strip()
+            if re.match(r"^\*(?:Recommendation|Decision):?\*:?", cleaned, re.IGNORECASE):
+                rec_val = re.sub(r"^\*(?:Recommendation|Decision):?\*:?[ \t]*", "", cleaned, flags=re.IGNORECASE).strip()
+                if rec_val and not explicit_rec:
+                    explicit_rec = " ".join(rec_val.split())
+                continue
+            cleaned = re.sub(r"^\*(?:Findings|Learnings|Outcome):?\*:?[ \t]*", "", cleaned, flags=re.IGNORECASE).strip()
+            if cleaned:
+                outcome_prose_lines.append(" ".join(cleaned.split()))
+
+    refined_findings = findings
+    if not refined_findings and outcome_prose_lines:
+        refined_findings = outcome_prose_lines[0]
+
+    recommendation = explicit_rec
+    if not recommendation:
+        if outcome and resulting_deltas:
+            delta_str = ", ".join(resulting_deltas)
+            summary_tail = f" ({outcome_prose_lines[0]})" if outcome_prose_lines else ""
+            recommendation = f"{outcome.capitalize()} — graduated into {delta_str}{summary_tail}".strip()
+        elif outcome and outcome_prose_lines:
+            recommendation = f"{outcome.capitalize()}: {outcome_prose_lines[0]}"
+        elif outcome_prose_lines:
+            recommendation = outcome_prose_lines[0]
+        elif resulting_deltas:
+            recommendation = f"Graduated into {', '.join(resulting_deltas)}"
+        elif outcome:
+            recommendation = f"Outcome: {outcome}"
+
+    return exit_criteria, refined_findings, recommendation
+
+
 def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     """Inspect and extract all living specifications into a structured portal payload."""
     eidos_path = eidos_dir.resolve()
-    project = load_project(eidos_path.parent)
+    repo_root_resolved = eidos_path.parent.resolve()
+    project = load_project(repo_root_resolved)
     validator = SpecValidator()
     report = validator.validate_directory(eidos_path)
 
@@ -22,11 +169,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     specs_by_type: dict[str, list[dict[str, Any]]] = {}
 
     for doc in report.documents:
-        rel_path = (
-            str(doc.file_path.relative_to(eidos_path.parent))
-            if doc.file_path.is_relative_to(eidos_path.parent)
-            else str(doc.file_path)
-        )
+        rel_path = _to_repo_rel_posix(doc.file_path, repo_root_resolved)
         doc_body = doc.body
         if doc.doc_type == "delta/mutation":
             doc_status = str(doc.frontmatter.get("status", "proposed")).strip().lower()
@@ -422,11 +565,22 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         else:
             resulting_deltas = []
 
+        exit_criteria, findings, recommendation = _extract_exploration_fields(
+            fm=fm,
+            body=exp.get("body", ""),
+            decision_dict=decision_dict,
+            outcome=str(outcome or ""),
+            resulting_deltas=resulting_deltas,
+            findings=findings,
+        )
+
         if outcome:
             decision_dict["outcome"] = outcome
         if findings:
             decision_dict["learnings"] = findings
             decision_dict["findings"] = findings
+        if recommendation:
+            decision_dict["recommendation"] = recommendation
         if resulting_deltas:
             decision_dict["resulting_deltas"] = resulting_deltas
 
@@ -440,9 +594,9 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                 "status": fm.get("status", "proposed"),
                 "is_archived": is_archived_exp,
                 "hypothesis": hypothesis,
-                "exit_criteria": {},
+                "exit_criteria": exit_criteria,
                 "findings": findings,
-                "recommendation": "",
+                "recommendation": recommendation,
                 "resulting_deltas": resulting_deltas,
                 "decision": decision_dict,
                 "body": exp["body"],
@@ -499,11 +653,16 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             "SELECT source_id, target_id, rel_type FROM edges ORDER BY source_id, target_id, rel_type;"
         ).fetchall()
     ]
+    normalized_schema_errors: dict[str, list[str]] = {}
+    for raw_err_path, err_list in (report.schema_errors or {}).items():
+        norm_err_path = _to_repo_rel_posix(raw_err_path, repo_root_resolved)
+        normalized_schema_errors.setdefault(norm_err_path, []).extend(err_list)
+
     validation_summary = {
         "is_clean": report.is_clean,
         "total_docs": report.total_docs,
         "valid_docs": report.valid_docs,
-        "schema_errors": report.schema_errors,
+        "schema_errors": normalized_schema_errors,
         "broken_references": report.broken_references,
     }
 
@@ -579,6 +738,7 @@ def _extract_design_systems(
 
     systems: list[dict[str, Any]] = []
     design_specs = specs_by_type.get("design/system", [])
+    repo_root_resolved = eidos_path.parent.resolve()
 
     for ds in design_specs:
         fm = ds["frontmatter"]
@@ -592,34 +752,63 @@ def _extract_design_systems(
         )
         tok_cfg = fm.get("tokens") if isinstance(fm.get("tokens"), dict) else {}
         manifest_ref = tok_cfg.get("manifest")
-        tokens_file = sys_dir / "tokens.json"
+        tokens_file: Path | None = None
+        tokens_warning: str | None = None
         if isinstance(manifest_ref, str) and manifest_ref.strip():
             cand_rel = manifest_ref.strip()
-            for candidate in (
-                sys_dir / cand_rel,
-                eidos_path.parent / cand_rel,
-                eidos_path / cand_rel,
-            ):
-                if candidate.is_file():
-                    tokens_file = candidate
+            cand_path = Path(cand_rel)
+            candidates = (
+                (cand_path,)
+                if cand_path.is_absolute()
+                else (
+                    sys_dir / cand_rel,
+                    eidos_path.parent / cand_rel,
+                    eidos_path / cand_rel,
+                )
+            )
+            rejected_outside = False
+            for candidate in candidates:
+                try:
+                    cand_resolved = candidate.resolve()
+                except OSError:
+                    continue
+                if not cand_resolved.is_relative_to(repo_root_resolved):
+                    rejected_outside = True
+                    continue
+                if cand_resolved.is_file():
+                    tokens_file = cand_resolved
                     break
+            if tokens_file is None and rejected_outside:
+                tokens_warning = f"Blocked tokens.manifest '{cand_rel}': path resolves outside repository root."
+        else:
+            default_tokens = sys_dir / "tokens.json"
+            try:
+                default_resolved = default_tokens.resolve()
+                if not default_resolved.is_relative_to(repo_root_resolved):
+                    tokens_warning = "Blocked default tokens.json: path resolves outside repository root."
+                elif default_resolved.is_file():
+                    tokens_file = default_resolved
+            except OSError:
+                tokens_file = None
+
         tokens_data: dict[str, Any] = {}
-        if tokens_file.exists():
+        if tokens_file is not None and tokens_file.is_file():
             try:
                 tokens_data = orjson.loads(tokens_file.read_text(encoding="utf-8"))
             except (orjson.JSONDecodeError, ValueError, OSError):
                 tokens_data = {}
 
-        systems.append(
-            {
-                "id": sys_id,
-                "title": ds["title"],
-                "client": "core",
-                "brand_name": ds["title"],
-                "extends": fm.get("extends"),
-                "tokens": tokens_data,
-            }
-        )
+        sys_entry: dict[str, Any] = {
+            "id": sys_id,
+            "title": ds["title"],
+            "client": "core",
+            "brand_name": ds["title"],
+            "extends": fm.get("extends"),
+            "tokens": tokens_data,
+        }
+        if tokens_warning:
+            sys_entry["tokens_warning"] = tokens_warning
+        systems.append(sys_entry)
 
     default_ds_id = systems[0]["id"] if systems else "DS-001"
 
@@ -715,6 +904,8 @@ def _extract_design_systems(
                 "slots": fm.get("slots", {}),
                 "capabilities": scr_to_caps.get(scr_id, []),
                 "mermaid": mermaid_state,
+                "body": scr.get("body", ""),
+                "path": scr.get("path", ""),
             }
         )
 
@@ -734,30 +925,42 @@ def _generate_c4_context_mermaid(
     external_systems: list[Any] | None = None,
 ) -> str:
     """Generate Mermaid syntax for C4 Level 1 System Context from declared personas and external_systems."""
-    clean_title = html.escape(str(system_title or "")).replace('"', "'")
+    clean_title = html.escape(str(system_title or ""), quote=True)
     lines = [
         "graph TD",
         "  classDef actor fill:#0284c7,stroke:#0369a1,color:#fff,stroke-width:2px,rx:6px;",
         "  classDef system fill:#059669,stroke:#047857,color:#fff,stroke-width:3px,rx:8px;",
         "  classDef external fill:#334155,stroke:#475569,color:#fff,stroke-width:2px,rx:6px;",
         "",
-        f"  SYS[\"<div style='padding:10px 14px;font-size:15px;'><b>{html.escape(str(system_id or 'SYS-001'))}</b><br/>{clean_title}<br/><i>[Software System]</i></div>\"]:::system",
+        f"  SYS[\"<div style='padding:10px 14px;font-size:15px;'><b>{html.escape(str(system_id or 'SYS-001'), quote=True)}</b><br/>{clean_title}<br/><i>[Software System]</i></div>\"]:::system",
     ]
 
     ext_edges: list[tuple[str, str]] = []
     for idx, ext in enumerate(external_systems or []):
+        if not ext:
+            continue
         ext_node_id = f"EXT_{idx + 1}"
-        ext_name = html.escape(str(ext)).replace('"', "'")
-        ext_role = "External Integration"
-        ext_proto = "External System"
+        if isinstance(ext, dict):
+            raw_name = str(ext.get("name") or ext.get("title") or ext.get("id") or f"External System {idx + 1}").strip()
+            raw_role = str(ext.get("role") or ext.get("description") or "External Integration").strip()
+            raw_proto = str(ext.get("protocol") or ext.get("type") or "External System").strip()
+        else:
+            raw_name = str(ext).strip()
+            raw_role = "External Integration"
+            raw_proto = "External System"
+        if not raw_name:
+            continue
+        ext_name = html.escape(raw_name, quote=True)
+        ext_role = html.escape(raw_role, quote=True)
+        ext_proto = html.escape(raw_proto, quote=True)
         lines.append(
             f"  {ext_node_id}[\"<div style='padding:8px 12px;'><b>{ext_name}</b><br/>{ext_role}<br/><i>[{ext_proto}]</i></div>\"]:::external"
         )
-        ext_edges.append((ext_node_id, ext_proto))
+        ext_edges.append((ext_node_id, ext_proto.replace("|", "/")))
 
     for p in personas:
         pid = p.get("id", "PER")
-        ptitle = html.escape(str(p.get("title", pid))).replace('"', "'")
+        ptitle = html.escape(str(p.get("title", pid)), quote=True)
         node_id = pid.replace("-", "_")
         lines.append(
             f"  {node_id}[\"<div style='padding:8px 12px;'><b>{ptitle}</b><br/>Persona Actor<br/><i>[Human / Autonomous Lead]</i></div>\"]:::actor"
@@ -770,7 +973,7 @@ def _generate_c4_context_mermaid(
         lines.append(f"  {node_id} ==>|Interacts & Collaborates| SYS")
 
     for ext_node_id, ext_proto in ext_edges:
-        lines.append(f"  SYS ==>|{ext_proto}| {ext_node_id}")
+        lines.append(f'  SYS ==>|"{ext_proto}"| {ext_node_id}')
 
     return "\n".join(lines)
 
@@ -1317,7 +1520,7 @@ def _generate_screen_state_mermaid(screen_id: str, states: list[Any], transition
             continue
         src = _sanitize_state_id(t.get("from_state") or state_names[0], 0)
         dst = _sanitize_state_id(t.get("to_state") or state_names[-1], len(state_names) - 1)
-        trigger = str(t.get("action") or "action").replace("\n", " ")
+        trigger = html.escape(str(t.get("action") or "action").replace("\n", " "), quote=True)
         lines.append(f"  {src} --> {dst}: {trigger}")
 
     if not transitions and len(state_names) > 1:
@@ -1327,11 +1530,27 @@ def _generate_screen_state_mermaid(screen_id: str, states: list[Any], transition
     return "\n".join(lines)
 
 
+def _sanitize_mermaid_block(raw_code: str) -> str:
+    """Strip unsafe Mermaid directives (`%%{init:...}%%`) and inline JS/URI click callbacks."""
+    cleaned = re.sub(r"%%\{.*?\}%%", "", raw_code or "", flags=re.DOTALL)
+    safe_lines: list[str] = []
+    for line in cleaned.splitlines():
+        if re.match(
+            r"^\s*click\s+.*(?:\bcall\b|(?:javascript|data|vbscript)\s*:)",
+            line,
+            flags=re.IGNORECASE,
+        ):
+            continue
+        safe_lines.append(line)
+    return "\n".join(safe_lines).strip()
+
+
 def _extract_or_generate_flow_mermaid(flow_id: str, flow_type: str, steps: list[dict[str, Any]], body: str) -> str:
     """Extract authored Mermaid block from spec body or generate from steps."""
     match = re.search(r"\[mermaid\]\s*\n----\s*\n(.*?)\n----", body or "", re.DOTALL)
     if match:
-        return match.group(1).strip()
+        sanitized = _sanitize_mermaid_block(match.group(1))
+        return sanitized or "flowchart LR\n  Start --> End"
 
     if not steps:
         return "flowchart LR\n  Start --> End"
@@ -1347,35 +1566,53 @@ def _extract_or_generate_flow_mermaid(flow_id: str, flow_type: str, steps: list[
                 participants.append(clt)
         if not participants:
             participants.append("Client")
-        for p in participants:
-            p_clean = re.sub(r"[^a-zA-Z0-9_]", "_", p)
-            lines.append(f"  participant {p_clean} as {p}")
-        for s in steps:
+        for idx, p in enumerate(participants):
+            p_clean = re.sub(r"[^a-zA-Z0-9_]", "_", p).strip("_") or f"Client_{idx + 1}"
+            p_escaped = html.escape(p.replace("\n", " "), quote=True)
+            lines.append(f"  participant {p_clean} as {p_escaped}")
+        for idx, s in enumerate(steps):
             if not isinstance(s, dict):
                 continue
-            clt = re.sub(r"[^a-zA-Z0-9_]", "_", str(s.get("client") or participants[0]))
-            title = str(s.get("title") or f"Step {s.get('step') or ''}").replace('"', "'")
-            action = str(s.get("action") or "").replace('"', "'")
-            lines.append(f"  Note over {clt}: {title}")
-            lines.append(f"  {clt}->>{clt}: {action}")
+            raw_clt = str(s.get("client") or participants[0])
+            clt = re.sub(r"[^a-zA-Z0-9_]", "_", raw_clt).strip("_") or "Client_1"
+            raw_title = str(s.get("title") or f"Step {s.get('step') or (idx + 1)}").replace("\n", " ")
+            raw_action = str(s.get("action") or "").replace("\n", " ")
+            raw_outcome = str(s.get("outcome") or "").replace("\n", " ")
+            raw_screen = str(s.get("screen") or "").replace("\n", " ")
+            title = html.escape(raw_title, quote=True)
+            action = html.escape(raw_action, quote=True)
+            outcome = html.escape(raw_outcome, quote=True)
+            screen_stem = html.escape(Path(raw_screen).stem, quote=True) if raw_screen else ""
+            note_suffix = f" [{screen_stem}]" if screen_stem else ""
+            lines.append(f"  Note over {clt}: {title}{note_suffix}")
+            msg = f"{action} ({outcome})" if outcome else action
+            lines.append(f"  {clt}->>{clt}: {msg}")
         return "\n".join(lines)
     else:
         lines = ["flowchart LR"]
         for i, s in enumerate(steps):
             if not isinstance(s, dict):
                 continue
-            step_num = s.get("step") if s.get("step") is not None else (i + 1)
-            title = str(s.get("title") or f"Step {step_num}").replace('"', "'")
-            screen = str(s.get("screen") or "")
-            scr_label = f"<br/><small>{Path(screen).stem}</small>" if screen else ""
-            lines.append(f'  step{step_num}["<b>Step {step_num}: {title}</b>{scr_label}"]')
+            raw_step_num = s.get("step") if s.get("step") is not None else (i + 1)
+            step_id = re.sub(r"[^a-zA-Z0-9_]", "_", str(raw_step_num)).strip("_") or str(i + 1)
+            step_label_num = html.escape(str(raw_step_num), quote=True)
+            title = html.escape(str(s.get("title") or f"Step {raw_step_num}").replace("\n", " "), quote=True)
+            raw_screen = str(s.get("screen") or "").replace("\n", " ")
+            scr_stem = html.escape(Path(raw_screen).stem, quote=True) if raw_screen else ""
+            scr_label = f"<br/><small>{scr_stem}</small>" if scr_stem else ""
+            raw_outcome = str(s.get("outcome") or "").replace("\n", " ")
+            outcome_label = f"<br/><i>{html.escape(raw_outcome, quote=True)}</i>" if raw_outcome else ""
+            lines.append(f'  step{step_id}["<b>Step {step_label_num}: {title}</b>{scr_label}{outcome_label}"]')
         for i in range(len(steps) - 1):
             s_curr = steps[i] if isinstance(steps[i], dict) else {}
             s_next = steps[i + 1] if isinstance(steps[i + 1], dict) else {}
-            trigger = str(s_curr.get("action") or "next").replace('"', "'")
-            if len(trigger) > 28:
-                trigger = trigger[:25] + "..."
-            curr_num = s_curr.get("step") if s_curr.get("step") is not None else (i + 1)
-            next_num = s_next.get("step") if s_next.get("step") is not None else (i + 2)
-            lines.append(f'  step{curr_num} -->|"{trigger}"| step{next_num}')
+            raw_trigger = str(s_curr.get("action") or "next").replace("\n", " ").replace("|", "/")
+            if len(raw_trigger) > 28:
+                raw_trigger = raw_trigger[:25] + "..."
+            trigger = html.escape(raw_trigger, quote=True)
+            curr_raw = s_curr.get("step") if s_curr.get("step") is not None else (i + 1)
+            next_raw = s_next.get("step") if s_next.get("step") is not None else (i + 2)
+            curr_id = re.sub(r"[^a-zA-Z0-9_]", "_", str(curr_raw)).strip("_") or str(i + 1)
+            next_id = re.sub(r"[^a-zA-Z0-9_]", "_", str(next_raw)).strip("_") or str(i + 2)
+            lines.append(f'  step{curr_id} -->|"{trigger}"| step{next_id}')
         return "\n".join(lines)

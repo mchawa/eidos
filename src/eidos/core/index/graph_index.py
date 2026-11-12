@@ -12,6 +12,7 @@ from __future__ import annotations
 import atexit
 import contextlib
 import sqlite3
+import threading
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -121,23 +122,56 @@ class ArchitecturalIndex:
         if db_path is None:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self._conn: sqlite3.Connection | None = None
+        self._local = threading.local()
+        self._conns_lock = threading.Lock()
+        self._conns: list[sqlite3.Connection] = []
+        self._closed: bool = False
+        self._generation: int = 0
+        self._last_synced_check: float = 0.0
         self._init_db()
 
+    @property
+    def _conn(self) -> sqlite3.Connection | None:
+        if self._closed:
+            return None
+        return self._get_connection()
+
+    @_conn.setter
+    def _conn(self, value: sqlite3.Connection | None) -> None:
+        if value is None:
+            self.close()
+        else:
+            with self._conns_lock:
+                self._closed = False
+                self._local._entry = (self._generation, value)
+                if value not in self._conns:
+                    self._conns.append(value)
+
     def _get_connection(self) -> sqlite3.Connection:
-        if self._conn is None:
-            self._conn = open_cache_connection(self.db_path)
-        return self._conn
+        entry = getattr(self._local, "_entry", None)
+        if not self._closed and entry is not None and entry[0] == self._generation:
+            return entry[1]
+        conn = open_cache_connection(self.db_path)
+        with self._conns_lock:
+            self._closed = False
+            self._local._entry = (self._generation, conn)
+            self._conns.append(conn)
+        return conn
 
     def _init_db(self) -> None:
         """Create tables, indexes, and FTS5 virtual tables with corruption recovery."""
         self._get_connection()
 
     def close(self) -> None:
-        if self._conn:
+        with self._conns_lock:
+            self._closed = True
+            self._generation += 1
+            conns_to_close = list(self._conns)
+            self._conns.clear()
+        self._local.__dict__.clear()
+        for conn in conns_to_close:
             with contextlib.suppress(sqlite3.Error):
-                self._conn.close()
-            self._conn = None
+                conn.close()
 
     def __del__(self) -> None:
         with contextlib.suppress(Exception):
@@ -158,7 +192,10 @@ class ArchitecturalIndex:
         return check_index_dirty(self)
 
     def _ensure_synced(self) -> None:
-        """Lazily ensure the index is synchronized (<2ms check when clean)."""
+        """Lazily ensure the index is synchronized (<2ms check when clean, 50ms in-process debounce)."""
+        now = time.monotonic()
+        if self._last_synced_check > 0.0 and (now - self._last_synced_check) < 0.05:
+            return
         dirty_state = self.is_dirty()
         if dirty_state[0]:
             self.sync(dirty_state=dirty_state)
@@ -440,8 +477,10 @@ class ArchitecturalIndex:
         )
 
 
-# Global singleton instance for high-speed module reuse
+# Thread-safe registry keyed by resolved eidos_dir so secondary worktrees never close active instances
+_INDEX_INSTANCES: dict[Path, ArchitecturalIndex] = {}
 _INDEX_INSTANCE: ArchitecturalIndex | None = None
+_INDEX_LOCK = threading.Lock()
 
 
 def get_architectural_index(
@@ -450,32 +489,41 @@ def get_architectural_index(
     db_path: Path | None = None,
     force_new: bool = False,
 ) -> ArchitecturalIndex:
-    """Get or create singleton ArchitecturalIndex instance."""
+    """Get or create a thread-safe ArchitecturalIndex instance keyed by resolved ``eidos_dir``."""
     global _INDEX_INSTANCE
     target_root, target_eidos, target_db = _resolve_index_paths(
         repo_root=repo_root,
         eidos_dir=eidos_dir,
         db_path=db_path,
     )
-    if (
-        force_new
-        or _INDEX_INSTANCE is None
-        or _INDEX_INSTANCE.root != target_root
-        or _INDEX_INSTANCE.eidos_dir != target_eidos
-        or _INDEX_INSTANCE.db_path != target_db
-        or _INDEX_INSTANCE._conn is None
-    ):
-        if _INDEX_INSTANCE is not None:
-            _INDEX_INSTANCE.close()
-        _INDEX_INSTANCE = ArchitecturalIndex(db_path=db_path, repo_root=target_root, eidos_dir=target_eidos)
-    return _INDEX_INSTANCE
+    key = target_eidos.resolve()
+    with _INDEX_LOCK:
+        existing = _INDEX_INSTANCES.get(key)
+        if (
+            force_new
+            or existing is None
+            or existing._closed
+            or existing.root != target_root
+            or existing.db_path != target_db
+        ):
+            if existing is not None:
+                existing.close()
+            existing = ArchitecturalIndex(db_path=db_path, repo_root=target_root, eidos_dir=target_eidos)
+            _INDEX_INSTANCES[key] = existing
+        _INDEX_INSTANCE = existing
+        return existing
 
 
 def _close_singleton_index() -> None:
     global _INDEX_INSTANCE
-    if _INDEX_INSTANCE is not None:
-        _INDEX_INSTANCE.close()
+    with _INDEX_LOCK:
+        instances = list(_INDEX_INSTANCES.values())
+        _INDEX_INSTANCES.clear()
+        if _INDEX_INSTANCE is not None and _INDEX_INSTANCE not in instances:
+            instances.append(_INDEX_INSTANCE)
         _INDEX_INSTANCE = None
+    for inst in instances:
+        inst.close()
 
 
 atexit.register(_close_singleton_index)

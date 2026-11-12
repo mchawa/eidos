@@ -20,7 +20,7 @@ properties:
     pattern: "^DLT-[A-Z0-9_-]+$"
     description: "Unique mutation identifier following the DLT-<YEAR>-<NUMBER> convention (e.g. DLT-2026-089)."
   title:
-    type: string
+    $ref: "#/$defs/non_empty_string"
     description: "Short, descriptive summary of the proposed product or technical mutation."
   status:
     $ref: "#/$defs/delta_status"
@@ -50,7 +50,7 @@ properties:
           - "enabler"
           - "bug"
       motivation:
-        type: string
+        $ref: "#/$defs/non_empty_string"
         description: "Why this change is needed and the problem it resolves."
       bug_classification:
         type: string
@@ -131,10 +131,10 @@ properties:
               - FLOW-
             entity_label: target
         title:
-          type: string
+          $ref: "#/$defs/non_empty_string"
           description: "Optional human-readable title when scaffolding a new specification."
         details:
-          type: string
+          $ref: "#/$defs/non_empty_string"
           description: "Additional operational notes, migration directives, or deprecation sunset timeline."
         expect:
           type: object
@@ -148,17 +148,19 @@ properties:
               properties:
                 contains:
                   oneOf:
-                    - type: string
+                    - $ref: "#/$defs/non_empty_string"
                     - type: array
+                      minItems: 1
                       items:
-                        type: string
+                        $ref: "#/$defs/non_empty_string"
                   description: "Required substring or list of substrings that must appear in the specification body."
                 not_contains:
                   oneOf:
-                    - type: string
+                    - $ref: "#/$defs/non_empty_string"
                     - type: array
+                      minItems: 1
                       items:
-                        type: string
+                        $ref: "#/$defs/non_empty_string"
                   description: "Forbidden substring or list of substrings that must NOT appear in the specification body."
             frontmatter:
               type: object
@@ -168,18 +170,18 @@ properties:
                 source_path:
                   $ref: "#/$defs/code_paths"
                 rule:
-                  type: string
+                  $ref: "#/$defs/non_empty_string"
                   description: "Expected policy or invariant rule statement (or required substring)."
                 test_binding:
                   type: string
-                  pattern: "^(.+::.+|N/A|TBD)$"
-                  description: "Expected invariant test binding (file::func, N/A, or TBD)."
+                  pattern: "^(\\S.*::.*\\S|TBD)$"
+                  description: "Expected invariant test binding (file::func or TBD)."
                 status:
                   $ref: "#/$defs/lifecycle_status"
                 version:
                   $ref: "#/$defs/semver"
                 category:
-                  type: string
+                  $ref: "#/$defs/non_empty_string"
                   description: "Expected policy category."
                 severity:
                   type: string
@@ -197,7 +199,7 @@ properties:
         type: array
         description: "Additional code symbols, module names, or string tokens to scan for dangling references."
         items:
-          type: string
+          $ref: "#/$defs/non_empty_string"
       allowed_reasons:
         type: array
         description: "Explicit path or file exemptions where references to removed/deprecated entities are permitted."
@@ -209,10 +211,13 @@ properties:
             - reason
           properties:
             path:
-              type: string
+              $ref: "#/$defs/non_empty_string"
               description: "Relative file path or directory prefix where the reference is permitted."
+            pattern:
+              $ref: "#/$defs/non_empty_string"
+              description: "Optional regular expression or token pattern scoping this exemption within matching files."
             reason:
-              type: string
+              $ref: "#/$defs/non_empty_string"
               description: "Audit justification explaining why the reference is intentionally retained."
   graduated_from:
     type: string
@@ -230,7 +235,7 @@ properties:
     additionalProperties: false
     properties:
       branch:
-        type: string
+        $ref: "#/$defs/non_empty_string"
         description: "Git branch implementing this delta."
       base_commit:
         type: string

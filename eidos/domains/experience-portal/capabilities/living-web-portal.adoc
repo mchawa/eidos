@@ -4,7 +4,7 @@ id: CAP-EXP-001
 title: "Interactive Living Web Portal & Visual Documentation Engine"
 domain: DOM-EXPERIENCE-PORTAL
 status: active
-version: "1.1.0"
+version: "1.2.0"
 
 business:
   personas:
@@ -63,8 +63,14 @@ technical:
       rule: "The portal C4 Level 2 Container Diagram must structure containers into semantic architectural tiers within the system boundary and explicitly render declared inter-container dependency connections and contract bindings."
       test_binding: "tests/test_portal.py::test_c4_level2_container_hierarchy_and_connections"
     - id: INV-PORTAL-STATIC-SCALABILITY
-      rule: "Static portal builds must deduplicate embedded specification bodies in window.__EIDOS_DATA__ and data.json while exporting pre-computed directed graph edges, validation diagnostics, and hash-based deep-linking routes."
+      rule: "Static portal builds must escape '\\u003c!--' and '<\\/' in embedded JSON, externalize specification bodies into lazy local 'specs/<id>.json' chunks by default (with opt-in '--single-file' archive support), deduplicate window.__EIDOS_DATA__ and data.json payloads, and export pre-computed directed graph edges, validation diagnostics, and hash-based deep-linking routes."
       test_binding: "tests/test_portal.py::test_portal_static_scalability_and_deep_linking"
+    - id: INV-PORTAL-XSS-AND-SERVER-ISOLATION
+      rule: "The Living Web Portal must render Mermaid diagrams under securityLevel 'strict', sanitize AsciiDoc HTML with DOMPurify SANITIZE_DOM=true and idprefix='spec-', escape HTML/comment delimiters in flow diagrams and embedded JSON, reject tokens.manifest paths resolving outside repo_root, omit wildcard CORS headers, and reject mismatched Host headers on eidos portal serve."
+      test_binding: "tests/test_portal.py::test_portal_xss_sanitization_path_containment_and_host_cors_isolation"
+    - id: INV-PORTAL-LIVE-DRIFT-SSE
+      rule: "eidos portal serve must track eidos/, src/, and tests/ modifications in its snapshot cache, fail closed on _get_cached_drift errors, stream live updates via GET /api/events (SSE) wired to /api/drift in the UI, format object-typed external_systems in C4 Level 1 diagrams without Python dict reprs, and hydrate Screen Spec bodies and Exploration exit_criteria/recommendations."
+      test_binding: "tests/test_portal.py::test_portal_live_drift_sse_c4_context_and_screen_hydration"
 ---
 = Capability: Interactive Living Web Portal & Visual Documentation Engine
 :toc: left
@@ -76,8 +82,9 @@ Explore, search, and visually inspect living C4 architecture models, multi-clien
 Technical specifications and architecture models are often trapped in raw text files or separate wikis. This capability provides a local, zero-dependency embedded HTTP server (`eidos portal serve`) and static site builder (`eidos portal build`) that turns living AsciiDoc files into an interactive single-page application.
 
 == Key Responsibilities
-* Real-time inspection and clickable hierarchical exploration of C4 Level 1 (Context), Level 2 (Containers), and Level 3 (Component Whitebox) models using client-side Mermaid rendering, interactive Blast Radius simulation, and boundary interface contract (`CTR-*`) inspection.
-* Slide-over component inspection drawer and shareable `window.location.hash` (`#/...`) deep linking revealing module responsibilities, source paths, bound contracts, and catalog specifications.
+* Real-time inspection and clickable hierarchical exploration of C4 Level 1 (Context), Level 2 (Containers), and Level 3 (Component Whitebox) models using client-side Mermaid rendering (`securityLevel: "strict"`), direct C4 SVG node Blast Radius simulation, and boundary interface contract (`CTR-*`) inspection.
+* Slide-over component inspection drawer, lazy local `specs/<id>.json` body loading (with `--single-file` offline archive support), DOMPurify `SANITIZE_DOM` AsciiDoc rendering, and shareable `window.location.hash` (`#/...`) deep linking revealing module responsibilities, source paths, bound contracts, and catalog specifications.
+* Same-origin loopback `Host` header isolation and real-time Server-Sent Events (`GET /api/events`) streaming live workspace and uncommitted drift (`/api/drift`) updates across `eidos/`, `src/`, and `tests/`.
 * Interactive SpecDelta Kanban dashboard and Chronological Timeline tracking proposed, in-review, and applied mutations.
 * Full-text fuzzy search (`⌘K`), real-time schema filtering, and inline validation diagnostics across all catalog entities.
 

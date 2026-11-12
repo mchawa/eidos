@@ -19,9 +19,9 @@ from typing import Any, ClassVar
 import orjson
 from ast_grep_py import SgRoot
 
-INVARIANT_PATTERN = re.compile(r"\b(INV-[A-Z0-9_-]+)\b")
-POLICY_PATTERN = re.compile(r"\b(POL-[A-Z0-9_-]+)\b")
-INV_OR_POL_TOKEN_RE = re.compile(r"\b(?:INV|POL)-[A-Za-z0-9_-]+\b")
+INVARIANT_PATTERN = re.compile(r"(?<![A-Z0-9_-])(INV-[A-Z0-9]+(?:-[A-Z0-9]+)*)(?![A-Z0-9_]|-[A-Z0-9])")
+POLICY_PATTERN = re.compile(r"(?<![A-Z0-9_-])(POL-[A-Z0-9]+(?:-[A-Z0-9]+)*)(?![A-Z0-9_]|-[A-Z0-9])")
+INV_OR_POL_TOKEN_RE = re.compile(r"(?<![A-Z0-9_-])((?:INV|POL)-[A-Z0-9]+(?:-[A-Z0-9]+)*)(?![A-Z0-9_]|-[A-Z0-9])")
 _RUST_TEST_ATTR_RE = re.compile(r"#\[\s*(?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)*(?:test|rstest|test_case)\b")
 _SCRIPT_BLOCK_RE = re.compile(r"<script\b[^>]*>(.*?)</script>", re.DOTALL | re.IGNORECASE)
 _RUST_LIFETIME_AT_START_RE = re.compile(r"^'[A-Za-z_][A-Za-z0-9_]*(?![A-Za-z0-9_'-])")
@@ -684,36 +684,44 @@ class AstGrepIndexer(BaseAstIndexer):
 
     @staticmethod
     def _extract_ts_test_call_title(c: Any) -> str | None:
-        """Extract test title from TS/JS it/test/describe (.each/.concurrent/.only/.skip) and Deno.test call_expression."""
+        """Extract runnable test title from TS/JS it/test (.each/.concurrent/.only) and Deno.test call_expression.
+
+        Disabled test modifiers (.skip, .todo, .fixme, xit, xtest) and suite-only describe(...) wrappers are excluded.
+        """
         fn_ident = c.field("function")
         if fn_ident is None:
             return None
         fn_text = re.sub(r"\s+", " ", fn_ident.text().strip())
         is_deno = fn_text == "Deno.test"
         is_direct_or_member = (
-            fn_text in ("it", "test", "describe")
+            fn_text in ("it", "test")
             or is_deno
             or bool(
                 re.match(
-                    r"^(?:it|test|describe)\.(?:only|skip|concurrent|todo|serial|fails|fixme)(?:\.(?:only|skip|concurrent))?$",
+                    r"^(?:it|test)(?:\.(?:only|concurrent|serial|fails))+$",
                     fn_text,
                 )
             )
         )
-        is_parameterized_each = bool(re.match(r"^(?:it|test|describe)(?:\.[A-Za-z_]+)*\.each\s*(?:\(|`)", fn_text))
+        is_parameterized_each = bool(
+            re.match(
+                r"^(?:it|test)(?:\.(?:only|concurrent|serial|fails))*\.each\s*(?:\(|`|$)",
+                fn_text,
+            )
+        )
         if not (is_direct_or_member or is_parameterized_each):
             return None
 
         args = c.field("arguments")
         if args is None:
             return None
-        first_arg = next(
-            (ch for ch in args.children() if ch.text() not in ("(", ")", ",")),
-            None,
-        )
+        arg_children = [ch for ch in args.children() if ch.text() not in ("(", ")", ",")]
+        first_arg = arg_children[0] if arg_children else None
         if first_arg is None:
             return None
         raw_arg = first_arg.text().strip()
+        if is_deno and any(re.search(r"\bignore\s*:\s*true\b", ch.text()) for ch in arg_children):
+            return None
         if raw_arg.startswith(("'", '"', "`")) and len(raw_arg) >= 2:
             title = raw_arg.strip("'\"`")
             return title if title else None
@@ -826,14 +834,101 @@ class AstGrepIndexer(BaseAstIndexer):
             {
                 "function_definition",
                 "function_declaration",
+                "function_signature",
                 "method_definition",
+                "method_signature",
                 "function_item",
+                "function_signature_item",
                 "method_declaration",
+                "method_elem",
+                "method_spec",
                 "method",
                 "singleton_method",
                 "local_function_statement",
             }
         )
+
+        def _extract_interface_member_summary(iface_node: Any, ck_name: str) -> str:
+            member_sigs: list[str] = []
+            if lang in ("typescript", "tsx") and ck_name == "interface_declaration":
+                body = iface_node.field("body") or next(
+                    (c for c in iface_node.children() if c.kind() in ("interface_body", "object_type")),
+                    None,
+                )
+                if body is not None:
+                    for ch in body.children():
+                        if ch.kind() in (
+                            "method_signature",
+                            "property_signature",
+                            "call_signature",
+                            "construct_signature",
+                            "index_signature",
+                        ):
+                            msig = re.sub(r"\s+", " ", ch.text().strip()).rstrip(";,")
+                            if msig:
+                                member_sigs.append(msig)
+            elif lang == "go" and ck_name == "type_spec":
+                tnode = iface_node.field("type")
+                if tnode is not None and "interface" in tnode.kind():
+                    for ch in tnode.children():
+                        if ch.kind() not in ("interface", "{", "}", ";", ",", "comment"):
+                            msig = re.sub(r"\s+", " ", ch.text().strip()).rstrip(";")
+                            if msig:
+                                member_sigs.append(msig)
+            elif lang == "rust" and ck_name == "trait_item":
+                body = iface_node.field("body") or next(
+                    (c for c in iface_node.children() if c.kind() == "declaration_list"),
+                    None,
+                )
+                if body is not None:
+                    for ch in body.children():
+                        ch_k = ch.kind()
+                        if ch_k == "function_item":
+                            msig = _extract_header_signature(ch.text()).rstrip(";").strip()
+                            if msig:
+                                member_sigs.append(msig)
+                        elif ch_k in ("function_signature_item", "associated_type", "const_item", "type_item"):
+                            msig = re.sub(r"\s+", " ", ch.text().strip()).rstrip(";")
+                            if msig:
+                                member_sigs.append(msig)
+            elif lang == "java" and ck_name == "interface_declaration":
+                body = iface_node.field("body") or next(
+                    (c for c in iface_node.children() if c.kind() == "interface_body"),
+                    None,
+                )
+                if body is not None:
+                    for ch in body.children():
+                        ch_k = ch.kind()
+                        if ch_k == "method_declaration":
+                            msig = _extract_header_signature(ch.text()).rstrip(";").strip()
+                            if msig:
+                                member_sigs.append(msig)
+                        elif ch_k in ("constant_declaration", "field_declaration"):
+                            msig = re.sub(r"\s+", " ", ch.text().strip()).rstrip(";")
+                            if msig:
+                                member_sigs.append(msig)
+            elif lang == "csharp" and ck_name == "interface_declaration":
+                body = iface_node.field("body") or next(
+                    (c for c in iface_node.children() if c.kind() == "declaration_list"),
+                    None,
+                )
+                if body is not None:
+                    for ch in body.children():
+                        ch_k = ch.kind()
+                        if ch_k == "method_declaration":
+                            msig = _extract_header_signature(ch.text()).rstrip(";").strip()
+                            if msig:
+                                member_sigs.append(msig)
+                        elif ch_k in (
+                            "property_declaration",
+                            "indexer_declaration",
+                            "event_field_declaration",
+                            "event_declaration",
+                        ):
+                            msig = re.sub(r"\s+", " ", ch.text().strip()).rstrip(";")
+                            if msig:
+                                member_sigs.append(msig)
+            return f" {{ {'; '.join(member_sigs)} }}" if member_sigs else ""
 
         # 1. Classes, Structs & Interfaces
         class_kinds = {
@@ -862,6 +957,7 @@ class AstGrepIndexer(BaseAstIndexer):
 
         class_nodes: dict[str, Any] = {}
         class_is_public: dict[str, bool] = {}
+        interface_or_trait_names: set[str] = set()
         for ck in class_kinds:
             for m in node.find_all(kind=ck):
                 if lang in ("c", "cpp") and not any(
@@ -942,8 +1038,15 @@ class AstGrepIndexer(BaseAstIndexer):
                     else:
                         kind_label = "interface" if ("interface" in ck or "type_alias" in ck) else "class"
                         sig = hdr_sig
+                    if kind_label == "interface" and ck != "type_alias_declaration":
+                        interface_or_trait_names.add(cname)
+                        sig = f"{sig}{_extract_interface_member_summary(m, ck)}"
                     if lang in ("typescript", "tsx", "javascript", "jsx"):
                         parent = m.parent()
+                        if parent is not None and parent.kind() == "ambient_declaration":
+                            if not sig.startswith("declare "):
+                                sig = f"declare {sig}"
+                            parent = parent.parent()
                         if parent is not None and parent.kind() == "export_statement" and not sig.startswith("export "):
                             sig = f"export {sig}"
                     if dec_list:
@@ -974,12 +1077,12 @@ class AstGrepIndexer(BaseAstIndexer):
         # 2. Functions & Methods
         fn_kinds = {
             "python": ["function_definition"],
-            "typescript": ["function_declaration", "method_definition"],
-            "tsx": ["function_declaration", "method_definition"],
+            "typescript": ["function_signature", "method_signature", "function_declaration", "method_definition"],
+            "tsx": ["function_signature", "method_signature", "function_declaration", "method_definition"],
             "javascript": ["function_declaration", "method_definition"],
             "jsx": ["function_declaration", "method_definition"],
-            "rust": ["function_item"],
-            "go": ["function_declaration", "method_declaration"],
+            "rust": ["function_signature_item", "function_item"],
+            "go": ["function_declaration", "method_declaration", "method_elem"],
             "java": ["method_declaration"],
             "kotlin": ["function_declaration"],
             "c": ["function_definition", "declaration"],
@@ -994,6 +1097,7 @@ class AstGrepIndexer(BaseAstIndexer):
             (cname, cnode.range().start.line, cnode.range().end.line) for cname, cnode in class_nodes.items()
         ]
         cpp_member_vis: dict[tuple[str, str], bool] = {}
+        ts_overload_sig_targets: set[tuple[str, str]] = set()
 
         for fk in fn_kinds:
             for m in node.find_all(kind=fk):
@@ -1034,6 +1138,7 @@ class AstGrepIndexer(BaseAstIndexer):
                         if best_span is None or span <= best_span:
                             best_span = span
                             parent_cls = cname
+                rust_is_trait_impl = False
                 if parent_cls is None and fk == "method_declaration":
                     recv = m.field("receiver")
                     if recv is not None:
@@ -1048,6 +1153,7 @@ class AstGrepIndexer(BaseAstIndexer):
                     anc_impl = m.parent()
                     while anc_impl is not None:
                         if anc_impl.kind() == "impl_item":
+                            rust_is_trait_impl = any(ch.kind() == "for" for ch in anc_impl.children())
                             impl_type = anc_impl.field("type")
                             if impl_type is not None:
                                 type_tokens = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", impl_type.text())
@@ -1094,8 +1200,19 @@ class AstGrepIndexer(BaseAstIndexer):
                             if parent_cls is None and qual_tokens and qual_tokens[-1][0].isupper():
                                 parent_cls = qual_tokens[-1]
 
+                if lang in ("typescript", "tsx"):
+                    ts_target_key = (parent_cls or "", fname)
+                    if fk in ("function_signature", "method_signature"):
+                        ts_overload_sig_targets.add(ts_target_key)
+                    elif fk in ("function_declaration", "method_definition") and ts_target_key in ts_overload_sig_targets:
+                        continue
+
                 kind_label = "method" if parent_cls or "method" in fk else "function"
                 sig = _node_header_sig(m, rng)
+                if fk in ("function_signature", "method_signature", "function_signature_item", "method_elem", "method_spec") or (
+                    parent_cls in interface_or_trait_names and sig.endswith(";")
+                ):
+                    sig = sig.rstrip(";").strip()
                 cpp_member_is_private = False
                 if lang == "cpp" and parent_cls:
                     member_node = m
@@ -1154,6 +1271,10 @@ class AstGrepIndexer(BaseAstIndexer):
                         sig = f"{rb_vis} {sig}"
                 elif lang in ("typescript", "tsx", "javascript", "jsx") and kind_label != "method":
                     parent = m.parent()
+                    if parent is not None and parent.kind() == "ambient_declaration":
+                        if not sig.startswith("declare "):
+                            sig = f"declare {sig}"
+                        parent = parent.parent()
                     if parent is not None and parent.kind() == "export_statement" and not sig.startswith("export "):
                         sig = f"export {sig}"
                 if dec_list:
@@ -1177,6 +1298,8 @@ class AstGrepIndexer(BaseAstIndexer):
                     ts_exports=ts_exports,
                     class_is_public=class_is_public,
                     cpp_member_is_private=cpp_member_is_private,
+                    parent_is_interface_or_trait=bool(parent_cls and parent_cls in interface_or_trait_names),
+                    rust_is_trait_impl=rust_is_trait_impl,
                 )
                 sym.is_boundary_export = _evaluate_boundary_export(sym, py_dunder_all=py_dunder_all)
                 symbols.append(sym)
@@ -1371,6 +1494,14 @@ class AstGrepIndexer(BaseAstIndexer):
                     continue
                 rng = fn.range()
                 dec_start, dec_list = self._extract_decorator_info(fn, sg_lang)
+                if any(
+                    re.match(
+                        r"^(?:@(?:pytest\.mark\.skip|unittest\.skip|Disabled|Ignore)(?:\s*\(|$)|#\[\s*ignore\b)",
+                        d,
+                    )
+                    for d in dec_list
+                ):
+                    continue
                 start_line = dec_start
                 parent = fn.parent()
                 if parent and parent.kind() in ("decorated_definition",):
@@ -1565,21 +1696,35 @@ def _extract_ts_exported_names(content: str, ts_root: Any = None, lang: str = "t
         except (RuntimeError, ValueError):
             return set()
     exports: set[str] = set()
+    decl_kinds = (
+        "function_declaration",
+        "function_signature",
+        "generator_function_declaration",
+        "class_declaration",
+        "abstract_class_declaration",
+        "interface_declaration",
+        "type_alias_declaration",
+        "enum_declaration",
+    )
     for exp in ts_root.find_all(kind="export_statement"):
         for ch in exp.children():
             ck = ch.kind()
-            if ck in (
-                "function_declaration",
-                "generator_function_declaration",
-                "class_declaration",
-                "abstract_class_declaration",
-                "interface_declaration",
-                "type_alias_declaration",
-                "enum_declaration",
-            ):
+            if ck in decl_kinds:
                 n = AstGrepIndexer._node_name(ch, lang)
                 if n:
                     exports.add(n)
+            elif ck == "ambient_declaration":
+                for amb_ch in ch.children():
+                    ack = amb_ch.kind()
+                    if ack in decl_kinds:
+                        n = AstGrepIndexer._node_name(amb_ch, lang)
+                        if n:
+                            exports.add(n)
+                    elif ack in ("lexical_declaration", "variable_declaration"):
+                        for vd in amb_ch.find_all(kind="variable_declarator"):
+                            n = AstGrepIndexer._node_name(vd, lang)
+                            if n:
+                                exports.add(n)
             elif ck in ("lexical_declaration", "variable_declaration"):
                 for vd in ch.find_all(kind="variable_declarator"):
                     n = AstGrepIndexer._node_name(vd, lang)
@@ -1606,6 +1751,8 @@ def _evaluate_symbol_visibility(
     ts_exports: set[str] | None = None,
     class_is_public: dict[str, bool] | None = None,
     cpp_member_is_private: bool = False,
+    parent_is_interface_or_trait: bool = False,
+    rust_is_trait_impl: bool = False,
 ) -> bool:
     """Evaluate language-native public boundary visibility for a CodeSymbol (DLT-2026-055)."""
     suffix = Path(sym.file_path).suffix.lower()
@@ -1620,6 +1767,8 @@ def _evaluate_symbol_visibility(
     if suffix == ".rs":
         if sym.parent_symbol and class_is_public is not None and not class_is_public.get(sym.parent_symbol, True):
             return False
+        if parent_is_interface_or_trait or rust_is_trait_impl:
+            return True
         if sig:
             return bool(_RUST_PUB_RE.search(sig))
         return not sym.name.startswith("_")
@@ -1659,9 +1808,15 @@ def _evaluate_symbol_visibility(
         if sym.name.startswith("_"):
             return False
         sig_prefix = sig.split("(", 1)[0] if sig else ""
-        return bool(re.search(r"\bpublic\b", sig_prefix)) and not bool(
-            re.search(r"\b(?:private|internal|protected)\b", sig_prefix)
-        )
+        if re.search(r"\b(?:private|internal|protected)\b", sig_prefix):
+            return False
+        if parent_is_interface_or_trait:
+            return bool(
+                sym.parent_symbol is None
+                or class_is_public is None
+                or class_is_public.get(sym.parent_symbol, False)
+            )
+        return bool(re.search(r"\bpublic\b", sig_prefix))
 
     if suffix == ".rb":
         if sym.name.startswith("_"):
@@ -1808,6 +1963,117 @@ class PublicSymbolDiff:
         return bool(self.added or self.removed or self.changed)
 
 
+def _extract_overload_param_suffix(sig: str, name: str) -> str:
+    """Extract normalized ``(...)`` parameter suffix (plus generic ``<...>`` if present) for overload disambiguation."""
+    stripped = _strip_leading_decorators_from_signature((sig or "").strip())
+    if not stripped or "(" not in stripped:
+        return ""
+    search_start = 0
+    if name:
+        m_name = re.search(rf"(?<![A-Za-z0-9_$]){re.escape(name)}(?![A-Za-z0-9_$])", stripped)
+        if m_name:
+            search_start = m_name.end()
+    tail = stripped[search_start:].lstrip()
+    type_params = ""
+    if tail.startswith("<"):
+        angle_depth = 0
+        for idx, ch in enumerate(tail):
+            if ch == "<":
+                angle_depth += 1
+            elif ch == ">":
+                angle_depth -= 1
+                if angle_depth == 0:
+                    type_params = re.sub(r"\s+", " ", tail[: idx + 1].strip())
+                    tail = tail[idx + 1 :].lstrip()
+                    break
+    open_idx = tail.find("(")
+    if open_idx == -1:
+        open_idx = stripped.find("(")
+        if open_idx == -1:
+            return type_params
+        tail = stripped[open_idx:]
+    else:
+        tail = tail[open_idx:]
+    depth = 0
+    in_q: str | None = None
+    esc = False
+    for idx, ch in enumerate(tail):
+        if esc:
+            esc = False
+            continue
+        if ch == "\\":
+            esc = True
+            continue
+        if in_q is not None:
+            if ch == in_q:
+                in_q = None
+            continue
+        if ch in ("'", '"', "`"):
+            if ch == "'" and _RUST_LIFETIME_AT_START_RE.match(tail[idx:]):
+                continue
+            in_q = ch
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                raw_params = re.sub(r"\s+", " ", tail[: idx + 1].strip())
+                raw_params = re.sub(r"\(\s+", "(", raw_params)
+                raw_params = re.sub(r"\s+\)", ")", raw_params)
+                raw_params = re.sub(r"\s*,\s*", ", ", raw_params)
+                return f"{type_params}{raw_params}"
+    return type_params
+
+
+def _build_overload_safe_symbol_map(
+    filtered_syms: list[CodeSymbol],
+    *,
+    collapse_same_params: bool = False,
+) -> dict[tuple[str, str, str], str]:
+    """Build ``(kind, parent, name) -> signature`` without clobbering overloaded functions or methods."""
+    groups: dict[tuple[str, str, str], list[CodeSymbol]] = {}
+    for s in filtered_syms:
+        groups.setdefault((s.kind, s.parent_symbol or "", s.name), []).append(s)
+
+    out: dict[tuple[str, str, str], str] = {}
+    for base_key, group in groups.items():
+        if len(group) == 1:
+            out[base_key] = group[0].signature or ""
+            continue
+        kind, parent, name = base_key
+        entries: list[tuple[str, str]] = []
+        if collapse_same_params:
+            by_param: dict[str, str] = {}
+            for s in group:
+                sig = s.signature or ""
+                psuffix = _extract_overload_param_suffix(sig, name)
+                if psuffix not in by_param or len(sig) > len(by_param[psuffix]):
+                    by_param[psuffix] = sig
+            entries = list(by_param.items())
+        else:
+            for s in group:
+                sig = s.signature or ""
+                entries.append((_extract_overload_param_suffix(sig, name), sig))
+
+        if len(entries) == 1:
+            out[base_key] = entries[0][1]
+            continue
+
+        for idx, (psuffix, sig) in enumerate(entries):
+            if idx == 0:
+                out[base_key] = sig
+            else:
+                disambig = f"{name}{psuffix}" if psuffix else f"{name}#{idx + 1}"
+                cand_key = (kind, parent, disambig)
+                n = 2
+                while cand_key in out:
+                    cand_key = (kind, parent, f"{disambig}#{n}")
+                    n += 1
+                out[cand_key] = sig
+    return out
+
+
 def public_symbol_map(
     content: str | None,
     file_path: Path | str,
@@ -1823,7 +2089,10 @@ def public_symbol_map(
     if content is None or suffix not in _AST_DIFF_EXTS:
         return {}
     syms = _symbols if _symbols is not None else get_ast_indexer().extract_symbols(p, content)
-    return {(s.kind, s.parent_symbol or "", s.name): (s.signature or "") for s in syms if _is_public_symbol(s)}
+    return _build_overload_safe_symbol_map(
+        [s for s in syms if _is_public_symbol(s)],
+        collapse_same_params=suffix in (".c", ".cpp", ".h", ".hpp"),
+    )
 
 
 def boundary_symbol_map(
@@ -1917,13 +2186,12 @@ def boundary_symbol_map(
             pass
 
     syms = _symbols if _symbols is not None else get_ast_indexer().extract_symbols(p, content)
-    out: dict[tuple[str, str, str], str] = {
-        (s.kind, s.parent_symbol or "", s.name): (s.signature or "")
-        for s in syms
-        if _is_boundary_export_symbol(s, py_dunder_all=py_dunder_all)
-    }
+    out = _build_overload_safe_symbol_map(
+        [s for s in syms if _is_boundary_export_symbol(s, py_dunder_all=py_dunder_all)],
+        collapse_same_params=suffix in (".c", ".cpp", ".h", ".hpp"),
+    )
     for k, v in reexported.items():
-        if not any(existing_k[2] == k[2] for existing_k in out):
+        if not any(existing_k[2].split("(", 1)[0] == k[2] for existing_k in out):
             out[k] = v
     return out
 

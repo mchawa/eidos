@@ -40,6 +40,7 @@ class ChangedFilesClassification:
     test_files: list[str] = field(default_factory=list)
     doc_files: list[str] = field(default_factory=list)
     other_files: list[str] = field(default_factory=list)
+    onboarding_files: list[str] = field(default_factory=list)
 
     @property
     def total_changed(self) -> int:
@@ -54,6 +55,28 @@ class ChangedFilesClassification:
 
 
 _CANDIDATE_BASE_REFS = ("origin/main", "main", "origin/master", "master", "HEAD~1")
+_DOCS_STATIC_EXTENSIONS = frozenset(
+    {
+        ".md",
+        ".adoc",
+        ".rst",
+        ".txt",
+        ".html",
+        ".css",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".svg",
+        ".webp",
+        ".ico",
+        ".pdf",
+        ".yml",
+        ".yaml",
+        ".toml",
+        ".json",
+    }
+)
 _PACKAGE_PATH_LINE_RE = re.compile(r"^source_path:[ \t]*[\"']?([^\"'\n#\[\]-][^\"'\n#]*)", re.MULTILINE)
 _PACKAGE_PATH_BLOCK_RE = re.compile(
     r"^source_path:[ \t]*(.*?)$((?:\r?\n[ \t]+-[ \t]+.*$)*)",
@@ -68,6 +91,56 @@ def _stdout_str(res: object) -> str:
     if isinstance(out, str):
         return out.strip()
     return ""
+
+
+def _is_shallow_repository(git_root: Path) -> bool:
+    """Return True when git_root (standard checkout or linked Git worktree) is a shallow repository."""
+    try:
+        res = subprocess.run(
+            ["git", "rev-parse", "--is-shallow-repository"],
+            cwd=git_root,
+            capture_output=True,
+            check=False,
+        )
+        if res.returncode == 0:
+            return _stdout_str(res).lower() == "true"
+    except OSError:
+        pass
+    dot_git = git_root / ".git"
+    if dot_git.is_dir():
+        return (dot_git / "shallow").is_file()
+    if dot_git.is_file():
+        with contextlib.suppress(OSError):
+            raw = dot_git.read_text(encoding="utf-8", errors="replace").strip()
+            if raw.startswith("gitdir:"):
+                gitdir = Path(raw.split(":", 1)[1].strip())
+                if not gitdir.is_absolute():
+                    gitdir = (git_root / gitdir).resolve()
+                if (gitdir / "shallow").is_file():
+                    return True
+                commondir_file = gitdir / "commondir"
+                if commondir_file.is_file():
+                    rel_common = commondir_file.read_text(encoding="utf-8", errors="replace").strip()
+                    return ((gitdir / rel_common).resolve() / "shallow").is_file()
+    return False
+
+
+def _git_commit_count(repo: Path, rev: str = "HEAD") -> int | None:
+    """Return reachable commit count for rev via `git rev-list --count`, or None on failure."""
+    try:
+        res = subprocess.run(
+            ["git", "rev-list", "--count", rev],
+            cwd=repo,
+            capture_output=True,
+            check=False,
+        )
+        if res.returncode == 0:
+            out = _stdout_str(res)
+            if out.isdigit():
+                return int(out)
+    except OSError:
+        pass
+    return None
 
 
 def _query_merge_base(repo: Path, base_ref: str, head_ref: str = "HEAD") -> str | None:
@@ -142,6 +215,15 @@ def _resolve_base_ref(repo: Path, base_ref: str | None = None) -> str | None:
                 )
                 if prev_check.returncode == 0 and _resolve_merge_base(repo, "HEAD~1", "HEAD", fail_loudly=False):
                     continue
+                git_root = find_git_root(repo) or repo
+                if _is_shallow_repository(git_root):
+                    raise GitResolutionError(
+                        "Cannot resolve base Git reference in a shallow clone (--is-shallow-repository detected; "
+                        f"'{candidate}' points to HEAD with fetch-depth: 1). "
+                        "Fetch full history (fetch-depth: 0) or pass --uncommitted."
+                    )
+                if _git_commit_count(repo, "HEAD") != 1:
+                    continue
             return candidate
     return None
 
@@ -173,6 +255,7 @@ def _resolve_base_and_merge_base(
         resolved_mb = _resolve_merge_base(repo, resolved_base, head_ref, fail_loudly=True)
         return resolved_base, resolved_mb, False
 
+    head_sha = ""
     if head_ref != "HEAD":
         head_check = subprocess.run(
             ["git", "rev-parse", "--verify", head_ref],
@@ -184,28 +267,49 @@ def _resolve_base_and_merge_base(
             raise GitResolutionError(
                 f"Cannot resolve head Git reference '{head_ref}'. Ensure the reference exists and is fetched."
             )
+        head_sha = _stdout_str(head_check)
 
     candidate = _resolve_base_ref(repo, None)
     if not candidate:
-        if (git_root / ".git" / "shallow").exists():
+        if _is_shallow_repository(git_root):
             raise GitResolutionError(
-                "Cannot resolve base Git reference in a shallow clone (.git/shallow detected). "
+                "Cannot resolve base Git reference in a shallow clone (--is-shallow-repository detected). "
                 "Fetch full history (fetch-depth: 0) or pass --uncommitted."
             )
         return None, None, True
 
     mb = _resolve_merge_base(repo, candidate, head_ref, fail_loudly=False)
     if mb:
-        return candidate, mb, False
+        if head_ref != "HEAD" and head_sha and mb == head_sha and candidate in ("origin/main", "main", "origin/master", "master"):
+            prev_ref = f"{head_ref}~1"
+            prev_check = subprocess.run(
+                ["git", "rev-parse", "--verify", prev_ref],
+                cwd=repo,
+                capture_output=True,
+                check=False,
+            )
+            if prev_check.returncode == 0 and _resolve_merge_base(repo, prev_ref, head_ref, fail_loudly=False):
+                mb = None
+            elif _is_shallow_repository(git_root):
+                raise GitResolutionError(
+                    "Cannot resolve base Git reference in a shallow clone (--is-shallow-repository detected; "
+                    f"'{candidate}' points to '{head_ref}' with fetch-depth: 1). "
+                    "Fetch full history (fetch-depth: 0) or pass --uncommitted."
+                )
+            elif _git_commit_count(repo, head_ref) != 1:
+                mb = None
+        if mb:
+            return candidate, mb, False
 
     # Fallback scan if the initial candidate had no common ancestor with head_ref
-    head_check = subprocess.run(
-        ["git", "rev-parse", "--verify", "HEAD"],
-        cwd=repo,
-        capture_output=True,
-        check=False,
-    )
-    head_sha = _stdout_str(head_check) if head_check.returncode == 0 else ""
+    if not head_sha:
+        head_check = subprocess.run(
+            ["git", "rev-parse", "--verify", head_ref],
+            cwd=repo,
+            capture_output=True,
+            check=False,
+        )
+        head_sha = _stdout_str(head_check) if head_check.returncode == 0 else ""
     start_idx = _CANDIDATE_BASE_REFS.index(candidate) + 1 if candidate in _CANDIDATE_BASE_REFS else 0
     for rem_cand in _CANDIDATE_BASE_REFS[start_idx:]:
         check = subprocess.run(
@@ -217,21 +321,30 @@ def _resolve_base_and_merge_base(
         if check.returncode == 0:
             cand_sha = _stdout_str(check)
             if rem_cand in ("origin/main", "main", "origin/master", "master") and head_sha and cand_sha == head_sha:
+                prev_ref = f"{head_ref}~1" if head_ref != "HEAD" else "HEAD~1"
                 prev_check = subprocess.run(
-                    ["git", "rev-parse", "--verify", "HEAD~1"],
+                    ["git", "rev-parse", "--verify", prev_ref],
                     cwd=repo,
                     capture_output=True,
                     check=False,
                 )
-                if prev_check.returncode == 0 and _resolve_merge_base(repo, "HEAD~1", head_ref, fail_loudly=False):
+                if prev_check.returncode == 0 and _resolve_merge_base(repo, prev_ref, head_ref, fail_loudly=False):
+                    continue
+                if _is_shallow_repository(git_root):
+                    raise GitResolutionError(
+                        "Cannot resolve merge base in a shallow clone (--is-shallow-repository detected; "
+                        f"'{rem_cand}' points to '{head_ref}' with fetch-depth: 1). "
+                        "Fetch full history (fetch-depth: 0) or pass --uncommitted."
+                    )
+                if _git_commit_count(repo, head_ref) != 1:
                     continue
             rem_mb = _resolve_merge_base(repo, rem_cand, head_ref, fail_loudly=False)
             if rem_mb:
                 return rem_cand, rem_mb, False
 
-    if (git_root / ".git" / "shallow").exists():
+    if _is_shallow_repository(git_root):
         raise GitResolutionError(
-            "Cannot resolve merge base in a shallow clone (.git/shallow detected). "
+            "Cannot resolve merge base in a shallow clone (--is-shallow-repository detected). "
             "Fetch full history (fetch-depth: 0) or pass --uncommitted."
         )
     return None, None, True
@@ -265,6 +378,36 @@ def _scope_git_paths_to_subproject(
     return sorted(scoped)
 
 
+def _parse_porcelain_v1_z(raw_output: str) -> list[str]:
+    """Parse NUL-delimited `git status --porcelain=v1 -z` entries (including R/C rename/copy pairs)."""
+    paths: list[str] = []
+    tokens = raw_output.split("\0")
+    idx = 0
+    n = len(tokens)
+    while idx < n:
+        entry = tokens[idx]
+        idx += 1
+        if len(entry) < 4:
+            continue
+        xy = entry[:2]
+        path = entry[3:]
+        if path:
+            paths.append(path)
+        if ("R" in xy or "C" in xy) and idx < n:
+            orig_path = tokens[idx]
+            idx += 1
+            if orig_path:
+                paths.append(orig_path)
+    return paths
+
+
+def _split_git_name_only_output(raw_output: str) -> list[str]:
+    """Split `git diff --name-only -z` output (falling back to lines if non-NUL mocked output is provided)."""
+    if "\0" in raw_output:
+        return [entry for entry in raw_output.split("\0") if entry]
+    return [line.strip() for line in raw_output.splitlines() if line.strip()]
+
+
 def get_git_diff_files(
     repo_root: Path,
     base_ref: str | None = None,
@@ -273,7 +416,7 @@ def get_git_diff_files(
     *,
     merge_base: str | None = None,
 ) -> list[str]:
-    """Retrieve list of modified and added files using Git with core.quotePath=false, scoped to repo_root."""
+    """Retrieve list of modified and added files using NUL-delimited Git output, scoped to repo_root."""
     repo = repo_root.resolve()
     git_root = find_git_root(repo)
     nested_roots = discover_nested_subproject_roots(repo)
@@ -284,44 +427,38 @@ def get_git_diff_files(
     )
 
     if uncommitted:
-        # Check uncommitted changes (working tree + staging + untracked)
+        # Check uncommitted changes (working tree + staging + untracked) via NUL-delimited Git plumbing
         files: set[str] = set()
         try:
             diff_res = subprocess.run(
-                ["git", "-c", "core.quotePath=false", "diff", "--name-only", "--no-renames"],
+                ["git", "-c", "core.quotePath=false", "diff", "--name-only", "-z", "--no-renames"],
                 cwd=repo,
                 capture_output=True,
                 text=True,
                 check=False,
             )
             if diff_res.returncode == 0:
-                files.update(line.strip() for line in diff_res.stdout.splitlines() if line.strip())
+                files.update(_split_git_name_only_output(diff_res.stdout))
 
             staged_res = subprocess.run(
-                ["git", "-c", "core.quotePath=false", "diff", "--cached", "--name-only", "--no-renames"],
+                ["git", "-c", "core.quotePath=false", "diff", "--cached", "--name-only", "-z", "--no-renames"],
                 cwd=repo,
                 capture_output=True,
                 text=True,
                 check=False,
             )
             if staged_res.returncode == 0:
-                files.update(line.strip() for line in staged_res.stdout.splitlines() if line.strip())
+                files.update(_split_git_name_only_output(staged_res.stdout))
 
             status_res = subprocess.run(
-                ["git", "-c", "core.quotePath=false", "status", "--porcelain", "--no-renames", "-uall"],
+                ["git", "-c", "core.quotePath=false", "status", "--porcelain=v1", "-z", "-uall"],
                 cwd=repo,
                 capture_output=True,
                 text=True,
                 check=False,
             )
             if status_res.returncode == 0:
-                for line in status_res.stdout.splitlines():
-                    if len(line) > 3:
-                        raw_path = line[3:].strip()
-                        if " -> " in raw_path:
-                            src_path, raw_path = (part.strip() for part in raw_path.split(" -> ", 1))
-                            files.add(src_path)
-                        files.add(raw_path)
+                files.update(_parse_porcelain_v1_z(status_res.stdout))
         except OSError:
             pass
         return _scope_git_paths_to_subproject(files, repo, git_root, nested_prefixes)
@@ -337,7 +474,17 @@ def get_git_diff_files(
     try:
         diff_base = resolved_mb or f"{resolved_base}...{head_ref}"
         if resolved_mb:
-            cmd = ["git", "-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", resolved_mb, head_ref]
+            cmd = [
+                "git",
+                "-c",
+                "core.quotePath=false",
+                "diff",
+                "--name-only",
+                "-z",
+                "--no-renames",
+                resolved_mb,
+                head_ref,
+            ]
         else:
             cmd = [
                 "git",
@@ -345,13 +492,14 @@ def get_git_diff_files(
                 "core.quotePath=false",
                 "diff",
                 "--name-only",
+                "-z",
                 "--no-renames",
                 f"{resolved_base}...{head_ref}",
             ]
 
         res = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=False)
         if res.returncode == 0:
-            lines = [line.strip() for line in res.stdout.splitlines() if line.strip()]
+            lines = _split_git_name_only_output(res.stdout)
             return _scope_git_paths_to_subproject(lines, repo, git_root, nested_prefixes)
 
         if base_ref:
@@ -471,6 +619,20 @@ def _discover_container_package_paths(eidos_dir: Path) -> list[str]:
     return pkg_paths
 
 
+def _is_onboarding_governance_file(parts: list[str]) -> bool:
+    """Return True if repo-relative lowercased path parts match an Eidos onboarding governance artifact."""
+    if not parts:
+        return False
+    if len(parts) == 1 and parts[0] in ("agents.md", "claude.md", ".aider.conf.yml"):
+        return True
+    return (
+        len(parts) >= 3
+        and parts[0] in (".agents", ".claude", ".aider")
+        and parts[1] == "skills"
+        and parts[-1] == "skill.md"
+    )
+
+
 def classify_changed_files(
     files: list[str],
     repo_root: Path | None = None,
@@ -526,7 +688,7 @@ def classify_changed_files(
     )
 
     candidate_code_paths: list[str] = []
-    parsed_files: list[tuple[str, Path, Path, list[str], bool, list[str], bool]] = []
+    parsed_files: list[tuple[str, Path, Path, list[str], bool, list[str], bool, bool]] = []
     for f_str in files:
         f = Path(f_str)
         if f.is_absolute():
@@ -537,32 +699,36 @@ def classify_changed_files(
         else:
             rel_f = f
         parts = [p.lower() for p in rel_f.parts]
+        sfx = f.suffix.lower()
+        if _is_onboarding_governance_file(parts):
+            classification.onboarding_files.append(f_str)
         is_in_eidos = prefix_len > 0 and len(parts) >= prefix_len and parts[:prefix_len] == eidos_rel_parts
         sub_parts = parts[prefix_len:] if is_in_eidos else []
         is_eidos_ignored = f.name == ".gitkeep" or (is_in_eidos and any(p.startswith(".") for p in sub_parts))
-        is_eidos_spec = is_in_eidos and f.suffix in {".adoc", ".json", ".yaml", ".yml"}
+        is_eidos_spec = is_in_eidos and sfx in {".adoc", ".json", ".yaml", ".yml"}
         is_test = is_polyglot_test_file(rel_f, repo_root=effective_root, package_paths=eff_pkg_paths)
-        is_doc = f.suffix in {".md", ".rst"} or (bool(parts and parts[0] == "docs"))
-        parsed_files.append((f_str, f, rel_f, parts, is_in_eidos, sub_parts, is_test))
+        is_doc = sfx in {".md", ".rst"} or (bool(parts and parts[0] == "docs") and sfx in _DOCS_STATIC_EXTENSIONS)
+        parsed_files.append((f_str, f, rel_f, parts, is_in_eidos, sub_parts, is_test, is_doc))
 
         if (
             not is_eidos_ignored
             and not is_eidos_spec
             and not is_test
             and not is_doc
-            and f.suffix in code_extensions
+            and sfx in code_extensions
             and not any(skip in STANDARD_EXCLUDED_DIRS for skip in parts[:-1])
         ):
             candidate_code_paths.append(str(rel_f).replace("\\", "/"))
 
     vendored_paths = is_generated_or_vendored(effective_root, candidate_code_paths) if candidate_code_paths else set()
 
-    for f_str, f, rel_f, parts, is_in_eidos, sub_parts, is_test in parsed_files:
+    for f_str, f, rel_f, parts, is_in_eidos, sub_parts, is_test, is_doc in parsed_files:
+        sfx = f.suffix.lower()
         if f.name == ".gitkeep" or (is_in_eidos and any(p.startswith(".") for p in sub_parts)):
             classification.other_files.append(f_str)
             continue
 
-        if is_in_eidos and f.suffix in {".adoc", ".json", ".yaml", ".yml"}:
+        if is_in_eidos and sfx in {".adoc", ".json", ".yaml", ".yml"}:
             if "deltas" in sub_parts:
                 classification.delta_files.append(f_str)
             else:
@@ -573,13 +739,13 @@ def classify_changed_files(
             classification.test_files.append(f_str)
             continue
 
-        if f.suffix in {".md", ".rst"} or (bool(parts and parts[0] == "docs")):
+        if is_doc:
             classification.doc_files.append(f_str)
             continue
 
         rel_str_norm = str(rel_f).replace("\\", "/")
         if (
-            f.suffix in code_extensions
+            sfx in code_extensions
             and not any(skip in STANDARD_EXCLUDED_DIRS for skip in parts[:-1])
             and rel_str_norm not in vendored_paths
             and str(rel_f) not in vendored_paths

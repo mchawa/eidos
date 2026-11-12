@@ -20,17 +20,17 @@ properties:
     pattern: "^CTR-[A-Z0-9_-]+$"
     description: "Unique contract identifier (e.g. CTR-CLI, CTR-AUTH-OPENAPI)."
   title:
-    type: string
+    $ref: "#/$defs/non_empty_string"
     description: "Human-readable title of this interface contract."
   status:
     $ref: "#/$defs/lifecycle_status"
   protocol:
-    type: string
+    $ref: "#/$defs/non_empty_string"
     description: "Protocol format: openapi, protobuf, graphql, asyncapi, json_schema, json_rpc_stdio, python_protocol, or cli_args."
   container:
     $ref: "#/$defs/container_ref"
   specification_file:
-    type: string
+    $ref: "#/$defs/non_empty_string"
     description: "Relative path from repository root to the raw interface schema file (e.g. contracts/api.openapi.yaml)."
   version:
     $ref: "#/$defs/semver"

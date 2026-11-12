@@ -19,14 +19,14 @@ properties:
     pattern: "^DS-[A-Z0-9_-]+$"
     description: "Unique design system identifier following the DS-<NAME> convention (e.g. DS-CORE, DS-ACME)."
   title:
-    type: string
+    $ref: "#/$defs/non_empty_string"
     description: "Display title of the design system (e.g. 'Core Product Design System', 'Acme Enterprise Theme')."
   status:
     $ref: "#/$defs/lifecycle_status"
   version:
     $ref: "#/$defs/semver"
   brand_name:
-    type: string
+    $ref: "#/$defs/non_empty_string"
     description: "Human-readable client or brand name (e.g. 'Acme Corporation')."
   extends:
     $ref: "#/$defs/design_system_ref"
@@ -47,12 +47,13 @@ properties:
       - manifest
     properties:
       spec_format:
-        type: string
+        $ref: "#/$defs/non_empty_string"
         description: "Format identifier for design tokens. Recommended standard: 'w3c_design_tokens'."
         examples:
           - "w3c_design_tokens"
       manifest:
         type: string
+        pattern: "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))\\S.*$"
         description: "Relative path to the W3C tokens JSON file (e.g. 'tokens.json' or 'tokens/brand-overrides.json')."
   theme_capabilities:
     type: object
@@ -63,12 +64,12 @@ properties:
         type: array
         description: "Supported color schemes (e.g. light, dark, high_contrast)."
         items:
-          type: string
+          $ref: "#/$defs/non_empty_string"
       density_modes:
         type: array
         description: "Supported UI density presets (e.g. comfortable, compact)."
         items:
-          type: string
+          $ref: "#/$defs/non_empty_string"
   external_references:
     $ref: "#/$defs/external_design_references"
   decisions:

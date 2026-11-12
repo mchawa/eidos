@@ -39,7 +39,7 @@ eidos info
 ---
 
 ### `eidos doctor`
-Verify Eidos tool installation, non-blocking PyPI release update availability (`checks.cli_update`), Git repository status, specification directory health, knowledge graph index freshness, and installed agent plugin currency and `Stop` hook health (`hooks_ok`, `hooks_status`, `target_hooks`, `hook_errors`):
+Verify Eidos tool installation, non-blocking PyPI release update availability (`checks.cli_update`), root `AGENTS.md` managed-block integrity (`checks.agents_md`), Git repository status, specification directory health, knowledge graph index freshness, and installed agent plugin currency and `Stop` / `PreToolUse` hook health (`hooks_ok`, `hooks_status`, `target_hooks`, `hook_errors`):
 
 ```bash
 eidos doctor
@@ -49,7 +49,7 @@ eidos doctor --json
 
 Options:
 * `--path, -p PATH`: Path to the project or specifications directory (default: current directory).
-* `--json`: Output diagnostic report in JSON format (including `checks.cli_update` with `status`, `installed_version`, `latest_version`, `update_available`, and `upgrade_command`, and `checks.agent_plugin` with `hooks_ok`, `hooks_status`, `target_hooks`, and `hook_errors`).
+* `--json`: Output diagnostic report in JSON format (including `checks.cli_update`, `checks.agents_md`, and `checks.agent_plugin` with `hooks_ok`, `hooks_status`, `target_hooks`, and `hook_errors`).
 
 ---
 
@@ -178,7 +178,7 @@ Manage and query the embedded SQLite architectural knowledge graph and FTS5 lexi
 The index initializes automatically on first use and lazily resynchronizes before every query via sub-5ms `mtime_ns` and `SHA-256` dirty checking, guaranteeing zero drift.
 
 #### `eidos index status`
-Display database cache size, schema version (`2.18.0`), clean/drift synchronization state across specs and code, check latency, entity/edge counts, active AST parser engine (`ast-grep`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
+Display database cache size, schema version (`2.19.0`), clean/drift synchronization state across specs and code, check latency, entity/edge counts, active AST parser engine (`ast-grep`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
 
 ```bash
 # Display rich visual status and AST telemetry:
@@ -353,6 +353,10 @@ eidos delta status
 eidos delta status DLT-2026-055 in_review
 eidos delta status --json
 
+# Inspect any active or archived SpecDelta's frontmatter, composable mutations, and AsciiDoc body
+eidos delta show DLT-2026-055
+eidos delta show DLT-2026-055 --json
+
 # Create a new SpecDelta with collision-free auto ID and title-derived slug (kind: feature | enabler | bug)
 eidos delta create \
   --title "Migrate to PostgreSQL 16" \
@@ -421,15 +425,17 @@ Options:
 * `--open`: Open portal in browser automatically.
 
 #### `eidos portal build`
-Export the Eidos Living Web Portal as a self-contained, air-gapped static site (`index.html` + `data.json`) suitable for deployment on GitHub Pages, GitLab Pages, or static web servers.
+Export the Eidos Living Web Portal as a self-contained, air-gapped static site (`index.html`, `./assets/*`, `data.json`, and local per-entity `specs/<id>.json` chunks by default, or a single self-contained `index.html` + `data.json` with `--single-file`) suitable for deployment on GitHub Pages, GitLab Pages, or static web servers.
 
 ```bash
 eidos portal build --path eidos --out public
+eidos portal build --path eidos --out public --single-file
 ```
 
 Options:
 * `--path, -p PATH`: Path to the specifications directory (default: `eidos`).
 * `--out, -o PATH`: Destination directory for generated static assets (default: `./site`).
+* `--single-file`: Inline scripts, styles, and specification bodies directly into `index.html` and `data.json` instead of emitting `./assets/*` and lazy local `specs/<id>.json` chunks.
 
 ---
 
@@ -442,7 +448,7 @@ Manage and validate Eidos Agent Skills complying with the `agentskills.io` speci
 # Install Agent Skills for all 9 supported AI agents (skills + AGENTS.md, no hooks by default)
 eidos plugin install all
 
-# Install Agent Skills with native Stop / TaskComplete lifecycle hooks enabled
+# Install Agent Skills with native Stop / PreToolUse lifecycle hooks enabled
 eidos plugin install all --hooks
 
 # Or install for a specific target:
@@ -482,12 +488,12 @@ Sub-commands:
 * `version`: Displays and compares bundled vs installed skills version (`--project-dir, -p`).
 * `update <TARGET>`: Updates project-scoped skills to the latest bundled version and preserves the current hook state (`--project-dir, -p`, `--launcher [eidos|uvx]`).
 * `validate`: Validates an Agent Skills bundle against `agentskills.io` frontmatter rules and SemVer 2.0.0 versioning.
-* `info`: Displays Agent Skills metadata, skills, lifecycle hooks, and supported targets.
+* `info`: Displays Agent Skills package metadata, skills, and lifecycle hooks.
 
 ---
 
 ### `eidos hook`
-Stateless CLI-native `Stop` lifecycle hook handler invoked by AI coding agent harnesses to verify specification schemas, invariant test bindings, and spec-to-code synchronization:
+Stateless session-baseline-aware CLI-native `Stop` / `PreToolUse` (`attempt_completion`) / `SessionStart` lifecycle hook handler invoked by AI coding agent harnesses to verify specification schemas, invariant test bindings, and spec-to-code synchronization:
 
 ```bash
 eidos hook

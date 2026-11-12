@@ -30,8 +30,8 @@ def safe_load_yaml(stream_or_str: str | bytes | Any) -> Any:
     if not raw_str.strip():
         return None
     try:
-        if "\n---" in raw_str:
-            docs = list(fast_yaml.safe_load_all(raw_str))
+        if "\n---" in raw_str or "\n..." in raw_str or raw_str.lstrip().startswith(("---", "...")):
+            docs = [d for d in fast_yaml.safe_load_all(raw_str) if d is not None]
             if not docs:
                 return None
             if len(docs) > 1:
@@ -116,7 +116,27 @@ def dump_spec_document(frontmatter: dict[str, Any], body: str) -> str:
 
 def parse_spec_file(path: Path) -> SpecDocument:
     """Parse an .adoc specification file with YAML frontmatter."""
-    return _parse_spec_content(path, path.read_text(encoding="utf-8"))
+    try:
+        content = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        return SpecDocument(
+            file_path=path,
+            frontmatter={},
+            body="",
+            doc_type="unknown",
+            doc_id=path.stem,
+            errors=[f"Invalid UTF-8 encoding: {exc}"],
+        )
+    except OSError as exc:
+        return SpecDocument(
+            file_path=path,
+            frontmatter={},
+            body="",
+            doc_type="unknown",
+            doc_id=path.stem,
+            errors=[f"Failed to read specification file: {exc}"],
+        )
+    return _parse_spec_content(path, content)
 
 
 _NON_ROOT_SPEC_SUBDIRS = (

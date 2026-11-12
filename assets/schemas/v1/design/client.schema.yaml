@@ -20,7 +20,7 @@ properties:
     pattern: "^CLT-[A-Z0-9_-]+$"
     description: "Unique client identifier following the CLT-<NAME> convention (e.g. CLT-WEB-PORTAL, CLT-MOBILE-APP)."
   title:
-    type: string
+    $ref: "#/$defs/non_empty_string"
     description: "Display title of the client application or platform."
   status:
     $ref: "#/$defs/lifecycle_status"
@@ -28,12 +28,13 @@ properties:
     $ref: "#/$defs/semver"
   platform:
     type: string
-    description: "Runtime platform surface: web, mobile-ios, mobile-android, desktop, tui, or multi-platform."
+    description: "Runtime platform surface: web, mobile-ios, mobile-android, desktop, cli, tui, or multi-platform."
     enum:
       - "web"
       - "mobile-ios"
       - "mobile-android"
       - "desktop"
+      - "cli"
       - "tui"
       - "multi-platform"
   design_system:

@@ -18,7 +18,7 @@ properties:
     pattern: "^EXP-[A-Z0-9_-]+$"
     description: "Unique exploration identifier following the EXP-<YEAR>-<NUMBER> convention (e.g. EXP-2026-014)."
   title:
-    type: string
+    $ref: "#/$defs/non_empty_string"
     description: "Human-readable title describing the research topic or spike investigation."
   status:
     $ref: "#/$defs/exploration_status"

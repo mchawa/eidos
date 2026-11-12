@@ -1,7 +1,7 @@
 import * as React from "react";
 import { ZoomIn, ZoomOut, RotateCcw, Maximize2, Move, Expand, Shrink } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getConfiguredMermaid } from "@/lib/mermaid";
+import { getConfiguredMermaid, sanitizeMermaidCode } from "@/lib/mermaid";
 
 export interface MermaidDiagramProps {
   code: string;
@@ -149,7 +149,8 @@ export function MermaidDiagram({
         setError(null);
         const mermaid = await getConfiguredMermaid(isDark);
         const uniqueId = `mermaid-${id || "dia"}-${Math.random().toString(36).substring(2, 9)}`;
-        const { svg } = await mermaid.render(uniqueId, code.trim());
+        const safeCode = sanitizeMermaidCode(code);
+        const { svg } = await mermaid.render(uniqueId, safeCode || "flowchart LR\n  Start --> End");
         if (!isCancelled && diagramRef.current) {
           diagramRef.current.innerHTML = svg;
           const svgEl = diagramRef.current.querySelector("svg");
