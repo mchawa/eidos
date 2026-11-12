@@ -4529,8 +4529,11 @@ def test_group_e_parser_models_project_and_spec_cli_branches(tmp_path, validator
         "    plain = 1\n"
         "    def __init__(self):\n"
         "        self.ready = True\n"
+        "def clone_widget[T](w: T) -> T:\n"
+        "    return w\n"
         "__all__ = ['Widget']\n"
-        "type WidgetId = str\n",
+        "type WidgetId = str\n"
+        "type GenericWidgetId[T] = list[T]\n",
         encoding="utf-8",
     )
     (g_repo / "src" / "gen.py").write_text("# generated\nx = 1\n", encoding="utf-8")
@@ -4619,7 +4622,7 @@ def test_group_e_parser_models_project_and_spec_cli_branches(tmp_path, validator
     )
     (g_repo / "eidos" / "architecture" / "components" / "widget.adoc").write_text(
         "---\ntype: tech/component\nid: CMP-WIDGET\ntitle: Widget\ncontainer: CNT-APP\nstatus: active\nsource_path: src/main.py\n---\n"
-        "= Widget\n\n== Public Surface\n* `Widget.count`\n* `Widget.plain`\n* `Widget.ready`\n* `WidgetId`\n",
+        "= Widget\n\n== Public Surface\n* `Widget.count`\n* `Widget.plain`\n* `Widget.ready`\n* `WidgetId`\n* `GenericWidgetId[T]`\n* `clone_widget[T](w: T)`\n",
         encoding="utf-8",
     )
     (g_repo / "eidos" / "architecture" / "contracts" / "schema.adoc").write_text(
@@ -4668,7 +4671,7 @@ def test_group_e_parser_models_project_and_spec_cli_branches(tmp_path, validator
     # 5. Additional validator protocol & reference edge cases (GraphQL, Python Protocol, malformed OpenAPI/JSON Schema)
     (g_repo / "api.graphql").write_text("type Query {\n  user(id: ID!): String\n}\n", encoding="utf-8")
     (g_repo / "proto_iface.py").write_text(
-        "from typing import Protocol\nclass StoragePort(Protocol):\n    def load(self, key: str) -> str: ...\n",
+        "from typing import Protocol\nclass StoragePort[T](Protocol):\n    def load(self, key: str) -> T: ...\n",
         encoding="utf-8",
     )
     (g_repo / "bad_openapi.yaml").write_text("paths: [unclosed\n", encoding="utf-8")

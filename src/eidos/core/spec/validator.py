@@ -10,6 +10,7 @@ from typing import Any, ClassVar
 
 import jsonschema
 import orjson
+from ast_grep_py import SgRoot
 
 from eidos.core.index.ast_indexer import AST_DIFF_EXTS, get_ast_indexer
 from eidos.core.spec.models import (
@@ -64,6 +65,37 @@ def is_entity_id(val: Any) -> bool:
         return False
     val_clean = val.strip().upper()
     return any(val_clean.startswith(prefix) for prefix in _DYNAMIC_ENTITY_ID_PREFIXES)
+
+
+def _parse_python_ast(source: str) -> ast.Module:
+    """Parse Python source into an AST, normalizing PEP 695/696 type aliases and type parameters on Python >=3.11."""
+    root = SgRoot(source, "python").root()
+    edits: list[tuple[int, int, str]] = []
+    for ta in root.find_all(kind="type_alias_statement"):
+        left = ta.field("left")
+        alias_ident = left.text().split("[", 1)[0].strip() if left is not None else ""
+        if alias_ident.isidentifier():
+            rng = ta.range()
+            s_idx, e_idx = rng.start.index, rng.end.index
+            nl_pad = "\n" * source[s_idx:e_idx].count("\n")
+            edits.append((s_idx, e_idx, f"{alias_ident} = None{nl_pad}"))
+    for tp in root.find_all(kind="type_parameter"):
+        parent = tp.parent()
+        if parent is not None and parent.kind() in ("class_definition", "function_definition"):
+            rng = tp.range()
+            edits.append((rng.start.index, rng.end.index, ""))
+    if edits:
+        edits.sort(key=lambda item: item[0], reverse=True)
+        parts: list[str] = []
+        cursor = len(source)
+        for s_idx, e_idx, repl in edits:
+            if e_idx <= cursor:
+                parts.append(source[e_idx:cursor])
+                parts.append(repl)
+                cursor = s_idx
+        parts.append(source[:cursor])
+        source = "".join(reversed(parts))
+    return ast.parse(source)
 
 
 class SpecValidator:
@@ -900,7 +932,7 @@ class SpecValidator:
 
         if test_file.suffix.lower() == ".py":
             with contextlib.suppress(SyntaxError, ValueError):
-                tree = ast.parse(source)
+                tree = _parse_python_ast(source)
                 for node in ast.walk(tree):
                     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         unqualified_names.add(node.name)
@@ -1374,8 +1406,8 @@ class SpecValidator:
         """Verify bidirectional CLI command parity across Typer (including sub-apps), Click, and argparse entrypoints (DLT-2026-082)."""
         try:
             source = cli_file.read_text(encoding="utf-8")
-            tree = ast.parse(source)
-        except (OSError, SyntaxError):
+            tree = _parse_python_ast(source)
+        except (OSError, SyntaxError, ValueError):
             return
 
         source_lower = source.lower()
@@ -1567,8 +1599,8 @@ class SpecValidator:
                     continue
                 seen_cands.add(cand_py)
                 if cand_py.is_file() and cand_py.resolve() != cli_file.resolve():
-                    with contextlib.suppress(OSError, SyntaxError):
-                        parsed = ast.parse(cand_py.read_text(encoding="utf-8"))
+                    with contextlib.suppress(OSError, SyntaxError, ValueError):
+                        parsed = _parse_python_ast(cand_py.read_text(encoding="utf-8"))
                         _register_typer_aliases(parsed)
                         sibling_trees[mod_ref] = parsed
                         sibling_trees[mod_leaf] = parsed
@@ -2358,8 +2390,8 @@ class SpecValidator:
         if spec_file.suffix != ".py":
             return
         try:
-            tree = ast.parse(spec_file.read_text(encoding="utf-8"))
-        except (OSError, SyntaxError):
+            tree = _parse_python_ast(spec_file.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError, ValueError):
             return
 
         protocol_symbols: list[str] = []
@@ -2680,7 +2712,7 @@ class SpecValidator:
         suffix = code_file.suffix.lower()
         if suffix == ".py":
             with contextlib.suppress(SyntaxError, ValueError):
-                tree = ast.parse(source)
+                tree = _parse_python_ast(source)
                 for node in ast.walk(tree):
                     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         defined_symbols.add(node.name)
@@ -2730,12 +2762,6 @@ class SpecValidator:
                                             defined_symbols.add(elt.value)
                     elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
                         defined_symbols.add(node.target.id)
-                    elif (
-                        hasattr(ast, "TypeAlias")
-                        and isinstance(node, ast.TypeAlias)
-                        and isinstance(node.name, ast.Name)
-                    ):
-                        defined_symbols.add(node.name.id)
                     elif isinstance(node, ast.ImportFrom):
                         for al in node.names:
                             defined_symbols.add(al.asname or al.name)
