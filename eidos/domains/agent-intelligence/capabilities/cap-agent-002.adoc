@@ -4,7 +4,7 @@ id: CAP-AGENT-002
 title: "Polyglot AST Code Graph & Structural Repo Map Intelligence"
 domain: DOM-AGENT-INTELLIGENCE
 status: active
-version: "1.4.0"
+version: "1.5.0"
 
 business:
   personas:
@@ -27,6 +27,24 @@ technical:
   contracts:
     - "CTR-EIDOS-CLI"
   invariants:
+    - id: INV-INDEX-PHP-SYMBOL-IDENTITY
+      rule: "PHP declarations retain collision-free canonical identities and AST lexical ownership across namespaces, same-line declarations, traits, interfaces and enums."
+      test_binding: "tests/test_ast_indexer.py::test_php_qualified_symbol_identity"
+    - id: INV-INDEX-PHP-API-SURFACE
+      rule: "PHP declaration-level API fingerprints cover native public and protected contracts, promotion, hooks, constants, enums and trait composition without implementation-body or prose-only changes."
+      test_binding: "tests/test_ast_indexer.py::test_php_api_surface"
+    - id: INV-INDEX-PHP-DEPENDENCIES
+      rule: "Resolve only statically provable local PHP dependencies within discovered repository ownership; never execute PHP, Composer plugins or autoloaders."
+      test_binding: "tests/test_graph_index.py::test_php_dependency_graph"
+    - id: INV-INDEX-PHP-TEST-BINDINGS
+      rule: "PHPUnit and Pest static test discovery preserves qualified identities, unique aliases and test-local INV/POL tokens while rejecting duplicate and explicitly disabled declarations."
+      test_binding: "tests/test_ast_indexer.py::test_php_test_bindings"
+    - id: INV-INDEX-PHP-GRAMMAR-COVERAGE
+      rule: "PHP syntax coverage matrix claims for 7.4 through 8.5 require feature fixtures against the installed parser and graceful malformed-source handling."
+      test_binding: "tests/test_ast_indexer.py::test_php_grammar_matrix"
+    - id: INV-INDEX-PHP-SYNC-PARITY
+      rule: "PHP full and incremental sync parity preserves symbols, imports, ownership and test edges after namespace, move, delete, Composer and disabled-test edits."
+      test_binding: "tests/test_graph_index.py::test_php_incremental_sync_parity"
     - id: INV-INDEX-OPTIONAL-AST-FALLBACK
       rule: "The Eidos Architectural Knowledge Graph indexer and drift engine must parse all 17 supported languages uniformly via AstGrepIndexer (SgRoot) and degrade gracefully on malformed or partially edited syntax without unhandled exceptions."
       test_binding: "tests/test_ast_indexer.py::test_inv_index_optional_ast_fallback"
@@ -66,6 +84,12 @@ This capability bridges the semantic chasm between **C4 Level 3 (Living Specific
 In strict compliance with *POL-004-ZERO-AI-CALL-DEPENDENCY*, all AST extraction, repo map synthesis, and symbol indexing execute 100% deterministically on local CPU using `ast-grep-py` (`SgRoot`) across all 17 supported languages with zero calls to remote AI or embedding APIs.
 
 == 2. Key Responsibilities
+
+Comprehensive static PHP support includes namespace-safe navigation and API
+fingerprints, conservative local Composer/include dependencies and shared
+PHPUnit/Pest binding semantics. The tested syntax and static-analysis boundaries
+are defined in CNT-EIDOS-INDEX; existing polyglot precision and latency requirements
+continue to apply.
 
 1. **Token-Budgeted AI Repo Map (`eidos index repo-map`) & Context Slicing (`eidos context`)**:
    Synthesizes a compact structural outline of classes, public methods, `interface` and trait member signatures, overload-disambiguated function/method declarations, and file coordinates across polyglot source trees (Python, TypeScript/JS, Go, Rust, Java, Kotlin, C/C++ with length-preserving `*_API` / `*_EXPORT` macro normalization, C#, Ruby, PHP, Swift, Vue, Svelte), achieving $\ge 85\%$ token compression compared to raw code ingestion, enforces strict tier token budgets (`anchor`, `guardrails`, `deep`) across both Markdown and JSON (`--json`) context slices—compacting primary-component `DEC-*` narratives in Stage 1a before evicting 1-hop capability `INV-*` or `POL-*` guardrails while retaining compact primary `DEC-*` summaries—and returns honest empty slices when explicit queries match zero entities.

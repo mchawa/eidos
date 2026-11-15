@@ -612,6 +612,10 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
             return
 
     _scan_eidos_dir(str(index.eidos_dir))
+    composer_path = index.root / "composer.json"
+    if composer_path.is_file():
+        disk_files.add("composer.json")
+        _check_file_str(str(composer_path), "composer.json", composer_path.stat().st_mtime)
 
     # 2. Tracked code, test, and governed text files
     excluded_dirs = STANDARD_EXCLUDED_DIRS
@@ -1160,9 +1164,113 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
     _derive_ast_import_edges(conn)
 
 
+def _php_dependency_resolver(conn: sqlite3.Connection, root: Path, known_files: set[str]):
+    """Resolve metadata and declarations only within already discovered local source files."""
+    root = root.resolve()
+    allowed = {
+        f
+        for f in known_files
+        if f.endswith(".php")
+        and (root / f).resolve().is_relative_to(root)
+        and not any(part in STANDARD_EXCLUDED_DIRS for part in Path(f).parts)
+    }
+    declarations: dict[str, set[str]] = {}
+    for row in conn.execute(
+        "SELECT symbol, file_path FROM code_symbols WHERE file_path LIKE '%.php' "
+        "AND parent_symbol = '' AND kind != 'import' AND is_test = 0;"
+    ):
+        if row["file_path"] in allowed:
+            declarations.setdefault(row["symbol"].lower(), set()).add(row["file_path"])
+    try:
+        metadata_path = (root / "composer.json").resolve()
+        metadata = orjson.loads(metadata_path.read_bytes()) if metadata_path.is_relative_to(root) else {}
+    except (OSError, ValueError, RuntimeError):
+        metadata = {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    def local_path(value: str) -> str | None:
+        try:
+            path = (root / value).resolve()
+        except (OSError, ValueError, RuntimeError):
+            return None
+        if not path.is_relative_to(root):
+            return None
+        rel = path.relative_to(root).as_posix()
+        return rel if rel in allowed else None
+
+    mappings = []
+    eager = set()
+    classmap = set()
+    for section in ("autoload", "autoload-dev"):
+        config = metadata.get(section, {})
+        if not isinstance(config, dict):
+            continue
+        for standard in ("psr-4", "psr-0"):
+            prefixes = config.get(standard, {})
+            if not isinstance(prefixes, dict):
+                continue
+            for prefix, paths in prefixes.items():
+                if not isinstance(prefix, str):
+                    continue
+                for path in paths if isinstance(paths, list) else [paths]:
+                    if isinstance(path, str):
+                        mappings.append((prefix, path, standard))
+        files = config.get("files", [])
+        for value in files if isinstance(files, list) else []:
+            if isinstance(value, str) and (rel := local_path(value)):
+                eager.add(rel)
+        paths = config.get("classmap", [])
+        for value in paths if isinstance(paths, list) else []:
+            if not isinstance(value, str):
+                continue
+            try:
+                path = (root / value).resolve()
+            except (OSError, ValueError, RuntimeError):
+                continue
+            if path.is_relative_to(root):
+                classmap.update(f for f in allowed if root / f == path or (root / f).is_relative_to(path))
+    mappings.sort(key=lambda m: (-len(m[0]), m[0], m[1]))
+
+    def resolve(source: str, reference: str) -> set[str]:
+        targets = set(eager)
+        candidates = declarations.get(reference.lower(), set())
+        mapped = candidates & classmap
+        if len(mapped) == 1:
+            targets.update(mapped)
+        if "/" in reference or reference.endswith(".php"):
+            candidate = Path(reference)
+            if not candidate.is_absolute():
+                candidate = root / Path(source).parent / candidate
+            rel = local_path(str(candidate))
+            if rel:
+                targets.add(rel)
+            return targets
+        matched = [m for m in mappings if reference.startswith(m[0])]
+        if matched:
+            longest = len(matched[0][0])
+            for prefix, path, standard in matched:
+                if len(prefix) != longest:
+                    break
+                tail = reference[len(prefix) :] if standard == "psr-4" else reference
+                if standard == "psr-0":
+                    namespace, _, name = tail.rpartition("\\")
+                    tail = "\\".join(filter(None, (namespace, name.replace("_", "\\"))))
+                rel = local_path(str(Path(path) / (tail.replace("\\", "/") + ".php")))
+                if rel and rel in declarations.get(reference.lower(), set()):
+                    targets.add(rel)
+        else:
+            if len(candidates) == 1:
+                targets.update(candidates)
+        return targets
+
+    return resolve
+
+
 def _derive_ast_import_edges(
     conn: sqlite3.Connection,
     resolver: _CodeOwnershipResolver | None = None,
+    repo_root: Path | None = None,
 ) -> None:
     """Derive component consumes_api and container depends_on edges from AST imports and contract links."""
     import posixpath
@@ -1190,6 +1298,7 @@ def _derive_ast_import_edges(
         if fp:
             known_files.add(_normalize_rel_path(fp))
     known_files.update(resolver.declared_files())
+    php_resolve = _php_dependency_resolver(conn, repo_root, known_files) if repo_root else None
 
     module_to_file: dict[str, str] = {}
     for kf in sorted(known_files):
@@ -1218,6 +1327,15 @@ def _derive_ast_import_edges(
         ORDER BY file_path, symbol;
         """
     ).fetchall()
+    # Composer files autoloading applies even to a file with no explicit imports.
+    import_rows = [
+        *import_rows,
+        *(
+            {"file_path": path, "symbol": "@composer-files", "entity_id": resolver.resolve(path) or ""}
+            for path in sorted(known_files)
+            if path.endswith(".php")
+        ),
+    ]
 
     ast_cnt_deps: set[tuple[str, str]] = set()
     for row in import_rows:
@@ -1227,6 +1345,16 @@ def _derive_ast_import_edges(
             continue
 
         dst_file: str | None = None
+        if src_file.endswith(".php"):
+            targets = php_resolve(src_file, imp) if php_resolve else set()
+            for target in sorted(targets - {src_file}):
+                src_cnt, src_cmp = _effective_cnt_and_comp(src_file, row["entity_id"])
+                dst_cnt, dst_cmp = _effective_cnt_and_comp(target)
+                if src_cmp and dst_cmp and src_cmp != dst_cmp:
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes_api');", (src_cmp, dst_cmp))
+                if src_cnt and dst_cnt and src_cnt != dst_cnt:
+                    ast_cnt_deps.add((src_cnt, dst_cnt))
+            continue
         if src_file.endswith(".py"):
             if imp.startswith("."):
                 level = len(imp) - len(imp.lstrip("."))
@@ -1400,25 +1528,31 @@ def index_test_bindings(
         if functions:
             from eidos.core.index.ast_indexer import CodeSymbol
 
+            php_spans = {}
+            if test_path.suffix.lower() == ".php":
+                from eidos.core.index.ast_indexer import _php_test_spans
+
+                php_spans = {name: (start, end) for name, start, end, _ in _php_test_spans(content)}
             for fn_key in functions:
                 bare_fn = fn_key.split("::")[-1] if "::" in fn_key else fn_key
-                if fn_key not in known_test_names and bare_fn not in known_test_names:
+                if fn_key not in known_test_names and (php_spans or bare_fn not in known_test_names):
+                    start, end = php_spans.get(fn_key, (1, 1))
                     test_symbols.append(
                         CodeSymbol(
-                            name=bare_fn,
+                            name=fn_key if test_path.suffix.lower() == ".php" else bare_fn,
                             kind="function",
                             file_path=rel_test,
-                            line_start=1,
-                            line_end=1,
+                            line_start=start,
+                            line_end=end,
                         )
                     )
-                    known_test_names.add(bare_fn)
+                    known_test_names.add(fn_key if php_spans else bare_fn)
         store_code_symbols(conn, rel_test, ["tests"], test_symbols, is_test=True)
     _upsert_file_tokens_fts(conn, rel_test, "code/test", content)
     for test_name, fn_tokens in functions.items():
         identifier = f"{rel_test}::{test_name}"
         for inv_id in fn_tokens:
-            if not inv_id.startswith("INV-"):
+            if not inv_id.startswith("INV-") and not (rel_test.endswith(".php") and inv_id.startswith("POL-")):
                 continue
             conn.execute(
                 "INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts');",
@@ -1551,7 +1685,7 @@ def _reconcile_invariant_coverage(
                     candidate_token_lists: list[list[str]] = []
                     if tb_func in funcs:
                         candidate_token_lists.append(funcs[tb_func])
-                    elif "::" not in tb_func:
+                    elif "::" not in tb_func and Path(tb_file).suffix.lower() != ".php":
                         suffix = f"::{parts[-1]}"
                         candidate_token_lists.extend(
                             toks for k, toks in funcs.items() if k == parts[-1] or k.endswith(suffix)
@@ -1636,6 +1770,8 @@ def sync_index(
                 store_code_symbols(conn, d_rel, [], [])
                 conn.execute("DELETE FROM symbol_mappings WHERE symbol = ?;", (d_rel,))
                 conn.execute("DELETE FROM test_binding_cache WHERE file_path = ?;", (d_rel,))
+                prefix = d_rel.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "::%"
+                conn.execute("DELETE FROM edges WHERE rel_type = 'asserts' AND source_id LIKE ? ESCAPE '\\';", (prefix,))
                 conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
             elif row and row["doc_id"]:
                 doc_id = row["doc_id"]
@@ -2060,7 +2196,7 @@ def sync_index(
             reconcile_code_ownership(index, conn, ast_idx, resolver, processed_code)
 
         if force or spec_updates or specs_deleted or processed_code or code_deleted:
-            _derive_ast_import_edges(conn, resolver)
+            _derive_ast_import_edges(conn, resolver, index.root)
 
         if force or spec_updates or specs_deleted or processed_code or code_deleted:
             conn.execute("DELETE FROM symbol_mappings WHERE kind = 'inferred_path';")

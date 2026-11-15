@@ -5333,3 +5333,57 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
     (uninst_dir / "file_a.txt").write_text("a", encoding="utf-8")
     (uninst_dir / MANIFEST_FILENAME).write_bytes(b'{"files": ["file_a.txt", "sub_empty", "AGENTS.md"]}')
     assert _uninstall_from_manifest(uninst_dir) is True
+def test_php_binding_validation(tmp_path, validator):
+    """INV-SPEC-PHP-BINDING-VALIDATION: qualified PHP surfaces and own enabled test tokens resolve uniquely."""
+    from eidos.vcs.invariants import _verify_single_invariant
+
+    src = tmp_path / "src"
+    tests = tmp_path / "tests"
+    specs = tmp_path / "eidos"
+    for directory in (src, tests, specs / "architecture/containers", specs / "policies"):
+        directory.mkdir(parents=True, exist_ok=True)
+    (src / "One.php").write_text("<?php namespace One; class Service { function run() {} }")
+    (src / "Two.php").write_text("<?php namespace Two; class Service { function run() {} }")
+    surface = specs / "architecture/containers/php.adoc"
+    header = (
+        "---\ntype: tech/container\nid: CNT-PHP\ntitle: PHP\ncontainer_type: library\n"
+        "runtime: PHP\nsource_path: src\n---\n= PHP\n\n== Public Surface\n"
+    )
+    surface.write_text(header + "* `One\\Service::run()`\n* `Two\\Service`\n")
+    test = tests / "PaymentTest.php"
+    inv = "INV" + "-PHP-VALIDATION-FIXTURE"
+    test.write_text(
+        "<?php namespace One { class T { function testPay() { /* " + inv + " */ } } }\n"
+        "namespace Two { class T { function testPay() {} } }"
+    )
+    policy = specs / "policies/php.adoc"
+
+    def bind(symbol):
+        policy.write_text(
+            "---\ntype: product/policy\nid: POL-PHP\ntitle: PHP\nstatus: active\n"
+            "category: testing\nseverity: blocking\ninvariants:\n"
+            f"  - id: {inv}\n    rule: Bind correctly\n"
+            f"    test_binding: tests/PaymentTest.php::{symbol}\n---\n= PHP\n"
+        )
+
+    bind("One\\T::testPay")
+    assert not validator.validate_directory(specs).broken_references
+    assert _verify_single_invariant(inv, "tests/PaymentTest.php::One\\T::testPay", tmp_path, {}, {})
+    for symbol in ("T::testPay", "testPay", "Two\\T::testPay", "Missing\\T::testPay"):
+        bind(symbol)
+        report = validator.validate_directory(specs)
+        assert any(inv in error for error in report.broken_references)
+        assert not _verify_single_invariant(inv, f"tests/PaymentTest.php::{symbol}", tmp_path, {}, {})
+    bind("One\\T::testPay")
+    test.write_text(
+        "<?php namespace One; class T { function testPay() { $this->markTestSkipped(); /* " + inv + " */ } }"
+    )
+    assert validator.validate_directory(specs).broken_references
+    assert not _verify_single_invariant(inv, "tests/PaymentTest.php::One\\T::testPay", tmp_path, {}, {})
+    test.write_text("<?php describe('payments', function(){ it('pays', fn()=>check('" + inv + "')); });")
+    bind("payments::pays")
+    assert not validator.validate_directory(specs).broken_references
+    assert _verify_single_invariant(inv, "tests/PaymentTest.php::payments::pays", tmp_path, {}, {})
+    for reference in ("Service", "Service::run()", "Missing\\Service", "One\\Service::missing()"):
+        surface.write_text(header + f"* `{reference}`\n")
+        assert any("Public surface drift" in e for e in validator.validate_directory(specs).broken_references)

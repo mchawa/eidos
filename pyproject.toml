@@ -28,7 +28,7 @@ dependencies = [
     "fastyaml-rs>=0.7.0",
     "jsonschema>=4.20.0",
     "pydantic>=2.7.0",
-    "ast-grep-py>=0.50.0",
+    "ast-grep-py>=0.51.2",
     "orjson>=3.10.0",
 ]
 

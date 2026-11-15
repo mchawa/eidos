@@ -960,6 +960,8 @@ class SpecValidator:
 
         suffix = test_file.suffix.lower()
         leaf_sym = symbol_parts[-1]
+        if suffix == ".php":
+            return "::".join(symbol_parts) in get_ast_indexer().list_test_functions(test_file, source)
         if suffix in AST_DIFF_EXTS:
             unqualified_names, qualified_names = cls._extract_cached_test_symbols(test_file, raw_bytes, source)
             joined_colons = "::".join(symbol_parts)
@@ -1205,10 +1207,28 @@ class SpecValidator:
                             f"Invariant '{inv_id}' references '{file_part}' which does not exist on disk"
                         )
                     elif sym_parts and not self._test_symbol_exists(resolved_tf, sym_parts):
+                        hint = (
+                            "; PHP tests must be enabled and unique: use a namespace-qualified Class::method "
+                            "or a complete Pest describe::title binding"
+                            if resolved_tf.suffix.lower() == ".php" else ""
+                        )
                         report.broken_references.append(
                             f"Broken test_binding in {doc.file_path.name}: "
-                            f"Invariant '{inv_id}' references symbol '{'::'.join(sym_parts)}' which does not exist in '{file_part}'"
+                            f"Invariant '{inv_id}' references symbol '{'::'.join(sym_parts)}' "
+                            f"which does not exist in '{file_part}'{hint}"
                         )
+                    elif resolved_tf.suffix.lower() == ".php":
+                        from eidos.core.index.ast_indexer import extract_test_file_cache_payload
+
+                        functions, file_tokens, _, _ = extract_test_file_cache_payload(
+                            file_part, resolved_tf.read_text(encoding="utf-8", errors="replace")
+                        )
+                        tokens = functions.get("::".join(sym_parts), []) if sym_parts else file_tokens
+                        if inv_id not in tokens:
+                            report.broken_references.append(
+                                f"Broken test_binding in {doc.file_path.name}: Invariant '{inv_id}' "
+                                f"must occur in its own enabled, uniquely qualified PHP test '{raw_tb}'"
+                            )
 
     _VALID_DTCG_TYPES = frozenset(
         {
@@ -2899,7 +2919,19 @@ class SpecValidator:
         defined_methods: set[str] = set()
         methods_by_class: dict[str, set[str]] = {}
         base_classes_by_class: dict[str, set[str]] = {}
+        php_symbols: dict[str, set[tuple[str, int, str]]] = {}
         for cf in dict.fromkeys(code_files):
+            if cf.suffix.lower() == ".php":
+                for symbol in get_ast_indexer().extract_symbols(cf):
+                    canonical = f"{symbol.parent_symbol}::{symbol.name}" if symbol.parent_symbol else symbol.name
+                    identity = (str(cf), symbol.line_start, canonical)
+                    aliases = {canonical}
+                    if symbol.parent_symbol:
+                        aliases.add(f"{symbol.parent_symbol.rsplit(chr(92), 1)[-1]}::{symbol.name}")
+                    else:
+                        aliases.add(symbol.name.rsplit("\\", 1)[-1])
+                    for alias in aliases:
+                        php_symbols.setdefault(alias, set()).add(identity)
             f_syms, f_clss, f_meths, f_cls_meths, f_cls_bases = self._extract_cached_public_surface_symbols(cf)
             defined_symbols.update(f_syms)
             defined_classes.update(f_clss)
@@ -2982,6 +3014,17 @@ class SpecValidator:
                         break
                     s = next_s
             s = self._strip_public_surface_generics(s)
+            if all(cf.suffix.lower() == ".php" for cf in code_files) or "\\" in s:
+                php_match = re.match(r"^(\\?[\w\\]+(?:::\$?[\w]+)?)\s*(?:\(|:(?!:)|=|$)", s)
+                if php_match:
+                    ident = php_match.group(1).lstrip("\\")
+                    if len(php_symbols.get(ident, set())) != 1 and ident not in seen_missing:
+                        seen_missing.add(ident)
+                        report.broken_references.append(
+                            f"Public surface drift in {doc.file_path.name}: PHP symbol '{ident}' is missing or ambiguous; "
+                            "use its namespace-qualified declaration"
+                        )
+                continue
             ms = re.match(
                 r"^([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|::)[A-Za-z_][A-Za-z0-9_]*)*)\s*(?:\(|:(?!:)|=|$)",
                 s,

@@ -1620,7 +1620,7 @@ def test_all_ast_languages_and_corner_cases(tmp_path: Path) -> None:
         )
     }
     assert php_syms["Loggable"].kind == "interface"
-    assert php_syms["_private_php_fn"].is_public is False
+    assert php_syms["_private_php_fn"].is_public is True
 
     swift_syms = {
         s.name: s
@@ -1714,4 +1714,226 @@ def test_all_ast_languages_and_corner_cases(tmp_path: Path) -> None:
     assert fix_file_toks == [f"{inv_p}SYNTH-FIX-001"]
 
 
+def test_php_qualified_symbol_identity():
+    """INV-INDEX-PHP-SYMBOL-IDENTITY: namespace and lexical ownership are collision-free."""
+    from eidos.core.index.ast_indexer import AstGrepIndexer
 
+    source = """<html></html><?php
+namespace One { class Service { public function a() {} } trait T { function t() {} } }
+namespace Two { class Service { public function b() {} } interface I { function i(); }
+enum E { case Yes; function e() {} } }
+namespace { function café() {} $a = new class { public function hidden() {} }; }
+"""
+    symbols = AstGrepIndexer().extract_symbols("test.php", source.replace("\n", "\r\n"))
+    names = {(s.parent_symbol, s.name) for s in symbols}
+    assert (None, "One\\Service") in names and (None, "Two\\Service") in names
+    for parent, name in [
+        ("One\\Service", "a"),
+        ("Two\\Service", "b"),
+        ("One\\T", "t"),
+        ("Two\\I", "i"),
+        ("Two\\E", "e"),
+    ]:
+        assert (parent, name) in names
+    assert (None, "café") in names
+    assert not any(s.name == "hidden" and s.is_public for s in symbols)
+    assert any(s.name == "One\\T" and "trait" in s.signature for s in symbols)
+    mixed = "<?php class Before {} ?>\n<h1>outside</h1>\n<?php class After {} ?>tail"
+    assert {s.name for s in AstGrepIndexer().extract_symbols("mixed.php", mixed)} == {"Before", "After"}
+    mixed_body = "<?php function render() { ?> <h1>hello</h1> <?php } class C {}"
+    assert {s.name for s in AstGrepIndexer().extract_symbols("mixed.php", mixed_body)} == {"render", "C"}
+
+
+def test_php_api_surface():
+    """INV-INDEX-PHP-API-SURFACE: fingerprints include public and subclass declarations, not bodies."""
+    from eidos.core.index.ast_indexer import AstGrepIndexer, public_symbol_map
+
+    def surface(source):
+        return public_symbol_map("<?php " + source, "src.php")
+
+    pairs = [
+        ("namespace A; class C {}", "namespace B; class C {}"),
+        ("class C extends A {}", "class C extends B {}"),
+        ("class C implements A {}", "class C implements B {}"),
+        ("class C { use T; }", "class C { use T { run as public go; } }"),
+        ("class C { public int $x; }", "class C { public string $x; }"),
+        ("class C { protected int $x; }", "class C { protected string $x; }"),
+        ("class C { protected function f(): int {} }", "class C { protected function f(): string {} }"),
+        ("class C { function f(int $a = 1): int {} }", "class C { function f(int $b = 2): int {} }"),
+        ("class C { function __construct(public int $x) {} }", "class C { function __construct(public string $x) {} }"),
+        ("class C { private function __construct(protected int $x) {} }",
+         "class C { private function __construct(protected string $x) {} }"),
+        ("class C { public const string X = 'a'; }", "class C { public const string X = 'b'; }"),
+        ("const X = 1;", "const X = 2;"),
+        ("enum E: string { case A = 'a'; }", "enum E: string { case B = 'b'; }"),
+        ("class C { public string $x { get; } }", "class C { public string $x { get; set; } }"),
+        ("class C { public private(set) string $x; }", "class C { public protected(set) string $x; }"),
+    ]
+    for before, after in pairs:
+        assert surface(before) != surface(after), (before, after)
+    for before, after in [
+        ("class C { function f() { return 1; } }", "class C { function f() { return 2; } }"),
+        ("class C { private int $x = 1; }", "class C { private string $x = 'x'; }"),
+        ("/** description */ class C {}", "/** changed prose */ class C { }"),
+        ("class C{function f(int $x):int{}}", "class C { function f( int $x ) : int { } }"),
+        ("class C { public string $x { get => 'a'; } }", "class C { public string $x { get => 'b'; } }"),
+    ]:
+        assert surface(before) == surface(after), (before, after)
+    symbols = AstGrepIndexer().extract_symbols(
+        "c.php",
+        """<?php class C {
+        function __construct() {} function __invoke() {} public function _publicApi() {}
+        protected function subclass() {} private function secret() {}
+    }""",
+    )
+    assert all(s.is_public for s in symbols if s.name in {"__construct", "__invoke", "_publicApi"})
+    assert all(not s.is_public for s in symbols if s.name in {"subclass", "secret"})
+
+
+def test_php_test_bindings():
+    """INV-INDEX-PHP-TEST-BINDINGS: shared PHPUnit/Pest discovery scopes tokens and rejects disabled/ambiguous tests."""
+    from eidos.core.index.ast_indexer import AstGrepIndexer
+
+    inv = "INV" + "-"
+    pol = "POL" + "-"
+    source = r"""<?php namespace App\Tests;
+use PHPUnit\Framework\Attributes\Test as Example;
+use Other\Test;
+class PaymentTest {
+    // CHECK-PHP-NAMED
+    public function testPay() {}
+    #[Example]
+    /* attached */ public function captures() { /* CHECK-PHP-ATTR */ }
+    /** @test CHECK-PHP-DOC */ public function refunds() {}
+    #[\PHPUnit\Framework\Attributes\Test] public function fq() { /* POLICY-PHP-FQ */ }
+    #[Test] public function notATest() { /* CHECK-PHP-FAKE */ }
+    private function testPrivate() { /* CHECK-PHP-PRIVATE */ }
+    public function testSkip() { $this->markTestSkipped(); /* CHECK-PHP-SKIP */ }
+    public function testIncomplete() { $this->markTestIncomplete(); /* CHECK-PHP-INCOMPLETE */ }
+    public function testConditional() { if ($x) { $this->markTestSkipped(); } /* CHECK-PHP-CONDITIONAL */ }
+}
+// CHECK-PHP-SUITE-ONLY
+describe('payments', function () {
+    beforeEach(function () { /* CHECK-PHP-HOOK */ });
+    it('captures payment', function () { /* CHECK-PHP-PEST */ })->with([1, 2]);
+    test('arrow', fn () => check('CHECK-PHP-ARROW'));
+    test('disabled', function () { /* CHECK-PHP-DISABLED */ })->skip();
+    test('todo title', function () { /* CHECK-PHP-TODO */ })->todo();
+    test($dynamic, function () { /* CHECK-PHP-DYNAMIC */ });
+});
+describe('disabled suite', function () {
+    test('nested', function () { /* CHECK-PHP-SUITE-SKIP */ });
+})->skip();
+test('duplicate', function () { /* CHECK-PHP-DUP-ONE */ });
+test('duplicate', function () { /* CHECK-PHP-DUP-TWO */ });
+test('own', function () { /* CHECK-PHP-OWN */ });
+test('neighbor', function () {});
+$text = "test('fake', function () { /* CHECK-PHP-STRING */ });";
+""".replace("CHECK-", inv).replace("POLICY-", pol)
+    idx = AstGrepIndexer()
+    functions = idx.list_test_functions("tests/PaymentTest.php", source)
+    for name in [
+        r"App\Tests\PaymentTest::testPay",
+        r"App\Tests\PaymentTest::captures",
+        r"App\Tests\PaymentTest::refunds",
+        r"App\Tests\PaymentTest::fq",
+        "payments::captures payment",
+        "payments::arrow",
+        "own",
+        "neighbor",
+    ]:
+        assert name in functions
+    for name in [
+        "notATest",
+        "testPrivate",
+        "testSkip",
+        "testIncomplete",
+        "duplicate",
+        "payments::disabled",
+        "payments::todo title",
+        "disabled suite::nested",
+    ]:
+        assert name not in functions
+    assert "testConditional" in functions
+    assert inv + "PHP-OWN" not in functions["neighbor"]
+    tokens = {
+        token
+        for b in idx.extract_test_bindings("tests/PaymentTest.php", source)
+        for token in [*b.invariants, *b.policies]
+    }
+    assert {inv + "PHP-" + name for name in ["NAMED", "ATTR", "DOC", "PEST", "ARROW", "OWN", "CONDITIONAL"]} | {
+        pol + "PHP-FQ"
+    } == tokens
+    ambiguous = r"""<?php namespace A { class T { function testRun() {} } }
+namespace B { class T { function testRun() {} } }"""
+    funcs = idx.list_test_functions("a.php", ambiguous)
+    assert r"A\T::testRun" in funcs and r"B\T::testRun" in funcs
+    assert "T::testRun" not in funcs and "testRun" not in funcs
+    scopes = r"""<?php namespace App {
+use PHPUnit\Framework\Attributes\Test;
+use function Other\Test;
+class A { #[Test] public function first() {} }
+} namespace App {
+use Other\Test;
+class B { #[Test] public function second() {} }
+}
+"""
+    funcs = idx.list_test_functions("scopes.php", scopes)
+    assert r"App\A::first" in funcs and r"App\B::second" not in funcs
+    assert not idx.list_test_functions(
+        "skip.php",
+        """<?php
+test("reason", fn () => true)->skip("not ready");
+test("duplicate", fn () => true);
+test("duplicate", fn () => true)->skip();
+""",
+    )
+
+
+def test_php_grammar_matrix():
+    """INV-INDEX-PHP-GRAMMAR-COVERAGE: feature fixtures gate PHP 7.4-8.5 coverage."""
+    from ast_grep_py import SgRoot
+
+    from eidos.core.index.ast_indexer import AstGrepIndexer
+
+    fixtures = {
+        "7.4": "class C { public int $x; }",
+        "8.0": "#[A] class C { function __construct(public int|string $x) {} }",
+        "8.1": "enum E: string { case A = 'a'; } class C { public readonly A&B $x; }",
+        "8.2": "readonly class C { function f((A&B)|C $x): null {} }",
+        "8.3": "class C { public const string X = 'x'; }",
+        "8.4": "class C { public private(set) string $x { get => $this->x; set { $this->x = $value; } } }",
+        "8.5": """#[\\NoDiscard] function f($x, $f = static function () {}) {
+            $x |> trim(...); return clone($x, ['name' => 'a']);
+        } class C { public const F = static function () {}; }""",
+    }
+    for version, fixture in fixtures.items():
+        source = "<?php " + fixture + " class After {}"
+        assert not SgRoot(source, "php").root().find_all(kind="ERROR"), version
+        names = {s.name for s in AstGrepIndexer().extract_symbols("c.php", source)}
+        assert "After" in names and ("C" in names or "f" in names), version
+    for source in ["<?php class", "<?php function broken(", "<?php class C { function f("]:
+        assert not AstGrepIndexer().extract_symbols("broken.php", source)
+
+
+def test_php_indexing_latency():
+    """PHP declaration extraction retains the existing 1000-line indexing budget."""
+    idx = AstGrepIndexer()
+    source = (
+        "<?php\nnamespace App;\n"
+        + "".join(
+            f"class C{i} {{\n public int $id;\n public function run(int $x): int {{\n return $x;\n }}\n}}\n"
+            for i in range(166)
+        )
+        + "// end\n// end\n"
+    )
+    assert len(source.splitlines()) == 1000
+    idx.extract_symbols("large.php", source)
+    samples = []
+    for _ in range(10):
+        start = time.perf_counter()
+        symbols = idx.extract_symbols("large.php", source)
+        samples.append((time.perf_counter() - start) * 1000)
+    assert len(symbols) == 498
+    budget = 60 if "coverage" in sys.modules or sys.gettrace() is not None else 10
+    assert min(samples) < budget
