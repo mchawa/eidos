@@ -5146,3 +5146,49 @@ def test_uic_invariants_planned_delta_verify_and_skipped_test_rejection(tmp_path
     assert not any("eidos_head_" in str(k) for k in gi._INDEX_INSTANCES)
 
 
+def test_php_structural_drift(tmp_path):
+    """INV-DRIFT-PHP-STRUCTURAL-COVERAGE: native public/subclass declarations drive both Git comparisons."""
+    import subprocess
+
+    from eidos.vcs.drift import detect_drift
+
+    src = tmp_path / "src"
+    spec_dir = tmp_path / "eidos/architecture/containers"
+    src.mkdir()
+    spec_dir.mkdir(parents=True)
+    (spec_dir / "php.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-PHP\ntitle: PHP\ncontainer_type: library\n"
+        "runtime: PHP\nsource_path: src\n---\n= PHP\n\nA static PHP library.\n"
+    )
+    source = src / "Service.php"
+    baseline = "<?php namespace App; class Service { protected int $x; function run() { return 1; } }"
+    source.write_text(baseline)
+
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=tmp_path, capture_output=True, text=True, check=True).stdout.strip()
+
+    git("init", "-b", "main")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "Test")
+    git("add", ".")
+    git("commit", "-m", "baseline")
+    base = git("rev-parse", "HEAD")
+    source.write_text(baseline.replace("return 1", "return 2"))
+    assert not detect_drift(repo_root=tmp_path, eidos_dir=tmp_path / "eidos", uncommitted=True).drift_detected
+    for changed in (
+        baseline.replace("protected int", "protected string"),
+        baseline.replace("namespace App", "namespace Renamed"),
+        baseline.replace("class Service", "class Service extends Base"),
+        baseline.replace("function run()", "function run(int $x)"),
+        baseline.replace("protected int $x;", "public const int V = 2;"),
+        "<?php enum Service { case A; }",
+    ):
+        source.write_text(changed)
+        report = detect_drift(repo_root=tmp_path, eidos_dir=tmp_path / "eidos", uncommitted=True)
+        assert report.drift_detected, changed
+    git("add", "src")
+    git("commit", "-m", "change PHP declaration")
+    report = detect_drift(
+        repo_root=tmp_path, eidos_dir=tmp_path / "eidos", base_ref=base, head_ref="HEAD", uncommitted=False
+    )
+    assert report.drift_detected

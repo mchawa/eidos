@@ -808,15 +808,15 @@ def resolve_symbol_locations_in_db(
 ) -> list[dict[str, Any]]:
     """Resolve persisted source coordinates (one entry per definition) for an AST symbol mapping."""
     cursor = conn.cursor()
-    if kind == "method" and "." in symbol:
-        parent, name = symbol.rsplit(".", 1)
+    if "::" in symbol or (kind == "method" and "." in symbol):
+        parent, name = symbol.rsplit("::" if "::" in symbol else ".", 1)
         cursor.execute(
             """
             SELECT file_path, line_start, line_end, signature, parent_symbol FROM code_symbols
-            WHERE entity_id = ? AND kind = 'method' AND parent_symbol = ? AND symbol = ?
+            WHERE entity_id = ? AND kind = ? AND parent_symbol = ? AND symbol = ?
             ORDER BY file_path, line_start;
             """,
-            (entity_id, parent, name),
+            (entity_id, kind, parent, name),
         )
     else:
         cursor.execute(
@@ -863,7 +863,8 @@ def find_symbol_in_db(
             UNION
             SELECT symbol, entity_id, kind, is_test FROM code_symbols WHERE kind != 'import'
             UNION
-            SELECT parent_symbol || '.' || symbol, entity_id, 'method', is_test
+            SELECT parent_symbol || CASE WHEN file_path LIKE '%.php' THEN '::' ELSE '.' END || symbol,
+                   entity_id, kind, is_test
             FROM code_symbols WHERE kind != 'import' AND parent_symbol != ''
         )
         SELECT s.symbol, s.entity_id, s.kind, s.is_test, e.title, e.type, e.file_path

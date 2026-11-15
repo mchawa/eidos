@@ -38,13 +38,38 @@ The architectural index requires **zero external database daemons** and **zero t
 
 * Built on Python's standard library **`sqlite3`** in WAL (Write-Ahead Logging) mode, utilizing native SQLite 3.x FTS5 and recursive Common Table Expressions (CTEs).
 * Decomposed across 6 focused internal modules in `src/eidos/core/index/`: `storage.py` (`CMP-GRAPH-STORAGE`), `sync.py` (`CMP-INCREMENTAL-SYNC-ENGINE`), `query.py` (`CMP-FTS-QUERY-ENGINE` & `CMP-GRAPH-TRAVERSAL-ENGINE`), `context.py` (`CMP-TIERED-CONTEXT-COMPRESSOR`), `semantic.py` (`CMP-SEMANTIC-EMBEDDING-ENGINE`), and `ast_indexer.py` (`CMP-AST-SYMBOL-INDEXER`).
-* Stores all relational graph data, AST symbol coordinates, inverted file token FTS tables, optional ONNX semantic embeddings, and validation/test caches inside a single self-contained, 100% stateless derived file: `eidos/.cache/index.db` (canonical `SCHEMA_VERSION = "2.19.0"`).
+* Stores all relational graph data, AST symbol coordinates, inverted file token FTS tables, optional ONNX semantic embeddings, and validation/test caches inside a single self-contained, 100% stateless derived file: `eidos/.cache/index.db` (canonical `SCHEMA_VERSION = "2.20.0"`).
 * Automatically performs drop-and-rebuild migration on schema version upgrades (preserving content-addressed `spec_embeddings` across `eidos index sync --force`) and self-heals on database corruption.
 * The `eidos/.cache/` directory is isolated via `eidos/.gitignore`, keeping Git repositories pristine.
 
 ---
 
 ## Automatic Initialization & Lazy Synchronization
+
+### PHP static architectural support
+
+PHP symbols use fully qualified names (`App\Service\InvoiceService`) and lexical
+member identities (`App\Service\InvoiceService::issueInvoice`). Short searches
+return distinct matches; ambiguous short Public Surface or test bindings must be
+qualified. Public and protected declaration changes are tracked, including
+properties/promotion/hooks, constants, enums, inheritance and trait adaptations.
+Method bodies, hook implementations and prose-only PHPDoc changes are not API
+changes. PHPDoc metadata does not imply type inference.
+
+Feature fixtures cover PHP 7.4 typed properties; 8.0 attributes, unions and
+promotion; 8.1 enums, readonly properties and intersections; 8.2 readonly classes
+and DNF types; 8.3 typed constants; 8.4 hooks/asymmetric visibility; and 8.5 pipes,
+clone-with and closure defaults/constants. The parser requires ast-grep-py 0.51.2
+or newer. Malformed source is handled conservatively.
+
+Local dependencies use namespace imports, inheritance/trait references, static
+includes (including `__DIR__`/`__FILE__` concatenation), and root `composer.json`
+autoload/autoload-dev PSR-4, PSR-0, classmap and files metadata. Longest-prefix
+matching checks actual local declarations. Targets must already be discovered,
+owned source files inside the repository; metadata never causes vendor scanning.
+Dynamic/external references remain unresolved. **PHP, Composer, plugins and
+autoloaders are never executed.** Composer-only edits invalidate dependency
+edges, and cache version 2.20.0 rebuilds old short-name entries automatically.
 
 You never need to remember to run a manual build command before querying.
 
@@ -82,7 +107,7 @@ Output:
 ```text
 ╭───────────────── Eidos Architectural Knowledge Graph Index ──────────────────╮
 │        Database Path:  /path/to/project/eidos/.cache/index.db                │
-│       Schema Version:  2.19.0                                                │
+│       Schema Version:  2.20.0                                                │
 │           Cache Size:  5308.0 KB                                             │
 │               Status:  SYNCED (Clean) (1.76ms check)                         │
 │       Total Entities:  208                                                   │
@@ -311,4 +336,3 @@ symbols = index.find_symbol("AstGrepIndexer", limit=5)
 for sym in symbols:
     print(f"{sym['symbol_name']} ({sym['symbol_kind']}) -> {sym['entity_id']} in {sym['file_path']}")
 ```
-

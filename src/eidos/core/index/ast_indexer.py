@@ -239,6 +239,9 @@ class BaseAstIndexer(ABC):
             except OSError:
                 return []
 
+        if suffix == ".php":
+            return _php_imports(p, content)
+
         imports: list[str] = []
         seen: set[str] = set()
 
@@ -411,34 +414,6 @@ class BaseAstIndexer(ABC):
                 pass
             return imports
 
-        if suffix == ".php":
-            try:
-                php_root = SgRoot(content, "php").root()
-                for udecl in php_root.find_all(kind="namespace_use_declaration"):
-                    prefix_ns = next(
-                        (ch.text().strip() for ch in udecl.children() if ch.kind() == "namespace_name"), ""
-                    )
-                    clauses = list(udecl.find_all(kind="namespace_use_clause"))
-                    for clause in clauses:
-                        raw_clause = clause.text().strip().split(" as ", 1)[0].strip().lstrip("\\")
-                        if raw_clause:
-                            _add(f"{prefix_ns}\\{raw_clause}" if prefix_ns else raw_clause)
-                for req_kind in (
-                    "require_expression",
-                    "require_once_expression",
-                    "include_expression",
-                    "include_once_expression",
-                ):
-                    for req in php_root.find_all(kind=req_kind):
-                        for s_kind in ("string", "encapsed_string"):
-                            for s_node in req.find_all(kind=s_kind):
-                                val = s_node.text().strip("'\"")
-                                if val:
-                                    _add(val)
-            except (RuntimeError, ValueError):
-                pass
-            return imports
-
         if suffix == ".swift":
             try:
                 sw_root = SgRoot(content, "swift").root()
@@ -522,6 +497,502 @@ def _extract_python_docstring(node: Any) -> str | None:
         return None
     raw = "".join(c.text() for c in str_node.children() if c.kind() in ("string_content", "escape_sequence"))
     return inspect.cleandoc(raw)
+
+
+_PHP_CLASS_KINDS = {"class_declaration", "interface_declaration", "trait_declaration", "enum_declaration"}
+
+
+def _php_name(node: Any) -> str:
+    name = node.field("name") or node.field("function")
+    return name.text() if name else ""
+
+
+def _php_namespace(node: Any) -> str:
+    """Resolve the lexical namespace, including semicolon-style namespace blocks."""
+    current = node
+    while current.parent():
+        parent = current.parent()
+        if parent.kind() == "namespace_definition":
+            names = [c.text() for c in parent.children() if c.kind() == "namespace_name"]
+            return names[0] if names else ""
+        siblings = parent.children()
+        preceding = []
+        for sibling in siblings:
+            if sibling.range().start.index >= current.range().start.index:
+                break
+            if sibling.kind() == "namespace_definition":
+                preceding = [c.text() for c in sibling.children() if c.kind() == "namespace_name"]
+        if preceding:
+            return preceding[0]
+        current = parent
+    return ""
+
+
+def _php_qualified(node: Any) -> str:
+    return "\\".join(filter(None, (_php_namespace(node), _php_name(node))))
+
+
+def _php_ancestors(node: Any):
+    parent = node.parent()
+    while parent:
+        yield parent
+        parent = parent.parent()
+
+
+def _php_visibility(node: Any) -> str:
+    for child in node.children():
+        if child.kind() == "visibility_modifier" and "(set)" not in child.text().replace(" ", ""):
+            return child.text().strip()
+    return "public"
+
+
+def _php_tokens(node: Any) -> str:
+    """Normalize declaration tokens, excluding comments and executable hook bodies."""
+    if node.kind() == "comment":
+        return ""
+    if node.kind() in {"string", "encapsed_string", "heredoc", "nowdoc"}:
+        return node.text()
+    children = node.children()
+    if node.kind() == "property_hook":
+        kept = []
+        for child in children:
+            if child.kind() in {"compound_statement", "=>"}:
+                break
+            if child.kind() != ";":
+                kept.append(_php_tokens(child))
+        return " ".join(filter(None, kept))
+    if node.kind() in {"method_declaration", "function_definition"}:
+        children = [c for c in children if c.kind() != "compound_statement"]
+    if not children:
+        return node.text()
+    return " ".join(filter(None, (_php_tokens(c) for c in children)))
+
+
+def _php_doc(node: Any) -> str:
+    comments = []
+    previous = node.prev()
+    while previous and previous.kind() == "comment":
+        comments.insert(0, previous.text())
+        previous = previous.prev()
+    return "\n".join(comments)
+
+
+def _php_root(content: str) -> Any:
+    """Mask HTML only at parser-recognized PHP boundaries, preserving source positions."""
+    if "<?" in content:
+        prefix, suffix = content.split("<?", 1)
+        content = re.sub(r"[^\r\n]", " ", prefix) + "<?" + suffix
+    root = SgRoot(content, "php").root()
+    gaps = set()
+    boundaries = root.find_all(any=[{"kind": "php_end_tag"}, {"kind": "ERROR"}]) if "?>" in content else []
+    for node in boundaries:
+        if node.kind() == "php_end_tag" or (node.kind() == "ERROR" and node.text().startswith("?>")):
+            start = node.range().start.index
+            end = content.find("<?", start + 2)
+            if end >= 0:
+                opening = re.match(r"<\?(?:php\b)?", content[end:], re.I)
+                end += len(opening[0])
+            gaps.add((start, len(content) if end < 0 else end))
+    for start, end in sorted(gaps, reverse=True):
+        content = content[:start] + re.sub(r"[^\r\n]", " ", content[start:end]) + content[end:]
+    return SgRoot(content, "php").root() if gaps else root
+
+
+def _php_symbols(file_path: str, content: str) -> list[CodeSymbol]:
+    try:
+        root = _php_root(content)
+    except (RuntimeError, ValueError):
+        return []
+    if root.find_all(kind="ERROR"):
+        return []
+    namespace_cache = {}
+    token_cache = {}
+
+    def tokens(node: Any) -> str:
+        if node not in token_cache:
+            token_cache[node] = _php_tokens(node)
+        return token_cache[node]
+
+    def qualified(node: Any) -> str:
+        # Reuse lexical parents: scanning all preceding top-level siblings per
+        # member makes large PHP files quadratic.
+        def namespace(current: Any) -> str:
+            if current in namespace_cache:
+                return namespace_cache[current]
+            parent = current.parent()
+            if parent is None:
+                value = ""
+            elif parent.kind() == "namespace_definition":
+                value = next((c.text() for c in parent.children() if c.kind() == "namespace_name"), "")
+            else:
+                previous = current.prev()
+                if previous is not None and previous.kind() == "namespace_definition":
+                    value = next((c.text() for c in previous.children() if c.kind() == "namespace_name"), "")
+                else:
+                    value = namespace(previous if previous is not None else parent)
+            namespace_cache[current] = value
+            return value
+
+        return "\\".join(filter(None, (namespace(node), _php_name(node))))
+
+    symbols = []
+    kinds = _PHP_CLASS_KINDS | {
+        "function_definition",
+        "method_declaration",
+        "property_declaration",
+        "const_declaration",
+        "enum_case",
+        "property_promotion_parameter",
+    }
+    for node in root.find_all(any=[{"kind": kind} for kind in sorted(kinds)]):
+        ancestors = list(_php_ancestors(node))
+        owner = next((a for a in ancestors if a.kind() in _PHP_CLASS_KINDS | {"anonymous_class"}), None)
+        local = any(
+            a.kind() in {"function_definition", "anonymous_function", "arrow_function"}
+            or (a.kind() == "method_declaration" and node.kind() != "property_promotion_parameter")
+            for a in ancestors
+        )
+        anonymous = owner is not None and owner.kind() == "anonymous_class"
+        parent = qualified(owner) if owner is not None and not anonymous else None
+        public = not local and not anonymous and _php_visibility(node) == "public"
+        signature = "" if node.kind() in _PHP_CLASS_KINDS else tokens(node)
+        name = _php_name(node)
+        kind = "function"
+        names = []
+        if node.kind() in _PHP_CLASS_KINDS:
+            kind = {
+                "interface_declaration": "interface",
+                "trait_declaration": "interface",
+                "enum_declaration": "enum",
+            }.get(node.kind(), "class")
+            name = qualified(node)
+            body = next((c for c in node.children() if c.kind() in {"declaration_list", "enum_declaration_list"}), None)
+            header = " ".join(tokens(c) for c in node.children() if c != body)
+            members = (
+                []
+                if body is None
+                else [
+                    tokens(c)
+                    for c in body.children()
+                    if c.kind() not in {"{", "}", "comment"} and _php_visibility(c) != "private"
+                ]
+            )
+            if body is not None:
+                for member in body.children():
+                    if member.kind() == "method_declaration" and _php_visibility(member) == "private":
+                        members.extend(tokens(p) for p in member.find_all(kind="property_promotion_parameter")
+                                       if _php_visibility(p) != "private")
+            signature = header + " { " + " ; ".join(members) + " }"
+        elif node.kind() == "function_definition":
+            name = qualified(node)
+        elif node.kind() == "method_declaration":
+            kind = "method"
+        elif node.kind() in {"property_declaration", "property_promotion_parameter"}:
+            kind = "property"
+            names = [
+                c.text()
+                for c in node.find_all(kind="variable_name")
+                if not any(a.kind() == "property_hook" for a in _php_ancestors(c))
+            ]
+            if node.kind() == "property_declaration":
+                names = [
+                    c.text()
+                    for element in node.children()
+                    if element.kind() == "property_element"
+                    for c in element.children()
+                    if c.kind() == "variable_name"
+                ]
+        elif node.kind() == "const_declaration":
+            kind = "constant"
+            names = [_php_name(c) or c.children()[0].text() for c in node.children() if c.kind() == "const_element"]
+            if parent is None:
+                names = ["\\".join(filter(None, (_php_namespace(node), n))) for n in names]
+        elif node.kind() == "enum_case":
+            kind = "enum_case"
+        for symbol_name in names or [name]:
+            if not symbol_name:
+                continue
+            symbols.append(
+                CodeSymbol(
+                    name=symbol_name,
+                    kind=kind,
+                    file_path=file_path,
+                    line_start=node.range().start.line + 1,
+                    line_end=node.range().end.line + 1,
+                    parent_symbol=parent,
+                    signature=signature,
+                    docstring=_php_doc(node) or None,
+                    is_public=public,
+                    is_boundary_export=public,
+                )
+            )
+    return symbols
+
+
+def _php_literal(node: Any) -> str | None:
+    if node.kind() not in {"string", "encapsed_string"} or node.find_all(kind="variable_name"):
+        return None
+    text = node.text()
+    if text[0] == "'":
+        return re.sub(r"\\([\\'])", r"\1", text[1:-1])
+    escapes = {"n": "\n", "r": "\r", "t": "\t", "\\": "\\", '"': '"', "$": "$"}
+    if re.search(r"\\[^nrt\\\"$]", text[1:-1]):
+        return None
+    return re.sub(r'\\([nrt\\"$])', lambda m: escapes[m[1]], text[1:-1])
+
+
+def _php_import_aliases(node: Any, category: str | None = "class") -> dict[str, str]:
+    root = node
+    while root.parent():
+        root = root.parent()
+    namespace = _php_namespace(node)
+
+    def scope(current: Any) -> int:
+        for ancestor in _php_ancestors(current):
+            if ancestor.kind() == "namespace_definition":
+                return ancestor.range().start.index
+        preceding = [
+            c
+            for c in root.children()
+            if c.kind() == "namespace_definition" and c.range().start.index < current.range().start.index
+        ]
+        return preceding[-1].range().start.index if preceding else -1
+
+    lexical_scope = scope(node)
+    aliases = {}
+    for declaration in root.find_all(kind="namespace_use_declaration"):
+        if _php_namespace(declaration) != namespace or scope(declaration) != lexical_scope:
+            continue
+        prefix = next((c.text() for c in declaration.children() if c.kind() == "namespace_name"), "")
+        default_category = next(
+            (c.kind() for c in declaration.children() if c.kind() in {"function", "const"}), "class"
+        )
+        for clause in declaration.find_all(kind="namespace_use_clause"):
+            clause_category = next(
+                (c.kind() for c in clause.children() if c.kind() in {"function", "const"}), default_category
+            )
+            if category is not None and clause_category != category:
+                continue
+            text = re.sub(r"^(?:function|const)\s+", "", clause.text()).strip()
+            parts = re.split(r"\s+as\s+", text, flags=re.I)
+            target = "\\".join(filter(None, (prefix, parts[0].strip("\\")))).strip("\\")
+            aliases[(parts[1] if len(parts) > 1 else target.rsplit("\\", 1)[-1]).lower()] = target
+    return aliases
+
+
+def _php_resolve_name(name: str, node: Any, category: str = "class") -> str:
+    if name.startswith("\\"):
+        return name.lstrip("\\")
+    namespace = _php_namespace(node)
+    if name.lower().startswith("namespace\\"):
+        return "\\".join(filter(None, (namespace, name[10:])))
+    first, _, rest = name.partition("\\")
+    alias = _php_import_aliases(node, category).get(first.lower())
+    return "\\".join(filter(None, (alias, rest))) if alias else "\\".join(filter(None, (namespace, name)))
+
+
+def _php_imports(path: Path, content: str) -> list[str]:
+    try:
+        root = _php_root(content)
+    except (RuntimeError, ValueError):
+        return []
+    if root.find_all(kind="ERROR"):
+        return []
+    imports = set()
+    for declaration in root.find_all(kind="namespace_use_declaration"):
+        imports.update(_php_import_aliases(declaration, None).values())
+    reference_kinds = {
+        "base_clause",
+        "class_interface_clause",
+        "use_declaration",
+        "named_type",
+        "object_creation_expression",
+        "scoped_call_expression",
+        "class_constant_access_expression",
+    }
+    for node in root.find_all(any=[{"kind": kind} for kind in sorted(reference_kinds)]):
+        for child in node.children():
+            if child.kind() in {"name", "qualified_name", "relative_name"}:
+                if child.text().lower() not in {"self", "parent", "static"}:
+                    imports.add(_php_resolve_name(child.text(), node))
+                if node.kind() in {"scoped_call_expression", "class_constant_access_expression"}:
+                    break
+    for node in root.find_all(kind="qualified_name"):
+        if any(a.kind() == "namespace_use_declaration" for a in _php_ancestors(node)):
+            continue
+        parent = node.parent()
+        category = "function" if parent and parent.kind() == "function_call_expression" else "class"
+        imports.add(_php_resolve_name(node.text(), node, category))
+
+    def literal(node: Any) -> str | None:
+        if node.kind() in {"string", "encapsed_string"}:
+            return _php_literal(node)
+        if node.kind() == "name" and node.text() in {"__DIR__", "__FILE__"}:
+            return str(path.parent if node.text() == "__DIR__" else path)
+        if node.kind() == "parenthesized_expression":
+            children = [c for c in node.children() if c.kind() not in {"(", ")"}]
+            return literal(children[0]) if len(children) == 1 else None
+        if node.kind() == "binary_expression":
+            children = node.children()
+            if len(children) == 3 and children[1].text() == ".":
+                left, right = literal(children[0]), literal(children[2])
+                return left + right if left is not None and right is not None else None
+        return None
+
+    for node in root.find_all(
+        any=[
+            {"kind": k}
+            for k in (
+                "require_expression",
+                "require_once_expression",
+                "include_expression",
+                "include_once_expression",
+            )
+        ]
+    ):
+        children = node.children()
+        value = literal(children[-1]) if children else None
+        if value is not None:
+            # Absolute paths are checked against the repository's indexed files by sync.
+            imports.add(value)
+    return sorted(imports)
+
+
+def _php_disabled_call(node: Any) -> bool:
+    current = node
+    while current.parent() and current.parent().kind() == "member_call_expression":
+        current = current.parent()
+        if _php_name(current).lower() in {"skip", "todo"}:
+            args = current.field("arguments")
+            values = (
+                [c.children()[0] for c in args.children() if c.kind() == "argument" and c.children()] if args else []
+            )
+            if (
+                _php_name(current).lower() == "todo"
+                or not values
+                or values[0].kind() in {"string", "encapsed_string"}
+                or values[0].text().lower() == "true"
+            ):
+                return True
+    return False
+
+
+def _php_test_spans(content: str) -> list[tuple[str, int, int, str]]:
+    try:
+        root = _php_root(content)
+    except (RuntimeError, ValueError):
+        return []
+    if root.find_all(kind="ERROR"):
+        return []
+    candidates = []
+    # Keep the existing standalone test-function convention as a legacy binding.
+    for node in root.find_all(kind="function_definition"):
+        if _php_name(node).startswith("test") and not any(
+            a.kind() in _PHP_CLASS_KINDS | {"method_declaration", "function_definition", "anonymous_function"}
+            for a in _php_ancestors(node)
+        ):
+            candidates.append(
+                (_php_qualified(node), {_php_name(node)}, node, _php_doc(node) + "\n" + node.text(), True)
+            )
+    for node in root.find_all(kind="method_declaration"):
+        owner = next((a for a in _php_ancestors(node) if a.kind() in _PHP_CLASS_KINDS | {"anonymous_class"}), None)
+        if owner is None or owner.kind() == "anonymous_class" or _php_visibility(node) != "public":
+            continue
+        name = _php_name(node)
+        doc = _php_doc(node)
+        attributes = [
+            a for group in node.children() if group.kind() == "attribute_list" for a in group.find_all(kind="attribute")
+        ]
+        attributed = any(
+            _php_resolve_name(_php_name(a) or a.children()[0].text(), a) == "PHPUnit\\Framework\\Attributes\\Test"
+            for a in attributes
+        )
+        if not (name.startswith("test") or attributed or re.search(r"@test\b", doc)):
+            continue
+        disabled = False
+        for call in node.find_all(kind="member_call_expression"):
+            if _php_name(call) not in {"markTestSkipped", "markTestIncomplete"}:
+                continue
+            receiver = call.field("object")
+            if receiver is None or receiver.text() != "$this":
+                continue
+            ancestors = list(_php_ancestors(call))
+            if not any(
+                a.kind()
+                in {
+                    "if_statement",
+                    "switch_statement",
+                    "conditional_expression",
+                    "while_statement",
+                    "for_statement",
+                    "foreach_statement",
+                    "do_statement",
+                    "catch_clause",
+                    "anonymous_function",
+                    "arrow_function",
+                    "function_definition",
+                }
+                for a in ancestors
+                if a != node
+            ):
+                disabled = True
+        canonical = f"{_php_qualified(owner)}::{name}"
+        aliases = {f"{_php_name(owner)}::{name}", name}
+        candidates.append((canonical, aliases, node, doc + "\n" + node.text(), not disabled))
+
+    calls = root.find_all(kind="function_call_expression")
+    suites = {}
+    for call in calls:
+        if _php_name(call) != "describe":
+            continue
+        args = call.field("arguments")
+        values = [c.children()[0] for c in args.children() if c.kind() == "argument" and c.children()] if args else []
+        title = _php_literal(values[0]) if values else None
+        if len(values) >= 2 and title is not None and values[1].kind() in {"anonymous_function", "arrow_function"}:
+            suites[values[1].range().start.index] = (title, _php_disabled_call(call))
+    for call in calls:
+        if _php_name(call) not in {"test", "it"}:
+            continue
+        args = call.field("arguments")
+        values = [c.children()[0] for c in args.children() if c.kind() == "argument" and c.children()] if args else []
+        title = _php_literal(values[0]) if values else None
+        if len(values) < 2 or title is None or values[1].kind() not in {"anonymous_function", "arrow_function"}:
+            continue
+        ancestors = list(_php_ancestors(call))
+        scopes = []
+        disabled = _php_disabled_call(call)
+        eligible = True
+        for ancestor in reversed(ancestors):
+            if ancestor.kind() in {"anonymous_function", "arrow_function"}:
+                suite = suites.get(ancestor.range().start.index)
+                if suite is None:
+                    eligible = False
+                    break
+                scopes.append(suite[0])
+                disabled |= suite[1]
+            elif ancestor.kind() in {"method_declaration", "function_definition"}:
+                eligible = False
+        if not eligible:
+            continue
+        canonical = "::".join([*scopes, title])
+        statement = call
+        while statement.parent() and statement.parent().kind() == "member_call_expression":
+            statement = statement.parent()
+        if statement.parent() and statement.parent().kind() == "expression_statement":
+            statement = statement.parent()
+        candidates.append((canonical, {title}, call, _php_doc(statement) + "\n" + call.text(), not disabled))
+    counts = {}
+    for canonical, aliases, _, _, _ in candidates:
+        for name in aliases | {canonical}:
+            counts[name] = counts.get(name, 0) + 1
+    spans = []
+    for canonical, aliases, node, text, enabled in candidates:
+        if not enabled or counts[canonical] != 1:
+            continue
+        for name in sorted(aliases | {canonical}):
+            if counts[name] == 1:
+                spans.append((name, node.range().start.line + 1, node.range().end.line + 1, text))
+    return spans
 
 
 class AstGrepIndexer(BaseAstIndexer):
@@ -1417,6 +1888,8 @@ class AstGrepIndexer(BaseAstIndexer):
                 return []
 
         rel_path = str(p)
+        if lang == "php":
+            return _php_symbols(rel_path, content)
         if lang in ("vue", "svelte"):
             symbols: list[CodeSymbol] = []
             for block_text, line_offset in _extract_sfc_script_blocks(content):
@@ -1447,6 +1920,9 @@ class AstGrepIndexer(BaseAstIndexer):
                 content = p.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 return []
+
+        if lang == "php":
+            return _php_test_spans(content)
 
         spans: list[tuple[str, int, int, str]] = []
         sg_lang = "tsx" if lang in ("vue", "svelte") else lang
@@ -2534,7 +3010,9 @@ def extract_test_file_cache_payload(
         if fn_tokens:
             functions[fname] = fn_tokens
 
-    if not has_fixture:
+    if Path(rel_path).suffix.lower() == ".php":
+        file_tokens_list = list(dict.fromkeys(tok for tokens in functions.values() for tok in tokens))
+    elif not has_fixture:
         file_tokens_list = list(dict.fromkeys(INV_OR_POL_TOKEN_RE.findall(content)))
     else:
         file_tokens_list = list(

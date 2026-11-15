@@ -129,7 +129,7 @@ The index engine is decomposed into 6 focused modules under `src/eidos/core/inde
 
 | Module | Component ID | Responsibility |
 | :--- | :--- | :--- |
-| `storage.py` | `CMP-GRAPH-STORAGE` | Canonical authority for `SCHEMA_VERSION` (`2.19.0`), DDL initialization, WAL pragmas, stateless drop-and-rebuild migration on version mismatch (preserving `spec_embeddings` across `sync --force`), corruption recovery, and unified `orjson`-backed `SpecDocument` / test-binding cache helpers. |
+| `storage.py` | `CMP-GRAPH-STORAGE` | Canonical authority for `SCHEMA_VERSION` (`2.20.0`), DDL initialization, WAL pragmas, stateless drop-and-rebuild migration on version mismatch (preserving `spec_embeddings` across `sync --force`), corruption recovery, and unified `orjson`-backed `SpecDocument` / test-binding cache helpers. |
 | `sync.py` | `CMP-INCREMENTAL-SYNC-ENGINE` | Two-tier `mtime_ns` + `SHA-256` dirty detection across `_GOVERNED_TEXT_EXTS`, path-keyed entity eviction on ID rename, canonical unidirectional edge reconstruction (including C4 Level 1 `ARCH-*`/`SYS-*`, exploration `graduated_to`, and AST-derived `consumes_api`/`depends_on` edges), `file_tokens_fts` inverted token indexing, AST symbol FTS projection, and source ownership reconciliation. |
 | `query.py` | `CMP-FTS-QUERY-ENGINE` & `CMP-GRAPH-TRAVERSAL-ENGINE` | Two-tier (`AND` conjunction before `OR` fallback) positional column-weighted FTS5 BM25 search with deterministic architectural synonym expansion and opt-in Hybrid RRF fusion, identifier de-compounding, symbol lookup via unified `all_mappings` CTE, indexed catalog reconstruction (`query_spec_catalog_in_db`), and hub-scoped recursive CTE `k`-hop blast-radius (`resolve_blast_radius_targets`) and SpecDelta impact (`compute_delta_impact_in_db`) traversal. |
 | `context.py` | `CMP-TIERED-CONTEXT-COMPRESSOR` | Rank-ordered, token-budgeted context slicing across `anchor` (`<=300` tokens), `guardrails` (`<=1000` tokens), and `deep` (`<=2500` tokens) tiers, and `{a,b}` brace-glob matching. |
@@ -149,7 +149,7 @@ The SQLite database is a **100% stateless, derived cache (`DEC-INDEX-STATELESS-D
 8. **`spec_validation_cache`**: Content-addressed cache of parsed `SpecDocument` payloads and JSON Schema validation verdicts keyed by `mtime_ns`, file SHA-256, and schema SHA-256.
 9. **`test_binding_cache`**: Content-addressed cache of AST-extracted test functions (`func` and `Class::method`) and referenced `INV-*` / `POL-*` tokens per test file.
 10. **`spec_embeddings`**: Content-addressed cache of 1024-dim L2-normalized Float32 Harrier ONNX embeddings keyed by `entity_id`, `content_sha256` (computed strictly over specification text), and `model_id`.
-11. **`metadata`**: Canonical `SCHEMA_VERSION` (`2.19.0`) and cache lifecycle state.
+11. **`metadata`**: Canonical `SCHEMA_VERSION` (`2.20.0`) and cache lifecycle state.
 
 #### How Lazy Incremental Sync Works (`<5ms`)
 Before every CLI query (`eidos context`, `eidos index`, `eidos spec list`), `_ensure_synced()` runs `check_index_dirty()`:

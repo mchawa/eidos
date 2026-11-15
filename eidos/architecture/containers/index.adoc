@@ -81,6 +81,16 @@ decisions:
       - option: "Download Harrier ONNX weights from mutable branch refs ('main') checking only st_size > 0"
         reason_rejected: "Vulnerable to upstream supply-chain mutation and permanently caches partially downloaded .onnx_data files."
     graduated_from: DLT-2026-133-HARDEN-SQLITE-187E
+  - id: DEC-INDEX-PHP-STATIC-SEMANTICS
+    title: "Shared PHP AST and Declarative Local Metadata"
+    decision: "Extend the unified SgRoot pipeline with namespace-qualified declarations, normalized API fingerprints, shared PHPUnit/Pest discovery and repository-contained declarative Composer resolution."
+    rationale: "Provides consistent navigation, dependency edges, validation and drift without executing untrusted project code or introducing PHP runtime dependencies."
+    rejected_alternatives:
+      - option: "Regex-only PHP declaration parsing"
+        reason_rejected: "Loses lexical ownership, namespace identity and callback token scope."
+      - option: "Invoke PHP/Composer or embed a full semantic analyzer"
+        reason_rejected: "Executes untrusted project code or exceeds static architectural analysis."
+    graduated_from: DLT-2026-138-COMPREHENSIVE-PHP-AB27
 ---
 = Container: Architectural Knowledge Graph & Retrieval Index (C4 Level 2 Container)
 :toc: left
@@ -89,7 +99,7 @@ decisions:
 This container represents the embedded relational, lexical, and optional semantic indexing engine under `src/eidos/core/index/`. `ArchitecturalIndex` in `graph_index.py` acts as a thin facade delegating persistence, schema versioning, incremental sync, FTS5/CTE graph queries, optional ONNX semantic embedding fusion, and tiered context slicing to focused submodules (`storage.py`, `sync.py`, `query.py`, `context.py`, `semantic.py`, and `ast_indexer.py`). It persists and manages the local SQLite knowledge graph (`eidos/.cache/index.db`) via per-thread `threading.local()` connections and advisory lockfile coordination (`index.db.lock`), providing sub-millisecond catalog lookups, incremental zero-drift synchronization, AST-derived component and container dependency graphs, FTS5 BM25 + optional Harrier Hybrid RRF search, recursive CTE blast-radius traversal, and tiered context slicing for AI coding agents and CLI commands.
 
 == Internal Structure & Key Mechanisms
-* **Embedded SQLite WAL + FTS5 Knowledge Graph (`DEC-INDEX-SQLITE-WAL`, `DEC-INDEX-FLOCK-WAL-AND-PINNED-ONNX`)**: Persists living specification entities (`entities`), typed directed relationships (`edges`, rebuilt in bounded batches without hitting `SQLITE_MAX_EXPR_DEPTH`), governed file digests (`indexed_files`), ownership rules (`symbol_mappings`), polyglot AST symbols (`code_symbols`, including class `method` entries and `is_test = 1` automated test symbols), weighted lexical search (`specs_fts`), inverted token index (`file_tokens_fts`), validation/test caches (`spec_validation_cache`, `test_binding_cache`), and content-addressed dense embeddings (`spec_embeddings`) in a local SQLite WAL database (`SCHEMA_VERSION` `2.19.0`) without `PRAGMA mmap_size`.
+* **Embedded SQLite WAL + FTS5 Knowledge Graph (`DEC-INDEX-SQLITE-WAL`, `DEC-INDEX-FLOCK-WAL-AND-PINNED-ONNX`)**: Persists living specification entities (`entities`), typed directed relationships (`edges`, rebuilt in bounded batches without hitting `SQLITE_MAX_EXPR_DEPTH`), governed file digests (`indexed_files`), ownership rules (`symbol_mappings`), polyglot AST symbols (`code_symbols`, including class `method` entries and `is_test = 1` automated test symbols), weighted lexical search (`specs_fts`), inverted token index (`file_tokens_fts`), validation/test caches (`spec_validation_cache`, `test_binding_cache`), and content-addressed dense embeddings (`spec_embeddings`) in a local SQLite WAL database (`SCHEMA_VERSION` `2.20.0`) without `PRAGMA mmap_size`.
 * **Incremental Synchronization & Polyglot AST Extraction (`DEC-INDEX-CPP-MACRO-NORMALIZATION`)**: Performs single-pass `os.scandir` mtime and SHA-256 dirty checks (debounced via `_last_synced_check`) across `eidos/`, governed `source_path` trees, and test suites, extracting polyglot symbols, interface/trait member signatures, overload-disambiguated symbol keys, Rust/C# trait/interface public items, and cross-file imports across 17 languages via `ast-grep-py` (`SgRoot`).
 * **Two-Tier Retrieval, Pinned ONNX Verification & Tiered Context Slicing (`DEC-INDEX-FTS-RETRIEVAL-HYGIENE`, `DEC-INDEX-HYBRID-SEMANTIC-RRF`, `DEC-INDEX-FLOCK-WAL-AND-PINNED-ONNX`)**: Combines column-weighted FTS5 BM25 ranking, `{a,b}` brace-glob file resolution, and optional gated Harrier-OSS-v1-0.6B ONNX Hybrid RRF (pinned to an immutable HuggingFace commit SHA with `Content-Length` + SHA-256 artifact verification, 3-file `fp32` validation, and atomic `semantic_sync.lock` background worker locking) with calibrated token-budget compression (`anchor` <=300, `guardrails` <=1000, `deep` <=2500 tokens).
 
@@ -98,4 +108,52 @@ This container represents the embedded relational, lexical, and optional semanti
 * **Stateless Derived Cache (`DEC-INDEX-STATELESS-DERIVED-CACHE`, `POL-001`)**: `eidos/.cache/index.db` contains zero unrecoverable state and automatically drops and rebuilds whenever `SCHEMA_VERSION` changes.
 * **Offline Determinism & Opt-In Local Semantic Indexing (`POL-004`, `INV-AGENT-HYBRID-SEMANTIC-FALLBACK`)**: Core CLI workflows use stdlib `sqlite3` and deterministic AST/BM25 algorithms with zero required model weights, while optional `eidos-ai[semantic]` runs 100% locally on CPU with zero remote API calls and 100% deterministic fallback to FTS5 BM25.
 
+== PHP syntax coverage matrix
 
+Feature fixtures run against ast-grep-py >=0.51.2; these are source syntax targets,
+not runtime deployment recommendations or whole-program type checking.
+
+[cols="1,3",options="header"]
+|===
+|PHP |Tested declaration-adjacent syntax
+|7.4 |Typed properties
+|8.0 |Attributes, union types and constructor promotion
+|8.1 |Enums, readonly properties and intersection types
+|8.2 |Readonly classes and DNF types
+|8.3 |Typed class constants
+|8.4 |Property hooks and asymmetric read/write visibility
+|8.5 |Pipe expressions, clone-with, closure defaults/constants and NoDiscard attributes
+|===
+
+Namespace-qualified identities retain lexical owners across compact declarations,
+Unicode names and CRLF input. Malformed syntax fails closed without fabricated
+exports. Declaration fingerprints include public and protected subclass surfaces,
+not private members, executable method/hook bodies or ordinary PHPDoc prose.
+PHPDoc is retained as metadata, not interpreted as an inferred type system.
+
+=== No PHP or Composer execution
+
+Only already discovered, repository-contained local source files are eligible
+dependency targets. Root composer.json autoload/autoload-dev PSR-4 and PSR-0
+mappings use deterministic longest-prefix matching and actual declaration checks;
+classmap paths restrict matches to local indexed declarations, and files mappings
+add eager ownership dependencies. Literal includes support __DIR__/__FILE__
+concatenation. Dynamic paths, runtime aliases, ambiguous declarations, external
+packages and excluded dependency trees remain unresolved. No mapping initiates
+vendor scanning, autoloader loading, plugin invocation or a Composer process.
+Composer-only edits invalidate edges. Derived cache version 2.20.0 rebuilds old
+short-name symbols and binding caches without modifying authoritative files.
+
+=== Static framework coverage
+
+Fixtures cover PHPUnit 9-style named/PHPDoc methods and PHPUnit 10-12-style Test
+attributes (including imported aliases), plus Pest 2-4-style literal test/it
+closures, arrow callbacks, nested describe scopes and declaration-level datasets.
+This is syntax-level traceability, not framework execution or version certification.
+Canonical PHPUnit bindings use file.php::Namespace\Class::method; Pest bindings use
+file.php::scope::literal title without a display-only "it " prefix. Unique legacy
+aliases remain accepted; duplicate identities and explicit skip/todo or
+unconditional PHPUnit skip/incomplete markers cannot satisfy an invariant.
+Conditional runtime skips, generated titles and runtime-expanded datasets are
+outside the static guarantee. Tokens belong to the test callback, title or
+directly attached comment, never an enclosing suite or neighboring test.

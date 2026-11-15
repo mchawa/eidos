@@ -92,9 +92,9 @@ The pairing of `POL-*` and `INV-*` was designed to solve three critical challeng
 
 ## 5. How Polyglot Invariant Verification Works Under the Hood
 
-When `eidos drift` runs, `CMP-DRIFT-DETECTOR` (`src/eidos/vcs/invariants.py`) and `CMP-AST-SYMBOL-INDEXER` (`src/eidos/core/index/ast_indexer.py`) statically verify every declared `INV-*` binding across **6 language families** without executing arbitrary code:
+When `eidos drift` runs, `CMP-DRIFT-DETECTOR` (`src/eidos/vcs/invariants.py`) and `CMP-AST-SYMBOL-INDEXER` (`src/eidos/core/index/ast_indexer.py`) statically verify declared `INV-*` bindings without executing arbitrary code:
 
-1. **Supported Languages**: Python (`.py`), TypeScript/JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`), Go (`_test.go`), Rust (`.rs`), Java (`.java`), and Kotlin (`.kt`, `.kts`).
+1. **Supported Languages**: Python (`.py`), TypeScript/JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`), Go (`_test.go`), Rust (`.rs`), Java (`.java`), Kotlin (`.kt`, `.kts`), and PHP (`.php`, PHPUnit/Pest syntax described below).
 2. **Supported Binding Formats**:
    * **Standalone Function**: `path/to/test_file.py::test_function_name`
    * **Class-Qualified Method**: `path/to/test_file.py::TestSuiteClass::test_method_name` (automatically falls back to bare `test_method_name` lookup when needed).
@@ -103,6 +103,27 @@ When `eidos drift` runs, `CMP-DRIFT-DETECTOR` (`src/eidos/vcs/invariants.py`) an
    * **Orphan Check**: Scans all test suites for `INV-*` references that do not correspond to any declared invariant in `eidos/`, flagging dangling test references.
 
 ### Test Binding Examples
+
+### PHP (PHPUnit and Pest)
+
+Use `tests/PaymentTest.php::App\Tests\PaymentTest::testPay` for PHPUnit, or
+`tests/PaymentTest.php::payments::captures payment` for Pest
+`describe('payments', ...)` containing `it('captures payment', ...)`.
+Top-level Pest tests use `file.php::literal title`, without an injected `it `
+prefix. Unambiguous legacy method/title aliases remain valid.
+
+Static fixtures cover PHPUnit 9-style named/PHPDoc tests, PHPUnit 10-12-style
+`PHPUnit\Framework\Attributes\Test` attributes (short imported, aliased or fully
+qualified), and Pest 2-4-style literal titles, closures/arrows, nested scopes and
+datasets. This is syntax coverage, not framework runtime certification.
+Datasets bind to the declaration, not expanded runtime names.
+
+The selected test's callback, title or directly attached comment must contain
+its INV/POL token. Suite comments, hooks and neighboring tests cannot supply it.
+Duplicate identities, Pest `skip`/`todo`, disabled enclosing suites and
+unconditional PHPUnit skip/incomplete calls cannot satisfy a binding. Conditional
+runtime skips, generated titles and dataset execution are not evaluated. All
+consumers share discovery; native CI remains responsible for running the tests.
 
 === "Python (pytest)"
 
@@ -138,4 +159,3 @@ Verify invariant coverage at any time with:
 ```bash
 eidos drift --uncommitted
 ```
-

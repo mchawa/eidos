@@ -1324,7 +1324,7 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
     db_path = eidos_dir / ".cache" / "index.db"
     with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
-        assert ver == SCHEMA_VERSION == "2.19.0"
+        assert ver == SCHEMA_VERSION == "2.20.0"
         val_rows_before = conn.execute("SELECT COUNT(*) FROM spec_validation_cache;").fetchone()[0]
         assert val_rows_before == 1
 
@@ -2374,7 +2374,7 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
     from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 
-    assert SCHEMA_VERSION == "2.19.0"
+    assert SCHEMA_VERSION == "2.20.0"
     assert set(AstGrepIndexer.LANGUAGE_MAP.keys()) | {".proto", ".adoc"} <= _FILE_QUERY_EXTS
 
     # 1. Verify _ENTITY_ID_TOKEN_RE recognizes SYS-*, ARCH-*, PER-*, and underscore IDs
@@ -2549,7 +2549,7 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
     from eidos.portal.generator import get_portal_data
 
-    assert SCHEMA_VERSION == "2.19.0"
+    assert SCHEMA_VERSION == "2.20.0"
     assert _build_spec_catalog_with_invariants(tmp_path / "nonexistent_eidos") == ({}, {})
 
     init_repository(tmp_path, title="dlt-104-repo")
@@ -2681,11 +2681,11 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
     try:
         conn = idx._get_connection()
-        # Simulate upgrading from schema_version 2.11.0 -> 2.19.0
+        # Simulate upgrading from schema_version 2.11.0 -> 2.20.0
         conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '2.11.0');")
         conn.commit()
         ensure_cache_schema(conn)
-        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.19.0"
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.20.0"
 
         idx.sync(force=True)
 
@@ -4141,3 +4141,139 @@ def test_concurrent_wal_lock_thread_isolation_and_large_edge_rebuild(tmp_path: P
         assert conn_b.execute("SELECT 1 FROM entities WHERE id = 'CMP-SECOND-B-RENAMED';").fetchone() is not None
     finally:
         _close_singleton_index()
+def _php_graph_repo(repo):
+    (repo / "src" / "app").mkdir(parents=True)
+    (repo / "src" / "lib").mkdir(parents=True)
+    (repo / "tests").mkdir()
+    _write_container(repo, "app.adoc", "CNT-PHP-APP", "src/app", [("CMP-PHP-APP", "src/app")])
+    _write_container(repo, "lib.adoc", "CNT-PHP-LIB", "src/lib", [("CMP-PHP-LIB", "src/lib")])
+    (repo / "src/lib/Service.php").write_text("<?php namespace Lib; class Service { function run() {} }")
+    (repo / "src/app/Service.php").write_text(
+        "<?php namespace App; use Lib\\Service as Other; class Service extends Other {}"
+    )
+    composer = {"autoload": {"psr-4": {"Lib\\": "src/lib/"}}}
+    (repo / "composer.json").write_bytes(orjson.dumps(composer))
+    return ArchitecturalIndex(repo_root=repo, eidos_dir=repo / "eidos")
+
+
+def test_php_dependency_graph(tmp_path):
+    """INV-INDEX-PHP-DEPENDENCIES: only provable, repository-local PHP dependencies form edges."""
+    idx = _php_graph_repo(tmp_path)
+    try:
+        idx.sync(force=True)
+        conn = idx._get_connection()
+        edge = ("CMP-PHP-APP", "CMP-PHP-LIB", "consumes_api")
+        assert edge in {tuple(r) for r in conn.execute("SELECT * FROM edges")}
+        assert {m["symbol"] for m in idx.find_symbol("Service") if m["kind"] == "class"} >= {
+            "App\\Service",
+            "Lib\\Service",
+        }
+        method = next(m for m in idx.find_symbol("Lib\\Service::run") if m["symbol"] == "Lib\\Service::run")
+        assert method["location"]["parent_symbol"] == "Lib\\Service"
+        app = tmp_path / "src/app/Service.php"
+        app.write_text("<?php namespace App; use External\\Service; require $dynamic; class Service {}")
+        _touch_later(app)
+        idx.sync()
+        assert edge not in {tuple(r) for r in conn.execute("SELECT * FROM edges")}
+        app.write_text("<?php require __DIR__ . '/../lib/Service.php'; class App {}")
+        _touch_later(app, 10)
+        idx.sync()
+        assert edge in {tuple(r) for r in conn.execute("SELECT * FROM edges")}
+        app.write_text("<?php require __DIR__ . '/../../../outside.php'; class App {}")
+        _touch_later(app, 15)
+        idx.sync()
+        assert edge not in {tuple(r) for r in conn.execute("SELECT * FROM edges")}
+        composer = tmp_path / "composer.json"
+        for step, (source, metadata, expected) in enumerate(
+            [
+                ("<?php class App {}", {"autoload": {"files": ["src/lib/Service.php"]}}, True),
+                ("<?php class App {}", {"autoload": {"files": ["../outside.php", "vendor/Service.php", "\0"]}}, False),
+                ("<?php use Lib\\Service; class App {}", {"autoload": {"classmap": ["src/lib/"]}}, True),
+                (
+                    "<?php use Lib\\Service; class App {}",
+                    {"autoload": {"psr-4": {"Lib\\": "src/lib/", "Lib\\Service": "../outside/"}}},
+                    False,
+                ),
+                ("<?php use Lib\\Service; class App {}", {"autoload-dev": {"psr-0": {"Lib\\": "src/"}}}, False),
+            ]
+        ):
+            app.write_text(source)
+            composer.write_bytes(orjson.dumps(metadata))
+            _touch_later(app, 20 + step * 5)
+            _touch_later(composer, 20 + step * 5)
+            idx.sync()
+            assert (edge in {tuple(r) for r in conn.execute("SELECT * FROM edges")}) is expected
+        (tmp_path / "src/lib/Legacy").mkdir()
+        (tmp_path / "src/lib/Legacy/Service.php").write_text("<?php class Legacy_Service {}")
+        composer.write_bytes(orjson.dumps({"autoload": {"psr-0": {"Legacy_": "src/lib/"}}}))
+        app.write_text("<?php use Legacy_Service; class App {}")
+        _touch_later(app, 60)
+        _touch_later(composer, 60)
+        idx.sync()
+        assert edge in {tuple(r) for r in conn.execute("SELECT * FROM edges")}
+    finally:
+        idx.close()
+
+
+def test_php_incremental_sync_parity(tmp_path):
+    """INV-INDEX-PHP-SYNC-PARITY: edits, moves, deletion, metadata and disabled bindings match rebuilds."""
+    idx = _php_graph_repo(tmp_path)
+    test = tmp_path / "tests/PaymentTest.php"
+    marker = "INV" + "-PHP-PARITY-FIXTURE"
+    test.write_text(f"<?php namespace Tests; class PaymentTest {{ function testPay() {{ /* {marker} */ }} }}")
+    component = tmp_path / "eidos/architecture/components/php-app.adoc"
+    component.write_text(component.read_text().replace("\n---\n", f"""
+invariants:
+  - id: {marker}
+    rule: PHP binding parity
+    test_binding: tests/PaymentTest.php::testPay
+---
+""", 1))
+
+    def snapshot():
+        conn = idx._get_connection()
+        return (
+            sorted(
+                tuple(r)
+                for r in conn.execute(
+                    "SELECT file_path,symbol,kind,parent_symbol,line_start,line_end,signature,entity_id,is_test FROM code_symbols"
+                )
+            ),
+            sorted(tuple(r) for r in conn.execute("SELECT * FROM edges")),
+            [orjson.loads(r["data_json"]) for r in conn.execute("SELECT data_json FROM entities WHERE id = ?", (marker,))],
+        )
+
+    def parity():
+        idx.sync()
+        incremental = snapshot()
+        idx.sync(force=True)
+        assert snapshot() == incremental
+
+    try:
+        idx.sync(force=True)
+        assert snapshot()[2][0]["has_test_coverage"]
+        changes = [
+            (tmp_path / "composer.json", '{"autoload":{"psr-4":{"Lib\\\\":"../outside/"}}}'),
+            (tmp_path / "src/lib/Service.php", "<?php namespace Changed; class Service {}"),
+            (test, f"""<?php namespace A {{ class T {{ function testPay() {{ /* {marker} */ }} }} }}
+namespace B {{ class T {{ function testPay() {{ /* {marker} */ }} }} }}"""),
+            (test, f"<?php test('payment', function () {{ /* {marker} */ }})->skip();"),
+        ]
+        for step, (path, text) in enumerate(changes):
+            path.write_text(text)
+            _touch_later(path, 5 * (step + 1))
+            parity()
+            if step >= 2:
+                assert not snapshot()[2][0]["has_test_coverage"]
+        old = tmp_path / "src/lib/Service.php"
+        old.rename(old.with_name("Moved.php"))
+        parity()
+        test.unlink()
+        parity()
+        assert (
+            not idx._get_connection()
+            .execute("SELECT 1 FROM edges WHERE rel_type='asserts' AND source_id LIKE 'tests/PaymentTest.php::%'")
+            .fetchone()
+        )
+    finally:
+        idx.close()

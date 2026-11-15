@@ -1,0 +1,469 @@
+---
+type: delta/mutation
+id: DLT-2026-138-COMPREHENSIVE-PHP-AB27
+title: Comprehensive PHP Language Support
+status: applied
+intent:
+  kind: feature
+  motivation: >-
+    Replace partial PHP symbol extraction with dependable static architectural
+    intelligence: namespace-safe identities, complete declaration-level API
+    surfaces, conservative dependency edges, structural drift detection, and
+    PHPUnit/Pest invariant traceability without executing PHP or Composer.
+mutations:
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+    details: >-
+      Define PHP namespace and lexical ownership, declaration signatures,
+      language-native visibility, imports, PHPDoc/attributes, and static test
+      discovery using the existing AstGrepIndexer/SgRoot pipeline.
+    expect:
+      frontmatter:
+        source_path: src/eidos/core/index/ast_indexer.py
+      body:
+        contains:
+          - PHP namespace-qualified symbol identities
+          - PHP declaration-level API fingerprints
+          - PHPUnit and Pest static test discovery
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    details: >-
+      Persist PHP qualified symbols, test identities and assertion edges; resolve
+      statically known local dependencies using namespace imports, literal
+      includes and declarative Composer metadata; invalidate affected cached
+      edges when source or Composer mappings change.
+    expect:
+      frontmatter:
+        source_path: src/eidos/core/index/sync.py
+      body:
+        contains:
+          - PHP static dependency resolution
+          - Composer metadata invalidation
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+    details: >-
+      Support exact PHP fully qualified symbol and test lookup while retaining
+      unambiguous short-name discovery without merging distinct declarations.
+    expect:
+      frontmatter:
+        source_path: src/eidos/core/index/query.py
+      body:
+        contains:
+          - PHP qualified and short-name lookup
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    details: >-
+      Preserve PHP canonical identities through storage and graph retrieval;
+      version the derived cache so existing short-name-only entries are rebuilt
+      without deleting authoritative specs, code or Git history.
+    expect:
+      frontmatter:
+        source_path:
+          - src/eidos/core/index/storage.py
+          - src/eidos/core/index/graph_index.py
+      body:
+        contains:
+          - PHP symbol identity cache rebuild
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    details: >-
+      Consume the shared PHP API fingerprints for uncommitted and commit-range
+      drift; enforce qualified PHPUnit/Pest bindings and reject statically
+      disabled bindings without adding test execution to Eidos.
+    expect:
+      body:
+        contains:
+          - PHP declaration-level structural drift
+          - PHP static invariant traceability
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: >-
+      Validate PHP Public Surface references and canonical test bindings through
+      shared AST discovery, including namespace collisions and explicit
+      PHPUnit/Pest disabled markers, without regex-only test acceptance.
+    expect:
+      frontmatter:
+        source_path: src/eidos/core/spec/validator.py
+      body:
+        contains:
+          - PHP qualified Public Surface and test bindings
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+    details: >-
+      Document the PHP syntax coverage matrix, static analysis boundary,
+      Composer resolution rules and derived-cache compatibility strategy.
+      Record DEC-INDEX-PHP-STATIC-SEMANTICS in the owning decisions block.
+    expect:
+      frontmatter:
+        decisions.id:
+          - DEC-INDEX-PHP-STATIC-SEMANTICS
+      body:
+        contains:
+          - PHP syntax coverage matrix
+          - No PHP or Composer execution
+  - operation: modify
+    target: CAP-AGENT-002
+    details: >-
+      Bump 1.4.0 to 1.5.0 and specify tested PHP symbol identity, API surfaces,
+      dependencies, test discovery, grammar coverage and incremental parity.
+      Retain the existing cross-language precision and latency requirements.
+    expect:
+      frontmatter:
+        version: "1.5.0"
+        technical.invariants.id:
+          - INV-INDEX-PHP-SYMBOL-IDENTITY
+          - INV-INDEX-PHP-API-SURFACE
+          - INV-INDEX-PHP-DEPENDENCIES
+          - INV-INDEX-PHP-TEST-BINDINGS
+          - INV-INDEX-PHP-GRAMMAR-COVERAGE
+          - INV-INDEX-PHP-SYNC-PARITY
+      body:
+        contains:
+          - Comprehensive static PHP support
+  - operation: modify
+    target: CAP-VCS-001
+    details: >-
+      Bump 1.12.0 to 1.13.0 and require PHP declaration-level structural coverage
+      and shared static binding semantics in both Git comparison modes.
+    expect:
+      frontmatter:
+        version: "1.13.0"
+        technical.invariants.id:
+          - INV-DRIFT-PHP-STRUCTURAL-COVERAGE
+      body:
+        contains:
+          - PHP public and subclass API drift
+  - operation: modify
+    target: CAP-PROD-001
+    details: >-
+      Bump 1.11.0 to 1.12.0 and require namespace-safe PHP Public Surface and
+      PHPUnit/Pest binding validation using the same indexer as drift.
+    expect:
+      frontmatter:
+        version: "1.12.0"
+        technical.invariants.id:
+          - INV-SPEC-PHP-BINDING-VALIDATION
+      body:
+        contains:
+          - PHP namespace-safe specification validation
+  - operation: add
+    target: INV-INDEX-PHP-SYMBOL-IDENTITY
+    details: >-
+      Add under CAP-AGENT-002. Namespaced declarations and class-like members
+      retain collision-free canonical identities and AST-derived lexical
+      ownership, including same-line declarations, traits, interfaces and enums.
+    expect:
+      frontmatter:
+        rule: collision-free canonical identities
+        test_binding: tests/test_ast_indexer.py::test_php_qualified_symbol_identity
+  - operation: add
+    target: INV-INDEX-PHP-API-SURFACE
+    details: >-
+      Add under CAP-AGENT-002. PHP declaration-level fingerprints cover native
+      visibility, public magic methods, properties and promotion, constants,
+      enum cases, inheritance, interfaces, trait adaptations and member types.
+    expect:
+      frontmatter:
+        rule: PHP declaration-level API fingerprints
+        test_binding: tests/test_ast_indexer.py::test_php_api_surface
+  - operation: add
+    target: INV-INDEX-PHP-DEPENDENCIES
+    details: >-
+      Add under CAP-AGENT-002. Resolve only statically provable local PHP
+      dependencies, preserve unresolved references honestly, and never execute
+      repository PHP, Composer plugins or autoloaders.
+    expect:
+      frontmatter:
+        rule: statically provable local PHP dependencies
+        test_binding: tests/test_graph_index.py::test_php_dependency_graph
+  - operation: add
+    target: INV-INDEX-PHP-TEST-BINDINGS
+    details: >-
+      Add under CAP-AGENT-002. Discover PHPUnit named, attributed and PHPDoc
+      tests plus literal Pest tests with stable qualified bindings, scoped
+      INV/POL references and rejection of explicit static disabled markers.
+    expect:
+      frontmatter:
+        rule: PHPUnit and Pest static test discovery
+        test_binding: tests/test_ast_indexer.py::test_php_test_bindings
+  - operation: add
+    target: INV-INDEX-PHP-GRAMMAR-COVERAGE
+    details: >-
+      Add under CAP-AGENT-002. Gate the documented PHP 7.4 through 8.5 syntax
+      matrix on feature-specific fixtures and graceful malformed-source handling;
+      do not advertise unsupported grammar as complete coverage.
+    expect:
+      frontmatter:
+        rule: PHP syntax coverage matrix
+        test_binding: tests/test_ast_indexer.py::test_php_grammar_matrix
+  - operation: add
+    target: INV-INDEX-PHP-SYNC-PARITY
+    details: >-
+      Add under CAP-AGENT-002. Full and incremental sync produce equivalent PHP
+      symbols, imports, ownership and test edges after edits, moves, deletions,
+      namespace changes and Composer mapping changes.
+    expect:
+      frontmatter:
+        rule: PHP full and incremental sync parity
+        test_binding: tests/test_graph_index.py::test_php_incremental_sync_parity
+  - operation: add
+    target: INV-DRIFT-PHP-STRUCTURAL-COVERAGE
+    details: >-
+      Add under CAP-VCS-001. PHP externally visible declaration and subclass API
+      changes require substantive owning-spec coverage in both uncommitted and
+      commit-range comparisons; implementation-only edits are not API changes.
+    expect:
+      frontmatter:
+        rule: PHP declaration-level structural drift
+        test_binding: tests/test_drift.py::test_php_structural_drift
+  - operation: add
+    target: INV-SPEC-PHP-BINDING-VALIDATION
+    details: >-
+      Add under CAP-PROD-001. PHP qualified Public Surface references and
+      PHPUnit/Pest file::symbol bindings resolve uniquely and contain their own
+      INV/POL token; missing, ambiguous or explicitly disabled tests fail static
+      validation consistently with drift.
+    expect:
+      frontmatter:
+        rule: PHP namespace-safe specification validation
+        test_binding: tests/test_validator.py::test_php_binding_validation
+vcs:
+  branch: main
+  base_commit: 9ef60b0a7e5c9291dc89a4a0b8c1661cf7b4d5d1
+---
+= SpecDelta: Comprehensive PHP Language Support
+:toc: left
+
+== Problem Statement
+PHP is already registered in the unified AST indexer, but registration does not
+mean complete architectural support. Current extraction handles named class-like
+declarations, functions, methods, basic imports and conventionally named tests.
+The assessment preceding this proposal demonstrated the following gaps:
+
+* Namespace changes are absent from public symbol identity; repeated short class
+  names can collide and lose method ownership.
+* Line-range ownership can misassociate declarations sharing a source line.
+* Public magic methods and underscore-prefixed public methods are incorrectly
+  treated as private.
+* Public property types, constant values, enum cases and trait composition
+  changes can escape structural API comparison.
+* PHPUnit attribute/PHPDoc tests and Pest closures are not reliably discoverable
+  for invariant bindings.
+
+These are false-confidence risks for agents using PHP repo maps, dependency
+graphs, Public Surface validation and spec-to-code drift enforcement.
+
+== Scope and Compatibility
+
+Comprehensive means *static architectural support*, not a PHP interpreter,
+compiler, whole-program type checker or general-purpose PHP static analyzer.
+The proposed syntax matrix targets PHP 7.4 through 8.5 source constructs relevant
+to declarations, dependencies and tests. These are source-compatibility targets,
+not a recommendation to deploy end-of-life PHP runtimes.
+
+Grammar support must be established with fixtures against the installed
+`ast-grep-py` parser. Cover typed properties (7.4); attributes, union types and
+constructor promotion (8.0); enums, readonly properties and intersection types
+(8.1); readonly classes and DNF types (8.2); typed class constants (8.3); property
+hooks and asymmetric property visibility (8.4); and representative 8.5 syntax,
+including expressions inside bodies and defaults that must not corrupt adjacent
+declarations. Upgrade the existing parser dependency only if required and proven
+compatible with the other supported languages. A grammar gap blocks the affected
+coverage claim and completion of this delta; silently returning no symbols is not
+evidence of support.
+
+Keep existing CLI commands and JSON field shapes. Qualified identities are the
+canonical PHP lookup and comparison keys; short names remain search aliases, not
+an excuse to merge declarations. Preserve an existing short test binding only
+when it resolves uniquely; ambiguous bindings require explicit qualification
+and an actionable diagnostic. Non-PHP identity and binding behavior must remain
+unchanged. Rebuild derived caches through the existing schema-version mechanism.
+
+== Proposed Specification Changes
+
+=== Symbol Identity, Ownership and Declaration Surfaces
+
+* Track bracketed/unbracketed namespaces, the global namespace, multiple
+  namespaces per file and namespace-relative names. Canonical examples are
+  `App\Service\InvoiceService` and
+  `App\Service\InvoiceService::issueInvoice`.
+* Derive lexical parents from AST ancestry or exact source spans, not shared
+  short names or line-only containment. Cover class/interface/trait/enum members,
+  anonymous classes, nested declarations and multiple declarations on one line.
+  Anonymous/local declarations must not become fabricated named public exports.
+* Index functions, methods, classes, interfaces, traits, enums, properties,
+  promoted properties, namespace/class constants and enum cases. Retain trait
+  identity even if the common symbol-kind model uses an interface-like category.
+* Follow PHP visibility, including default public methods, public `__construct`,
+  `__invoke` and `_publicApi`. Index non-public members for navigation without
+  marking them public. Protected members form a subclass API; private members
+  do not form the externally visible surface. Model property read/write
+  visibility separately where asymmetric visibility is present.
+* Build deterministic declaration-level fingerprints for parameters, names
+  relevant to named arguments, reference/variadic markers, defaults, nullable/
+  union/intersection/DNF types, return types, modifiers, property hooks,
+  inheritance, implemented interfaces, interface/abstract member requirements,
+  trait `use`/`insteadof`/`as` adaptations, constant values and enum backing/cases.
+  Include effective promoted properties and public trait adaptations. Changes
+  to inherited/trait-provided API must remain attributable to their declaration
+  and visible to dependency/blast-radius traversal, not require a PHP runtime.
+* Attach PHPDoc and attributes to the correct declaration, including intervening
+  comments and multiple attribute groups. Retain declaration metadata in
+  deterministic summaries, but do not claim PHPDoc type inference. Formatting,
+  ordinary prose-only PHPDoc edits and implementation-body edits must not create
+  false API-signature changes.
+
+=== Imports and Dependency Graphs
+
+* Extract class, function and constant imports, aliases, grouped/mixed imports,
+  fully qualified and namespace-relative references, plus `extends`,
+  `implements` and trait composition references. Keep namespace import `use`
+  distinct from closure captures and trait `use`.
+* Resolve literal `include`, `include_once`, `require` and `require_once`,
+  including statically evaluable `__DIR__`/`__FILE__` concatenation. Parse
+  declarative Composer `autoload`/`autoload-dev` PSR-4, PSR-0, classmap and files
+  mappings to connect local indexed files, with deterministic longest-prefix
+  matching and declared component/container ownership.
+* Read metadata only: never execute PHP, Composer commands, plugins, generated
+  autoloaders or included files. Respect repository boundaries and existing
+  source discovery/exclusion rules; do not scan dependencies merely because a
+  mapping points into `vendor`. Dynamic includes, runtime aliases and external
+  packages remain unresolved rather than generating guessed dependency edges.
+* Changes to Composer mappings must invalidate affected dependency edges even
+  if PHP source hashes have not changed. Cache rebuild and incremental sync must
+  remove stale namespace identities, moved/deleted symbols and assertion edges.
+
+=== PHPUnit, Pest and Invariant Traceability
+
+* Discover PHPUnit public `test*` methods, `#[Test]` attributes (short, imported,
+  aliased and fully qualified PHPUnit names), and legacy PHPDoc `@test` methods.
+  Do not classify arbitrary attributes with the same short name as PHPUnit.
+* Discover Pest `test` and `it` calls with literal titles and closure/arrow
+  callbacks, including nested `describe` scopes and statically declared datasets.
+  Calls inside strings/comments, hooks, providers and suite-only declarations
+  must not become tests. Dynamic/generated titles remain outside guaranteed
+  resolution and must not be accepted as an unrelated literal binding.
+* Canonical bindings are `tests/PaymentTest.php::App\Tests\PaymentTest::testPay`
+  for PHPUnit and `tests/PaymentTest.php::payments::captures payment` for
+  `describe('payments', ...)` containing `it('captures payment', ...)`.
+  A top-level Pest test uses `file.php::literal title`; use the literal title
+  without injecting Pest's display-only `it ` prefix. Dataset instances bind to
+  their declaration, not runtime-expanded names. Reject duplicate canonical
+  identities within a file; never silently select the first matching test.
+* Associate INV/POL tokens with the owning test's callback, directly attached
+  comments/PHPDoc or title, not neighboring tests or suite-only comments.
+  Retain existing unambiguous legacy binding aliases.
+* Reject explicit statically disabled bindings, including Pest `skip`/`todo` and
+  unconditional PHPUnit `markTestSkipped()`/`markTestIncomplete()` calls. Detect
+  enclosing static suite disablement. Do not pretend to evaluate conditional runtime
+  skips, environment requirements, dataset generation or framework execution.
+* Use one shared discovery/identity implementation for indexing, validator and
+  drift. Eidos checks static bidirectional traceability only; native CI remains
+  responsible for executing tests and judging assertions.
+
+=== Architectural Decisions and Specification Ownership
+
+Keep implementation in the existing index, core-validation and VCS components;
+no new container, component, CLI operation or PHP runtime dependency is proposed.
+Declare the eight invariants above in their owning capabilities only when their
+tests exist, each with the exact `test_binding` and an INV-ID reference in the
+bound test. Existing personas, domain vocabulary and policies remain applicable;
+there is no new user workflow, policy or UI contract.
+
+Record `DEC-INDEX-PHP-STATIC-SEMANTICS` under `CNT-EIDOS-INDEX.decisions` during
+implementation: extend the unified AST pipeline and static metadata resolution.
+Reject regex-only declaration parsing because it loses lexical ownership, and
+reject invoking PHP/Composer or adding a full semantic analyzer because it
+executes untrusted project code or expands Eidos beyond architectural analysis.
+Document the precise grammar/framework matrix and limitations in the owning
+living specs and the existing user-facing language/binding documentation.
+
+== Implementation Plan
+
+. *Pin down parser coverage and failing regressions.* Add parameterized PHP
+  grammar, identity and visibility fixtures to `tests/test_ast_indexer.py`.
+  Reproduce all demonstrated misses before changing extraction. Include CRLF,
+  mixed HTML/PHP blocks, Unicode identifiers, compact same-line declarations,
+  malformed/partially edited input and multiple namespaces. Document tested
+  PHPUnit/Pest syntax versions without introducing framework runtime installs.
+. *Fix shared symbol semantics.* Extend AST ownership, qualified identities,
+  metadata attachment, native visibility and declaration fingerprints in
+  `src/eidos/core/index/ast_indexer.py`. Keep shared non-PHP behavior intact;
+  update callers of changed shared helpers rather than adding parallel PHP
+  implementations of validation or drift.
+. *Wire graph persistence and conservative dependencies.* Update `sync.py`,
+  `query.py`, `storage.py` and `graph_index.py` as needed for qualified lookup,
+  Composer-aware local resolution and cache versioning. Keep existing JSON
+  shapes and short-name search. Add graph integration tests for identity
+  collisions, external/unresolved references and full/incremental equivalence.
+. *Implement shared test discovery and consumers.* Add PHPUnit/Pest identities,
+  metadata recognition, token scoping and explicit disabled-test rejection.
+  Wire `src/eidos/core/spec/validator.py` and `src/eidos/vcs/invariants.py` to the
+  same results; add positive and negative validator/drift integration fixtures.
+. *Close structural drift gaps.* Exercise the shared public/boundary maps through
+  `src/eidos/vcs/structural.py` and the existing drift workflow. Cover both
+  uncommitted and `--base`/`--head` comparisons in temporary Git repositories.
+  Protected subclass contracts must be tracked without reclassifying protected
+  members as public. Test additions, removals, renames and signature changes.
+. *Co-evolve and verify.* Update every mutated spec, capability version,
+  invariant and owning decision, plus existing language/binding docs. Run the
+  affected AST, graph, validator and drift suites, existing polyglot regressions
+  and indexing latency checks. Verify the delta and run the drift gate before
+  applying it; do not mark applied while a grammar-matrix item remains unmet.
+
+== Acceptance Criteria
+
+[cols="1,3",options="header"]
+|===
+|Area |Required evidence
+|Identity and navigation
+|Same short names in distinct namespaces and same-line declarations retain
+distinct symbols, correct parents, exact source spans and qualified/short lookup.
+Graph persistence, repo maps and Public Surface validation agree.
+|API fidelity
+|Before/after fixtures detect namespace, inheritance, interface, trait-adaptation,
+public/protected method/property, promotion, property-hook, constant and enum
+changes. Public magic methods stay public; private body edits, whitespace and
+prose-only documentation edits do not masquerade as API changes.
+|Dependencies and safety
+|Grouped/aliased imports, local Composer mappings and static includes create only
+provable local ownership edges. Dynamic/external references do not create guessed
+edges. Hostile metadata paths cannot escape repository boundaries and no
+repository code, autoloader, plugin or Composer process is executed.
+|Test traceability
+|Named, attributed and PHPDoc PHPUnit tests and literal Pest tests bind through
+all consumers, including namespaced duplicate class names, nested scopes,
+datasets, duplicate titles, marker ownership and statically disabled negatives.
+|Incremental correctness
+|Full rebuild equals incremental results after namespace edits, moves, deletion,
+Composer-only changes and disabled-test changes; stale cache identities and
+assertion/dependency edges are removed.
+|Syntax and regressions
+|Feature fixtures establish the documented PHP 7.4–8.5 matrix. Malformed input
+does not crash or invent exports. Existing supported-language tests and the
+current indexing latency requirements remain satisfied.
+|Governance
+|All mutation post-conditions pass; eight real invariant-bound tests exist and
+reference their INV IDs; schema/cross-reference validation and final drift are
+clean. No runtime test execution is added to Eidos.
+|===
+
+== Verification and Lifecycle
+
+This document is a *proposed plan only*. Creating it does not add PHP behavior,
+activate future invariants, bump living capability versions or apply mutations.
+Future test paths in `expect` blocks are implementation deliverables, not claims
+that those tests already exist.
+
+Validate the proposal now with `eidos validate eidos --json` and
+`eidos drift --uncommitted --json`. After implementation, run:
+
+[source,shell]
+----
+uv run pytest tests/test_ast_indexer.py tests/test_graph_index.py tests/test_validator.py tests/test_drift.py
+eidos delta verify DLT-2026-138-COMPREHENSIVE-PHP-AB27 --json
+eidos drift --uncommitted --json
+----
+
+Only after all acceptance criteria and post-conditions pass should
+`eidos delta apply DLT-2026-138-COMPREHENSIVE-PHP-AB27` be run.

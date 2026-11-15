@@ -4,7 +4,7 @@ id: CAP-VCS-001
 title: "Git-Native Spec-to-Code Drift Detection"
 domain: DOM-VCS-LIFECYCLE
 status: active
-version: "1.12.0"
+version: "1.13.0"
 
 business:
   personas:
@@ -25,6 +25,9 @@ technical:
   contracts:
     - "CTR-EIDOS-CLI"
   invariants:
+    - id: INV-DRIFT-PHP-STRUCTURAL-COVERAGE
+      rule: "PHP declaration-level structural drift requires substantive owning-spec coverage for public and protected subclass API changes in uncommitted and commit-range comparisons, not implementation-only edits."
+      test_binding: "tests/test_drift.py::test_php_structural_drift"
     - id: INV-DRIFT-DETECTION-ACCURACY
       rule: "The drift detection engine must accurately identify structural code and design token/props modifications, parse uncommitted paths via NUL-delimited git status --porcelain=v1 -z, map all modified code_files (structural_code_files and body_only_code_files) to touched_components, filter linguist-generated/vendored files via single-pass batched check-attr queries, fail closed with explicit errors when an explicit base Git reference cannot be resolved or lacks a merge base, resolve deterministic merge-base commit SHAs for 3-dot diffs and batched file content extraction via git cat-file --batch without silent fallbacks, require unowned structural code files to trigger drift in Direct and Planned modes unless claimed by a container/component or covered by a substantive system-level specification update, enforce verify_delta_mutations and _spec_coverage_verdict on newly applied SpecDeltas, enforce --strict co-evolution on body_only_code_files when requested, exclude global POL-* and PER-* neighbors from 1-hop component drift satisfaction, require both token and ui_contract frontend modifications on containers/components bound to CLT-*/DS-* entities to substantively update a specification in the bound design subgraph (tokens.json, DS-*, UIC-*, CLT-*, SCR-*, FLOW-*), verify static test bindings across domain, policy, design (UIC-*), and architecture component invariants by reusing shared test_binding_cache rows in index.db, and enforce component-scoped 1-hop living specification synchronization without global system.adoc bypasses."
       test_binding: "tests/test_drift.py::test_drift_detection_code_without_specs"
@@ -53,6 +56,7 @@ Ensures that source code and living specifications never diverge via a determini
 By leveraging the SQLite Knowledge Graph (`eidos/.cache/index.db`), drift detection maps code diffs directly to architectural components, reuses canonical `CMP-GRAPH-STORAGE` cache helpers (`get_cached_spec_document`, `load_test_binding_cache`, `save_test_binding_cache`) without redundant inline DDL, and traverses 1-hop relational neighborhoods to recommend exact specification targets.
 
 == Key Responsibilities
+* **PHP public and subclass API drift**: Uses shared namespace-qualified declaration fingerprints and shared static PHPUnit/Pest binding semantics in both Git comparison modes, without running PHP tests.
 * **Git Diff Inspection, Shallow-Clone Guards & Monorepo Sub-Project Isolation (`INV-MONOREPO-SUBPROJECT-ISOLATION`, `INV-DRIFT-SHALLOW-AND-COMMIT-TREE-FIDELITY`)**: Inspecting working trees (`git status --porcelain=v1 -z`), staged changes, and branch heads for unmapped architectural modifications via direct canonical `eidos.vcs.diff` and `eidos.vcs.structural` submodule signatures (`merge_base=resolved_mb`), detecting shallow clones across standard checkouts and linked worktrees via `git rev-parse --is-shallow-repository`, evaluating `--base`/`--head` commit ranges from `--head`'s Git tree rather than dirty working-tree files, and scoping Git diffs strictly to the active sub-project root relative to `<git_root>`.
 * **Decorator-Aware AST Structural Diffing**: Capturing enclosing `@decorator` and `#[attribute]` lines in `CodeSymbol.line_start`, prefixing normalized decorator/attribute annotations onto `CodeSymbol.signature`, normalizing C/C++ export macros (`*_API`, `*_EXPORT`), and distinguishing public C++ `static` class/struct methods from file-local `static` free functions in `AstGrepIndexer` (`SgRoot`) across all 17 supported languages so CLI route, lifecycle, and visibility changes are detected by `diff_public_symbols`.
 * **Graph-Powered Reverse Symbol Resolution**: Resolving all modified source code file paths (`structural_code_files` and `body_only_code_files`) to internal C4 components (`CMP-*`) and owning container IDs (`CNT-*`) in `touched_components` via sub-millisecond SQLite queries rather than linear disk crawls, with optional `--strict` enforcement requiring 1-hop spec or bound test co-evolution for `body_only_code_files`.

@@ -415,7 +415,7 @@ def _verify_single_invariant(
                 candidate_token_lists: list[list[str]] = []
                 if tb_func in entry.functions:
                     candidate_token_lists.append(entry.functions[tb_func])
-                elif "::" not in tb_func:
+                elif "::" not in tb_func and Path(tb_file).suffix.lower() != ".php":
                     suffix = f"::{parts[-1]}"
                     candidate_token_lists.extend(
                         toks for k, toks in entry.functions.items() if k == parts[-1] or k.endswith(suffix)
@@ -442,7 +442,7 @@ def _verify_single_invariant(
             candidate_bodies: list[str] = []
             if tb_func in funcs:
                 candidate_bodies.append(funcs[tb_func])
-            elif "::" not in tb_func:
+            elif "::" not in tb_func and Path(tb_file).suffix.lower() != ".php":
                 suffix = f"::{parts[-1]}"
                 candidate_bodies.extend(body for k, body in funcs.items() if k == parts[-1] or k.endswith(suffix))
             if not candidate_bodies:
@@ -455,6 +455,11 @@ def _verify_single_invariant(
             if Path(tb_file).suffix.lower() in _TS_JS_EXTS
             else file_content
         )
+        if Path(tb_file).suffix.lower() == ".php":
+            from eidos.core.index.ast_indexer import extract_test_file_cache_payload
+
+            _, tokens, _, _ = extract_test_file_cache_payload(tb_file, file_content, ast_idx)
+            return [tb_file] if iid in tokens else []
         if pattern.search(searchable_content):
             return list(dict.fromkeys([tb_file, *inv_to_test_funcs.get(iid, [])]))
         return []
@@ -474,6 +479,11 @@ def _verify_single_invariant(
                     if Path(tpath).suffix.lower() in _TS_JS_EXTS
                     else raw_str
                 )
+                if Path(tpath).suffix.lower() == ".php":
+                    from eidos.core.index.ast_indexer import extract_test_file_cache_payload
+
+                    _, tokens, _, _ = extract_test_file_cache_payload(tpath, raw_str, ast_idx)
+                    searchable = "\n".join(tokens)
                 if pattern.search(searchable):
                     matching.append(tpath)
     return matching
