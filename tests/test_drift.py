@@ -4076,6 +4076,52 @@ def test_dlt_2026_110_batch_git_slug_ids_and_unified_test_binding_cache(tmp_path
     assert "INV-SYS-001" in cache_map["tests/test_batch.py"].functions["test_batch_behavior"]
 
 
+def test_typescript_exported_variable_public_surface_drift(tmp_path: Path, monkeypatch) -> None:
+    import subprocess
+
+    from eidos.core.lifecycle.initializer import init_repository
+
+    repo = tmp_path / "ts_drift"
+    init_repository(repo, title="ts-drift")
+    src = repo / "src"
+    src.mkdir()
+    for ext, name in (("ts", "DATA"), ("tsx", "VIEW")):
+        (src / f"app.{ext}").write_text(f"export const {name} = 1;\n", encoding="utf-8")
+    containers = repo / "eidos/architecture/containers"
+    components = repo / "eidos/architecture/components"
+    containers.mkdir(parents=True, exist_ok=True)
+    components.mkdir(parents=True, exist_ok=True)
+    (containers / "app.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-APP\ntitle: App\nstatus: active\n"
+        "container_type: library\nruntime: TypeScript\nsource_path: src\n---\n= App\n",
+        encoding="utf-8",
+    )
+    spec = components / "app.adoc"
+    spec.write_text(
+        "---\ntype: tech/component\nid: CMP-APP\ntitle: App\ncontainer: CNT-APP\n"
+        "status: active\nsource_path: src\n---\n= App\n\n== Public Surface\n* `DATA`\n* `VIEW`\n",
+        encoding="utf-8",
+    )
+    for args in (
+        ["init", "-q", "-b", "main"],
+        ["config", "user.email", "dev@eidos.dev"],
+        ["config", "user.name", "Dev"],
+        ["add", "."],
+        ["commit", "-qm", "baseline"],
+    ):
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+    spec.write_text(spec.read_text(encoding="utf-8") + "\nMore detail.\n", encoding="utf-8")
+    with monkeypatch.context() as m:
+        m.chdir(repo)
+        result = runner.invoke(app, ["drift", "--uncommitted", "--json"])
+        assert result.exit_code == 0, result.stdout
+        assert orjson.loads(result.stdout)["is_clean"]
+        spec.write_text(spec.read_text(encoding="utf-8") + "* `MISSING_DATA`\n", encoding="utf-8")
+        result = runner.invoke(app, ["drift", "--uncommitted", "--json"])
+        assert result.exit_code != 0
+        assert "MISSING_DATA" in result.stdout
+
+
 def test_dlt_2026_113_body_only_attribution_strict_mode_and_stale_removed_symbols(tmp_path: Path, monkeypatch) -> None:
     """Verify DLT-2026-113-HARDEN-SPEC-B4EE:
     1. touched_components, structural_code_files, and body_only_code_files on body-only edits.
@@ -5144,5 +5190,3 @@ def test_uic_invariants_planned_delta_verify_and_skipped_test_rejection(tmp_path
     dlt_errs = res_cr.validation_report.schema_errors.get("eidos/deltas/dlt-2026-999-unmodified.adoc", [])
     assert any("digest matches pre-delta baseline" in msg for msg in dlt_errs)
     assert not any("eidos_head_" in str(k) for k in gi._INDEX_INSTANCES)
-
-

@@ -1,0 +1,172 @@
+---
+type: delta/mutation
+id: DLT-2026-137-RECOGNIZE-EXPORTED-9193
+title: Recognize exported TypeScript variables in Public Surface validation
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: medium
+  motivation: Recognize exported TypeScript variable bindings during shared AST extraction so active component and container Public Surface validation does not report existing constants as missing.
+mutations:
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+    details: Document and implement module-level TypeScript variable binding extraction in src/eidos/core/index/ast_indexer.py, preserving export visibility and callable symbol classification.
+    expect:
+      frontmatter:
+        status: active
+        source_path: src/eidos/core/index/ast_indexer.py
+      body:
+        contains:
+          - "exported TypeScript variable bindings"
+          - "non-callable"
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: Document Public Surface resolution of exported TypeScript variable bindings through the shared AST indexer, without a validator-specific TypeScript regex fallback.
+    expect:
+      frontmatter:
+        status: active
+        source_path: src/eidos/core/spec/validator.py
+      body:
+        contains:
+          - "exported TypeScript variable bindings"
+          - "shared AST"
+  - operation: modify
+    target: CAP-AGENT-002
+    details: Extend the polyglot symbol precision guarantee and its existing bound regression for exported TypeScript variable bindings.
+    expect:
+      frontmatter:
+        status: active
+        technical.invariants.id:
+          - INV-INDEX-POLYGLOT-SYMBOL-PRECISION
+      body:
+        contains:
+          - "exported TypeScript variable bindings"
+  - operation: modify
+    target: INV-INDEX-POLYGLOT-SYMBOL-PRECISION
+    details: Extend the existing rule to cover exported TypeScript variable bindings while retaining its concrete test binding.
+    expect:
+      frontmatter:
+        rule: "exported TypeScript variable bindings"
+        test_binding: tests/test_ast_indexer.py::test_inv_index_polyglot_symbol_precision
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    details: Bump the derived cache schema to rebuild incomplete symbols on upgrade.
+    expect:
+      body:
+        contains:
+          - "2.20.0"
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+    details: Document the canonical cache schema version.
+    expect:
+      body:
+        contains:
+          - "2.20.0"
+vcs:
+  branch: main
+  base_commit: 9ef60b0a7e5c9291dc89a4a0b8c1661cf7b4d5d1
+---
+= SpecDelta: Recognize exported TypeScript variables in Public Surface validation
+:toc: left
+
+== Problem Statement
+An Eidos 0.24.0 user reported that Public Surface validation flags exported
+TypeScript constants as missing. This is a medium-severity governance false
+positive affecting validation and drift, not application runtime behavior.
+The portable example below is illustrative and *has not been run*; no
+captured validation output or independently reproduced 0.24.0 result is claimed.
+
+[source,typescript]
+----
+export const LABEL = "ready", LIMIT = 10;
+export const OPTIONS = { enabled: true };
+----
+
+An active component whose `source_path` includes that file and whose
+`== Public Surface` lists `LABEL`, `LIMIT`, and `OPTIONS` should resolve those
+names. The reported symptom is a missing-symbol diagnostic for real exports.
+Inspection of `src/eidos/core/index/ast_indexer.py` shows that export names are
+collected but the variable-declarator symbol pass currently admits only
+function-like initializers. `src/eidos/core/spec/validator.py` consumes names
+from the shared extractor; its assignment fallback is Python-specific. This
+points to extraction rather than stale cache as the likely cause, not a proven
+diagnosis from a run of the example.
+
+After the extractor changes, an existing cache can still retain incomplete
+symbols for unchanged files because incremental sync checks file mtime and
+content hash. Upgrades must invalidate those derived symbols and reindex them.
+
+The existing polyglot precision invariant does not explicitly guarantee
+variable bindings, so this proposal classifies the omission as a `spec_gap`.
+Existing Public Surface hardening in DLT-2026-113-HARDEN-SPEC-B4EE and
+DLT-2026-135-FIX-CONTRACT-6A95 remains applicable.
+
+== Proposed Specification Changes
+* `CMP-AST-SYMBOL-INDEXER` and `CAP-AGENT-002` specify that module-level exported
+  TypeScript variables are extracted as non-callable symbols, with export and
+  visibility semantics preserved. Extend the existing
+  `INV-INDEX-POLYGLOT-SYMBOL-PRECISION`, retaining its existing test binding.
+* `CMP-SPEC-VALIDATOR` documents that Public Surface resolution uses those
+  shared AST symbols, not a TypeScript-specific regex workaround. Continue to
+  report genuinely absent names; do not change the validator's existing
+  visibility policy.
+* Cover `.ts` and `.tsx`: direct `export const`, `export let`, and `export var`
+  declarations, including multiple declarators and local bindings exported
+  by a named export list. Support shallow object and array destructuring,
+  including object property aliases, by recording bound local identifiers
+  rather than property keys. Nested patterns, rest bindings, and defaulted
+  destructuring are outside this delta; do not invent symbols for unsupported
+  patterns. Cross-module re-exports and export-alias resolution beyond existing
+  behavior are also out of scope.
+* Keep arrow/function-expression variables, declared functions, types, and
+  non-exported visibility behavior unchanged. Newly recognized data bindings
+  must not be classified as functions or produce callable graph edges; ensure
+  structural diff and graph consumers handle their distinct kind deliberately.
+
+== Implementation Plan
+These are future work, not changes or test results from this proposed delta.
+
+1. Update `src/eidos/core/index/ast_indexer.py` at the shared declarator
+   extraction path. Preserve existing handling of callable initializers,
+   export lists, boundary exports, and nested scopes. Represent data bindings
+   as a non-callable kind and check downstream indexing and structural-diff
+   consumers for kind assumptions. Co-evolve the three targeted living specs
+   and the existing invariant as declared above.
+2. Bump the existing canonical `SCHEMA_VERSION` in
+   `src/eidos/core/index/storage.py` from `2.19.0` to `2.20.0`. Use the
+   existing version-mismatch cache rebuild path to discard old derived symbols
+   and indexed-file records, so normal sync reindexes unchanged sources.
+   Update version-sensitive expectations in `tests/test_graph_index.py`.
+   Add a planned regression there that seeds a previous-version cache with
+   matching mtime and hash for unchanged `.ts` and `.tsx` sources but missing
+   their exported constants, then closes and reopens it through normal
+   startup/sync without forcing a rebuild or touching the sources. Assert the
+   constants are restored in the index and discoverable via `find-symbol`.
+3. Extend the existing
+   `tests/test_ast_indexer.py::test_inv_index_polyglot_symbol_precision`
+   (which already references the invariant) and add the planned isolated
+   `tests/test_ast_indexer.py::test_typescript_exported_variable_bindings`.
+   Assert names, non-callable kinds, public/boundary visibility, and line
+   locations for string, number, object, multiple declarations, shallow
+   destructuring and aliases, `const`/`let`/`var`, and named exports in both
+   extensions. Assert private and nested bindings do not become public;
+   unsupported patterns do not yield invented names. Retest callable arrows,
+   function expressions, functions and types; verify graph/diff behavior does
+   not create callable edges for data.
+4. Add the planned
+   `tests/test_validator.py::test_typescript_exported_variable_public_surface`
+   using active component specifications for `.ts` and `.tsx` source files.
+   Assert valid documented exports pass `validate_directory`, while an
+   actually absent documented name still produces a missing-symbol diagnostic.
+   Add the planned
+   `tests/test_drift.py::test_typescript_exported_variable_public_surface_drift`
+   with a Git-initialized, committed fixture, then a tracked uncommitted spec
+   change: run `eidos drift --uncommitted --json`, assert valid exports do not
+   produce Public Surface errors, and assert an added nonexistent name does.
+   Keep all other fixture validation and drift conditions clean so failures
+   cannot be mistaken for this regression.
+5. Run the targeted cache-upgrade, extractor, validator and drift tests and
+   `eidos drift --uncommitted --json` after implementation. Only then verify
+   and apply this delta through the normal lifecycle. This proposal is not
+   implementation evidence and must remain `proposed` until that work occurs.

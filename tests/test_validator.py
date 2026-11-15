@@ -3679,6 +3679,42 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
     assert "Contract 'CTR-BAD-OWNER' specifies in-process component" in schema_err_text
 
 
+def test_typescript_exported_variable_public_surface(tmp_path: Path, validator: SpecValidator) -> None:
+    repo = tmp_path / "typescript"
+    src = repo / "src"
+    src.mkdir(parents=True)
+    components = repo / "eidos/architecture/components"
+    containers = repo / "eidos/architecture/containers"
+    components.mkdir(parents=True)
+    containers.mkdir(parents=True)
+    (containers / "app.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-APP\ntitle: App\nstatus: active\n"
+        "container_type: library\nruntime: TypeScript\nsource_path: src\n---\n= App\n",
+        encoding="utf-8",
+    )
+    specs = []
+    for suffix, name in (("ts", "DATA"), ("tsx", "VIEW")):
+        (src / f"app.{suffix}").write_text(
+            f'export const {name} = "ready", {name}_OPTIONS = {{enabled: true}};\n'
+            f"const {name}_LOCAL = 3;\nexport {{ {name}_LOCAL }};\n",
+            encoding="utf-8",
+        )
+        spec = components / f"app-{suffix}.adoc"
+        spec.write_text(
+            f"---\ntype: tech/component\nid: CMP-{suffix.upper()}\ntitle: App {suffix}\n"
+            f"container: CNT-APP\nstatus: active\nsource_path: src/app.{suffix}\n---\n"
+            f"= App\n\n== Public Surface\n* `{name}`\n* `{name}_OPTIONS`\n* `{name}_LOCAL`\n",
+            encoding="utf-8",
+        )
+        specs.append(spec)
+    report = validator.validate_directory(repo / "eidos")
+    assert report.is_clean, report.broken_references
+    specs[0].write_text(specs[0].read_text(encoding="utf-8") + "* `MISSING_DATA`\n", encoding="utf-8")
+    report = validator.validate_directory(repo / "eidos")
+    assert not report.is_clean
+    assert any("MISSING_DATA" in error for error in report.broken_references)
+
+
 def test_dlt_2026_113_component_public_surface_symbol_validation(tmp_path: Path, validator: SpecValidator) -> None:
     """Verify DLT-2026-113-HARDEN-SPEC-B4EE: SpecValidator._validate_source_and_contract_paths
     flags nonexistent backticked symbols under '== Public Surface' in active CMP-*/CNT-* specs."""

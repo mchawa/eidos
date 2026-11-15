@@ -12,15 +12,15 @@ source_path:
 :toc: left
 
 == Responsibility
-Owns the embedded SQLite knowledge graph lifecycle (`eidos/.cache/index.db`), canonical `SCHEMA_VERSION` (`2.19.0`) DDL initialization, corruption recovery, `orjson`-backed validation/test-binding and semantic embedding caches (`spec_embeddings`), and the `ArchitecturalIndex` facade.
+Owns the embedded SQLite knowledge graph lifecycle (`eidos/.cache/index.db`), canonical `SCHEMA_VERSION` (`2.20.0`) DDL initialization, corruption recovery, `orjson`-backed validation/test-binding and semantic embedding caches (`spec_embeddings`), and the `ArchitecturalIndex` facade.
 
 == Key Responsibilities & Collaborators
-* **File-Locked SQLite WAL Schema & Connection Management (`storage.py`, `DEC-INDEX-FLOCK-WAL-AND-PINNED-ONNX`)**: Serializes 11-table SQLite WAL DDL initialization (`SCHEMA_VERSION` `2.19.0`, including `code_symbols.is_test`) and corruption recovery via OS advisory file locks on `eidos/.cache/index.db.lock` without enabling `PRAGMA mmap_size`, unlinking `index.db*` sidecars strictly when `SQLITE_CORRUPT` / `SQLITE_NOTADB` is confirmed under an exclusive non-contended lock.
+* **File-Locked SQLite WAL Schema & Connection Management (`storage.py`, `DEC-INDEX-FLOCK-WAL-AND-PINNED-ONNX`)**: Serializes 11-table SQLite WAL DDL initialization (`SCHEMA_VERSION` `2.20.0`, including `code_symbols.is_test`) and corruption recovery via OS advisory file locks on `eidos/.cache/index.db.lock` without enabling `PRAGMA mmap_size`, unlinking `index.db*` sidecars strictly when `SQLITE_CORRUPT` / `SQLITE_NOTADB` is confirmed under an exclusive non-contended lock.
 * **Unified Validation & Test Cache Helpers**: Provides shared `get_cached_spec_document`, `load_spec_validation_cache` / `save_spec_validation_cache`, and `load_test_binding_cache` / `save_test_binding_cache` helpers consumed by `CMP-SPEC-VALIDATOR`, `CMP-INCREMENTAL-SYNC-ENGINE`, and `CMP-DRIFT-DETECTOR`.
 * **Thread-Isolated `ArchitecturalIndex` Facade (`graph_index.py`)**: Isolates SQLite connections per thread via `threading.local()`, keys cached index instances by normalized `eidos_dir` (`_INDEX_INSTANCES`), debounces back-to-back in-process `_ensure_synced` dirty checks via `_last_synced_check` (`50ms` monotonic window), and delegates graph queries, FTS/Hybrid RRF search, semantic provisioning/sync, blast-radius traversal, and tiered context slicing (`get_context_slice`) to sibling submodules.
 
 == Public Surface
-* `SCHEMA_VERSION: str` (`"2.19.0"`), `open_cache_connection(db_path: Path) -> sqlite3.Connection`, `ensure_cache_schema(conn: sqlite3.Connection)`
+* `SCHEMA_VERSION: str` (`"2.20.0"`), `open_cache_connection(db_path: Path) -> sqlite3.Connection`, `ensure_cache_schema(conn: sqlite3.Connection)`
 * `get_cached_spec_document(...)`, `load_spec_validation_cache(...)`, `save_spec_validation_cache(...)`, `load_test_binding_cache(...)`, `save_test_binding_cache(...)`
 * `ArchitecturalIndex`, `get_architectural_index(repo_root: Path | None = None, eidos_dir: Path | None = None, db_path: Path | None = None, force_new: bool = False) -> ArchitecturalIndex`
 

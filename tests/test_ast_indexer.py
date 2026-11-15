@@ -24,6 +24,66 @@ from eidos.core.index.graph_index import get_architectural_index
 runner = CliRunner()
 
 
+def test_typescript_exported_variable_bindings():
+    from eidos.core.index.ast_indexer import boundary_symbol_map, diff_public_symbols, public_symbol_map
+
+    source = (
+        'export const LABEL = "ready", LIMIT = 10;\n'
+        "export let OPTIONS = { enabled: true };\n"
+        "export var COUNT = 1;\n"
+        "const LOCAL = 2, PRIVATE = 3;\n"
+        "export { LOCAL };\n"
+        "export const { first, key: alias, deep: { inner }, skip = 1, ...rest } = input;\n"
+        "export const [one, , two, [nested], ...tail] = input;\n"
+        "export const arrow = () => 1, expr = function () {};\n"
+        "export function declared() { const hidden = 2; return hidden; }\n"
+        "export type Value = string;\n"
+        "if (true) { const blocked = 1; }\n"
+    )
+    for extension in ("ts", "tsx"):
+        path = f"src/index.{extension}"
+        symbols = get_ast_indexer().extract_symbols(path, source)
+        by_name = {s.name: s for s in symbols}
+        expected = {
+            "LABEL": 1, "LIMIT": 1, "OPTIONS": 2, "COUNT": 3, "LOCAL": 4,
+            "first": 6, "alias": 6, "one": 7, "two": 7,
+        }
+        for name, line in expected.items():
+            sym = by_name[name]
+            assert (sym.kind, sym.line_start, sym.is_public, sym.is_boundary_export) == ("variable", line, True, True)
+            assert ("variable", "", name) in public_symbol_map(source, path)
+            assert ("variable", "", name) in boundary_symbol_map(source, path)
+        assert not by_name["PRIVATE"].is_public
+        assert not by_name["PRIVATE"].is_boundary_export
+        assert not ({"inner", "deep", "skip", "rest", "nested", "tail", "hidden", "blocked"} & by_name.keys())
+        assert all(by_name[name].kind == "function" for name in ("arrow", "expr", "declared"))
+        assert by_name["Value"].kind == "interface"
+        diff = diff_public_symbols("", source, path)
+        assert ("variable", "", "LABEL") in diff.added
+        assert ("function", "", "LABEL") not in diff.added
+
+
+def test_typescript_exported_callable_and_pattern_visibility():
+    source = (
+        "const hidden = 1;\n"
+        "export const run = () => { const hidden = 2; return hidden; };\n"
+        "export const {length: arity} = (x: number) => x;\n"
+        "export const {nested: {ignored}, ...rest} = (x: number) => x;\n"
+        "export const wrapped = (((() => 1)));\n"
+        "export declare const declared: string;\n"
+    )
+    for extension in ("ts", "tsx"):
+        symbols = get_ast_indexer().extract_symbols(f"src/data.{extension}", source)
+        by_name = {s.name: s for s in symbols}
+        assert not by_name["hidden"].is_public
+        assert not by_name["hidden"].is_boundary_export
+        assert by_name["arity"].kind == "variable" and by_name["arity"].is_public
+        assert by_name["wrapped"].kind == "function" and by_name["wrapped"].is_public
+        assert by_name["run"].kind == "function" and by_name["run"].is_public
+        assert by_name["declared"].kind == "variable" and by_name["declared"].is_public
+        assert not ({"length", "ignored", "nested", "rest", "{length: arity}"} & by_name.keys())
+
+
 def test_inv_index_optional_ast_fallback():
     """Verify INV-INDEX-OPTIONAL-AST-FALLBACK: Engine extracts Python stdlib ast signatures and falls back to Tree-sitter on broken syntax without unhandled exceptions."""
     idx = get_ast_indexer()
@@ -60,6 +120,8 @@ def test_inv_index_polyglot_symbol_precision():
     """Verify INV-INDEX-POLYGLOT-SYMBOL-PRECISION: Sub-10ms precision symbol extraction across Python & TypeScript."""
     idx = get_ast_indexer()
     is_instrumented = "coverage" in sys.modules or sys.gettrace() is not None
+    exported = idx.extract_symbols("sample.ts", 'export const LABEL = "ready";')
+    assert any(s.name == "LABEL" and s.kind == "variable" and s.is_public for s in exported)
 
     # Warm up symbol extractor to avoid one-off dynamic import overhead skewing latency
     idx.extract_symbols(Path("src/eidos/core/index/ast_indexer.py"))
@@ -1712,6 +1774,3 @@ def test_all_ast_languages_and_corner_cases(tmp_path: Path) -> None:
     )
     assert fix_fns == {}
     assert fix_file_toks == [f"{inv_p}SYNTH-FIX-001"]
-
-
-

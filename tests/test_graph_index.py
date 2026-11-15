@@ -782,6 +782,48 @@ def test_spec_edit_keeps_package_code_symbols(tmp_path):
         idx.close()
 
 
+def test_typescript_exported_variables_cache_upgrade(tmp_path):
+    import hashlib
+
+    repo, _, _ = _make_symbol_repo(tmp_path, "ts_upgrade")
+    paths = [repo / "src/pkg/data.ts", repo / "src/pkg/view.tsx"]
+    names = ["DATA_VALUE", "VIEW_VALUE"]
+    for path, name in zip(paths, names, strict=True):
+        path.write_text(f"export const {name} = 42;\n", encoding="utf-8")
+    db_path = repo / "eidos/.cache/index.db"
+    idx = ArchitecturalIndex(db_path=db_path, repo_root=repo, eidos_dir=repo / "eidos")
+    try:
+        idx.sync()
+        conn = idx._get_connection()
+        for path, name in zip(paths, names, strict=True):
+            row = conn.execute(
+                "SELECT mtime, sha256 FROM indexed_files WHERE rel_path = ?", (path.relative_to(repo).as_posix(),)
+            ).fetchone()
+            assert row is not None
+            assert row["mtime"] == path.stat().st_mtime
+            assert row["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
+            conn.execute("DELETE FROM code_symbols WHERE symbol = ?", (name,))
+            conn.execute("DELETE FROM symbol_mappings WHERE symbol = ?", (name,))
+        conn.execute("UPDATE metadata SET value = '2.19.0' WHERE key = 'schema_version'")
+        conn.commit()
+        timestamps = [p.stat().st_mtime_ns for p in paths]
+    finally:
+        idx.close()
+
+    reopened = ArchitecturalIndex(db_path=db_path, repo_root=repo, eidos_dir=repo / "eidos")
+    try:
+        for name, path in zip(names, paths, strict=True):
+            hit = next(row for row in reopened.find_symbol(name) if row["symbol"] == name)
+            assert hit["kind"] == "variable"
+            assert hit["location"]["file"] == path.relative_to(repo).as_posix()
+        assert [p.stat().st_mtime_ns for p in paths] == timestamps
+        assert not reopened._get_connection().execute(
+            "SELECT 1 FROM edges WHERE rel_type LIKE '%call%'"
+        ).fetchone()
+    finally:
+        reopened.close()
+
+
 def test_schema_version_mismatch_rebuilds_cache(tmp_path):
     """INV-KNOWLEDGE-GRAPH-CATALOG: a legacy (unversioned) index.db is dropped and rebuilt with the 2.0.0 schema."""
     repo, _src, _spec = _make_symbol_repo(tmp_path, "migrepo")
@@ -1324,7 +1366,7 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
     db_path = eidos_dir / ".cache" / "index.db"
     with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
-        assert ver == SCHEMA_VERSION == "2.19.0"
+        assert ver == SCHEMA_VERSION == "2.20.0"
         val_rows_before = conn.execute("SELECT COUNT(*) FROM spec_validation_cache;").fetchone()[0]
         assert val_rows_before == 1
 
@@ -2374,7 +2416,7 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
     from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 
-    assert SCHEMA_VERSION == "2.19.0"
+    assert SCHEMA_VERSION == "2.20.0"
     assert set(AstGrepIndexer.LANGUAGE_MAP.keys()) | {".proto", ".adoc"} <= _FILE_QUERY_EXTS
 
     # 1. Verify _ENTITY_ID_TOKEN_RE recognizes SYS-*, ARCH-*, PER-*, and underscore IDs
@@ -2549,7 +2591,7 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
     from eidos.portal.generator import get_portal_data
 
-    assert SCHEMA_VERSION == "2.19.0"
+    assert SCHEMA_VERSION == "2.20.0"
     assert _build_spec_catalog_with_invariants(tmp_path / "nonexistent_eidos") == ({}, {})
 
     init_repository(tmp_path, title="dlt-104-repo")
@@ -2681,11 +2723,11 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
     try:
         conn = idx._get_connection()
-        # Simulate upgrading from schema_version 2.11.0 -> 2.19.0
+        # Simulate upgrading from schema_version 2.11.0 -> 2.20.0
         conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '2.11.0');")
         conn.commit()
         ensure_cache_schema(conn)
-        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.19.0"
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.20.0"
 
         idx.sync(force=True)
 

@@ -160,7 +160,7 @@ class CodeSymbol:
     """A granular syntax-level code symbol (class, function, method, interface)."""
 
     name: str
-    kind: str  # "class", "function", "method", "interface", "struct", "enum"
+    kind: str  # "class", "function", "method", "interface", "struct", "enum", "variable"
     file_path: str
     line_start: int
     line_end: int
@@ -1314,12 +1314,23 @@ class AstGrepIndexer(BaseAstIndexer):
             }
             for vdecl in node.find_all(kind="variable_declarator"):
                 val_node = vdecl.field("value")
-                if val_node is None or val_node.kind() not in (
+                name_node = vdecl.field("name")
+                is_ts_file = lang in ("typescript", "tsx") and sfc_lang is None
+                if is_ts_file:
+                    while val_node is not None and val_node.kind() == "parenthesized_expression":
+                        val_node = next(
+                            (child for child in val_node.children() if child.kind() not in ("(", ")", "comment")),
+                            None,
+                        )
+                is_callable = val_node is not None and val_node.kind() in (
                     "arrow_function",
                     "function_expression",
                     "function",
                     "generator_function",
-                ):
+                )
+                if is_ts_file and (name_node is None or name_node.kind() != "identifier"):
+                    is_callable = False
+                if not is_callable and not is_ts_file:
                     continue
                 anc = vdecl.parent()
                 nested_in_fn_or_cls = False
@@ -1330,6 +1341,15 @@ class AstGrepIndexer(BaseAstIndexer):
                     if akind in fn_like_kinds or akind in ("class_declaration", "class_body"):
                         nested_in_fn_or_cls = True
                         break
+                    if not is_callable and akind not in (
+                        "program",
+                        "lexical_declaration",
+                        "variable_declaration",
+                        "export_statement",
+                        "ambient_declaration",
+                    ):
+                        nested_in_fn_or_cls = True
+                        break
                     if akind in ("lexical_declaration", "variable_declaration"):
                         stmt_node = anc
                     elif akind == "export_statement":
@@ -1338,31 +1358,37 @@ class AstGrepIndexer(BaseAstIndexer):
                     anc = anc.parent()
                 if nested_in_fn_or_cls:
                     continue
-                fname = self._node_name(vdecl, lang)
-                if not fname or fname in seen_fn_names:
-                    continue
-                seen_fn_names.add(fname)
-                rng = stmt_node.range()
-                sig = _node_header_sig(stmt_node, rng)
-                if is_exported_decl and not sig.startswith("export "):
-                    sig = f"export {sig}"
-                sym = CodeSymbol(
-                    name=fname,
-                    kind="function",
-                    file_path=rel_path,
-                    line_start=rng.start.line + 1 + line_offset,
-                    line_end=rng.end.line + 1 + line_offset,
-                    parent_symbol=None,
-                    signature=sig,
-                )
-                sym.is_public = _evaluate_symbol_visibility(
-                    sym,
-                    py_dunder_all=py_dunder_all,
-                    ts_exports=ts_exports,
-                    class_is_public=class_is_public,
-                )
-                sym.is_boundary_export = _evaluate_boundary_export(sym, py_dunder_all=py_dunder_all)
-                symbols.append(sym)
+                names = [self._node_name(vdecl, lang)] if is_callable else _ts_variable_binding_names(vdecl)
+                for fname in names:
+                    if not fname or (is_callable and fname in seen_fn_names):
+                        continue
+                    if is_callable:
+                        seen_fn_names.add(fname)
+                    rng = stmt_node.range() if is_callable else vdecl.range()
+                    sig = (
+                        _node_header_sig(stmt_node, stmt_node.range())
+                        if is_callable
+                        else re.sub(r"\s+", " ", vdecl.text().strip())
+                    )
+                    if is_exported_decl and not sig.startswith("export "):
+                        sig = f"export {sig}"
+                    sym = CodeSymbol(
+                        name=fname,
+                        kind="function" if is_callable else "variable",
+                        file_path=rel_path,
+                        line_start=rng.start.line + 1 + line_offset,
+                        line_end=rng.end.line + 1 + line_offset,
+                        parent_symbol=None,
+                        signature=sig,
+                    )
+                    sym.is_public = _evaluate_symbol_visibility(
+                        sym,
+                        py_dunder_all=py_dunder_all,
+                        ts_exports=ts_exports,
+                        class_is_public=class_is_public,
+                    )
+                    sym.is_boundary_export = _evaluate_boundary_export(sym, py_dunder_all=py_dunder_all)
+                    symbols.append(sym)
 
             if sfc_lang == "vue":
                 for call in node.find_all(kind="call_expression"):
@@ -1686,6 +1712,25 @@ def _extract_python_dunder_all_from_source(content: str, py_root: Any = None) ->
     return names if found else None
 
 
+def _ts_variable_binding_names(declarator: Any) -> list[str]:
+    name = declarator.field("name")
+    if name is None:
+        return []
+    if name.kind() == "identifier":
+        return [name.text()]
+    if name.kind() not in ("object_pattern", "array_pattern"):
+        return []
+    names = []
+    for child in name.children():
+        if child.kind() in ("identifier", "shorthand_property_identifier_pattern"):
+            names.append(child.text())
+        elif child.kind() == "pair_pattern":
+            value = child.field("value")
+            if value is not None and value.kind() == "identifier":
+                names.append(value.text())
+    return names
+
+
 def _extract_ts_exported_names(content: str, ts_root: Any = None, lang: str = "tsx") -> set[str]:
     """Return all identifier names exported via export declarations, export lists, or export default via SgRoot."""
     if ts_root is None:
@@ -1721,15 +1766,13 @@ def _extract_ts_exported_names(content: str, ts_root: Any = None, lang: str = "t
                         if n:
                             exports.add(n)
                     elif ack in ("lexical_declaration", "variable_declaration"):
-                        for vd in amb_ch.find_all(kind="variable_declarator"):
-                            n = AstGrepIndexer._node_name(vd, lang)
-                            if n:
-                                exports.add(n)
+                        for vd in amb_ch.children():
+                            if vd.kind() == "variable_declarator":
+                                exports.update(_ts_variable_binding_names(vd))
             elif ck in ("lexical_declaration", "variable_declaration"):
-                for vd in ch.find_all(kind="variable_declarator"):
-                    n = AstGrepIndexer._node_name(vd, lang)
-                    if n:
-                        exports.add(n)
+                for vd in ch.children():
+                    if vd.kind() == "variable_declarator":
+                        exports.update(_ts_variable_binding_names(vd))
             elif ck == "export_clause":
                 for spec in ch.find_all(kind="export_specifier"):
                     for id_node in spec.children():

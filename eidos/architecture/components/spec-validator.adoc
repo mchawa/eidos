@@ -24,3 +24,4 @@ Validates all 16 living specification types against Draft 2020-12 JSON Schemas (
 == Design Constraints & Operational Notes
 * **Cache Isolation**: Cross-reference errors depend on catalog-wide state and are never persisted into per-file `spec_validation_cache` entries.
 * **Static-Only Verification**: Verifies test symbol existence and contract signatures via static AST inspection without importing or executing user code.
+* **TypeScript Public Surface**: Resolves exported TypeScript variable bindings through the shared AST extractor, without a validator-specific regex fallback; genuinely absent symbols remain errors.
