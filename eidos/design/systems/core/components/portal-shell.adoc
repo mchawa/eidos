@@ -23,13 +23,13 @@ states:
 == 1. Structure & Layout Grid
 The Portal Layout Shell (`UIC-PORTAL-SHELL`) establishes the two-pane application framework:
 * **Sidebar Region**: Fixed left navigation drawer containing brand identity, system badges, grouped navigation links, and theme toggle.
-* **Main Viewport Stage**: Scrollable content viewport containing the top context header (search, breadcrumb, export controls) and active page views (`ArchitectureView`, `DesignView`, `CatalogView`, `DeltasView`, `ExplorationsView`).
+* **Main Viewport Stage**: Scrollable content viewport containing the top context header (search, breadcrumb, export controls) and active page views (`ArchitectureView`, `DesignView`, `CatalogView`, `DeltasView`, `ExplorationsView`) wrapped in a tab-scoped `ViewErrorBoundary` (`role="alert"`) so an isolated view render error never unmounts navigation.
 
 == 2. Responsive Behavior
 On desktop monitors (>1024px), the sidebar remains pinned at `260px` width. On tablets and mobile screens (<768px), the sidebar collapses into an off-canvas drawer toggled via the hamburger trigger.
 
 == 3. Accessibility & Verification
-* **WCAG Conformance**: Level AA (`aria-role: application`).
+* **WCAG Conformance**: Level AA (`aria-role: application`, `role="alert"` view error boundary announcements, explicit form label associations, and `aria-pressed` toggle states).
 * **Keyboard Navigation**: Tab navigates sequentially between sidebar navigation items and main content landmark.
 * **Automated Verification**: Exercised by `tests/test_portal.py::test_static_portal_builder`.
 

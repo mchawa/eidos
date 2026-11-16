@@ -234,8 +234,8 @@ export interface SpecUIComponent {
   category?: string;
   component_type?: string;
   status?: string;
-  variants?: SpecUIVariant[];
-  states?: string[];
+  variants?: Array<SpecUIVariant | string>;
+  states?: Array<SpecScreenState | string>;
   invariants?: Array<{
     id: string;
     rule: string;
@@ -300,7 +300,7 @@ export interface SpecScreen {
   system_ref?: string;
   components?: string[];
   states?: SpecScreenState[] | string[];
-  slots?: Record<string, string>;
+  slots?: Record<string, string | string[] | Record<string, unknown>>;
   capabilities?: string[];
   mermaid?: string;
   description?: string;

@@ -29,9 +29,40 @@ import type {
   PortalData,
   SpecClient,
   SpecFlow,
+  SpecScreenState,
   SpecUIComponent,
+  SpecUIVariant,
   SpecScreen,
 } from "@/types";
+
+function normalizeVariantEntry(v: SpecUIVariant | string): SpecUIVariant {
+  if (typeof v === "string") return { name: v };
+  return {
+    name: String(v?.name ?? "default"),
+    description: v?.description ? String(v.description) : undefined,
+  };
+}
+
+function normalizeStateEntry(st: SpecScreenState | string): SpecScreenState {
+  if (typeof st === "string") return { name: st };
+  return {
+    name: String(st?.name ?? "default"),
+    description: st?.description ? String(st.description) : undefined,
+  };
+}
+
+function formatSlotValue(val: unknown): string {
+  if (typeof val === "string") return val;
+  if (Array.isArray(val)) {
+    return val.map((item) => (typeof item === "string" ? item : JSON.stringify(item))).join(", ");
+  }
+  if (val && typeof val === "object") {
+    return Object.entries(val as Record<string, unknown>)
+      .map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`)
+      .join(", ");
+  }
+  return String(val ?? "");
+}
 
 export interface DesignViewProps {
   data: PortalData;
@@ -330,6 +361,7 @@ export function DesignView({
               <button
                 key={tab.id}
                 type="button"
+                aria-pressed={isActive}
                 onClick={() => setActiveTab(tab.id as DesignSubTab)}
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all cursor-pointer",
@@ -362,6 +394,7 @@ export function DesignView({
                     <button
                       key={ds.id}
                       type="button"
+                      aria-pressed={isSel}
                       onClick={() => setSelectedDSId(ds.id)}
                       className={cn(
                         "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl font-mono text-xs border transition-colors cursor-pointer",
@@ -635,9 +668,12 @@ export function DesignView({
               Client Applications & Experience Surfaces
             </h3>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground font-medium">
+              <label
+                htmlFor="designClientSelect"
+                className="text-xs text-muted-foreground font-medium"
+              >
                 Select Client:
-              </span>
+              </label>
               <select
                 id="designClientSelect"
                 value={selectedClientId}
@@ -768,11 +804,13 @@ export function DesignView({
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {ui_components.map((comp) => {
+              const normalizedVariants = (comp.variants || []).map(normalizeVariantEntry);
+              const normalizedStates = (comp.states || []).map(normalizeStateEntry);
               const currentVariant =
                 selectedVariantByComp[comp.id] ||
-                comp.variants?.[0]?.name ||
+                normalizedVariants[0]?.name ||
                 "default";
-              const activeVariantObj = comp.variants?.find((v) => v.name === currentVariant);
+              const activeVariantObj = normalizedVariants.find((v) => v.name === currentVariant);
 
               return (
                 <Card key={comp.id} className="p-4 space-y-3 flex flex-col justify-between">
@@ -805,18 +843,19 @@ export function DesignView({
                     </div>
 
                     {/* Interactive Variants Selector */}
-                    {comp.variants && comp.variants.length > 0 && (
+                    {normalizedVariants.length > 0 && (
                       <div className="space-y-1.5 pt-2 border-t border-border/60">
                         <span className="text-[10px] font-bold text-foreground uppercase tracking-wider block">
-                          Variants ({comp.variants.length})
+                          Variants ({normalizedVariants.length})
                         </span>
                         <div className="flex flex-wrap gap-1">
-                          {comp.variants.map((v) => {
+                          {normalizedVariants.map((v, vIdx) => {
                             const isSelected = currentVariant === v.name;
                             return (
                               <button
-                                key={v.name}
+                                key={`${v.name}-${vIdx}`}
                                 type="button"
+                                aria-pressed={isSelected}
                                 onClick={() =>
                                   setSelectedVariantByComp((prev) => ({
                                     ...prev,
@@ -844,19 +883,24 @@ export function DesignView({
                     )}
 
                     {/* States List */}
-                    {comp.states && comp.states.length > 0 && (
+                    {normalizedStates.length > 0 && (
                       <div className="space-y-1">
                         <span className="text-[10px] font-bold text-foreground uppercase tracking-wider block">
                           Declared States
                         </span>
                         <div className="flex flex-wrap gap-1">
-                          {comp.states.map((st) => (
-                            <span
-                              key={st}
-                              className="px-1.5 py-0.5 rounded-md bg-muted/30 border border-border/60 text-[9px] font-mono text-muted-foreground"
+                          {normalizedStates.map((st, idx) => (
+                            <div
+                              key={`${st.name}-${idx}`}
+                              className="px-1.5 py-0.5 rounded-md bg-muted/30 border border-border/60 text-[9px] text-muted-foreground max-w-full"
                             >
-                              :{st}
-                            </span>
+                              <span className="font-mono text-foreground font-semibold">:{st.name}</span>
+                              {st.description && (
+                                <span className="font-sans ml-1 text-muted-foreground">
+                                  — {st.description}
+                                </span>
+                              )}
+                            </div>
                           ))}
                         </div>
                       </div>
@@ -865,7 +909,7 @@ export function DesignView({
 
                   {/* Invariant Traceability Footer */}
                   <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[10px]">
-                    {comp.invariants?.[0]?.test_binding ? (
+                    {typeof comp.invariants?.[0]?.test_binding === "string" && comp.invariants[0].test_binding ? (
                       <span
                         className="font-mono text-emerald-500 truncate max-w-[190px]"
                         title={comp.invariants[0].test_binding}
@@ -923,6 +967,7 @@ export function DesignView({
                 <button
                   key={scr.id}
                   type="button"
+                  aria-pressed={isSelected}
                   onClick={() => setSelectedScreenId(scr.id)}
                   className={cn(
                     "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-mono transition-all cursor-pointer whitespace-nowrap",
@@ -994,7 +1039,7 @@ export function DesignView({
                           {slot}
                         </span>
                         <span className="font-mono text-[11px] font-bold text-primary block truncate">
-                          {compId}
+                          {formatSlotValue(compId)}
                         </span>
                       </div>
                     ))}

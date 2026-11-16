@@ -22,6 +22,51 @@ const VALID_TABS = new Set<TabKey>([
   "catalog",
 ]);
 
+class ViewErrorBoundary extends React.Component<
+  { resetKey: string; children: React.ReactNode },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error): { error: Error } {
+    return { error };
+  }
+
+  componentDidUpdate(prevProps: { resetKey: string }): void {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.error !== null) {
+      this.setState({ error: null });
+    }
+  }
+
+  render(): React.ReactNode {
+    if (this.state.error) {
+      return (
+        <div
+          role="alert"
+          className="p-6 rounded-2xl border border-destructive/40 bg-destructive/10 space-y-3 text-xs"
+        >
+          <div className="space-y-1">
+            <h2 className="text-sm font-bold text-foreground">
+              Failed to render view section
+            </h2>
+            <p className="font-mono text-[11px] text-destructive break-words">
+              {String(this.state.error.message || this.state.error)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => this.setState({ error: null })}
+            className="px-3 py-1.5 rounded-xl bg-primary text-primary-foreground font-semibold cursor-pointer"
+          >
+            Retry View
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function hydratePortalData(raw: PortalData): PortalData {
   registerSpecChunks(raw.specs || []);
   const bodyById = new Map<string, string>();
@@ -702,76 +747,78 @@ export function App() {
 
         {/* Viewport Content */}
         <div className="flex-1 p-6 max-w-7xl w-full mx-auto">
-          {activeTab === "home" && (
-            <HomeView
-              data={data}
-              driftStatus={driftStatus}
-              isLiveMode={!isStaticBundle}
-              onNavigateTab={(t: TabKey) => setActiveTab(t)}
-              onInspectSpec={(spec: any) => {
-                if (spec?.id) {
-                  setFocusSpec({ id: spec.id, nonce: Date.now() });
-                  setActiveTab("catalog", spec.id);
-                } else {
-                  setActiveTab("catalog");
-                }
-              }}
-            />
-          )}
-          {activeTab === "architecture" && (
-            <ArchitectureView
-              data={data}
-              darkMode={darkMode}
-              initialComponentId={selectedComponent?.id}
-              initialComponentNonce={selectedComponent?.nonce}
-              onClearSelectedComponent={() => setSelectedComponent(null)}
-            />
-          )}
-          {activeTab === "deltas" && (
-            <DeltasView
-              data={data}
-              initialDeltaId={selectedDelta?.id}
-              initialDeltaNonce={selectedDelta?.nonce}
-              onClearSelectedDelta={() => setSelectedDelta(null)}
-            />
-          )}
-          {activeTab === "explorations" && (
-            <ExplorationsView
-              data={data}
-              initialSelectedId={selectedExploration?.id}
-              initialSelectedNonce={selectedExploration?.nonce}
-              onClearSelected={() => setSelectedExploration(null)}
-              onNavigateDelta={(deltaId) => {
-                setSelectedDelta({ id: deltaId, nonce: Date.now() });
-                setActiveTab("deltas", deltaId);
-              }}
-            />
-          )}
-          {activeTab === "catalog" && (
-            <CatalogView
-              data={data}
-              focusSpecId={focusSpec?.id}
-              focusNonce={focusSpec?.nonce}
-              onFocusHandled={() => setFocusSpec(null)}
-            />
-          )}
-          {activeTab === "business" && (
-            <BusinessView
-              data={data}
-              initialSelectedId={selectedBusiness?.id}
-              initialSelectedNonce={selectedBusiness?.nonce}
-              onClearSelected={() => setSelectedBusiness(null)}
-            />
-          )}
-          {activeTab === "design" && (
-            <DesignView
-              data={data}
-              darkMode={darkMode}
-              initialSelectedId={selectedDesign?.id}
-              initialSelectedNonce={selectedDesign?.nonce}
-              onClearSelected={() => setSelectedDesign(null)}
-            />
-          )}
+          <ViewErrorBoundary resetKey={activeTab}>
+            {activeTab === "home" && (
+              <HomeView
+                data={data}
+                driftStatus={driftStatus}
+                isLiveMode={!isStaticBundle}
+                onNavigateTab={(t: TabKey) => setActiveTab(t)}
+                onInspectSpec={(spec: any) => {
+                  if (spec?.id) {
+                    setFocusSpec({ id: spec.id, nonce: Date.now() });
+                    setActiveTab("catalog", spec.id);
+                  } else {
+                    setActiveTab("catalog");
+                  }
+                }}
+              />
+            )}
+            {activeTab === "architecture" && (
+              <ArchitectureView
+                data={data}
+                darkMode={darkMode}
+                initialComponentId={selectedComponent?.id}
+                initialComponentNonce={selectedComponent?.nonce}
+                onClearSelectedComponent={() => setSelectedComponent(null)}
+              />
+            )}
+            {activeTab === "deltas" && (
+              <DeltasView
+                data={data}
+                initialDeltaId={selectedDelta?.id}
+                initialDeltaNonce={selectedDelta?.nonce}
+                onClearSelectedDelta={() => setSelectedDelta(null)}
+              />
+            )}
+            {activeTab === "explorations" && (
+              <ExplorationsView
+                data={data}
+                initialSelectedId={selectedExploration?.id}
+                initialSelectedNonce={selectedExploration?.nonce}
+                onClearSelected={() => setSelectedExploration(null)}
+                onNavigateDelta={(deltaId) => {
+                  setSelectedDelta({ id: deltaId, nonce: Date.now() });
+                  setActiveTab("deltas", deltaId);
+                }}
+              />
+            )}
+            {activeTab === "catalog" && (
+              <CatalogView
+                data={data}
+                focusSpecId={focusSpec?.id}
+                focusNonce={focusSpec?.nonce}
+                onFocusHandled={() => setFocusSpec(null)}
+              />
+            )}
+            {activeTab === "business" && (
+              <BusinessView
+                data={data}
+                initialSelectedId={selectedBusiness?.id}
+                initialSelectedNonce={selectedBusiness?.nonce}
+                onClearSelected={() => setSelectedBusiness(null)}
+              />
+            )}
+            {activeTab === "design" && (
+              <DesignView
+                data={data}
+                darkMode={darkMode}
+                initialSelectedId={selectedDesign?.id}
+                initialSelectedNonce={selectedDesign?.nonce}
+                onClearSelected={() => setSelectedDesign(null)}
+              />
+            )}
+          </ViewErrorBoundary>
         </div>
       </main>
 
