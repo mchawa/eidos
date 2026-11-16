@@ -21,7 +21,7 @@ import sqlite3
 import struct
 import time
 import urllib.request
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -594,6 +594,49 @@ def _is_semantic_sync_locked_by_other(eidos_dir: Path) -> bool:
         return False
 
 
+@contextlib.contextmanager
+def _semantic_sync_lock(eidos_dir: Path) -> Iterator[None]:
+    """Serialize foreground and background Harrier ONNX encoding on ``eidos/.cache/semantic_sync.lock``."""
+    lock_path = Path(eidos_dir).resolve() / ".cache" / "semantic_sync.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o666)
+    locked = False
+    try:
+        if os.name == "nt":  # pragma: no cover
+            import msvcrt
+
+            os.lseek(fd, 0, os.SEEK_SET)
+            if os.fstat(fd).st_size == 0:
+                os.write(fd, b"0")
+                os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+            locked = True
+        else:
+            import fcntl
+
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            os.ftruncate(fd, 0)
+            os.lseek(fd, 0, os.SEEK_SET)
+            os.write(fd, f"{os.getpid()}\n".encode())
+            locked = True
+        yield
+    finally:
+        if locked:
+            with contextlib.suppress(OSError):
+                if os.name == "nt":  # pragma: no cover
+                    import msvcrt
+
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    os.ftruncate(fd, 0)
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+        with contextlib.suppress(OSError):
+            os.close(fd)
+
+
 class _semantic_cli_progress:
     """Rich progress bar context manager for ``eidos index semantic setup`` and ``eidos index semantic sync``."""
 
@@ -1004,6 +1047,8 @@ def sync_spec_embeddings(
     batch_size: int = 8,
     encode_fn: Callable[[list[str]], list[bytes]] | None = None,
     model_id: str = HARRIER_MODEL_ID,
+    *,
+    _holds_worker_lock: bool = False,
 ) -> dict[str, Any]:
     """Synchronize ``spec_embeddings`` using spec-only ``content_sha256`` caching and length-sorted dynamic batching."""
     t0 = time.perf_counter()
@@ -1015,61 +1060,72 @@ def sync_spec_embeddings(
                 "Install 'eidos-ai[semantic]' and run 'eidos index semantic setup'."
             )
         encode_fn = lambda texts: engine.encode_texts(texts, is_query=False)  # noqa: E731
+        needs_sync_lock = not _holds_worker_lock
     else:
         _CUSTOM_ENCODE_FNS[str(eidos_dir.resolve())] = encode_fn
+        needs_sync_lock = False
 
-    records = _collect_embeddable_spec_records(conn)
-    existing: dict[str, tuple[str, str]] = {}
-    if not force:
-        for row in conn.execute("SELECT entity_id, content_sha256, model_id FROM spec_embeddings;").fetchall():
-            existing[str(row[0])] = (str(row[1]), str(row[2]))
+    def _compute_pending() -> tuple[list[dict[str, str]], list[dict[str, str]], int]:
+        recs = _collect_embeddable_spec_records(conn)
+        existing_map: dict[str, tuple[str, str]] = {}
+        if not force:
+            for row in conn.execute("SELECT entity_id, content_sha256, model_id FROM spec_embeddings;").fetchall():
+                existing_map[str(row[0])] = (str(row[1]), str(row[2]))
+        pending: list[dict[str, str]] = []
+        reused_cnt = 0
+        for rec in recs:
+            eid = rec["entity_id"]
+            prev = existing_map.get(eid)
+            if not force and prev is not None and prev[0] == rec["content_sha256"] and prev[1] == model_id:
+                reused_cnt += 1
+            else:
+                pending.append(rec)
+        return recs, pending, reused_cnt
 
-    to_encode: list[dict[str, str]] = []
-    reused = 0
-    for rec in records:
-        eid = rec["entity_id"]
-        prev = existing.get(eid)
-        if not force and prev is not None and prev[0] == rec["content_sha256"] and prev[1] == model_id:
-            reused += 1
-        else:
-            to_encode.append(rec)
+    records, to_encode, reused = _compute_pending()
 
     upserted = 0
     progress_cb = _ACTIVE_PROGRESS_CALLBACK
-    total_to_encode = len(to_encode)
-    if progress_cb is not None and total_to_encode > 0:
-        progress_cb({"phase": "sync_start", "total": total_to_encode})
-    for batch in _build_semantic_sync_batches(to_encode, batch_size=batch_size):
+    with contextlib.ExitStack() as lock_stack:
+        if to_encode and needs_sync_lock:
+            lock_stack.enter_context(_semantic_sync_lock(eidos_dir))
+            if not force:
+                records, to_encode, reused = _compute_pending()
+
+        total_to_encode = len(to_encode)
         if progress_cb is not None and total_to_encode > 0:
-            progress_cb(
-                {
-                    "phase": "batch_start",
-                    "total": total_to_encode,
-                    "batch_ids": [item["entity_id"] for item in batch],
-                }
-            )
-        blobs = encode_fn([item["doc_text"] for item in batch])
-        with conn:
-            conn.executemany(
-                """
-                INSERT OR REPLACE INTO spec_embeddings (entity_id, content_sha256, model_id, embedding)
-                VALUES (?, ?, ?, ?);
-                """,
-                [
-                    (item["entity_id"], item["content_sha256"], model_id, blob)
-                    for item, blob in zip(batch, blobs, strict=True)
-                ],
-            )
-        upserted += len(batch)
-        if progress_cb is not None and total_to_encode > 0:
-            progress_cb(
-                {
-                    "phase": "batch_done",
-                    "total": total_to_encode,
-                    "batch_size": len(batch),
-                    "completed": upserted,
-                }
-            )
+            progress_cb({"phase": "sync_start", "total": total_to_encode})
+        for batch in _build_semantic_sync_batches(to_encode, batch_size=batch_size):
+            if progress_cb is not None and total_to_encode > 0:
+                progress_cb(
+                    {
+                        "phase": "batch_start",
+                        "total": total_to_encode,
+                        "batch_ids": [item["entity_id"] for item in batch],
+                    }
+                )
+            blobs = encode_fn([item["doc_text"] for item in batch])
+            with conn:
+                conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO spec_embeddings (entity_id, content_sha256, model_id, embedding)
+                    VALUES (?, ?, ?, ?);
+                    """,
+                    [
+                        (item["entity_id"], item["content_sha256"], model_id, blob)
+                        for item, blob in zip(batch, blobs, strict=True)
+                    ],
+                )
+            upserted += len(batch)
+            if progress_cb is not None and total_to_encode > 0:
+                progress_cb(
+                    {
+                        "phase": "batch_done",
+                        "total": total_to_encode,
+                        "batch_size": len(batch),
+                        "completed": upserted,
+                    }
+                )
 
     with conn:
         cur = conn.execute(
@@ -1188,7 +1244,7 @@ def _trigger_auto_semantic_refresh(
                 "conn.execute('PRAGMA journal_mode=WAL;'); "
                 "conn.execute('PRAGMA busy_timeout=30000;'); "
                 "try:\n"
-                f"    sync_spec_embeddings(conn, pathlib.Path({str(resolved_eidos)!r}), force=False)\n"
+                f"    sync_spec_embeddings(conn, pathlib.Path({str(resolved_eidos)!r}), force=False, _holds_worker_lock=True)\n"
                 "finally:\n"
                 "    conn.close()\n"
                 "    lock.unlink(missing_ok=True)\n"

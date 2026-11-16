@@ -1570,6 +1570,20 @@
         "type": "BOOL"
       },
       {
+        "name": "no_semantic",
+        "opts": [
+          "--no-semantic"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Skip Harrier ONNX semantic embedding synchronization when provisioned.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      },
+      {
         "name": "path",
         "opts": [
           "--path",
@@ -1583,6 +1597,20 @@
         "panel": null,
         "envvar": "None",
         "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Output index synchronization telemetry as machine-readable JSON.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
       }
     ]
   },

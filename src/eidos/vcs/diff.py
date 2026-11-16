@@ -20,6 +20,7 @@ from eidos.core.workspace.project import (
     extract_entity_paths,
     find_git_root,
     get_tracked_files,
+    is_dotnet_bin_dir,
     is_generated_or_vendored,
     is_polyglot_test_file,
     matches_owned_paths,
@@ -540,18 +541,28 @@ POLYGLOT_TEST_PATTERNS = [
     "*_test.rs",
     # Java / Kotlin
     "*Test.java",
+    "*Tests.java",
     "*Test.kt",
+    "*Tests.kt",
     "*Spec.kt",
+    # C# / .NET
+    "*Tests.cs",
+    "*Test.cs",
+    "*_Tests.cs",
+    "*_Test.cs",
 ]
 
 
 def collect_polyglot_test_files(repo_root: Path) -> dict[str, str]:
-    """Scan the repository for test files across Python, TS/JS, Go, Rust, and Java/Kotlin."""
+    """Scan the repository for test files across Python, TS/JS, Go, Rust, Java/Kotlin, and .NET/C#."""
     all_tests_content: dict[str, str] = {}
     root = repo_root.resolve()
 
     if not root.exists():
         return all_tests_content
+
+    eidos_dir = root / "eidos"
+    pkg_paths = _discover_container_package_paths(eidos_dir) if eidos_dir.is_dir() else None
 
     if find_git_root(root) is not None:
         tracked_rels = get_tracked_files(root)
@@ -560,7 +571,7 @@ def collect_polyglot_test_files(repo_root: Path) -> dict[str, str]:
                 rel_parts = Path(rel).parts
                 if any(d in STANDARD_EXCLUDED_DIRS or d.startswith(".") for d in rel_parts[:-1]):
                     continue
-                if is_polyglot_test_file(Path(rel), repo_root=root):
+                if is_polyglot_test_file(Path(rel), repo_root=root, package_paths=pkg_paths):
                     try:
                         all_tests_content[rel] = (root / rel).read_text(encoding="utf-8", errors="replace")
                     except OSError:
@@ -575,12 +586,13 @@ def collect_polyglot_test_files(repo_root: Path) -> dict[str, str]:
             if d not in STANDARD_EXCLUDED_DIRS
             and not d.startswith(".")
             and (Path(dirpath) / d).resolve() not in nested_roots
+            and not is_dotnet_bin_dir(Path(dirpath) / d)
         ]
 
         for fn in filenames:
             file_path = Path(dirpath) / fn
             rel = str(file_path.relative_to(root))
-            if is_polyglot_test_file(Path(rel), repo_root=root):
+            if is_polyglot_test_file(Path(rel), repo_root=root, package_paths=pkg_paths):
                 try:
                     all_tests_content[rel] = file_path.read_text(encoding="utf-8", errors="replace")
                 except OSError:

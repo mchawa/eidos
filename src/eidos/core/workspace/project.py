@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import fnmatch
 import os
 import subprocess
@@ -22,6 +23,7 @@ STANDARD_EXCLUDED_DIRS = {
     "dist",
     "build",
     "out",
+    "obj",
     "target",
     "coverage",
     "htmlcov",
@@ -61,6 +63,64 @@ _REPO_MARKERS = (".git", "pyproject.toml", "package.json", "Cargo.toml", "go.mod
 
 _NESTED_TEST_DIR_NAMES = {"test", "tests", "__tests__"}
 _ROOT_TEST_DIR_NAMES = {"test", "tests", "__tests__", "testing", "spec", "specs"}
+_TEST_DIR_EXACT_NAMES = frozenset(
+    {
+        "unittests",
+        "unittest",
+        "integrationtests",
+        "integrationtest",
+        "functionaltests",
+        "functionaltest",
+        "e2etests",
+        "testproject",
+        "testprojects",
+    }
+)
+_TEST_DIR_SUFFIXES = (
+    ".tests",
+    ".test",
+    ".unittests",
+    ".unittest",
+    ".integrationtests",
+    ".integrationtest",
+    ".functionaltests",
+    ".functionaltest",
+    ".e2etests",
+    ".specs",
+    ".spec",
+    "_tests",
+    "_test",
+    "-tests",
+    "-test",
+)
+
+
+def is_dotnet_bin_dir(dir_path: Path) -> bool:
+    """Return True if ``dir_path`` is a .NET ``bin/`` build output directory (not e.g. Rust ``src/bin``)."""
+    if dir_path.name.lower() != "bin" or not dir_path.is_dir():
+        return False
+    parent = dir_path.parent
+    if (parent / "obj").is_dir():
+        return True
+    with contextlib.suppress(OSError):
+        for entry in os.scandir(parent):
+            if entry.name.lower().endswith((".csproj", ".fsproj", ".vbproj")):
+                return True
+    return (dir_path / "Debug").is_dir() or (dir_path / "Release").is_dir()
+
+
+def _is_test_dir_segment(seg: str, *, allow_root_names: bool = False) -> bool:
+    """Return True if a path segment identifies a test folder or .NET test project (e.g. ``*.Tests``, ``*.UnitTests``)."""
+    s = seg.strip().lower()
+    if not s:
+        return False
+    if s in _NESTED_TEST_DIR_NAMES or s in _TEST_DIR_EXACT_NAMES:
+        return True
+    if allow_root_names and s in _ROOT_TEST_DIR_NAMES:
+        return True
+    return s.endswith(_TEST_DIR_SUFFIXES)
+
+
 _POLYGLOT_TEST_CODE_EXTS = frozenset(
     {
         ".py",
@@ -587,6 +647,7 @@ def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[s
             if d not in STANDARD_EXCLUDED_DIRS
             and not d.startswith(".")
             and (Path(dirpath) / d).resolve() not in nested_set
+            and not is_dotnet_bin_dir(Path(dirpath) / d)
         ]
         for fn in filenames:
             full = Path(dirpath) / fn
@@ -626,7 +687,7 @@ def is_polyglot_test_file(
 
     if rel_path.is_absolute():
         parent_names = [parent.name.lower() for parent in rel_path.parents[:2]]
-        in_test_dir = any(d in _ROOT_TEST_DIR_NAMES for d in parent_names)
+        in_test_dir = any(_is_test_dir_segment(d, allow_root_names=True) for d in parent_names)
         is_under_src = False
         nested_test_segment = False
     else:
@@ -645,13 +706,13 @@ def is_polyglot_test_file(
                     nested_dir_parts = dir_parts[len(pkg_parts) :]
                     break
 
-        nested_test_segment = any(seg in _NESTED_TEST_DIR_NAMES for seg in nested_dir_parts)
+        nested_test_segment = any(_is_test_dir_segment(seg) for seg in nested_dir_parts)
         in_test_dir = (
             nested_test_segment
             if is_under_src
             else (
-                bool(dir_parts and dir_parts[0] in _ROOT_TEST_DIR_NAMES)
-                or any(part in _NESTED_TEST_DIR_NAMES for part in dir_parts)
+                bool(dir_parts and _is_test_dir_segment(dir_parts[0], allow_root_names=True))
+                or any(_is_test_dir_segment(part) for part in dir_parts)
             )
         )
 
@@ -680,9 +741,17 @@ def is_polyglot_test_file(
         name.endswith(ext)
         for ext in (
             "Test.java",
+            "Tests.java",
             "Test.kt",
+            "Tests.kt",
             "Spec.kt",
         )
+    ):
+        return True
+
+    if p.suffix.lower() == ".cs" and (
+        name.endswith(("Tests.cs", "_Tests.cs", "_Test.cs", ".Tests.cs", ".Test.cs"))
+        or (name.endswith("Test.cs") and len(name) > len("Test.cs"))
     ):
         return True
 

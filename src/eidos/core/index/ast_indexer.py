@@ -459,6 +459,84 @@ class BaseAstIndexer(ABC):
 
         return imports
 
+    def extract_declared_namespaces(self, file_path: Path | str, content: str | None = None) -> list[str]:
+        """Extract declared namespace/package names (e.g. C# namespace, Java/Kotlin package) via syntax trees."""
+        p = Path(file_path)
+        suffix = p.suffix.lower()
+        if suffix not in (".cs", ".java", ".kt", ".kts"):
+            return []
+        if content is None:
+            try:
+                content = p.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                return []
+
+        namespaces: list[str] = []
+        seen: set[str] = set()
+
+        def _add_ns(ns: str) -> None:
+            clean = ns.strip().rstrip(";")
+            if clean and clean not in seen:
+                seen.add(clean)
+                namespaces.append(clean)
+
+        if suffix == ".cs":
+            try:
+                cs_root = SgRoot(content, "csharp").root()
+                for fns in cs_root.find_all(kind="file_scoped_namespace_declaration"):
+                    nf = fns.field("name")
+                    if nf is not None:
+                        _add_ns(nf.text())
+                for nd in cs_root.find_all(kind="namespace_declaration"):
+                    parts: list[str] = []
+                    cur: Any = nd
+                    while cur is not None:
+                        if cur.kind() == "namespace_declaration":
+                            nf = cur.field("name")
+                            if nf is not None and nf.text().strip():
+                                parts.append(nf.text().strip())
+                        cur = cur.parent()
+                    if parts:
+                        _add_ns(".".join(reversed(parts)))
+            except (RuntimeError, ValueError):
+                pass
+            return namespaces
+
+        if suffix == ".java":
+            try:
+                java_root = SgRoot(content, "java").root()
+                for pkg in java_root.find_all(kind="package_declaration"):
+                    target = next(
+                        (
+                            ch.text().strip()
+                            for ch in pkg.children()
+                            if ch.kind() in ("scoped_identifier", "identifier")
+                        ),
+                        "",
+                    )
+                    if target:
+                        _add_ns(target)
+            except (RuntimeError, ValueError):
+                pass
+            return namespaces
+
+        try:
+            kt_root = SgRoot(content, "kotlin").root()
+            for pkg in kt_root.find_all(kind="package_header"):
+                target = next(
+                    (
+                        ch.text().strip()
+                        for ch in pkg.children()
+                        if ch.kind() in ("identifier", "simple_identifier")
+                    ),
+                    "",
+                )
+                if target:
+                    _add_ns(target)
+        except (RuntimeError, ValueError):
+            pass
+        return namespaces
+
     def generate_repo_map(self, symbols_by_file: dict[str, list[CodeSymbol]], max_tokens: int = 1500) -> str:
         """Generate a token-budgeted structural repo map outline for AI coding agents."""
         max_chars = max_tokens * 4  # Standard ~4 characters per token heuristic
@@ -586,6 +664,17 @@ class AstGrepIndexer(BaseAstIndexer):
                     name_txt = inner.text().split("::")[-1].strip()
                     return name_txt if name_txt and name_txt not in AstGrepIndexer._C_CONTROL_KEYWORDS else None
             return None
+        if lang == "csharp" and node.kind() == "indexer_declaration":
+            return "this"
+        if lang == "csharp" and node.kind() in ("event_field_declaration", "field_declaration"):
+            for vdecl in node.find_all(kind="variable_declarator"):
+                nf = vdecl.field("name")
+                if nf is not None and nf.text().strip():
+                    return nf.text().strip()
+                for ch in vdecl.children():
+                    if ch.kind() == "identifier" and ch.text().strip():
+                        return ch.text().strip()
+            return None
         name_field = node.field("name")
         if name_field is not None:
             return name_field.text()
@@ -662,6 +751,14 @@ class AstGrepIndexer(BaseAstIndexer):
 
         if lang == "python":
             return start_line, decorators
+
+        if lang == "csharp":
+            for ch in node.children():
+                if ch.kind() == "attribute_list":
+                    start_line = min(start_line, ch.range().start.line + 1)
+                    d_txt = re.sub(r"\s+", " ", ch.text().strip())
+                    if d_txt and d_txt not in decorators:
+                        decorators.append(d_txt)
 
         # 2. Check preceding sibling decorator / attribute_item nodes (e.g. Rust #[...], TS method @decorator)
         sibling_decos: list[str] = []
@@ -1050,7 +1147,7 @@ class AstGrepIndexer(BaseAstIndexer):
                         if parent is not None and parent.kind() == "export_statement" and not sig.startswith("export "):
                             sig = f"export {sig}"
                     if dec_list:
-                        missing_decos = [d for d in dec_list if not sig.startswith(d)]
+                        missing_decos = [d for d in dec_list if not sig.startswith(d) and d not in sig]
                         if missing_decos:
                             sig = f"{' '.join(missing_decos)} {sig}"
                     doc = _extract_python_docstring(m) if lang == "python" else None
@@ -1073,6 +1170,33 @@ class AstGrepIndexer(BaseAstIndexer):
                     class_is_public[cname] = bool(sym.is_public)
                     symbols.append(sym)
                     class_nodes[cname] = m
+                    if lang == "csharp" and ck == "record_declaration":
+                        plist = m.field("parameters") or next(
+                            (ch for ch in m.children() if ch.kind() == "parameter_list"),
+                            None,
+                        )
+                        if plist is not None:
+                            for param in plist.children():
+                                if param.kind() != "parameter":
+                                    continue
+                                pname = self._node_name(param, lang)
+                                if not pname:
+                                    continue
+                                prng = param.range()
+                                ptxt = re.sub(r"\s+", " ", param.text().strip())
+                                psig = f"{'public' if sym.is_public else 'internal'} {ptxt}"
+                                psym = CodeSymbol(
+                                    name=pname,
+                                    kind="method",
+                                    file_path=rel_path,
+                                    line_start=prng.start.line + 1 + line_offset,
+                                    line_end=prng.end.line + 1 + line_offset,
+                                    parent_symbol=cname,
+                                    signature=psig,
+                                    is_public=bool(sym.is_public),
+                                    is_boundary_export=bool(sym.is_public),
+                                )
+                                symbols.append(psym)
 
         # 2. Functions & Methods
         fn_kinds = {
@@ -1087,7 +1211,14 @@ class AstGrepIndexer(BaseAstIndexer):
             "kotlin": ["function_declaration"],
             "c": ["function_definition", "declaration"],
             "cpp": ["field_declaration", "declaration", "function_definition"],
-            "csharp": ["method_declaration"],
+            "csharp": [
+                "method_declaration",
+                "property_declaration",
+                "event_declaration",
+                "event_field_declaration",
+                "indexer_declaration",
+                "field_declaration",
+            ],
             "ruby": ["method", "singleton_method"],
             "php": ["function_definition", "method_declaration"],
             "swift": ["function_declaration"],
@@ -1107,6 +1238,10 @@ class AstGrepIndexer(BaseAstIndexer):
                     and not list(m.find_all(kind="function_declarator"))
                 ):
                     continue
+                if lang == "csharp" and fk == "field_declaration":
+                    mod_tokens = {ch.text().strip() for ch in m.children() if ch.kind() == "modifier"}
+                    if not (mod_tokens & {"public", "internal"}) or "private" in mod_tokens:
+                        continue
                 # Skip nested local helper functions defined inside another function or method
                 anc = m.parent()
                 nested_in_fn = False
@@ -1209,6 +1344,14 @@ class AstGrepIndexer(BaseAstIndexer):
 
                 kind_label = "method" if parent_cls or "method" in fk else "function"
                 sig = _node_header_sig(m, rng)
+                if lang == "csharp" and fk in (
+                    "property_declaration",
+                    "event_declaration",
+                    "event_field_declaration",
+                    "indexer_declaration",
+                    "field_declaration",
+                ):
+                    sig = re.split(r"\s*(?:=>|=|\{)", sig, maxsplit=1)[0].rstrip(";").strip()
                 if fk in ("function_signature", "method_signature", "function_signature_item", "method_elem", "method_spec") or (
                     parent_cls in interface_or_trait_names and sig.endswith(";")
                 ):
@@ -1278,7 +1421,7 @@ class AstGrepIndexer(BaseAstIndexer):
                     if parent is not None and parent.kind() == "export_statement" and not sig.startswith("export "):
                         sig = f"export {sig}"
                 if dec_list:
-                    missing_decos = [d for d in dec_list if not sig.startswith(d)]
+                    missing_decos = [d for d in dec_list if not sig.startswith(d) and d not in sig]
                     if missing_decos:
                         sig = f"{' '.join(missing_decos)} {sig}"
                 doc = _extract_python_docstring(m) if lang == "python" else None
@@ -1499,6 +1642,14 @@ class AstGrepIndexer(BaseAstIndexer):
                         r"^(?:@(?:pytest\.mark\.skip|unittest\.skip|Disabled|Ignore)(?:\s*\(|$)|#\[\s*ignore\b)",
                         d,
                     )
+                    or (
+                        sg_lang == "csharp"
+                        and re.match(
+                            r"^\[\s*(?:[\w.]+\.)?(?:Ignore\b|(?:Fact|Theory)\s*\([^]]*\bSkip\s*=)",
+                            d,
+                            re.IGNORECASE,
+                        )
+                    )
                     for d in dec_list
                 ):
                     continue
@@ -1520,9 +1671,15 @@ class AstGrepIndexer(BaseAstIndexer):
                     or (fname.startswith("test") and sg_lang != "python")
                     or bool(_RUST_TEST_ATTR_RE.search(full_text))
                     or "@Test" in full_text
-                    or "[Fact]" in full_text
-                    or "[Theory]" in full_text
-                    or "[Test]" in full_text
+                    or (
+                        sg_lang == "csharp"
+                        and bool(
+                            re.search(
+                                r"\[\s*(?:[\w.]+\.)?(?:Fact|Theory|Test|TestCase|TestCaseSource|TestMethod|DataTestMethod)(?:Attribute)?\s*(?:\(|\]|,)",
+                                base_text,
+                            )
+                        )
+                    )
                 )
                 if not is_test:
                     continue
@@ -1580,12 +1737,12 @@ _TS_PRIVATE_METHOD_RE = re.compile(r"^(?:private\s+|protected\s+|#)")
 
 
 def _strip_leading_decorators_from_signature(sig: str) -> str:
-    """Strip leading @decorator(...) / #[attribute] prefixes from a signature string before visibility analysis."""
-    if not sig or not sig.startswith(("@", "#[", "#![")):
+    """Strip leading @decorator(...) / #[attribute] / C# [Attribute] prefixes from a signature string before visibility analysis."""
+    if not sig or not sig.startswith(("@", "#[", "#![", "[")):
         return sig
     s = sig
     while s:
-        if s.startswith(("#[", "#![")):
+        if s.startswith(("#[", "#![", "[")):
             depth = 0
             in_q: str | None = None
             esc = False
@@ -1807,7 +1964,9 @@ def _evaluate_symbol_visibility(
     if suffix == ".cs":
         if sym.name.startswith("_"):
             return False
-        sig_prefix = sig.split("(", 1)[0] if sig else ""
+        if sym.parent_symbol and class_is_public is not None and not class_is_public.get(sym.parent_symbol, False):
+            return False
+        sig_prefix = re.split(r"[([={]|=>", sig, maxsplit=1)[0] if sig else ""
         if re.search(r"\b(?:private|internal|protected)\b", sig_prefix):
             return False
         if parent_is_interface_or_trait:
@@ -1855,6 +2014,60 @@ def _is_public_symbol(sym: CodeSymbol) -> bool:
     if sym.is_public is not None:
         return sym.is_public
     return _evaluate_symbol_visibility(sym)
+
+
+def _is_component_surface_symbol(
+    sym: CodeSymbol,
+    *,
+    interface_names: set[str] | frozenset[str] = frozenset(),
+    hidden_classes: set[str] | frozenset[str] = frozenset(),
+) -> bool:
+    """Return True if a symbol belongs on a C4 CMP-* surface (public plus internal/package-scoped; rejects private/protected/_)."""
+    if sym.parent_symbol:
+        p_leaf = sym.parent_symbol.split("<", 1)[0].split("[", 1)[0].split("::")[-1].split(".")[-1].strip()
+        if sym.parent_symbol in hidden_classes or (p_leaf and p_leaf in hidden_classes):
+            return False
+    if _is_public_symbol(sym):
+        return True
+    if sym.parent_symbol and sym.parent_symbol.startswith(("_", "#")):
+        return False
+    if sym.name.startswith(("_", "#")):
+        return sym.kind == "method" and sym.name in ("__init__", "__call__")
+
+    suffix = Path(sym.file_path).suffix.lower()
+    raw_sig = (sym.signature or "").strip()
+    sig = _strip_leading_decorators_from_signature(raw_sig)
+    sig_prefix = re.split(r"[([={]|=>", sig, maxsplit=1)[0] if sig else ""
+
+    if suffix == ".cs":
+        if re.search(r"\bprivate\b", sig_prefix):
+            return False
+        if re.search(r"\bprotected\b", sig_prefix) and not re.search(
+            r"\b(?:protected\s+internal|internal\s+protected)\b", sig_prefix
+        ):
+            return False
+        if sym.parent_symbol:
+            if sym.parent_symbol in interface_names:
+                return True
+            return bool(re.search(r"\b(?:public|internal)\b", sig_prefix))
+        return True
+
+    if suffix in (".java", ".kt", ".kts"):
+        return not bool(re.search(r"\b(?:private|protected)\b", sig_prefix))
+
+    if suffix in (".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte"):
+        return not bool(_TS_PRIVATE_METHOD_RE.match(sig))
+
+    if suffix in (".c", ".cpp", ".h", ".hpp"):
+        if sym.parent_symbol or sym.kind == "method":
+            return _is_public_symbol(sym)
+        return True
+
+    if suffix in (".rb", ".php", ".swift"):
+        return not bool(re.search(r"\b(?:private|protected|fileprivate)\b", sig_prefix))
+
+    # Python, Go, Rust: allow non-underscore package/module-scoped symbols within a CMP-* component
+    return True
 
 
 _BOUNDARY_ENTRYPOINT_NAMES = frozenset(

@@ -3,7 +3,7 @@ type: tech/contract
 id: CTR-EIDOS-CLI
 title: "Eidos Command-Line Interface Contract"
 status: active
-version: "1.5.0"
+version: "1.6.0"
 protocol: "cli_args"
 container: "CNT-EIDOS-CLI"
 specification_file: "src/eidos/cli/main.py"
@@ -48,7 +48,7 @@ Extracts a compact, token-efficient architectural subgraph context slice (C4 com
 Manages the embedded SQLite architectural knowledge graph and FTS5 hybrid search index (`eidos/.cache/index.db`).
 * **Sub-commands**:
   - `status [--path <path>] [--json]`: Displays index health, AST parser engine telemetry (`ast-grep` vs `python-ast`), symbol breakdown by syntax kind, test invariant assertion metrics, cache file size, and continuous code-aware dirty status. Supports `--json` for programmatic agent consumption.
-  - `sync [--path <path>] [--force]`: Synchronizes or rebuilds the knowledge graph index.
+  - `sync [--path <path>] [--force] [--no-semantic] [--json]`: Synchronizes or rebuilds the knowledge graph index, optionally skipping Harrier ONNX embedding generation (`--no-semantic`) or emitting machine-readable JSON telemetry (`--json`).
   - `search <query> [--limit <n>] [--semantic/--no-semantic] [--path <path>] [--json]`: Performs BM25 full-text search with optional Harrier Hybrid RRF fusion across titles, requirements, and invariants.
   - `blast-radius <symbol_or_path> [--depth <n>] [--path <path>] [--json]`: Computes the transitive dependency and governance blast radius for a canonical entity ID, AST code symbol, specification file path, or source file path (reporting `query`, `resolved_entities`, `entity_id`, and `neighbors` in `--json` output).
   - `repo-map [--max-tokens <tokens>] [--json] [--path <path>]`: Generates a token-budgeted structural repo map outline (classes, functions, methods, routes) for AI coding agents in Markdown or JSON (`--json`).

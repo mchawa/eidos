@@ -196,9 +196,11 @@ class ArchitecturalIndex:
         now = time.monotonic()
         if self._last_synced_check > 0.0 and (now - self._last_synced_check) < 0.05:
             return
+        pre_dv_row = self._get_connection().execute("PRAGMA data_version;").fetchone()
+        pre_dv = int(pre_dv_row[0]) if pre_dv_row else 0
         dirty_state = self.is_dirty()
         if dirty_state[0]:
-            self.sync(dirty_state=dirty_state)
+            self.sync(dirty_state=dirty_state, _pre_data_version=pre_dv)
         self._last_synced_check = time.monotonic()
 
     def sync(
@@ -206,9 +208,19 @@ class ArchitecturalIndex:
         force: bool = False,
         dirty_state: tuple[bool, list[Path], list[Path]] | None = None,
         strict: bool = False,
+        *,
+        auto_semantic: bool = True,
+        _pre_data_version: int | None = None,
     ) -> IndexSyncStats:
         """Incrementally synchronize the index with specifications and code on disk."""
-        return sync_index(self, force=force, dirty_state=dirty_state, strict=strict)
+        return sync_index(
+            self,
+            force=force,
+            dirty_state=dirty_state,
+            strict=strict,
+            auto_semantic=auto_semantic,
+            _pre_data_version=_pre_data_version,
+        )
 
     # ------------------------------------------------------------------
     # Query & Graph Traversal Delegation (query.py & context.py)
@@ -343,10 +355,10 @@ class ArchitecturalIndex:
                 WITH all_mappings(symbol, entity_id, kind) AS (
                     SELECT symbol, entity_id, kind FROM symbol_mappings
                     UNION
-                    SELECT symbol, entity_id, kind FROM code_symbols WHERE kind != 'import'
+                    SELECT symbol, entity_id, kind FROM code_symbols WHERE kind NOT IN ('import', 'namespace')
                     UNION
                     SELECT parent_symbol || '.' || symbol, entity_id, 'method'
-                    FROM code_symbols WHERE kind != 'import' AND parent_symbol != ''
+                    FROM code_symbols WHERE kind NOT IN ('import', 'namespace') AND parent_symbol != ''
                 )
                 SELECT kind, COUNT(*) FROM all_mappings GROUP BY kind;
                 """

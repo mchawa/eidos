@@ -18,12 +18,19 @@ from typing import Any
 
 import orjson
 
-from eidos.core.index.ast_indexer import AstGrepIndexer, extract_test_file_cache_payload, get_ast_indexer
-from eidos.core.index.storage import get_cached_spec_document
+from eidos.core.index.ast_indexer import AstGrepIndexer, CodeSymbol, extract_test_file_cache_payload, get_ast_indexer
+from eidos.core.index.storage import (
+    _advisory_db_lock,
+    _immediate_write_transaction,
+    _resolve_conn_db_path,
+    get_cached_spec_document,
+)
 from eidos.core.workspace.project import (
     STANDARD_EXCLUDED_DIRS,
+    _is_test_dir_segment,
     discover_nested_subproject_roots,
     extract_entity_paths,
+    is_dotnet_bin_dir,
     is_polyglot_test_file,
     match_path_pattern,
 )
@@ -383,6 +390,7 @@ def _can_use_ast_mem_cache(ast_idx: Any) -> bool:
         cls.__module__.startswith("eidos.")
         and "extract_symbols" not in inst_dict
         and "extract_imports" not in inst_dict
+        and "extract_declared_namespaces" not in inst_dict
         and "extract_test_bindings" not in inst_dict
         and "list_test_functions" not in inst_dict
     )
@@ -433,7 +441,20 @@ def index_source_file(
         if cached is not None:
             symbols, imports = cached
         else:
-            symbols = ast_idx.extract_symbols(path, content)
+            symbols = list(ast_idx.extract_symbols(path, content))
+            if path.suffix.lower() in (".cs", ".java", ".kt", ".kts") and hasattr(
+                ast_idx, "extract_declared_namespaces"
+            ):
+                for ns in ast_idx.extract_declared_namespaces(path, content):
+                    symbols.append(
+                        CodeSymbol(
+                            name=ns,
+                            kind="namespace",
+                            file_path=rel_path,
+                            line_start=1,
+                            line_end=1,
+                        )
+                    )
             imports = ast_idx.extract_imports(path, content) if hasattr(ast_idx, "extract_imports") else []
             if cache_key is not None:
                 _SOURCE_AST_MEM_CACHE[cache_key] = (symbols, imports)
@@ -461,12 +482,11 @@ def reconcile_code_ownership(
     """Recursively index every container package directory and re-attribute files whose owners changed."""
     nested_roots = set(discover_nested_subproject_roots(index.root))
     nested_prefixes: tuple[str, ...] = tuple(
-        f"{nr.relative_to(index.root).as_posix().strip('/')}/"
-        for nr in nested_roots
-        if nr.is_relative_to(index.root)
+        f"{nr.relative_to(index.root).as_posix().strip('/')}/" for nr in nested_roots if nr.is_relative_to(index.root)
     )
     candidates: dict[str, Path] = {}
-    for pkg in sorted(resolver.package_dirs()):
+    pkg_dirs = resolver.package_dirs()
+    for pkg in sorted(pkg_dirs):
         abs_pkg = (index.root / pkg).resolve()
         if not abs_pkg.is_dir() or abs_pkg in nested_roots:
             continue
@@ -477,6 +497,7 @@ def reconcile_code_ownership(
                 if d not in STANDARD_EXCLUDED_DIRS
                 and not d.startswith(".")
                 and (Path(dirpath) / d).resolve() not in nested_roots
+                and not is_dotnet_bin_dir(Path(dirpath) / d)
             )
             for fn in sorted(filenames):
                 p_file = Path(dirpath) / fn
@@ -508,7 +529,25 @@ def reconcile_code_ownership(
                 candidates[rel_code] = abs_known
 
     for rel_code, p_file in sorted(candidates.items()):
-        if rel_code in processed or is_polyglot_test_file(rel_code):
+        if rel_code in processed:
+            continue
+        if is_polyglot_test_file(rel_code, repo_root=index.root, package_paths=pkg_dirs):
+            if rel_code in manifest:
+                store_code_symbols(conn, rel_code, [], [])
+                conn.execute("DELETE FROM symbol_mappings WHERE symbol = ? AND kind = 'source_path';", (rel_code,))
+                stat = p_file.stat()
+                raw_bytes = p_file.read_bytes()
+                t_sha = hashlib.sha256(raw_bytes).hexdigest()
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type)
+                    VALUES (?, ?, ?, 'tests', 'code/test');
+                    """,
+                    (rel_code, stat.st_mtime, t_sha),
+                )
+                index_test_bindings(
+                    conn, ast_idx, p_file, rel_code, sha=t_sha, raw_bytes=raw_bytes, mtime_ns=stat.st_mtime_ns
+                )
             continue
         owners = resolver.owners(rel_code)
         if rel_code in manifest and manifest[rel_code] == (owners[0] if owners else "source"):
@@ -534,6 +573,44 @@ def reconcile_code_ownership(
         )
 
 
+def _discover_sibling_test_dirs(
+    root: Path,
+    candidate_dirs: list[Path],
+    nested_dir_strs: set[str],
+) -> list[str]:
+    """Discover root and sibling test directories (e.g. ``*.Tests``, ``*.UnitTests``) near tracked package roots."""
+    resolved_root = root.resolve()
+    parent_dirs: list[Path] = [resolved_root]
+    seen_parents: set[Path] = {resolved_root}
+    for cand in candidate_dirs:
+        parent = cand.resolve().parent
+        if parent not in seen_parents and (parent == resolved_root or parent.is_relative_to(resolved_root)):
+            seen_parents.add(parent)
+            parent_dirs.append(parent)
+
+    discovered: list[str] = []
+    seen_dirs: set[str] = set()
+    for pdir in parent_dirs:
+        if not pdir.is_dir():
+            continue
+        with contextlib.suppress(OSError):
+            for entry in os.scandir(pdir):
+                if entry.name.startswith(".") or entry.name in STANDARD_EXCLUDED_DIRS:
+                    continue
+                try:
+                    if not entry.is_dir(follow_symlinks=False):
+                        continue
+                except OSError:
+                    continue
+                norm_dir = os.path.normpath(entry.path)
+                if norm_dir in nested_dir_strs or norm_dir in seen_dirs:
+                    continue
+                if _is_test_dir_segment(entry.name, allow_root_names=True):
+                    seen_dirs.add(norm_dir)
+                    discovered.append(norm_dir)
+    return discovered
+
+
 def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
     """Perform sub-5ms dirty checking comparing filesystem mtime with indexed state."""
     conn = index._get_connection()
@@ -555,9 +632,7 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
     nested_roots = set(discover_nested_subproject_roots(index.root))
     nested_dir_strs = {os.path.normpath(str(nr)) for nr in nested_roots}
     nested_prefixes: tuple[str, ...] = tuple(
-        f"{nr.relative_to(index.root).as_posix().strip('/')}/"
-        for nr in nested_roots
-        if nr.is_relative_to(index.root)
+        f"{nr.relative_to(index.root).as_posix().strip('/')}/" for nr in nested_roots if nr.is_relative_to(index.root)
     )
 
     def _rel_path(full_str: str) -> str:
@@ -649,6 +724,13 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
             else:
                 explicit_code_files.append(full_pp)
 
+    for sibling_test_dir in _discover_sibling_test_dirs(
+        index.root,
+        [Path(d) for d in sorted(tracked_code_dirs)],
+        nested_dir_strs,
+    ):
+        tracked_code_dirs.add(sibling_test_dir)
+
     # Deduplicate child directories whose parent directory is already in tracked_code_dirs
     top_code_dirs: list[str] = []
     for d in sorted(tracked_code_dirs):
@@ -678,7 +760,7 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
                         continue
                     try:
                         if entry.is_dir(follow_symlinks=False):
-                            if os.path.normpath(entry.path) in nested_dir_strs:
+                            if os.path.normpath(entry.path) in nested_dir_strs or is_dotnet_bin_dir(Path(entry.path)):
                                 continue
                             _scan_code_dir(entry.path)
                             continue
@@ -735,11 +817,14 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
                 _check_file_str(abs_tracked, rel_tracked, stat.st_mtime)
 
     if mtime_refreshes:
-        with conn:
-            conn.executemany(
-                "UPDATE indexed_files SET mtime = ? WHERE rel_path = ?;",
-                mtime_refreshes,
-            )
+        lock_db = _resolve_conn_db_path(conn, getattr(index, "db_path", None))
+        with _advisory_db_lock(lock_db, non_blocking=True) as acquired:
+            if acquired:
+                with contextlib.suppress(sqlite3.OperationalError), _immediate_write_transaction(conn):
+                    conn.executemany(
+                        "UPDATE indexed_files SET mtime = ? WHERE rel_path = ?;",
+                        mtime_refreshes,
+                    )
 
     to_update.sort()
     deleted = sorted(Path(rel) for rel in db_files.keys() - disk_files)
@@ -871,10 +956,7 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
             if dangling_src:
                 neighbor_candidates.add(dangling_src)
 
-        scope_set = (
-            ((neighbor_candidates | set(evict_ids)) & non_inv_id_set)
-            | set(clean_ids)
-        )
+        scope_set = ((neighbor_candidates | set(evict_ids)) & non_inv_id_set) | set(clean_ids)
 
         # Include any existing entity whose frontmatter JSON mentions a newly added/unlinked target spec
         # in a single O(N) Python pass (zero SQLite expression depth or parameter limits).
@@ -1163,8 +1245,9 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
 def _derive_ast_import_edges(
     conn: sqlite3.Connection,
     resolver: _CodeOwnershipResolver | None = None,
+    repo_root: Path | None = None,
 ) -> None:
-    """Derive component consumes_api and container depends_on edges from AST imports and contract links."""
+    """Derive component consumes_api and container depends_on edges from AST imports, namespaces, .csproj ProjectReferences, and contract links."""
     import posixpath
 
     if resolver is None:
@@ -1210,6 +1293,131 @@ def _derive_ast_import_edges(
             if stem_path.endswith("/index"):
                 module_to_file.setdefault(stem_path[:-6], kf)
 
+    ns_to_owners: dict[str, set[tuple[str, str]]] = {}
+    file_declared_ns: dict[str, set[str]] = {}
+    ns_owner_counts: dict[str, dict[tuple[str, str], int]] = {}
+    for ns_sym, ns_file, ns_ent in conn.execute(
+        "SELECT symbol, file_path, entity_id FROM code_symbols WHERE kind = 'namespace' AND is_primary = 1 AND is_test = 0;"
+    ).fetchall():
+        ns_name = str(ns_sym or "").strip()
+        if ns_name:
+            norm_ns_file = _normalize_rel_path(ns_file)
+            owner = _effective_cnt_and_comp(norm_ns_file, str(ns_ent or ""))
+            ns_to_owners.setdefault(ns_name, set()).add(owner)
+            file_declared_ns.setdefault(norm_ns_file, set()).add(ns_name)
+            owner_counts = ns_owner_counts.setdefault(ns_name, {})
+            owner_counts[owner] = owner_counts.get(owner, 0) + 1
+
+    ast_cnt_deps: set[tuple[str, str]] = set()
+    csproj_cnt_deps: set[tuple[str, str]] = set()
+
+    eff_root = Path(repo_root).resolve() if repo_root is not None else None
+    if eff_root is None:
+        db_file = _resolve_conn_db_path(conn)
+        if db_file is not None and db_file.parent.name == ".cache" and db_file.parent.parent.name == "eidos":
+            eff_root = db_file.parents[2]
+
+    if eff_root is not None and eff_root.is_dir():
+        nested_roots = set(discover_nested_subproject_roots(eff_root))
+        pkg_dirs = resolver.package_dirs()
+        seen_csproj: set[Path] = set()
+        csproj_files: list[Path] = []
+        for pkg_dir in sorted(pkg_dirs):
+            cand_dir = (eff_root / pkg_dir).resolve()
+            if not cand_dir.is_dir() or cand_dir in nested_roots:
+                continue
+            for dirpath, dirnames, filenames in os.walk(str(cand_dir)):
+                dirnames[:] = [
+                    d
+                    for d in dirnames
+                    if d not in STANDARD_EXCLUDED_DIRS
+                    and not d.startswith(".")
+                    and (Path(dirpath) / d).resolve() not in nested_roots
+                    and not is_dotnet_bin_dir(Path(dirpath) / d)
+                ]
+                for fn in filenames:
+                    if fn.lower().endswith((".csproj", ".fsproj", ".vbproj")):
+                        cp = (Path(dirpath) / fn).resolve()
+                        if cp not in seen_csproj:
+                            seen_csproj.add(cp)
+                            csproj_files.append(cp)
+        with contextlib.suppress(OSError):
+            for entry in os.scandir(eff_root):
+                if entry.is_file() and entry.name.lower().endswith((".csproj", ".fsproj", ".vbproj")):
+                    cp = Path(entry.path).resolve()
+                    if cp not in seen_csproj:
+                        seen_csproj.add(cp)
+                        csproj_files.append(cp)
+                elif (
+                    entry.is_dir(follow_symlinks=False)
+                    and not entry.name.startswith(".")
+                    and entry.name not in STANDARD_EXCLUDED_DIRS
+                ):
+                    ep = Path(entry.path).resolve()
+                    if ep not in nested_roots:
+                        with contextlib.suppress(OSError):
+                            for sub in os.scandir(ep):
+                                if sub.is_file() and sub.name.lower().endswith((".csproj", ".fsproj", ".vbproj")):
+                                    cp = Path(sub.path).resolve()
+                                    if cp not in seen_csproj:
+                                        seen_csproj.add(cp)
+                                        csproj_files.append(cp)
+
+        def _resolve_csproj_owner(proj_file: Path) -> tuple[str, str]:
+            try:
+                rel_proj = _normalize_rel_path(str(proj_file.relative_to(eff_root)))
+            except ValueError:
+                return "", ""
+            cnt_id, cmp_id = _effective_cnt_and_comp(rel_proj)
+            if cnt_id or cmp_id:
+                return cnt_id, cmp_id
+            rel_dir = posixpath.dirname(rel_proj)
+            probe_cs = f"{rel_dir}/_.cs" if rel_dir else "_.cs"
+            return _effective_cnt_and_comp(probe_cs)
+
+        proj_ref_re = re.compile(r"""<ProjectReference\b[^>]*\bInclude\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
+        for cp in sorted(csproj_files):
+            try:
+                rel_cp = _normalize_rel_path(str(cp.relative_to(eff_root)))
+            except ValueError:
+                continue
+            if is_polyglot_test_file(rel_cp, repo_root=eff_root, package_paths=pkg_dirs) or _is_test_dir_segment(
+                cp.parent.name, allow_root_names=True
+            ):
+                continue
+            src_cnt, src_cmp = _resolve_csproj_owner(cp)
+            if not src_cnt and not src_cmp:
+                continue
+            with contextlib.suppress(OSError):
+                proj_text = cp.read_text(encoding="utf-8", errors="replace")
+                for m_ref in proj_ref_re.finditer(proj_text):
+                    inc_raw = m_ref.group(1).strip().replace("\\", "/")
+                    if not inc_raw:
+                        continue
+                    target_cp = (cp.parent / inc_raw).resolve()
+                    if not target_cp.is_relative_to(eff_root):
+                        continue
+                    rel_target = _normalize_rel_path(str(target_cp.relative_to(eff_root)))
+                    if is_polyglot_test_file(
+                        rel_target, repo_root=eff_root, package_paths=pkg_dirs
+                    ) or _is_test_dir_segment(target_cp.parent.name, allow_root_names=True):
+                        continue
+                    dst_cnt, dst_cmp = _resolve_csproj_owner(target_cp)
+                    if src_cmp and dst_cmp and src_cmp != dst_cmp:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes_api');",
+                            (src_cmp, dst_cmp),
+                        )
+                    if (
+                        src_cnt
+                        and dst_cnt
+                        and src_cnt != dst_cnt
+                        and src_cnt.startswith("CNT-")
+                        and dst_cnt.startswith("CNT-")
+                    ):
+                        csproj_cnt_deps.add((src_cnt, dst_cnt))
+                        ast_cnt_deps.add((src_cnt, dst_cnt))
+
     import_rows = conn.execute(
         """
         SELECT file_path, symbol, entity_id
@@ -1219,7 +1427,6 @@ def _derive_ast_import_edges(
         """
     ).fetchall()
 
-    ast_cnt_deps: set[tuple[str, str]] = set()
     for row in import_rows:
         src_file = _normalize_rel_path(row["file_path"])
         imp = str(row["symbol"] or "").strip()
@@ -1255,7 +1462,50 @@ def _derive_ast_import_edges(
         else:
             dst_file = module_to_file.get(imp)
 
-        if not dst_file or dst_file == src_file:
+        if not dst_file:
+            if src_file.endswith((".cs", ".java", ".kt", ".kts")):
+                clean_imp = imp[:-2] if imp.endswith(".*") else imp
+                matched_ns = ""
+                if clean_imp in ns_to_owners:
+                    matched_ns = clean_imp
+                elif "." in clean_imp:
+                    parent_ns = clean_imp.rsplit(".", 1)[0]
+                    if parent_ns in ns_to_owners:
+                        matched_ns = parent_ns
+                if matched_ns and matched_ns not in file_declared_ns.get(src_file, ()):
+                    target_owners = ns_to_owners[matched_ns]
+                    src_cnt, src_cmp = _effective_cnt_and_comp(src_file, row["entity_id"])
+                    src_owner = (src_cnt, src_cmp)
+                    src_in_targets = src_owner in target_owners
+                    counts_for_ns = ns_owner_counts.get(matched_ns, {})
+                    src_ns_count = counts_for_ns.get(src_owner, 0)
+                    for dst_cnt, dst_cmp in sorted(target_owners):
+                        dst_owner = (dst_cnt, dst_cmp)
+                        if dst_owner == src_owner:
+                            continue
+                        if (dst_cnt, src_cnt) in csproj_cnt_deps:
+                            continue
+                        if src_in_targets and not (
+                            (src_cnt, dst_cnt) in csproj_cnt_deps
+                            or (src_cnt == dst_cnt and counts_for_ns.get(dst_owner, 0) > src_ns_count)
+                        ):
+                            continue
+                        if src_cmp and dst_cmp and src_cmp != dst_cmp:
+                            conn.execute(
+                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes_api');",
+                                (src_cmp, dst_cmp),
+                            )
+                        if (
+                            src_cnt
+                            and dst_cnt
+                            and src_cnt != dst_cnt
+                            and src_cnt.startswith("CNT-")
+                            and dst_cnt.startswith("CNT-")
+                        ):
+                            ast_cnt_deps.add((src_cnt, dst_cnt))
+            continue
+
+        if dst_file == src_file:
             continue
 
         src_cnt, src_cmp = _effective_cnt_and_comp(src_file, row["entity_id"])
@@ -1590,16 +1840,57 @@ def sync_index(
     force: bool = False,
     dirty_state: tuple[bool, list[Path], list[Path]] | None = None,
     strict: bool = False,
+    *,
+    auto_semantic: bool = True,
+    _pre_data_version: int | None = None,
 ) -> IndexSyncStats:
     """Incrementally synchronize the index with specifications and code on disk."""
-    from eidos.core.index.query import compound_identifier_subtokens, expand_architectural_synonyms
-
     t0 = time.perf_counter()
     stats = IndexSyncStats()
+    conn = index._get_connection()
+    lock_db = _resolve_conn_db_path(conn, getattr(index, "db_path", None))
+
+    spec_updates: list[Path] = []
+    with _advisory_db_lock(lock_db, non_blocking=True) as got_immediate_lock:
+        contended = not got_immediate_lock
+        with _advisory_db_lock(lock_db, non_blocking=False):
+            spec_updates = _sync_index_locked(
+                index,
+                conn,
+                stats,
+                force=force,
+                dirty_state=dirty_state,
+                strict=strict,
+                contended=contended,
+                _pre_data_version=_pre_data_version,
+            )
+
+    if auto_semantic and spec_updates:
+        from eidos.core.index.semantic import _trigger_auto_semantic_refresh
+
+        _trigger_auto_semantic_refresh(conn, index.eidos_dir, index.db_path)
+
+    stats.duration_ms = (time.perf_counter() - t0) * 1000
+    index._last_synced_check = time.monotonic()
+    return stats
+
+
+def _sync_index_locked(
+    index: Any,
+    conn: sqlite3.Connection,
+    stats: IndexSyncStats,
+    *,
+    force: bool = False,
+    dirty_state: tuple[bool, list[Path], list[Path]] | None = None,
+    strict: bool = False,
+    contended: bool = False,
+    _pre_data_version: int | None = None,
+) -> list[Path]:
+    """Execute one serialized sync pass while holding ``index.db.lock``."""
+    from eidos.core.index.query import compound_identifier_subtokens, expand_architectural_synonyms
 
     if force:
-        conn = index._get_connection()
-        with conn:
+        with _immediate_write_transaction(conn):
             conn.execute("DELETE FROM indexed_files;")
             conn.execute("DELETE FROM entities;")
             conn.execute("DELETE FROM edges;")
@@ -1611,20 +1902,24 @@ def sync_index(
             # are intentionally preserved across force rebuilds; orphaned spec_embeddings rows are
             # pruned after entity reconciliation.
 
-    if force or dirty_state is None:
+    if force or dirty_state is None or contended:
         dirty, to_update, deleted = index.is_dirty()
+    elif _pre_data_version is not None:
+        post_dv_row = conn.execute("PRAGMA data_version;").fetchone()
+        post_dv = int(post_dv_row[0]) if post_dv_row else _pre_data_version
+        if post_dv != _pre_data_version:
+            dirty, to_update, deleted = index.is_dirty()
+        else:
+            dirty, to_update, deleted = dirty_state
     else:
         dirty, to_update, deleted = dirty_state
     if not dirty and not force:
-        stats.duration_ms = (time.perf_counter() - t0) * 1000
         stats.was_clean = True
-        index._last_synced_check = time.monotonic()
-        return stats
+        return []
 
     stats.was_clean = False
-    conn = index._get_connection()
 
-    with conn:
+    with _immediate_write_transaction(conn):
         specs_deleted = False
         code_deleted = False
         for d in deleted:
@@ -2021,6 +2316,7 @@ def sync_index(
 
         ast_idx = get_ast_indexer()
         resolver = _CodeOwnershipResolver(conn)
+        pkg_dirs = resolver.package_dirs()
         processed_code: set[str] = set()
         for p in code_updates:
             if not p.is_file():
@@ -2035,7 +2331,7 @@ def sync_index(
             raw_bytes = p.read_bytes()
             sha = hashlib.sha256(raw_bytes).hexdigest()
 
-            is_test = is_polyglot_test_file(rel_p)
+            is_test = is_polyglot_test_file(rel_p, repo_root=index.root, package_paths=pkg_dirs)
 
             existing = conn.execute("SELECT 1 FROM indexed_files WHERE rel_path = ?", (rel_p,)).fetchone()
             if existing:
@@ -2044,6 +2340,7 @@ def sync_index(
                 stats.indexed_new += 1
 
             if is_test:
+                conn.execute("DELETE FROM symbol_mappings WHERE symbol = ? AND kind = 'source_path';", (rel_p,))
                 index_test_bindings(conn, ast_idx, p, rel_p, sha=sha, raw_bytes=raw_bytes, mtime_ns=st.st_mtime_ns)
                 conn.execute(
                     """
@@ -2060,7 +2357,7 @@ def sync_index(
             reconcile_code_ownership(index, conn, ast_idx, resolver, processed_code)
 
         if force or spec_updates or specs_deleted or processed_code or code_deleted:
-            _derive_ast_import_edges(conn, resolver)
+            _derive_ast_import_edges(conn, resolver, repo_root=index.root)
 
         if force or spec_updates or specs_deleted or processed_code or code_deleted:
             conn.execute("DELETE FROM symbol_mappings WHERE kind = 'inferred_path';")
@@ -2180,35 +2477,48 @@ def sync_index(
                         break
 
         nested_roots = set(discover_nested_subproject_roots(index.root))
+        nested_dir_strs = {os.path.normpath(str(nr)) for nr in nested_roots}
         nested_prefixes: tuple[str, ...] = tuple(
             f"{nr.relative_to(index.root).as_posix().strip('/')}/"
             for nr in nested_roots
             if nr.is_relative_to(index.root)
         )
         candidate_test_files: dict[str, Path] = {}
-        for std_test_dir in ("tests", "test", *sorted(resolver.package_dirs())):
-            tests_dir = (index.root / std_test_dir).resolve()
-            if tests_dir.is_dir() and tests_dir not in nested_roots:
-                for dirpath, dirnames, filenames in os.walk(str(tests_dir)):
-                    dirnames[:] = [
-                        d
-                        for d in dirnames
-                        if d not in STANDARD_EXCLUDED_DIRS
-                        and not d.startswith(".")
-                        and (Path(dirpath) / d).resolve() not in nested_roots
-                    ]
-                    for fn in filenames:
-                        tp = Path(dirpath) / fn
-                        if tp.suffix not in _CODE_EXTS:
-                            continue
-                        try:
-                            rel_t = str(tp.relative_to(index.root)).replace("\\", "/")
-                        except ValueError:
-                            rel_t = str(tp).replace("\\", "/")
-                        if nested_prefixes and rel_t.startswith(nested_prefixes):
-                            continue
-                        if is_polyglot_test_file(rel_t):
-                            candidate_test_files.setdefault(rel_t, tp)
+        pkg_abs_dirs = [(index.root / pd).resolve() for pd in sorted(pkg_dirs)]
+        sibling_test_dirs = _discover_sibling_test_dirs(index.root, pkg_abs_dirs, nested_dir_strs)
+        test_scan_roots: list[Path] = []
+        seen_scan_roots: set[Path] = set()
+        for cand_root in [
+            *(index.root / std for std in ("tests", "test", *sorted(pkg_dirs))),
+            *(Path(sd) for sd in sibling_test_dirs),
+        ]:
+            res_cand = cand_root.resolve()
+            if res_cand not in seen_scan_roots and res_cand.is_dir() and res_cand not in nested_roots:
+                seen_scan_roots.add(res_cand)
+                test_scan_roots.append(res_cand)
+
+        for tests_dir in test_scan_roots:
+            for dirpath, dirnames, filenames in os.walk(str(tests_dir)):
+                dirnames[:] = [
+                    d
+                    for d in dirnames
+                    if d not in STANDARD_EXCLUDED_DIRS
+                    and not d.startswith(".")
+                    and (Path(dirpath) / d).resolve() not in nested_roots
+                    and not is_dotnet_bin_dir(Path(dirpath) / d)
+                ]
+                for fn in filenames:
+                    tp = Path(dirpath) / fn
+                    if tp.suffix not in _CODE_EXTS:
+                        continue
+                    try:
+                        rel_t = str(tp.relative_to(index.root)).replace("\\", "/")
+                    except ValueError:
+                        rel_t = str(tp).replace("\\", "/")
+                    if nested_prefixes and rel_t.startswith(nested_prefixes):
+                        continue
+                    if is_polyglot_test_file(rel_t, repo_root=index.root, package_paths=pkg_dirs):
+                        candidate_test_files.setdefault(rel_t, tp)
 
         for (tb_sym,) in conn.execute(
             "SELECT DISTINCT symbol FROM symbol_mappings WHERE kind = 'test_binding';"
@@ -2227,16 +2537,20 @@ def sync_index(
 
         for rel_t, tp in sorted(candidate_test_files.items()):
             cached_entry = conn.execute(
-                "SELECT mtime, sha256 FROM indexed_files WHERE rel_path = ? AND doc_type = 'code/test';",
+                "SELECT mtime, sha256, doc_type FROM indexed_files WHERE rel_path = ?;",
                 (rel_t,),
             ).fetchone()
             stat = tp.stat()
             if (
                 not cached_entry
+                or cached_entry["doc_type"] != "code/test"
                 or abs(stat.st_mtime - cached_entry["mtime"]) > 1e-7
                 or force
                 or needs_unindexed_test_scan
             ):
+                if cached_entry and cached_entry["doc_type"] != "code/test":
+                    store_code_symbols(conn, rel_t, [], [])
+                    conn.execute("DELETE FROM symbol_mappings WHERE symbol = ? AND kind = 'source_path';", (rel_t,))
                 t_raw_bytes = tp.read_bytes()
                 t_sha = hashlib.sha256(t_raw_bytes).hexdigest()
                 conn.execute(
@@ -2307,14 +2621,7 @@ def sync_index(
         prune_stale_test_binding_edges(conn)
         _reconcile_invariant_coverage(index, conn, ast_idx)
 
-    if spec_updates:
-        from eidos.core.index.semantic import _trigger_auto_semantic_refresh
-
-        _trigger_auto_semantic_refresh(conn, index.eidos_dir, index.db_path)
-
-    stats.duration_ms = (time.perf_counter() - t0) * 1000
-    index._last_synced_check = time.monotonic()
-    return stats
+    return spec_updates
 
 
 def _project_ast_code_symbols_into_fts(

@@ -104,11 +104,21 @@ def index_sync_cmd(
         "-f",
         help="Force complete rebuild of the index from scratch.",
     ),
+    no_semantic: bool = typer.Option(
+        False,
+        "--no-semantic",
+        help="Skip Harrier ONNX semantic embedding synchronization when provisioned.",
+    ),
     path: Path | None = typer.Option(
         None,
         "--path",
         "-p",
         help="Path to eidos directory (defaults to ./eidos).",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output index synchronization telemetry as machine-readable JSON.",
     ),
 ):
     """Synchronize the architectural index with specifications on disk."""
@@ -116,34 +126,60 @@ def index_sync_cmd(
     idx = get_architectural_index(eidos_dir=eidos_dir)
     from eidos.core.index.semantic import _semantic_cli_progress
 
-    with _semantic_cli_progress(console=console, mode="sync", enabled=True):
-        stats = idx.sync(force=force)
+    with _semantic_cli_progress(console=console, mode="sync", enabled=not json_output):
+        stats = idx.sync(force=force, auto_semantic=False)
 
-        if stats.was_clean and not force:
-            console.print(
-                f"[bold green]✓ Index is up to date.[/bold green] Verified in [dim]{stats.duration_ms:.2f}ms[/dim]."
-            )
-        else:
-            mode = "Rebuilt" if force else "Synchronized"
-            console.print(
-                f"[bold green]✓ {mode} index in {stats.duration_ms:.2f}ms.[/bold green] "
-                f"[dim](Indexed {stats.indexed_new} new, updated {stats.updated_modified} modified, pruned {stats.pruned_deleted} deleted)[/dim]"
-            )
-
-        try:
-            sem_status = idx.get_semantic_status()
-            if (
-                sem_status.get("runtime_available")
-                and sem_status.get("model_ready")
-                and int(sem_status.get("stale_or_missing_embeddings") or 0) > 0
-            ):
-                sem_res = idx.sync_semantic(force=False)
+        if not json_output:
+            if stats.was_clean and not force:
                 console.print(
-                    f"[bold green]✓ Synchronized semantic embeddings in {sem_res['duration_ms']:.2f}ms.[/bold green] "
-                    f"[dim](Encoded {sem_res['encoded_entities']}, reused {sem_res['reused_entities']} cached, pruned {sem_res['pruned_orphans']})[/dim]"
+                    f"[bold green]✓ Index is up to date.[/bold green] Verified in [dim]{stats.duration_ms:.2f}ms[/dim]."
                 )
-        except Exception:
-            pass
+            else:
+                mode = "Rebuilt" if force else "Synchronized"
+                console.print(
+                    f"[bold green]✓ {mode} index in {stats.duration_ms:.2f}ms.[/bold green] "
+                    f"[dim](Indexed {stats.indexed_new} new, updated {stats.updated_modified} modified, pruned {stats.pruned_deleted} deleted)[/dim]"
+                )
+
+        sem_payload: dict[str, object]
+        if no_semantic:
+            sem_payload = {"status": "skipped", "reason": "disabled_by_flag"}
+        else:
+            sem_payload = {"status": "skipped", "reason": "not_ready_or_up_to_date"}
+            try:
+                sem_status = idx.get_semantic_status()
+                if (
+                    sem_status.get("runtime_available")
+                    and sem_status.get("model_ready")
+                    and int(sem_status.get("stale_or_missing_embeddings") or 0) > 0
+                ):
+                    sem_res = idx.sync_semantic(force=False)
+                    sem_payload = {"status": "synchronized", **sem_res}
+                    if not json_output:
+                        console.print(
+                            f"[bold green]✓ Synchronized semantic embeddings in {sem_res['duration_ms']:.2f}ms.[/bold green] "
+                            f"[dim](Encoded {sem_res['encoded_entities']}, reused {sem_res['reused_entities']} cached, pruned {sem_res['pruned_orphans']})[/dim]"
+                        )
+            except Exception as exc:
+                sem_payload = {"status": "error", "error": str(exc)}
+
+        if json_output:
+            sync_status = "clean" if (stats.was_clean and not force) else ("rebuilt" if force else "synchronized")
+            console.print_json(
+                data={
+                    "status": sync_status,
+                    "was_clean": stats.was_clean,
+                    "forced": force,
+                    "duration_ms": round(stats.duration_ms, 2),
+                    "indexed_new": stats.indexed_new,
+                    "updated_modified": stats.updated_modified,
+                    "pruned_deleted": stats.pruned_deleted,
+                    "total_specs_scanned": stats.total_specs_scanned,
+                    "duplicate_id_collisions": list(stats.duplicate_id_collisions),
+                    "semantic_enabled": not no_semantic,
+                    "semantic": sem_payload,
+                }
+            )
 
 
 @index_app.command("search")

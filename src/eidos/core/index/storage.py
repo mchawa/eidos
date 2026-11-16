@@ -11,6 +11,7 @@ import copy
 import hashlib
 import os
 import sqlite3
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -150,6 +151,21 @@ CREATE VIRTUAL TABLE IF NOT EXISTS file_tokens_fts USING fts5(
 """
 
 
+_PROCESS_DB_LOCKS_GUARD = threading.Lock()
+_PROCESS_DB_LOCKS: dict[Path, threading.RLock] = {}
+_HELD_DB_LOCKS = threading.local()
+
+
+def _get_process_db_lock(lock_path: Path) -> threading.RLock:
+    """Return the intra-process re-entrant mutex guarding a resolved advisory ``index.db.lock`` path."""
+    with _PROCESS_DB_LOCKS_GUARD:
+        lock = _PROCESS_DB_LOCKS.get(lock_path)
+        if lock is None:
+            lock = threading.RLock()
+            _PROCESS_DB_LOCKS[lock_path] = lock
+        return lock
+
+
 def _db_lock_path(db_path: Path) -> Path:
     """Return the advisory lockfile path (e.g. ``index.db.lock``) guarding DDL and WAL recovery."""
     resolved = Path(db_path).resolve()
@@ -157,13 +173,40 @@ def _db_lock_path(db_path: Path) -> Path:
 
 
 @contextlib.contextmanager
-def _advisory_db_lock(db_path: Path, *, non_blocking: bool = False) -> Iterator[bool]:
-    """Acquire an OS advisory file lock on ``<db_path>.lock`` (``fcntl.flock`` on POSIX, ``msvcrt`` on Windows)."""
+def _advisory_db_lock(db_path: Path | None, *, non_blocking: bool = False) -> Iterator[bool]:
+    """Acquire an OS advisory file lock on ``<db_path>.lock`` (re-entrant per thread; ``fcntl.flock`` on POSIX, ``msvcrt`` on Windows)."""
+    if db_path is None or str(db_path) == ":memory:" or Path(db_path).name == ":memory:":
+        yield True
+        return
+
     lock_path = _db_lock_path(db_path)
+    held: dict[Path, int] | None = getattr(_HELD_DB_LOCKS, "counts", None)
+    if held is None:
+        held = {}
+        _HELD_DB_LOCKS.counts = held
+    if held.get(lock_path, 0) > 0:
+        held[lock_path] += 1
+        try:
+            yield True
+        finally:
+            remaining = held.get(lock_path, 1) - 1
+            if remaining <= 0:
+                held.pop(lock_path, None)
+            else:
+                held[lock_path] = remaining
+        return
+
+    proc_lock = _get_process_db_lock(lock_path)
+    if not proc_lock.acquire(blocking=not non_blocking):
+        yield False
+        return
+
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o666)
-    locked = False
+    fd = -1
+    os_locked = False
+    proc_held = True
     try:
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o666)
         if os.name == "nt":  # pragma: no cover
             import msvcrt
 
@@ -174,9 +217,14 @@ def _advisory_db_lock(db_path: Path, *, non_blocking: bool = False) -> Iterator[
             mode = msvcrt.LK_NBLCK if non_blocking else msvcrt.LK_LOCK
             try:
                 msvcrt.locking(fd, mode, 1)
-                locked = True
+                os_locked = True
             except OSError:
                 if non_blocking:
+                    with contextlib.suppress(OSError):
+                        os.close(fd)
+                    fd = -1
+                    proc_lock.release()
+                    proc_held = False
                     yield False
                     return
                 raise
@@ -186,15 +234,23 @@ def _advisory_db_lock(db_path: Path, *, non_blocking: bool = False) -> Iterator[
             flags = fcntl.LOCK_EX | (fcntl.LOCK_NB if non_blocking else 0)
             try:
                 fcntl.flock(fd, flags)
-                locked = True
+                os_locked = True
             except (BlockingIOError, OSError):
                 if non_blocking:
+                    with contextlib.suppress(OSError):
+                        os.close(fd)
+                    fd = -1
+                    proc_lock.release()
+                    proc_held = False
                     yield False
                     return
                 raise
+        held[lock_path] = 1
         yield True
     finally:
-        if locked:
+        if os_locked:
+            held.pop(lock_path, None)
+        if os_locked and fd >= 0:
             with contextlib.suppress(OSError):
                 if os.name == "nt":  # pragma: no cover
                     import msvcrt
@@ -205,8 +261,42 @@ def _advisory_db_lock(db_path: Path, *, non_blocking: bool = False) -> Iterator[
                     import fcntl
 
                     fcntl.flock(fd, fcntl.LOCK_UN)
-        with contextlib.suppress(OSError):
-            os.close(fd)
+        if fd >= 0:
+            with contextlib.suppress(OSError):
+                os.close(fd)
+        if proc_held:
+            proc_lock.release()
+
+
+def _resolve_conn_db_path(conn: sqlite3.Connection, fallback_db_path: Path | None = None) -> Path | None:
+    """Resolve the backing file path of a SQLite connection, returning None for in-memory databases."""
+    with contextlib.suppress(sqlite3.Error):
+        db_list = conn.execute("PRAGMA database_list;").fetchall()
+        main_file = str(db_list[0][2] or "") if db_list else ""
+        if main_file == ":memory:":
+            return None
+        if main_file:
+            return Path(main_file).resolve()
+    if fallback_db_path is not None and str(fallback_db_path) != ":memory:" and Path(fallback_db_path).name != ":memory:":
+        return Path(fallback_db_path).resolve()
+    return None
+
+
+@contextlib.contextmanager
+def _immediate_write_transaction(conn: sqlite3.Connection) -> Iterator[None]:
+    """Run SQLite writes inside an explicit ``BEGIN IMMEDIATE`` transaction to avoid deferred-lock deadlocks."""
+    if conn.in_transaction:
+        with conn:
+            yield
+        return
+    conn.execute("BEGIN IMMEDIATE;")
+    try:
+        yield
+        conn.commit()
+    except BaseException:
+        with contextlib.suppress(sqlite3.Error):
+            conn.rollback()
+        raise
 
 
 def _is_corrupt_database_error(exc: BaseException) -> bool:

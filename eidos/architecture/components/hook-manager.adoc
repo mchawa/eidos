@@ -17,7 +17,6 @@ Validates agent lifecycle hook configurations (`hooks.json`) and Agent Skills pa
 
 == Public Surface
 * `validate_plugin_package(plugin_dir: Path, version: str | None = None) -> PluginValidationReport`
-* `_verify_hook_command(handler: dict[str, Any], hook_name: str, event_key: str, plugin_dir: Path, report: PluginValidationReport) -> None`
 
 == Design Constraints & Operational Notes
 * **Completion-Scoped Drift Gate (`DEC-PLUGIN-STOP-SCOPED-DRIFT-GATE`, `DEC-PLUGIN-TURN-SCOPED-STOP-GATE`)**: Ensures full drift gates run only at turn completion (`Stop`) while permitting sub-10ms `SessionStart` / `UserPromptSubmit` baseline capture.

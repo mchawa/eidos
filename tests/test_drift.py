@@ -39,6 +39,7 @@ def test_classify_changed_files():
 
 
 def _patch_versions(monkeypatch, fn):
+    monkeypatch.setattr("eidos.vcs.drift._materialize_head_snapshot", lambda *args, **kwargs: None)
     monkeypatch.setattr("eidos.vcs.drift._get_file_versions", fn)
     monkeypatch.setattr(
         "eidos.vcs.drift._get_files_versions_batch",

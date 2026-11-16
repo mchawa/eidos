@@ -4,7 +4,7 @@ id: CAP-AGENT-002
 title: "Polyglot AST Code Graph & Structural Repo Map Intelligence"
 domain: DOM-AGENT-INTELLIGENCE
 status: active
-version: "1.4.0"
+version: "1.5.0"
 
 business:
   personas:
@@ -24,6 +24,10 @@ technical:
   components:
     - "CMP-AST-SYMBOL-INDEXER"
     - "CMP-TIERED-CONTEXT-COMPRESSOR"
+    - "CMP-INCREMENTAL-SYNC-ENGINE"
+    - "CMP-GRAPH-STORAGE"
+    - "CMP-SEMANTIC-EMBEDDING-ENGINE"
+    - "CMP-CLI-INDEX-COMMANDS"
   contracts:
     - "CTR-EIDOS-CLI"
   invariants:
@@ -51,6 +55,12 @@ technical:
     - id: INV-INDEX-CONCURRENT-WAL-SAFETY
       rule: "open_cache_connection and ArchitecturalIndex must coordinate DDL and corruption recovery via an advisory lockfile without PRAGMA mmap_size or unlinking active WAL sidecars on transient schema-change errors, isolate SQLite connections per thread, debounce in-process _ensure_synced checks via _last_synced_check, and rebuild >1,000 spec edges without hitting SQLITE_MAX_EXPR_DEPTH."
       test_binding: "tests/test_graph_index.py::test_concurrent_wal_lock_thread_isolation_and_large_edge_rebuild"
+    - id: INV-DOTNET-POLYGLOT-PARITY
+      rule: "The polyglot indexer and drift detector must classify .NET test project directories (*.Tests, *.UnitTests, *.IntegrationTests) and C# test suffixes (*Tests.cs, *Test.cs, *_Tests.cs, *_Test.cs) as code/test while excluding obj/ and dotnet bin/ outputs, extract parameterized and attribute-decorated C# test bindings ([Fact(...)], [Theory(...)], [TestCase(...)], [TestMethod] while skipping [Ignore] and Skip=), index C# properties/events/record properties and [Attribute]-stripped visibility, and derive consumes_api and depends_on edges from C#/JVM declared namespaces and .csproj ProjectReference links."
+      test_binding: "tests/test_dotnet_polyglot_fixes.py::test_dotnet_test_detection_namespace_edges_and_public_surface"
+    - id: INV-INDEX-SYNC-CLI-CONTROLS
+      rule: "sync_index must serialize multi-process and multi-thread writes under re-entrant _advisory_db_lock and BEGIN IMMEDIATE (re-checking is_dirty on contention or PRAGMA data_version changes), while 'eidos index sync' must support --no-semantic and --json with auto_semantic=False and serialized semantic_sync.lock verification so foreground sync never spawns competing ONNX workers."
+      test_binding: "tests/test_dotnet_polyglot_fixes.py::test_parallel_sync_lock_and_cli_no_semantic_json"
 ---
 = Capability: Polyglot AST Code Graph & Structural Repo Map Intelligence
 :toc: left
@@ -75,7 +85,7 @@ In strict compliance with *POL-004-ZERO-AI-CALL-DEPENDENCY*, all AST extraction,
    Links code symbols directly to C4 containers (`CNT-*`), components (`CMP-*`), capability requirements (`CAP-*`), and invariant tests (`INV-*`) in a unified relational knowledge graph.
 4. **Syntax-Aware Invariant Traceability**:
    Resolves exact test functions (`def test_*`, `Class::test_*`, `it(...)`, `func Test*`, `#[test] fn`, `@Test fun`) enforcing capability invariants, preserving qualified `Class::method` keys so identical method names across test classes never overwrite each other.
-5. **Concurrent WAL-Safe AST Indexing & Path-Keyed Sync Parity (`INV-INDEX-CONCURRENT-WAL-SAFETY`)**:
-   Coordinates SQLite DDL and corruption recovery via an advisory lockfile (`index.db.lock`) without `PRAGMA mmap_size`, isolates SQLite connections per thread via `threading.local()`, debounces in-process `_ensure_synced` checks via `_last_synced_check`, batches `>1,000` spec-edge rebuilds without hitting `SQLITE_MAX_EXPR_DEPTH`, and monitors filesystem `mtime` across tracked source code and test suites.
+5. **Concurrent WAL-Safe AST Indexing & Path-Keyed Sync Parity (`INV-INDEX-CONCURRENT-WAL-SAFETY`, `INV-INDEX-SYNC-CLI-CONTROLS`, `INV-DOTNET-POLYGLOT-PARITY`)**:
+   Coordinates SQLite DDL, corruption recovery, and full `sync_index` write transactions via a re-entrant advisory lockfile (`index.db.lock`) and `BEGIN IMMEDIATE` transactions without `PRAGMA mmap_size`, isolates SQLite connections per thread via `threading.local()`, debounces in-process `_ensure_synced` checks via `_last_synced_check` with `PRAGMA data_version` handoff, batches `>1,000` spec-edge rebuilds without hitting `SQLITE_MAX_EXPR_DEPTH`, indexes `.NET` test suites (`*.Tests`, `*Tests.cs`) and C# namespace/`.csproj` dependency edges, and exposes `eidos index sync --no-semantic --json` without competing background ONNX subprocess races.
 6. **AST Engine & Invariant Telemetry (`eidos index status`)**:
    Exposes deterministic telemetry regarding the active AST parsing engine (`AstGrepIndexer`), symbol counts by syntax kind (classes, functions, methods, test bindings), and exact test-to-invariant assertion metrics with full `--json` support.

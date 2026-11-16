@@ -75,6 +75,16 @@ decisions:
       - option: "Overload eidos spec show to accept DLT-* SpecDeltas directly"
         reason_rejected: "Breaks CNT-EIDOS-CLI's intentional disjoint boundary between living catalog specifications (eidos spec) and mutation plans (eidos delta)."
     graduated_from: DLT-2026-136-ENFORCE-NON-3715
+  - id: DEC-CORE-SCOPED-PUBLIC-SURFACE-AND-LRU-CACHE
+    title: "Enforce Scoped Public Surface Visibility, Polyglot Inheritance, Prose Filtering, and mtime_ns LRU Caching"
+    decision: "Enforce strict public visibility on CNT-* containers and public-plus-internal/package-scoped visibility on CMP-* components (rejecting private, protected, and leading-underscore symbols everywhere), extract polyglot ':'/'implements'/'<' base classes, skip artifact extensions and bare prose backticks, scope OpenAPI reverse route scanning away from boundary/contrastive prose, and replace the 512-entry full-clear symbol cache with an 8,192-entry (path, mtime_ns, st_size) LRU cache backed by pruned os.walk file enumeration."
+    rationale: "Strict container visibility prevents leaking internal implementation details at Level 2 while allowing internal/package-scoped symbols on internal Level 3 components; mtime_ns-first LRU caching eliminates full-flush thrashing and redundant SHA-256 reads across >1,000-file .NET solutions."
+    rejected_alternatives:
+      - option: "Enforce strict public-only visibility identically on both CNT-* and CMP-* specs"
+        reason_rejected: "Internal C4 components legitimately document assembly-internal (C# internal) and package-scoped building blocks."
+      - option: "Keep 512-entry dict.clear() cache keyed by SHA-256 bytes read"
+        reason_rejected: "Wipes the entire cache mid-container on large polyglot solutions and re-reads/hashes every source file even on warm hits."
+    graduated_from: DLT-2026-138-FIX-SQLITE-SYNC-CONCURRENCY-5FB4
 
 contracts:
   provides: []
@@ -89,7 +99,7 @@ This container represents the foundational library under `src/eidos/core/` (`spe
 == Internal Structure & Key Mechanisms
 `CNT-EIDOS-CORE` is structured into three internal subpackages plus the packaged `assets/schemas/v1/` schema bundle:
 
-* **Specification Parsing & Validation (`src/eidos/core/spec/`, `DEC-CORE-NON-EMPTY-SCHEMA-STRINGS-AND-DELTA-SHOW`, `DEC-CORE-STRICT-DELTA-AND-SURFACE-VERIFICATION`)**: Parses AsciiDoc documents with YAML frontmatter via Rust-backed `fastyaml-rs` (tolerating trailing `---` document end markers and surfacing `UnicodeDecodeError` cleanly), resolves entity types parent-directory-first, and validates all 16 v1 document types against JSON Schema Draft 2020-12 (`minLength: 1` / non-whitespace `non_empty_string`, `minItems: 1` `code_paths`, and `"cli"` client platform), recursive `x-eidos-ref` cross-references, bidirectional multi-protocol `CTR-*` contract parity (`cli_args` imported sub-apps, `openapi`, `protobuf` messages/enums, `graphql`, `python_protocol`), per-class `== Public Surface` AST parity, repository-contained `tokens.manifest` files, and active `file::symbol` `INV-*` test bindings.
+* **Specification Parsing & Validation (`src/eidos/core/spec/`, `DEC-CORE-NON-EMPTY-SCHEMA-STRINGS-AND-DELTA-SHOW`, `DEC-CORE-STRICT-DELTA-AND-SURFACE-VERIFICATION`, `DEC-CORE-SCOPED-PUBLIC-SURFACE-AND-LRU-CACHE`)**: Parses AsciiDoc documents with YAML frontmatter via Rust-backed `fastyaml-rs` (tolerating trailing `---` document end markers and surfacing `UnicodeDecodeError` cleanly), resolves entity types parent-directory-first, and validates all 16 v1 document types against JSON Schema Draft 2020-12 (`minLength: 1` / non-whitespace `non_empty_string`, `minItems: 1` `code_paths`, and `"cli"` client platform), recursive `x-eidos-ref` cross-references, bidirectional multi-protocol `CTR-*` contract parity (`cli_args` imported sub-apps, scoped `openapi` routes, `protobuf` messages/enums, `graphql`, `python_protocol`), scoped `== Public Surface` AST parity with 8,192-entry `mtime_ns` LRU caching, repository-contained `tokens.manifest` files, and active `file::symbol` `INV-*` test bindings.
 * **Specification & SpecDelta Lifecycle (`src/eidos/core/lifecycle/`, `DEC-CORE-STRICT-DELTA-AND-SURFACE-VERIFICATION`)**: Orchestrates greenfield repository initialization (`init_repository`), live catalog-aware blueprint generation without nonexistent placeholder IDs, quote-safe YAML scalar updates, ambiguity-checked ID lookups, cross-branch collision-free SpecDelta IDs, non-empty `mutations` verification across `add`/`modify`/`deprecate`/`remove` (with CRLF-normalized and shallow-clone-safe baselines), lossless multi-line exploration archiving, tombstone pattern auditing, and dynamic `SYS-*` Keep a Changelog compilation.
 * **Workspace & Asset Resolution (`src/eidos/core/workspace/`)**: Resolves repository roots (`eidos/`), enclosing `.git` worktree roots (`find_git_root`), cached `.gitignore`-aware monorepo sub-project boundaries (`discover_nested_subproject_roots`), `{a,b}` brace-glob `source_path` ownership rules, Git-tracked file preservation inside excluded directory names, repo-relative `.agents` filtering, and bundled schema/template assets.
 

@@ -692,10 +692,10 @@ def resolve_symbol_or_path_in_db(conn: sqlite3.Connection, query: str) -> list[d
             WITH all_mappings(symbol, entity_id, kind) AS (
                 SELECT symbol, entity_id, kind FROM symbol_mappings
                 UNION
-                SELECT symbol, entity_id, kind FROM code_symbols WHERE kind != 'import' AND is_test = 0
+                SELECT symbol, entity_id, kind FROM code_symbols WHERE kind NOT IN ('import', 'namespace') AND is_test = 0
                 UNION
                 SELECT parent_symbol || '.' || symbol, entity_id, 'method'
-                FROM code_symbols WHERE kind != 'import' AND is_test = 0 AND parent_symbol != ''
+                FROM code_symbols WHERE kind NOT IN ('import', 'namespace') AND is_test = 0 AND parent_symbol != ''
             )
             SELECT s.symbol, s.entity_id, s.kind, e.type, e.title, e.file_path, e.data_json
             FROM all_mappings s
@@ -867,10 +867,10 @@ def find_symbol_in_db(
         WITH all_mappings(symbol, entity_id, kind, is_test) AS (
             SELECT symbol, entity_id, kind, 0 AS is_test FROM symbol_mappings
             UNION
-            SELECT symbol, entity_id, kind, is_test FROM code_symbols WHERE kind != 'import'
+            SELECT symbol, entity_id, kind, is_test FROM code_symbols WHERE kind NOT IN ('import', 'namespace')
             UNION
             SELECT parent_symbol || '.' || symbol, entity_id, 'method', is_test
-            FROM code_symbols WHERE kind != 'import' AND parent_symbol != ''
+            FROM code_symbols WHERE kind NOT IN ('import', 'namespace') AND parent_symbol != ''
         )
         SELECT s.symbol, s.entity_id, s.kind, s.is_test, e.title, e.type, e.file_path
         FROM all_mappings s

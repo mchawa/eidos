@@ -193,11 +193,14 @@ Options:
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
 #### `eidos index sync`
-Manually synchronize or force a full clean rebuild of the SQLite database and FTS5 index.
+Manually synchronize or force a full clean rebuild of the SQLite database and FTS5 index, with optional Harrier semantic embedding control and JSON telemetry.
 
 ```bash
 # Incremental synchronization (auto-triggered on queries if dirty)
 eidos index sync
+
+# Fast structural/AST sync skipping Harrier ONNX embedding generation
+eidos index sync --no-semantic --json
 
 # Force complete rebuild from scratch
 eidos index sync --force
@@ -205,6 +208,8 @@ eidos index sync --force
 
 Options:
 * `--force`: Force complete drop and rebuild of all tables and indexes.
+* `--no-semantic`: Skip Harrier ONNX semantic embedding synchronization when provisioned.
+* `--json`: Output synchronization metrics and semantic status as machine-readable JSON.
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
 #### `eidos index search`

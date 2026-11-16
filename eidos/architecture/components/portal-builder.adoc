@@ -13,12 +13,11 @@ source_path: src/eidos/portal/builder.py
 Compiles self-contained, zero-backend static documentation portals (`index.html`, `data.json`, `favicon.svg`) for GitHub Pages, GitLab Pages, S3, and offline `file://` inspection (`eidos portal build`).
 
 == Key Responsibilities & Collaborators
-* **Chunked Local Static Export & Payload Deduplication (`DEC-PORTAL-PAYLOAD-DEDUP-AND-CLIENT-BFS`, `DEC-PORTAL-STRICT-SANITIZATION-AND-SSE-CHUNKING`)**: Deduplicates prose strings (`_deduplicate_portal_payload`) and by default (`single_file=False`) externalizes local `./assets/*` JS/CSS bundles and per-entity `./specs/<id>.json` body chunks alongside compact `index.html` and `data.json` files (while supporting `--single-file` / `single_file=True` to inline all assets and spec bodies into a single standalone `index.html` for `file://` archives).
+* **Chunked Local Static Export & Payload Deduplication (`DEC-PORTAL-PAYLOAD-DEDUP-AND-CLIENT-BFS`, `DEC-PORTAL-STRICT-SANITIZATION-AND-SSE-CHUNKING`)**: Deduplicates prose strings in exported JSON payloads and by default (`single_file=False`) externalizes local `./assets/*` JS/CSS bundles and per-entity `./specs/<id>.json` body chunks alongside compact `index.html` and `data.json` files (while supporting `--single-file` / `single_file=True` to inline all assets and spec bodies into a single standalone `index.html` for `file://` archives).
 * **Safe Inline Script Embedding**: Escapes `<!--` as `\u003c!--` alongside `</` (`\u003c/`), `U+2028`, and `U+2029` when embedding `window.__EIDOS_DATA__` so HTML comments inside specification prose never corrupt script-data parsing.
 
 == Public Surface
 * `build_static_portal(eidos_dir: Path, output_dir: Path, single_file: bool = False) -> Path`
-* `_deduplicate_portal_payload(data: dict[str, Any]) -> dict[str, Any]`
 
 == Design Constraints & Operational Notes
 * **100% Static & Network-Silent (`INV-PORTAL-STATIC-SCALABILITY`)**: Emitted static builds contain pre-computed graph edges and validation diagnostics, requiring zero backend API servers or external CDN requests.
