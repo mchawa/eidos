@@ -46,22 +46,9 @@ def safe_load_yaml(stream_or_str: str | bytes | Any) -> Any:
 
 def safe_dump_yaml(data: Any, stream: Any = None, **kwargs: Any) -> str:
     """Serialize Python data into clean block-style YAML via fast_yaml."""
-    sort_keys = bool(kwargs.get("sort_keys", False))
-    allow_unicode = bool(kwargs.get("allow_unicode", True))
-    default_flow_style = kwargs.get("default_flow_style", False)
-    raw_width = kwargs.get("width", 1000)
-    width = min(max(int(raw_width), 20), 1000) if raw_width is not None else 1000
+    dump_kwargs = {"sort_keys": False, "default_flow_style": False, **kwargs}
     try:
-        out: str = (
-            fast_yaml.safe_dump(
-                data,
-                sort_keys=sort_keys,
-                allow_unicode=allow_unicode,
-                default_flow_style=default_flow_style,
-                width=width,
-            )
-            or ""
-        )
+        out: str = fast_yaml.safe_dump(data, **dump_kwargs) or ""
     except (fast_yaml.YAMLError, ValueError, TypeError) as exc:
         raise YamlError(str(exc) or "Failed to emit YAML") from exc
 

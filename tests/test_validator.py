@@ -5056,10 +5056,13 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
         "type": "string",
         "description": "override",
     }
-    assert _resolve_schema_node(
-        {"$ref": "#/$defs/a"},
-        {"a": {"$ref": "#/$defs/b"}, "b": {"$ref": "#/$defs/a", "type": "string"}},
-    )["type"] == "string"
+    assert (
+        _resolve_schema_node(
+            {"$ref": "#/$defs/a"},
+            {"a": {"$ref": "#/$defs/b"}, "b": {"$ref": "#/$defs/a", "type": "string"}},
+        )["type"]
+        == "string"
+    )
     assert _synthesize_example_value("x", {"default": "dval"}, {}) == "dval"
     assert _synthesize_example_value("test_binding", {"type": "string"}, {}) == "tests/test_example.py::test_invariant"
     assert _synthesize_example_value("version", {"type": "string"}, {}) == "1.0.0"
@@ -5333,3 +5336,41 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
     (uninst_dir / "file_a.txt").write_text("a", encoding="utf-8")
     (uninst_dir / MANIFEST_FILENAME).write_bytes(b'{"files": ["file_a.txt", "sub_empty", "AGENTS.md"]}')
     assert _uninstall_from_manifest(uninst_dir) is True
+
+
+def test_safe_dump_yaml_fast_yaml_08_compatibility():
+    """Verify INV-SPEC-VALIDATION: safe_dump_yaml and spec schema introspection run natively on fastyaml-rs >= 0.8.0."""
+    import importlib.metadata
+
+    import orjson
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.core.lifecycle.scaffolder import get_spec_schema_info
+    from eidos.core.spec.parser import YamlError, safe_dump_yaml
+
+    ver_parts = tuple(int(p) for p in importlib.metadata.version("fastyaml-rs").split(".")[:2])
+    assert ver_parts >= (0, 8)
+
+    dumped_unicode = safe_dump_yaml({"title": "Café — Δ", "items": ["a", "b"]})
+    assert "Café — Δ" in dumped_unicode
+    assert "- a" in dumped_unicode and "- b" in dumped_unicode
+
+    dumped_opts = safe_dump_yaml({"b": 1, "a": 2}, sort_keys=True, indent=4, explicit_start=True)
+    assert dumped_opts.startswith("---\n")
+    assert dumped_opts.index("a:") < dumped_opts.index("b:")
+
+    with pytest.raises(YamlError):
+        safe_dump_yaml({"a": 1}, allow_unicode=True)
+
+    schemas = get_spec_schema_info()
+    assert isinstance(schemas, list) and len(schemas) == 16
+
+    runner = CliRunner()
+    res_list = runner.invoke(app, ["spec", "schema"])
+    assert res_list.exit_code == 0, res_list.output
+    assert "16 types" in res_list.output
+
+    res_comp = runner.invoke(app, ["spec", "schema", "component", "--json"])
+    assert res_comp.exit_code == 0, res_comp.output
+    assert orjson.loads(res_comp.stdout)["type"] == "tech/component"
