@@ -2286,3 +2286,270 @@ def test_portal_live_drift_sse_c4_context_and_screen_hydration(
     assert len(served_args) == 1 and served_args[0][2] == 3123
 
 
+def test_portal_server_disconnect_resilience_gzip_lock_isolation_and_dotnet_snapshot(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Verify INV-PORTAL-LIVE-DRIFT-SSE and INV-PORTAL-ZERO-NODE-DEP:
+    portal HTTP handlers suppress client disconnects, negotiate compact/gzip /api/data payloads,
+    isolate /api/data from slow drift locks, prune .NET bin/obj dirs cleanly, and skip semantic sync.
+    """
+    import errno
+    import gzip
+    import io
+    import socket
+    from http import HTTPStatus
+
+    import eidos.core.index.graph_index as gi
+    import eidos.vcs.drift as drift_mod
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.portal.server import (
+        EidosPortalHandler,
+        PortalThreadingHTTPServer,
+        _compute_eidos_mtime_snapshot,
+        _resolve_governed_candidate_dirs,
+    )
+
+    ws = tmp_path / "dotnet_portal_ws"
+    init_repository(ws, title="DotNet Portal")
+    eidos_dir = ws / "eidos"
+
+    svc_dir = ws / "GBFSolution" / "GBF.Service"
+    bin_dir = svc_dir / "bin" / "Debug" / "net8.0"
+    obj_dir = svc_dir / "obj"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    obj_dir.mkdir(parents=True, exist_ok=True)
+    (svc_dir / "GBF.Service.csproj").write_text("<Project Sdk=\"Microsoft.NET.Sdk\" />\n", encoding="utf-8")
+    dll_file = bin_dir / "GBF.dll"
+    obj_file = obj_dir / "project.assets.json"
+    cs_file = svc_dir / "PartyService.cs"
+    dll_file.write_bytes(b"MZ")
+    obj_file.write_text("{}", encoding="utf-8")
+    cs_file.write_text("public class PartyService { public void Ping() {} }\n", encoding="utf-8")
+
+    # Container uses a YAML list for source_path and wildcard component path
+    (eidos_dir / "architecture" / "containers" / "gbf.adoc").write_text(
+        "\n".join([
+            "---",
+            "type: tech/container",
+            "id: CNT-GBF",
+            "title: GBF Service",
+            "status: active",
+            "container_type: service",
+            "runtime: .NET 8",
+            "domain: DOM-CORE",
+            "source_path:",
+            "  - GBFSolution/GBF.Service",
+            "---",
+            "= Container: GBF Service",
+            "",
+        ]),
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "party.adoc").write_text(
+        "\n".join([
+            "---",
+            "type: tech/component",
+            "id: CMP-PARTY",
+            "title: PartyService",
+            "container: CNT-GBF",
+            "status: active",
+            'source_path: "GBFSolution/GBF.Service/*.cs"',
+            "---",
+            "= Component: PartyService",
+            "",
+        ]),
+        encoding="utf-8",
+    )
+
+    subprocess.run(["git", "init", "-q"], cwd=ws, check=True)
+    subprocess.run(["git", "config", "user.email", "test@eidos.local"], cwd=ws, check=True)
+    subprocess.run(["git", "config", "user.name", "Eidos Test"], cwd=ws, check=True)
+    subprocess.run(["git", "add", "."], cwd=ws, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=ws, check=True)
+
+    # 1. Verify _resolve_governed_candidate_dirs and .NET bin/obj pruning in _compute_eidos_mtime_snapshot
+    assert _resolve_governed_candidate_dirs("N/A", ws) == []
+    assert _resolve_governed_candidate_dirs("*.cs", ws) == []
+    assert _resolve_governed_candidate_dirs("GBFSolution/GBF.Service/Party*.cs", ws) == [svc_dir.resolve()]
+    snap_base = _compute_eidos_mtime_snapshot(eidos_dir)
+    time.sleep(0.01)
+    dll_file.write_bytes(b"MZ-UPDATED")
+    obj_file.write_text('{"targets":{}}', encoding="utf-8")
+    assert _compute_eidos_mtime_snapshot(eidos_dir) == snap_base
+    time.sleep(0.01)
+    cs_file.write_text("public class PartyService { public int Ping() => 1; }\n", encoding="utf-8")
+    assert _compute_eidos_mtime_snapshot(eidos_dir) != snap_base
+
+    # 2. Verify get_portal_data synchronizes dirty index with auto_semantic=False (never triggers ONNX sync)
+    sync_calls: list[dict[str, object]] = []
+    if gi._INDEX_INSTANCE is not None:
+        gi._INDEX_INSTANCE.close()
+        gi._INDEX_INSTANCE = None
+    arch_idx = gi.get_architectural_index(eidos_dir=eidos_dir, repo_root=ws, force_new=True)
+    orig_sync = arch_idx.sync
+
+    def _spy_sync(*args, **kwargs):
+        sync_calls.append(dict(kwargs))
+        return orig_sync(*args, **kwargs)
+
+    monkeypatch.setattr(arch_idx, "sync", _spy_sync)
+    arch_idx._last_synced_check = 0.0
+    portal_payload = get_portal_data(eidos_dir)
+    assert portal_payload["overview"]["total_specs"] >= 2
+    assert sync_calls and all(call.get("auto_semantic") is False for call in sync_calls)
+
+    # 3. Direct disconnect & error handling unit checks on EidosPortalHandler
+    h = EidosPortalHandler.__new__(EidosPortalHandler)
+    h.path = "/api/data"
+    h.close_connection = False
+    h.send_response = lambda *_a, **_kw: None
+    h.send_header = lambda *_a, **_kw: None
+    h.end_headers = lambda *_a, **_kw: None
+    h.wfile = io.BytesIO()
+    monkeypatch.setattr(h.wfile, "write", lambda _b: (_ for _ in ()).throw(BrokenPipeError(errno.EPIPE, "broken pipe")))
+    h._write_response(HTTPStatus.OK, "application/json", b"{}")
+    assert h.close_connection is True
+
+    h.close_connection = False
+    monkeypatch.setattr(h.wfile, "write", lambda _b: (_ for _ in ()).throw(OSError(errno.ENOSPC, "disk full")))
+    with pytest.raises(OSError):
+        h._write_response(HTTPStatus.OK, "application/json", b"{}")
+
+    h.close_connection = False
+    h.send_error = lambda *_a, **_kw: (_ for _ in ()).throw(ConnectionResetError(errno.ECONNRESET, "reset"))
+    h._safe_send_error(HTTPStatus.NOT_FOUND, "missing")
+    assert h.close_connection is True
+
+    # 4. Live server: gzip negotiation, client abort without handle_error traceback, lock isolation, and warmup
+    prev_eidos_dir = EidosPortalHandler.eidos_dir
+    EidosPortalHandler.eidos_dir = eidos_dir
+    for attr in (
+        "_cache_key",
+        "_cached_portal_data",
+        "_cached_portal_json_bytes",
+        "_cached_portal_gzip_bytes",
+        "_cached_validation_key",
+        "_cached_validation_res",
+        "_cached_drift_key",
+        "_cached_drift_res",
+    ):
+        setattr(EidosPortalHandler, attr, None)
+
+    handled_errors: list[tuple[object, object]] = []
+
+    class _RecordingServer(PortalThreadingHTTPServer):
+        def handle_error(self, request, client_address) -> None:
+            handled_errors.append((request, client_address))
+
+    httpd = _RecordingServer(("127.0.0.1", 0), EidosPortalHandler)
+    port = httpd.server_address[1]
+    srv_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    srv_thread.start()
+    try:
+        # 4a. Accept-Encoding: gzip returns compressed compact JSON; gzip;q=0 returns uncompressed JSON
+        req_gz = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/data",
+            headers={"Accept-Encoding": "gzip, deflate"},
+        )
+        with urllib.request.urlopen(req_gz, timeout=5) as resp_gz:
+            assert resp_gz.status == 200
+            assert resp_gz.headers.get("Content-Encoding") == "gzip"
+            assert resp_gz.headers.get("Vary") == "Accept-Encoding"
+            gz_parsed = orjson.loads(gzip.decompress(resp_gz.read()))
+            assert gz_parsed["overview"]["total_specs"] >= 2
+
+        req_plain = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/data",
+            headers={"Accept-Encoding": "gzip;q=0"},
+        )
+        with urllib.request.urlopen(req_plain, timeout=5) as resp_plain:
+            assert resp_plain.status == 200
+            assert resp_plain.headers.get("Content-Encoding") is None
+            plain_raw = resp_plain.read()
+            assert b"\n  " not in plain_raw  # compact orjson output
+            assert orjson.loads(plain_raw)["overview"]["total_specs"] >= 2
+
+        # 4b. Slow /api/events drift computation must NOT block /api/data
+        drift_entered = threading.Event()
+        release_drift = threading.Event()
+        orig_detect_drift = drift_mod.detect_drift
+
+        def _slow_detect_drift(*args, **kwargs):
+            drift_entered.set()
+            assert release_drift.wait(timeout=5.0)
+            return orig_detect_drift(*args, **kwargs)
+
+        with monkeypatch.context() as m:
+            m.setattr(drift_mod, "detect_drift", _slow_detect_drift)
+            EidosPortalHandler._cached_drift_key = None
+            EidosPortalHandler._cached_drift_res = None
+            sse_done = threading.Event()
+
+            def _fetch_sse() -> None:
+                try:
+                    with urllib.request.urlopen(
+                        f"http://127.0.0.1:{port}/api/events?once=1", timeout=5
+                    ) as sse_resp:
+                        sse_resp.read()
+                finally:
+                    sse_done.set()
+
+            sse_thread = threading.Thread(target=_fetch_sse, daemon=True)
+            sse_thread.start()
+            assert drift_entered.wait(timeout=3.0)
+
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/data", timeout=2.0) as fast_resp:
+                assert fast_resp.status == 200
+                assert orjson.loads(fast_resp.read())["overview"]["total_specs"] >= 2
+
+            release_drift.set()
+            sse_thread.join(timeout=5.0)
+            assert sse_done.is_set()
+
+        # 4c. Client resetting socket while /api/data is being generated must NOT call server.handle_error
+        import struct
+
+        entered_bundle = threading.Event()
+        proceed_bundle = threading.Event()
+        orig_bundle_fn = EidosPortalHandler._get_cached_portal_bundle
+
+        def _delayed_bundle(self):
+            entered_bundle.set()
+            proceed_bundle.wait(timeout=5.0)
+            return orig_bundle_fn(self)
+
+        with monkeypatch.context() as m:
+            m.setattr(EidosPortalHandler, "_get_cached_portal_bundle", _delayed_bundle)
+            with socket.create_connection(("127.0.0.1", port), timeout=5.0) as sock:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+                sock.sendall(f"GET /api/data HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n".encode())
+                assert entered_bundle.wait(timeout=3.0)
+            # Client sent TCP RST before response is written
+            time.sleep(0.05)
+            proceed_bundle.set()
+            time.sleep(0.15)
+        assert handled_errors == [], f"Unexpected handle_error calls on client disconnect: {handled_errors}"
+
+        # 4d. run_portal_server starts warmup thread cleanly before serve_forever
+        serve_called = threading.Event()
+
+        class _StubServeServer(PortalThreadingHTTPServer):
+            def serve_forever(self, poll_interval: float = 0.5) -> None:
+                serve_called.set()
+
+        with monkeypatch.context() as m:
+            m.setattr("eidos.portal.server.PortalThreadingHTTPServer", _StubServeServer)
+            run_portal_server(eidos_dir, host="127.0.0.1", port=0, open_browser=False)
+            assert serve_called.is_set()
+    finally:
+        for th in threading.enumerate():
+            if th.name == "eidos-portal-warmup":
+                th.join(timeout=5.0)
+        httpd.shutdown()
+        httpd.server_close()
+        EidosPortalHandler.eidos_dir = prev_eidos_dir
+        if gi._INDEX_INSTANCE is not None:
+            gi._INDEX_INSTANCE.close()
+            gi._INDEX_INSTANCE = None
+
+

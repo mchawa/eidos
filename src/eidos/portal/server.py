@@ -1,5 +1,8 @@
 """Local HTTP server hosting the interactive Eidos Living Web Portal."""
 
+import contextlib
+import errno
+import gzip
 import logging
 import os
 import re
@@ -16,65 +19,123 @@ from typing import Any
 
 import orjson
 
+from eidos.core.index.storage import get_cached_spec_document
 from eidos.core.spec.validator import SpecValidator
-from eidos.core.workspace.project import find_repo_root
+from eidos.core.workspace.project import (
+    STANDARD_EXCLUDED_DIRS,
+    discover_nested_subproject_roots,
+    extract_entity_paths,
+    find_repo_root,
+    is_dotnet_bin_dir,
+)
 from eidos.portal.assets import get_portal_favicon_svg, get_portal_html_template
 from eidos.portal.generator import _to_repo_rel_posix, get_portal_data
 
 logger = logging.getLogger("eidos.portal")
 
-_SNAPSHOT_SKIP_DIRS: frozenset[str] = frozenset(
-    {
-        ".git",
-        "node_modules",
-        "__pycache__",
-        ".venv",
-        "venv",
-        ".cache",
-        "dist",
-        "site",
-        ".pytest_cache",
-        ".ruff_cache",
-        ".mypy_cache",
-        ".tox",
-        "htmlcov",
-    }
+_SNAPSHOT_SKIP_DIRS: frozenset[str] = frozenset(STANDARD_EXCLUDED_DIRS)
+_SNAPSHOT_SKIP_SUFFIXES: frozenset[str] = frozenset(
+    {".pyc", ".pyo", ".pyd", ".swp", ".sqlite", ".sqlite3", ".db", ".lock", ".dll", ".pdb", ".exe", ".cache"}
 )
-_SNAPSHOT_SKIP_SUFFIXES: frozenset[str] = frozenset({".pyc", ".pyo", ".pyd", ".swp", ".sqlite", ".sqlite3", ".db"})
 _LOOPBACK_HOSTS: frozenset[str] = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
+
+_GOVERNED_ROOTS_LOCK = threading.Lock()
+_GOVERNED_ROOTS_CACHE: dict[Path, tuple[tuple[int, int, int, int], list[Path]]] = {}
+
+
+def _is_client_disconnect_error(exc: BaseException) -> bool:
+    """Return True when ``exc`` indicates the HTTP client closed/aborted the socket."""
+    if isinstance(exc, (BrokenPipeError, ConnectionResetError)):
+        return True
+    return isinstance(exc, OSError) and exc.errno in (errno.EPIPE, errno.ECONNRESET, errno.ECONNABORTED)
+
+
+def _resolve_governed_candidate_dirs(raw_pat: str, repo_root: Path) -> list[Path]:
+    """Resolve a declared ``source_path`` or ``specification_file`` pattern to existing directories under ``repo_root``."""
+    cleaned = str(raw_pat or "").strip().replace("\\", "/")
+    while cleaned.startswith("./"):
+        cleaned = cleaned[2:]
+    cleaned = cleaned.lstrip("/")
+    if not cleaned or cleaned.upper() == "N/A":
+        return []
+
+    wild_indices = [idx for ch in ("*", "?", "[", "{") if (idx := cleaned.find(ch)) != -1]
+    if wild_indices:
+        first_wild = min(wild_indices)
+        before_wild = cleaned[:first_wild]
+        if before_wild.endswith("/") or not before_wild:
+            cleaned = before_wild.rstrip("/")
+        elif "/" in before_wild:
+            cleaned = before_wild.rsplit("/", 1)[0]
+        else:
+            return []
+        if not cleaned:
+            return []
+
+    cand_path = (repo_root / cleaned).resolve()
+    if cand_path.is_relative_to(repo_root) and cand_path.exists():
+        return [cand_path if cand_path.is_dir() else cand_path.parent]
+    return []
 
 
 def _discover_governed_roots(eidos_path: Path, repo_root: Path) -> list[Path]:
-    """Return deduplicated governed directories (eidos/, src/, tests/, and declared container source_path roots)."""
-    candidates: list[Path] = [eidos_path]
-    for std_dir in ("src", "tests"):
-        cand = repo_root / std_dir
-        if cand.is_dir():
-            candidates.append(cand)
+    """Return deduplicated governed directories (eidos/, src/, tests/, and declared container/component source_path roots)."""
+    eidos_resolved = eidos_path.resolve()
+    src_dir = repo_root / "src"
+    tests_dir = repo_root / "tests"
 
-    containers_dir = eidos_path / "architecture" / "containers"
-    if containers_dir.is_dir():
-        for adoc_file in containers_dir.glob("*.adoc"):
-            try:
-                head = adoc_file.read_text(encoding="utf-8", errors="ignore")[:4096]
-            except OSError:
-                continue
-            for m in re.finditer(r"source_path\s*:\s*(.+)", head):
-                raw_val = m.group(1).strip()
-                tokens = re.findall(r'["\']([^"\']+)["\']', raw_val) or [raw_val.strip("[] ")]
-                for tok in tokens:
-                    cleaned = tok.strip()
-                    if not cleaned or cleaned == "N/A" or cleaned.startswith("-"):
-                        continue
-                    cand_path = (repo_root / cleaned).resolve()
-                    if cand_path.is_relative_to(repo_root) and cand_path.exists():
-                        candidates.append(cand_path if cand_path.is_dir() else cand_path.parent)
+    adoc_paths: list[Path] = []
+    max_adoc_mtime = 0
+    for arch_sub in ("containers", "components"):
+        sub_dir = eidos_resolved / "architecture" / arch_sub
+        if not sub_dir.is_dir():
+            continue
+        with contextlib.suppress(OSError), os.scandir(sub_dir) as it:
+            for entry in it:
+                if entry.name.endswith(".adoc") and entry.is_file(follow_symlinks=False):
+                    adoc_paths.append(Path(entry.path))
+                    with contextlib.suppress(OSError):
+                        mtime_ns = entry.stat(follow_symlinks=False).st_mtime_ns
+                        if mtime_ns > max_adoc_mtime:
+                            max_adoc_mtime = mtime_ns
+
+    sig = (len(adoc_paths), max_adoc_mtime, int(src_dir.is_dir()), int(tests_dir.is_dir()))
+    with _GOVERNED_ROOTS_LOCK:
+        cached = _GOVERNED_ROOTS_CACHE.get(eidos_resolved)
+        if cached is not None and cached[0] == sig and all(p.exists() for p in cached[1]):
+            return list(cached[1])
+
+    candidates: list[Path] = [eidos_resolved]
+    if src_dir.is_dir():
+        candidates.append(src_dir)
+    if tests_dir.is_dir():
+        candidates.append(tests_dir)
+
+    for adoc_file in adoc_paths:
+        doc, _, _ = get_cached_spec_document(adoc_file)
+        if doc is not None and isinstance(doc.frontmatter, dict):
+            for pat in extract_entity_paths(doc.frontmatter):
+                candidates.extend(_resolve_governed_candidate_dirs(pat, repo_root))
+            continue
+        try:
+            head = adoc_file.read_text(encoding="utf-8", errors="ignore")[:4096]
+        except OSError:
+            continue
+        for m in re.finditer(r"source_path\s*:\s*(.+)", head):
+            raw_val = m.group(1).strip()
+            tokens = re.findall(r'["\']([^"\']+)["\']', raw_val) or [raw_val.strip("[] ")]
+            for tok in tokens:
+                if not tok.strip().startswith("-"):
+                    candidates.extend(_resolve_governed_candidate_dirs(tok, repo_root))
 
     resolved_unique: list[Path] = []
     for c in sorted({p.resolve() for p in candidates if p.exists()}, key=lambda p: len(p.parts)):
         if not any(c != parent and c.is_relative_to(parent) for parent in resolved_unique):
             resolved_unique.append(c)
-    return resolved_unique
+
+    with _GOVERNED_ROOTS_LOCK:
+        _GOVERNED_ROOTS_CACHE[eidos_resolved] = (sig, resolved_unique)
+    return list(resolved_unique)
 
 
 def _resolve_portal_repo_root(eidos_resolved: Path) -> Path:
@@ -84,36 +145,59 @@ def _resolve_portal_repo_root(eidos_resolved: Path) -> Path:
     return find_repo_root(eidos_resolved)
 
 
-def _compute_eidos_mtime_snapshot(eidos_dir: Path) -> tuple[int, int, int]:
-    """Compute a lightweight (file_count, max_mtime_ns, total_size) snapshot across eidos/, src/, and tests/."""
+def _compute_eidos_mtime_snapshot_timed(eidos_dir: Path) -> tuple[tuple[int, int, int], float]:
+    """Compute a lightweight ``(file_count, max_mtime_ns, total_size)`` snapshot and scan duration in seconds."""
+    t0 = time.perf_counter()
     if not eidos_dir.is_dir():
-        return (0, 0, 0)
+        return ((0, 0, 0), time.perf_counter() - t0)
     eidos_resolved = eidos_dir.resolve()
     repo_root = _resolve_portal_repo_root(eidos_resolved)
     roots = _discover_governed_roots(eidos_resolved, repo_root)
+    nested_subprojects = set(discover_nested_subproject_roots(repo_root))
 
     count = 0
     max_mtime = 0
     total_size = 0
-    for root in roots:
-        for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = [d for d in dirnames if d not in _SNAPSHOT_SKIP_DIRS]
-            for fname in filenames:
+    stack: list[Path] = list(roots)
+    while stack:
+        cur_dir = stack.pop()
+        with contextlib.suppress(OSError), os.scandir(cur_dir) as it:
+            for entry in it:
+                if entry.is_symlink():
+                    continue
+                if entry.is_dir(follow_symlinks=False):
+                    dname = entry.name
+                    if dname in _SNAPSHOT_SKIP_DIRS:
+                        continue
+                    entry_path = Path(entry.path)
+                    if nested_subprojects and entry_path.resolve() in nested_subprojects:
+                        continue
+                    if dname.lower() == "bin" and is_dotnet_bin_dir(entry_path):
+                        continue
+                    stack.append(entry_path)
+                    continue
+                if not entry.is_file(follow_symlinks=False):
+                    continue
+                fname = entry.name
                 if fname == ".coverage" or fname.endswith("~"):
                     continue
                 lower_ext = os.path.splitext(fname)[1].lower()
                 if lower_ext in _SNAPSHOT_SKIP_SUFFIXES:
                     continue
-                fpath = os.path.join(dirpath, fname)
                 try:
-                    st = os.stat(fpath)
+                    st = entry.stat(follow_symlinks=False)
                 except OSError:
                     continue
                 count += 1
                 if st.st_mtime_ns > max_mtime:
                     max_mtime = st.st_mtime_ns
                 total_size += st.st_size
-    return (count, max_mtime, total_size)
+    return ((count, max_mtime, total_size), time.perf_counter() - t0)
+
+
+def _compute_eidos_mtime_snapshot(eidos_dir: Path) -> tuple[int, int, int]:
+    """Compute a lightweight (file_count, max_mtime_ns, total_size) snapshot across eidos/, src/, and tests/."""
+    return _compute_eidos_mtime_snapshot_timed(eidos_dir)[0]
 
 
 class PortalThreadingHTTPServer(ThreadingHTTPServer):
@@ -135,9 +219,14 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
     eidos_dir: Path = Path("eidos")
     static_dir: Path | None = None
     _sse_poll_interval: float = 0.5
-    _cache_lock: threading.Lock = threading.Lock()
+    _portal_data_lock: threading.Lock = threading.Lock()
+    _cache_lock: threading.Lock = _portal_data_lock
+    _validation_lock: threading.Lock = threading.Lock()
+    _drift_lock: threading.Lock = threading.Lock()
     _cache_key: tuple[str, int, int, int] | None = None
     _cached_portal_data: dict[str, Any] | None = None
+    _cached_portal_json_bytes: bytes | None = None
+    _cached_portal_gzip_bytes: bytes | None = None
     _cached_validation_key: tuple[str, int, int, int] | None = None
     _cached_validation_res: dict[str, Any] | None = None
     _cached_drift_key: tuple[str, int, int, int] | None = None
@@ -209,38 +298,75 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
             return False
         return not (req_port is not None and bool(bound_port) and req_port != bound_port)
 
+    def _safe_send_error(self, code: int, message: str | None = None) -> None:
+        try:
+            self.send_error(code, message)
+        except OSError as exc:
+            if _is_client_disconnect_error(exc):
+                self.close_connection = True
+                logger.debug("Client disconnected during error response %s: %s", getattr(self, "path", ""), exc)
+                return
+            raise
+
     def _check_request_isolation(self, path: str) -> bool:
         """Enforce Host header validation on all routes and Sec-Fetch-Site isolation on /api/*."""
         if not self._is_allowed_host(self.headers.get("Host")):
-            self.send_error(HTTPStatus.FORBIDDEN, "Forbidden Host header.")
+            self._safe_send_error(HTTPStatus.FORBIDDEN, "Forbidden Host header.")
             return False
         if path == "/api" or path.startswith("/api/"):
             sec_fetch_site = (self.headers.get("Sec-Fetch-Site") or "").strip().lower()
             if sec_fetch_site == "cross-site":
-                self.send_error(HTTPStatus.FORBIDDEN, "Cross-site API requests are forbidden.")
+                self._safe_send_error(HTTPStatus.FORBIDDEN, "Cross-site API requests are forbidden.")
                 return False
         return True
 
-    def _get_cached_portal_data(self) -> dict[str, Any]:
+    def _get_cached_portal_bundle(self) -> tuple[dict[str, Any], bytes, bytes]:
         snap = (str(self.eidos_dir.resolve()), *_compute_eidos_mtime_snapshot(self.eidos_dir))
-        with EidosPortalHandler._cache_lock:
-            if EidosPortalHandler._cache_key == snap and EidosPortalHandler._cached_portal_data is not None:
-                return EidosPortalHandler._cached_portal_data
+        with EidosPortalHandler._portal_data_lock:
+            if (
+                EidosPortalHandler._cache_key == snap
+                and EidosPortalHandler._cached_portal_data is not None
+                and EidosPortalHandler._cached_portal_json_bytes is not None
+                and EidosPortalHandler._cached_portal_gzip_bytes is not None
+            ):
+                return (
+                    EidosPortalHandler._cached_portal_data,
+                    EidosPortalHandler._cached_portal_json_bytes,
+                    EidosPortalHandler._cached_portal_gzip_bytes,
+                )
             data = get_portal_data(self.eidos_dir)
-            EidosPortalHandler._cache_key = snap
+            raw_bytes = orjson.dumps(data)
+            gz_bytes = gzip.compress(raw_bytes, compresslevel=5)
             EidosPortalHandler._cached_portal_data = data
-            return data
+            EidosPortalHandler._cached_portal_json_bytes = raw_bytes
+            EidosPortalHandler._cached_portal_gzip_bytes = gz_bytes
+            EidosPortalHandler._cache_key = snap
+            return (data, raw_bytes, gz_bytes)
+
+    def _get_cached_portal_data(self) -> dict[str, Any]:
+        return self._get_cached_portal_bundle()[0]
 
     def _get_cached_validation(self) -> dict[str, Any]:
         eidos_resolved = self.eidos_dir.resolve()
         repo_root_resolved = _resolve_portal_repo_root(eidos_resolved)
         snap = (str(eidos_resolved), *_compute_eidos_mtime_snapshot(self.eidos_dir))
-        with EidosPortalHandler._cache_lock:
+        with EidosPortalHandler._validation_lock:
             if (
                 EidosPortalHandler._cached_validation_key == snap
                 and EidosPortalHandler._cached_validation_res is not None
             ):
                 return EidosPortalHandler._cached_validation_res
+            cached_data = EidosPortalHandler._cached_portal_data
+            if (
+                EidosPortalHandler._cache_key == snap
+                and cached_data is not None
+                and isinstance(cached_data.get("validation"), dict)
+                and EidosPortalHandler._cache_key == snap
+            ):
+                res = dict(cached_data["validation"])
+                EidosPortalHandler._cached_validation_key = snap
+                EidosPortalHandler._cached_validation_res = res
+                return res
             validator = SpecValidator()
             report = validator.validate_directory(self.eidos_dir)
             normalized_errors: dict[str, list[str]] = {}
@@ -263,7 +389,7 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
 
         eidos_resolved = self.eidos_dir.resolve()
         snap = (str(eidos_resolved), *_compute_eidos_mtime_snapshot(self.eidos_dir))
-        with EidosPortalHandler._cache_lock:
+        with EidosPortalHandler._drift_lock:
             if EidosPortalHandler._cached_drift_key == snap and EidosPortalHandler._cached_drift_res is not None:
                 return EidosPortalHandler._cached_drift_res
             try:
@@ -335,15 +461,15 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
         max_events_raw = qs.get("max_events", [None])[0]
         max_events = int(max_events_raw) if (max_events_raw and str(max_events_raw).isdigit()) else (1 if once else 0)
 
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-        self.send_header("Cache-Control", "no-cache, no-transform")
-        self.send_header("Connection", "close" if max_events == 1 else "keep-alive")
-        self.send_header("X-Accel-Buffering", "no")
-        self.end_headers()
-
         try:
-            last_snap = _compute_eidos_mtime_snapshot(self.eidos_dir)
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache, no-transform")
+            self.send_header("Connection", "close" if max_events == 1 else "keep-alive")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+
+            last_snap, scan_elapsed = _compute_eidos_mtime_snapshot_timed(self.eidos_dir)
             initial_json = orjson.dumps(self._build_sse_status_payload(last_snap)).decode("utf-8")
             self.wfile.write(f"event: status\ndata: {initial_json}\n\n".encode())
             self.wfile.flush()
@@ -352,8 +478,13 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
                 self.close_connection = True
                 return
 
-            poll_interval = max(0.02, float(self._sse_poll_interval))
             while not getattr(self.server, "_portal_shutting_down", False):
+                base_interval = max(0.02, float(self._sse_poll_interval))
+                poll_interval = (
+                    max(base_interval, min(5.0, scan_elapsed * 4.0))
+                    if base_interval >= 0.5
+                    else base_interval
+                )
                 try:
                     readable, _, _ = select.select([self.connection], [], [], poll_interval)
                     if readable:
@@ -368,7 +499,7 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
                 if getattr(self.server, "_portal_shutting_down", False):
                     break
 
-                curr_snap = _compute_eidos_mtime_snapshot(self.eidos_dir)
+                curr_snap, scan_elapsed = _compute_eidos_mtime_snapshot_timed(self.eidos_dir)
                 if curr_snap != last_snap:
                     last_snap = curr_snap
                     update_json = orjson.dumps(self._build_sse_status_payload(curr_snap)).decode("utf-8")
@@ -393,8 +524,8 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
         elif path in ("/favicon.svg", "/favicon.ico"):
             self._send_svg(get_portal_favicon_svg())
         elif path == "/api/data":
-            data = self._get_cached_portal_data()
-            self._send_json(data)
+            _data, raw_bytes, gz_bytes = self._get_cached_portal_bundle()
+            self._send_json_bytes(raw_bytes, gz_bytes)
         elif path == "/api/overview":
             data = self._get_cached_portal_data()
             self._send_json(data.get("overview", {}))
@@ -418,20 +549,16 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
             rel_path = path.lstrip("/")
             full_path = (static_root / rel_path).resolve()
             if not full_path.resolve().is_relative_to(static_root):
-                self.send_error(HTTPStatus.FORBIDDEN, "Access denied.")
+                self._safe_send_error(HTTPStatus.FORBIDDEN, "Access denied.")
                 return
             if full_path.is_file():
                 payload = full_path.read_bytes()
                 mime_type = mimetypes.guess_type(str(full_path))[0] or "application/octet-stream"
-                self.send_response(HTTPStatus.OK)
-                self.send_header("Content-Type", mime_type)
-                self.send_header("Content-Length", str(len(payload)))
-                self.end_headers()
-                self.wfile.write(payload)
+                self._write_response(HTTPStatus.OK, mime_type, payload)
                 return
-            self.send_error(HTTPStatus.NOT_FOUND, f"Path '{path}' not found.")
+            self._safe_send_error(HTTPStatus.NOT_FOUND, f"Path '{path}' not found.")
         else:
-            self.send_error(HTTPStatus.NOT_FOUND, f"Path '{path}' not found.")
+            self._safe_send_error(HTTPStatus.NOT_FOUND, f"Path '{path}' not found.")
 
     def do_POST(self) -> None:
         parsed_url = urllib.parse.urlparse(self.path)
@@ -440,16 +567,16 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
             return
 
         if path != "/api/validate":
-            self.send_error(HTTPStatus.NOT_FOUND, f"Path '{path}' not found.")
+            self._safe_send_error(HTTPStatus.NOT_FOUND, f"Path '{path}' not found.")
             return
 
         try:
             content_length = int(self.headers.get("Content-Length", "0") or 0)
         except ValueError:
-            self.send_error(HTTPStatus.BAD_REQUEST, "Invalid Content-Length header.")
+            self._safe_send_error(HTTPStatus.BAD_REQUEST, "Invalid Content-Length header.")
             return
         if content_length < 0 or content_length > 10 * 1024 * 1024:
-            self.send_error(HTTPStatus.BAD_REQUEST, "Invalid or excessive Content-Length header.")
+            self._safe_send_error(HTTPStatus.BAD_REQUEST, "Invalid or excessive Content-Length header.")
             return
         payload: dict[str, Any] = {}
         if content_length > 0:
@@ -459,7 +586,7 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
                 if isinstance(parsed, dict):
                     payload = parsed
             except (UnicodeDecodeError, orjson.JSONDecodeError, ValueError):
-                self.send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON payload.")
+                self._safe_send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON payload.")
                 return
 
         resolved_eidos = self.eidos_dir.resolve()
@@ -469,38 +596,83 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
             raw_target.resolve() if raw_target.is_absolute() else (resolved_eidos.parent / raw_target).resolve()
         )
         if target_dir != resolved_eidos:
-            self.send_error(HTTPStatus.FORBIDDEN, "Validation is restricted to the active eidos directory.")
+            self._safe_send_error(HTTPStatus.FORBIDDEN, "Validation is restricted to the active eidos directory.")
             return
 
         res = self._get_cached_validation()
         self._send_json(res)
 
+    def _accepts_gzip(self) -> bool:
+        headers = getattr(self, "headers", None)
+        header = (headers.get("Accept-Encoding") or "").lower() if headers is not None else ""
+        for part in header.split(","):
+            tokens = [t.strip() for t in part.split(";") if t.strip()]
+            if not tokens or tokens[0] != "gzip":
+                continue
+            q_val = 1.0
+            for param in tokens[1:]:
+                if param.startswith("q="):
+                    with contextlib.suppress(ValueError):
+                        q_val = float(param[2:].strip())
+            return q_val > 0.0
+        return False
+
+    def _write_response(
+        self,
+        status: HTTPStatus,
+        content_type: str,
+        payload: bytes,
+        extra_headers: tuple[tuple[str, str], ...] = (),
+    ) -> None:
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(payload)))
+            for header_name, header_val in extra_headers:
+                self.send_header(header_name, header_val)
+            self.end_headers()
+            self.wfile.write(payload)
+        except OSError as exc:
+            if _is_client_disconnect_error(exc):
+                self.close_connection = True
+                logger.debug("Client disconnected while writing %s: %s", getattr(self, "path", ""), exc)
+                return
+            raise
+
     def _send_html(self, html_content: str) -> None:
-        payload = html_content.encode("utf-8")
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(payload)))
-        self.send_header("Cache-Control", "no-cache")
-        self.end_headers()
-        self.wfile.write(payload)
+        self._write_response(
+            HTTPStatus.OK,
+            "text/html; charset=utf-8",
+            html_content.encode("utf-8"),
+            (("Cache-Control", "no-cache"),),
+        )
 
     def _send_svg(self, svg_content: str) -> None:
-        payload = svg_content.encode("utf-8")
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "image/svg+xml")
-        self.send_header("Content-Length", str(len(payload)))
-        self.send_header("Cache-Control", "public, max-age=86400")
-        self.end_headers()
-        self.wfile.write(payload)
+        self._write_response(
+            HTTPStatus.OK,
+            "image/svg+xml",
+            svg_content.encode("utf-8"),
+            (("Cache-Control", "public, max-age=86400"),),
+        )
+
+    def _send_json_bytes(self, raw_bytes: bytes, gz_bytes: bytes | None = None) -> None:
+        if self._accepts_gzip():
+            body = gz_bytes if gz_bytes is not None else gzip.compress(raw_bytes, compresslevel=5)
+            extra = (
+                ("Cache-Control", "no-cache"),
+                ("Content-Encoding", "gzip"),
+                ("Vary", "Accept-Encoding"),
+            )
+        else:
+            body = raw_bytes
+            extra = (
+                ("Cache-Control", "no-cache"),
+                ("Vary", "Accept-Encoding"),
+            )
+        self._write_response(HTTPStatus.OK, "application/json; charset=utf-8", body, extra)
 
     def _send_json(self, data: dict[str, Any]) -> None:
-        payload = orjson.dumps(data, option=orjson.OPT_INDENT_2)
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(payload)))
-        self.send_header("Cache-Control", "no-cache")
-        self.end_headers()
-        self.wfile.write(payload)
+        self._send_json_bytes(orjson.dumps(data))
 
     def log_message(self, format: str, *args: Any) -> None:
         # Suppress noisy standard request logging in production/CLI
@@ -515,11 +687,28 @@ def run_portal_server(
 ) -> None:
     """Launch the Eidos Living Web Portal HTTP server."""
     target_dir = eidos_dir.resolve()
+    if EidosPortalHandler.eidos_dir != target_dir:
+        EidosPortalHandler._cache_key = None
+        EidosPortalHandler._cached_portal_data = None
+        EidosPortalHandler._cached_portal_json_bytes = None
+        EidosPortalHandler._cached_portal_gzip_bytes = None
+        EidosPortalHandler._cached_validation_key = None
+        EidosPortalHandler._cached_validation_res = None
+        EidosPortalHandler._cached_drift_key = None
+        EidosPortalHandler._cached_drift_res = None
     EidosPortalHandler.eidos_dir = target_dir
 
     server_address = (host, port)
     httpd = PortalThreadingHTTPServer(server_address, EidosPortalHandler)
     httpd.portal_bound_host = host
+
+    def _warm_portal_caches() -> None:
+        with contextlib.suppress(Exception):
+            warm_handler = EidosPortalHandler.__new__(EidosPortalHandler)
+            warm_handler.eidos_dir = target_dir
+            warm_handler._get_cached_portal_bundle()
+
+    threading.Thread(target=_warm_portal_caches, name="eidos-portal-warmup", daemon=True).start()
 
     url = f"http://{host}:{port}"
     print(f"\n⚡ Eidos Living Web Portal serving at: {url}")

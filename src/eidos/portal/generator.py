@@ -2,6 +2,7 @@
 
 import html
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -211,7 +212,14 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     from eidos.core.index.sync import build_spec_path_resolver
 
     arch_idx = get_architectural_index(eidos_dir=eidos_path, repo_root=eidos_path.parent)
-    arch_idx._ensure_synced()
+    now_mono = time.monotonic()
+    if arch_idx._last_synced_check <= 0.0 or (now_mono - arch_idx._last_synced_check) >= 0.05:
+        pre_dv_row = arch_idx._get_connection().execute("PRAGMA data_version;").fetchone()
+        pre_dv = int(pre_dv_row[0]) if pre_dv_row else 0
+        dirty_state = arch_idx.is_dirty()
+        if dirty_state[0]:
+            arch_idx.sync(dirty_state=dirty_state, auto_semantic=False, _pre_data_version=pre_dv)
+        arch_idx._last_synced_check = time.monotonic()
     conn = arch_idx._get_connection()
     _resolve_ref_id = build_spec_path_resolver(conn)
 
