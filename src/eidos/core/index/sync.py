@@ -118,7 +118,7 @@ def _upsert_file_tokens_fts(conn: sqlite3.Connection, rel_path: str, doc_type: s
     conn.execute("DELETE FROM file_tokens_fts WHERE rel_path = ?;", (rel_path,))
     if not text:
         return
-    unique_tokens = dict.fromkeys(m.group(0).lower() for m in _FILE_TOKEN_RE.finditer(text))
+    unique_tokens = dict.fromkeys(_FILE_TOKEN_RE.findall(text.lower()))
     if unique_tokens:
         conn.execute(
             "INSERT INTO file_tokens_fts (rel_path, doc_type, tokens) VALUES (?, ?, ?);",

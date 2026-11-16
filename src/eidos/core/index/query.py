@@ -150,10 +150,14 @@ def split_identifier(token: str) -> list[str]:
     ``get_tiered_context_slice`` -> ``[get, tiered, context, slice]``; ``ArchitecturalIndex`` ->
     ``[architectural, index]``; ``HTTPServer`` -> ``[http, server]``. Plain words return ``[word]``.
     """
+    if "_" not in token and token and token.isascii() and (len(token) == 1 or token.islower() or token[1:].islower()):
+        return [token.lower()]
     parts: list[str] = []
     for chunk in token.split("_"):
         if chunk:
-            parts.extend(p.lower() for p in _CAMEL_BOUNDARY_RE.split(chunk) if p)
+            for p in _CAMEL_BOUNDARY_RE.split(chunk):
+                if p:
+                    parts.append(p.lower())
     return parts
 
 
@@ -164,7 +168,9 @@ def compound_identifier_subtokens(text: str) -> str:
     compact, order-preserving, de-duplicated supplement for the FTS ``symbols`` column.
     """
     seen: dict[str, None] = {}
-    for ident in _IDENTIFIER_RE.findall(text or ""):
+    for ident in dict.fromkeys(_IDENTIFIER_RE.findall(text or "")):
+        if "_" not in ident and (len(ident) == 1 or ident.islower() or ident[1:].islower()):
+            continue
         parts = split_identifier(ident)
         if len(parts) > 1:
             for part in parts:

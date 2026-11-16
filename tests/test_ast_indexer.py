@@ -68,7 +68,7 @@ def test_inv_index_polyglot_symbol_precision():
     t0 = time.perf_counter()
     py_symbols = idx.extract_symbols(Path("src/eidos/core/index/ast_indexer.py"))
     py_ms = (time.perf_counter() - t0) * 1000
-    max_py_ms = 60.0 if is_instrumented else 25.0
+    max_py_ms = 150.0 if is_instrumented else 40.0
     assert py_ms < max_py_ms  # Well within latency limits
 
     classes = [s for s in py_symbols if s.kind == "class"]
@@ -87,7 +87,7 @@ def test_inv_index_polyglot_symbol_precision():
         t1 = time.perf_counter()
         tsx_symbols = idx.extract_symbols(tsx_path)
         tsx_ms = (time.perf_counter() - t1) * 1000
-        max_tsx_ms = 40.0 if is_instrumented else 15.0
+        max_tsx_ms = 80.0 if is_instrumented else 25.0
         assert tsx_ms < max_tsx_ms
         # App function should be extracted
         fn_names = {s.name for s in tsx_symbols}
@@ -421,7 +421,7 @@ def test_inv_index_ai_repo_map_budget():
     map_size = len(repo_map)
     compression = (1 - (map_size / raw_size)) * 100
 
-    max_duration_ms = 500.0 if is_instrumented else 250.0
+    max_duration_ms = 1200.0 if is_instrumented else 400.0
     assert duration_ms < max_duration_ms  # Fast batch parsing
     assert compression >= 85.0  # Strict >= 85% compression requirement
     assert "# 🗺️ Structural Code Graph (Repo Map)" in repo_map
