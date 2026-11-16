@@ -320,14 +320,19 @@ def _unlink_cache_files(db_path: Path) -> None:
                 candidate.unlink()
 
 
+_TEST_BINDING_CACHE_VERSION = "2"
+
+
 def _is_schema_current(conn: sqlite3.Connection) -> bool:
-    """Fast read-only check verifying ``conn`` already matches ``SCHEMA_VERSION`` with zero DDL statements."""
+    """Fast read-only check verifying ``conn`` already matches ``SCHEMA_VERSION`` and cache format versions with zero DDL statements."""
     existing_tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';")}
     user_tables = {t for t in existing_tables if not t.startswith(("sqlite_", "specs_fts_", "file_tokens_fts_"))}
     if user_tables == set(_MANAGED_TABLES) and "metadata" in existing_tables:
         row = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()
         if row and row[0] == SCHEMA_VERSION:
-            return True
+            tbc_row = conn.execute("SELECT value FROM metadata WHERE key = 'test_binding_cache_ver';").fetchone()
+            if tbc_row and tbc_row[0] == _TEST_BINDING_CACHE_VERSION:
+                return True
     return False
 
 
@@ -338,6 +343,15 @@ def _apply_cache_schema_ddl(conn: sqlite3.Connection) -> None:
     if user_tables == set(_MANAGED_TABLES) and "metadata" in existing_tables:
         row = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()
         if row and row[0] == SCHEMA_VERSION:
+            tbc_row = conn.execute("SELECT value FROM metadata WHERE key = 'test_binding_cache_ver';").fetchone()
+            if not tbc_row or tbc_row[0] != _TEST_BINDING_CACHE_VERSION:
+                with _immediate_write_transaction(conn):
+                    conn.execute("DELETE FROM test_binding_cache;")
+                    conn.execute("UPDATE indexed_files SET mtime = -1.0 WHERE doc_type = 'code/test';")
+                    conn.execute(
+                        "INSERT OR REPLACE INTO metadata (key, value) VALUES ('test_binding_cache_ver', ?);",
+                        (_TEST_BINDING_CACHE_VERSION,),
+                    )
             return
     if user_tables:
         stored_version = None
@@ -353,6 +367,10 @@ def _apply_cache_schema_ddl(conn: sqlite3.Connection) -> None:
         conn.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?);",
             (SCHEMA_VERSION,),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('test_binding_cache_ver', ?);",
+            (_TEST_BINDING_CACHE_VERSION,),
         )
 
 
@@ -587,7 +605,12 @@ def save_test_binding_cache(
     """Upsert and prune ``test_binding_cache`` entries via canonical ``open_cache_connection``."""
     if not to_upsert and not deleted_keys:
         return
-    with contextlib.suppress(OSError, sqlite3.Error), contextlib.closing(open_cache_connection(db_path)) as conn, conn:
+    with (
+        contextlib.suppress(OSError, sqlite3.Error),
+        _advisory_db_lock(db_path),
+        contextlib.closing(open_cache_connection(db_path)) as conn,
+        _immediate_write_transaction(conn),
+    ):
         if deleted_keys:
             conn.executemany(
                 "DELETE FROM test_binding_cache WHERE file_path = ?;",
@@ -602,3 +625,7 @@ def save_test_binding_cache(
                 """,
                 to_upsert,
             )
+        conn.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('test_binding_cache_ver', ?);",
+            (_TEST_BINDING_CACHE_VERSION,),
+        )

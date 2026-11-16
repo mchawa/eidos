@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import hashlib
 import os
 import subprocess
 import sys
@@ -11,14 +13,25 @@ import orjson
 from typer.testing import CliRunner
 
 from eidos.cli.main import app
-from eidos.core.index.ast_indexer import _is_component_surface_symbol, _is_public_symbol, get_ast_indexer
+from eidos.core.index.ast_indexer import (
+    _is_component_surface_symbol,
+    _is_public_symbol,
+    _strip_commented_out_code_blocks,
+    get_ast_indexer,
+)
 from eidos.core.index.graph_index import ArchitecturalIndex
 from eidos.core.index.semantic import _is_semantic_sync_locked_by_other, _semantic_sync_lock, sync_spec_embeddings
-from eidos.core.index.storage import _advisory_db_lock
+from eidos.core.index.storage import (
+    _advisory_db_lock,
+    load_test_binding_cache,
+    open_cache_connection,
+    save_test_binding_cache,
+)
 from eidos.core.index.sync import check_index_dirty
 from eidos.core.spec.validator import SpecValidator
 from eidos.core.workspace.project import is_dotnet_bin_dir, is_polyglot_test_file
 from eidos.vcs.diff import classify_changed_files, collect_polyglot_test_files
+from eidos.vcs.invariants import _verify_single_invariant, detect_orphan_invariants, extract_invariants_and_verify
 
 runner = CliRunner()
 
@@ -570,3 +583,178 @@ def test_dotnet_test_detection_namespace_edges_and_public_surface(tmp_path: Path
     assert all(isinstance(k[1], int) and isinstance(k[2], int) for k in cache_keys)
     rep_many_2 = validator.validate_directory(eidos_dir)
     assert rep_many_2.is_clean
+
+
+def test_orphan_invariants_ignores_commented_out_csharp_blocks_and_invoice_numbers(tmp_path: Path) -> None:
+    """Verify INV-DRIFT-DETECTION-ACCURACY: commented-out C# blocks, #if false sections, and pure-numeric invoice IDs do not cause false orphan reports while stale v1 test_binding_cache rows auto-invalidate."""
+    inv_pfx = "INV"
+    repo = tmp_path / "orphan_csharp_repo"
+    eidos_dir = repo / "eidos"
+    dom_dir = eidos_dir / "domains" / "billing" / "capabilities"
+    tests_dir = repo / "GBFSolution" / "GBF.Tests"
+    dom_dir.mkdir(parents=True, exist_ok=True)
+    tests_dir.mkdir(parents=True, exist_ok=True)
+
+    cs_rel = "GBFSolution/GBF.Tests/RemoteDocumentAttachmentService_Tests.cs"
+    cs_path = repo / cs_rel
+    cs_content = "\n".join([
+        "using Xunit;",
+        "public class RemoteDocumentAttachmentService_Tests",
+        "{",
+        "    /*",
+        "    [Fact]",
+        "    public async Task DeadAttachmentTest()",
+        "    {",
+        "        var payload = new Dictionary<string, string>",
+        "        {",
+        f'            {{ "UnifiedInvoiceNumber", "{inv_pfx}-2026-000123" }},',
+        f'            {{ "LegacyRef", "{inv_pfx}-LEGACY-COMMENTED-001" }}',
+        "        };",
+        "    }",
+        "    */",
+        "",
+        "#if false",
+        "    [Fact]",
+        "    public void DisabledByPreproc()",
+        "    {",
+        f'        var s = "{inv_pfx}-PREPROC-001";',
+        "    }",
+        "#elif false",
+        f'    var unused = "{inv_pfx}-PREPROC-ELIF";',
+        "#else",
+        "    // active else arm has no orphan",
+        "#endif",
+        "",
+        "    /*",
+        "    [Fact]",
+        "    public void PrecedingDeadTest() { }",
+        "    */",
+        f"    /// <summary>{inv_pfx}-XML-BOUND-001</summary>",
+        f"    // {inv_pfx}-REAL-BOUND-001",
+        "    [Fact]",
+        "    public void Should_Verify_Active_With_Globs()",
+        "    {",
+        f'        var liveInvoice = "{inv_pfx}-2026-999888";',
+        '        var globs = new[] { "apps/*/Dockerfile", "libs/*/Cargo.toml" };',
+        '        var verb = $@"C:\\{liveInvoice}\\/*not-comment*/";',
+        '        var raw = """/*not-comment*/""";',
+        f'        // var oldId = "{inv_pfx}-LINE-COMMENTED-001";',
+        f"        // eidos:fixture var kept = \"{inv_pfx}-FIXTURE-IN-COMMENT\";",
+        f'        var realOrphan = "{inv_pfx}-GENUINE-ORPHAN-001";',
+        "    }",
+        "}",
+        "",
+    ])
+    cs_path.write_text(cs_content, encoding="utf-8")
+
+    # Also exercise polyglot helper edge cases for high coverage and precision
+    js_stripped = _strip_commented_out_code_blocks(
+        "\n".join([
+            "/** @param {string} x " + f"{inv_pfx}-JSDOC-BOUND */",
+            "/* " + f"{inv_pfx}-PROSE-ONLY" + " */",
+            "const a = '/*'; const b = `/*\\`*/`; // let c = 'ignored';",
+            "/* { x = \"" + f"{inv_pfx}-DEAD-JS" + "\"; } */",
+        ]),
+        "sample.test.ts",
+    )
+    assert f"{inv_pfx}-JSDOC-BOUND" in js_stripped
+    assert f"{inv_pfx}-PROSE-ONLY" in js_stripped
+    assert "const a = '/*'" in js_stripped
+    assert "const b = `/*\\`*/`" in js_stripped
+    assert f"{inv_pfx}-DEAD-JS" not in js_stripped
+
+    go_stripped = _strip_commented_out_code_blocks('const p = `/*\\` + "*/";', "a_test.go")
+    assert "`/*\\`" in go_stripped
+    rs_stripped = _strip_commented_out_code_blocks(
+        "fn f<'a>() { let _c = 'x'; /* { let _z = \"" + f"{inv_pfx}-DEAD-RS" + "\"; } */ }",
+        "a_test.rs",
+    )
+    assert "fn f<'a>()" in rs_stripped
+    assert f"{inv_pfx}-DEAD-RS" not in rs_stripped
+
+    cap_path = dom_dir / "attachments.adoc"
+    cap_path.write_text(
+        "\n".join([
+            "---",
+            "type: product/capability",
+            "id: CAP-BILLING-001",
+            "title: Attachments",
+            "domain: DOM-BILLING",
+            "status: active",
+            'version: "1.0.0"',
+            "technical:",
+            "  invariants:",
+            f"    - id: {inv_pfx}-REAL-BOUND-001",
+            "      rule: Active attachment test verifies valid glob paths.",
+            f"      test_binding: {cs_rel}::RemoteDocumentAttachmentService_Tests::Should_Verify_Active_With_Globs",
+            f"    - id: {inv_pfx}-XML-BOUND-001",
+            "      rule: XML doc comment invariant binding remains intact.",
+            f"      test_binding: {cs_rel}",
+            "---",
+            "= Attachments",
+            "",
+        ]),
+        encoding="utf-8",
+    )
+
+    known_ids = {f"{inv_pfx}-REAL-BOUND-001", f"{inv_pfx}-XML-BOUND-001"}
+
+    # 1. Verify extract_invariants_and_verify and raw-string _verify_single_invariant
+    traces = extract_invariants_and_verify(eidos_dir, repo)
+    assert len(traces) == 2
+    assert all(t.has_test_coverage for t in traces), f"Uncovered invariants: {traces}"
+    assert _verify_single_invariant(f"{inv_pfx}-XML-BOUND-001", cs_rel, repo, {cs_rel: cs_content}, {}) == [cs_rel]
+    assert _verify_single_invariant(f"{inv_pfx}-LEGACY-COMMENTED-001", cs_rel, repo, {cs_rel: cs_content}, {}) == []
+
+    # 2. Verify uncached detect_orphan_invariants flags only the genuine orphan token
+    uncached_orphans = detect_orphan_invariants(
+        repo,
+        known_ids,
+        {cs_rel: cs_content},
+        eidos_dir=eidos_dir,
+    )
+    assert uncached_orphans == [
+        (f"{inv_pfx}-GENUINE-ORPHAN-001", f"{cs_rel}::RemoteDocumentAttachmentService_Tests::Should_Verify_Active_With_Globs")
+    ], f"Unexpected uncached orphans: {uncached_orphans}"
+
+    # 3. Seed stale v1 test_binding_cache row matching mtime_ns + sha256, verify auto-invalidation
+    db_path = eidos_dir / ".cache" / "index.db"
+    stat = cs_path.stat()
+    sha = hashlib.sha256(cs_content.encode("utf-8")).hexdigest()
+    stale_funcs = orjson.dumps(
+        {
+            "RemoteDocumentAttachmentService_Tests::DeadAttachmentTest": [
+                f"{inv_pfx}-2026-000123",
+                f"{inv_pfx}-LEGACY-COMMENTED-001",
+            ]
+        }
+    ).decode("utf-8")
+    save_test_binding_cache(db_path, [(cs_rel, stat.st_mtime_ns, sha, stale_funcs, "[]")])
+    with contextlib.closing(open_cache_connection(db_path)) as conn, conn:
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('test_binding_cache_ver', '1');")
+
+    assert load_test_binding_cache(db_path) == {}
+    with contextlib.closing(open_cache_connection(db_path)) as conn:
+        ver_row = conn.execute("SELECT value FROM metadata WHERE key = 'test_binding_cache_ver';").fetchone()
+        assert ver_row is not None and ver_row[0] == "2"
+
+    # 4. Run cached detect_orphan_invariants (all_tests_content=None) twice to verify cache rebuild + cache hit
+    cached_orphans_1 = detect_orphan_invariants(
+        repo,
+        known_ids,
+        None,
+        eidos_dir=eidos_dir,
+    )
+    assert cached_orphans_1 == [
+        (f"{inv_pfx}-GENUINE-ORPHAN-001", f"{cs_rel}::RemoteDocumentAttachmentService_Tests::Should_Verify_Active_With_Globs")
+    ], f"Unexpected cached orphans: {cached_orphans_1}"
+
+    cached_rows = load_test_binding_cache(db_path)
+    assert cs_rel in cached_rows
+    cached_orphans_2 = detect_orphan_invariants(
+        repo,
+        known_ids,
+        None,
+        eidos_dir=eidos_dir,
+    )
+    assert cached_orphans_2 == cached_orphans_1

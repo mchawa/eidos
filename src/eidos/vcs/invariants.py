@@ -20,6 +20,7 @@ import orjson
 
 from eidos.core.index.ast_indexer import (
     _has_function_level_fixture,
+    _strip_commented_out_code_blocks,
     extract_test_file_cache_payload,
 )
 from eidos.core.index.storage import (
@@ -67,6 +68,8 @@ _EXACT_INV_OR_POL_RE = re.compile(
 _EXACT_INV_RE = re.compile(
     r"(?<![A-Z0-9_-])(INV-[A-Z0-9]+(?:-[A-Z0-9]+)*)(?![A-Z0-9_]|-[A-Z0-9])"
 )
+# Numeric-only IDs (e.g. "INV-2026-000123") denote invoice/sequence numbers unless declared in specs.
+_NUMERIC_INVOICE_ID_RE = re.compile(r"^INV-\d+(?:-\d+)*$")
 _TS_JS_EXTS = frozenset({".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"})
 _TS_ACTIVE_CALL_RE = re.compile(
     r"(?<![A-Za-z0-9_$.])(?:test|it)"
@@ -450,10 +453,11 @@ def _verify_single_invariant(
             if not any(pattern.search(body) for body in candidate_bodies):
                 return []
             return list(dict.fromkeys([f"{tb_file}::{tb_func}", *inv_to_test_funcs.get(iid, [])]))
+        cleaned_file_content = _strip_commented_out_code_blocks(file_content, tb_file)
         searchable_content = (
-            _strip_ts_disabled_and_suite_calls(file_content)
+            _strip_ts_disabled_and_suite_calls(cleaned_file_content)
             if Path(tb_file).suffix.lower() in _TS_JS_EXTS
-            else file_content
+            else cleaned_file_content
         )
         if pattern.search(searchable_content):
             return list(dict.fromkeys([tb_file, *inv_to_test_funcs.get(iid, [])]))
@@ -468,11 +472,11 @@ def _verify_single_invariant(
             else:
                 if pattern is None:
                     pattern = _inv_token_pattern(iid)
-                raw_str = str(entry)
+                cleaned_str = _strip_commented_out_code_blocks(str(entry), tpath)
                 searchable = (
-                    _strip_ts_disabled_and_suite_calls(raw_str)
+                    _strip_ts_disabled_and_suite_calls(cleaned_str)
                     if Path(tpath).suffix.lower() in _TS_JS_EXTS
-                    else raw_str
+                    else cleaned_str
                 )
                 if pattern.search(searchable):
                     matching.append(tpath)
@@ -535,7 +539,7 @@ def detect_orphan_invariants(
                 for inv_id in invs:
                     if inv_id in accounted:
                         continue
-                    if inv_id not in effective_known_ids:
+                    if inv_id not in effective_known_ids and not _NUMERIC_INVOICE_ID_RE.match(inv_id):
                         key = (inv_id, f"{tpath}::{fname}")
                         if key not in seen:
                             seen.add(key)
@@ -545,8 +549,9 @@ def detect_orphan_invariants(
     ast_idx = get_ast_indexer()
 
     for tpath, tcontent in sorted(all_tests_content.items()):
-        has_fixture = "eidos:fixture" in tcontent
-        funcs = _filter_valid_test_functions(tpath, tcontent, ast_idx.list_test_functions(tpath, tcontent))
+        cleaned_content = _strip_commented_out_code_blocks(tcontent, tpath)
+        has_fixture = "eidos:fixture" in cleaned_content
+        funcs = _filter_valid_test_functions(tpath, cleaned_content, ast_idx.list_test_functions(tpath, cleaned_content))
         func_invs: dict[str, list[str]] = {}
         for fname, fslice in funcs.items():
             if has_fixture and _has_function_level_fixture(fslice, _EXACT_INV_RE):
@@ -570,7 +575,7 @@ def detect_orphan_invariants(
             for inv_id in inv_list:
                 if inv_id in accounted:
                     continue
-                if inv_id not in effective_known_ids:
+                if inv_id not in effective_known_ids and not _NUMERIC_INVOICE_ID_RE.match(inv_id):
                     key = (inv_id, f"{tpath}::{fname}")
                     if key not in seen:
                         seen.add(key)

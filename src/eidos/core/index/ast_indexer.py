@@ -138,6 +138,216 @@ def _extract_header_signature(node_text: str) -> str:
     return re.sub(r"\s+\)", ")", header)
 
 
+_BLOCK_COMMENT_EXTS = frozenset({
+    ".cs",
+    ".csx",
+    ".java",
+    ".kt",
+    ".kts",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".ts",
+    ".tsx",
+    ".mts",
+    ".cts",
+    ".go",
+    ".rs",
+    ".c",
+    ".h",
+    ".cpp",
+    ".cc",
+    ".cxx",
+    ".hpp",
+    ".hh",
+    ".hxx",
+    ".swift",
+    ".scala",
+})
+_PREPROC_IF_EXTS = frozenset({".cs", ".csx", ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx"})
+_SINGLE_QUOTE_STRING_EXTS = frozenset({".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"})
+_RAW_TRIPLE_QUOTE_EXTS = frozenset({".cs", ".csx", ".java", ".kt", ".kts", ".scala", ".swift"})
+
+_BLOCK_COMMENT_CODE_RE = re.compile(
+    r'(?m)(?:"[^"\n]*"|(?<![A-Za-z])\'[^\'\n]*\'|^\s*(?:\[(?:Fact|Theory|Test\w*|DataTestMethod|Ignore|Skip)\b|\b(?:public|private|protected|internal|static|async)\s+(?:async\s+)?[\w<>\[\]]+\s+\w+\s*\(|\b(?:var|const|let|val)\s+\w+\s*=)|;\s*$)'
+)
+_LINE_COMMENT_CODE_RE = re.compile(
+    r'(?:^\s*(?:\{|\[(?:Fact|Theory|Test\w*|DataTestMethod|Ignore|Skip)\b|\);|\],|"(?:[^"\\]|\\.)*"\s*,?\s*$|\b(?:var|const|let|val)\s+\w+\s*=|\b(?:if|for|foreach|while|switch|catch)\s*\(|\b(?:public|private|protected|internal|static|async)\s+[\w<>\[\]]+\s+\w+\s*\(|\b(?:return|throw|await)\b.+;|(?:Assert|assert)\s*[.(])|[)"\'\}\]\w]\s*;\s*$|(?:=|\b(?:var|const|let|val)\b|[({\[]|,)\s*(?:"[^"\n]*"|\'[^\'\n]*\')|(?:"[^"\n]*"|\'[^\'\n]*\')\s*(?:[,;)\]}]|:(?!\s*$|[^"]*$)))'
+)
+
+
+def _blank_preserving_newlines(text: str) -> str:
+    """Replace non-newline characters with spaces so 1-based line numbers stay identical."""
+    return re.sub(r"[^\r\n]", " ", text)
+
+
+def _blank_disabled_preproc_blocks(content: str) -> str:
+    """Blank ``#if false`` / ``#if 0`` preprocessor regions while preserving line endings."""
+    stack: list[tuple[bool, bool, bool]] = []
+    out: list[str] = []
+    for line in content.splitlines(keepends=True):
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            if m := re.match(r"^#\s*if\b(.*)$", stripped):
+                cond = re.split(r"//|/\*", m.group(1), maxsplit=1)[0].strip()
+                parent_dis = stack[-1][0] if stack else False
+                explicit_false = cond in ("false", "0", "(false)", "(0)", "!true", "!1")
+                stack.append((parent_dis or explicit_false, explicit_false, parent_dis))
+                out.append(line)
+                continue
+            if m := re.match(r"^#\s*elif\b(.*)$", stripped):
+                if stack:
+                    _, _, parent_dis = stack.pop()
+                    cond = re.split(r"//|/\*", m.group(1), maxsplit=1)[0].strip()
+                    explicit_false = cond in ("false", "0", "(false)", "(0)", "!true", "!1")
+                    stack.append((parent_dis or explicit_false, explicit_false, parent_dis))
+                out.append(line)
+                continue
+            if re.match(r"^#\s*else\b", stripped):
+                if stack:
+                    cur_dis, explicit_false, parent_dis = stack.pop()
+                    stack.append((parent_dis or (not explicit_false and cur_dis), False, parent_dis))
+                out.append(line)
+                continue
+            if re.match(r"^#\s*endif\b", stripped):
+                if stack:
+                    stack.pop()
+                out.append(line)
+                continue
+        if stack and stack[-1][0] and "eidos:fixture" not in line:
+            out.append(_blank_preserving_newlines(line))
+        else:
+            out.append(line)
+    return "".join(out)
+
+
+def _looks_like_commented_out_code_block(body: str) -> bool:
+    """Return True when a ``/* ... */`` body contains code syntax rather than pure prose."""
+    return "{" in body or "}" in body or bool(_BLOCK_COMMENT_CODE_RE.search(body))
+
+
+def _looks_like_commented_out_code_line(body: str) -> bool:
+    """Return True when a single-line ``// ...`` body contains commented-out code."""
+    stripped = body.strip()
+    return bool(stripped) and (stripped in ("{", "}", "};", ");") or bool(_LINE_COMMENT_CODE_RE.search(stripped)))
+
+
+def _strip_commented_out_code_blocks(content: str, file_path: Path | str) -> str:
+    """Blank commented-out code blocks and ``#if false`` regions in C-family test files.
+
+    Preserves line numbers, string literals (including glob patterns like ``"apps/*/Dockerfile"``
+    and C# ``@"..."`` / ``$@"..."`` strings), Rust lifetimes, doc comments (``/**``, ``/*!``,
+    ``///``), prose comments (e.g. ``/* INV-C-ARENA-001 */``), and ``eidos:fixture`` lines.
+    """
+    ext = Path(file_path).suffix.lower()
+    if ext not in _BLOCK_COMMENT_EXTS:
+        return content
+    if "/*" not in content and "//" not in content and ("#if" not in content or ext not in _PREPROC_IF_EXTS):
+        return content
+
+    if ext in _PREPROC_IF_EXTS and "#if" in content:
+        content = _blank_disabled_preproc_blocks(content)
+    if "/*" not in content and "//" not in content:
+        return content
+
+    n = len(content)
+    chunks: list[str] = []
+    last = 0
+    i = 0
+    while i < n:
+        ch = content[i]
+        if ext in (".cs", ".csx") and content.startswith(('$@"', '@$"', '@"'), i):
+            i += 3 if content[i] != "@" else 2
+            while i < n:
+                if content[i] == '"':
+                    if i + 1 < n and content[i + 1] == '"':
+                        i += 2
+                        continue
+                    i += 1
+                    break
+                i += 1
+            continue
+        if ext in _RAW_TRIPLE_QUOTE_EXTS and content.startswith('"""', i):
+            close = content.find('"""', i + 3)
+            i = n if close == -1 else close + 3
+            continue
+        if ch == '"':
+            i += 1
+            while i < n:
+                c = content[i]
+                if c == "\\":
+                    i += 2
+                    continue
+                if c == '"':
+                    i += 1
+                    break
+                i += 1
+            continue
+        if ch == "`":
+            i += 1
+            while i < n:
+                c = content[i]
+                if c == "\\" and ext != ".go":
+                    i += 2
+                    continue
+                if c == "`":
+                    i += 1
+                    break
+                i += 1
+            continue
+        if ch == "'":
+            if ext == ".rs" and _RUST_LIFETIME_AT_START_RE.match(content[i : i + 64]):
+                i += 1
+                continue
+            i += 1
+            while i < n:
+                c = content[i]
+                if c == "\\":
+                    i += 2
+                    continue
+                if c == "'":
+                    i += 1
+                    break
+                if c in ("\n", "\r") and ext not in _SINGLE_QUOTE_STRING_EXTS:
+                    break
+                i += 1
+            continue
+        if ch == "/" and i + 1 < n:
+            nxt = content[i + 1]
+            if nxt == "*":
+                end = content.find("*/", i + 2)
+                end_idx = n if end == -1 else end + 2
+                raw = content[i:end_idx]
+                is_doc = raw.startswith("/*!") or (
+                    raw.startswith("/**") and len(raw) > 3 and raw[3] not in "*/"
+                )
+                body = raw[2:-2] if end != -1 else raw[2:]
+                if "eidos:fixture" not in raw and not is_doc and _looks_like_commented_out_code_block(body):
+                    chunks.append(content[last:i])
+                    chunks.append(_blank_preserving_newlines(raw))
+                    last = end_idx
+                i = end_idx
+                continue
+            if nxt == "/":
+                nl = content.find("\n", i + 2)
+                end_idx = n if nl == -1 else nl
+                raw = content[i:end_idx]
+                is_doc = raw.startswith("///") and not raw.startswith("////")
+                if "eidos:fixture" not in raw and not is_doc and _looks_like_commented_out_code_line(raw[2:]):
+                    chunks.append(content[last:i])
+                    chunks.append(_blank_preserving_newlines(raw))
+                    last = end_idx
+                i = end_idx
+                continue
+        i += 1
+
+    if last == 0:
+        return content
+    chunks.append(content[last:])
+    return "".join(chunks)
+
+
 def _extract_preceding_context(lines: list[str], start_line_1based: int) -> str:
     """Collect decorators, attributes, and comments immediately preceding a function definition."""
     collected: list[str] = []
@@ -1596,14 +1806,16 @@ class AstGrepIndexer(BaseAstIndexer):
         blocks = _extract_sfc_script_blocks(content) if lang in ("vue", "svelte") else [(content, 0)]
 
         for block_text, line_offset in blocks:
-            parse_block = _blank_cpp_export_macros(block_text) if sg_lang in ("c", "cpp") else block_text
+            block_path = p.with_suffix(".ts") if lang in ("vue", "svelte") else p
+            work_block = _strip_commented_out_code_blocks(block_text, block_path)
+            parse_block = _blank_cpp_export_macros(work_block) if sg_lang in ("c", "cpp") else work_block
             try:
                 root = SgRoot(parse_block, sg_lang)
                 node = root.root()
             except (RuntimeError, ValueError):
                 continue
 
-            lines = block_text.splitlines()
+            lines = work_block.splitlines()
             fn_nodes: list[Any] = []
             if sg_lang == "python":
                 fn_nodes = node.find_all(kind="function_definition")
@@ -2720,7 +2932,8 @@ def extract_test_file_cache_payload(
     if ast_idx is None:
         ast_idx = get_ast_indexer()
     has_fixture = "eidos:fixture" in content
-    raw_funcs = ast_idx.list_test_functions(rel_path, content)
+    cleaned_content = _strip_commented_out_code_blocks(content, rel_path)
+    raw_funcs = ast_idx.list_test_functions(rel_path, cleaned_content)
     functions: dict[str, list[str]] = {}
     for fname, fslice in raw_funcs.items():
         if not has_fixture:
@@ -2748,12 +2961,12 @@ def extract_test_file_cache_payload(
             functions[fname] = fn_tokens
 
     if not has_fixture:
-        file_tokens_list = list(dict.fromkeys(INV_OR_POL_TOKEN_RE.findall(content)))
+        file_tokens_list = list(dict.fromkeys(INV_OR_POL_TOKEN_RE.findall(cleaned_content)))
     else:
         file_tokens_list = list(
             dict.fromkeys(
                 tok
-                for line in content.splitlines()
+                for line in cleaned_content.splitlines()
                 if "eidos:fixture" not in line
                 for tok in INV_OR_POL_TOKEN_RE.findall(line)
             )
