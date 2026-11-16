@@ -1035,8 +1035,10 @@ def test_portal_mermaid_diagram_generators_and_asset_fallbacks(tmp_path, monkeyp
     (fake_pkg / "frontend" / "public" / "favicon.svg").write_text("<svg>fallback</svg>", encoding="utf-8")
     (fake_pkg / "frontend" / "dist" / "index.html").write_text("<html>fallback</html>", encoding="utf-8")
     monkeypatch.setattr(portal_assets, "__file__", str(fake_pkg / "assets.py"))
+    monkeypatch.setattr(portal_assets, "_CACHED_HTML_BUNDLE_BYTES", None)
     assert portal_assets._load_portal_favicon() == "<svg>fallback</svg>"
     assert portal_assets._load_portal_html_template() == "<html>fallback</html>"
+    assert portal_assets._get_portal_html_bundle_bytes()[0] == b"<html>fallback</html>"
 
 
 def test_dlt_2026_085_portal_graph_derived_affects_and_blast_radius(tmp_path: Path) -> None:
@@ -2446,7 +2448,17 @@ def test_portal_server_disconnect_resilience_gzip_lock_isolation_and_dotnet_snap
     srv_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     srv_thread.start()
     try:
-        # 4a. Accept-Encoding: gzip returns compressed compact JSON; gzip;q=0 returns uncompressed JSON
+        # 4a. Accept-Encoding: gzip returns compressed compact JSON and root HTML; gzip;q=0 returns uncompressed JSON
+        req_root_gz = urllib.request.Request(
+            f"http://127.0.0.1:{port}/",
+            headers={"Accept-Encoding": "gzip, deflate"},
+        )
+        with urllib.request.urlopen(req_root_gz, timeout=5) as resp_root_gz:
+            assert resp_root_gz.status == 200
+            assert resp_root_gz.headers.get("Content-Encoding") == "gzip"
+            assert resp_root_gz.headers.get("Vary") == "Accept-Encoding"
+            assert b"<!DOCTYPE html>" in gzip.decompress(resp_root_gz.read())
+
         req_gz = urllib.request.Request(
             f"http://127.0.0.1:{port}/api/data",
             headers={"Accept-Encoding": "gzip, deflate"},

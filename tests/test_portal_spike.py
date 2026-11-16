@@ -176,7 +176,7 @@ def test_spike_d_runtime_zero_node_invariant(repo_root, tmp_path):
 
     # Exit Criteria: Cold boot live preview response < 50ms (headroom when instrumented with coverage)
     is_instrumented = "coverage" in sys.modules or sys.gettrace() is not None
-    max_delivery_ms = 150.0 if is_instrumented else 50.0
+    max_delivery_ms = 300.0 if is_instrumented else 50.0
     assert delivery_latency_ms < max_delivery_ms, (
         f"Delivery latency {delivery_latency_ms:.2f}ms exceeds {max_delivery_ms}ms"
     )

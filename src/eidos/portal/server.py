@@ -28,7 +28,7 @@ from eidos.core.workspace.project import (
     find_repo_root,
     is_dotnet_bin_dir,
 )
-from eidos.portal.assets import get_portal_favicon_svg, get_portal_html_template
+from eidos.portal.assets import _get_portal_html_bundle_bytes, get_portal_favicon_svg
 from eidos.portal.generator import _to_repo_rel_posix, get_portal_data
 
 logger = logging.getLogger("eidos.portal")
@@ -520,7 +520,7 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
             return
 
         if path in ("/", "/index.html"):
-            self._send_html(get_portal_html_template())
+            self._send_portal_bundle_html()
         elif path in ("/favicon.svg", "/favicon.ico"):
             self._send_svg(get_portal_favicon_svg())
         elif path == "/api/data":
@@ -639,23 +639,7 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
                 return
             raise
 
-    def _send_html(self, html_content: str) -> None:
-        self._write_response(
-            HTTPStatus.OK,
-            "text/html; charset=utf-8",
-            html_content.encode("utf-8"),
-            (("Cache-Control", "no-cache"),),
-        )
-
-    def _send_svg(self, svg_content: str) -> None:
-        self._write_response(
-            HTTPStatus.OK,
-            "image/svg+xml",
-            svg_content.encode("utf-8"),
-            (("Cache-Control", "public, max-age=86400"),),
-        )
-
-    def _send_json_bytes(self, raw_bytes: bytes, gz_bytes: bytes | None = None) -> None:
+    def _send_negotiated_bytes(self, content_type: str, raw_bytes: bytes, gz_bytes: bytes | None = None) -> None:
         if self._accepts_gzip():
             body = gz_bytes if gz_bytes is not None else gzip.compress(raw_bytes, compresslevel=5)
             extra = (
@@ -669,7 +653,22 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
                 ("Cache-Control", "no-cache"),
                 ("Vary", "Accept-Encoding"),
             )
-        self._write_response(HTTPStatus.OK, "application/json; charset=utf-8", body, extra)
+        self._write_response(HTTPStatus.OK, content_type, body, extra)
+
+    def _send_portal_bundle_html(self) -> None:
+        raw_bytes, gz_bytes = _get_portal_html_bundle_bytes()
+        self._send_negotiated_bytes("text/html; charset=utf-8", raw_bytes, gz_bytes)
+
+    def _send_svg(self, svg_content: str) -> None:
+        self._write_response(
+            HTTPStatus.OK,
+            "image/svg+xml",
+            svg_content.encode("utf-8"),
+            (("Cache-Control", "public, max-age=86400"),),
+        )
+
+    def _send_json_bytes(self, raw_bytes: bytes, gz_bytes: bytes | None = None) -> None:
+        self._send_negotiated_bytes("application/json; charset=utf-8", raw_bytes, gz_bytes)
 
     def _send_json(self, data: dict[str, Any]) -> None:
         self._send_json_bytes(orjson.dumps(data))
@@ -703,6 +702,12 @@ def run_portal_server(
     httpd.portal_bound_host = host
 
     def _warm_portal_caches() -> None:
+        with contextlib.suppress(Exception):
+            _get_portal_html_bundle_bytes()
+            get_portal_favicon_svg()
+        time.sleep(0.4)
+        if getattr(httpd, "_portal_shutting_down", False):
+            return
         with contextlib.suppress(Exception):
             warm_handler = EidosPortalHandler.__new__(EidosPortalHandler)
             warm_handler.eidos_dir = target_dir

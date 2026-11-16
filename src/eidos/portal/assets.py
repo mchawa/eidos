@@ -43,6 +43,21 @@ def _load_portal_html_template() -> str:
 
 _CACHED_FAVICON_SVG: str | None = None
 _CACHED_HTML_TEMPLATE: str | None = None
+_CACHED_HTML_BUNDLE_BYTES: tuple[bytes, bytes] | None = None
+
+
+def _get_portal_html_bundle_bytes() -> tuple[bytes, bytes]:
+    """Lazily load and cache ``(raw_utf8_bytes, gzip_bytes)`` for zero-copy HTTP serving."""
+    global _CACHED_HTML_BUNDLE_BYTES
+    if _CACHED_HTML_BUNDLE_BYTES is None:
+        try:
+            gz_bytes = get_assets_path("portal/bundle.html.gz").read_bytes()
+            raw_bytes = gzip.decompress(gz_bytes)
+        except FileNotFoundError:
+            raw_bytes = _load_portal_html_template().encode("utf-8")
+            gz_bytes = gzip.compress(raw_bytes, compresslevel=5)
+        _CACHED_HTML_BUNDLE_BYTES = (raw_bytes, gz_bytes)
+    return _CACHED_HTML_BUNDLE_BYTES
 
 
 def get_portal_favicon_svg() -> str:
