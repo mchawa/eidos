@@ -287,6 +287,77 @@ class DeltaMutationModel(_SpecBaseModel):
         return raw
 
 
+class ImportBoundaryRuleModel(_SpecBaseModel):
+    """Typed allow/deny import boundary rule for C4 containers, components, or tiers."""
+
+    allow: list[str] = Field(default_factory=list)
+    deny: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_input(cls, data: Any) -> dict[str, Any]:
+        if not isinstance(data, dict):
+            return {}
+        raw = dict(data)
+        for k in ("allow", "deny"):
+            vals = raw.get(k)
+            raw[k] = [str(v).strip() for v in vals if _coerce_opt_str(v)] if isinstance(vals, list) else []
+        return raw
+
+
+class RatchetBaselineEntryModel(_SpecBaseModel):
+    """Typed brownfield import-ratchet ceiling entry on ARCH-*.import_boundaries."""
+
+    source: str = ""
+    target: str = ""
+    max_imports: int = 1
+    reason: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_input(cls, data: Any) -> dict[str, Any]:
+        if not isinstance(data, dict):
+            return {}
+        raw = dict(data)
+        raw["source"] = _coerce_req_str(raw.get("source"))
+        raw["target"] = _coerce_req_str(raw.get("target"))
+        mi = raw.get("max_imports")
+        raw["max_imports"] = int(mi) if isinstance(mi, int) and not isinstance(mi, bool) else 1
+        if "reason" in raw:
+            raw["reason"] = _coerce_opt_str(raw.get("reason"))
+        return raw
+
+
+class ArchitectureImportBoundariesModel(_SpecBaseModel):
+    """Typed system-wide executable import boundary governance model on ARCH-*."""
+
+    tier_rules: dict[str, ImportBoundaryRuleModel] = Field(default_factory=dict)
+    enforce_declared_containers: bool = False
+    ratchet_baseline: list[RatchetBaselineEntryModel] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_input(cls, data: Any) -> dict[str, Any]:
+        if not isinstance(data, dict):
+            return {}
+        raw = dict(data)
+        tr = raw.get("tier_rules")
+        if isinstance(tr, dict):
+            raw["tier_rules"] = {
+                str(k).strip(): v
+                for k, v in tr.items()
+                if str(k).strip() and isinstance(v, (dict, ImportBoundaryRuleModel))
+            }
+        else:
+            raw["tier_rules"] = {}
+        raw["enforce_declared_containers"] = bool(raw.get("enforce_declared_containers", False))
+        rb = raw.get("ratchet_baseline")
+        raw["ratchet_baseline"] = (
+            [r for r in rb if isinstance(r, (dict, RatchetBaselineEntryModel))] if isinstance(rb, list) else []
+        )
+        return raw
+
+
 _FRONTMATTER_SCALAR_KEYS = (
     "id",
     "type",
@@ -294,6 +365,7 @@ _FRONTMATTER_SCALAR_KEYS = (
     "status",
     "version",
     "domain",
+    "tier",
     "container",
     "container_type",
     "runtime",
@@ -313,6 +385,7 @@ class FrontmatterModel(_SpecBaseModel):
     status: str | None = None
     version: str | None = None
     domain: str | None = None
+    tier: str | None = None
     container: str | None = None
     container_type: str | None = None
     runtime: str | None = None
@@ -321,6 +394,8 @@ class FrontmatterModel(_SpecBaseModel):
     category: str | None = None
     severity: str | None = None
     source_path: list[str] | str | None = None
+    import_boundary: ImportBoundaryRuleModel | None = None
+    import_boundaries: ArchitectureImportBoundariesModel | None = None
     technical: CapabilityTechnicalModel = Field(default_factory=CapabilityTechnicalModel)
     intent: DeltaIntentModel | None = None
     mutations: list[DeltaMutationModel] = Field(default_factory=list)
@@ -347,6 +422,14 @@ class FrontmatterModel(_SpecBaseModel):
         if "technical" in raw:
             tech_raw = raw.get("technical")
             raw["technical"] = tech_raw if isinstance(tech_raw, (dict, CapabilityTechnicalModel)) else {}
+        if "import_boundary" in raw:
+            ib_raw = raw.get("import_boundary")
+            raw["import_boundary"] = ib_raw if isinstance(ib_raw, (dict, ImportBoundaryRuleModel)) else None
+        if "import_boundaries" in raw:
+            ibs_raw = raw.get("import_boundaries")
+            raw["import_boundaries"] = (
+                ibs_raw if isinstance(ibs_raw, (dict, ArchitectureImportBoundariesModel)) else None
+            )
         if "intent" in raw:
             intent_raw = raw.get("intent")
             raw["intent"] = intent_raw if isinstance(intent_raw, (dict, DeltaIntentModel)) else None

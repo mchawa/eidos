@@ -28,7 +28,7 @@ This glossary details all **16 document schemas** (plus shared `$defs` in `commo
 | `delta/mutation` | `DLT-*` | `deltas/dlt-*.adoc` (`archive/`) | `delta/delta.schema.yaml` | Planned Mode semantic mutations, `expect:` post-conditions (including dot-paths), blast radius, and tombstones. |
 
 > [!NOTE]
-> **Shared Definitions (`assets/schemas/v1/common/defs.yaml`) & CLI Schema Introspection**: Reusable definitions for `#/$defs/non_empty_string` (`minLength: 1`, `pattern: "\\S"`, forbidding blank or whitespace-only prose/identifiers/paths), `#/$defs/decision` (`DEC-*`), `#/$defs/invariant` (`INV-*` with `test_binding`), `#/$defs/lifecycle_status`, `#/$defs/delta_status`, `#/$defs/exploration_status`, `#/$defs/code_paths` (`minItems: 1` non-whitespace paths or `{a,b}` brace globs), `#/$defs/contracts_block`, `#/$defs/external_design_references`, and `x-eidos-ref` entity references are automatically injected across schemas by `SpecValidator`. Each specification's JSON Schema path is automatically derived from `type`. Run `eidos spec schema [type] [--json]` at any time to inspect required/optional keys, nested sub-schemas, and valid YAML frontmatter templates.
+> **Shared Definitions (`assets/schemas/v1/common/defs.yaml`) & CLI Schema Introspection**: Reusable definitions for `#/$defs/non_empty_string` (`minLength: 1`, `pattern: "\\S"`, forbidding blank or whitespace-only prose/identifiers/paths), `#/$defs/decision` (`DEC-*`), `#/$defs/invariant` (`INV-*` with `test_binding`), `#/$defs/lifecycle_status`, `#/$defs/delta_status`, `#/$defs/exploration_status`, `#/$defs/code_paths` (`minItems: 1` non-whitespace paths or `{a,b}` brace globs), `#/$defs/boundary_entity_ref`, `#/$defs/container_import_boundary`, `#/$defs/component_import_boundary`, `#/$defs/contracts_block`, `#/$defs/external_design_references`, and `x-eidos-ref` entity references are automatically injected across schemas by `SpecValidator`. Each specification's JSON Schema path is automatically derived from `type`. Run `eidos spec schema [type] [--json]` at any time to inspect required/optional keys, nested sub-schemas, and valid YAML frontmatter templates.
 
 ---
 
@@ -187,7 +187,8 @@ decision:
 * **ID Convention**: `ARCH-<NAME>-<NUMBER>` (e.g., `ARCH-EIDOS-001`)
 * **Location**: `eidos/architecture/system-architecture.adoc`
 * **Required Properties**: `type`, `id`, `title`, `status`, `c4_context`
-* **Intent**: Global architectural baseline combining Arc42 (Sections 1–12) in the AsciiDoc prose body with C4 Level 1 System Context (`c4_context`) and system-wide `decisions:` (`DEC-*`) in frontmatter (C4 Level 2 container topology is derived automatically from `CNT-*` specs). **Strictly replaces ADRs**.
+* **Optional Governance**: `import_boundaries` (`tier_rules`, `enforce_declared_containers`, and brownfield `ratchet_baseline` with monotonically shrinking `max_imports >= 1` ceilings enforced across `ast_import` and `ast_http` couplings by `eidos validate` and `eidos drift`)
+* **Intent**: Global architectural baseline combining Arc42 (Sections 1–12) in the AsciiDoc prose body with C4 Level 1 System Context (`c4_context`), executable `import_boundaries`, and system-wide `decisions:` (`DEC-*`) in frontmatter (C4 Level 2 container topology is derived automatically from `CNT-*` specs). **Strictly replaces ADRs**.
 
 ```yaml
 ---
@@ -203,6 +204,12 @@ c4_context:
     - name: "Git Repository & CI/CD Pipeline"
       role: "Local and remote Git version control and CI verification gates"
       protocol: "Git CLI / Subprocess"
+import_boundaries:
+  tier_rules:
+    core:
+      deny: ["presentation"]
+    persistence:
+      deny: ["presentation", "extensibility"]
 ---
 ```
 
@@ -213,7 +220,8 @@ c4_context:
 * **ID Convention**: `CNT-<NAME>` (e.g., `CNT-EIDOS-CORE`, `CNT-EIDOS-CLI`)
 * **Location**: `eidos/architecture/containers/<name>.adoc`
 * **Required Properties**: `type`, `id`, `title`, `status`, `container_type`, `runtime`, `source_path`
-* **Intent**: C4 Level 2 Container manifest (deployable unit, library, service, or CLI). Declares provided/consumed interface contracts (`CTR-*`), container invariants (`INV-*`), and embedded architectural decisions (`DEC-*`). Standalone C4 Level 3 components (`eidos/architecture/components/*.adoc`) link bottom-up via their own `container: CNT-*` property.
+* **Optional Governance**: `tier`, `import_boundary` (`{ allow: [CNT-*...], deny: [CNT-*...] }`, disjoint sets enforced against cross-container `ast_import` and `ast_http` couplings)
+* **Intent**: C4 Level 2 Container manifest (deployable unit, library, service, or CLI). Declares provided/consumed interface contracts (`CTR-*`), optional `import_boundary` rules, container invariants (`INV-*`), and embedded architectural decisions (`DEC-*`). Standalone C4 Level 3 components (`eidos/architecture/components/*.adoc`) link bottom-up via their own `container: CNT-*` property.
 
 ```yaml
 ---
@@ -248,7 +256,8 @@ decisions:
 * **ID Convention**: `CMP-<NAME>` (e.g., `CMP-SPEC-VALIDATOR`, `CMP-AUTH-TOKEN-MGR`)
 * **Location**: Centralized in `eidos/architecture/components/<component>.adoc` (`INV-COMPONENT-CENTRALIZATION-MANDATE`; never placed inside `src/`)
 * **Required Properties**: `type`, `id`, `title`, `container`, `status`
-* **Intent**: Standalone C4 Level 3 Component specification in the Centralized C4 Architecture. Binds to its parent `CNT-*` container (`INV-COMPONENT-CONTAINER-AFFINITY`), maps to implementation files via `source_path` (intra-container `CMP-*` -> `CMP-*` dependencies are derived automatically via AST import analysis), documents its responsibility in the `== Responsibility` AsciiDoc section, and declares component invariants (`INV-*`) and embedded decisions (`DEC-*`).
+* **Optional Governance**: `import_boundary` (`{ allow: [CNT-*|CMP-*...], deny: [CNT-*|CMP-*...] }`, disjoint sets enforced against cross-component/container couplings)
+* **Intent**: Standalone C4 Level 3 Component specification in the Centralized C4 Architecture. Binds to its parent `CNT-*` container (`INV-COMPONENT-CONTAINER-AFFINITY`), maps to implementation files via `source_path` (intra-container `CMP-*` -> `CMP-*` dependencies are derived automatically via AST import and static HTTP analysis), documents its responsibility in the `== Responsibility` AsciiDoc section, and declares optional `import_boundary`, component invariants (`INV-*`), and embedded decisions (`DEC-*`).
 
 ```yaml
 ---

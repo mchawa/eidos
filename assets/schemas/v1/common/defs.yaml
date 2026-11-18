@@ -317,3 +317,48 @@ $defs:
     description: "Open map of upstream design tools, team libraries, frames, or documentation URLs."
     additionalProperties:
       $ref: "#/$defs/non_empty_string"
+
+  boundary_entity_ref:
+    type: string
+    pattern: "^((CNT|CMP)-[A-Z0-9_-]+|.*\\.adoc)$"
+    description: "Container ID (CNT-*), Component ID (CMP-*), or relative path to a tech/container or tech/component specification."
+    x-eidos-ref:
+      target_types:
+        - tech/container
+        - tech/component
+      prefixes:
+        - CNT-
+        - CMP-
+      entity_label: container or component
+
+  container_import_boundary:
+    type: object
+    description: "Declarative cross-container import and HTTP dependency boundary rules (allow/deny sets must be disjoint)."
+    additionalProperties: false
+    properties:
+      allow:
+        type: array
+        description: "Explicitly allowed target C4 containers (CNT-*). When non-empty, cross-container imports outside allow are forbidden unless covered by ratchet_baseline."
+        items:
+          $ref: "#/$defs/container_ref"
+      deny:
+        type: array
+        description: "Explicitly forbidden target C4 containers (CNT-*)."
+        items:
+          $ref: "#/$defs/container_ref"
+
+  component_import_boundary:
+    type: object
+    description: "Declarative cross-component/container import and HTTP dependency boundary rules (allow/deny sets must be disjoint)."
+    additionalProperties: false
+    properties:
+      allow:
+        type: array
+        description: "Explicitly allowed target C4 containers (CNT-*) or components (CMP-*). When non-empty, cross-boundary imports outside allow are forbidden unless covered by ratchet_baseline."
+        items:
+          $ref: "#/$defs/boundary_entity_ref"
+      deny:
+        type: array
+        description: "Explicitly forbidden target C4 containers (CNT-*) or components (CMP-*)."
+        items:
+          $ref: "#/$defs/boundary_entity_ref"

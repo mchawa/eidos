@@ -42,6 +42,8 @@ properties:
     description: "Architectural tier classification (optional: presentation, service, core, persistence, or custom tier slug)."
   contracts:
     $ref: "#/$defs/contracts_block"
+  import_boundary:
+    $ref: "#/$defs/container_import_boundary"
   invariants:
     type: array
     description: "Test-bound architectural invariants enforced by this C4 Level 2 container."

@@ -121,13 +121,13 @@ Options:
 * `--uncommitted, -u`: Analyze uncommitted working tree and staged changes instead of branch diff.
 * `--path, -p PATH`: Path to eidos specifications directory (defaults to `./eidos`).
 * `--markdown, -m FILE`: Path to write the markdown summary comment.
-* `--json`: Output raw JSON verification result (including `structural_code_files`, `body_only_code_files`, and `trivially_covered_files`).
+* `--json`: Output raw JSON verification result (including `structural_code_files`, `body_only_code_files`, `trivially_covered_files`, `boundary_violations`, and `ratchet_shrink_candidates`).
 * `--strict`: Treat body-only code changes as drift unless accompanied by a 1-hop spec, active SpecDelta, or test update.
 * `--warn-only`: Do not exit with code 1 when drift is detected.
 
 Exit Codes:
-* `0`: Specifications and code are synchronized, all schemas and bindings valid, invariant tests green.
-* `1`: Spec-to-code drift detected, unowned structural code found, specification validation errors found, or uncovered/orphan invariants detected.
+* `0`: Specifications and code are synchronized, all schemas, import boundaries, and bindings valid, invariant tests green (advisory `ratchet_shrink_candidates` do not fail exit code `0`).
+* `1`: Spec-to-code drift detected, architectural import `boundary_violations` detected, unowned structural code found, specification validation errors found, or uncovered/orphan invariants detected.
 
 > [!IMPORTANT]
 > `eidos drift` **subsumes `eidos validate`**: it executes the entire `SpecValidator` suite internally as part of its gate, in addition to checking Git diffs, AST structural changes, and polyglot invariant test bindings.
@@ -164,8 +164,8 @@ Options:
 * `-t, --task TEXT`: Free-text task description or engineering prompt.
 * `-T, --tier [anchor|guardrails|deep]`: Context compression budget (default: `guardrails`).
   * `anchor`: Container/component metadata, direct contract signatures, and 1-line `DEC-*` summaries (`<= 300 tokens`).
-  * `guardrails`: Adds domain capabilities, active invariants with `test_binding`, policies, and full `DEC-*` rationale (`<= 1,000 tokens`).
-  * `deep`: Adds standalone C4 component details, contract schemas, and downstream dependents (`<= 2,500 tokens`).
+  * `guardrails`: Adds structured epistemic `provenance_tags`, domain capabilities, active invariants with `test_binding`, policies, and full `DEC-*` rationale (`<= 1,000 tokens`).
+  * `deep`: Adds standalone C4 component details, contract schemas, and downstream dependents with `provenance_tags` (`<= 2,500 tokens`).
 * `--semantic / --no-semantic`: Enable or disable opt-in Harrier Hybrid RRF semantic fusion when `spec_embeddings` are available (default: `--semantic`).
 * `--json`: Output context slice as machine-readable JSON instead of Markdown.
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
@@ -178,7 +178,7 @@ Manage and query the embedded SQLite architectural knowledge graph and FTS5 lexi
 The index initializes automatically on first use and lazily resynchronizes before every query via sub-5ms `mtime_ns` and `SHA-256` dirty checking, guaranteeing zero drift.
 
 #### `eidos index status`
-Display database cache size, schema version (`2.19.0`), clean/drift synchronization state across specs and code, check latency, entity/edge counts, active AST parser engine (`ast-grep`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
+Display database cache size, schema version (`2.20.0`), clean/drift synchronization state across specs and code, check latency, entity/edge counts, `edge_counts_by_provenance` (`declared_spec`, `ast_import`, `ast_http`, `ast_symbol`, `inferred_ownership`), active AST parser engine (`ast-grep`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
 
 ```bash
 # Display rich visual status and AST telemetry:
@@ -228,21 +228,24 @@ Options:
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
 #### `eidos index blast-radius`
-Traverse the architectural knowledge graph using delimiter-anchored, hub-scoped recursive Common Table Expressions (CTE) to calculate forward/reverse dependency blast radius before editing code or contracts.
+Traverse the architectural knowledge graph using delimiter-anchored, hub-scoped recursive Common Table Expressions (CTE) to calculate forward/reverse dependency blast radius (with epistemic `provenance`, `confidence`, and `evidence` per neighbor) before editing code or contracts.
 
 ```bash
 eidos index blast-radius CNT-EIDOS-CORE --depth 2
+# Filter out speculative/inferred hops, keeping only observed specs + derived AST/HTTP couplings:
+eidos index blast-radius CNT-EIDOS-CORE --depth 2 --min-confidence derived
 # Or resolve directly from an AST symbol or file path:
 eidos index blast-radius detect_drift --depth 2
 eidos index blast-radius src/eidos/vcs/drift.py --depth 2
 # Machine-readable JSON output:
-eidos index blast-radius CNT-EIDOS-CORE --depth 2 --json
+eidos index blast-radius CNT-EIDOS-CORE --depth 2 --min-confidence observed --json
 ```
 
 Options:
 * `SYMBOL_OR_PATH`: Container ID, component ID, contract ID, domain ID, symbol, or file path.
 * `-d, --depth INTEGER`: Maximum graph traversal distance (default: `2`).
-* `--json`: Output results as machine-readable JSON.
+* `--min-confidence TEXT`: Minimum epistemic edge confidence threshold (`inferred` default, `derived`, or `observed`).
+* `--json`: Output results as machine-readable JSON (including `min_confidence` and per-neighbor `provenance`, `confidence`, `via_rel_type`, and `evidence`).
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
 #### `eidos index repo-map`

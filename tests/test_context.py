@@ -70,6 +70,52 @@ def test_context_slice_by_file(tmp_path, monkeypatch):
     anchor_portal = get_context_slice(files=["src/eidos/portal/builder.py"], tier="anchor").to_dict()
     assert "domain_path" not in anchor_portal["components"][0]
     assert "design" not in anchor_portal["components"][0]
+    assert "provenance_tags" not in anchor_portal
+    assert "provenance_tags" in proj
+    assert proj["provenance_tags"]["CNT-EIDOS-CLI"]["confidence"] == "observed"
+    deep_cli = get_context_slice(files=["src/eidos/cli/main.py"], tier="deep")
+    deep_proj = deep_cli.to_dict()
+    assert "provenance_tags" in deep_proj
+    assert deep_cli.token_estimate <= 2500
+
+    # DLT-2026-137: 1-hop ast_http frontend-to-backend expansion surfaces derived provenance_tags with file:line evidence
+    http_repo = tmp_path / "http_slice_repo"
+    http_eidos = http_repo / "eidos"
+    (http_eidos / "architecture" / "containers").mkdir(parents=True)
+    (http_repo / "apps" / "ui").mkdir(parents=True)
+    (http_repo / "services" / "backend").mkdir(parents=True)
+    (http_eidos / "architecture" / "containers" / "ui.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-UI-SLICE\ntitle: UI Slice\nstatus: active\n"
+        "container_type: web_app\nruntime: TypeScript\nsource_path: apps/ui\n---\n= UI Slice\n",
+        encoding="utf-8",
+    )
+    (http_eidos / "architecture" / "containers" / "backend.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-BACKEND-SLICE\ntitle: Backend Slice\nstatus: active\n"
+        "container_type: service\nruntime: Python 3.12\nsource_path: services/backend\n---\n= Backend Slice\n",
+        encoding="utf-8",
+    )
+    (http_repo / "apps" / "ui" / "api.ts").write_text(
+        'export const fetchWidgets = () => fetch("/api/widgets");\n',
+        encoding="utf-8",
+    )
+    (http_repo / "services" / "backend" / "app.py").write_text(
+        'from fastapi import FastAPI\napp = FastAPI()\n@app.get("/api/widgets")\ndef widgets():\n    return []\n',
+        encoding="utf-8",
+    )
+    http_sl = get_context_slice(
+        files=["apps/ui/api.ts"],
+        tier="guardrails",
+        eidos_dir=http_eidos,
+        repo_root=http_repo,
+    )
+    http_dict = http_sl.to_dict()
+    assert http_sl.token_estimate <= 1000
+    assert {"CNT-UI-SLICE", "CNT-BACKEND-SLICE"} <= {c["id"] for c in http_dict["components"]}
+    assert http_dict["provenance_tags"]["CNT-UI-SLICE"]["confidence"] == "observed"
+    assert http_dict["provenance_tags"]["CNT-BACKEND-SLICE"]["provenance"] == "ast_http"
+    assert http_dict["provenance_tags"]["CNT-BACKEND-SLICE"]["confidence"] == "derived"
+    assert "apps/ui/api.ts:1 -> GET /api/widgets" in http_dict["provenance_tags"]["CNT-BACKEND-SLICE"]["evidence"]
+    assert "ast_http" in http_sl.to_markdown()
 
     # DLT-2026-129: deterministic --file glob slicing across existing files, planned paths, and unmatched globs
     skill_glob_sl = get_context_slice(files=["./assets/plugin_reference/skills/*/SKILL.md"], tier="guardrails")

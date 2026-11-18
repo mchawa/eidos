@@ -5147,3 +5147,214 @@ def test_uic_invariants_planned_delta_verify_and_skipped_test_rejection(tmp_path
     assert not any("eidos_head_" in str(k) for k in gi._INDEX_INSTANCES)
 
 
+def test_executable_import_boundaries_and_ratchet_baseline(tmp_path: Path) -> None:
+    """Verify INV-DRIFT-IMPORT-BOUNDARY-RATCHET: fail-closed tier_rules, allow/deny, enforce_declared_containers, ratchet_baseline across ast_import/ast_http, commit-tree isolation, and advisory shrink candidates."""
+    import subprocess
+
+    import orjson
+    from typer.testing import CliRunner
+
+    import eidos.core.index.graph_index as gi
+    from eidos.cli.main import app
+    from eidos.vcs.report import generate_remediation_prompt
+
+    repo = tmp_path / "ratchet_repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "test@eidos.dev"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Eidos Test"], cwd=repo, check=True)
+
+    eidos_dir = repo / "eidos"
+    for sub in ("architecture/containers", "architecture/components", "architecture/contracts", "personas"):
+        (eidos_dir / sub).mkdir(parents=True)
+    for csub in ("src/core", "src/ui", "src/ext"):
+        (repo / csub).mkdir(parents=True)
+
+    (eidos_dir / "system.adoc").write_text(
+        "---\ntype: product/system\nid: SYS-RT-001\ntitle: Ratchet System\nstatus: active\narchetypes:\n  - service\n---\n= Ratchet System\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "personas" / "eng.adoc").write_text(
+        "---\ntype: product/persona\nid: PER-ENG\ntitle: Engineer\nstatus: active\nrole_type: human_engineer\n---\n= Engineer\n",
+        encoding="utf-8",
+    )
+    # Declare a CTR-* between CNT-CORE and CNT-UI so edges has provenance='declared_spec' on CNT-CORE -> CNT-UI,
+    # proving that tier_rules + ratchet_baseline STILL count raw ast_import and ast_http couplings in code_couplings!
+    (eidos_dir / "architecture" / "contracts" / "ui-ctr.adoc").write_text(
+        "---\ntype: tech/contract\nid: CTR-UI-HTTP\ntitle: UI HTTP\nstatus: active\nprotocol: http_json\ncontainer: CNT-UI\n---\n= UI HTTP\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "core.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-CORE\ntitle: Core Engine\nstatus: active\ncontainer_type: library\n"
+        "runtime: Python 3.12\nsource_path: src/core\ntier: core\n"
+        "contracts:\n  provides: []\n  consumes: [CTR-UI-HTTP]\n---\n= Core Engine\n\nProvides `run_core`.\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "ui.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-UI\ntitle: UI App\nstatus: active\ncontainer_type: web_app\n"
+        "runtime: Python 3.12\nsource_path: src/ui\ntier: presentation\n"
+        "contracts:\n  provides: [CTR-UI-HTTP]\n  consumes: []\n---\n= UI App\n\nProvides `ui_status`.\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "ext.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-EXT\ntitle: Ext Adapter\nstatus: active\ncontainer_type: library\n"
+        "runtime: Python 3.12\nsource_path: src/ext\ntier: extensibility\n---\n= Ext Adapter\n\nProvides `ext_call`.\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "ext-worker.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-EXT-WORKER\ntitle: Ext Worker\ncontainer: CNT-EXT\nstatus: active\n"
+        "source_path: src/ext/worker.py\n"
+        "import_boundary:\n  allow: [CNT-CORE]\n---\n= Ext Worker\n\n== Responsibility\nExecutes `ext_call`.\n\n== Public Surface\n* `ext_call() -> int`\n",
+        encoding="utf-8",
+    )
+
+    # Initial legacy state: CNT-CORE has 1 ast_import + 1 ast_http coupling to CNT-UI (total = 2, ratchet max_imports = 2)
+    (repo / "src" / "ui" / "server.py").write_text(
+        'from fastapi import FastAPI\napp = FastAPI()\n@app.get("/ui/ping")\ndef ui_status() -> str:\n    return "ok"\n',
+        encoding="utf-8",
+    )
+    (repo / "src" / "core" / "engine.py").write_text(
+        'import httpx\nfrom ui.server import ui_status\ndef run_core() -> str:\n    httpx.get("http://localhost:3000/ui/ping")\n    return ui_status()\n',
+        encoding="utf-8",
+    )
+    (repo / "src" / "ext" / "worker.py").write_text(
+        "from core.engine import run_core\ndef ext_call() -> int:\n    return len(run_core())\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "system-architecture.adoc").write_text(
+        "---\ntype: tech/architecture\nid: ARCH-RT-001\ntitle: Ratchet Arch\nstatus: active\n"
+        "c4_context:\n  actors: [PER-ENG]\n  external_systems: []\n"
+        "import_boundaries:\n"
+        "  enforce_declared_containers: true\n"
+        "  tier_rules:\n"
+        "    core:\n"
+        "      deny: [presentation]\n"
+        "  ratchet_baseline:\n"
+        "    - source: CNT-CORE\n"
+        "      target: CNT-UI\n"
+        "      max_imports: 2\n"
+        "      reason: Legacy brownfield UI coupling\n"
+        "    - source: CNT-EXT\n"
+        "      target: CNT-CORE\n"
+        "      max_imports: 2\n"
+        "      reason: Undeclared CNT-EXT -> CNT-CORE import\n"
+        "---\n= Ratchet Arch\n",
+        encoding="utf-8",
+    )
+
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "baseline with ratchet=2"], cwd=repo, check=True)
+
+    # 1. Baseline passes cleanly; CNT-EXT -> CNT-CORE has observed=1 < max_imports=2 -> surfaces advisory shrink candidate!
+    res_base = detect_drift(repo_root=repo, uncommitted=True)
+    assert res_base.is_clean is True
+    assert res_base.drift_detected is False
+    assert res_base.boundary_violations == []
+    assert len(res_base.ratchet_shrink_candidates) == 1
+    assert res_base.ratchet_shrink_candidates[0]["source"] == "CNT-EXT"
+    assert res_base.ratchet_shrink_candidates[0]["observed_imports"] == 1
+    assert res_base.ratchet_shrink_candidates[0]["action"] == "lower max_imports to 1"
+
+    # Commit a benign doc/spec update so HEAD~1..HEAD is a valid commit range
+    (eidos_dir / "system.adoc").write_text(
+        (eidos_dir / "system.adoc").read_text(encoding="utf-8") + "\nBaseline verified.\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "doc note"], cwd=repo, check=True)
+
+    # 2. Dirty working tree exceeds ratchet_baseline (3 > 2) AND violates CMP-EXT-WORKER.import_boundary.allow!
+    (repo / "src" / "core" / "engine.py").write_text(
+        'import httpx, requests\nfrom ui.server import ui_status\ndef run_core() -> str:\n'
+        '    httpx.get("http://localhost:3000/ui/ping")\n'
+        '    requests.get("http://localhost:3000/ui/ping")\n'
+        '    return ui_status()\n',
+        encoding="utf-8",
+    )
+    (repo / "src" / "ext" / "worker.py").write_text(
+        "from core.engine import run_core\nfrom ui.server import ui_status\ndef ext_call() -> int:\n    return len(run_core() + ui_status())\n",
+        encoding="utf-8",
+    )
+    # Warm the working-tree index.db with the dirty violations BEFORE running --base HEAD~1 --head HEAD!
+    res_dirty = detect_drift(repo_root=repo, uncommitted=True)
+    assert res_dirty.is_clean is False
+    assert res_dirty.drift_detected is True
+    viol_pairs = {(v["source"], v["target"]): v for v in res_dirty.boundary_violations}
+    assert ("CNT-CORE", "CNT-UI") in viol_pairs
+    assert viol_pairs[("CNT-CORE", "CNT-UI")]["observed_imports"] == 3
+    assert viol_pairs[("CNT-CORE", "CNT-UI")]["max_imports"] == 2
+    assert ("CMP-EXT-WORKER", "CNT-UI") in viol_pairs
+    assert viol_pairs[("CMP-EXT-WORKER", "CNT-UI")]["rule"] == "CMP-EXT-WORKER.import_boundary.allow"
+    prompt_txt = generate_remediation_prompt(res_dirty)
+    assert "Import boundary violation: `CNT-CORE -> CNT-UI`" in prompt_txt
+
+    # CLI drift --uncommitted (--json and Rich) exits 1 and reports boundary_violations
+    cli = CliRunner()
+    cli_json = cli.invoke(app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--json"])
+    assert cli_json.exit_code == 1
+    cli_payload = orjson.loads(cli_json.stdout)
+    assert len(cli_payload["boundary_violations"]) >= 2
+    cli_rich = cli.invoke(app, ["drift", "--uncommitted", "--path", str(eidos_dir)])
+    assert cli_rich.exit_code == 1
+    assert "Architectural Import Boundary Violations" in cli_rich.stdout
+
+    # 3. Commit-tree isolation: --base HEAD~1 --head HEAD MUST ignore dirty working-tree couplings and pass cleanly!
+    res_head_iso = detect_drift(repo_root=repo, base_ref="HEAD~1", head_ref="HEAD", uncommitted=False)
+    assert res_head_iso.is_clean is True
+    assert res_head_iso.boundary_violations == []
+    assert not any("eidos_head_" in str(sc.get("spec_path", "")) for sc in res_head_iso.ratchet_shrink_candidates)
+
+    # 4. Pay down all CNT-CORE -> CNT-UI debt (0 couplings) -> non-blocking 'remove_entry' shrink candidate + exit 0!
+    (repo / "src" / "core" / "engine.py").write_text(
+        'def run_core() -> str:\n    return "decoupled"\n',
+        encoding="utf-8",
+    )
+    (repo / "src" / "ext" / "worker.py").write_text(
+        "from core.engine import run_core\ndef ext_call() -> int:\n    return len(run_core())\n",
+        encoding="utf-8",
+    )
+    cli_clean = cli.invoke(app, ["drift", "--uncommitted", "--path", str(eidos_dir)])
+    assert cli_clean.exit_code == 0
+    assert "Ratchet Tightening Opportunities" in cli_clean.stdout
+    assert "remove_entry" in cli_clean.stdout
+
+    # 5. Component allow-list containing a CMP-* ID still honors container-scoped ratchet_baseline (CMP-EXT-WORKER -> CNT-UI)
+    from eidos.core.spec.validator import evaluate_import_boundaries
+
+    (eidos_dir / "architecture" / "components" / "core-engine.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-CORE-ENGINE\ntitle: Core Engine Mod\ncontainer: CNT-CORE\nstatus: active\n"
+        "source_path: src/core/engine.py\n---\n= Core Engine Mod\n\n== Responsibility\nRuns `run_core`.\n\n== Public Surface\n* `run_core() -> str`\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "ui-srv.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-UI-SRV\ntitle: UI Server Mod\ncontainer: CNT-UI\nstatus: active\n"
+        "source_path: src/ui/server.py\n---\n= UI Server Mod\n\n== Responsibility\nRuns `ui_status`.\n\n== Public Surface\n* `ui_status() -> str`\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "ext-worker.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-EXT-WORKER\ntitle: Ext Worker\ncontainer: CNT-EXT\nstatus: active\n"
+        "source_path: src/ext/worker.py\n"
+        "import_boundary:\n  allow: [CMP-CORE-ENGINE]\n---\n= Ext Worker\n\n== Responsibility\nExecutes `ext_call`.\n\n== Public Surface\n* `ext_call() -> int`\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "system-architecture.adoc").write_text(
+        "---\ntype: tech/architecture\nid: ARCH-RT-001\ntitle: Ratchet Arch\nstatus: active\n"
+        "c4_context:\n  actors: [PER-ENG]\n  external_systems: []\n"
+        "import_boundaries:\n"
+        "  ratchet_baseline:\n"
+        "    - source: CMP-EXT-WORKER\n"
+        "      target: CNT-UI\n"
+        "      max_imports: 1\n"
+        "      reason: Legacy component-to-UI-container import\n"
+        "---\n= Ratchet Arch\n",
+        encoding="utf-8",
+    )
+    (repo / "src" / "ext" / "worker.py").write_text(
+        "from core.engine import run_core\nfrom ui.server import ui_status\ndef ext_call() -> int:\n    return len(run_core() + ui_status())\n",
+        encoding="utf-8",
+    )
+    assert evaluate_import_boundaries(eidos_dir, repo_root=repo) == ([], [])
+    gi._INDEX_INSTANCES.pop(eidos_dir.resolve(), None)
+
+
+

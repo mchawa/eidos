@@ -3,7 +3,7 @@ type: tech/contract
 id: CTR-EIDOS-CLI
 title: "Eidos Command-Line Interface Contract"
 status: active
-version: "1.6.0"
+version: "1.7.0"
 protocol: "cli_args"
 container: "CNT-EIDOS-CLI"
 specification_file: "src/eidos/cli/main.py"
@@ -32,7 +32,7 @@ Validates all specification documents under `PATH` (defaults to `./eidos`) again
   - `1`: One or more validation errors or broken cross-references found.
 
 === `eidos context [--file PATH] [--component ID] [--task PROMPT] [--tier TIER] [--semantic/--no-semantic] [--json] [--path PATH]`
-Extracts a compact, token-efficient architectural subgraph context slice (C4 components, bound contracts, domain capabilities, active invariants, and governing policies).
+Extracts a compact, token-efficient architectural subgraph context slice (C4 components, bound contracts, domain capabilities, active invariants, governing policies, and structured epistemic `provenance_tags` on `guardrails` and `deep` tiers).
 * **Options**:
   - `--file, -f`: Target source file path(s), comma-separated paths, or quoted glob patterns including `{a,b}` brace globs (e.g. `'apps/*/Dockerfile'`, `'src/**/*.{ts,tsx}'`).
   - `--component, -c`: Target component identifier (e.g. `CMP-EIDOS-CLI`).
@@ -47,12 +47,12 @@ Extracts a compact, token-efficient architectural subgraph context slice (C4 com
 === `eidos index`
 Manages the embedded SQLite architectural knowledge graph and FTS5 hybrid search index (`eidos/.cache/index.db`).
 * **Sub-commands**:
-  - `status [--path <path>] [--json]`: Displays index health, AST parser engine telemetry (`ast-grep` vs `python-ast`), symbol breakdown by syntax kind, test invariant assertion metrics, cache file size, and continuous code-aware dirty status. Supports `--json` for programmatic agent consumption.
+  - `status [--path <path>] [--json]`: Displays index health, `SCHEMA_VERSION` (`2.20.0`), `edge_counts_by_provenance`, AST parser engine telemetry (`ast-grep` vs `python-ast`), symbol breakdown by syntax kind, test invariant assertion metrics, cache file size, and continuous code-aware dirty status. Supports `--json` for programmatic agent consumption.
   - `sync [--path <path>] [--force] [--no-semantic] [--json]`: Synchronizes or rebuilds the knowledge graph index, optionally skipping Harrier ONNX embedding generation (`--no-semantic`) or emitting machine-readable JSON telemetry (`--json`).
-  - `search <query> [--limit <n>] [--semantic/--no-semantic] [--path <path>] [--json]`: Performs BM25 full-text search with optional Harrier Hybrid RRF fusion across titles, requirements, and invariants.
-  - `blast-radius <symbol_or_path> [--depth <n>] [--path <path>] [--json]`: Computes the transitive dependency and governance blast radius for a canonical entity ID, AST code symbol, specification file path, or source file path (reporting `query`, `resolved_entities`, `entity_id`, and `neighbors` in `--json` output).
+  - `search <query> [--limit <n>] [--semantic/--no-semantic] [--path <path>] [--json]`: Performs BM25 full-text search with optional Harrier Hybrid RRF fusion across titles, requirements, and invariants, tagging each match with epistemic `provenance` (`fts_bm25`, `semantic_rrf`, `hybrid_rrf`) and `confidence` (`observed` for `fts_bm25`, `inferred` for `semantic_rrf` / `hybrid_rrf`).
+  - `blast-radius <symbol_or_path> [--depth <n>] [--min-confidence <level>] [--path <path>] [--json]`: Computes the transitive dependency and governance blast radius for a canonical entity ID, AST code symbol, specification file path, or source file path, filtering traversal edges by `--min-confidence` (`inferred` default, `derived`, or `observed`) and reporting `query`, `resolved_entities`, `entity_id`, `min_confidence`, and `neighbors` (with `provenance`, `confidence`, `via_rel_type`, and `evidence`) in `--json` output.
   - `repo-map [--max-tokens <tokens>] [--json] [--path <path>]`: Generates a token-budgeted structural repo map outline (classes, functions, methods, routes) for AI coding agents in Markdown or JSON (`--json`).
-  - `find-symbol <query> [--limit <n>] [--json] [--path <path>]`: Locates code symbols (including class methods and automated test symbols) across polyglot AST source files and links them to associated living component specifications. Each `--json` match carries `file_path` (the owning *specification* path) and a `location` object (`file`, `line_start`, `line_end`, `signature`, `parent_symbol`) pointing at the source definition, or `null` for non-AST matches.
+  - `find-symbol <query> [--limit <n>] [--json] [--path <path>]`: Locates code symbols (including class methods, `http_endpoint` / `http_request` symbols, and automated test symbols) across polyglot AST source files and links them to associated living component specifications. Each `--json` match carries `provenance`, `confidence`, `file_path` (the owning *specification* path), and a `location` object (`file`, `line_start`, `line_end`, `signature`, `parent_symbol`) pointing at the source definition, or `null` for non-AST matches.
   - `semantic [action] [--model <variant>] [--force] [--path <path>] [--json]`: Manages and inspects the optional SHA-256 verified Harrier-OSS-v1-0.6B ONNX semantic embedding index (`status`, `setup`, or `sync`).
 
 === `eidos portal`
@@ -98,15 +98,15 @@ Orchestrates SpecDeltas (`DLT-*`) throughout their semantic mutation lifecycle u
   - `changelog [--output <path>] [--unreleased/--no-unreleased] [--docs/--no-docs] [--stdout] [--path <path>]`: Compiles an auditable, Keep a Changelog compliant release history partitioned by Git release tags and frontmatter-verified applied SpecDeltas (`DLT-*`).
 
 === `eidos drift [--base REF] [--head REF] [--path PATH] [--uncommitted] [--strict] [--markdown FILE] [--warn-only] [--json]`
-Detects spec-to-code drift, schema validity, onboarding governance integrity, planned-mode SpecDelta mutation validity, and static invariant test coverage (including `design/` `UIC-*` invariants) across both Planned Mode and Direct Mode.
+Detects spec-to-code drift, schema validity, executable `import_boundaries` and `ratchet_baseline` compliance, onboarding governance integrity, planned-mode SpecDelta mutation validity, and static invariant test coverage (including `design/` `UIC-*` invariants) across both Planned Mode and Direct Mode.
 * **Options**:
   - `--base, -b`: Base git reference to compare against (defaults to `origin/main` or `main`).
-  - `--head`: Head git reference (defaults to `HEAD`; commit-range checks without `--uncommitted` evaluate specs and invariants isolated to the `--head` Git tree).
+  - `--head`: Head git reference (defaults to `HEAD`; commit-range checks without `--uncommitted` evaluate specs, `code_couplings`, and invariants isolated to the `--head` Git tree).
   - `--path, -p`: Path to the specifications directory (default: `eidos`).
   - `--uncommitted, -u`: Analyze uncommitted working tree and staged changes instead of branch diff.
   - `--strict`: Enforce strict drift detection on behavioral (`body_only_code_files`) modifications, requiring a substantive 1-hop specification update, an active SpecDelta target, or a modified bound test file.
   - `--markdown, -m`: Path to write the markdown summary comment (e.g. for CI/CD reports).
-  - `--json`: Output raw JSON verification result, including `structural_code_files`, `body_only_code_files`, and `trivially_covered_files`.
+  - `--json`: Output raw JSON verification result, including `structural_code_files`, `body_only_code_files`, `trivially_covered_files`, `boundary_violations`, and `ratchet_shrink_candidates`.
   - `--warn-only`: Do not exit with code 1 on drift.
 * **Exit Codes**:
   - `0`: Specifications and code are synchronized, all schemas valid, invariant tests green.

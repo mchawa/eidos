@@ -104,6 +104,8 @@ def drift_cmd(
             "orphan_invariants": [{"invariant_id": oid, "location": loc} for oid, loc in result.orphan_invariants],
             "remediation_suggestions": result.remediation_suggestions,
             "trivially_covered_files": result.trivially_covered_files,
+            "boundary_violations": result.boundary_violations,
+            "ratchet_shrink_candidates": result.ratchet_shrink_candidates,
         }
         console.print_json(data=data)
     else:
@@ -181,6 +183,23 @@ def drift_cmd(
                 console.print("\n[bold red]✗ Broken Cross-References:[/bold red]")
                 for ref in result.validation_report.broken_references:
                     console.print(f"  [red]•[/red] {ref}")
+
+        if result.boundary_violations:
+            console.print("\n[bold red]✗ Architectural Import Boundary Violations:[/bold red]")
+            for bv in result.boundary_violations:
+                ev_str = f" [{'; '.join(bv.get('evidence', [])[:3])}]" if bv.get("evidence") else ""
+                console.print(
+                    f"  [red]• {bv['source']} -> {bv['target']}[/red] ({bv['rule']}): "
+                    f"observed {bv['observed_imports']} coupling(s), max allowed {bv['max_imports']}{ev_str}"
+                )
+
+        if result.ratchet_shrink_candidates:
+            console.print("\n[bold cyan]→ Ratchet Tightening Opportunities (Advisory):[/bold cyan]")
+            for sc in result.ratchet_shrink_candidates:
+                console.print(
+                    f"  [cyan]• {sc['source']} -> {sc['target']}[/cyan] ({sc.get('spec_path', '')}): "
+                    f"observed {sc['observed_imports']} < max_imports {sc['max_imports']} ({sc['action']})"
+                )
 
         if result.is_clean:
             console.print(

@@ -1324,7 +1324,7 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
     db_path = eidos_dir / ".cache" / "index.db"
     with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
-        assert ver == SCHEMA_VERSION == "2.19.0"
+        assert ver == SCHEMA_VERSION == "2.20.0"
         val_rows_before = conn.execute("SELECT COUNT(*) FROM spec_validation_cache;").fetchone()[0]
         assert val_rows_before == 1
 
@@ -2374,7 +2374,7 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
     from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 
-    assert SCHEMA_VERSION == "2.19.0"
+    assert SCHEMA_VERSION == "2.20.0"
     assert set(AstGrepIndexer.LANGUAGE_MAP.keys()) | {".proto", ".adoc"} <= _FILE_QUERY_EXTS
 
     # 1. Verify _ENTITY_ID_TOKEN_RE recognizes SYS-*, ARCH-*, PER-*, and underscore IDs
@@ -2549,7 +2549,7 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
     from eidos.portal.generator import get_portal_data
 
-    assert SCHEMA_VERSION == "2.19.0"
+    assert SCHEMA_VERSION == "2.20.0"
     assert _build_spec_catalog_with_invariants(tmp_path / "nonexistent_eidos") == ({}, {})
 
     init_repository(tmp_path, title="dlt-104-repo")
@@ -2681,11 +2681,11 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
     try:
         conn = idx._get_connection()
-        # Simulate upgrading from schema_version 2.11.0 -> 2.19.0
+        # Simulate upgrading from schema_version 2.11.0 -> 2.20.0
         conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '2.11.0');")
         conn.commit()
         ensure_cache_schema(conn)
-        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.19.0"
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.20.0"
 
         idx.sync(force=True)
 
@@ -4141,3 +4141,253 @@ def test_concurrent_wal_lock_thread_isolation_and_large_edge_rebuild(tmp_path: P
         assert conn_b.execute("SELECT 1 FROM entities WHERE id = 'CMP-SECOND-B-RENAMED';").fetchone() is not None
     finally:
         _close_singleton_index()
+
+
+def test_epistemic_provenance_tags_and_confidence_filtering(tmp_path: Path) -> None:
+    """Verify INV-INDEX-EPISTEMIC-PROVENANCE: SCHEMA_VERSION 2.20.0 edge provenance precedence, code_couplings, and --min-confidence filtering."""
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.core.index.storage import (
+        SCHEMA_VERSION,
+        allowed_provenances_for_confidence,
+        normalize_confidence_level,
+        provenance_to_confidence,
+        upsert_edge,
+    )
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
+    from eidos.core.spec.parser import dump_spec_document, parse_spec_file
+
+    assert SCHEMA_VERSION == "2.20.0"
+    assert provenance_to_confidence("declared_spec") == "observed"
+    assert provenance_to_confidence("ast_symbol") == "observed"
+    assert provenance_to_confidence("ast_import") == "derived"
+    assert provenance_to_confidence("ast_http") == "derived"
+    assert provenance_to_confidence("inferred_ownership") == "inferred"
+    assert provenance_to_confidence("hybrid_rrf") == "inferred"
+    assert set(allowed_provenances_for_confidence("observed")) == {"declared_spec", "ast_symbol"}
+    assert set(allowed_provenances_for_confidence("derived")) == {
+        "declared_spec",
+        "ast_symbol",
+        "ast_import",
+        "ast_http",
+    }
+    assert set(allowed_provenances_for_confidence("inferred")) == {
+        "declared_spec",
+        "ast_symbol",
+        "ast_import",
+        "ast_http",
+        "inferred_ownership",
+    }
+    with pytest.raises(ValueError, match="Invalid min_confidence"):
+        normalize_confidence_level("speculative")
+
+    repo = tmp_path / "prov_repo"
+    repo.mkdir()
+    init_repository(repo, title="Epistemic Provenance Repo")
+    eidos_dir = repo / "eidos"
+
+    create_spec(eidos_dir, "domain", "DOM-PROV", title="Provenance Domain")
+    cnt_web = create_spec(eidos_dir, "container", "CNT-WEB", title="Web Client")
+    cnt_api = create_spec(eidos_dir, "container", "CNT-API", title="API Service")
+    cnt_inf = create_spec(eidos_dir, "container", "CNT-INFERRED", title="Inferred Peer")
+    cmp_web = create_spec(eidos_dir, "component", "CMP-WEB-FETCH", title="Web Fetcher")
+    cmp_api = create_spec(eidos_dir, "component", "CMP-API-ROUTES", title="API Routes")
+    ctr_api = create_spec(eidos_dir, "contract", "CTR-API-SPEC", title="API Contract")
+
+    for p_cnt, spath, prov_list, cons_list in (
+        (cnt_web, "src/web", [], ["CTR-API-SPEC"]),
+        (cnt_api, "src/api", ["CTR-API-SPEC"], []),
+        (cnt_inf, "src/inferred", [], []),
+    ):
+        d = parse_spec_file(p_cnt)
+        d.frontmatter["status"] = "active"
+        d.frontmatter["domain"] = "DOM-PROV"
+        d.frontmatter["source_path"] = spath
+        d.frontmatter["contracts"] = {"provides": prov_list, "consumes": cons_list}
+        p_cnt.write_text(dump_spec_document(d.frontmatter, d.body), encoding="utf-8")
+
+    d_ctr = parse_spec_file(ctr_api)
+    d_ctr.frontmatter["status"] = "active"
+    d_ctr.frontmatter["protocol"] = "http_json"
+    d_ctr.frontmatter["container"] = "CNT-API"
+    ctr_api.write_text(dump_spec_document(d_ctr.frontmatter, d_ctr.body), encoding="utf-8")
+
+    for p_cmp, parent, spath in (
+        (cmp_web, "CNT-WEB", "src/web/client.ts"),
+        (cmp_api, "CNT-API", "src/api/server.py"),
+    ):
+        d = parse_spec_file(p_cmp)
+        d.frontmatter["status"] = "active"
+        d.frontmatter["container"] = parent
+        d.frontmatter["source_path"] = spath
+        p_cmp.write_text(dump_spec_document(d.frontmatter, d.body), encoding="utf-8")
+
+    (repo / "src" / "web").mkdir(parents=True)
+    (repo / "src" / "api").mkdir(parents=True)
+    (repo / "src" / "inferred").mkdir(parents=True)
+    (repo / "src" / "web" / "client.ts").write_text(
+        'export async function loadItems() {\n  return fetch("/api/items");\n}\n',
+        encoding="utf-8",
+    )
+    (repo / "src" / "api" / "server.py").write_text(
+        'from fastapi import FastAPI\napp = FastAPI()\n@app.get("/api/items")\ndef list_items():\n    return []\n',
+        encoding="utf-8",
+    )
+    (repo / "src" / "inferred" / "helper.py").write_text("def infer_me():\n    return 1\n", encoding="utf-8")
+
+    idx = ArchitecturalIndex(repo_root=repo, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=True, auto_semantic=False)
+        conn = idx._get_connection()
+
+        # 1. Verify upsert_edge strict precedence: declared_spec > ast_import > ast_http > ast_symbol > inferred_ownership
+        upsert_edge(conn, "CMP-WEB-FETCH", "CNT-INFERRED", "depends_on", "inferred_ownership", "heuristic:dir")
+        row_inf = conn.execute(
+            "SELECT provenance, evidence FROM edges WHERE source_id = 'CMP-WEB-FETCH' AND target_id = 'CNT-INFERRED';"
+        ).fetchone()
+        assert (row_inf["provenance"], row_inf["evidence"]) == ("inferred_ownership", "heuristic:dir")
+
+        # Upgrade CNT-WEB -> CNT-INFERRED step by step and confirm lower ranks never clobber higher ranks
+        for prov, ev in (
+            ("inferred_ownership", "ev:inf"),
+            ("ast_symbol", "ev:sym"),
+            ("ast_http", "ev:http"),
+            ("ast_import", "ev:imp"),
+            ("declared_spec", ""),
+        ):
+            upsert_edge(conn, "CNT-API", "CNT-INFERRED", "depends_on", prov, ev)
+        # Attempt downgrade with ast_http -> must stay declared_spec, preserving non-empty evidence
+        upsert_edge(conn, "CNT-API", "CNT-INFERRED", "depends_on", "ast_http", "ev:downgrade")
+        conn.commit()
+        up_row = conn.execute(
+            "SELECT provenance, evidence FROM edges WHERE source_id = 'CNT-API' AND target_id = 'CNT-INFERRED';"
+        ).fetchone()
+        assert up_row["provenance"] == "declared_spec"
+        assert up_row["evidence"] == "ev:imp"
+
+        # 2. Declared CTR-API-SPEC keeps CNT-WEB -> CNT-API edge as declared_spec, while code_couplings keeps ast_http!
+        cnt_edge = conn.execute(
+            "SELECT provenance FROM edges WHERE source_id = 'CNT-WEB' AND target_id = 'CNT-API' AND rel_type = 'depends_on';"
+        ).fetchone()
+        assert cnt_edge["provenance"] == "declared_spec"
+        cmp_edge = conn.execute(
+            "SELECT provenance, evidence FROM edges WHERE source_id = 'CMP-WEB-FETCH' AND target_id = 'CMP-API-ROUTES';"
+        ).fetchone()
+        assert cmp_edge["provenance"] == "ast_http"
+        assert "src/web/client.ts:2" in cmp_edge["evidence"]
+        coupling_cnt = conn.execute(
+            "SELECT COUNT(*) FROM code_couplings WHERE source_cnt_id = 'CNT-WEB' AND target_cnt_id = 'CNT-API' AND provenance = 'ast_http';"
+        ).fetchone()[0]
+        assert coupling_cnt == 1
+
+        # 3. Traverse CMP-WEB-FETCH with min_confidence=inferred vs derived vs observed
+        walk_inf = {n["id"]: n for n in idx.get_k_hop_neighborhood("CMP-WEB-FETCH", max_depth=1, min_confidence="inferred")}
+        walk_der = {n["id"]: n for n in idx.get_k_hop_neighborhood("CMP-WEB-FETCH", max_depth=1, min_confidence="derived")}
+        walk_obs = {n["id"]: n for n in idx.get_k_hop_neighborhood("CMP-WEB-FETCH", max_depth=1, min_confidence="observed")}
+
+        assert "CNT-INFERRED" in walk_inf and walk_inf["CNT-INFERRED"]["confidence"] == "inferred"
+        assert "CMP-API-ROUTES" in walk_inf and walk_inf["CMP-API-ROUTES"]["confidence"] == "derived"
+        assert "CNT-WEB" in walk_inf and walk_inf["CNT-WEB"]["confidence"] == "observed"
+
+        assert "CNT-INFERRED" not in walk_der
+        assert "CMP-API-ROUTES" in walk_der
+        assert "CNT-WEB" in walk_der
+
+        assert "CNT-INFERRED" not in walk_obs
+        assert "CMP-API-ROUTES" not in walk_obs
+        assert "CNT-WEB" in walk_obs
+
+        # 3b. Verify 2-hop walk bottleneck certainty: derived (ast_http) -> observed (ast_symbol) stays 'derived',
+        #     and equal-depth tie-breaking prefers 'ast_symbol' (observed) over 'ast_http' (derived)
+        synth_inv = "INV-SYNTH-WALK-BOTTLENECK"  # eidos:fixture
+        conn.execute(
+            "INSERT INTO entities (id, type, title, status, domain, file_path, data_json) VALUES (?, 'invariant', 'Synth Inv', 'active', 'DOM-PROV', 'eidos/cap.adoc', '{}');",
+            (synth_inv,),
+        )
+        upsert_edge(conn, "CMP-API-ROUTES", synth_inv, "asserts", "ast_symbol", "tests/t.py::test_x")
+        walk_2hop = {
+            n["id"]: n
+            for n in idx.get_k_hop_neighborhood("CMP-WEB-FETCH", max_depth=2, min_confidence="derived")
+        }
+        assert synth_inv in walk_2hop
+        assert walk_2hop[synth_inv]["depth"] == 2
+        assert walk_2hop[synth_inv]["provenance"] == "ast_http"
+        assert walk_2hop[synth_inv]["confidence"] == "derived"
+
+        # Add a direct depth-1 ast_http edge alongside existing depth-1 ast_symbol edge from CMP-API-ROUTES -> synth_inv
+        upsert_edge(conn, "CMP-API-ROUTES", synth_inv, "consumes_api", "ast_http", "src/api/server.py:1")
+        conn.commit()
+        walk_tie = {
+            n["id"]: n
+            for n in idx.get_k_hop_neighborhood("CMP-API-ROUTES", max_depth=1, min_confidence="inferred")
+        }
+        assert walk_tie[synth_inv]["provenance"] == "ast_symbol"
+        assert walk_tie[synth_inv]["confidence"] == "observed"
+
+        # Incoming references also project provenance & confidence
+        inc_refs = {r["source_id"]: r for r in idx.get_incoming_references("CMP-API-ROUTES")}
+        assert inc_refs["CMP-WEB-FETCH"]["provenance"] == "ast_http"
+        assert inc_refs["CMP-WEB-FETCH"]["confidence"] == "derived"
+
+        # 4. CLI status, search, find-symbol, and blast-radius (--min-confidence + error handling)
+        cli = CliRunner()
+        st_res = cli.invoke(app, ["index", "status", "--path", str(eidos_dir), "--json"])
+        assert st_res.exit_code == 0
+        st_data = orjson.loads(st_res.stdout)
+        assert st_data["schema_version"] == "2.20.0"
+        assert st_data["edge_counts_by_provenance"]["declared_spec"] >= 1
+        assert st_data["edge_counts_by_provenance"]["ast_http"] >= 1
+        st_rich = cli.invoke(app, ["index", "status", "--path", str(eidos_dir)])
+        assert st_rich.exit_code == 0
+        assert "Edges by Epistemic Provenance" in st_rich.stdout
+
+        srch_res = cli.invoke(app, ["index", "search", "Web Fetcher", "--no-semantic", "--path", str(eidos_dir), "--json"])
+        assert srch_res.exit_code == 0
+        srch_data = orjson.loads(srch_res.stdout)
+        assert srch_data["results"][0]["provenance"] == "fts_bm25"
+        assert srch_data["results"][0]["confidence"] == "observed"
+        srch_rich = cli.invoke(app, ["index", "search", "Web Fetcher", "--no-semantic", "--path", str(eidos_dir)])
+        assert srch_rich.exit_code == 0
+        assert "fts_bm25" in srch_rich.stdout and "(observed)" in srch_rich.stdout
+
+        sym_res = cli.invoke(app, ["index", "find-symbol", "loadItems", "--path", str(eidos_dir), "--json"])
+        assert sym_res.exit_code == 0
+        sym_data = orjson.loads(sym_res.stdout)
+        assert sym_data["matches"][0]["provenance"] == "ast_symbol"
+        assert sym_data["matches"][0]["confidence"] == "observed"
+        sym_rich = cli.invoke(app, ["index", "find-symbol", "loadItems", "--path", str(eidos_dir)])
+        assert sym_rich.exit_code == 0
+        assert "ast_symbol" in sym_rich.stdout and "(observed)" in sym_rich.stdout
+
+        br_obs = cli.invoke(
+            app,
+            ["index", "blast-radius", "CMP-WEB-FETCH", "--depth", "1", "--min-confidence", "observed", "--path", str(eidos_dir), "--json"],
+        )
+        assert br_obs.exit_code == 0
+        br_data = orjson.loads(br_obs.stdout)
+        assert br_data["min_confidence"] == "observed"
+        br_ids = {n["id"] for n in br_data["neighbors"]}
+        assert "CNT-WEB" in br_ids
+        assert "CMP-API-ROUTES" not in br_ids
+
+        br_bad_json = cli.invoke(
+            app,
+            ["index", "blast-radius", "CMP-WEB-FETCH", "--min-confidence", "bogus", "--path", str(eidos_dir), "--json"],
+        )
+        assert br_bad_json.exit_code == 1
+        assert "Invalid min_confidence" in orjson.loads(br_bad_json.stdout)["error"]
+
+        br_bad_rich = cli.invoke(
+            app,
+            ["index", "blast-radius", "CMP-WEB-FETCH", "--min-confidence", "bogus", "--path", str(eidos_dir)],
+        )
+        assert br_bad_rich.exit_code == 1
+        assert "Invalid min_confidence" in br_bad_rich.stdout
+    finally:
+        idx.close()
+        import eidos.core.index.graph_index as gi
+
+        gi._INDEX_INSTANCES.pop(eidos_dir.resolve(), None)
+

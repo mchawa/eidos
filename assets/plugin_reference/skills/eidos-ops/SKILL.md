@@ -47,10 +47,10 @@ When introducing Eidos into an **existing codebase**, never invent speculative a
    * Set `source_path` to the exact repo-relative source path(s) so `eidos drift`, `eidos context`, and `eidos index repo-map` map every source file accurately.
    * Run `eidos index repo-map --max-tokens 1500` and `eidos index find-symbol <ClassOrFunction> --json` to inspect major internal classes/modules, creating standalone `eidos/architecture/components/<slug>.adoc` specifications (`id: CMP-*`, `title`, `container: CNT-*`, `status`, `source_path` in YAML frontmatter; author `== Responsibility` and `== Public Surface` in the AsciiDoc body) via `eidos spec create component <CMP-ID> --title "..."`.
    * Record non-obvious as-built architectural trade-offs in `decisions:` (`DEC-*`).
-4. **Extract Interface Contracts (`CTR-*`)**: Create contract specs in `eidos/architecture/contracts/<slug>.adoc` for REST/OpenAPI, gRPC/Protobuf, GraphQL, or CLI boundaries (`specification_file`), and link `provides:` / `consumes:` on `CNT-*`.
-5. **Extract Product Domains (`DOM-*`), Personas (`PER-*`) & Capabilities (`CAP-*`)**: Group business logic into bounded contexts (`eidos/domains/<slug>/domain.adoc`), create actor personas (`eidos/personas/<slug>.adoc`), and author capabilities (`eidos/domains/<slug>/capabilities/<cap>.adoc`) linking `business.personas`, `business.policies`, and `technical.containers` in YAML frontmatter (authoring Jobs-to-be-Done in the AsciiDoc prose body).
-6. **Extract Frontend Design Systems & Client Flows (If Applicable)**: For web/mobile/desktop/TUI clients, scaffold `DS-*` (`tokens.json`), `UIC-*`, `CLT-*`, `SCR-*`, and `FLOW-*` under `eidos/design/`.
-7. **Bind Existing Automated Tests to Capability Invariants (`INV-*`)**: Use `eidos index find-symbol "test_" --json` to locate test functions in `tests/`, declare `INV-*` entries with `test_binding: "<test_file>::<test_func>"` on the owning capability, and add the `INV-*` ID to each bound test's docstring or comment.
+4. **Extract Interface Contracts (`CTR-*`) & Import Boundaries**: Create contract specs in `eidos/architecture/contracts/<slug>.adoc` for REST/OpenAPI, gRPC/Protobuf, GraphQL, or CLI boundaries (`specification_file`), inspect `ast_http` / `ast_import` edges via `eidos index blast-radius <CNT-ID> --min-confidence derived --json`, link `provides:` / `consumes:` on `CNT-*`, and optionally set `import_boundaries` on `ARCH-*`.
+5. **Extract Product Domains (`DOM-*`), Personas (`PER-*`) & Capabilities (`CAP-*`)**: Group business logic into bounded contexts (`eidos/domains/<slug>/domain.adoc`), create personas (`eidos/personas/<slug>.adoc`), and author capabilities (`eidos/domains/<slug>/capabilities/<cap>.adoc`) linking `business.personas`, `business.policies`, and `technical.containers` in frontmatter (Jobs-to-be-Done in body).
+6. **Extract Design Systems & Client Flows (If Applicable)**: For web/mobile/desktop/TUI clients, scaffold `DS-*` (`tokens.json`), `UIC-*`, `CLT-*`, `SCR-*`, and `FLOW-*` under `eidos/design/`.
+7. **Bind Automated Tests to Invariants (`INV-*`)**: Use `eidos index find-symbol "test_" --json` to locate tests in `tests/`, declare `INV-*` (`test_binding: "<test_file>::<test_func>"`) on owning capabilities, and mention each `INV-*` ID in the test docstring/comment.
 8. **Synchronize, Inspect Graph & Verify Zero Drift**:
    ```bash
    eidos index sync --force
@@ -58,10 +58,10 @@ When introducing Eidos into an **existing codebase**, never invent speculative a
    eidos index repo-map --max-tokens 1500
    eidos index search "core" --json
    eidos context -c CNT-APP-API --tier guardrails --json
-   eidos index blast-radius CNT-APP-API --depth 2 --json
+   eidos index blast-radius CNT-APP-API --depth 2 --min-confidence derived --json
    eidos drift --uncommitted --json
    ```
-   Extraction is complete only when `eidos drift --uncommitted --json` exits with `0` (`is_clean: true`).
+   Done only when `eidos drift --uncommitted --json` exits `0` (`is_clean: true`).
 
 ---
 

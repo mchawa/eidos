@@ -16,6 +16,15 @@ c4_context:
       role: "Agent pair programming environments (Antigravity, Cursor, Claude Code) executing Eidos CLI tools"
       protocol: "CLI Subshell / JSON"
 
+import_boundaries:
+  tier_rules:
+    core:
+      deny: ["presentation"]
+    persistence:
+      deny: ["presentation", "extensibility"]
+    extensibility:
+      deny: ["presentation"]
+
 decisions:
   - id: DEC-ARCH-CENTRALIZED-HYBRID-C4
     title: "Centralized C4 Component Specifications Outside Source Trees"
@@ -125,7 +134,8 @@ Internal component building blocks reside centrally in `eidos/architecture/compo
 
 Furthermore, interface ownership strictly distinguishes between deployment boundaries and in-memory linkage:
 * **Containers (`CNT-*`)** define **Boundary Protocol Contracts (`CTR-*`)**: Cross-process, network, or CLI protocols (CLI args, REST OpenAPI, gRPC).
-* **Components (`CMP-*`)** resolve **In-Process Dependencies via AST**: Cross-component (`consumes_api`) and cross-container (`depends_on`) edges are automatically derived from source file imports and `source_path` ownership mappings during index synchronization.
+* **Components (`CMP-*`)** resolve **In-Process & Static HTTP Dependencies via AST**: Cross-component (`consumes_api`) and cross-container (`depends_on`) edges are automatically derived from source file imports and polyglot client-to-endpoint HTTP bindings (`ast_import` and `ast_http` with explicit epistemic `provenance`) during index synchronization.
+* **Executable Import Boundary Governance (`import_boundaries` / `tier_rules`)**: `ARCH-EIDOS-001` enforces static `import_boundaries.tier_rules` across `eidos validate` and `eidos drift` (`core` and `extensibility` forbid `presentation` couplings; `persistence` forbids both `presentation` and `extensibility` couplings) with zero `ratchet_baseline` debt across all 7 Eidos containers.
 
 Container manifests interactively explorable in the Living Web Portal's Hierarchical C4 Explorer:
 * link:containers/core.adoc[`CNT-EIDOS-CORE` Container Specification (CMP-SPEC-PARSER, CMP-SPEC-VALIDATOR, ...)]

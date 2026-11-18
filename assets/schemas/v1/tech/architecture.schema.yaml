@@ -56,6 +56,55 @@ properties:
             protocol:
               $ref: "#/$defs/non_empty_string"
               description: "Communication protocol (e.g. 'Git CLI', 'OAuth2', 'Kafka Topic')."
+  import_boundaries:
+    type: object
+    description: "Declarative system-wide C4 import and HTTP dependency boundary constraints with monotonically shrinking brownfield ratchet baselines."
+    additionalProperties: false
+    properties:
+      tier_rules:
+        type: object
+        description: "Per-source-tier allow/deny rules referencing C4 container tier slugs (e.g. presentation, service, core, persistence, extensibility)."
+        propertyNames:
+          $ref: "#/$defs/non_empty_string"
+        additionalProperties:
+          type: object
+          additionalProperties: false
+          properties:
+            allow:
+              type: array
+              items:
+                $ref: "#/$defs/non_empty_string"
+            deny:
+              type: array
+              items:
+                $ref: "#/$defs/non_empty_string"
+      enforce_declared_containers:
+        type: boolean
+        description: "When true, forbid cross-container code couplings without a declared contracts.consumes -> CTR-* <- contracts.provides contract."
+      ratchet_baseline:
+        type: array
+        description: "Brownfield legacy import/HTTP coupling ceilings (observed_imports > max_imports fails closed; observed_imports < max_imports emits ratchet_shrink_candidates)."
+        items:
+          type: object
+          additionalProperties: false
+          required:
+            - source
+            - target
+            - max_imports
+          properties:
+            source:
+              $ref: "#/$defs/boundary_entity_ref"
+              description: "Source container (CNT-*) or component (CMP-*) ID or spec path."
+            target:
+              $ref: "#/$defs/boundary_entity_ref"
+              description: "Target container (CNT-*) or component (CMP-*) ID or spec path."
+            max_imports:
+              type: integer
+              minimum: 1
+              description: "Maximum permitted cross-boundary AST import / HTTP call sites (minimum: 1)."
+            reason:
+              $ref: "#/$defs/non_empty_string"
+              description: "Architectural rationale for the temporary legacy coupling ceiling."
   decisions:
     type: array
     description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on the global architecture specification without standalone ADR files (POL-001)."

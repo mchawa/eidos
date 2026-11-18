@@ -36,8 +36,10 @@ def test_bundled_schemas_loaded(validator):
         assert schema_name in validator._schema_cache, f"Missing schema: {schema_name}"
 
 
-def test_validate_eidos_specifications(validator):
+def test_validate_eidos_specifications(validator, tmp_path):
     """Verify INV-SPEC-VALIDATION, INV-SPEC-GRAPH-INTEGRITY, INV-W3C-DTCG-COMPLIANCE, INV-CLIENT-DESIGN-BINDING, INV-POL-001-GIT-SOURCE-OF-TRUTH, and INV-POL-002-INVARIANT-TEST-ENFORCEMENT: all living specifications pass schema validation and entity ID graph integrity."""
+    from eidos.core.spec.validator import evaluate_import_boundaries
+
     eidos_dir = Path("eidos")
     assert eidos_dir.exists(), "eidos/ specification directory does not exist"
 
@@ -58,6 +60,89 @@ def test_validate_eidos_specifications(validator):
     assert "PER-SOFTWARE-ENGINEER" in report.entity_index
     assert "PER-DESIGN-ENGINEER" in report.entity_index
     assert "POL-001-GIT-SOURCE-OF-TRUTH" in report.entity_index
+
+    # Self-hosted ARCH-EIDOS-001 import_boundaries compliance (zero violations, zero ratchet debt)
+    arch_doc = report.entity_index["ARCH-EIDOS-001"]
+    assert arch_doc.model.import_boundaries is not None
+    assert arch_doc.model.import_boundaries.tier_rules["core"].deny == ["presentation"]
+    assert evaluate_import_boundaries(eidos_dir) == ([], [])
+
+    # Verify import_boundaries / import_boundary schema, x-eidos-ref, disjoint allow/deny, tier resolution, and cold-cache sync
+    ib_repo = tmp_path / "ib_val_repo"
+    ib_eidos = ib_repo / "eidos"
+    (ib_eidos / "architecture" / "containers").mkdir(parents=True)
+    (ib_eidos / "architecture" / "components").mkdir(parents=True)
+    (ib_eidos / "personas").mkdir(parents=True)
+    (ib_repo / "src" / "core").mkdir(parents=True)
+    (ib_repo / "src" / "ui").mkdir(parents=True)
+    (ib_repo / "src" / "core" / "svc.py").write_text("from ui.view import render\n", encoding="utf-8")
+    (ib_repo / "src" / "ui" / "view.py").write_text("def render():\n    return 'ok'\n", encoding="utf-8")
+    (ib_eidos / "personas" / "dev.adoc").write_text(
+        "---\ntype: product/persona\nid: PER-DEV\ntitle: Dev\nstatus: active\nrole_type: human_engineer\n---\n= Dev\n",
+        encoding="utf-8",
+    )
+    (ib_eidos / "architecture" / "containers" / "core.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-CORE\ntitle: Core\nstatus: active\ncontainer_type: library\n"
+        "runtime: Python 3.12\nsource_path: src/core\ntier: core\n"
+        "import_boundary:\n  allow: [CNT-UI]\n  deny: [CNT-UI, CMP-CORE-MOD]\n---\n= Core\n",
+        encoding="utf-8",
+    )
+    (ib_eidos / "architecture" / "containers" / "ui.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-UI\ntitle: UI\nstatus: active\ncontainer_type: web_app\n"
+        "runtime: Python 3.12\nsource_path: src/ui\ntier: presentation\n---\n= UI\n",
+        encoding="utf-8",
+    )
+    (ib_eidos / "architecture" / "components" / "core-mod.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-CORE-MOD\ntitle: Core Mod\ncontainer: CNT-CORE\nstatus: active\n"
+        "source_path: src/core/svc.py\nimport_boundary:\n  allow: [CNT-UI]\n  deny: [CNT-UI]\n---\n= Core Mod\n",
+        encoding="utf-8",
+    )
+    (ib_eidos / "architecture" / "system-architecture.adoc").write_text(
+        "---\ntype: tech/architecture\nid: ARCH-IB-001\ntitle: IB Arch\nstatus: active\n"
+        "c4_context:\n  actors: [PER-DEV]\n  external_systems: []\n"
+        "import_boundaries:\n  tier_rules:\n    core:\n      allow: [presentation]\n      deny: [presentation, ghost_tier]\n"
+        "    unassigned_tier:\n      deny: [presentation]\n---\n= IB Arch\n",
+        encoding="utf-8",
+    )
+    ib_rep = validator.validate_directory(ib_eidos)
+    assert not ib_rep.is_clean
+    flat_errs = "\n".join(msg for msgs in ib_rep.schema_errors.values() for msg in msgs)
+    broken_refs = "\n".join(ib_rep.broken_references)
+    # CNT-*.import_boundary rejects CMP-* references via container_ref x-eidos-ref
+    assert "CMP-CORE-MOD" in broken_refs and "CNT-" in broken_refs
+    # Overlapping allow/deny and unresolved tier_rules caught
+    assert "overlapping allow and deny" in flat_errs
+    assert "unresolved tier 'ghost_tier'" in flat_errs
+    assert "unresolved tier 'unassigned_tier'" in flat_errs
+
+    # Fix declaration errors -> cold-cache validate_directory still catches forbidden core -> presentation import!
+    (ib_eidos / "architecture" / "containers" / "core.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-CORE\ntitle: Core\nstatus: active\ncontainer_type: library\n"
+        "runtime: Python 3.12\nsource_path: src/core\ntier: core\n---\n= Core\n",
+        encoding="utf-8",
+    )
+    (ib_eidos / "architecture" / "components" / "core-mod.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-CORE-MOD\ntitle: Core Mod\ncontainer: CNT-CORE\nstatus: active\n"
+        "source_path: src/core/svc.py\n---\n= Core Mod\n",
+        encoding="utf-8",
+    )
+    (ib_eidos / "architecture" / "system-architecture.adoc").write_text(
+        "---\ntype: tech/architecture\nid: ARCH-IB-001\ntitle: IB Arch\nstatus: active\n"
+        "c4_context:\n  actors: [PER-DEV]\n  external_systems: []\n"
+        "import_boundaries:\n  tier_rules:\n    core:\n      deny: [presentation]\n---\n= IB Arch\n",
+        encoding="utf-8",
+    )
+    ib_rep2 = validator.validate_directory(ib_eidos)
+    assert not ib_rep2.is_clean
+    assert ib_rep2.invalid_docs == 1
+    assert ib_rep2.valid_docs == ib_rep2.total_docs - 1
+    assert ib_rep2.entity_index["ARCH-IB-001"].is_valid is False
+    flat_errs2 = "\n".join(msg for msgs in ib_rep2.schema_errors.values() for msg in msgs)
+    assert "Import boundary violation [ARCH-IB-001.tier_rules.core.deny(presentation)]" in flat_errs2
+    assert "src/core/svc.py:1 -> src/ui/view.py" in flat_errs2
+    import eidos.core.index.graph_index as gi
+
+    gi._INDEX_INSTANCES.pop(ib_eidos.resolve(), None)
 
 
 def test_delta_affects_validation_broken_references(tmp_path, validator):

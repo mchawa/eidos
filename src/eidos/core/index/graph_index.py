@@ -43,15 +43,22 @@ from eidos.core.index.query import (
     split_identifier,
 )
 from eidos.core.index.storage import (
+    EDGE_PROVENANCE_PRECEDENCE,
+    PROVENANCE_TO_CONFIDENCE,
     SCHEMA_VERSION,
+    VALID_CONFIDENCE_LEVELS,
+    allowed_provenances_for_confidence,
     clone_spec_document,
     ensure_cache_schema,
     get_cached_spec_document,
     load_spec_validation_cache,
     load_test_binding_cache,
+    normalize_confidence_level,
     open_cache_connection,
+    provenance_to_confidence,
     save_spec_validation_cache,
     save_test_binding_cache,
+    upsert_edge,
 )
 from eidos.core.index.sync import (
     IndexSyncStats,
@@ -61,13 +68,17 @@ from eidos.core.index.sync import (
 from eidos.core.workspace.project import find_repo_root, resolve_spec_and_repo_roots
 
 __all__ = [
+    "EDGE_PROVENANCE_PRECEDENCE",
     "FTS_COLUMN_WEIGHTS",
+    "PROVENANCE_TO_CONFIDENCE",
     "SCHEMA_VERSION",
     "TASK_SLICE_ENTITY_TYPES",
     "TIER_TOKEN_BUDGETS",
+    "VALID_CONFIDENCE_LEVELS",
     "ArchitecturalIndex",
     "IndexSyncStats",
     "TieredContextSlice",
+    "allowed_provenances_for_confidence",
     "build_fts_match_query",
     "clone_spec_document",
     "compound_identifier_subtokens",
@@ -76,10 +87,13 @@ __all__ = [
     "get_cached_spec_document",
     "load_spec_validation_cache",
     "load_test_binding_cache",
+    "normalize_confidence_level",
     "open_cache_connection",
+    "provenance_to_confidence",
     "save_spec_validation_cache",
     "save_test_binding_cache",
     "split_identifier",
+    "upsert_edge",
 ]
 
 
@@ -250,10 +264,20 @@ class ArchitecturalIndex:
             query_embedding=query_embedding,
         )
 
-    def get_k_hop_neighborhood(self, entity_id: str | Sequence[str], max_depth: int = 2) -> list[dict[str, Any]]:
+    def get_k_hop_neighborhood(
+        self,
+        entity_id: str | Sequence[str],
+        max_depth: int = 2,
+        min_confidence: str = "inferred",
+    ) -> list[dict[str, Any]]:
         """Traverse graph up to k hops in both directions using recursive CTE."""
         self._ensure_synced()
-        return execute_k_hop_traversal(self._get_connection(), entity_id=entity_id, max_depth=max_depth)
+        return execute_k_hop_traversal(
+            self._get_connection(),
+            entity_id=entity_id,
+            max_depth=max_depth,
+            min_confidence=min_confidence,
+        )
 
     def resolve_blast_radius_targets(self, symbol_or_path: str) -> list[str]:
         """Resolve an entity ID, specification path, source file path, or AST symbol to target entity ID(s)."""
@@ -358,7 +382,8 @@ class ArchitecturalIndex:
                     SELECT symbol, entity_id, kind FROM code_symbols WHERE kind NOT IN ('import', 'namespace')
                     UNION
                     SELECT parent_symbol || '.' || symbol, entity_id, 'method'
-                    FROM code_symbols WHERE kind NOT IN ('import', 'namespace') AND parent_symbol != ''
+                    FROM code_symbols
+                    WHERE kind NOT IN ('import', 'namespace', 'http_endpoint', 'http_request') AND parent_symbol != ''
                 )
                 SELECT kind, COUNT(*) FROM all_mappings GROUP BY kind;
                 """
@@ -369,6 +394,13 @@ class ArchitecturalIndex:
         total_edges, total_files = cursor.execute(
             "SELECT (SELECT COUNT(*) FROM edges), (SELECT COUNT(*) FROM indexed_files);"
         ).fetchone()
+
+        edge_counts_by_provenance = {
+            row[0]: row[1]
+            for row in cursor.execute(
+                "SELECT provenance, COUNT(*) FROM edges GROUP BY provenance ORDER BY provenance;"
+            ).fetchall()
+        }
 
         test_assert_filter = (
             "rel_type = 'asserts' AND instr(source_id, '::') > 0 AND source_id NOT IN (SELECT id FROM entities)"
@@ -407,6 +439,7 @@ class ArchitecturalIndex:
             "pending_deletions": len(to_delete),
             "dirty_check_latency_ms": round(dirty_ms, 2),
             "entity_counts_by_type": type_counts,
+            "edge_counts_by_provenance": edge_counts_by_provenance,
             "ast": ast_telemetry,
         }
 

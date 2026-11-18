@@ -18,12 +18,19 @@ from typing import Any
 
 import orjson
 
-from eidos.core.index.ast_indexer import AstGrepIndexer, CodeSymbol, extract_test_file_cache_payload, get_ast_indexer
+from eidos.core.index.ast_indexer import (
+    AstGrepIndexer,
+    CodeSymbol,
+    extract_test_file_cache_payload,
+    get_ast_indexer,
+    normalize_http_route_path,
+)
 from eidos.core.index.storage import (
     _advisory_db_lock,
     _immediate_write_transaction,
     _resolve_conn_db_path,
     get_cached_spec_document,
+    upsert_edge,
 )
 from eidos.core.workspace.project import (
     STANDARD_EXCLUDED_DIRS,
@@ -331,15 +338,19 @@ def store_code_symbols(
                     is_test_int,
                 ),
             )
-        for imp in imports or ():
+        for imp_entry in imports or ():
+            if isinstance(imp_entry, tuple):
+                imp, imp_line = imp_entry
+            else:
+                imp, imp_line = imp_entry, 0
             if imp:
                 conn.execute(
                     """
                     INSERT OR IGNORE INTO code_symbols
                     (file_path, symbol, kind, parent_symbol, line_start, line_end, signature, entity_id, is_primary, is_test)
-                    VALUES (?, ?, 'import', '', 0, 0, '', ?, ?, ?);
+                    VALUES (?, ?, 'import', '', ?, ?, '', ?, ?, ?);
                     """,
-                    (rel_path, imp, entity_id, is_prim, is_test_int),
+                    (rel_path, imp, imp_line, imp_line, entity_id, is_prim, is_test_int),
                 )
 
 
@@ -391,9 +402,28 @@ def _can_use_ast_mem_cache(ast_idx: Any) -> bool:
         and "extract_symbols" not in inst_dict
         and "extract_imports" not in inst_dict
         and "extract_declared_namespaces" not in inst_dict
+        and "extract_http_endpoints" not in inst_dict
+        and "extract_http_requests" not in inst_dict
         and "extract_test_bindings" not in inst_dict
         and "list_test_functions" not in inst_dict
     )
+
+
+def _find_import_line(content: str | None, imp: str) -> int:
+    """Locate 1-based line number of an import target in source text (defaults to 1)."""
+    if not content or not imp:
+        return 1
+    clean = imp.lstrip(".")
+    leaf = clean.rsplit("/", 1)[-1].rsplit(".", 1)[-1].rstrip("*")
+    for idx, line in enumerate(content.splitlines(), start=1):
+        s = line.strip()
+        if not s or s.startswith(("#", "//", "/*", "*")):
+            continue
+        if (clean and clean in s) or (
+            leaf and leaf in s and any(kw in s for kw in ("import", "from", "using", "use ", "require", "#include"))
+        ):
+            return idx
+    return 1
 
 
 def index_source_file(
@@ -455,7 +485,29 @@ def index_source_file(
                             line_end=1,
                         )
                     )
-            imports = ast_idx.extract_imports(path, content) if hasattr(ast_idx, "extract_imports") else []
+            base_symbols = list(symbols)
+            if hasattr(ast_idx, "extract_http_endpoints"):
+                ep_fn = ast_idx.extract_http_endpoints
+                ep_syms = (
+                    ep_fn(path, content, _symbols=base_symbols)
+                    if type(ast_idx) is AstGrepIndexer and "extract_http_endpoints" not in getattr(ast_idx, "__dict__", {})
+                    else ep_fn(path, content)
+                )
+                for ep in ep_syms:
+                    ep.file_path = rel_path
+                    symbols.append(ep)
+            if hasattr(ast_idx, "extract_http_requests"):
+                rq_fn = ast_idx.extract_http_requests
+                rq_syms = (
+                    rq_fn(path, content, _symbols=base_symbols)
+                    if type(ast_idx) is AstGrepIndexer and "extract_http_requests" not in getattr(ast_idx, "__dict__", {})
+                    else rq_fn(path, content)
+                )
+                for rq in rq_syms:
+                    rq.file_path = rel_path
+                    symbols.append(rq)
+            raw_imports = ast_idx.extract_imports(path, content) if hasattr(ast_idx, "extract_imports") else []
+            imports: list[Any] = [(imp, _find_import_line(content, imp)) for imp in raw_imports]
             if cache_key is not None:
                 _SOURCE_AST_MEM_CACHE[cache_key] = (symbols, imports)
     else:
@@ -1038,6 +1090,7 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
     for row in rows:
         doc_id = row["id"]
         doc_type = row["type"]
+        spec_fp = _normalize_rel_path(str(row["file_path"] or doc_id))
         try:
             fm = orjson.loads(row["data_json"])
         except (TypeError, ValueError):
@@ -1047,16 +1100,13 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
 
         domain = _resolve_ref(fm.get("domain", ""))
         if domain:
-            conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'realizes');", (doc_id, domain))
+            upsert_edge(conn, doc_id, domain, "realizes", "declared_spec", f"{spec_fp}:domain")
 
         for dec in fm.get("decisions", []) or []:
             if isinstance(dec, dict) and dec.get("graduated_from"):
                 grad_id = _resolve_ref(dec["graduated_from"])
                 if grad_id:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'graduated_from');",
-                        (doc_id, grad_id),
-                    )
+                    upsert_edge(conn, doc_id, grad_id, "graduated_from", "declared_spec", f"{spec_fp}:graduated_from")
 
         if doc_type == "tech/architecture":
             c4_ctx = fm.get("c4_context")
@@ -1064,20 +1114,11 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                 for actor_ref in c4_ctx.get("actors", []) or []:
                     actor_id = _resolve_ref(actor_ref)
                     if actor_id:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'serves_persona');",
-                            (doc_id, actor_id),
-                        )
+                        upsert_edge(conn, doc_id, actor_id, "serves_persona", "declared_spec", f"{spec_fp}:c4_context.actors")
             for sys_id in sys_ids:
-                conn.execute(
-                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'describes_system');",
-                    (doc_id, sys_id),
-                )
+                upsert_edge(conn, doc_id, sys_id, "describes_system", "declared_spec", f"{spec_fp}:type")
             for cnt_id in cnt_ids:
-                conn.execute(
-                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_container');",
-                    (doc_id, cnt_id),
-                )
+                upsert_edge(conn, doc_id, cnt_id, "contains_container", "declared_spec", f"{spec_fp}:type")
 
         if doc_type == "product/exploration":
             exp_dec = fm.get("decision")
@@ -1085,64 +1126,55 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                 for dlt_ref in exp_dec.get("resulting_deltas", []) or []:
                     dlt_id = _resolve_ref(dlt_ref)
                     if dlt_id:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'graduated_to');",
-                            (doc_id, dlt_id),
-                        )
+                        upsert_edge(conn, doc_id, dlt_id, "graduated_to", "declared_spec", f"{spec_fp}:decision.resulting_deltas")
 
         contracts = fm.get("contracts", {})
         if isinstance(contracts, dict):
             for prov in contracts.get("provides", []) or []:
                 prov_id = _resolve_ref(prov)
                 if prov_id:
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides');", (doc_id, prov_id))
+                    upsert_edge(conn, doc_id, prov_id, "provides", "declared_spec", f"{spec_fp}:contracts.provides")
             for req in contracts.get("consumes") or []:
                 req_id = _resolve_ref(req)
                 if req_id:
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes');", (doc_id, req_id))
+                    upsert_edge(conn, doc_id, req_id, "consumes", "declared_spec", f"{spec_fp}:contracts.consumes")
 
         if doc_type == "tech/contract":
             owning = _resolve_ref(fm.get("container"))
             if owning:
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides');", (owning, doc_id))
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'owned_by');", (doc_id, owning))
+                upsert_edge(conn, owning, doc_id, "provides", "declared_spec", f"{spec_fp}:container")
+                upsert_edge(conn, doc_id, owning, "owned_by", "declared_spec", f"{spec_fp}:container")
 
         if doc_type == "design/client":
             cnt_ref = _resolve_ref(fm.get("container"))
             ds_ref = _resolve_ref(fm.get("design_system"))
             if cnt_ref:
-                conn.execute(
-                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implemented_by');",
-                    (doc_id, cnt_ref),
-                )
+                upsert_edge(conn, doc_id, cnt_ref, "implemented_by", "declared_spec", f"{spec_fp}:container")
             if ds_ref:
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by');", (doc_id, ds_ref))
+                upsert_edge(conn, doc_id, ds_ref, "styled_by", "declared_spec", f"{spec_fp}:design_system")
             for scr_ref in fm.get("screens", []) or []:
                 scr_id = _resolve_ref(scr_ref)
                 if scr_id:
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'has_screen');", (doc_id, scr_id))
+                    upsert_edge(conn, doc_id, scr_id, "has_screen", "declared_spec", f"{spec_fp}:screens")
             for flw_ref in fm.get("flows", []) or []:
                 flw_id = _resolve_ref(flw_ref)
                 if flw_id:
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'has_flow');", (doc_id, flw_id))
+                    upsert_edge(conn, doc_id, flw_id, "has_flow", "declared_spec", f"{spec_fp}:flows")
 
         if doc_type == "design/system":
             for clt_ref in fm.get("clients", []) or []:
                 clt_id = _resolve_ref(clt_ref)
                 if clt_id:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by');",
-                        (clt_id, doc_id),
-                    )
+                    upsert_edge(conn, clt_id, doc_id, "styled_by", "declared_spec", f"{spec_fp}:clients")
             if fm.get("extends"):
                 parent_ds = _resolve_ref(fm["extends"])
                 if parent_ds:
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'extends');", (doc_id, parent_ds))
+                    upsert_edge(conn, doc_id, parent_ds, "extends", "declared_spec", f"{spec_fp}:extends")
 
         if doc_type == "design/ui-component":
             ds_ref = _resolve_ref(fm.get("design_system"))
             if ds_ref:
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by');", (doc_id, ds_ref))
+                upsert_edge(conn, doc_id, ds_ref, "styled_by", "declared_spec", f"{spec_fp}:design_system")
 
         if doc_type == "design/flow":
             for step in fm.get("steps", []) or []:
@@ -1150,21 +1182,21 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                     continue
                 step_clt = _resolve_ref(step.get("client"))
                 if step_clt:
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'has_flow');", (step_clt, doc_id))
+                    upsert_edge(conn, step_clt, doc_id, "has_flow", "declared_spec", f"{spec_fp}:steps.client")
                 step_scr = _resolve_ref(step.get("screen"))
                 if step_scr:
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'uses_screen');", (doc_id, step_scr))
+                    upsert_edge(conn, doc_id, step_scr, "uses_screen", "declared_spec", f"{spec_fp}:steps.screen")
 
         biz = fm.get("business", {})
         if isinstance(biz, dict):
             for pol in biz.get("policies", []) or []:
                 pol_ref = _resolve_ref(pol)
                 if pol_ref:
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'governed_by');", (doc_id, pol_ref))
+                    upsert_edge(conn, doc_id, pol_ref, "governed_by", "declared_spec", f"{spec_fp}:business.policies")
             for per in biz.get("personas", []) or []:
                 per_ref = _resolve_ref(per)
                 if per_ref:
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'serves_persona');", (doc_id, per_ref))
+                    upsert_edge(conn, doc_id, per_ref, "serves_persona", "declared_spec", f"{spec_fp}:business.personas")
 
         exp = fm.get("experience", {})
         if isinstance(exp, dict):
@@ -1172,7 +1204,7 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                 for exp_ref in exp.get(exp_key, []) or []:
                     exp_id = _resolve_ref(exp_ref)
                     if exp_id:
-                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'delivered_by');", (doc_id, exp_id))
+                        upsert_edge(conn, doc_id, exp_id, "delivered_by", "declared_spec", f"{spec_fp}:experience.{exp_key}")
 
         tech = fm.get("technical", {})
         invariants = list(fm.get("invariants", []) or [])
@@ -1185,14 +1217,14 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
             for comp_ref in tech_targets:
                 target_id = _resolve_ref(comp_ref)
                 if target_id:
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'implements');", (doc_id, target_id))
+                    upsert_edge(conn, doc_id, target_id, "implements", "declared_spec", f"{spec_fp}:technical")
             invariants.extend(tech.get("invariants", []) or [])
 
         if doc_type == "tech/component":
             cnt_id = _resolve_ref(fm.get("container"))
             if cnt_id:
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component');", (cnt_id, doc_id))
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of');", (doc_id, cnt_id))
+                upsert_edge(conn, cnt_id, doc_id, "contains_component", "declared_spec", f"{spec_fp}:container")
+                upsert_edge(conn, doc_id, cnt_id, "part_of", "declared_spec", f"{spec_fp}:container")
 
         if doc_type == "delta/mutation":
             row_fp = f"/{str(row['file_path'] or '').replace(chr(92), '/').lstrip('/')}"
@@ -1204,10 +1236,7 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                 if isinstance(v, str) and v.strip():
                     target_val = _resolve_ref(v)
                     if not is_archived_delta_edge:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'affects');",
-                            (doc_id, target_val),
-                        )
+                        upsert_edge(conn, doc_id, target_val, "affects", "declared_spec", f"{spec_fp}:mutations")
                     elif not str(target_val).startswith("DLT-"):
                         t_set = archived_delta_targets.setdefault(doc_id, set())
                         t_set.add(target_val)
@@ -1215,29 +1244,27 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
         for inv in invariants:
             iid = inv.get("id") if isinstance(inv, dict) else None
             if iid:
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts');", (doc_id, iid))
+                upsert_edge(conn, doc_id, iid, "asserts", "declared_spec", f"{spec_fp}:invariants")
 
-    conn.execute(
+    for e_src, e_dst, e_ev in conn.execute(
         """
-        INSERT OR IGNORE INTO edges (source_id, target_id, rel_type)
-        SELECT DISTINCT e_exp.source_id, e_aff.target_id, 'graduated_to'
+        SELECT DISTINCT e_exp.source_id, e_aff.target_id, e_exp.evidence
         FROM edges e_exp
         JOIN edges e_aff ON e_aff.source_id = e_exp.target_id AND e_aff.rel_type = 'affects'
         WHERE e_exp.rel_type = 'graduated_to'
           AND e_aff.target_id NOT LIKE 'DLT-%';
         """
-    )
+    ).fetchall():
+        upsert_edge(conn, e_src, e_dst, "graduated_to", "declared_spec", e_ev or "")
+
     for arch_dlt_id, t_vals in archived_delta_targets.items():
         exp_rows = conn.execute(
-            "SELECT DISTINCT source_id FROM edges WHERE target_id = ? AND rel_type = 'graduated_to';",
+            "SELECT DISTINCT source_id, evidence FROM edges WHERE target_id = ? AND rel_type = 'graduated_to';",
             (arch_dlt_id,),
         ).fetchall()
         for er in exp_rows:
             for tv in t_vals:
-                conn.execute(
-                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'graduated_to');",
-                    (er["source_id"], tv),
-                )
+                upsert_edge(conn, er["source_id"], tv, "graduated_to", "declared_spec", er["evidence"] or "")
 
     _derive_ast_import_edges(conn)
 
@@ -1253,7 +1280,9 @@ def _derive_ast_import_edges(
     if resolver is None:
         resolver = _CodeOwnershipResolver(conn)
 
+    conn.execute("DELETE FROM code_couplings;")
     conn.execute("DELETE FROM edges WHERE rel_type = 'consumes_api';")
+    conn.execute("DELETE FROM edges WHERE rel_type = 'consumes' AND provenance = 'ast_http';")
 
     comp_to_cnt: dict[str, str] = {}
     for src_id, dst_id in conn.execute("SELECT source_id, target_id FROM edges WHERE rel_type = 'part_of';"):
@@ -1265,6 +1294,31 @@ def _derive_ast_import_edges(
         if ent_id.startswith("CMP-"):
             return comp_to_cnt.get(ent_id, ""), ent_id
         return ent_id, ""
+
+    def _record_coupling(
+        src_cnt: str,
+        src_cmp: str,
+        dst_cnt: str,
+        dst_cmp: str,
+        provenance: str,
+        src_file: str,
+        line_no: int,
+        target_ref: str,
+    ) -> None:
+        src_ent = src_cmp or src_cnt
+        dst_ent = dst_cmp or dst_cnt
+        if not src_ent or not dst_ent:
+            return
+        if src_ent == dst_ent and (not src_cnt or src_cnt == dst_cnt):
+            return
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO code_couplings
+            (source_entity_id, target_entity_id, source_cnt_id, target_cnt_id, provenance, src_file, line_start, target_ref)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (src_ent, dst_ent, src_cnt, dst_cnt, provenance, src_file, max(1, int(line_no or 1)), target_ref),
+        )
 
     known_files: set[str] = set()
     for (fp,) in conn.execute(
@@ -1308,7 +1362,7 @@ def _derive_ast_import_edges(
             owner_counts = ns_owner_counts.setdefault(ns_name, {})
             owner_counts[owner] = owner_counts.get(owner, 0) + 1
 
-    ast_cnt_deps: set[tuple[str, str]] = set()
+    ast_cnt_deps: dict[tuple[str, str], str] = {}
     csproj_cnt_deps: set[tuple[str, str]] = set()
 
     eff_root = Path(repo_root).resolve() if repo_root is not None else None
@@ -1403,11 +1457,12 @@ def _derive_ast_import_edges(
                     ) or _is_test_dir_segment(target_cp.parent.name, allow_root_names=True):
                         continue
                     dst_cnt, dst_cmp = _resolve_csproj_owner(target_cp)
+                    ref_line = proj_text.count("\n", 0, m_ref.start()) + 1
+                    ev = f"{rel_cp}:{ref_line} -> {rel_target}"
+                    if (src_cmp and dst_cmp and src_cmp != dst_cmp) or (src_cnt and dst_cnt and src_cnt != dst_cnt):
+                        _record_coupling(src_cnt, src_cmp, dst_cnt, dst_cmp, "ast_import", rel_cp, ref_line, rel_target)
                     if src_cmp and dst_cmp and src_cmp != dst_cmp:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes_api');",
-                            (src_cmp, dst_cmp),
-                        )
+                        upsert_edge(conn, src_cmp, dst_cmp, "consumes_api", "ast_import", ev)
                     if (
                         src_cnt
                         and dst_cnt
@@ -1416,20 +1471,21 @@ def _derive_ast_import_edges(
                         and dst_cnt.startswith("CNT-")
                     ):
                         csproj_cnt_deps.add((src_cnt, dst_cnt))
-                        ast_cnt_deps.add((src_cnt, dst_cnt))
+                        ast_cnt_deps.setdefault((src_cnt, dst_cnt), ev)
 
     import_rows = conn.execute(
         """
-        SELECT file_path, symbol, entity_id
+        SELECT file_path, symbol, entity_id, line_start
         FROM code_symbols
         WHERE kind = 'import' AND is_primary = 1 AND is_test = 0
-        ORDER BY file_path, symbol;
+        ORDER BY file_path, line_start, symbol;
         """
     ).fetchall()
 
     for row in import_rows:
         src_file = _normalize_rel_path(row["file_path"])
         imp = str(row["symbol"] or "").strip()
+        imp_line = max(1, int(row["line_start"] or 1))
         if not src_file or not imp:
             continue
 
@@ -1490,11 +1546,11 @@ def _derive_ast_import_edges(
                             or (src_cnt == dst_cnt and counts_for_ns.get(dst_owner, 0) > src_ns_count)
                         ):
                             continue
+                        ev_ns = f"{src_file}:{imp_line} -> namespace:{matched_ns}"
+                        if (src_cmp and dst_cmp and src_cmp != dst_cmp) or (src_cnt and dst_cnt and src_cnt != dst_cnt):
+                            _record_coupling(src_cnt, src_cmp, dst_cnt, dst_cmp, "ast_import", src_file, imp_line, f"namespace:{matched_ns}")
                         if src_cmp and dst_cmp and src_cmp != dst_cmp:
-                            conn.execute(
-                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes_api');",
-                                (src_cmp, dst_cmp),
-                            )
+                            upsert_edge(conn, src_cmp, dst_cmp, "consumes_api", "ast_import", ev_ns)
                         if (
                             src_cnt
                             and dst_cnt
@@ -1502,7 +1558,7 @@ def _derive_ast_import_edges(
                             and src_cnt.startswith("CNT-")
                             and dst_cnt.startswith("CNT-")
                         ):
-                            ast_cnt_deps.add((src_cnt, dst_cnt))
+                            ast_cnt_deps.setdefault((src_cnt, dst_cnt), ev_ns)
             continue
 
         if dst_file == src_file:
@@ -1510,33 +1566,29 @@ def _derive_ast_import_edges(
 
         src_cnt, src_cmp = _effective_cnt_and_comp(src_file, row["entity_id"])
         dst_cnt, dst_cmp = _effective_cnt_and_comp(dst_file)
+        ev_imp = f"{src_file}:{imp_line} -> {dst_file}"
 
+        if (src_cmp and dst_cmp and src_cmp != dst_cmp) or (src_cnt and dst_cnt and src_cnt != dst_cnt):
+            _record_coupling(src_cnt, src_cmp, dst_cnt, dst_cmp, "ast_import", src_file, imp_line, dst_file)
         if src_cmp and dst_cmp and src_cmp != dst_cmp:
-            conn.execute(
-                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes_api');",
-                (src_cmp, dst_cmp),
-            )
+            upsert_edge(conn, src_cmp, dst_cmp, "consumes_api", "ast_import", ev_imp)
         if src_cnt and dst_cnt and src_cnt != dst_cnt and src_cnt.startswith("CNT-") and dst_cnt.startswith("CNT-"):
-            ast_cnt_deps.add((src_cnt, dst_cnt))
+            ast_cnt_deps.setdefault((src_cnt, dst_cnt), ev_imp)
 
     conn.execute("DELETE FROM edges WHERE rel_type = 'depends_on';")
-    for src_cnt, dst_cnt in sorted(ast_cnt_deps):
-        conn.execute(
-            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'depends_on');",
-            (src_cnt, dst_cnt),
-        )
-    conn.execute(
+
+    for src_cnt, dst_cnt, ctr_ev in conn.execute(
         """
-        INSERT OR IGNORE INTO edges (source_id, target_id, rel_type)
         SELECT DISTINCT
             COALESCE(p_src.target_id, c_edge.source_id) AS src_cnt,
             COALESCE(p_prov.target_id, p_edge.source_id) AS dst_cnt,
-            'depends_on'
+            'contract:' || c_edge.target_id AS ctr_ev
         FROM edges c_edge
         LEFT JOIN edges p_src ON p_src.source_id = c_edge.source_id AND p_src.rel_type = 'part_of'
         JOIN edges p_edge ON p_edge.target_id = c_edge.target_id AND p_edge.rel_type = 'provides'
         LEFT JOIN edges p_prov ON p_prov.source_id = p_edge.source_id AND p_prov.rel_type = 'part_of'
         WHERE c_edge.rel_type = 'consumes'
+          AND c_edge.provenance = 'declared_spec'
           AND COALESCE(p_src.target_id, c_edge.source_id) LIKE 'CNT-%'
           AND COALESCE(p_prov.target_id, p_edge.source_id) LIKE 'CNT-%'
           AND COALESCE(p_src.target_id, c_edge.source_id) != COALESCE(p_prov.target_id, p_edge.source_id)
@@ -1544,18 +1596,27 @@ def _derive_ast_import_edges(
         SELECT DISTINCT
             COALESCE(p_src.target_id, c_edge.source_id) AS src_cnt,
             c_edge.target_id AS dst_cnt,
-            'depends_on'
+            c_edge.evidence AS ctr_ev
         FROM edges c_edge
         LEFT JOIN edges p_src ON p_src.source_id = c_edge.source_id AND p_src.rel_type = 'part_of'
         WHERE c_edge.rel_type = 'consumes'
+          AND c_edge.provenance = 'declared_spec'
           AND COALESCE(p_src.target_id, c_edge.source_id) LIKE 'CNT-%'
           AND c_edge.target_id LIKE 'CNT-%'
-          AND COALESCE(p_src.target_id, c_edge.source_id) != c_edge.target_id
-        UNION
+          AND COALESCE(p_src.target_id, c_edge.source_id) != c_edge.target_id;
+        """
+    ).fetchall():
+        upsert_edge(conn, src_cnt, dst_cnt, "depends_on", "declared_spec", ctr_ev or "")
+
+    for (src_cnt, dst_cnt), ev_str in sorted(ast_cnt_deps.items()):
+        upsert_edge(conn, src_cnt, dst_cnt, "depends_on", "ast_import", ev_str)
+
+    for src_cnt, dst_cnt, api_ev in conn.execute(
+        """
         SELECT DISTINCT
             p_src.target_id AS src_cnt,
             COALESCE(p_dst.target_id, api_edge.target_id) AS dst_cnt,
-            'depends_on'
+            api_edge.evidence
         FROM edges api_edge
         JOIN edges p_src ON p_src.source_id = api_edge.source_id AND p_src.rel_type = 'part_of'
         LEFT JOIN edges p_dst ON p_dst.source_id = api_edge.target_id AND p_dst.rel_type = 'part_of'
@@ -1564,7 +1625,282 @@ def _derive_ast_import_edges(
           AND COALESCE(p_dst.target_id, api_edge.target_id) LIKE 'CNT-%'
           AND p_src.target_id != COALESCE(p_dst.target_id, api_edge.target_id);
         """
-    )
+    ).fetchall():
+        upsert_edge(conn, src_cnt, dst_cnt, "depends_on", "ast_import", api_ev or "")
+
+    _derive_http_request_edges(conn, resolver, repo_root=eff_root)
+
+
+_HTTP_DOC_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"})
+_HTTP_JSON_TABLE_ROW_RE = re.compile(r"^\|\s*([^|]+)\|\s*`?(/[^|\s`]*)`?\s*\|", re.MULTILINE)
+
+
+def _extract_contract_http_routes(
+    conn: sqlite3.Connection,
+    eff_root: Path | None,
+) -> dict[tuple[str, str], list[tuple[str, str, str]]]:
+    """Extract normalized (method, path) -> [(ctr_id, ctr_rel_path, owning_cnt_id)] from openapi and http_json CTR-* specs."""
+    routes: dict[tuple[str, str], list[tuple[str, str, str]]] = {}
+    if eff_root is None or not eff_root.is_dir():
+        return routes
+
+    resolve_ref = build_spec_path_resolver(conn)
+    for row in conn.execute(
+        "SELECT id, file_path, data_json FROM entities WHERE type = 'tech/contract' ORDER BY id;"
+    ).fetchall():
+        ctr_id = str(row["id"] or "")
+        ctr_fp = _normalize_rel_path(str(row["file_path"] or ""))
+        try:
+            fm = orjson.loads(row["data_json"])
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(fm, dict) or not ctr_id:
+            continue
+        protocol = str(fm.get("protocol") or "").strip().lower()
+        owning_cnt = resolve_ref(fm.get("container") or "")
+        spec_rel = _normalize_rel_path(str(fm.get("specification_file") or ""))
+
+        if protocol in ("openapi", "rest_openapi") and spec_rel.lower().endswith((".yaml", ".yml", ".json")):
+            spec_abs = (eff_root / spec_rel).resolve()
+            if spec_abs.is_file() and spec_abs.is_relative_to(eff_root):
+                parsed_spec: Any = None
+                with contextlib.suppress(OSError, ValueError, TypeError):
+                    raw_txt = spec_abs.read_text(encoding="utf-8", errors="replace")
+                    if spec_rel.lower().endswith(".json"):
+                        parsed_spec = orjson.loads(raw_txt)
+                    else:
+                        import yaml
+
+                        parsed_spec = yaml.safe_load(raw_txt)
+                if isinstance(parsed_spec, dict) and isinstance(parsed_spec.get("paths"), dict):
+                    srv_prefixes = [""]
+                    servers = parsed_spec.get("servers")
+                    if isinstance(servers, list):
+                        for srv in servers:
+                            if isinstance(srv, dict) and isinstance(srv.get("url"), str):
+                                sp = normalize_http_route_path(srv["url"])
+                                if sp and sp != "/" and sp not in srv_prefixes:
+                                    srv_prefixes.append(sp)
+                    for raw_p, ops in parsed_spec["paths"].items():
+                        if not isinstance(ops, dict):
+                            continue
+                        norm_raw = normalize_http_route_path(str(raw_p))
+                        if not norm_raw:
+                            continue
+                        for verb_k in ops:
+                            verb_u = str(verb_k).strip().upper()
+                            if verb_u in _HTTP_DOC_METHODS:
+                                for pref in srv_prefixes:
+                                    full_p = (
+                                        normalize_http_route_path(f"{pref.rstrip('/')}{norm_raw}")
+                                        if pref
+                                        else norm_raw
+                                    )
+                                    entry = (ctr_id, spec_rel, owning_cnt)
+                                    bucket = routes.setdefault((verb_u, full_p), [])
+                                    if entry not in bucket:
+                                        bucket.append(entry)
+
+        elif protocol == "http_json" and ctr_fp:
+            adoc_abs = (eff_root / ctr_fp).resolve()
+            if not adoc_abs.is_file() and not ctr_fp.startswith("eidos/"):
+                adoc_abs = (eff_root / "eidos" / ctr_fp).resolve()
+            if adoc_abs.is_file() and adoc_abs.is_relative_to(eff_root):
+                with contextlib.suppress(OSError):
+                    adoc_txt = adoc_abs.read_text(encoding="utf-8", errors="replace")
+                    for m_row in _HTTP_JSON_TABLE_ROW_RE.finditer(adoc_txt):
+                        methods_col, path_col = m_row.group(1), m_row.group(2)
+                        norm_p = normalize_http_route_path(path_col)
+                        if not norm_p:
+                            continue
+                        for tok in re.findall(r"[A-Z]{3,7}", methods_col):
+                            if tok in _HTTP_DOC_METHODS:
+                                entry = (ctr_id, ctr_fp, owning_cnt)
+                                bucket = routes.setdefault((tok, norm_p), [])
+                                if entry not in bucket:
+                                    bucket.append(entry)
+    return routes
+
+
+def _route_segments_match(req_path: str, cand_path: str) -> bool:
+    """Return True if concrete/parameterized ``req_path`` matches parameterized ``cand_path`` segment-by-segment."""
+    r_segs = [s for s in req_path.strip("/").split("/") if s]
+    c_segs = [s for s in cand_path.strip("/").split("/") if s]
+    if not r_segs or len(r_segs) != len(c_segs):
+        return False
+    has_static_match = False
+    for rs, cs in zip(r_segs, c_segs, strict=False):
+        if rs == cs:
+            if cs != "{*}":
+                has_static_match = True
+        elif cs == "{*}" or rs == "{*}":
+            continue
+        else:
+            return False
+    return has_static_match
+
+
+def _derive_http_request_edges(
+    conn: sqlite3.Connection,
+    resolver: _CodeOwnershipResolver | None = None,
+    repo_root: Path | None = None,
+) -> None:
+    """Match client http_request symbols against AST http_endpoint routes and OpenAPI/http_json CTR-* contracts."""
+    if resolver is None:
+        resolver = _CodeOwnershipResolver(conn)
+
+    eff_root = Path(repo_root).resolve() if repo_root is not None else None
+    if eff_root is None:
+        db_file = _resolve_conn_db_path(conn)
+        if db_file is not None and db_file.parent.name == ".cache" and db_file.parent.parent.name == "eidos":
+            eff_root = db_file.parents[2]
+
+    comp_to_cnt: dict[str, str] = {}
+    for src_id, dst_id in conn.execute("SELECT source_id, target_id FROM edges WHERE rel_type = 'part_of';"):
+        comp_to_cnt[src_id] = dst_id
+
+    def _cnt_and_cmp(rel_path: str, ent_id: str = "") -> tuple[str, str]:
+        if not ent_id:
+            ent_id = resolver.resolve(rel_path) or ""
+        if ent_id.startswith("CMP-"):
+            return comp_to_cnt.get(ent_id, ""), ent_id
+        return ent_id, ""
+
+    req_rows = conn.execute(
+        """
+        SELECT file_path, symbol, line_start, entity_id
+        FROM code_symbols
+        WHERE kind = 'http_request' AND is_primary = 1 AND is_test = 0
+        ORDER BY file_path, line_start, symbol;
+        """
+    ).fetchall()
+    if not req_rows:
+        return
+
+    endpoints_by_route: dict[tuple[str, str], list[tuple[str, int, str, str]]] = {}
+    for ep_row in conn.execute(
+        """
+        SELECT file_path, symbol, line_start, entity_id
+        FROM code_symbols
+        WHERE kind = 'http_endpoint' AND is_primary = 1 AND is_test = 0
+        ORDER BY file_path, line_start, symbol;
+        """
+    ).fetchall():
+        ep_sym = str(ep_row["symbol"] or "").strip()
+        if " " not in ep_sym:
+            continue
+        verb, norm_p = ep_sym.split(" ", 1)
+        ep_file = _normalize_rel_path(ep_row["file_path"])
+        dst_cnt, dst_cmp = _cnt_and_cmp(ep_file, str(ep_row["entity_id"] or ""))
+        endpoints_by_route.setdefault((verb.upper(), norm_p.strip()), []).append(
+            (ep_file, max(1, int(ep_row["line_start"] or 1)), dst_cnt, dst_cmp)
+        )
+
+    contracts_by_route = _extract_contract_http_routes(conn, eff_root)
+    all_route_keys = sorted(set(endpoints_by_route) | set(contracts_by_route))
+
+    for rq in req_rows:
+        cli_file = _normalize_rel_path(rq["file_path"])
+        rq_sym = str(rq["symbol"] or "").strip()
+        cli_line = max(1, int(rq["line_start"] or 1))
+        if not cli_file or " " not in rq_sym:
+            continue
+        verb, req_path = rq_sym.split(" ", 1)
+        verb = verb.upper().strip()
+        req_path = req_path.strip()
+        src_cnt, src_cmp = _cnt_and_cmp(cli_file, str(rq["entity_id"] or ""))
+        if not src_cnt and not src_cmp:
+            continue
+
+        matched_key: tuple[str, str] | None = (verb, req_path) if (verb, req_path) in all_route_keys else None
+        if matched_key is None and req_path != "/":
+            seg_candidates = [
+                (cand_v, cand_p)
+                for cand_v, cand_p in all_route_keys
+                if cand_v == verb and _route_segments_match(req_path, cand_p)
+            ]
+            if len(seg_candidates) == 1:
+                matched_key = seg_candidates[0]
+        if matched_key is None and req_path != "/":
+            suffix_candidates = [
+                (cand_v, cand_p)
+                for cand_v, cand_p in all_route_keys
+                if cand_v == verb and len(cand_p) > len(req_path) and cand_p.endswith(req_path)
+            ]
+            cand_owners: set[str] = set()
+            for ck in suffix_candidates:
+                for srv_f, _sl, d_cnt, d_cmp in endpoints_by_route.get(ck, ()):
+                    if srv_f != cli_file:
+                        cand_owners.add(d_cmp or d_cnt)
+                for c_id, _cf, c_cnt in contracts_by_route.get(ck, ()):
+                    cand_owners.add(c_cnt or c_id)
+            if len(suffix_candidates) == 1 and len(cand_owners) == 1:
+                matched_key = suffix_candidates[0]
+
+        if matched_key is None:
+            continue
+
+        matched_verb, matched_path = matched_key
+        coupled_containers_for_call: set[str] = set()
+
+        for srv_file, srv_line, dst_cnt, dst_cmp in endpoints_by_route.get(matched_key, ()):
+            if srv_file == cli_file:
+                continue
+            ev = f"{cli_file}:{cli_line} -> {matched_verb} {matched_path} ({srv_file}:{srv_line})"
+            src_ent = src_cmp or src_cnt
+            dst_ent = dst_cmp or dst_cnt
+            if (
+                ((src_cmp and dst_cmp and src_cmp != dst_cmp) or (src_cnt and dst_cnt and src_cnt != dst_cnt))
+                and src_ent
+                and dst_ent
+                and (src_ent != dst_ent or src_cnt != dst_cnt)
+            ):
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO code_couplings
+                    (source_entity_id, target_entity_id, source_cnt_id, target_cnt_id, provenance, src_file, line_start, target_ref)
+                    VALUES (?, ?, ?, ?, 'ast_http', ?, ?, ?);
+                    """,
+                    (
+                        src_ent,
+                        dst_ent,
+                        src_cnt,
+                        dst_cnt,
+                        cli_file,
+                        cli_line,
+                        f"{matched_verb} {matched_path} ({srv_file}:{srv_line})",
+                    ),
+                )
+            if src_cmp and dst_cmp and src_cmp != dst_cmp:
+                upsert_edge(conn, src_cmp, dst_cmp, "consumes_api", "ast_http", ev)
+            if src_cnt and dst_cnt and src_cnt != dst_cnt and src_cnt.startswith("CNT-") and dst_cnt.startswith("CNT-"):
+                upsert_edge(conn, src_cnt, dst_cnt, "depends_on", "ast_http", ev)
+                coupled_containers_for_call.add(dst_cnt)
+
+        for ctr_id, _ctr_fp, ctr_cnt in contracts_by_route.get(matched_key, ()):
+            ev_ctr = f"{cli_file}:{cli_line} -> {matched_verb} {matched_path} ({ctr_id})"
+            client_owner = src_cmp or src_cnt
+            if client_owner and not (not src_cmp and client_owner == ctr_cnt):
+                upsert_edge(conn, client_owner, ctr_id, "consumes", "ast_http", ev_ctr)
+            if src_cnt and ctr_cnt and src_cnt != ctr_cnt and src_cnt.startswith("CNT-") and ctr_cnt.startswith("CNT-"):
+                upsert_edge(conn, src_cnt, ctr_cnt, "depends_on", "ast_http", ev_ctr)
+                if ctr_cnt not in coupled_containers_for_call and client_owner:
+                    conn.execute(
+                        """
+                        INSERT OR IGNORE INTO code_couplings
+                        (source_entity_id, target_entity_id, source_cnt_id, target_cnt_id, provenance, src_file, line_start, target_ref)
+                        VALUES (?, ?, ?, ?, 'ast_http', ?, ?, ?);
+                        """,
+                        (
+                            client_owner,
+                            ctr_cnt,
+                            src_cnt,
+                            ctr_cnt,
+                            cli_file,
+                            cli_line,
+                            f"{matched_verb} {matched_path} ({ctr_id})",
+                        ),
+                    )
 
 
 def index_test_bindings(
@@ -1670,10 +2006,7 @@ def index_test_bindings(
         for inv_id in fn_tokens:
             if not inv_id.startswith("INV-"):
                 continue
-            conn.execute(
-                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts');",
-                (identifier, inv_id),
-            )
+            upsert_edge(conn, identifier, inv_id, "asserts", "ast_symbol", identifier)
             conn.execute(
                 "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'test_binding');",
                 (rel_test, inv_id),
@@ -1808,10 +2141,7 @@ def _reconcile_invariant_coverage(
                         )
                     tb_verified = any(iid in toks for toks in candidate_token_lists)
                     if tb_verified:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts');",
-                            (target_ref, iid),
-                        )
+                        upsert_edge(conn, target_ref, iid, "asserts", "ast_symbol", target_ref)
                 matching = list(dict.fromkeys([target_ref, *ast_matches])) if tb_verified else []
                 has_coverage = tb_verified
             else:
@@ -1894,6 +2224,7 @@ def _sync_index_locked(
             conn.execute("DELETE FROM indexed_files;")
             conn.execute("DELETE FROM entities;")
             conn.execute("DELETE FROM edges;")
+            conn.execute("DELETE FROM code_couplings;")
             conn.execute("DELETE FROM symbol_mappings;")
             conn.execute("DELETE FROM code_symbols;")
             conn.execute("DELETE FROM specs_fts;")
@@ -2408,8 +2739,8 @@ def _sync_index_locked(
                     (clt_id,),
                 ).fetchall()
                 for (ds_id,) in ds_rows:
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by');", (cnt_id, ds_id))
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_container');", (ds_id, cnt_id))
+                    upsert_edge(conn, cnt_id, ds_id, "styled_by", "declared_spec", f"client:{clt_id}")
+                    upsert_edge(conn, ds_id, cnt_id, "styles_container", "declared_spec", f"client:{clt_id}")
                     for pat in cnt_paths:
                         conn.execute(
                             "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'inferred_path');",

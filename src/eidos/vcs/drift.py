@@ -14,7 +14,7 @@ from typing import Any
 from eidos.core.index.graph_index import get_architectural_index
 from eidos.core.index.storage import get_cached_spec_document
 from eidos.core.spec.parser import extract_frontmatter
-from eidos.core.spec.validator import SpecValidator, ValidationReport
+from eidos.core.spec.validator import SpecValidator, ValidationReport, evaluate_import_boundaries
 from eidos.core.workspace.project import find_git_root, is_generated_or_vendored
 from eidos.vcs.diff import (
     POLYGLOT_TEST_PATTERNS,
@@ -47,6 +47,7 @@ from eidos.vcs.structural import (
     _is_system_level_spec,
     _pair_moved_files,
     _path_in,
+    _remap_boundary_records,
     _resolve_bound_design_ids,
     _spec_coverage_verdict,
     _SpecDiffInspector,
@@ -99,6 +100,8 @@ class DriftCheckResult:
     uncovered_design_files: list[str] = field(default_factory=list)
     unmapped_code_files: list[str] = field(default_factory=list)
     trivially_covered_files: list[dict[str, Any]] = field(default_factory=list)
+    boundary_violations: list[dict[str, Any]] = field(default_factory=list)
+    ratchet_shrink_candidates: list[dict[str, Any]] = field(default_factory=list)
     remediation_suggestions: list[str] = field(default_factory=list)
     summary_markdown: str = ""
 
@@ -173,7 +176,12 @@ def _materialize_head_snapshot(
         with contextlib.suppress(OSError):
             dst_cache_dir = snap_eidos / ".cache"
             dst_cache_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src_cache_db, dst_cache_dir / "index.db")
+            dst_db = dst_cache_dir / "index.db"
+            shutil.copy2(src_cache_db, dst_db)
+            import sqlite3
+
+            with contextlib.suppress(sqlite3.Error), sqlite3.connect(dst_db) as snap_conn:
+                snap_conn.execute("UPDATE indexed_files SET mtime = -1.0;")
     return tmp_dir
 
 
@@ -511,6 +519,8 @@ def detect_drift(
         comp_mappings = [m for m in all_comp_mappings if m[0] in structural_set]
         body_comp_mappings = [m for m in all_comp_mappings if m[0] not in structural_set]
         idx = get_architectural_index(repo_root=eval_root, eidos_dir=eval_eidos) if eval_eidos.exists() else None
+        if idx is not None and snap_root is not None:
+            idx.sync(auto_semantic=False)
 
         # 2. Extract declared targets from active deltas (excluding rejected or pre-existing applied deltas)
         from eidos.core.spec.models import FrontmatterModel
@@ -833,8 +843,27 @@ def detect_drift(
 
         # 4. Specification Schema & Link Integrity Validation + Applied Delta Verification + Onboarding Governance
         validator = SpecValidator()
-        validation_report = validator.validate_directory(eval_eidos)
+        validation_report = validator.validate_directory(eval_eidos, check_import_boundaries=False)
         _remap_validation_report(validation_report, snap_root)
+
+        raw_boundary_violations, raw_shrink_candidates = (
+            evaluate_import_boundaries(
+                eval_eidos,
+                repo_root=eval_root,
+                documents=validation_report.documents,
+            )
+            if eval_eidos.exists()
+            else ([], [])
+        )
+        boundary_violations = _remap_boundary_records(
+            raw_boundary_violations,
+            lambda s: _remap_snapshot_str(s, snap_root),
+        )
+        ratchet_shrink_candidates = _remap_boundary_records(
+            raw_shrink_candidates,
+            lambda s: _remap_snapshot_str(s, snap_root),
+        )
+        boundary_drift = bool(boundary_violations)
 
         applied_delta_drift = False
         for df_rel, delta_id_str, new_dc_val in newly_applied_deltas:
@@ -895,6 +924,7 @@ def detect_drift(
             or unmapped_drift
             or applied_delta_drift
             or onboarding_drift
+            or boundary_drift
         )
 
         # 5. Invariant Traceability & Orphan Invariant Detection (DLT-2026-027, DLT-2026-068)
@@ -946,6 +976,8 @@ def detect_drift(
             orphan_invariants=orphan_invariants,
             touched_components=touched_components,
             eidos_rel_prefix=eidos_rel_prefix,
+            boundary_violations=boundary_violations,
+            ratchet_shrink_candidates=ratchet_shrink_candidates,
         )
 
         return DriftCheckResult(
@@ -962,6 +994,8 @@ def detect_drift(
             uncovered_design_files=frontend_code_files,
             unmapped_code_files=uncovered_unmapped_code,
             trivially_covered_files=trivial_records,
+            boundary_violations=boundary_violations,
+            ratchet_shrink_candidates=ratchet_shrink_candidates,
             remediation_suggestions=remediation,
             summary_markdown=summary_markdown,
         )

@@ -4,7 +4,7 @@ id: CAP-AGENT-001
 title: "Universal Agent Adapter & Context Slicing Engine"
 domain: DOM-AGENT-INTELLIGENCE
 status: active
-version: "1.15.0"
+version: "1.16.0"
 
 business:
   personas:
@@ -24,6 +24,8 @@ technical:
   components:
     - "CMP-CLI-CONTEXT-COMMAND"
     - "CMP-CLI-DOCTOR-HOOKS"
+    - "CMP-CLI-INDEX-COMMANDS"
+    - "CMP-GRAPH-TRAVERSAL-ENGINE"
     - "CMP-PLUGIN-INSTALLER"
     - "CMP-SEMANTIC-EMBEDDING-ENGINE"
     - "CMP-TIERED-CONTEXT-COMPRESSOR"
@@ -55,7 +57,7 @@ technical:
       rule: "All lifecycle hooks in hooks.json must invoke the native eidos hook CLI entrypoint directly without shell or Python wrapper scripts."
       test_binding: "tests/test_plugin.py::test_hooks_are_cli_native"
     - id: INV-AGENT-CONTEXT-SLICING
-      rule: "Context slicing must extract compact, token-efficient architectural subgraphs across exact file paths, comma-separated paths, and deterministic '--file' glob patterns (including planned paths under existing or indexed parent directories and subdirectory CLI invocations) without phantom dependencies or circular module errors, surfacing owning component domain_path and bound design (CLT-*/DS-*) pointers, capability file_path, business.personas, business.policies, and experience bindings (clients, design_systems, screens, flows, ui_components), and policy category/file_path in guardrails and deep tiers."
+      rule: "Context slicing must extract compact, token-efficient architectural subgraphs across exact file paths, comma-separated paths, and deterministic '--file' glob patterns (including planned paths under existing or indexed parent directories and subdirectory CLI invocations) without phantom dependencies or circular module errors, surfacing structured epistemic provenance_tags (observed, derived, inferred), owning component domain_path and bound design (CLT-*/DS-*) pointers, capability file_path, business.personas, business.policies, and experience bindings (clients, design_systems, screens, flows, ui_components), and policy category/file_path in guardrails and deep tiers."
       test_binding: "tests/test_context.py::test_context_slice_by_file"
     - id: INV-AGENT-GRAPH-INDEX-FRESHNESS
       rule: "The embedded architectural knowledge graph (along with 'spec_validation_cache' and 'test_binding_cache') must automatically detect mtime/SHA-256 drift and lazily synchronize before query or drift execution, maintaining sub-10ms response times with zero external runtime dependencies."
@@ -91,7 +93,7 @@ In strict adherence to *POL-004*, Eidos never initiates AI/LLM calls itself. Ins
 * **Deterministic Substrate for Coding Agents**: Exposing machine-readable JSON envelopes across CLI inspection commands (`eidos context`, `eidos index`, `eidos drift`).
 * **Tiered Context Slicing (`CMP-TIERED-CONTEXT-COMPRESSOR`, `CMP-CLI-CONTEXT-COMMAND`, `INV-AGENT-CONTEXT-SLICING`)**: Extracting token-efficient architectural subgraphs across exact file paths, comma-separated file lists, quoted `--file` glob patterns (including `{a,b}` brace globs and planned non-existent files under existing or indexed parent directories), entity IDs, and task prompts.
 * **Hybrid Lexical-Relational Retrieval**: Combining FTS5 BM25 search with graph-neighborhood traversals to resolve engineering prompts to architectural entities.
-* **Architectural Blast-Radius Analysis**: Recursive CTE impact mapping allowing agents to assess blast radius before proposing code changes.
+* **Architectural Blast-Radius Analysis**: Confidence-filtered recursive CTE impact mapping (`eidos index blast-radius --min-confidence <inferred|derived|observed>`) allowing agents to distinguish directly observed spec facts and derived AST/HTTP couplings from inferred hits before proposing code changes.
 * **Turn-Scoped Stateless 1-Turn Stop / PreToolUse Lifecycle Hook**: Unified `Stop` / `PreToolUse` hook (`eidos hook`) honoring both snake_case `stop_hook_active` and camelCase `stopHookActive` retry markers, gating Cline premature completion on `attempt_completion`, short-circuiting zero-edit Q&A turns via session baselines (`eidos/.cache/hook_baselines/`), and verifying specification schemas, cross-references, invariant test bindings, and spec-to-code synchronization via `detect_drift`.
 * **Non-Destructive Plugin Ecosystem Management (`INV-PLUGIN-INSTALL-TRUTHFULNESS`)**: Installing and removing Agent Skills (`agentskills.io`) via `eidos plugin` across all 9 supported coding harnesses (`.agents/skills/` for Antigravity, Cursor, GitHub Copilot, OpenAI Codex, Cline, Kilo Code, and OpenCode; `.claude/skills/` for Claude Code; `.aider/skills/` for Aider) with opt-in `--hooks` native `Stop` / `PreToolUse` hook wiring on `eidos plugin install` (`.agents/hooks.json`, `.claude/settings.json`, `.cursor/hooks.json`, `.clinerules/hooks/PreToolUse`, `.github/hooks/hooks.json`, `.codex/hooks.json`, disabled by default and preserved on `eidos plugin update`), truthful `modified` status reporting when locally edited skills are skipped, comment-preserving `.aider.conf.yml` editing, self-hosted `.agents/skills` symlink tolerance, and clean target pruning on `uninstall`.
 * **Canonical `AGENTS.md` Bridge & Doctor Integrity (`INV-PLUGIN-MANAGED-BLOCK-SAFETY`, `INV-DOCTOR-ONBOARDING-INTEGRITY`)**: Every install target projects one marker-delimited, hash-stamped Eidos block into the repository's root `AGENTS.md`, verified continuously by `eidos doctor` whenever Agent Skills or `.eidos-manifest.json` are present.
@@ -105,7 +107,7 @@ Eidos implements a three-tier context compression model:
 |===
 | Tier | Approximate Size | Contents Included
 | `anchor` | ~140 tokens | Owning container (`CNT-*`) and internal component (`CMP-*`), runtime, `source_path`, bound domain, compact `DEC-*` architectural decisions (`title`, `decision`, and rejected option names), and direct interface contract (`CTR-*`) signatures.
-| `guardrails` | ~300–900 tokens | Everything in `anchor`, plus bounded `DEC-*` rationale and `rejected_alternatives`, component `domain_path` and bound `design` (`CLT-*`/`DS-*`) pointers, domain capabilities (`CAP-*` with `file_path`, `personas`, `policies`, and `experience` bindings), active invariants (`INV-*`) with `test_binding`, and governing policies (`POL-*` with `category` and `file_path`).
+| `guardrails` | ~300–900 tokens | Everything in `anchor`, plus structured epistemic `provenance_tags` (`observed`, `derived`, `inferred`), bounded `DEC-*` rationale and `rejected_alternatives`, component `domain_path` and bound `design` (`CLT-*`/`DS-*`) pointers, domain capabilities (`CAP-*` with `file_path`, `personas`, `policies`, and `experience` bindings), active invariants (`INV-*`) with `test_binding`, and governing policies (`POL-*` with `category` and `file_path`).
 | `deep` | ~500–1,500 tokens | Comprehensive architectural audit slice: C4 Level 3 internal building blocks, full contract schemas, full policy texts, full `DEC-*` trade-off records, and downstream dependents.
 |===
 

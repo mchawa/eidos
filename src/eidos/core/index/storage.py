@@ -21,8 +21,8 @@ import orjson
 if TYPE_CHECKING:
     from eidos.core.spec.models import SpecDocument
 
-# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-133).
-SCHEMA_VERSION = "2.19.0"
+# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-137).
+SCHEMA_VERSION = "2.20.0"
 
 # In-process parsed SpecDocument cache keyed by resolved Path -> (mtime_ns, st_size, sha256, SpecDocument)
 _PARSED_SPEC_MEM_CACHE: dict[Path, tuple[int, int, str, SpecDocument]] = {}
@@ -30,6 +30,7 @@ _PARSED_SPEC_MEM_CACHE: dict[Path, tuple[int, int, str, SpecDocument]] = {}
 # Every table owned by the derived index cache (dropped and rebuilt on schema version mismatch).
 _MANAGED_TABLES = (
     "code_symbols",
+    "code_couplings",
     "symbol_mappings",
     "edges",
     "entities",
@@ -95,11 +96,29 @@ CREATE TABLE IF NOT EXISTS edges (
     source_id TEXT NOT NULL,
     target_id TEXT NOT NULL,
     rel_type TEXT NOT NULL,
+    provenance TEXT NOT NULL DEFAULT 'declared_spec',
+    evidence TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (source_id, target_id, rel_type)
 );
 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
 CREATE INDEX IF NOT EXISTS idx_edges_rel ON edges(rel_type);
+CREATE INDEX IF NOT EXISTS idx_edges_provenance ON edges(provenance);
+
+CREATE TABLE IF NOT EXISTS code_couplings (
+    source_entity_id TEXT NOT NULL,
+    target_entity_id TEXT NOT NULL,
+    source_cnt_id TEXT NOT NULL DEFAULT '',
+    target_cnt_id TEXT NOT NULL DEFAULT '',
+    provenance TEXT NOT NULL,
+    src_file TEXT NOT NULL,
+    line_start INTEGER NOT NULL DEFAULT 0,
+    target_ref TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (source_entity_id, target_entity_id, provenance, src_file, line_start, target_ref)
+);
+CREATE INDEX IF NOT EXISTS idx_couplings_src ON code_couplings(source_entity_id);
+CREATE INDEX IF NOT EXISTS idx_couplings_dst ON code_couplings(target_entity_id);
+CREATE INDEX IF NOT EXISTS idx_couplings_cnt ON code_couplings(source_cnt_id, target_cnt_id);
 
 CREATE TABLE IF NOT EXISTS symbol_mappings (
     symbol TEXT NOT NULL,
@@ -629,3 +648,94 @@ def save_test_binding_cache(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('test_binding_cache_ver', ?);",
             (_TEST_BINDING_CACHE_VERSION,),
         )
+
+
+EDGE_PROVENANCE_PRECEDENCE: dict[str, int] = {
+    "inferred_ownership": 1,
+    "ast_symbol": 2,
+    "ast_http": 3,
+    "ast_import": 4,
+    "declared_spec": 5,
+}
+
+PROVENANCE_TO_CONFIDENCE: dict[str, str] = {
+    "declared_spec": "observed",
+    "ast_symbol": "observed",
+    "fts_bm25": "observed",
+    "ast_import": "derived",
+    "ast_http": "derived",
+    "inferred_ownership": "inferred",
+    "semantic_rrf": "inferred",
+    "hybrid_rrf": "inferred",
+}
+
+CONFIDENCE_RANK: dict[str, int] = {
+    "inferred": 1,
+    "derived": 2,
+    "observed": 3,
+}
+
+VALID_CONFIDENCE_LEVELS: tuple[str, ...] = ("inferred", "derived", "observed")
+
+_PROVENANCE_RANK_SQL_EXPR = (
+    "CASE {col} "
+    "WHEN 'declared_spec' THEN 5 "
+    "WHEN 'ast_import' THEN 4 "
+    "WHEN 'ast_http' THEN 3 "
+    "WHEN 'ast_symbol' THEN 2 "
+    "WHEN 'inferred_ownership' THEN 1 "
+    "ELSE 0 END"
+)
+
+_UPSERT_EDGE_SQL = f"""
+INSERT INTO edges (source_id, target_id, rel_type, provenance, evidence)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(source_id, target_id, rel_type) DO UPDATE SET
+    evidence = CASE
+        WHEN {_PROVENANCE_RANK_SQL_EXPR.format(col='excluded.provenance')} > {_PROVENANCE_RANK_SQL_EXPR.format(col='edges.provenance')}
+            THEN CASE WHEN excluded.evidence != '' THEN excluded.evidence ELSE edges.evidence END
+        WHEN edges.evidence = '' AND excluded.evidence != ''
+            THEN excluded.evidence
+        ELSE edges.evidence
+    END,
+    provenance = CASE
+        WHEN {_PROVENANCE_RANK_SQL_EXPR.format(col='excluded.provenance')} > {_PROVENANCE_RANK_SQL_EXPR.format(col='edges.provenance')}
+            THEN excluded.provenance
+        ELSE edges.provenance
+    END;
+"""
+
+
+def provenance_to_confidence(provenance: str) -> str:
+    """Map a canonical provenance tag to its 3-tier epistemic certainty ('observed' | 'derived' | 'inferred')."""
+    return PROVENANCE_TO_CONFIDENCE.get((provenance or "").strip().lower(), "observed")
+
+
+def normalize_confidence_level(min_confidence: str | None) -> str:
+    """Validate and normalize a confidence threshold ('inferred' | 'derived' | 'observed')."""
+    clean = (min_confidence or "inferred").strip().lower()
+    if clean not in CONFIDENCE_RANK:
+        raise ValueError(f"Invalid min_confidence '{min_confidence}' (expected one of: {', '.join(VALID_CONFIDENCE_LEVELS)}).")
+    return clean
+
+
+def allowed_provenances_for_confidence(min_confidence: str | None) -> tuple[str, ...]:
+    """Return edge provenance tags meeting or exceeding ``min_confidence``."""
+    threshold = CONFIDENCE_RANK[normalize_confidence_level(min_confidence)]
+    return tuple(
+        prov
+        for prov in ("declared_spec", "ast_symbol", "ast_import", "ast_http", "inferred_ownership")
+        if CONFIDENCE_RANK[PROVENANCE_TO_CONFIDENCE[prov]] >= threshold
+    )
+
+
+def upsert_edge(
+    conn: sqlite3.Connection,
+    source_id: str,
+    target_id: str,
+    rel_type: str,
+    provenance: str = "declared_spec",
+    evidence: str = "",
+) -> None:
+    """Insert or update an edge enforcing canonical provenance precedence."""
+    conn.execute(_UPSERT_EDGE_SQL, (source_id, target_id, rel_type, provenance, evidence or ""))

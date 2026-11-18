@@ -735,3 +735,16 @@ def _collect_design_subgraph(
             if fp_low:
                 paths.add(fp_low)
     return paths, sub_ids
+
+
+def _remap_boundary_records(records: list[dict[str, Any]], remap_fn: Any) -> list[dict[str, Any]]:
+    """Normalize snapshot paths inside boundary_violations and ratchet_shrink_candidates records."""
+    remapped: list[dict[str, Any]] = []
+    for rec in records:
+        item = dict(rec)
+        if isinstance(item.get("spec_path"), str):
+            item["spec_path"] = remap_fn(item["spec_path"])
+        if isinstance(item.get("evidence"), list):
+            item["evidence"] = [remap_fn(str(ev)) for ev in item["evidence"]]
+        remapped.append(item)
+    return remapped

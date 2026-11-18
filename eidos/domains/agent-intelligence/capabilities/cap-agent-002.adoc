@@ -4,7 +4,7 @@ id: CAP-AGENT-002
 title: "Polyglot AST Code Graph & Structural Repo Map Intelligence"
 domain: DOM-AGENT-INTELLIGENCE
 status: active
-version: "1.5.0"
+version: "1.6.0"
 
 business:
   personas:
@@ -27,6 +27,8 @@ technical:
     - "CMP-INCREMENTAL-SYNC-ENGINE"
     - "CMP-GRAPH-STORAGE"
     - "CMP-SEMANTIC-EMBEDDING-ENGINE"
+    - "CMP-GRAPH-TRAVERSAL-ENGINE"
+    - "CMP-FTS-QUERY-ENGINE"
     - "CMP-CLI-INDEX-COMMANDS"
   contracts:
     - "CTR-EIDOS-CLI"
@@ -61,6 +63,12 @@ technical:
     - id: INV-INDEX-SYNC-CLI-CONTROLS
       rule: "sync_index must serialize multi-process and multi-thread writes under re-entrant _advisory_db_lock and BEGIN IMMEDIATE (re-checking is_dirty on contention or PRAGMA data_version changes), while 'eidos index sync' must support --no-semantic and --json with auto_semantic=False and serialized semantic_sync.lock verification so foreground sync never spawns competing ONNX workers."
       test_binding: "tests/test_dotnet_polyglot_fixes.py::test_parallel_sync_lock_and_cli_no_semantic_json"
+    - id: INV-INDEX-STATIC-HTTP-AUTOLINK
+      rule: "AstGrepIndexer and _derive_http_request_edges must deterministically extract polyglot server http_endpoint routes and non-test (is_test = 0) client http_request calls with zero runtime LLM calls (POL-004), normalize dynamic path parameters (:id, {id}, <int:id>, [id], ${expr}) to {*}, match client calls from both CMP-* and container-direct CNT-* files against server endpoints and OpenAPI/http_json CTR-* contracts (with single-candidate base-path prefix disambiguation), and materialize ast_http edges and code_couplings rows with file:line evidence without polluting synthetic method or repo-map symbol counts."
+      test_binding: "tests/test_http_autolink.py::test_static_frontend_request_to_backend_endpoint_autolink"
+    - id: INV-INDEX-EPISTEMIC-PROVENANCE
+      rule: "SCHEMA_VERSION '2.20.0' must persist explicit epistemic provenance and file:line evidence on edges using strict precedence upserts (declared_spec > ast_import > ast_http > ast_symbol > inferred_ownership) alongside per-call-site code_couplings, expose edge_counts_by_provenance in 'eidos index status', stamp normalized provenance and 3-tier confidence (observed, derived, inferred) on 'eidos index search' and 'eidos index find-symbol', and filter recursive k-hop blast-radius traversals by --min-confidence (observed > derived > inferred)."
+      test_binding: "tests/test_graph_index.py::test_epistemic_provenance_tags_and_confidence_filtering"
 ---
 = Capability: Polyglot AST Code Graph & Structural Repo Map Intelligence
 :toc: left
@@ -87,5 +95,7 @@ In strict compliance with *POL-004-ZERO-AI-CALL-DEPENDENCY*, all AST extraction,
    Resolves exact test functions (`def test_*`, `Class::test_*`, `it(...)`, `func Test*`, `#[test] fn`, `@Test fun`) enforcing capability invariants, preserving qualified `Class::method` keys so identical method names across test classes never overwrite each other.
 5. **Concurrent WAL-Safe AST Indexing & Path-Keyed Sync Parity (`INV-INDEX-CONCURRENT-WAL-SAFETY`, `INV-INDEX-SYNC-CLI-CONTROLS`, `INV-DOTNET-POLYGLOT-PARITY`)**:
    Coordinates SQLite DDL, corruption recovery, and full `sync_index` write transactions via a re-entrant advisory lockfile (`index.db.lock`) and `BEGIN IMMEDIATE` transactions without `PRAGMA mmap_size`, isolates SQLite connections per thread via `threading.local()`, debounces in-process `_ensure_synced` checks via `_last_synced_check` with `PRAGMA data_version` handoff, batches `>1,000` spec-edge rebuilds without hitting `SQLITE_MAX_EXPR_DEPTH`, indexes `.NET` test suites (`*.Tests`, `*Tests.cs`) and C# namespace/`.csproj` dependency edges, and exposes `eidos index sync --no-semantic --json` without competing background ONNX subprocess races.
-6. **AST Engine & Invariant Telemetry (`eidos index status`)**:
-   Exposes deterministic telemetry regarding the active AST parsing engine (`AstGrepIndexer`), symbol counts by syntax kind (classes, functions, methods, test bindings), and exact test-to-invariant assertion metrics with full `--json` support.
+6. **AST Engine, Epistemic Provenance & Invariant Telemetry (`eidos index status`, `INV-INDEX-EPISTEMIC-PROVENANCE`)**:
+   Exposes deterministic telemetry regarding the active AST parsing engine (`AstGrepIndexer`), `edge_counts_by_provenance` across `SCHEMA_VERSION` `2.20.0` `edges.provenance` tags (`declared_spec`, `ast_import`, `ast_http`, `ast_symbol`, `inferred_ownership`), `--min-confidence` (`observed`, `derived`, `inferred`) blast-radius traversal filtering, symbol counts by syntax kind, and exact test-to-invariant assertion metrics with full `--json` support.
+7. **Polyglot Static Frontend-to-Backend HTTP Auto-Linking (`INV-INDEX-STATIC-HTTP-AUTOLINK`)**:
+   Extracts server `http_endpoint` routes and non-test client `http_request` calls across polyglot web frameworks and HTTP clients with zero runtime LLM calls (`POL-004`), normalizes dynamic route parameters to `{*}`, and links client components/containers to backend endpoints and OpenAPI/`http_json` `CTR-*` contracts via `ast_http` edges and `code_couplings` rows with `file:line` evidence.

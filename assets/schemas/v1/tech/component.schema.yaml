@@ -31,6 +31,8 @@ properties:
     $ref: "#/$defs/domain_ref"
   source_path:
     $ref: "#/$defs/code_paths"
+  import_boundary:
+    $ref: "#/$defs/component_import_boundary"
   invariants:
     type: array
     description: "Component-specific operational or architectural invariants."

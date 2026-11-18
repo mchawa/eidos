@@ -1740,6 +1740,20 @@
         "type": "INT"
       },
       {
+        "name": "min_confidence",
+        "opts": [
+          "--min-confidence"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "inferred",
+        "help": "Minimum epistemic edge confidence threshold: 'inferred', 'derived', or 'observed'.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
         "name": "path",
         "opts": [
           "--path",

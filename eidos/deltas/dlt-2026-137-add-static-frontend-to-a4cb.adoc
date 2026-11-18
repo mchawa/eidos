@@ -1,0 +1,531 @@
+---
+type: delta/mutation
+id: DLT-2026-137-ADD-STATIC-FRONTEND-TO-A4CB
+title: "Add Static Frontend-to-Backend HTTP Auto-Linking, Executable Architectural Import Boundaries, and Explicit Epistemic Provenance Tags"
+status: applied
+intent:
+  kind: feature
+  motivation: "Close three architectural governance gaps while upholding POL-004 (zero runtime LLM calls): (1) deterministically link frontend HTTP client calls (fetch, EventSource, axios, ky, Angular HttpClient, Python requests/httpx) to backend framework endpoints and OpenAPI CTR-* contracts across polyglot containers without manual edge wiring; (2) turn passive C4 container tiers and dependency declarations into executable static import/HTTP boundary constraints with monotonically shrinking brownfield ratchet baselines in eidos validate and eidos drift; and (3) attach explicit epistemic provenance tags (declared_spec, ast_import, ast_http, ast_symbol, inferred_ownership, fts_bm25, semantic_rrf, hybrid_rrf) and 3-tier certainty levels (observed, derived, inferred) with file:line evidence across index.db edges, k-hop blast-radius filtering (--min-confidence), FTS/symbol lookups, and tiered context slices."
+mutations:
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+    details: "Extend AstGrepIndexer in src/eidos/core/index/ast_indexer.py with deterministic polyglot extract_http_endpoints(file_path, content) (kind='http_endpoint') across FastAPI/Flask/Starlette, Express/Fastify/Hono/Koa/NestJS/Next.js App Router, Go (net/http, Gin, Echo, Chi), Rust (axum, actix-web), Java/Kotlin Spring, and C# ASP.NET Core, and extract_http_requests(file_path, content) (kind='http_request') across fetch, EventSource, axios, ky, Angular this.http, and Python requests/httpx (normalizing dynamic route parameters :id, {id}, <int:id>, [id] to {*} and resolving intra-file URL constants/prefix helpers), and update eidos/architecture/components/ast-symbol-indexer.adoc (anchoring extract_http_endpoints and extract_http_requests in == Public Surface)."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/core/index/ast_indexer.py"
+      body:
+        contains:
+          - "extract_http_endpoints"
+          - "extract_http_requests"
+          - "http_endpoint"
+          - "http_request"
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    details: "Bump SCHEMA_VERSION from '2.19.0' to '2.20.0' in src/eidos/core/index/storage.py, extend the edges DDL with provenance TEXT NOT NULL DEFAULT 'declared_spec' and evidence TEXT NOT NULL DEFAULT '' plus a derived code_couplings table (added to _MANAGED_TABLES) tracking per-call-site ast_import and ast_http couplings, exclude http_endpoint and http_request from synthetic 'method' symbol telemetry in ArchitecturalIndex.get_index_status(), expose edge_counts_by_provenance in get_index_status() and min_confidence filtering on ArchitecturalIndex.get_k_hop_neighborhood(...) in src/eidos/core/index/graph_index.py, and update eidos/architecture/components/graph-storage.adoc (anchoring updated public signatures in == Public Surface)."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/index/storage.py"
+          - "src/eidos/core/index/graph_index.py"
+      body:
+        contains:
+          - "2.20.0"
+          - "provenance"
+          - "code_couplings"
+          - "edge_counts_by_provenance"
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    details: "Persist http_endpoint and http_request rows in code_symbols, implement _derive_http_request_edges(conn, resolver) in src/eidos/core/index/sync.py matching normalized non-test (is_test = 0) client (method, path_template) calls (supporting both CMP-* and container-direct CNT-* client files plus single-candidate client base-path prefix disambiguation) against AST http_endpoint symbols and protocol=='openapi' CTR-* specification_file routes (plus protocol=='http_json' AsciiDoc endpoint tables) to emit consumes_api (CMP-* -> CMP-*) and depends_on / consumes (CNT-* -> CNT-*, CMP-*/CNT-* -> CTR-*) edges and code_couplings rows, migrate all 26 INSERT ... INTO edges sites across rebuild_spec_edges, _derive_ast_import_edges, _derive_http_request_edges, index_test_bindings / sync_test_bindings_from_cache (ast_symbol), and container styled_by/styles_container propagation to explicit 5-column precedence upserts (declared_spec > ast_import > ast_http > ast_symbol > inferred_ownership), and update == Key Responsibilities & Collaborators in eidos/architecture/components/incremental-sync-engine.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/core/index/sync.py"
+      body:
+        contains:
+          - "_derive_http_request_edges"
+          - "ast_http"
+          - "ast_import"
+          - "declared_spec"
+          - "code_couplings"
+          - "provenance"
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+    details: "Extend execute_k_hop_traversal(conn, entity_id, max_depth=2, min_confidence='inferred') and execute_incoming_references(conn, target_id_or_path) in src/eidos/core/index/query.py to project hop-edge provenance, epistemic confidence ('observed' | 'derived' | 'inferred'), via_rel_type, and evidence while filtering edges below min_confidence (observed > derived > inferred), and update eidos/architecture/components/graph-traversal-engine.adoc (anchoring updated signatures in == Public Surface)."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/core/index/query.py"
+      body:
+        contains:
+          - "min_confidence"
+          - "provenance"
+          - "confidence"
+          - "observed"
+          - "derived"
+          - "inferred"
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+    details: "Normalize epistemic provenance (declared_spec, ast_symbol, fts_bm25, semantic_rrf, hybrid_rrf) and confidence (observed | derived | inferred) metadata on execute_fts_query and find_symbol_in_db results in src/eidos/core/index/query.py, exclude http_endpoint and http_request from synthetic Class.method unions and generate_repo_map_from_db to preserve INV-INDEX-AI-REPO-MAP-BUDGET, and update eidos/architecture/components/fts-query-engine.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/core/index/query.py"
+      body:
+        contains:
+          - "provenance"
+          - "confidence"
+          - "semantic_rrf"
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+    details: "Surface compact structured provenance_tags (provenance, confidence, evidence) for resolved components and 1-hop expansions in TieredContextSlice.to_dict() and to_markdown() across guardrails (<=1000 tokens) and deep (<=2500 tokens) tiers in src/eidos/core/index/context.py while omitting verbose provenance evidence from anchor (<=300 tokens) to preserve INV-CONTEXT-TOKEN-COMPRESSION, and update eidos/architecture/components/tiered-context-compressor.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/core/index/context.py"
+      body:
+        contains:
+          - "provenance_tags"
+          - "confidence"
+          - "ast_http"
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+    details: "Record DEC-INDEX-HTTP-LINKING-AND-PROVENANCE on CNT-EIDOS-INDEX in eidos/architecture/containers/index.adoc and update container narrative for SCHEMA_VERSION 2.20.0, static client-to-endpoint HTTP auto-linking, and 3-tier (observed, derived, inferred) epistemic edge provenance."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-INDEX-HTTP-LINKING-AND-PROVENANCE"
+      body:
+        contains:
+          - "2.20.0"
+          - "ast_http"
+          - "provenance"
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: "Add reusable $defs.boundary_entity_ref (target_types: ['tech/container', 'tech/component'], prefixes: ['CNT-', 'CMP-']), $defs.container_import_boundary ({ allow, deny } of container_ref), and $defs.component_import_boundary ({ allow, deny } of boundary_entity_ref) in assets/schemas/v1/common/defs.yaml, expose optional import_boundary on assets/schemas/v1/tech/container.schema.yaml and assets/schemas/v1/tech/component.schema.yaml, expose optional import_boundaries ({ tier_rules, enforce_declared_containers, ratchet_baseline } with boundary_entity_ref on ratchet_baseline[].{source,target} and minimum: 1 on max_imports) on assets/schemas/v1/tech/architecture.schema.yaml, and record DEC-CORE-DECLARATIVE-IMPORT-BOUNDARIES on CNT-EIDOS-CORE in eidos/architecture/containers/core.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-CORE-DECLARATIVE-IMPORT-BOUNDARIES"
+      body:
+        contains:
+          - "import_boundaries"
+          - "ratchet_baseline"
+  - operation: modify
+    target: CMP-DOMAIN-MODELS
+    details: "Add typed Pydantic models (ImportBoundaryRuleModel, RatchetBaselineEntryModel, ArchitectureImportBoundariesModel) and expose import_boundary and import_boundaries on FrontmatterModel in src/eidos/core/spec/models.py, and update eidos/architecture/components/domain-models.adoc (anchoring the new models in == Public Surface)."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/core/spec/models.py"
+      body:
+        contains:
+          - "ImportBoundaryRuleModel"
+          - "RatchetBaselineEntryModel"
+          - "ArchitectureImportBoundariesModel"
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: "Validate ARCH-*.import_boundaries, CNT-*.import_boundary, and CMP-*.import_boundary in src/eidos/core/spec/validator.py (rejecting overlapping allow/deny sets, unresolved tier names in tier_rules, and cross-container/component ast_import or ast_http code_couplings violating tier_rules, allow/deny, enforce_declared_containers, or ratchet_baseline[].max_imports after structural sync_index(..., auto_semantic=False) so cold caches never fail open and ONNX semantic threads are never spawned), expose reusable evaluate_import_boundaries(...) with a check_import_boundaries toggle on validate_directory to avoid duplicate runs inside detect_drift, and update eidos/architecture/components/spec-validator.adoc (anchoring evaluate_import_boundaries in == Public Surface)."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/core/spec/validator.py"
+      body:
+        contains:
+          - "evaluate_import_boundaries"
+          - "import_boundaries"
+          - "ratchet_baseline"
+  - operation: modify
+    target: ARCH-EIDOS-001
+    details: "Dogfood declarative import_boundaries.tier_rules on ARCH-EIDOS-001 in eidos/architecture/system-architecture.adoc (core: { deny: ['presentation'] }, persistence: { deny: ['presentation', 'extensibility'] }, extensibility: { deny: ['presentation'] }, verified clean with zero ratchet_baseline debt across Eidos's 7 containers) and document executable import boundary governance in the AsciiDoc body."
+    expect:
+      frontmatter:
+        status: "active"
+        import_boundaries.tier_rules.core.deny:
+          - "presentation"
+        import_boundaries.tier_rules.persistence.deny:
+          - "presentation"
+          - "extensibility"
+        import_boundaries.tier_rules.extensibility.deny:
+          - "presentation"
+      body:
+        contains:
+          - "import_boundaries"
+          - "tier_rules"
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    details: "Integrate single-pass evaluate_import_boundaries into detect_drift across src/eidos/vcs/drift.py, src/eidos/vcs/structural.py, and src/eidos/vcs/report.py (running sync_index(..., auto_semantic=False) against eval_root/eval_eidos so --base/--head runs evaluate the --head snapshot rather than copied working-tree index.db rows per INV-DRIFT-SHALLOW-AND-COMMIT-TREE-FIDELITY, passing check_import_boundaries=False to validate_directory to prevent duplicate reporting, and remapping snap_root paths on all evidence strings), fail closed (is_clean=False, drift_detected=True) on forbidden ast_import/ast_http code_couplings or ratchet_baseline count increases (observed_imports > max_imports), emit boundary_violations plus non-blocking ratchet_shrink_candidates (observed_imports < max_imports) in DriftCheckResult, generate_remediation_prompt, and build_drift_remediation_and_summary, and update eidos/architecture/components/drift-detector.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/vcs/drift.py"
+          - "src/eidos/vcs/diff.py"
+          - "src/eidos/vcs/invariants.py"
+          - "src/eidos/vcs/structural.py"
+          - "src/eidos/vcs/report.py"
+      body:
+        contains:
+          - "boundary_violations"
+          - "ratchet_shrink_candidates"
+          - "import_boundaries"
+  - operation: modify
+    target: CNT-EIDOS-VCS
+    details: "Record DEC-VCS-EXECUTABLE-IMPORT-RATCHET on CNT-EIDOS-VCS in eidos/architecture/containers/vcs.adoc and document static AST/HTTP import-boundary enforcement and monotonically shrinking ratchet_baseline governance."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-VCS-EXECUTABLE-IMPORT-RATCHET"
+      body:
+        contains:
+          - "boundary_violations"
+          - "ratchet_baseline"
+  - operation: modify
+    target: CMP-CLI-INDEX-COMMANDS
+    details: "Add --min-confidence (inferred | derived | observed, default 'inferred') to eidos index blast-radius in src/eidos/cli/index_commands.py, render epistemic provenance, confidence, and evidence fields in Rich and --json outputs across blast-radius, search, find-symbol, and status (edge_counts_by_provenance), and update eidos/architecture/components/cli-index-commands.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/cli/index_commands.py"
+      body:
+        contains:
+          - "--min-confidence"
+          - "provenance"
+          - "edge_counts_by_provenance"
+  - operation: modify
+    target: CMP-CLI-DRIFT-COMMANDS
+    details: "Render boundary_violations (blocking exit code 1) and ratchet_shrink_candidates (advisory tightening hints) in Rich terminal diagnostics and eidos drift --json in src/eidos/cli/drift_commands.py, and update eidos/architecture/components/cli-drift-commands.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/cli/drift_commands.py"
+      body:
+        contains:
+          - "boundary_violations"
+          - "ratchet_shrink_candidates"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Bump CTR-EIDOS-CLI from 1.6.0 to 1.7.0 in eidos/architecture/contracts/cli.adoc to document --min-confidence on eidos index blast-radius, epistemic provenance/confidence/evidence JSON fields across eidos index and eidos context, and boundary_violations/ratchet_shrink_candidates on eidos drift."
+    expect:
+      frontmatter:
+        version: "1.7.0"
+        status: "active"
+      body:
+        contains:
+          - "--min-confidence"
+          - "provenance"
+          - "boundary_violations"
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Update assets/plugin_reference/skills/eidos/SKILL.md (<= 2,050 body words) and assets/plugin_reference/skills/eidos-ops/SKILL.md (<= 850 body words) in place with zero Eidos-self references (INV-ENGINE-GENERICITY) and exact Typer option parity (INV-PLUGIN-SKILL-CLI-PARITY) to teach agents --min-confidence blast-radius filtering, ast_http brownfield contract discovery, and import_boundaries drift remediation, and update eidos/architecture/containers/plugin.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "--min-confidence"
+          - "import_boundaries"
+          - "ast_http"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Document eidos index blast-radius --min-confidence, epistemic provenance outputs, and eidos drift import boundary / ratchet diagnostics in docs/guides/cli.md (POL-003, INV-DOCS-SYNCHRONIZATION), and update eidos/architecture/components/docs-user-guides.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/guides"
+      body:
+        contains:
+          - "--min-confidence"
+          - "boundary_violations"
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: "Document ARCH-*.import_boundaries, CNT-*/CMP-*.import_boundary, SCHEMA_VERSION 2.20.0 edges.provenance + code_couplings, and static client-to-backend ast_http auto-linking in docs/concepts/schema-glossary.md and docs/concepts/architectural-index.md, and update eidos/architecture/components/docs-core-concepts.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/concepts"
+      body:
+        contains:
+          - "import_boundaries"
+          - "provenance"
+          - "ast_http"
+  - operation: modify
+    target: CAP-AGENT-002
+    details: "Bump CAP-AGENT-002 from 1.5.0 to 1.6.0 in eidos/domains/agent-intelligence/capabilities/cap-agent-002.adoc, link CMP-GRAPH-TRAVERSAL-ENGINE and CMP-FTS-QUERY-ENGINE alongside existing index components under technical.components, and register INV-INDEX-STATIC-HTTP-AUTOLINK and INV-INDEX-EPISTEMIC-PROVENANCE."
+    expect:
+      frontmatter:
+        version: "1.6.0"
+        status: "active"
+        technical.components:
+          - "CMP-AST-SYMBOL-INDEXER"
+          - "CMP-TIERED-CONTEXT-COMPRESSOR"
+          - "CMP-INCREMENTAL-SYNC-ENGINE"
+          - "CMP-GRAPH-STORAGE"
+          - "CMP-SEMANTIC-EMBEDDING-ENGINE"
+          - "CMP-GRAPH-TRAVERSAL-ENGINE"
+          - "CMP-FTS-QUERY-ENGINE"
+          - "CMP-CLI-INDEX-COMMANDS"
+        technical.invariants.id:
+          - "INV-INDEX-STATIC-HTTP-AUTOLINK"
+          - "INV-INDEX-EPISTEMIC-PROVENANCE"
+      body:
+        contains:
+          - "INV-INDEX-STATIC-HTTP-AUTOLINK"
+          - "INV-INDEX-EPISTEMIC-PROVENANCE"
+          - "ast_http"
+          - "provenance"
+  - operation: add
+    target: INV-INDEX-STATIC-HTTP-AUTOLINK
+    details: "Add INV-INDEX-STATIC-HTTP-AUTOLINK on CAP-AGENT-002 bound to tests/test_http_autolink.py::test_static_frontend_request_to_backend_endpoint_autolink verifying zero-LLM polyglot http_request and http_endpoint AST extraction (excluding test files), OpenAPI/http_json CTR-* route matching, container-owned and component-owned client edge emission, dynamic parameter normalization, and ast_http edge + code_couplings materialization with file:line evidence (POL-004)."
+    expect:
+      frontmatter:
+        rule: "ast_http"
+        test_binding: "tests/test_http_autolink.py::test_static_frontend_request_to_backend_endpoint_autolink"
+  - operation: add
+    target: INV-INDEX-EPISTEMIC-PROVENANCE
+    details: "Add INV-INDEX-EPISTEMIC-PROVENANCE on CAP-AGENT-002 bound to tests/test_graph_index.py::test_epistemic_provenance_tags_and_confidence_filtering verifying SCHEMA_VERSION '2.20.0' edges.provenance precedence (declared_spec > ast_import > ast_http > ast_symbol > inferred_ownership), code_couplings preservation, edge_counts_by_provenance telemetry, and --min-confidence (observed | derived | inferred) traversal filtering."
+    expect:
+      frontmatter:
+        rule: "provenance"
+        test_binding: "tests/test_graph_index.py::test_epistemic_provenance_tags_and_confidence_filtering"
+  - operation: modify
+    target: CAP-AGENT-001
+    details: "Bump CAP-AGENT-001 from 1.15.0 to 1.16.0 in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc, link CMP-CLI-INDEX-COMMANDS and CMP-GRAPH-TRAVERSAL-ENGINE under technical.components, and extend INV-AGENT-CONTEXT-SLICING to verify structured epistemic provenance_tags in guardrails and deep context slices."
+    expect:
+      frontmatter:
+        version: "1.16.0"
+        status: "active"
+        technical.components:
+          - "CMP-CLI-INDEX-COMMANDS"
+          - "CMP-GRAPH-TRAVERSAL-ENGINE"
+        technical.invariants.id:
+          - "INV-AGENT-CONTEXT-SLICING"
+      body:
+        contains:
+          - "provenance_tags"
+          - "min-confidence"
+  - operation: modify
+    target: INV-AGENT-CONTEXT-SLICING
+    details: "Extend INV-AGENT-CONTEXT-SLICING on CAP-AGENT-001 and tests/test_context.py::test_context_slice_by_file to verify epistemic provenance_tags (observed, derived, inferred) on guardrails and deep slices while preserving strict tier token budgets (<=300 / <=1000 / <=2500)."
+    expect:
+      frontmatter:
+        rule: "provenance_tags"
+        test_binding: "tests/test_context.py::test_context_slice_by_file"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Bump CAP-PROD-001 from 1.12.0 to 1.13.0 in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc and extend INV-SPEC-VALIDATION to validate declarative import_boundaries and import_boundary schemas."
+    expect:
+      frontmatter:
+        version: "1.13.0"
+        status: "active"
+        technical.invariants.id:
+          - "INV-SPEC-VALIDATION"
+      body:
+        contains:
+          - "import_boundaries"
+          - "import_boundary"
+  - operation: modify
+    target: INV-SPEC-VALIDATION
+    details: "Extend INV-SPEC-VALIDATION on CAP-PROD-001 and tests/test_validator.py::test_validate_eidos_specifications to verify import_boundaries and import_boundary schema validation, x-eidos-ref resolution, disjoint allow/deny validation, and ARCH-EIDOS-001 self-hosted boundary compliance."
+    expect:
+      frontmatter:
+        rule: "import_boundaries"
+        test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
+  - operation: modify
+    target: CAP-VCS-001
+    details: "Bump CAP-VCS-001 from 1.12.0 to 1.13.0 in eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc, link CMP-CLI-DRIFT-COMMANDS and CMP-SPEC-VALIDATOR under technical.components, and register INV-DRIFT-IMPORT-BOUNDARY-RATCHET."
+    expect:
+      frontmatter:
+        version: "1.13.0"
+        status: "active"
+        technical.components:
+          - "CMP-DRIFT-DETECTOR"
+          - "CMP-AST-SYMBOL-INDEXER"
+          - "CMP-CLI-DRIFT-COMMANDS"
+          - "CMP-SPEC-VALIDATOR"
+        technical.invariants.id:
+          - "INV-DRIFT-IMPORT-BOUNDARY-RATCHET"
+      body:
+        contains:
+          - "INV-DRIFT-IMPORT-BOUNDARY-RATCHET"
+          - "boundary_violations"
+          - "ratchet_baseline"
+  - operation: add
+    target: INV-DRIFT-IMPORT-BOUNDARY-RATCHET
+    details: "Add INV-DRIFT-IMPORT-BOUNDARY-RATCHET on CAP-VCS-001 bound to tests/test_drift.py::test_executable_import_boundaries_and_ratchet_baseline verifying fail-closed detection of forbidden tier_rules, allow/deny, enforce_declared_containers, and exceeded ratchet_baseline[].max_imports across ast_import and ast_http code_couplings (even when declared_spec CTR-* edges exist and isolated to the --head snapshot on commit-range runs) plus non-blocking ratchet_shrink_candidates reporting."
+    expect:
+      frontmatter:
+        rule: "ratchet_baseline"
+        test_binding: "tests/test_drift.py::test_executable_import_boundaries_and_ratchet_baseline"
+vcs:
+  branch: main
+  base_commit: c638ea7b4a5af382235fc9a827b92491ab5feef7
+---
+= SpecDelta: Add Static Frontend-to-Backend HTTP Auto-Linking, Executable Architectural Import Boundaries, and Explicit Epistemic Provenance Tags
+:toc: left
+
+== Problem Statement
+
+Eidos maintains a deterministic SQLite + AST knowledge graph (`eidos/.cache/index.db`) and a Git-native `eidos drift` verification gate with zero runtime LLM calls (`POL-004`). Comparative architectural analysis surfaced three structural blind spots in the current engine:
+
+1. **Cross-Runtime Frontend-to-Backend HTTP Blind Spot (`CMP-AST-SYMBOL-INDEXER`, `CMP-INCREMENTAL-SYNC-ENGINE`)**:
+   * `_derive_ast_import_edges` (`src/eidos/core/index/sync.py`, lines 1245–1567) only derives `consumes_api` (`CMP-* -> CMP-*`) and `depends_on` (`CNT-* -> CNT-*`) edges from same-language `import` statements (`code_symbols.kind = 'import'`), C#/Java/Kotlin namespaces, `.csproj` `<ProjectReference>` links, and authored `CTR-*.contracts` declarations.
+   * Web frontends, portals, SPAs, and backend services communicate across language and container boundaries via HTTP calls (`fetch`, `EventSource`, `axios`, `ky`, Angular `HttpClient`, `requests`, `httpx`) targeting server endpoints (FastAPI, Flask, Express, Fastify, Hono, NestJS, Next.js App Router, Go, Rust, Spring, ASP.NET Core) or OpenAPI `CTR-*` contracts. Today, those cross-boundary runtime couplings remain invisible in `eidos index blast-radius`, `eidos context`, and brownfield extraction (`eidos-ops`) unless manually hand-linked.
+2. **Passive C4 Tiers & Unenforceable Cross-Container Import Coupling (`CMP-SPEC-VALIDATOR`, `CMP-DRIFT-DETECTOR`)**:
+   * `CNT-*.tier` (`presentation`, `service`, `core`, `persistence`, `extensibility`) and `CNT-*.contracts` in `eidos/architecture/` document architectural layering, yet neither `eidos validate` nor `eidos drift` enforces import boundaries. Nothing prevents a `persistence` or `core` module from importing `presentation` code or bypassing declared boundaries in a brownfield codebase without an explicit ratchet baseline.
+3. **Flat Untyped Epistemic Certainty on Knowledge Graph Edges & Slices (`CMP-GRAPH-STORAGE`, `CMP-GRAPH-TRAVERSAL-ENGINE`, `CMP-FTS-QUERY-ENGINE`, `CMP-TIERED-CONTEXT-COMPRESSOR`)**:
+   * `edges(source_id, target_id, rel_type)` (`SCHEMA_VERSION` `"2.19.0"`, `src/eidos/core/index/storage.py`) stores authored `x-eidos-ref` links, deterministic AST imports, heuristic ownership inferences, and semantic similarity hits without storing **provenance** or **confidence**. Consequently, `eidos index blast-radius` and `eidos context` cannot distinguish directly observed facts from derived AST links or inferred/semantic hits, nor filter out low-certainty hops during high-stakes architectural impact analysis.
+
+== Proposed Specification Changes
+
+=== 1. Polyglot Static Frontend-to-Backend HTTP Auto-Linking (`CMP-AST-SYMBOL-INDEXER`, `CMP-INCREMENTAL-SYNC-ENGINE`, `CNT-EIDOS-INDEX`, `CAP-AGENT-002`)
+
+Add deterministic, zero-LLM HTTP endpoint and client-call extraction to `AstGrepIndexer` (`src/eidos/core/index/ast_indexer.py`) and cross-container edge materialization to `_derive_http_request_edges` (`src/eidos/core/index/sync.py`), without executing target user code (`POL-004`):
+
+[cols="1,2,2", options="header"]
+|===
+| Direction | Supported Polyglot Patterns (`AstGrepIndexer`) | Normalized `code_symbols` Representation
+| **Server Endpoints (`extract_http_endpoints`)** | Python (FastAPI/APIRouter `@app.<method>`/`@router.<method>`, Flask `@app.route`/`@bp.route` with `methods=[...]`, Starlette `Route`); TS/JS (Express/Fastify/Hono/Koa `app.<method>(...)`/`router.<method>(...)`, NestJS `@Controller` + `@Get`/`@Post`/`@Put`/`@Patch`/`@Delete`, Next.js App Router `app/**/route.{ts,js}` exported HTTP verbs); Go (`http.HandleFunc`, Gin/Echo/Chi route calls); Rust (`axum::Router::route`, `actix_web` attributes); Java/Kotlin Spring (`@RequestMapping` + `@GetMapping`/`@PostMapping`/etc.); C# ASP.NET Core (`[Route]` + `[HttpGet]`/`[HttpPost]`/`MapGet`/`MapPost`); plus `CTR-*` contracts with `protocol: "openapi"` (`specification_file` `paths.<path>.<method>`) or `protocol: "http_json"` (AsciiDoc `\| Method \| Path \|` endpoint tables). | `kind = "http_endpoint"`, `symbol = "<METHOD> <normalized_path>"` (e.g. `"GET /api/orders/{*}"`), `signature = raw_path`, `line_start..line_end`.
+| **Client Requests (`extract_http_requests`)** | TS/JS (`fetch(url, {method})`, `new EventSource(url)`, `axios.<method>(url)` / `axios({method, url})`, `ky.<method>(url)`, Angular `this.http.<method>(url)`); Python (`requests.<method>(url)`, `httpx.<method>(url)`, `httpx.Client/AsyncClient.<method>(url)`). Resolves intra-file string constants (`const API_BASE = ...`), simple wrapper prefix helpers, and template literals (`${BASE}/api/orders/${id}`). | `kind = "http_request"`, `symbol = "<METHOD> <normalized_path>"` (`GET` default when omitted on `fetch`/`EventSource`), `signature = raw_url`, `line_start..line_end`.
+|===
+
+1. **Dynamic Segment Normalization & Symbol Hygiene**:
+   * Path parameters across frameworks (`:id`, `{id}`, `<int:id>`, `[id]`, `[...slug]`, `${expr}`) normalize deterministically to `{*}` (stripping trailing slashes except `/`, preserving query path prefixes up to `?`).
+   * `http_endpoint` and `http_request` rows in `code_symbols` are excluded from synthetic `Class.method` symbol unions (`graph_index.py`, `query.py`) and from `generate_repo_map_from_db` so `INV-INDEX-AI-REPO-MAP-BUDGET` and AST symbol counts remain unpolluted.
+2. **Cross-Container & Contract Matching (`_derive_http_request_edges`)**:
+   * Filters strictly to `is_test = 0` so automated test HTTP clients never fabricate production edges or false boundary violations.
+   * Matches each client `http_request` `(method, path)` against indexed `http_endpoint` symbols (excluding self-file matches) and contract routes extracted strictly from `CTR-*` specs with `protocol == "openapi"` (`specification_file` YAML/JSON `paths`) or `protocol == "http_json"` (AsciiDoc endpoint tables, avoiding YAML parsing on source-code `specification_file` paths such as `CTR-EIDOS-PORTAL -> src/eidos/portal/server.py`).
+   * When a client call omits a fixed base prefix (e.g. `/orders/{*}`) while an endpoint sits under a prefix (e.g. `/api/v1/orders/{*}`), single-candidate client base-path prefix disambiguation resolves uniquely within the same client root; ambiguous multi-candidate suffix matches are never guessed.
+   * Supports both `CMP-*`-owned and container-direct `CNT-*`-owned client files (such as SPA frontends mapped directly to a `CNT-*` container), emitting `consumes_api` (`CMP-* -> CMP-*`), `depends_on` (`CNT-* -> CNT-*`), and `consumes` / `depends_on` (`CMP-*/CNT-* -> CTR-*` when matched to a contract) with `provenance = "ast_http"` and `evidence = "<client_file>:<line> -> <METHOD> <path> (<server_file>:<line>)"`, while recording every distinct call site in `code_couplings`.
+
+=== 2. Executable Architectural Import Boundaries & Monotonic Debt Ratcheting (`CNT-EIDOS-CORE`, `CMP-DOMAIN-MODELS`, `CMP-SPEC-VALIDATOR`, `ARCH-EIDOS-001`, `CMP-DRIFT-DETECTOR`, `CNT-EIDOS-VCS`, `CMP-CLI-DRIFT-COMMANDS`, `CAP-PROD-001`, `CAP-VCS-001`)
+
+Extend `assets/schemas/v1/common/defs.yaml`, `tech/architecture.schema.yaml`, `tech/container.schema.yaml`, and `tech/component.schema.yaml` with optional declarative import boundary governance validated statically by `CMP-SPEC-VALIDATOR` (`evaluate_import_boundaries`) and enforced fail-closed by `CMP-DRIFT-DETECTOR` (`detect_drift`):
+
+1. **Schema Additions (`common/defs.yaml`, `architecture.schema.yaml`, `container.schema.yaml`, `component.schema.yaml`)**:
+   * **`$defs.boundary_entity_ref`, `$defs.container_import_boundary`, and `$defs.component_import_boundary`**:
+     Define `$defs.boundary_entity_ref` (`target_types: ["tech/container", "tech/component"]`, `prefixes: ["CNT-", "CMP-"]`), `$defs.container_import_boundary` (`{ allow?: [container_ref...], deny?: [container_ref...] }` on `container.schema.yaml`), and `$defs.component_import_boundary` (`{ allow?: [boundary_entity_ref...], deny?: [boundary_entity_ref...] }` on `component.schema.yaml`), all with `additionalProperties: false` and `x-eidos-ref` validation. Disjoint `allow ∩ deny` is enforced; when `allow` is non-empty, cross-boundary targets outside `allow` are forbidden unless explicitly exempted by `ratchet_baseline`.
+   * **`import_boundaries` (on `ARCH-*`)**:
++
+[source,yaml]
+----
+import_boundaries:
+  tier_rules:
+    core:
+      deny: ["presentation"]
+    persistence:
+      deny: ["presentation", "extensibility"]
+    extensibility:
+      deny: ["presentation"]
+  enforce_declared_containers: false
+  ratchet_baseline:
+    - source: "CNT-LEGACY-A"
+      target: "CNT-LEGACY-B"
+      max_imports: 3
+      reason: "Legacy shared helper pending extraction."
+----
+   * Every `ratchet_baseline[]` item requires `source`, `target` (`$defs.boundary_entity_ref` container or component IDs), `max_imports` (`integer`, `minimum: 1`), and optional `reason` (`non_empty_string`).
+2. **Evaluation Precedence, Snapshot Sync & Monotonic Ratchet Enforcement (`evaluate_import_boundaries` & `detect_drift`)**:
+   * Whenever boundary declarations exist, `evaluate_import_boundaries` obtains `ArchitecturalIndex` for the target root (`eval_root` / `eval_eidos`) and runs `sync_index(idx, auto_semantic=False)` before querying `code_couplings`—guaranteeing cold checkouts and `tmp_path` fixtures never fail open, background ONNX semantic threads are never spawned during `eidos validate`, and `--base`/`--head` commit-range drift runs evaluate the `--head` snapshot rather than working-tree `index.db` rows copied into `snap_root` (`INV-DRIFT-SHALLOW-AND-COMMIT-TREE-FIDELITY`). `detect_drift` passes `check_import_boundaries=False` to `validate_directory` so boundary checks execute once per gate run and remaps `snap_root` prefixes on all `evidence` strings.
+   * Inspects all cross-container and cross-component `ast_import` and `ast_http` rows in `code_couplings` (so an authored `declared_spec` `CTR-*` edge in `edges` never masks a forbidden `tier_rules` or `deny` coupling, and `observed_imports` counts distinct `(src_file, line_start, target_ref)` call sites rather than collapsed 1-row `edges` pairs).
+   * **Rule check order**: (a) component `CMP-*.import_boundary` (`deny` / `allow`), (b) container `CNT-*.import_boundary` (`deny` / `allow`), (c) `ARCH-*.import_boundaries.tier_rules[<src_tier>]` (`deny` / `allow` across container `tier:` values, validating that every referenced tier resolves cleanly), and (d) when `enforce_declared_containers: true`, cross-container `code_couplings` without a declared `contracts.consumes -> CTR-* <- contracts.provides` contract.
+   * **Ratchet comparison**: For any forbidden `(source, target)` entity pair, compute `observed_imports` as the count of matching `code_couplings` rows and look up `ratchet_baseline`:
+     - Absent (when `observed_imports >= 1`) or `observed_imports > max_imports`: emit a blocking `boundary_violations` item with concrete `file:line -> target` evidence (failing `eidos validate` and `eidos drift` with exit code `1`).
+     - `observed_imports < max_imports` (including `0`): emit an advisory, non-blocking `ratchet_shrink_candidates` item urging the engineer to lower or remove `max_imports` so architectural debt shrinks monotonically.
+3. **Self-Hosted Dogfooding on `ARCH-EIDOS-001`**:
+   * Declare `import_boundaries.tier_rules` on `eidos/architecture/system-architecture.adoc` (`core` denies `presentation`; `persistence` denies `presentation` and `extensibility`; `extensibility` denies `presentation`) with zero `ratchet_baseline` debt across Eidos's 7 containers (`CNT-EIDOS-CLI`, `CNT-EIDOS-PORTAL`, `CNT-EIDOS-DOCS`, `CNT-EIDOS-PLUGIN`, `CNT-EIDOS-CORE`, `CNT-EIDOS-VCS`, `CNT-EIDOS-INDEX`).
+
+=== 3. Explicit Epistemic Provenance Taxonomy & Confidence Filtering (`CMP-GRAPH-STORAGE`, `CMP-GRAPH-TRAVERSAL-ENGINE`, `CMP-FTS-QUERY-ENGINE`, `CMP-TIERED-CONTEXT-COMPRESSOR`, `CMP-CLI-INDEX-COMMANDS`, `CTR-EIDOS-CLI`, `CAP-AGENT-001`, `CAP-AGENT-002`)
+
+1. **SQLite `SCHEMA_VERSION` `"2.20.0"` (`src/eidos/core/index/storage.py`)**:
+   * Bump `SCHEMA_VERSION` from `"2.19.0"` to `"2.20.0"`.
+   * Extend `edges` table with `provenance TEXT NOT NULL DEFAULT 'declared_spec'` and `evidence TEXT NOT NULL DEFAULT ''`, retaining `PRIMARY KEY (source_id, target_id, rel_type)`, and migrate all 26 `INSERT ... INTO edges` statements in `sync.py` to explicit 5-column precedence upserts (`declared_spec` > `ast_import` > `ast_http` > `ast_symbol` > `inferred_ownership`).
+   * Add `code_couplings(source_entity_id, target_entity_id, source_cnt_id, target_cnt_id, provenance, src_file, line_start, target_ref)` to `_MANAGED_TABLES` and `_CACHE_SCHEMA_DDL` to preserve every distinct `ast_import` and `ast_http` call site without losing secondary couplings under `edges` primary-key deduplication.
+
+2. **Canonical Epistemic Taxonomy (`observed` > `derived` > `inferred`)**:
++
+[cols="1,1,2", options="header"]
+|===
+| `provenance` Tag | Epistemic `confidence` | Producer & Recorded `evidence`
+| `declared_spec` | `observed` | Authored YAML frontmatter `x-eidos-ref` links (`part_of`, `implements`, `provides`, `consumes`, `asserts`, `governed_by`, `serves_persona`, `affects`, `graduated_from`, `depends_on` via `CTR-*`, and derived container `styled_by`/`styles_container` propagation). Evidence: `<spec_file>:<field>`.
+| `ast_symbol` | `observed` | Direct `AstGrepIndexer` symbol extraction (`find-symbol`) and automated test-to-invariant `asserts` bindings (`index_test_bindings` / `sync_test_bindings_from_cache`). Evidence: `<source_file>:<line_start>-<line_end>` or `<test_file>::<func>`.
+| `fts_bm25` | `observed` | Exact lexical token / ID match in SQLite `specs_fts`.
+| `ast_import` | `derived` | Cross-file import, namespace, or `.csproj` `<ProjectReference>` resolved to owning `CMP-*`/`CNT-*` (`_derive_ast_import_edges`). Evidence: `<src_file>:<line> -> <dst_file>`.
+| `ast_http` | `derived` | Client HTTP request matched to server endpoint or `openapi`/`http_json` `CTR-*` (`_derive_http_request_edges`). Evidence: `<client_file>:<line> -> <METHOD> <path>`.
+| `inferred_ownership` | `inferred` | Directory/prefix/stem heuristic path mapping when no explicit `source_path` owns a leaf file.
+| `semantic_rrf` / `hybrid_rrf` | `inferred` | Local Harrier ONNX cosine similarity or Reciprocal Rank Fusion match (`eidos context -t` / `eidos index search`).
+|===
+
+3. **Query, CLI & Context Projection (`CTR-EIDOS-CLI` `1.7.0`)**:
+   * `eidos index blast-radius <symbol_or_path> [--depth <n>] [--min-confidence inferred|derived|observed] [--path <path>] [--json]`: defaults to `"inferred"` (full backward compatibility); `--min-confidence derived` prunes `inferred` hops; `--min-confidence observed` traverses only directly observed links (`declared_spec`, `ast_symbol`). Each neighbor row includes `provenance`, `confidence`, `via_rel_type`, and `evidence`.
+   * `eidos index status --json` exposes `edge_counts_by_provenance`. `eidos index search --json` and `find-symbol --json` attach `provenance` and `confidence`.
+   * `eidos context` projects compact `provenance_tags` (`provenance`, `confidence`, `evidence`) in `guardrails` (`<=1,000` tokens) and `deep` (`<=2,500` tokens) tiers while keeping `anchor` (`<=300` tokens) minimal per `INV-CONTEXT-TOKEN-COMPRESSION`.
+
+=== 4. Skill Word-Ceiling Trim Budget (`CNT-EIDOS-PLUGIN`, `INV-PLUGIN-SKILL-SIZE-CEILING`, `INV-PLUGIN-SKILL-CLI-PARITY`, `INV-ENGINE-GENERICITY`)
+
+[cols="1,2,2,1", options="header"]
+|===
+| Skill (`assets/plugin_reference/skills/`) | Trim Target (Existing Body) | Addition Target | Net Word Budget
+| `eidos/SKILL.md` (`2,005` words, ceiling `2,050`)
+| Tighten redundant wording in §2.1 matrix prose and §4 Step 3 parentheticals (`~-15` words).
+| Document `eidos index blast-radius --min-confidence` provenance filtering and `import_boundaries` drift remediation (`~+35` words).
+| `~2,025 <= 2,050`
+| `eidos-ops/SKILL.md` (`843` words, ceiling `850`)
+| Condense Phase 1/3/8 comments and Section 4 prose (`~-40` words).
+| Document `ast_http` auto-linked `CTR-*` / `depends_on` discovery and `edge_counts_by_provenance` inspection in Phase 4/8 (`~+38` words).
+| `~841 <= 850`
+|===
+
+*(Note: `.agents/skills` is a Git-tracked symlink to `../assets/plugin_reference/skills`; edits under `assets/plugin_reference/skills/` stay synchronized in place with zero Eidos-self references per `INV-ENGINE-GENERICITY` and exact Typer command/option parity per `INV-PLUGIN-SKILL-CLI-PARITY`.)*
+
+=== 5. Architectural Decisions (`DEC-INDEX-HTTP-LINKING-AND-PROVENANCE`, `DEC-CORE-DECLARATIVE-IMPORT-BOUNDARIES`, `DEC-VCS-EXECUTABLE-IMPORT-RATCHET`)
+
+* **`DEC-INDEX-HTTP-LINKING-AND-PROVENANCE` (on `CNT-EIDOS-INDEX`)**:
+  * *Decision*: Extract polyglot HTTP endpoints and client requests statically via `AstGrepIndexer` (`POL-004`), link unambiguous single-candidate client prefixes and `openapi`/`http_json` `CTR-*` routes over non-test files into `ast_http` edges and `code_couplings` rows during `sync_index`, and store canonical edge `provenance` (`declared_spec` > `ast_import` > `ast_http` > `ast_symbol` > `inferred_ownership`) and `evidence` in `eidos/.cache/index.db` (`SCHEMA_VERSION` `"2.20.0"`), projecting `observed`/`derived`/`inferred` certainty in `query.py` and `context.py`.
+  * *Rationale*: Unlocks cross-runtime SPA-to-API dependency visibility, unmasked call-site coupling counts for boundary ratchets, and certainty-weighted blast-radius queries in sub-millisecond local SQLite without calling LLMs, executing user servers, or inventing ambiguous edges.
+  * *Rejected Alternatives*:
+    ** *Require external LLM prose generation or runtime HTTP tracing to connect frontend and backend containers*: Rejected because runtime tracing breaks offline CI execution and LLM calls violate `POL-004-ZERO-AI-CALL-DEPENDENCY`.
+    ** *Emit edges on loose path-suffix collisions across multiple services*: Rejected because false-positive `depends_on` edges corrupt blast-radius and import-boundary checks.
+* **`DEC-CORE-DECLARATIVE-IMPORT-BOUNDARIES` (on `CNT-EIDOS-CORE`)**:
+  * *Decision*: Express executable import and HTTP dependency rules declaratively inside `ARCH-*.import_boundaries` (`tier_rules`, `enforce_declared_containers`, `ratchet_baseline`) and `CNT-*`/`CMP-*.import_boundary` (`allow`, `deny`) rather than standalone sidecar JSON configs.
+  * *Rationale*: Keeps architectural boundary constraints inside the single living specification source of truth in Git (`POL-001`), validated by `x-eidos-ref` JSON Schemas and inspectable in `eidos context`.
+  * *Rejected Alternatives*:
+    ** *Store a separate `.eidos-layer-ratchet.json` file outside `eidos/`*: Rejected because splitting boundary rules from C4 tier/container specs breaks `POL-001` single-source governance and invites config drift.
+* **`DEC-VCS-EXECUTABLE-IMPORT-RATCHET` (on `CNT-EIDOS-VCS`)**:
+  * *Decision*: Enforce `import_boundaries` inside `detect_drift` against the synced `--head` snapshot or working tree over `code_couplings` using monotonically shrinking `ratchet_baseline[].max_imports` ceilings (`observed_imports > max_imports` fails closed; `observed_imports < max_imports` emits advisory `ratchet_shrink_candidates`).
+  * *Rationale*: Lets brownfield teams adopt strict C4 layering immediately without blocking on legacy coupling while guaranteeing architectural debt can only decrease over time and commit-range checks never leak dirty working-tree edges.
+  * *Rejected Alternatives*:
+    ** *Hard-fail on all pre-existing legacy violations with no ratchet mechanism*: Rejected because large brownfield repositories cannot migrate legacy imports in one PR and would disable boundary enforcement altogether.
+
+== Implementation Plan
+
+1. **Polyglot HTTP Extraction, SQLite `2.20.0` Provenance Storage, Edge Linking & Context Slicing (`CNT-EIDOS-INDEX`)**:
+   * `src/eidos/core/index/ast_indexer.py` (`CMP-AST-SYMBOL-INDEXER`, maintaining `>90.0%` statement coverage per `POL-005`): implement `extract_http_endpoints`, `extract_http_requests`, and dynamic route parameter normalization (`{*}`) across Python, TS/JS, Go, Rust, Java/Kotlin, and C#. Update `eidos/architecture/components/ast-symbol-indexer.adoc` (anchoring `extract_http_endpoints` and `extract_http_requests` in `== Public Surface`).
+   * `src/eidos/core/index/storage.py` & `src/eidos/core/index/graph_index.py` (`CMP-GRAPH-STORAGE`, `>90.0%` coverage per `POL-005`): bump `SCHEMA_VERSION = "2.20.0"`, add `provenance` and `evidence` columns to `edges` plus `code_couplings` to `_MANAGED_TABLES` / `_CACHE_SCHEMA_DDL`, exclude `http_endpoint` and `http_request` from synthetic `'method'` telemetry, expose `edge_counts_by_provenance` in `get_index_status()`, and pass `min_confidence` through `get_k_hop_neighborhood()`. Update `eidos/architecture/components/graph-storage.adoc` (`== Public Surface`).
+   * `src/eidos/core/index/sync.py` (`CMP-INCREMENTAL-SYNC-ENGINE`, `>90.0%` coverage per `POL-005`): persist `http_endpoint`/`http_request` symbols, implement `_derive_http_request_edges` (`is_test = 0`, `protocol == "openapi"` / `"http_json"` `CTR-*` routes, `CMP-*` and container-direct `CNT-*` clients, unambiguous base-path disambiguation), populate `code_couplings`, and migrate all 26 `INSERT ... INTO edges` sites across `sync.py` to 5-column precedence upserts. Update `== Key Responsibilities & Collaborators` in `eidos/architecture/components/incremental-sync-engine.adoc` (keeping private `_derive_http_request_edges` out of `== Public Surface`).
+   * `src/eidos/core/index/query.py` (`CMP-GRAPH-TRAVERSAL-ENGINE` & `CMP-FTS-QUERY-ENGINE`, `>90.0%` coverage per `POL-005`): add `min_confidence` traversal filtering and epistemic `provenance`/`confidence`/`evidence` projection across `execute_k_hop_traversal`, `execute_incoming_references`, `execute_fts_query`, and `find_symbol_in_db`, and exclude `http_endpoint`/`http_request` from synthetic `Class.method` unions and `generate_repo_map_from_db`. Update `eidos/architecture/components/graph-traversal-engine.adoc` (`== Public Surface`) and `eidos/architecture/components/fts-query-engine.adoc`.
+   * `src/eidos/core/index/context.py` (`CMP-TIERED-CONTEXT-COMPRESSOR`, `>90.0%` coverage per `POL-005`): surface compact `provenance_tags` in `guardrails`/`deep` slices without breaching `INV-CONTEXT-TOKEN-COMPRESSION` budgets. Update `eidos/architecture/components/tiered-context-compressor.adoc` and `eidos/architecture/containers/index.adoc` (`CNT-EIDOS-INDEX`, adding `DEC-INDEX-HTTP-LINKING-AND-PROVENANCE`).
+
+2. **Boundary Schemas, Models, Validator & Self-Hosted Dogfooding (`CNT-EIDOS-CORE`, `ARCH-EIDOS-001`)**:
+   * `assets/schemas/v1/common/defs.yaml`, `assets/schemas/v1/tech/architecture.schema.yaml`, `assets/schemas/v1/tech/container.schema.yaml`, `assets/schemas/v1/tech/component.schema.yaml` (`CNT-EIDOS-CORE`): add `$defs.boundary_entity_ref`, `$defs.container_import_boundary`, `$defs.component_import_boundary`, `import_boundary`, and `import_boundaries` (`tier_rules`, `enforce_declared_containers`, `ratchet_baseline`). Update `eidos/architecture/containers/core.adoc` (`DEC-CORE-DECLARATIVE-IMPORT-BOUNDARIES`).
+   * `src/eidos/core/spec/models.py` (`CMP-DOMAIN-MODELS`, `>90.0%` coverage per `POL-005`): add `ImportBoundaryRuleModel`, `RatchetBaselineEntryModel`, `ArchitectureImportBoundariesModel`, and `FrontmatterModel` fields. Update `eidos/architecture/components/domain-models.adoc` (`== Public Surface`).
+   * `src/eidos/core/spec/validator.py` (`CMP-SPEC-VALIDATOR`, `>90.0%` coverage per `POL-005`): add `evaluate_import_boundaries(...)` (syncing structural edges via `sync_index(..., auto_semantic=False)` when boundary rules exist) and integrate boundary/tier/disjointness validation into `validate_directory(..., check_import_boundaries: bool = True)`. Update `eidos/architecture/components/spec-validator.adoc` (`== Public Surface`).
+   * `eidos/architecture/system-architecture.adoc` (`ARCH-EIDOS-001`): configure self-hosted `import_boundaries.tier_rules` and document executable boundary rules in body prose.
+
+3. **Drift Gate Enforcement, CLI Flags & Contract Updates (`CNT-EIDOS-VCS`, `CTR-EIDOS-CLI`)**:
+   * `src/eidos/vcs/drift.py`, `src/eidos/vcs/structural.py`, `src/eidos/vcs/report.py` (`CMP-DRIFT-DETECTOR`, `>90.0%` coverage per `POL-005`): invoke `evaluate_import_boundaries` once inside `detect_drift` against `eval_root`/`eval_eidos` (passing `check_import_boundaries=False` to `validate_directory` and remapping `snap_root` prefixes on `evidence`) and emit `boundary_violations` + `ratchet_shrink_candidates` in `DriftCheckResult`, CLI remediation prompts, and Markdown reports. Update `eidos/architecture/components/drift-detector.adoc` and `eidos/architecture/containers/vcs.adoc` (`CNT-EIDOS-VCS`, adding `DEC-VCS-EXECUTABLE-IMPORT-RATCHET`).
+   * `src/eidos/cli/index_commands.py` (`CMP-CLI-INDEX-COMMANDS`) and `src/eidos/cli/drift_commands.py` (`CMP-CLI-DRIFT-COMMANDS`, `>90.0%` coverage per `POL-005`): add `--min-confidence` to `eidos index blast-radius`, render provenance/confidence fields, and render `boundary_violations` / `ratchet_shrink_candidates` in `eidos drift` *(CNT-EIDOS-CLI covered via CMP-CLI-INDEX-COMMANDS, CMP-CLI-DRIFT-COMMANDS, and CTR-EIDOS-CLI; no CNT-EIDOS-CLI spec mutation)*. Update `eidos/architecture/components/cli-index-commands.adoc`, `eidos/architecture/components/cli-drift-commands.adoc`, and `eidos/architecture/contracts/cli.adoc` (`CTR-EIDOS-CLI` `1.7.0`).
+   * Regenerate `tests/fixtures/cli_command_tree.json` to match the updated Typer `--min-confidence` option *(CLI snapshot fixture classified under `other_files`; no spec mutation)*.
+
+4. **Capabilities, Agent Skills & User Documentation (`CAP-*`, `CNT-EIDOS-PLUGIN`, `CMP-DOCS-*`)**:
+   * Update `eidos/domains/agent-intelligence/capabilities/cap-agent-002.adoc` (`CAP-AGENT-002` `1.6.0`, adding `INV-INDEX-STATIC-HTTP-AUTOLINK` and `INV-INDEX-EPISTEMIC-PROVENANCE`), `eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc` (`CAP-AGENT-001` `1.16.0`, updating `INV-AGENT-CONTEXT-SLICING`), `eidos/domains/spec-engine/capabilities/living-spec-engine.adoc` (`CAP-PROD-001` `1.13.0`, updating `INV-SPEC-VALIDATION`), and `eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc` (`CAP-VCS-001` `1.13.0`, adding `INV-DRIFT-IMPORT-BOUNDARY-RATCHET`).
+   * Tighten and update `assets/plugin_reference/skills/eidos/SKILL.md` (`<=2,050` words) and `assets/plugin_reference/skills/eidos-ops/SKILL.md` (`<=850` words) per §4 trim budget (`CNT-EIDOS-PLUGIN`; `.agents/skills` symlinked in place). Update `eidos/architecture/containers/plugin.adoc`.
+   * Update `docs/guides/cli.md` (`CMP-DOCS-USER-GUIDES`), `docs/concepts/schema-glossary.md`, and `docs/concepts/architectural-index.md` (`CMP-DOCS-CORE-CONCEPTS`) *(CNT-EIDOS-DOCS covered via CMP-DOCS-USER-GUIDES and CMP-DOCS-CORE-CONCEPTS; no CNT-EIDOS-DOCS spec mutation)*. Update `eidos/architecture/components/docs-user-guides.adoc` and `eidos/architecture/components/docs-core-concepts.adoc`.
+
+5. **Tests & Verification Gates**:
+   * Add `tests/test_http_autolink.py::test_static_frontend_request_to_backend_endpoint_autolink` (`INV-INDEX-STATIC-HTTP-AUTOLINK`), add `tests/test_graph_index.py::test_epistemic_provenance_tags_and_confidence_filtering` (`INV-INDEX-EPISTEMIC-PROVENANCE`), extend `tests/test_context.py::test_context_slice_by_file` (`INV-AGENT-CONTEXT-SLICING`), extend `tests/test_validator.py::test_validate_eidos_specifications` (`INV-SPEC-VALIDATION`), and add `tests/test_drift.py::test_executable_import_boundaries_and_ratchet_baseline` (`INV-DRIFT-IMPORT-BOUNDARY-RATCHET`), covering every touched `src/eidos/**/*.py` module above `90.0%` statement coverage (`POL-005`).
+   * Run regression checks (`tests/test_cli_json.py`, `tests/test_docs_sync.py` including `zensical build --strict` per `POL-003`, `tests/test_plugin.py`, `tests/test_policy_zero_ai.py` per `POL-004`, `tests/test_scaffolder.py -k genericity` per `INV-ENGINE-GENERICITY`, and `tests/test_validator.py -k test_pol_005`), then run `eidos delta verify DLT-2026-137-ADD-STATIC-FRONTEND-TO-A4CB --json`, `eidos delta apply DLT-2026-137-ADD-STATIC-FRONTEND-TO-A4CB`, `eidos delta audit DLT-2026-137-ADD-STATIC-FRONTEND-TO-A4CB --strict --json`, and `eidos drift --uncommitted --json`.

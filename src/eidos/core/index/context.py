@@ -22,6 +22,7 @@ from eidos.core.index.query import (
     execute_fts_query,
     resolve_symbol_or_path_in_db,
 )
+from eidos.core.index.storage import CONFIDENCE_RANK, EDGE_PROVENANCE_PRECEDENCE, provenance_to_confidence
 
 _GLOB_EXCLUDED_DIRS = frozenset(
     {
@@ -393,6 +394,7 @@ class ArchitecturalContextSlice:
     invariants: list[dict[str, Any]] = field(default_factory=list)
     policies: list[dict[str, Any]] = field(default_factory=list)
     matched_reasons: dict[str, list[str]] = field(default_factory=dict)
+    provenance_tags: dict[str, dict[str, str]] = field(default_factory=dict)
     tier: str = "guardrails"  # "anchor" | "guardrails" | "deep"
     query_latency_ms: float = 0.0
     token_estimate: int = 0
@@ -459,6 +461,10 @@ class ArchitecturalContextSlice:
                 lines.append(f"- **Owning Container:** `{parent_cnt}` | **Source Path:** `{pkg}`")
                 if comp.get("file_path"):
                     lines.append(f"- **Specification:** `{comp['file_path']}`")
+                if self.tier in ("guardrails", "deep") and not compact_metadata and (not is_secondary or not compact_prose):
+                    ptag = self.provenance_tags.get(cid)
+                    if ptag:
+                        lines.append(f"- **Provenance:** `{ptag.get('provenance')}` (`{ptag.get('confidence')}`)")
                 if self.tier in ("guardrails", "deep") and not compact_metadata and not is_secondary:
                     if comp.get("domain_path"):
                         lines.append(f"- **Domain Spec:** `{comp['domain_path']}`")
@@ -478,6 +484,10 @@ class ArchitecturalContextSlice:
             else:
                 lines.append(f"### `{cid}` ({title})")
                 lines.append(f"- **Container:** `{ctype}` | **Runtime:** `{runtime}` | **Source Path:** `{pkg}`")
+                if self.tier in ("guardrails", "deep") and not compact_metadata and (not is_secondary or not compact_prose):
+                    ptag = self.provenance_tags.get(cid)
+                    if ptag:
+                        lines.append(f"- **Provenance:** `{ptag.get('provenance')}` (`{ptag.get('confidence')}`)")
                 if comp.get("domain"):
                     dom_path_str = (
                         f" (`{comp['domain_path']}`)"
@@ -543,6 +553,8 @@ class ArchitecturalContextSlice:
                         max_dec_items = 2
                     elif self.tier == "guardrails" and compact_primary_decisions and idx_comp == 0:
                         max_dec_items = 3
+                    elif self.tier == "deep" and compact_primary_decisions and idx_comp == 0 and len(decisions) > 7:
+                        max_dec_items = 7
                     else:
                         max_dec_items = None
                     lines.extend(
@@ -724,6 +736,8 @@ class TieredContextSlice(ArchitecturalContextSlice):
             max_decs = 2
         elif self.tier == "guardrails" and self._compact_primary_decisions and is_primary:
             max_decs = 3
+        elif self.tier == "deep" and self._compact_primary_decisions and is_primary and len(decisions) > 7:
+            max_decs = 7
         else:
             max_decs = len(decisions)
         for dec_idx, d in enumerate(decisions[:max_decs]):
@@ -999,9 +1013,31 @@ class TieredContextSlice(ArchitecturalContextSlice):
             return True
         return False
 
+    def _project_provenance_tags(self) -> dict[str, dict[str, str]]:
+        out: dict[str, dict[str, str]] = {}
+        max_guard_tags = 2 if (self.tier == "guardrails" and self._compact_prose and len(self.components) > 3) else None
+        for idx_c, c in enumerate(self.components):
+            cid = str(c.get("id") or "")
+            if not cid or cid not in self.provenance_tags:
+                continue
+            if self._compact_metadata and idx_c > 0:
+                continue
+            if max_guard_tags is not None and len(out) >= max_guard_tags and self._is_secondary_dependency(cid):
+                continue
+            raw_tag = self.provenance_tags[cid]
+            entry: dict[str, str] = {
+                "provenance": str(raw_tag.get("provenance") or "declared_spec"),
+                "confidence": str(raw_tag.get("confidence") or "observed"),
+            }
+            ev = str(raw_tag.get("evidence") or "")
+            if ev and not self._compact_metadata and not self._compact_prose:
+                entry["evidence"] = self._clip(ev, 80) if self.tier == "guardrails" else ev
+            out[cid] = entry
+        return out
+
     def to_dict(self) -> dict[str, Any]:
         """Project tier-scoped view of matched architectural entities rather than raw frontmatter (DLT-2026-047)."""
-        return {
+        payload: dict[str, Any] = {
             "query": self.query,
             "tier": self.tier,
             "components": [self._project_component(c, idx) for idx, c in enumerate(self.components)],
@@ -1010,9 +1046,12 @@ class TieredContextSlice(ArchitecturalContextSlice):
             "invariants": [self._project_invariant(i) for i in self.invariants],
             "policies": [self._project_policy(p) for p in self.policies],
             "matched_reasons": dict(self.matched_reasons),
-            "query_latency_ms": self.query_latency_ms,
-            "token_estimate": self.token_estimate,
         }
+        if self.tier in ("guardrails", "deep"):
+            payload["provenance_tags"] = self._project_provenance_tags()
+        payload["query_latency_ms"] = self.query_latency_ms
+        payload["token_estimate"] = self.token_estimate
+        return payload
 
     _STRUCTURAL_STRIP_TABLE = str.maketrans("", "", "{}[]:,\"'`|")
 
@@ -1047,6 +1086,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
             for k, v in self.matched_reasons.items()
             if k in retained_ids or k.startswith(self._EXPANDED_REASON_PREFIXES)
         }
+        self.provenance_tags = {k: v for k, v in self.provenance_tags.items() if k in retained_ids}
 
     def _state_signature(self, budget: int) -> tuple[Any, ...]:
         return (
@@ -1128,11 +1168,18 @@ class TieredContextSlice(ArchitecturalContextSlice):
             return
         eid = str(item.get("id", "") or "")
         reason_ub = 0
+        prov_md_ub = 0
         if eid and not eid.startswith(self._EXPANDED_REASON_PREFIXES):
             removed_reasons = self.matched_reasons.pop(eid, None)
             if removed_reasons:
                 reason_ub = len(eid) + sum(len(str(r)) + 12 for r in removed_reasons) + 24
+        removed_ptag = self.provenance_tags.pop(eid, None) if eid else None
+        if removed_ptag:
+            ev_len = len(str(removed_ptag.get("evidence") or ""))
+            reason_ub += len(eid) + ev_len + 96
+            prov_md_ub = 56
         md_ub, json_ub = self._item_md_and_json_upper_bounds(lst, item, idx)
+        md_ub += prov_md_ub
         json_ub += reason_ub
         md_lb = self.__dict__.get("_md_char_lb", 0)
         md_tok_lb = self.__dict__.get("_md_tok_lb", 0)
@@ -1337,6 +1384,7 @@ def build_tiered_context_slice(
     matched_invariants: dict[str, dict[str, Any]] = {}
     matched_policies: dict[str, dict[str, Any]] = {}
     matched_reasons: dict[str, list[str]] = {}
+    provenance_tags: dict[str, dict[str, str]] = {}
     direct_inv_ids: list[str] = []
     direct_cnt_ids: list[str] = []
     expanded_cnt_ids: list[str] = []
@@ -1347,6 +1395,26 @@ def build_tiered_context_slice(
         bucket = matched_reasons.setdefault(eid, [])
         if reason not in bucket and len(bucket) < 3:
             bucket.append(reason)
+
+    def _record_prov(eid: str, provenance: str, evidence: str = "") -> None:
+        if not eid:
+            return
+        conf = provenance_to_confidence(provenance)
+        new_score = (CONFIDENCE_RANK.get(conf, 0), EDGE_PROVENANCE_PRECEDENCE.get(provenance, 0))
+        cur = provenance_tags.get(eid)
+        if cur is not None:
+            cur_score = (
+                CONFIDENCE_RANK.get(cur.get("confidence", ""), 0),
+                EDGE_PROVENANCE_PRECEDENCE.get(cur.get("provenance", ""), 0),
+            )
+            if new_score < cur_score:
+                return
+            if new_score == cur_score and cur.get("evidence"):
+                return
+        entry = {"provenance": provenance, "confidence": conf}
+        if evidence:
+            entry["evidence"] = evidence
+        provenance_tags[eid] = entry
 
     conn = index._get_connection()
     cursor = conn.cursor()
@@ -1378,6 +1446,7 @@ def build_tiered_context_slice(
             if member_ids is not None and row["id"] not in member_ids:
                 member_ids.append(row["id"])
             _add_reason(row["id"], member_reason)
+            _record_prov(row["id"], "declared_spec", row["file_path"] or "")
 
     def _ingest_entity(
         eid: str,
@@ -1572,6 +1641,7 @@ def build_tiered_context_slice(
                 f"Explicit component parameter '{component}'",
                 expand_cap_components=True,
             )
+            _record_prov(cid, "declared_spec", str(row["file_path"] or cid))
 
     # 2. Resolve by File paths
     raw_files = [files] if isinstance(files, str) else (files or [])
@@ -1640,6 +1710,13 @@ def build_tiered_context_slice(
                 else:
                     file_reason = f"Contract file match on '{fpath}'"
                 _ingest_entity(eid, etype, data, file_reason)
+                mk = str(m.get("kind") or "")
+                m_prov = (
+                    "inferred_ownership"
+                    if mk == "inferred_path"
+                    else ("ast_symbol" if mk == "test_binding" else "declared_spec")
+                )
+                _record_prov(eid, m_prov, fpath)
             continue
 
         if not matches:
@@ -1680,6 +1757,7 @@ def build_tiered_context_slice(
             if m.get("file_path"):
                 data.setdefault("file_path", m["file_path"])
             _ingest_entity(eid, etype, data, f"Specification file match on '{fpath}'", expand_cap_components=True)
+            _record_prov(eid, "declared_spec", fpath)
 
     # 3. Resolve by Task prompt (FTS5 lexical + optional Harrier Hybrid RRF search restricted to sliceable entity types,
     #    retaining up to 8 primary structural matches and up to 4 secondary persona/design matches so secondary entities
@@ -1741,6 +1819,7 @@ def build_tiered_context_slice(
                 reason = f"FTS lexical match on task (BM25 score: {m['rank']:.2f})"
 
             _ingest_entity(eid, etype, data, reason, fts_hit_ranks)
+            _record_prov(eid, str(m.get("provenance") or "fts_bm25"), f"task:{task.strip()[:40]}")
 
     for iid in direct_inv_ids:
         inv_data = matched_invariants[iid]
@@ -1845,6 +1924,7 @@ def build_tiered_context_slice(
                     matched_components[row["id"]] = cnt_data
             if parent_cnt in matched_components:
                 _add_reason(parent_cnt, f"Owning container of {cid}")
+                _record_prov(parent_cnt, "declared_spec", f"{cid}:container")
                 if parent_cnt not in prioritized_direct_cnt_ids:
                     prioritized_direct_cnt_ids.append(parent_cnt)
     direct_cnt_ids = prioritized_direct_cnt_ids
@@ -1865,6 +1945,7 @@ def build_tiered_context_slice(
                 if row["id"] not in direct_cnt_ids and row["id"] not in expanded_cnt_ids:
                     expanded_cnt_ids.append(row["id"])
                 _add_reason(row["id"], f"Owning container of {cid}")
+                _record_prov(row["id"], "declared_spec", f"{cid}:container")
 
     # 5. Expand 1-hop internal dependencies via graph edges (depends_on, consumes_api)
     primary_cids = list(
@@ -1874,12 +1955,21 @@ def build_tiered_context_slice(
         ph = ",".join("?" for _ in primary_cids)
         dep_rows = cursor.execute(
             f"""
-            SELECT DISTINCT target_id FROM edges
+            SELECT target_id, provenance, evidence FROM edges
             WHERE source_id IN ({ph}) AND rel_type IN ('depends_on', 'consumes_api')
             """,
             tuple(primary_cids),
         ).fetchall()
-        missing_dep_ids = [r[0] for r in dep_rows if r[0] and r[0] not in matched_components]
+        dep_prov_by_target: dict[str, tuple[str, str]] = {}
+        for d_tid, d_prov, d_ev in dep_rows:
+            if not d_tid:
+                continue
+            p_str = str(d_prov or "declared_spec")
+            e_str = str(d_ev or "")
+            prev = dep_prov_by_target.get(d_tid)
+            if prev is None or EDGE_PROVENANCE_PRECEDENCE.get(p_str, 0) > EDGE_PROVENANCE_PRECEDENCE.get(prev[0], 0):
+                dep_prov_by_target[d_tid] = (p_str, e_str)
+        missing_dep_ids = [tid for tid in dep_prov_by_target if tid not in matched_components]
         if missing_dep_ids:
             ph_dep = ",".join("?" for _ in missing_dep_ids)
             cursor.execute(
@@ -1894,6 +1984,8 @@ def build_tiered_context_slice(
                 c_data.setdefault("file_path", row["file_path"])
                 matched_components[row["id"]] = c_data
                 _add_reason(row["id"], "Internal dependency")
+                d_prov, d_ev = dep_prov_by_target.get(row["id"], ("declared_spec", ""))
+                _record_prov(row["id"], d_prov, d_ev)
 
     # 6. Include contracts owned by or provided/consumed by primary components
     direct_ctr_ids = list(matched_contracts.keys())
@@ -2291,6 +2383,10 @@ def build_tiered_context_slice(
                     if len(ordered_invs) >= max_invs:
                         break
 
+    for cid, comp_entry in matched_components.items():
+        if cid not in provenance_tags:
+            _record_prov(cid, "declared_spec", str(comp_entry.get("file_path") or cid))
+
     slice_obj = TieredContextSlice(
         tier=tier,
         query={"files": requested_files, "component": component, "task": task},
@@ -2300,6 +2396,7 @@ def build_tiered_context_slice(
         invariants=ordered_invs,
         policies=sorted_pols,
         matched_reasons=matched_reasons,
+        provenance_tags=provenance_tags,
         query_latency_ms=0.0,
         token_estimate=0,
     )

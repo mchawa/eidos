@@ -9,6 +9,7 @@ from rich.table import Table
 
 from eidos.cli._shared import console, resolve_cli_eidos_dir
 from eidos.core.index.graph_index import get_architectural_index
+from eidos.core.index.storage import normalize_confidence_level, provenance_to_confidence
 
 index_app = typer.Typer(
     name="index",
@@ -86,6 +87,14 @@ def index_status_cmd(
         for etype, count in sorted(status["entity_counts_by_type"].items()):
             table.add_row(etype, str(count))
         console.print(table)
+
+    if status.get("edge_counts_by_provenance"):
+        prov_table = Table(title="Edges by Epistemic Provenance", show_header=True)
+        prov_table.add_column("Provenance", style="bold cyan")
+        prov_table.add_column("Count", justify="right", style="green")
+        for prov, count in sorted(status["edge_counts_by_provenance"].items()):
+            prov_table.add_row(prov, str(count))
+        console.print(prov_table)
 
     if ast_info.get("symbols_by_kind"):
         ast_table = Table(title="AST Code Symbols & Traceability", show_header=True)
@@ -230,13 +239,17 @@ def index_search_cmd(
 
     table = Table(title=f"Architectural Search Results for '{query}' ({len(results)} matches)", show_header=True)
     table.add_column("Rank", justify="right", style="dim")
-    table.add_column("Entity ID", style="bold cyan")
+    table.add_column("Entity ID", style="bold cyan", no_wrap=True)
     table.add_column("Type", style="yellow")
     table.add_column("Title", style="white")
     table.add_column("Domain", style="dim")
+    table.add_column("Provenance", style="dim")
 
     for r in results:
-        table.add_row(f"{r['rank']:.2f}", r["id"], r["type"], r["title"], r.get("domain", "") or "—")
+        prov = str(r.get("provenance") or "fts_bm25")
+        conf = str(r.get("confidence") or provenance_to_confidence(prov))
+        prov_label = f"{prov} ({conf})"
+        table.add_row(f"{r['rank']:.2f}", r["id"], r["type"], r["title"], r.get("domain", "") or "—", prov_label)
 
     console.print(table)
 
@@ -254,6 +267,11 @@ def index_blast_radius_cmd(
         "-d",
         help="Maximum graph walk hop distance (defaults to 2).",
     ),
+    min_confidence: str = typer.Option(
+        "inferred",
+        "--min-confidence",
+        help="Minimum epistemic edge confidence threshold: 'inferred', 'derived', or 'observed'.",
+    ),
     path: Path | None = typer.Option(
         None,
         "--path",
@@ -267,10 +285,23 @@ def index_blast_radius_cmd(
     ),
 ):
     """Display recursive CTE graph walk / blast radius for an architectural entity, symbol, or file path."""
+    try:
+        norm_confidence = normalize_confidence_level(min_confidence)
+    except ValueError as exc:
+        if json_output:
+            console.print_json(data={"error": str(exc)})
+        else:
+            console.print(f"[bold red]Error:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
+
     eidos_dir = resolve_cli_eidos_dir(path)
     idx = get_architectural_index(eidos_dir=eidos_dir)
     resolved_ids = idx.resolve_blast_radius_targets(symbol_or_path)
-    neighbors = idx.get_k_hop_neighborhood(resolved_ids, max_depth=depth) if resolved_ids else []
+    neighbors = (
+        idx.get_k_hop_neighborhood(resolved_ids, max_depth=depth, min_confidence=norm_confidence)
+        if resolved_ids
+        else []
+    )
     primary_entity_id = resolved_ids[0] if resolved_ids else symbol_or_path
 
     if json_output:
@@ -280,6 +311,7 @@ def index_blast_radius_cmd(
                 "query": symbol_or_path,
                 "resolved_entities": resolved_ids,
                 "depth": depth,
+                "min_confidence": norm_confidence,
                 "count": len(neighbors),
                 "neighbors": neighbors,
             }
@@ -296,15 +328,22 @@ def index_blast_radius_cmd(
         if resolved_ids and symbol_or_path.upper() != resolved_str.upper()
         else f"'{primary_entity_id}'"
     )
-    table = Table(title=f"Blast Radius for {title_target} (Depth: {depth})", show_header=True)
+    table = Table(
+        title=f"Blast Radius for {title_target} (Depth: {depth}, Min Confidence: {norm_confidence})",
+        show_header=True,
+    )
     table.add_column("Hop", justify="center", style="bold magenta")
-    table.add_column("Entity ID", style="bold cyan")
+    table.add_column("Entity ID", style="bold cyan", no_wrap=True)
     table.add_column("Type", style="yellow")
     table.add_column("Title", style="white")
-    table.add_column("Domain", style="dim")
+    table.add_column("Provenance", style="dim")
 
     for n in neighbors:
-        table.add_row(str(n["depth"]), n["id"], n["type"], n["title"], n.get("domain", "") or "—")
+        prov_label = f"{n.get('provenance', 'declared_spec')} ({n.get('confidence', 'observed')})"
+        ev = n.get("evidence", "")
+        if ev:
+            prov_label = f"{prov_label} [{ev}]"
+        table.add_row(str(n["depth"]), n["id"], n["type"], n["title"], prov_label)
 
     console.print(table)
 
@@ -384,12 +423,15 @@ def index_find_symbol_cmd(
     table.add_column("Kind", style="yellow")
     table.add_column("Owning Entity", style="bold white", no_wrap=True)
     table.add_column("Location", style="green")
-    table.add_column("Spec Path", style="dim")
+    table.add_column("Provenance", style="dim")
 
     for m in matches:
         loc = m.get("location")
         location = f"{loc['file']}:{loc['line_start']}" if loc else "—"
-        table.add_row(m["symbol"], m["kind"], m["entity_id"], location, m.get("file_path", "") or "—")
+        prov = str(m.get("provenance") or "ast_symbol")
+        conf = str(m.get("confidence") or provenance_to_confidence(prov))
+        prov_label = f"{prov} ({conf})"
+        table.add_row(m["symbol"], m["kind"], m["entity_id"], location, prov_label)
 
     console.print(table)
 

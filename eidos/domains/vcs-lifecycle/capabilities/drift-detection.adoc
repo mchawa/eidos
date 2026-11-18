@@ -4,7 +4,7 @@ id: CAP-VCS-001
 title: "Git-Native Spec-to-Code Drift Detection"
 domain: DOM-VCS-LIFECYCLE
 status: active
-version: "1.12.0"
+version: "1.13.0"
 
 business:
   personas:
@@ -19,9 +19,13 @@ technical:
   containers:
     - "CNT-EIDOS-VCS"
     - "CNT-EIDOS-INDEX"
+    - "CNT-EIDOS-CORE"
+    - "CNT-EIDOS-CLI"
   components:
     - "CMP-DRIFT-DETECTOR"
     - "CMP-AST-SYMBOL-INDEXER"
+    - "CMP-CLI-DRIFT-COMMANDS"
+    - "CMP-SPEC-VALIDATOR"
   contracts:
     - "CTR-EIDOS-CLI"
   invariants:
@@ -40,6 +44,9 @@ technical:
     - id: INV-DRIFT-UIC-AND-SKIPPED-TEST-GUARD
       rule: "eidos drift must scan eidos/design/ for UIC-* invariants, enforce verify_delta_mutations and _spec_coverage_verdict on applied SpecDeltas without planned-mode short-circuiting, match INV-* tokens cleanly across lowercase prose suffixes without colliding on uppercase suffix IDs, and reject disabled test modifiers (.skip, .todo, .fixme) and suite-only describe(...) blocks as test bindings."
       test_binding: "tests/test_drift.py::test_uic_invariants_planned_delta_verify_and_skipped_test_rejection"
+    - id: INV-DRIFT-IMPORT-BOUNDARY-RATCHET
+      rule: "detect_drift and 'eidos drift' must enforce ARCH-*.import_boundaries (tier_rules, enforce_declared_containers, ratchet_baseline) and CNT-*/CMP-*.import_boundary (allow, deny) fail-closed across ast_import and ast_http code_couplings (even when declared_spec CTR-* edges exist and isolated strictly to the --head snapshot on commit-range runs), failing when forbidden couplings or observed_imports > ratchet_baseline[].max_imports occur while surfacing non-blocking ratchet_shrink_candidates when observed_imports < max_imports."
+      test_binding: "tests/test_drift.py::test_executable_import_boundaries_and_ratchet_baseline"
 ---
 = Capability: Git-Native Spec-to-Code Drift Detection
 :toc: left
@@ -59,4 +66,5 @@ By leveraging the SQLite Knowledge Graph (`eidos/.cache/index.db`), drift detect
 * **1-Hop Neighborhood & `UIC-*` Invariant Verification (`INV-DRIFT-UIC-AND-SKIPPED-TEST-GUARD`)**: Querying the knowledge graph during `eidos drift` to discover bound interface contracts (`CTR-*`), domain capabilities (`CAP-*`), and parent containers affected by code changes, scanning `eidos/design/` for `UIC-*` UI component invariants, and rejecting disabled `.skip`/`.todo`/`.fixme` tests as valid bindings.
 * **Single Source of Truth & Planned-Mode Mutation Enforcement**: Gating CI/CD pipelines via `eidos drift` and enforcing `verify_delta_mutations` and `_spec_coverage_verdict` on newly applied SpecDeltas (`POL-001`).
 * **Diff-Aware & Boundary-Aware Spec Coverage**: Rejecting "touch-to-appease" spec edits (blank lines, `//` comments, re-wrapping) as coverage for new source files and new public symbols, rejecting spec coverage when removed public symbols remain referenced in the owning specification (`stale_removed_symbol`), enforcing strict symbol/file anchoring (`is_anchored`) for unclaimed files and package/contract boundary exports while allowing substantive owning/1-hop spec updates to cover module-internal helper functions, requiring bound design subgraph (`tokens.json`, `DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`) updates for both `token` and `ui_contract` frontend changes (`DEC-VCS-STRICT-UI-CONTRACT-DESIGN-DRIFT`), and reporting rejected edits in `trivially_covered_files`.
+* **Executable Import Boundary & Monotonic Ratchet Enforcement (`INV-DRIFT-IMPORT-BOUNDARY-RATCHET`, `DEC-VCS-EXECUTABLE-IMPORT-RATCHET`)**: Evaluates `ARCH-*.import_boundaries` and `CNT-*/CMP-*.import_boundary` against snapshot-synced `ast_import` and `ast_http` `code_couplings`, failing closed with `boundary_violations` when forbidden couplings or `ratchet_baseline` count increases occur while surfacing non-blocking `ratchet_shrink_candidates` tightening advisories.
 * **Direct Mode Frictionless Co-evolution**: Enabling developers and autonomous agents to write code first and instantly reconcile specifications in the same commit.

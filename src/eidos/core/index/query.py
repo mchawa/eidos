@@ -15,6 +15,10 @@ from typing import Any
 import orjson
 
 from eidos.core.index.ast_indexer import AstGrepIndexer, CodeSymbol, get_ast_indexer
+from eidos.core.index.storage import (
+    allowed_provenances_for_confidence,
+    provenance_to_confidence,
+)
 from eidos.core.index.sync import _NON_AST_SYMBOL_KINDS, build_spec_path_resolver
 from eidos.core.spec.models import ENTITY_PREFIX_REGISTRY, resolve_entity_prefix_meta
 from eidos.core.workspace.project import match_path_pattern
@@ -361,6 +365,8 @@ def execute_fts_query(
                         "source_path": source_path,
                         "file_path": row["file_path"],
                         "rank": row["rank"],
+                        "provenance": "fts_bm25",
+                        "confidence": "observed",
                         "data": data,
                     }
                 )
@@ -402,7 +408,7 @@ def execute_fts_query(
                     tau_min=DEFAULT_SEMANTIC_MIN_COSINE,
                 )
                 if sem_hits:
-                    return fuse_hybrid_rrf(
+                    fused_rows = fuse_hybrid_rrf(
                         results,
                         sem_hits,
                         explicit_ids=explicit_ids,
@@ -413,6 +419,17 @@ def execute_fts_query(
                         w_sem=DEFAULT_RRF_W_SEM,
                         tau_min=DEFAULT_SEMANTIC_MIN_COSINE,
                     )
+                    for f_row in fused_rows:
+                        msrc = str(f_row.get("match_source") or "lexical").lower()
+                        if msrc == "semantic":
+                            prov = "semantic_rrf"
+                        elif msrc == "hybrid":
+                            prov = "hybrid_rrf"
+                        else:
+                            prov = "fts_bm25"
+                        f_row["provenance"] = prov
+                        f_row["confidence"] = provenance_to_confidence(prov)
+                    return fused_rows
 
         return results[:limit]
     except sqlite3.OperationalError:
@@ -520,12 +537,23 @@ def resolve_blast_radius_targets(
     return list(dict.fromkeys(str(m["entity_id"]) for m in matches if m.get("entity_id")))
 
 
+_WALK_CERTAINTY_RANK: dict[str, int] = {
+    "inferred_ownership": 1,
+    "ast_http": 2,
+    "ast_import": 3,
+    "ast_symbol": 4,
+    "declared_spec": 5,
+}
+
+
 def execute_k_hop_traversal(
     conn: sqlite3.Connection,
     entity_id: str | Sequence[str],
     max_depth: int = 2,
+    min_confidence: str = "inferred",
 ) -> list[dict[str, Any]]:
-    """Traverse graph up to k hops in both directions using recursive CTE while preventing organizational hub fan-out at hop >= 2."""
+    """Traverse graph up to k hops in both directions using recursive CTE while filtering edges below min_confidence."""
+    allowed_provs = allowed_provenances_for_confidence(min_confidence)
     if isinstance(entity_id, str):
         seed_ids = resolve_blast_radius_targets(conn, entity_id)
     else:
@@ -534,29 +562,49 @@ def execute_k_hop_traversal(
             for r_id in resolve_blast_radius_targets(conn, str(item)):
                 if r_id not in seed_ids:
                     seed_ids.append(r_id)
-    if not seed_ids:
+    if not seed_ids or not allowed_provs:
         return []
 
-    seed_select_sql = " UNION ALL ".join("SELECT ?, 0, ?" for _ in seed_ids)
+    seed_select_sql = " UNION ALL ".join("SELECT ?, 0, ?, 'declared_spec', '', ''" for _ in seed_ids)
     seed_params: list[Any] = []
     for sid in seed_ids:
         seed_params.extend((sid, sid))
+    prov_ph = ",".join("?" for _ in allowed_provs)
+
+    rank_case_e = (
+        "CASE e.provenance "
+        "WHEN 'declared_spec' THEN 5 WHEN 'ast_symbol' THEN 4 WHEN 'ast_import' THEN 3 "
+        "WHEN 'ast_http' THEN 2 WHEN 'inferred_ownership' THEN 1 ELSE 5 END"
+    )
+    rank_case_gw = (
+        "CASE gw.walk_prov "
+        "WHEN 'declared_spec' THEN 5 WHEN 'ast_symbol' THEN 4 WHEN 'ast_import' THEN 3 "
+        "WHEN 'ast_http' THEN 2 WHEN 'inferred_ownership' THEN 1 ELSE 5 END"
+    )
 
     cursor = conn.cursor()
     cursor.execute(
         f"""
         WITH RECURSIVE
-        graph_walk(node_id, depth, path) AS (
+        graph_walk(node_id, depth, path, walk_prov, via_rel_type, evidence) AS (
             {seed_select_sql}
             UNION
             SELECT
                 CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END,
                 gw.depth + 1,
-                gw.path || '->' || CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END
+                gw.path || '->' || CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END,
+                CASE
+                    WHEN gw.depth = 0 THEN e.provenance
+                    WHEN ({rank_case_e}) < ({rank_case_gw}) THEN e.provenance
+                    ELSE gw.walk_prov
+                END,
+                e.rel_type,
+                CASE WHEN e.evidence != '' THEN e.evidence ELSE gw.evidence END
             FROM edges e
             JOIN graph_walk gw ON (e.source_id = gw.node_id OR e.target_id = gw.node_id)
             JOIN entities cur_ent ON cur_ent.id = gw.node_id
             WHERE gw.depth < ?
+              AND e.provenance IN ({prov_ph})
               AND (
                   gw.depth = 0
                   OR cur_ent.type NOT IN (
@@ -567,31 +615,43 @@ def execute_k_hop_traversal(
               AND CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END NOT LIKE 'DLT-%'
               AND ('->' || gw.path || '->') NOT LIKE '%->' || CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END || '->%'
         )
-        SELECT gw.node_id, MIN(gw.depth) AS depth, ent.type, ent.title, ent.domain, ent.file_path, ent.data_json
+        SELECT gw.node_id, gw.depth, gw.walk_prov, gw.via_rel_type, gw.evidence,
+               ent.type, ent.title, ent.domain, ent.file_path, ent.data_json
         FROM graph_walk gw
         JOIN entities ent ON ent.id = gw.node_id
-        GROUP BY gw.node_id
-        ORDER BY depth ASC, gw.node_id ASC;
+        ORDER BY gw.depth ASC, gw.node_id ASC;
         """,
-        (*seed_params, max_depth),
+        (*seed_params, max_depth, *allowed_provs),
     )
 
-    results = []
+    best_by_node: dict[str, dict[str, Any]] = {}
     for row in cursor.fetchall():
+        nid = row["node_id"]
+        depth = int(row["depth"])
+        prov = str(row["walk_prov"] or "declared_spec")
+        rank = _WALK_CERTAINTY_RANK.get(prov, 5)
+        existing = best_by_node.get(nid)
+        if existing is not None:
+            if depth > existing["depth"]:
+                continue
+            if depth == existing["depth"] and rank <= _WALK_CERTAINTY_RANK.get(existing["provenance"], 0):
+                continue
         data = orjson.loads(row["data_json"]) if row["data_json"] else {}
         comp_domain = str(data.get("domain") or "").strip() if isinstance(data, dict) else ""
-        results.append(
-            {
-                "id": row["node_id"],
-                "depth": row["depth"],
-                "type": row["type"],
-                "title": row["title"],
-                "domain": comp_domain or row["domain"],
-                "file_path": row["file_path"],
-                "data": data,
-            }
-        )
-    return results
+        best_by_node[nid] = {
+            "id": nid,
+            "depth": depth,
+            "type": row["type"],
+            "title": row["title"],
+            "domain": comp_domain or row["domain"],
+            "file_path": row["file_path"],
+            "provenance": prov,
+            "confidence": provenance_to_confidence(prov),
+            "via_rel_type": str(row["via_rel_type"] or ""),
+            "evidence": str(row["evidence"] or ""),
+            "data": data,
+        }
+    return sorted(best_by_node.values(), key=lambda item: (item["depth"], item["id"]))
 
 
 def execute_incoming_references(
@@ -615,7 +675,7 @@ def execute_incoming_references(
         target = row["doc_id"]
     rows = conn.execute(
         """
-        SELECT e.source_id, e.rel_type, ent.type, ent.title, ent.file_path
+        SELECT e.source_id, e.rel_type, e.provenance, e.evidence, ent.type, ent.title, ent.file_path
         FROM edges e
         JOIN entities ent ON ent.id = e.source_id
         WHERE e.target_id = ?
@@ -628,6 +688,10 @@ def execute_incoming_references(
         {
             "source_id": r["source_id"],
             "rel_type": r["rel_type"],
+            "via_rel_type": r["rel_type"],
+            "provenance": str(r["provenance"] or "declared_spec"),
+            "confidence": provenance_to_confidence(str(r["provenance"] or "declared_spec")),
+            "evidence": str(r["evidence"] or ""),
             "type": r["type"],
             "title": r["title"],
             "file_path": r["file_path"],
@@ -695,7 +759,8 @@ def resolve_symbol_or_path_in_db(conn: sqlite3.Connection, query: str) -> list[d
                 SELECT symbol, entity_id, kind FROM code_symbols WHERE kind NOT IN ('import', 'namespace') AND is_test = 0
                 UNION
                 SELECT parent_symbol || '.' || symbol, entity_id, 'method'
-                FROM code_symbols WHERE kind NOT IN ('import', 'namespace') AND is_test = 0 AND parent_symbol != ''
+                FROM code_symbols
+                WHERE kind NOT IN ('import', 'namespace', 'http_endpoint', 'http_request') AND is_test = 0 AND parent_symbol != ''
             )
             SELECT s.symbol, s.entity_id, s.kind, e.type, e.title, e.file_path, e.data_json
             FROM all_mappings s
@@ -870,7 +935,8 @@ def find_symbol_in_db(
             SELECT symbol, entity_id, kind, is_test FROM code_symbols WHERE kind NOT IN ('import', 'namespace')
             UNION
             SELECT parent_symbol || '.' || symbol, entity_id, 'method', is_test
-            FROM code_symbols WHERE kind NOT IN ('import', 'namespace') AND parent_symbol != ''
+            FROM code_symbols
+            WHERE kind NOT IN ('import', 'namespace', 'http_endpoint', 'http_request') AND parent_symbol != ''
         )
         SELECT s.symbol, s.entity_id, s.kind, s.is_test, e.title, e.type, e.file_path
         FROM all_mappings s
@@ -891,25 +957,33 @@ def find_symbol_in_db(
     seen_loc_keys: set[tuple[str, str, str, int]] = set()
     for r in cursor.fetchall():
         is_test_flag = bool(r["is_test"])
+        rk = str(r["kind"] or "")
+        sym_prov = (
+            "inferred_ownership"
+            if rk == "inferred_path"
+            else ("declared_spec" if rk in _NON_AST_SYMBOL_KINDS else "ast_symbol")
+        )
         base = {
             "symbol": r["symbol"],
             "entity_id": r["entity_id"],
-            "kind": r["kind"],
+            "kind": rk,
             "title": r["title"] or ("Automated Test Suite" if is_test_flag else r["entity_id"]),
             "type": r["type"] or ("code/test" if is_test_flag else ""),
             # Spec path of the owning entity (or test file path for standalone automated test symbols);
             # source coordinates live in 'location'.
             "file_path": r["file_path"],
             "is_test": is_test_flag,
+            "provenance": sym_prov,
+            "confidence": provenance_to_confidence(sym_prov),
         }
         locations = (
             []
-            if r["kind"] in _NON_AST_SYMBOL_KINDS
-            else resolve_symbol_locations_in_db(conn, r["entity_id"], r["kind"], r["symbol"])
+            if rk in _NON_AST_SYMBOL_KINDS
+            else resolve_symbol_locations_in_db(conn, r["entity_id"], rk, r["symbol"])
         )
         if locations:
             for loc in locations:
-                loc_key = (r["entity_id"], r["kind"], str(loc.get("file") or ""), int(loc.get("line_start") or 0))
+                loc_key = (r["entity_id"], rk, str(loc.get("file") or ""), int(loc.get("line_start") or 0))
                 if loc_key not in seen_loc_keys:
                     seen_loc_keys.add(loc_key)
                     row_fp = base["file_path"] or str(loc.get("file") or "")
@@ -929,7 +1003,9 @@ def generate_repo_map_from_db(conn: sqlite3.Connection, max_tokens: int = 1500) 
         """
         SELECT file_path, symbol, kind, parent_symbol, line_start, line_end, signature
         FROM code_symbols
-        WHERE is_primary = 1 AND is_test = 0
+        WHERE is_primary = 1
+          AND is_test = 0
+          AND kind NOT IN ('import', 'namespace', 'http_endpoint', 'http_request')
         ORDER BY file_path, id;
         """
     ).fetchall()

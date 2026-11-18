@@ -41,9 +41,13 @@ def build_drift_remediation_and_summary(
     eidos_rel_prefix: str = "eidos",
     body_only_code_files: list[str] | None = None,
     strict: bool = False,
+    boundary_violations: list[dict[str, Any]] | None = None,
+    ratchet_shrink_candidates: list[dict[str, Any]] | None = None,
 ) -> tuple[list[str], str]:
     """Build actionable remediation suggestions and Markdown summary report for drift detection."""
     remediation: list[str] = []
+    b_violations = list(boundary_violations or [])
+    shrink_cands = list(ratchet_shrink_candidates or [])
     if base_direct_drift:
         target_list = uncovered_direct_components or comp_mappings
         structural_set = set(structural_code_files)
@@ -151,6 +155,16 @@ def build_drift_remediation_and_summary(
                 f"• {oid} referenced in '{loc}' is not declared in any capability, policy, or component (CNT-*, CMP-*, UIC-*)."
             )
 
+    if b_violations:
+        remediation.append(
+            f"Architectural Import Boundary Violations: {len(b_violations)} cross-boundary coupling rule(s) failed."
+        )
+        for bv in b_violations[:5]:
+            ev_preview = f" [{'; '.join(bv.get('evidence', [])[:2])}]" if bv.get("evidence") else ""
+            remediation.append(
+                f"• {bv['source']} -> {bv['target']} ({bv['rule']}): observed {bv['observed_imports']} coupling(s), max allowed {bv['max_imports']}{ev_preview}"
+            )
+
     summary_lines = [
         "## 🧭 Eidos Living Specification Drift Detection Summary",
         "",
@@ -195,6 +209,13 @@ def build_drift_remediation_and_summary(
             f"| Modified Test Files | `{len(classification.test_files)}` | {'✓' if classification.test_files else '—'} |",
             f"| Living Specs Validated | `{validation_report.valid_docs}/{validation_report.total_docs}` | {'✓ 100% Green' if validation_report.is_clean else '✗ Errors'} |",
             f"| Invariants Verified | `{len(invariants) - len(uncovered_invariants)}/{len(invariants)}` | {'✓ 100% Covered' if not uncovered_invariants else f'✗ {len(uncovered_invariants)} Uncovered'} |",
+            *(
+                [
+                    f"| Import Boundaries | `{len(b_violations)} violations` | {'✓ Enforced' if not b_violations else f'✗ {len(b_violations)} Violated'} |"
+                ]
+                if (b_violations or shrink_cands)
+                else []
+            ),
             "",
         ]
     )
@@ -220,6 +241,15 @@ def build_drift_remediation_and_summary(
             summary_lines.append(f"- {rem}")
         summary_lines.append("")
 
+    if shrink_cands:
+        summary_lines.append("### 📉 Ratchet Tightening Opportunities (Advisory):")
+        for sc in shrink_cands:
+            summary_lines.append(
+                f"- `{sc['source']} -> {sc['target']}` ({sc.get('spec_path', '')}): "
+                f"observed `{sc['observed_imports']}` < `max_imports: {sc['max_imports']}` ({sc['action']})"
+            )
+        summary_lines.append("")
+
     return remediation, "\n".join(summary_lines)
 
 
@@ -243,6 +273,12 @@ def generate_remediation_prompt(report: Any) -> str:
         )
     for oid, loc in getattr(report, "orphan_invariants", []):
         gov_failures.append(f"- Orphan invariant reference: `{oid}` in `{loc}`")
+    for bv in getattr(report, "boundary_violations", []) or []:
+        ev_preview = f" ({'; '.join(bv.get('evidence', [])[:2])})" if bv.get("evidence") else ""
+        gov_failures.append(
+            f"- Import boundary violation: `{bv['source']} -> {bv['target']}` [{bv['rule']}] "
+            f"(observed `{bv['observed_imports']}` > max `{bv['max_imports']}`){ev_preview}"
+        )
 
     if gov_failures or not code_files:
         header = (

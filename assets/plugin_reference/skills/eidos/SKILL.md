@@ -36,8 +36,8 @@ Whenever you need to orient in the codebase, locate a symbol, search specs, or a
 | Running `find` / `ls -R` or reading many files to orient | `eidos index repo-map --max-tokens 1500` | AST outline of all containers and modules (~85% fewer tokens). |
 | Grepping source files for a class, function, method, or route | `eidos index find-symbol "<SymbolName>" --json` | Exact `location.file` and `line_start`..`line_end` (pass to `read_file` instead of reading full files), plus `CNT-*` / `CMP-*`. |
 | Grepping `eidos/` for domain concepts, rules, capabilities, or spikes | `eidos index search "<keywords>" --json` | BM25 + synonym search (optional hybrid semantic via `--semantic`) over specs, `DEC-*`, and `INV-*`. |
-| Editing or reviewing files/globs (including `@[file]`) without knowing governance | `eidos context -f "<path_or_glob>" --json` *(or `-f a,b` / `-t "<task>"` / `-c <ID>`)* | Owning `CNT-*`/`CMP-*`, `DOM-*`, `CAP-*`, `PER-*`, `POL-*`, `design`, `INV-*`, `DEC-*`, and `CTR-*` in one call (always quote globs; trust without re-reading `.adoc` files). |
-| Guessing what breaks when modifying an entity, symbol, or file | `eidos index blast-radius <SYMBOL_OR_PATH> --depth 2 --json` | Upstream/downstream k-hop dependents of an entity ID, symbol, spec path, or source path. |
+| Editing or reviewing files/globs (including `@[file]`) without knowing governance | `eidos context -f "<path_or_glob>" --json` *(or `-f a,b` / `-t "<task>"` / `-c <ID>`)* | Owning `CNT-*`/`CMP-*`, `DOM-*`, `CAP-*`, `PER-*`, `POL-*`, `design`, `INV-*`, `DEC-*`, `CTR-*`, and `provenance_tags` in one call (always quote globs; trust without re-reading `.adoc` files). |
+| Guessing what breaks when modifying an entity, symbol, or file | `eidos index blast-radius <SYMBOL_OR_PATH> --depth 2 --min-confidence derived --json` | Upstream/downstream k-hop dependents filtered by epistemic certainty (`observed`, `derived`, or `inferred` default). |
 
 ### 2.2 Context Slicing Tiers (`eidos context`)
 
@@ -123,8 +123,8 @@ Before concluding **any** task or presenting your final response, complete both 
 eidos drift --uncommitted --json
 ```
 
-* **`eidos drift`** runs `eidos validate` internally (v1 JSON Schemas, `x-eidos-ref` links, `source_path`/`specification_file` paths, `== Public Surface` AST symbols, and **bidirectional multi-protocol contract parity** across `cli_args`, `openapi`, `protobuf`, `graphql`, `python_protocol`) plus Git diff ownership mapping, workflow mode verification, substantive spec diff checks, `stale_removed_symbol` rejection, `--strict` body-level drift, and polyglot `INV-*` `test_binding` verification. (Use `eidos validate eidos --json` only outside a Git repo.)
-* **If `is_clean: false` or `drift_detected: true`**: Follow `remediation_suggestions` and `validation_errors` in the JSON output and re-run until exit code is `0`.
+* **`eidos drift`** runs `eidos validate` internally (v1 JSON Schemas, `x-eidos-ref` links, `source_path`/`specification_file` paths, `import_boundaries` / `import_boundary` couplings, `== Public Surface` AST symbols, and **bidirectional multi-protocol contract parity** across `cli_args`, `openapi`, `protobuf`, `graphql`, `python_protocol`) plus Git diff ownership mapping, workflow mode verification, substantive spec diff checks, `stale_removed_symbol` rejection, `--strict` body-level drift, and polyglot `INV-*` `test_binding` verification. (Use `eidos validate eidos --json` only outside a Git repo.)
+* **If `is_clean: false` or `drift_detected: true`**: Follow `remediation_suggestions`, `boundary_violations` (remove forbidden cross-boundary imports/HTTP calls or adjust `ratchet_baseline` via a SpecDelta), and `validation_errors` in the JSON output and re-run until exit code is `0` (`ratchet_shrink_candidates` are non-blocking tightening hints).
 
 ### Stage 2: Mandatory Autonomous Adversarial Gap Review
 
