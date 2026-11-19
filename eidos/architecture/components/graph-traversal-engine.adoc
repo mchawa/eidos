@@ -4,13 +4,13 @@ id: CMP-GRAPH-TRAVERSAL-ENGINE
 title: GraphTraversalEngine
 container: CNT-EIDOS-INDEX
 status: active
-source_path: src/eidos/core/index/query.py
+source_path: src/eidos/core/index/traversal.py
 ---
 = Component: GraphTraversalEngine
 :toc: left
 
 == Responsibility
-Executes recursive Common Table Expression (CTE) `k`-hop blast-radius traversals (`execute_k_hop_traversal`), multi-target blast-radius symbol/path resolution (`resolve_blast_radius_targets`), incoming reference lookups, file/symbol-to-entity resolution, indexed catalog reconstruction (`query_spec_catalog_in_db`), and SpecDelta impact analysis (`compute_delta_impact_in_db`).
+Executes recursive Common Table Expression (CTE) `k`-hop blast-radius traversals (`execute_k_hop_traversal`), multi-target blast-radius symbol/path resolution (`resolve_blast_radius_targets`), incoming reference lookups, file/symbol-to-entity resolution, indexed catalog reconstruction (`query_spec_catalog_in_db`), and SpecDelta impact analysis (`compute_delta_impact_in_db`) from its dedicated disjoint module (`traversal.py`).
 
 == Key Responsibilities & Collaborators
 * **Hub-Scoped & Confidence-Filtered Recursive CTE Blast Radius**: Resolves entity IDs, specification paths, source file paths, and AST code symbols (`kind NOT IN ('import', 'namespace')`) to seed entity IDs (`resolve_blast_radius_targets`, filtering to `CMP-*` seeds when component matches resolve), filters edges by `min_confidence` (`observed > derived > inferred`), and traverses forward and reverse architectural edges up to `max_depth` hops while projecting bottleneck hop `provenance`, `confidence`, `via_rel_type`, and `evidence` on both `execute_k_hop_traversal` and `execute_incoming_references` and suppressing hop >= 2 sibling fan-out through organizational hub nodes (`DOM-*`, `DS-*`, `PER-*`, `ARCH-*`, `SYS-*`, `DLT-*`, `EXP-*`).

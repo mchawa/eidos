@@ -26,20 +26,14 @@ from eidos.core.index.context import (
     TieredContextSlice,
     build_tiered_context_slice,
 )
-from eidos.core.index.query import (
+from eidos.core.index.fts_query import (
     FTS_COLUMN_WEIGHTS,
     TASK_SLICE_ENTITY_TYPES,
     build_fts_match_query,
     compound_identifier_subtokens,
-    compute_delta_impact_in_db,
     execute_fts_query,
-    execute_incoming_references,
-    execute_k_hop_traversal,
     find_symbol_in_db,
     generate_repo_map_from_db,
-    query_spec_catalog_in_db,
-    resolve_blast_radius_targets,
-    resolve_symbol_or_path_in_db,
     split_identifier,
 )
 from eidos.core.index.storage import (
@@ -64,6 +58,14 @@ from eidos.core.index.sync import (
     IndexSyncStats,
     check_index_dirty,
     sync_index,
+)
+from eidos.core.index.traversal import (
+    compute_delta_impact_in_db,
+    execute_incoming_references,
+    execute_k_hop_traversal,
+    query_spec_catalog_in_db,
+    resolve_blast_radius_targets,
+    resolve_symbol_or_path_in_db,
 )
 from eidos.core.workspace.project import find_repo_root, resolve_spec_and_repo_roots
 

@@ -177,7 +177,9 @@ def test_drift_detection_code_without_specs(monkeypatch, tmp_path):
         "def greet() -> str:\n    return 'hi'\n\ndef extra_fn() -> int:\n    return 1\n",
         encoding="utf-8",
     )
-    (repo / "src" / "app" / 'my "quoted" mod.py').write_text("def quoted_fn() -> int:\n    return 2\n", encoding="utf-8")
+    (repo / "src" / "app" / 'my "quoted" mod.py').write_text(
+        "def quoted_fn() -> int:\n    return 2\n", encoding="utf-8"
+    )
 
     uncommitted_paths = get_git_diff_files(repo, uncommitted=True)
     assert "src/app/renamed space.py" in uncommitted_paths
@@ -197,7 +199,9 @@ def test_drift_detection_code_without_specs(monkeypatch, tmp_path):
     (repo / "src" / "app" / 'my "quoted" mod.py').unlink(missing_ok=True)
 
     (repo / "AGENTS.md").write_text("project\n", encoding="utf-8")
-    (repo / ".agents" / "skills" / "eidos" / "SKILL.md").write_text("# Corrupted without frontmatter\n", encoding="utf-8")
+    (repo / ".agents" / "skills" / "eidos" / "SKILL.md").write_text(
+        "# Corrupted without frontmatter\n", encoding="utf-8"
+    )
     (repo / "CLAUDE.md").write_text("# Wiped import\n", encoding="utf-8")
     (repo / ".aider.conf.yml").write_text("model: sonnet\n", encoding="utf-8")
 
@@ -260,9 +264,7 @@ def test_pr_check_gate_pass_planned(monkeypatch):
         lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: (
             (
                 None,
-                (Path.cwd() / rel_path)
-                .read_text(encoding="utf-8")
-                .replace("status: applied", "status: proposed", 1),
+                (Path.cwd() / rel_path).read_text(encoding="utf-8").replace("status: applied", "status: proposed", 1),
             )
             if "dlt-2026-010" in rel_path
             else (
@@ -872,9 +874,7 @@ def test_uncovered_delta_drift_detection(monkeypatch):
         lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: (
             (
                 None,
-                (Path.cwd() / rel_path)
-                .read_text(encoding="utf-8")
-                .replace("status: applied", "status: proposed", 1),
+                (Path.cwd() / rel_path).read_text(encoding="utf-8").replace("status: applied", "status: proposed", 1),
             )
             if "dlt-2026-001" in rel_path
             else (_OLD_CSS, _TOKEN_CSS)
@@ -1509,6 +1509,46 @@ def test_substantive_spec_edit_covers_structural_addition(tmp_path, monkeypatch)
     result = detect_drift(repo_root=tmp_path, eidos_dir=eidos_dir)
     assert result.drift_detected is False
     assert result.trivially_covered_files == []
+
+
+def test_sibling_source_path_relocation_not_flagged_stale(tmp_path, monkeypatch):
+    """INV-DRIFT-DIFF-AWARE-COVERAGE: relocating a public symbol to a sibling source_path file of the same component does not trigger stale_removed_symbol, while relocating to a different component does."""
+    from eidos.vcs.structural import _filter_sibling_relocated_symbols, _SymbolMapCache
+
+    old_a = "def shared_fn() -> int:\n    return 1\n\ndef kept_fn() -> int:\n    return 2\n"
+    new_a = "def kept_fn() -> int:\n    return 2\n"
+    new_b = "def shared_fn() -> int:\n    return 1\n"
+    smap = _SymbolMapCache(
+        {
+            "src/pkg/a.py": (old_a, new_a),
+            "src/pkg/sub/b.py": (None, new_b),
+        }
+    )
+    # 1. Same owning component (multi-directory sibling source_path) -> filtered out
+    same_owner = _filter_sibling_relocated_symbols(
+        ["shared_fn"],
+        cf="src/pkg/a.py",
+        cid="CMP-SVC",
+        all_comp_mappings=[
+            ("src/pkg/a.py", "CMP-SVC", "eidos/architecture/components/svc.adoc"),
+            ("src/pkg/sub/b.py", "CMP-SVC", "eidos/architecture/components/svc.adoc"),
+        ],
+        smap=smap,
+    )
+    assert same_owner == []
+
+    # 2. Different owning component -> preserved so stale_removed_symbol catches stale references on CMP-SVC
+    diff_owner = _filter_sibling_relocated_symbols(
+        ["shared_fn"],
+        cf="src/pkg/a.py",
+        cid="CMP-SVC",
+        all_comp_mappings=[
+            ("src/pkg/a.py", "CMP-SVC", "eidos/architecture/components/svc.adoc"),
+            ("src/pkg/sub/b.py", "CMP-OTHER", "eidos/architecture/components/other.adoc"),
+        ],
+        smap=smap,
+    )
+    assert diff_owner == ["shared_fn"]
 
 
 def test_new_spec_file_counts_as_substantive(tmp_path, monkeypatch):
@@ -4517,11 +4557,19 @@ def test_shallow_clone_worktree_and_commit_range_tree_isolation(tmp_path):
     assert _is_shallow_repository(synth_wt2) is True
 
     # Exercise shallow fallback scan in `_resolve_base_and_merge_base` when `origin/main` has no merge-base with `main`
-    sp.run(["git", "checkout", "--orphan", "shallow-orphan"], cwd=shallow_dir, env=git_env, check=True, capture_output=True)
+    sp.run(
+        ["git", "checkout", "--orphan", "shallow-orphan"], cwd=shallow_dir, env=git_env, check=True, capture_output=True
+    )
     (shallow_dir / "ORPHAN.txt").write_text("x\n", encoding="utf-8")
     sp.run(["git", "add", "ORPHAN.txt"], cwd=shallow_dir, env=git_env, check=True, capture_output=True)
     sp.run(["git", "commit", "-m", "shallow orphan"], cwd=shallow_dir, env=git_env, check=True, capture_output=True)
-    sp.run(["git", "update-ref", "refs/remotes/origin/main", "HEAD"], cwd=shallow_dir, env=git_env, check=True, capture_output=True)
+    sp.run(
+        ["git", "update-ref", "refs/remotes/origin/main", "HEAD"],
+        cwd=shallow_dir,
+        env=git_env,
+        check=True,
+        capture_output=True,
+    )
     sp.run(["git", "checkout", "main"], cwd=shallow_dir, env=git_env, check=True, capture_output=True)
     with pytest.raises(GitResolutionError, match="fetch-depth: 0"):
         _resolve_base_and_merge_base(shallow_dir, None, "HEAD")
@@ -4548,7 +4596,13 @@ def test_shallow_clone_worktree_and_commit_range_tree_isolation(tmp_path):
     assert fell_back is False
 
     # Create an unrelated orphan branch for `origin/main` so `_resolve_base_and_merge_base` exercises fallback scan to `main`
-    sp.run(["git", "checkout", "--orphan", "unrelated-origin"], cwd=single_repo, env=git_env, check=True, capture_output=True)
+    sp.run(
+        ["git", "checkout", "--orphan", "unrelated-origin"],
+        cwd=single_repo,
+        env=git_env,
+        check=True,
+        capture_output=True,
+    )
     (single_repo / "README.md").write_text("# Unrelated\n", encoding="utf-8")
     sp.run(["git", "add", "README.md"], cwd=single_repo, env=git_env, check=True, capture_output=True)
     sp.run(["git", "commit", "-m", "orphan"], cwd=single_repo, env=git_env, check=True, capture_output=True)
@@ -4586,7 +4640,13 @@ def test_shallow_clone_worktree_and_commit_range_tree_isolation(tmp_path):
     (single_repo / "README.md").write_text("# Unrelated 2\n", encoding="utf-8")
     sp.run(["git", "add", "README.md"], cwd=single_repo, env=git_env, check=True, capture_output=True)
     sp.run(["git", "commit", "-m", "orphan 2"], cwd=single_repo, env=git_env, check=True, capture_output=True)
-    sp.run(["git", "update-ref", "refs/remotes/origin/main", "HEAD"], cwd=single_repo, env=git_env, check=True, capture_output=True)
+    sp.run(
+        ["git", "update-ref", "refs/remotes/origin/main", "HEAD"],
+        cwd=single_repo,
+        env=git_env,
+        check=True,
+        capture_output=True,
+    )
     sp.run(["git", "checkout", "feature"], cwd=single_repo, env=git_env, check=True, capture_output=True)
     fb3_base, fb3_mb, fb3_fell = _resolve_base_and_merge_base(single_repo, None, "unrelated-origin")
     assert fb3_base is None and fb3_mb is None and fb3_fell is True
@@ -4697,7 +4757,9 @@ def test_shallow_clone_worktree_and_commit_range_tree_isolation(tmp_path):
     blobs = batch_read_git_blobs(sub, [("HEAD", "src/charge.py"), ("HEAD", "src/missing.py")])
     assert "return 2" in (blobs[("HEAD", "src/charge.py")] or "")
     assert blobs[("HEAD", "src/missing.py")] is None
-    sub_drift = detect_drift(repo_root=sub, eidos_dir=sub / "eidos", base_ref="HEAD~1", head_ref="HEAD", uncommitted=False)
+    sub_drift = detect_drift(
+        repo_root=sub, eidos_dir=sub / "eidos", base_ref="HEAD~1", head_ref="HEAD", uncommitted=False
+    )
     assert sub_drift.classification.code_files == ["src/charge.py"]
 
 
@@ -4858,14 +4920,33 @@ def test_uic_invariants_planned_delta_verify_and_skipped_test_rejection(tmp_path
         "tests/skip.test.ts": skip_ts_content,
         "tests/nav.test.ts": (tests_dir / "nav.test.ts").read_text(encoding="utf-8"),
     }
-    assert _verify_single_invariant("INV-SKIP-GUARD", "tests/skip.test.ts::skipped test case", repo, raw_map, {}) == []  # eidos:fixture
+    assert (
+        _verify_single_invariant(
+            "INV-SKIP-GUARD",  # eidos:fixture
+            "tests/skip.test.ts::skipped test case",
+            repo,
+            raw_map,
+            {},
+        )
+        == []
+    )
     assert _verify_single_invariant("INV-SKIP-GUARD", "tests/skip.test.ts", repo, raw_map, {}) == []  # eidos:fixture
     assert _verify_single_invariant("INV-SKIP-GUARD", None, repo, raw_map, {}) == []  # eidos:fixture
     assert _verify_single_invariant(
-        "INV-AUTH-001", "tests/nav.test.ts::checks compliant prose suffix", repo, raw_map, {}  # eidos:fixture
+        "INV-AUTH-001",  # eidos:fixture
+        "tests/nav.test.ts::checks compliant prose suffix",
+        repo,
+        raw_map,
+        {},
     ) == ["tests/nav.test.ts::checks compliant prose suffix"]
     assert (
-        _verify_single_invariant("INV-AUTH-1", "tests/nav.test.ts::checks extended uppercase id", repo, raw_map, {})  # eidos:fixture
+        _verify_single_invariant(
+            "INV-AUTH-1",  # eidos:fixture
+            "tests/nav.test.ts::checks extended uppercase id",
+            repo,
+            raw_map,
+            {},
+        )
         == []
     )
 
@@ -5072,7 +5153,14 @@ def test_uic_invariants_planned_delta_verify_and_skipped_test_rejection(tmp_path
     assert "CLAUDE.md" not in res_strict_trivial.validation_report.schema_errors
 
     # 3. Overload-disambiguated keys in `_structural_addition_for` & `_SpecChangeInspector` edge branches
-    smap = _SymbolMapCache({"src/core/mod.ts": ("export function fmt(x: number): string { return ''; }", "export function fmt(x: string): string { return x; }")})
+    smap = _SymbolMapCache(
+        {
+            "src/core/mod.ts": (
+                "export function fmt(x: number): string { return ''; }",
+                "export function fmt(x: string): string { return x; }",
+            )
+        }
+    )
     smap._maps[("src/core/mod.ts", 0)] = {
         ("function", "fmt#1"): "1",
         ("function", "fmt#2"): "2",
@@ -5265,10 +5353,10 @@ def test_executable_import_boundaries_and_ratchet_baseline(tmp_path: Path) -> No
 
     # 2. Dirty working tree exceeds ratchet_baseline (3 > 2) AND violates CMP-EXT-WORKER.import_boundary.allow!
     (repo / "src" / "core" / "engine.py").write_text(
-        'import httpx, requests\nfrom ui.server import ui_status\ndef run_core() -> str:\n'
+        "import httpx, requests\nfrom ui.server import ui_status\ndef run_core() -> str:\n"
         '    httpx.get("http://localhost:3000/ui/ping")\n'
         '    requests.get("http://localhost:3000/ui/ping")\n'
-        '    return ui_status()\n',
+        "    return ui_status()\n",
         encoding="utf-8",
     )
     (repo / "src" / "ext" / "worker.py").write_text(
@@ -5355,6 +5443,3 @@ def test_executable_import_boundaries_and_ratchet_baseline(tmp_path: Path) -> No
     )
     assert evaluate_import_boundaries(eidos_dir, repo_root=repo) == ([], [])
     gi._INDEX_INSTANCES.pop(eidos_dir.resolve(), None)
-
-
-

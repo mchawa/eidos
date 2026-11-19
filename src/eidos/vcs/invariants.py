@@ -62,12 +62,8 @@ class _CachedTestFile:
     file_tokens: set[str] = field(default_factory=set)
 
 
-_EXACT_INV_OR_POL_RE = re.compile(
-    r"(?<![A-Z0-9_-])((?:INV|POL)-[A-Z0-9]+(?:-[A-Z0-9]+)*)(?![A-Z0-9_]|-[A-Z0-9])"
-)
-_EXACT_INV_RE = re.compile(
-    r"(?<![A-Z0-9_-])(INV-[A-Z0-9]+(?:-[A-Z0-9]+)*)(?![A-Z0-9_]|-[A-Z0-9])"
-)
+_EXACT_INV_OR_POL_RE = re.compile(r"(?<![A-Z0-9_-])((?:INV|POL)-[A-Z0-9]+(?:-[A-Z0-9]+)*)(?![A-Z0-9_]|-[A-Z0-9])")
+_EXACT_INV_RE = re.compile(r"(?<![A-Z0-9_-])(INV-[A-Z0-9]+(?:-[A-Z0-9]+)*)(?![A-Z0-9_]|-[A-Z0-9])")
 # Numeric-only IDs (e.g. "INV-2026-000123") denote invoice/sequence numbers unless declared in specs.
 _NUMERIC_INVOICE_ID_RE = re.compile(r"^INV-\d+(?:-\d+)*$")
 _TS_JS_EXTS = frozenset({".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"})
@@ -191,9 +187,7 @@ def _build_cached_test_file_entry(
     ast_idx: Any,
 ) -> tuple[_CachedTestFile, str, str]:
     """Extract test functions and file-level tokens in a single AST pass for caching."""
-    raw_functions, raw_file_tokens, _, _ = extract_test_file_cache_payload(
-        rel, tcontent, ast_idx
-    )
+    raw_functions, raw_file_tokens, _, _ = extract_test_file_cache_payload(rel, tcontent, ast_idx)
     is_ts_js = Path(rel).suffix.lower() in _TS_JS_EXTS
     rejected_titles: set[str] = set()
     if is_ts_js:
@@ -300,9 +294,7 @@ def _load_or_update_test_binding_cache(
         if row is not None and row["mtime_ns"] == mtime_ns:
             with contextlib.suppress(ValueError, TypeError, KeyError):
                 raw_fn_map = orjson.loads(row["functions_json"])
-                norm_fn_map = {
-                    k: nt for k, v in raw_fn_map.items() if (nt := _normalize_inv_tokens(v))
-                }
+                norm_fn_map = {k: nt for k, v in raw_fn_map.items() if (nt := _normalize_inv_tokens(v))}
                 result[rel] = _CachedTestFile(
                     file_path=rel,
                     mtime_ns=mtime_ns,
@@ -321,9 +313,7 @@ def _load_or_update_test_binding_cache(
         if row is not None and row["sha256"] == sha256:
             with contextlib.suppress(ValueError, TypeError, KeyError):
                 raw_fn_map = orjson.loads(row["functions_json"])
-                norm_fn_map = {
-                    k: nt for k, v in raw_fn_map.items() if (nt := _normalize_inv_tokens(v))
-                }
+                norm_fn_map = {k: nt for k, v in raw_fn_map.items() if (nt := _normalize_inv_tokens(v))}
                 result[rel] = _CachedTestFile(
                     file_path=rel,
                     mtime_ns=mtime_ns,
@@ -551,7 +541,9 @@ def detect_orphan_invariants(
     for tpath, tcontent in sorted(all_tests_content.items()):
         cleaned_content = _strip_commented_out_code_blocks(tcontent, tpath)
         has_fixture = "eidos:fixture" in cleaned_content
-        funcs = _filter_valid_test_functions(tpath, cleaned_content, ast_idx.list_test_functions(tpath, cleaned_content))
+        funcs = _filter_valid_test_functions(
+            tpath, cleaned_content, ast_idx.list_test_functions(tpath, cleaned_content)
+        )
         func_invs: dict[str, list[str]] = {}
         for fname, fslice in funcs.items():
             if has_fixture and _has_function_level_fixture(fslice, _EXACT_INV_RE):
@@ -779,8 +771,8 @@ def recommend_invariants_for_unbound_tests(
 ) -> dict[str, list[dict[str, Any]]]:
     """Recommend candidate ``INV-*`` bindings for unbound test functions using de-compounded BM25 + optional Hybrid RRF."""
     from eidos.core.index.ast_indexer import INVARIANT_PATTERN
+    from eidos.core.index.fts_query import split_identifier
     from eidos.core.index.graph_index import ArchitecturalIndex, get_architectural_index
-    from eidos.core.index.query import split_identifier
 
     if isinstance(index_or_repo_root, ArchitecturalIndex):
         idx = index_or_repo_root

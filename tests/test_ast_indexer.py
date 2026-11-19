@@ -29,9 +29,9 @@ def test_inv_index_optional_ast_fallback():
     idx = get_ast_indexer()
     assert isinstance(idx, AstGrepIndexer)
 
-    # 1. Test Python symbol extraction on ast_indexer.py
-    py_path = Path("src/eidos/core/index/ast_indexer.py")
-    symbols = idx.extract_symbols(py_path)
+    # 1. Test Python symbol extraction on ast_preprocess.py & ast_indexer.py
+    py_path = Path("src/eidos/core/index/ast_preprocess.py")
+    symbols = idx.extract_symbols(py_path) + idx.extract_symbols(Path("src/eidos/core/index/ast_indexer.py"))
     assert len(symbols) >= 10
     names = {s.name for s in symbols}
     assert "CodeSymbol" in names
@@ -62,13 +62,15 @@ def test_inv_index_polyglot_symbol_precision():
     is_instrumented = "coverage" in sys.modules or sys.gettrace() is not None
 
     # Warm up symbol extractor to avoid one-off dynamic import overhead skewing latency
-    idx.extract_symbols(Path("src/eidos/core/index/ast_indexer.py"))
+    idx.extract_symbols(Path("src/eidos/core/index/ast_preprocess.py"))
 
     # 1. Python file symbol precision
     t0 = time.perf_counter()
-    py_symbols = idx.extract_symbols(Path("src/eidos/core/index/ast_indexer.py"))
+    py_symbols = idx.extract_symbols(Path("src/eidos/core/index/ast_preprocess.py")) + idx.extract_symbols(
+        Path("src/eidos/core/index/ast_indexer.py")
+    )
     py_ms = (time.perf_counter() - t0) * 1000
-    max_py_ms = 150.0 if is_instrumented else 40.0
+    max_py_ms = 180.0 if is_instrumented else 50.0
     assert py_ms < max_py_ms  # Well within latency limits
 
     classes = [s for s in py_symbols if s.kind == "class"]
@@ -183,11 +185,7 @@ def test_inv_index_polyglot_symbol_precision():
     assert ("method", "AuthService", "login") in public_symbol_map(ts_iface_v1, "src/auth.ts")
 
     go_iface_v1 = (
-        "package auth\n\n"
-        "type Authenticator interface {\n"
-        "    io.Closer\n"
-        "    Verify(token string) (bool, error)\n"
-        "}\n"
+        "package auth\n\ntype Authenticator interface {\n    io.Closer\n    Verify(token string) (bool, error)\n}\n"
     )
     go_iface_v2 = go_iface_v1.replace("(bool, error)", "error")
     assert has_structural_changes(go_iface_v1, go_iface_v2, "pkg/auth/iface.go")[0] is True
@@ -197,7 +195,7 @@ def test_inv_index_polyglot_symbol_precision():
         "pub trait Authenticator {\n"
         "    type Claims;\n"
         "    fn verify(&self, token: &str) -> bool;\n"
-        "    fn realm(&self) -> &str { \"default\" }\n"
+        '    fn realm(&self) -> &str { "default" }\n'
         "}\n"
         "pub struct JwtAuth;\n"
         "impl Authenticator for JwtAuth {\n"
@@ -219,7 +217,7 @@ def test_inv_index_polyglot_symbol_precision():
     java_iface_v1 = (
         "public interface Authenticator {\n"
         "    boolean verify(String token);\n"
-        "    default String realm() { return \"main\"; }\n"
+        '    default String realm() { return "main"; }\n'
         "}\n"
     )
     java_iface_v2 = java_iface_v1.replace("boolean verify(String token);", "int verify(String token, boolean strict);")
@@ -259,7 +257,7 @@ def test_inv_index_polyglot_symbol_precision():
     java_ov_v1 = (
         "public class Codec {\n"
         "    public String encode(String s) { return s; }\n"
-        "    public String encode(byte[] b, int offset) { return \"\"; }\n"
+        '    public String encode(byte[] b, int offset) { return ""; }\n'
         "}\n"
     )
     java_ov_v2 = java_ov_v1.replace("String encode(String s)", "String encode(CharSequence s)")
@@ -269,7 +267,7 @@ def test_inv_index_polyglot_symbol_precision():
     cs_ov_v1 = (
         "public class Codec {\n"
         "    public string Encode(string s) { return s; }\n"
-        "    public string Encode(byte[] b, int offset) { return \"\"; }\n"
+        '    public string Encode(byte[] b, int offset) { return ""; }\n'
         "}\n"
     )
     cs_ov_v2 = cs_ov_v1.replace("Encode(string s)", "Encode(ReadOnlySpan<char> s)")
@@ -1247,7 +1245,7 @@ def test_ast_imports_ignore_docstrings_and_rust_lifetime_signatures():
     py_src = (
         "import orjson\n"
         "from eidos.core import parser\n\n"
-        'def helper():\n'
+        "def helper():\n"
         '    """Example:\n'
         "    import fake_docstring_mod\n"
         "    from fake.pkg import PhantomSymbol\n"
@@ -1307,7 +1305,12 @@ def test_deep_review_polyglot_ast_refinements():
         "src/Service.php",
         "<?php\nuse App\\Models\\User;\nuse App\\Services\\{AuthService, BillingService as Billing};\nrequire_once 'config.php';\n",
     )
-    assert php_imps == ["App\\Models\\User", "App\\Services\\AuthService", "App\\Services\\BillingService", "config.php"]
+    assert php_imps == [
+        "App\\Models\\User",
+        "App\\Services\\AuthService",
+        "App\\Services\\BillingService",
+        "config.php",
+    ]
 
     sw_imps = indexer.extract_imports("src/Auth.swift", "import Foundation\nimport struct Foundation.URL\n")
     assert sw_imps == ["Foundation", "Foundation.URL"]
@@ -1318,7 +1321,7 @@ def test_deep_review_polyglot_ast_refinements():
     # 2. Vue / Svelte SFC <script> unwrapping in list_test_functions and extract_test_bindings
     vue_sfc = (
         "<template>\n  <div>{{ label }}</div>\n</template>\n"
-        "<script setup lang=\"ts\">\n"
+        '<script setup lang="ts">\n'
         "it('renders vue component label', () => {\n"
         f"  // {inv_p}VUE-SFC-001\n"
         "});\n"
@@ -1350,15 +1353,7 @@ def test_deep_review_polyglot_ast_refinements():
     assert py_syms["internal_c"].is_public is False
 
     # 4. Ruby singleton_method (`def self.build`) after bare `private` remains public
-    rb_code = (
-        "class Factory\n"
-        "  private\n"
-        "  def secret_helper\n"
-        "  end\n"
-        "  def self.build\n"
-        "  end\n"
-        "end\n"
-    )
+    rb_code = "class Factory\n  private\n  def secret_helper\n  end\n  def self.build\n  end\nend\n"
     rb_syms = {s.name: s for s in indexer.extract_symbols("app/factory.rb", rb_code)}
     assert rb_syms["secret_helper"].is_public is False
     assert rb_syms["build"].is_public is True
@@ -1501,11 +1496,7 @@ def test_all_ast_languages_and_corner_cases(tmp_path: Path) -> None:
     assert cs_binds["ValidatesCurrencyRate"].invariants == [f"{inv_p}CS-THEORY-001"]
     assert cs_binds["ValidatesCurrencyRate"].to_dict()["test_name"] == "ValidatesCurrencyRate"
 
-    c_test_src = (
-        "void test_arena_allocator(void) {\n"
-        f"    /* {inv_p}C-ARENA-001 */\n"
-        "}\n"
-    )
+    c_test_src = f"void test_arena_allocator(void) {{\n    /* {inv_p}C-ARENA-001 */\n}}\n"
     assert "test_arena_allocator" in indexer.list_test_functions("arena_test.c", c_test_src)
     c_binds = indexer.extract_test_bindings("arena_test.c", c_test_src)
     assert len(c_binds) == 1 and c_binds[0].invariants == [f"{inv_p}C-ARENA-001"]
@@ -1546,11 +1537,7 @@ def test_all_ast_languages_and_corner_cases(tmp_path: Path) -> None:
     assert php_binds["test_standalone_webhook"].invariants == [f"{inv_p}PHP-HOOK-001"]
 
     swift_test_src = (
-        "class KeychainTests {\n"
-        "    func testKeyRotation() {\n"
-        f"        // {inv_p}SWIFT-KEY-001\n"
-        "    }\n"
-        "}\n"
+        f"class KeychainTests {{\n    func testKeyRotation() {{\n        // {inv_p}SWIFT-KEY-001\n    }}\n}}\n"
     )
     swift_funcs = indexer.list_test_functions("KeychainTests.swift", swift_test_src)
     assert "KeychainTests::testKeyRotation" in swift_funcs
@@ -1558,11 +1545,7 @@ def test_all_ast_languages_and_corner_cases(tmp_path: Path) -> None:
     assert swift_binds["KeychainTests::testKeyRotation"].invariants == [f"{inv_p}SWIFT-KEY-001"]
 
     svelte_test_src = (
-        "<script lang=\"ts\">\n"
-        "Deno.test(function denoNamedFnTest() {\n"
-        f"  // {inv_p}SVELTE-DENO-001\n"
-        "});\n"
-        "</script>\n"
+        f'<script lang="ts">\nDeno.test(function denoNamedFnTest() {{\n  // {inv_p}SVELTE-DENO-001\n}});\n</script>\n'
     )
     svelte_funcs = indexer.list_test_functions("Widget.test.svelte", svelte_test_src)
     assert "denoNamedFnTest" in svelte_funcs
@@ -1647,7 +1630,7 @@ def test_all_ast_languages_and_corner_cases(tmp_path: Path) -> None:
         for s in indexer.extract_symbols(
             "impls.rs",
             "struct PrivateHolder;\nimpl PrivateHolder {\n    pub fn inside_private(&self) {}\n}\n"
-            "impl<T> ExternalGeneric<T> {\n    #[doc = \"escaped \\\" [bracket]\"]\n    pub fn ext_method(&self) {}\n}\n",
+            'impl<T> ExternalGeneric<T> {\n    #[doc = "escaped \\" [bracket]"]\n    pub fn ext_method(&self) {}\n}\n',
         )
     }
     assert rs_syms["inside_private"].is_public is False
@@ -1683,9 +1666,15 @@ def test_all_ast_languages_and_corner_cases(tmp_path: Path) -> None:
     )
     assert _extract_overload_param_suffix("export const plainVal = 1;", "plainVal") == ""
     dup_overloads = [
-        CodeSymbol(name="dup", kind="function", file_path="src/dup.rs", line_start=1, line_end=1, signature="fn dup(x: i32)"),
-        CodeSymbol(name="dup", kind="function", file_path="src/dup.rs", line_start=2, line_end=2, signature="fn dup(x: i32)"),
-        CodeSymbol(name="dup", kind="function", file_path="src/dup.rs", line_start=3, line_end=3, signature="fn dup(x: i32)"),
+        CodeSymbol(
+            name="dup", kind="function", file_path="src/dup.rs", line_start=1, line_end=1, signature="fn dup(x: i32)"
+        ),
+        CodeSymbol(
+            name="dup", kind="function", file_path="src/dup.rs", line_start=2, line_end=2, signature="fn dup(x: i32)"
+        ),
+        CodeSymbol(
+            name="dup", kind="function", file_path="src/dup.rs", line_start=3, line_end=3, signature="fn dup(x: i32)"
+        ),
     ]
     dup_map = _build_overload_safe_symbol_map(dup_overloads)
     assert ("function", "", "dup") in dup_map
@@ -1705,13 +1694,7 @@ def test_all_ast_languages_and_corner_cases(tmp_path: Path) -> None:
     inv_p = "INV" + "-"
     fix_fns, fix_file_toks, _, _ = extract_test_file_cache_payload(
         "tests/fixture_block.test.ts",
-        "function testBlockFixture() {\n"
-        "  /* eidos:fixture */\n"
-        f"  // {inv_p}SYNTH-FIX-001\n"
-        "}\n",
+        f"function testBlockFixture() {{\n  /* eidos:fixture */\n  // {inv_p}SYNTH-FIX-001\n}}\n",
     )
     assert fix_fns == {}
     assert fix_file_toks == [f"{inv_p}SYNTH-FIX-001"]
-
-
-

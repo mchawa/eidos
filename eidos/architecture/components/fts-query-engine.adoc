@@ -4,13 +4,13 @@ id: CMP-FTS-QUERY-ENGINE
 title: FTSQueryEngine
 container: CNT-EIDOS-INDEX
 status: active
-source_path: src/eidos/core/index/query.py
+source_path: src/eidos/core/index/fts_query.py
 ---
 = Component: FTSQueryEngine
 :toc: left
 
 == Responsibility
-Executes column-weighted SQLite FTS5 BM25 lexical search (`execute_fts_query`), reverse symbol lookup (`find_symbol_in_db`), and token-budgeted structural repository map generation (`generate_repo_map_from_db`) over the indexed knowledge graph.
+Executes column-weighted SQLite FTS5 BM25 lexical search (`execute_fts_query`), reverse symbol lookup (`find_symbol_in_db`), and token-budgeted structural repository map generation (`generate_repo_map_from_db`) over the indexed knowledge graph from its dedicated disjoint module (`fts_query.py`).
 
 == Key Responsibilities & Collaborators
 * **Two-Tier Weighted FTS5 Search & Synonym Backfill (`DEC-INDEX-FTS-RETRIEVAL-HYGIENE`)**: Prioritizes high-precision multi-term `AND` queries before `OR` fallback using positional BM25 column weights `(0, 4, 2, 1, 2, 2)` (`title` > `jtbd_or_rule`/`keywords`/`symbols` > `body_text`), identifier de-compounding, deterministic architectural synonym expansion (`expand_architectural_synonyms`), and exact `CMP-*`/`DEC-*` entity ID boosting.

@@ -1,0 +1,25 @@
+---
+type: tech/component
+id: CMP-HTTP-TOPOLOGY-LINKER
+title: HttpTopologyLinker
+container: CNT-EIDOS-INDEX
+status: active
+source_path:
+  - src/eidos/core/index/ast_http.py
+  - src/eidos/core/index/http_linker.py
+---
+= Component: HttpTopologyLinker
+:toc: left
+
+== Responsibility
+Extracts polyglot server HTTP route declarations (`http_endpoint`) and frontend/SDK client HTTP calls (`http_request`) statically from source files (`ast_http.py`) and links cross-runtime client calls to server endpoints and OpenAPI/`http_json` `CTR-*` contracts as provenance-tagged `ast_http` graph edges and `code_couplings` (`http_linker.py`).
+
+== Key Responsibilities & Collaborators
+* **Polyglot Static HTTP Endpoint & Request Extraction (`ast_http.py`, `DEC-INDEX-HTTP-LINKING-AND-PROVENANCE`)**: Extracts server route definitions across FastAPI/Flask/Starlette, Express/Fastify/Hono/Koa/NestJS/Next.js App Router, Go (`net/http`, Gin, Echo, Chi), Rust (`axum`, `actix-web`), Java/Kotlin Spring, and C# ASP.NET Core, plus client HTTP calls across `fetch`, `EventSource`, `axios`, `ky`, Angular `this.http`, and Python `requests`/`httpx`, normalizing `:id`, `{id}`, `<int:id>`, `[id]`, and `${expr}` route segments to `{*}` via `normalize_http_route_path` and resolving intra-file URL constants and prefix helpers while excluding HTTP client factory instances (`axios.create`, `ky.create`) and `this.*` property receivers.
+* **Cross-Runtime Route & Contract Matching (`http_linker.py`)**: Matches non-test (`is_test = 0`) client `http_request` symbols from both `CMP-*` and container-direct `CNT-*` files—with segment-aware parameter matching and single-candidate base-path prefix disambiguation—against server `http_endpoint` symbols and `openapi` / `http_json` `CTR-*` routes, persisting `ast_http` `consumes_api`/`depends_on` edges with `file:line` `evidence` and per-call-site `code_couplings` rows.
+
+== Public Surface
+* `normalize_http_route_path(raw_path: str) -> str`
+
+== Design Constraints & Operational Notes
+* **Zero Runtime Server Execution (`POL-004`)**: Derives cross-runtime frontend-to-backend topology strictly via static AST/text inspection without launching application servers or making LLM calls.

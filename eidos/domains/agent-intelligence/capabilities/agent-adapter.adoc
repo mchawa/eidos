@@ -4,7 +4,7 @@ id: CAP-AGENT-001
 title: "Universal Agent Adapter & Context Slicing Engine"
 domain: DOM-AGENT-INTELLIGENCE
 status: active
-version: "1.16.0"
+version: "1.17.0"
 
 business:
   personas:
@@ -26,6 +26,7 @@ technical:
     - "CMP-CLI-DOCTOR-HOOKS"
     - "CMP-CLI-INDEX-COMMANDS"
     - "CMP-GRAPH-TRAVERSAL-ENGINE"
+    - "CMP-HOOK-MANAGER"
     - "CMP-PLUGIN-INSTALLER"
     - "CMP-SEMANTIC-EMBEDDING-ENGINE"
     - "CMP-TIERED-CONTEXT-COMPRESSOR"
@@ -95,7 +96,7 @@ In strict adherence to *POL-004*, Eidos never initiates AI/LLM calls itself. Ins
 * **Hybrid Lexical-Relational Retrieval**: Combining FTS5 BM25 search with graph-neighborhood traversals to resolve engineering prompts to architectural entities.
 * **Architectural Blast-Radius Analysis**: Confidence-filtered recursive CTE impact mapping (`eidos index blast-radius --min-confidence <inferred|derived|observed>`) allowing agents to distinguish directly observed spec facts and derived AST/HTTP couplings from inferred hits before proposing code changes.
 * **Turn-Scoped Stateless 1-Turn Stop / PreToolUse Lifecycle Hook**: Unified `Stop` / `PreToolUse` hook (`eidos hook`) honoring both snake_case `stop_hook_active` and camelCase `stopHookActive` retry markers, gating Cline premature completion on `attempt_completion`, short-circuiting zero-edit Q&A turns via session baselines (`eidos/.cache/hook_baselines/`), and verifying specification schemas, cross-references, invariant test bindings, and spec-to-code synchronization via `detect_drift`.
-* **Non-Destructive Plugin Ecosystem Management (`INV-PLUGIN-INSTALL-TRUTHFULNESS`)**: Installing and removing Agent Skills (`agentskills.io`) via `eidos plugin` across all 9 supported coding harnesses (`.agents/skills/` for Antigravity, Cursor, GitHub Copilot, OpenAI Codex, Cline, Kilo Code, and OpenCode; `.claude/skills/` for Claude Code; `.aider/skills/` for Aider) with opt-in `--hooks` native `Stop` / `PreToolUse` hook wiring on `eidos plugin install` (`.agents/hooks.json`, `.claude/settings.json`, `.cursor/hooks.json`, `.clinerules/hooks/PreToolUse`, `.github/hooks/hooks.json`, `.codex/hooks.json`, disabled by default and preserved on `eidos plugin update`), truthful `modified` status reporting when locally edited skills are skipped, comment-preserving `.aider.conf.yml` editing, self-hosted `.agents/skills` symlink tolerance, and clean target pruning on `uninstall`.
+* **Non-Destructive Plugin Ecosystem Management (`CMP-PLUGIN-INSTALLER`, `CMP-HOOK-MANAGER`, `INV-PLUGIN-INSTALL-TRUTHFULNESS`)**: Installing and removing Agent Skills (`agentskills.io`) via `eidos plugin` across all 9 supported coding harnesses (`.agents/skills/` for Antigravity, Cursor, GitHub Copilot, OpenAI Codex, Cline, Kilo Code, and OpenCode; `.claude/skills/` for Claude Code; `.aider/skills/` for Aider) with opt-in `--hooks` native `Stop` / `PreToolUse` hook wiring managed by `CMP-HOOK-MANAGER` (`.agents/hooks.json`, `.claude/settings.json`, `.cursor/hooks.json`, `.clinerules/hooks/PreToolUse`, `.github/hooks/hooks.json`, `.codex/hooks.json`, disabled by default and preserved on `eidos plugin update`), truthful `modified` status reporting when locally edited skills are skipped, comment-preserving `.aider.conf.yml` editing, self-hosted `.agents/skills` symlink tolerance, and clean target pruning on `uninstall`.
 * **Canonical `AGENTS.md` Bridge & Doctor Integrity (`INV-PLUGIN-MANAGED-BLOCK-SAFETY`, `INV-DOCTOR-ONBOARDING-INTEGRITY`)**: Every install target projects one marker-delimited, hash-stamped Eidos block into the repository's root `AGENTS.md`, verified continuously by `eidos doctor` whenever Agent Skills or `.eidos-manifest.json` are present.
 * **Self-Contained, Guarded Skills & SpecDelta Reconciliation (`INV-PLUGIN-SKILL-SIZE-CEILING`, `INV-PLUGIN-SKILL-CLI-PARITY`, `INV-PLUGIN-SKILL-DELTA-RECONCILIATION`)**: The 4 bundled skills stay complete in their `SKILL.md` files with trigger-focused descriptions, no-growth word ceilings, test-enforced CLI parity, bottom-up `eidos context -f` reconciliation of `Implementation Plan` files against 1-hop ownership and `design/*` rules (with inline `UNMODIFIED`-avoidance annotations, `INV-*` test pairing, and compliant `DLT-2026-015` templates), and mandatory autonomous pre-presentation 5-Dimension SpecDelta self-review.
 

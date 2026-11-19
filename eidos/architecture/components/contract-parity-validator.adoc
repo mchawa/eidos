@@ -1,0 +1,27 @@
+---
+type: tech/component
+id: CMP-CONTRACT-PARITY-VALIDATOR
+title: ContractParityValidator
+container: CNT-EIDOS-CORE
+status: active
+source_path:
+  - src/eidos/core/spec/contract_parity.py
+  - src/eidos/core/spec/cli_contract_parity.py
+---
+= Component: ContractParityValidator
+:toc: left
+
+== Responsibility
+Verifies bidirectional parity between `CTR-*` living interface contract specifications and their declared `specification_file` code or schema artifacts across all 6 supported contract protocols (`cli_args`, `python_protocol`, `openapi` / `rest_openapi`, `protobuf` / `grpc_proto`, `graphql`, and `json_schema`).
+
+== Key Responsibilities & Collaborators
+* **CLI Interface AST Parity (`cli_contract_parity.py`)**: Parses Python Typer (including imported `add_typer` sub-apps and decorator helpers), Click, and `argparse` command/option/positional trees via `_parse_python_ast` and verifies bidirectional parity (`verify_cli_contract_commands`) against AsciiDoc CLI contract command tables after stripping AsciiDoc comments (`strip_asciidoc_comments`).
+* **Multi-Protocol Bidirectional Parity (`contract_parity.py`)**: Dispatches `CTR-*` protocol verification via `ContractParityValidator` across Python `Protocol`/ABC signatures, left-bounded `openapi` HTTP routes (scoping reverse checks away from boundary/out-of-scope sections and contrastive prose clauses), backtick-scoped `protobuf` (`rpc`, `service`, `message`, `enum`), `graphql` SDL queries/mutations/subscriptions, and `json_schema` definitions.
+
+== Public Surface
+* `ContractParityValidator`
+* `verify_cli_contract_commands(doc: SpecDocument, cli_file: Path, report: ValidationReport) -> None`
+* `strip_asciidoc_comments(body: str) -> str`
+
+== Design Constraints & Operational Notes
+* **Static-Only Inspection**: Verifies Typer/Click/`argparse` ASTs, Python protocols, OpenAPI YAML/JSON, Protobuf, and GraphQL definitions strictly via static parsing without importing or executing user application code.

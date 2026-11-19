@@ -90,7 +90,7 @@ class _SymbolMapCache:
 
     @staticmethod
     def supports(cf: str) -> bool:
-        from eidos.core.index.ast_indexer import AST_DIFF_EXTS
+        from eidos.core.index.ast_diff import AST_DIFF_EXTS
 
         return Path(cf).suffix.lower() in AST_DIFF_EXTS
 
@@ -99,7 +99,7 @@ class _SymbolMapCache:
 
     def get(self, cf: str, side: int) -> dict[tuple[Any, ...], str]:
         """Public symbol map of ``cf`` at ``side`` (0 = old, 1 = new)."""
-        from eidos.core.index.ast_indexer import public_symbol_map
+        from eidos.core.index.ast_diff import public_symbol_map
 
         key = (cf, side)
         if key not in self._maps:
@@ -108,7 +108,7 @@ class _SymbolMapCache:
 
     def get_boundary(self, cf: str, side: int) -> dict[tuple[Any, ...], str]:
         """Boundary-exported symbol map of ``cf`` at ``side`` (0 = old, 1 = new)."""
-        from eidos.core.index.ast_indexer import boundary_symbol_map
+        from eidos.core.index.ast_diff import boundary_symbol_map
 
         key = (cf, side)
         if key not in self._boundary_maps:
@@ -117,7 +117,7 @@ class _SymbolMapCache:
 
     def diff(self, cf: str, old_from: str | None = None) -> Any:
         """Public symbol diff of ``cf`` (old side taken from ``old_from`` for moved files)."""
-        from eidos.core.index.ast_indexer import diff_symbol_maps
+        from eidos.core.index.ast_diff import diff_symbol_maps
 
         src_old = old_from or cf
         return diff_symbol_maps(
@@ -190,12 +190,10 @@ def _structural_addition_for(
             removed_symbol_names=[],
         )
     diff = smap.diff(cf, old_from=moved_from) if moved_from else (symbol_diff or smap.diff(cf))
-    cf_parent = Path(cf).parent
     still_present: set[str] = set()
-    for other_cf in smap._versions:
-        if (other_cf == cf or Path(other_cf).parent == cf_parent) and smap.supports(other_cf):
-            for k in smap.get(other_cf, 1):
-                still_present.add(_clean_symbol_name(diff, k))
+    if smap.supports(cf):
+        for k in smap.get(cf, 1):
+            still_present.add(_clean_symbol_name(diff, k))
     removed_keys = [k for k in getattr(diff, "removed", ()) if _clean_symbol_name(diff, k) not in still_present]
     removed_names = list(dict.fromkeys(_clean_symbol_name(diff, k) for k in removed_keys))
     if not diff.added and not removed_names:
@@ -218,6 +216,56 @@ def _structural_addition_for(
         ),
         removed_symbol_names=removed_names,
     )
+
+
+def _filter_sibling_relocated_symbols(
+    removed_symbol_names: list[str],
+    *,
+    cf: str,
+    cid: str,
+    all_comp_mappings: list[tuple[str, str, str]],
+    smap: _SymbolMapCache,
+    idx: Any = None,
+) -> list[str]:
+    """Exclude symbols relocated to sibling source_path files owned by the exact same component/container (INV-DRIFT-DIFF-AWARE-COVERAGE)."""
+    if not removed_symbol_names:
+        return []
+    cf_norm = cf.replace("\\", "/")
+    present_in_siblings: set[str] = set()
+    for other_cf, other_cid, _ in all_comp_mappings:
+        if other_cid != cid or other_cf.replace("\\", "/") == cf_norm:
+            continue
+        if not smap.supports(other_cf):
+            continue
+        for _kind, parent, raw_name in smap.get(other_cf, 1):
+            base = raw_name.split("(", 1)[0]
+            present_in_siblings.add(base)
+            if parent:
+                present_in_siblings.add(f"{parent}.{base}")
+
+    remaining = [s for s in removed_symbol_names if s not in present_in_siblings]
+    if remaining and idx is not None and cid:
+        try:
+            conn = idx._get_connection()
+            rows = conn.execute(
+                """
+                SELECT DISTINCT symbol, parent_symbol FROM code_symbols
+                WHERE entity_id = ? AND file_path != ? AND is_test = 0
+                  AND kind NOT IN ('import', 'namespace', 'http_endpoint', 'http_request');
+                """,
+                (cid, cf_norm),
+            ).fetchall()
+            for r in rows:
+                sym = str(r["symbol"] or "").split("(", 1)[0]
+                parent = str(r["parent_symbol"] or "")
+                if sym:
+                    present_in_siblings.add(sym)
+                    if parent:
+                        present_in_siblings.add(f"{parent}.{sym}")
+        except Exception:
+            pass
+        remaining = [s for s in remaining if s not in present_in_siblings]
+    return remaining
 
 
 def _split_spec(content: str | None) -> tuple[str | None, str]:
@@ -565,6 +613,7 @@ def _spec_coverage_verdict(
     allowed_ids: set[str],
     *,
     addition: _StructuralAddition | None = None,
+    removed_symbol_names_override: list[str] | None = None,
     owner_spec: str = "",
     inspector: _SpecDiffInspector | None = None,
     system_spec_paths: tuple[str, ...] = SYSTEM_LEVEL_SPEC_PATHS,
@@ -589,11 +638,12 @@ def _spec_coverage_verdict(
     if addition is None or not owner_spec or inspector is None:
         return True, None, []
 
-    if addition.removed_symbol_names:
+    effective_removed = (
+        removed_symbol_names_override if removed_symbol_names_override is not None else addition.removed_symbol_names
+    )
+    if effective_removed:
         stale_specs = (
-            [owner_spec]
-            if owner_spec and inspector.has_stale_removed_symbols(owner_spec, addition.removed_symbol_names)
-            else []
+            [owner_spec] if owner_spec and inspector.has_stale_removed_symbols(owner_spec, effective_removed) else []
         )
         if stale_specs:
             return False, "stale_removed_symbol", stale_specs

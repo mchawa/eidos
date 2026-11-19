@@ -3295,10 +3295,14 @@ def test_hybrid_semantic_rrf_and_deterministic_fallback(tmp_path: Path, monkeypa
     assert dl_healed["downloaded"] == ["config.json"] and len(dl_healed["skipped"]) == 4
 
     # Atomic non-blocking semantic_sync.lock prevents duplicate background worker Popen spawns
-    idx_lock_test = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
+    idx_lock_test = ArchitecturalIndex(
+        db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir
+    )
     try:
         conn_l = idx_lock_test._get_connection()
-        conn_l.execute("UPDATE spec_embeddings SET content_sha256 = 'force_stale' WHERE entity_id = 'CMP-HERMETIC-GUARD';")
+        conn_l.execute(
+            "UPDATE spec_embeddings SET content_sha256 = 'force_stale' WHERE entity_id = 'CMP-HERMETIC-GUARD';"
+        )
         conn_l.commit()
         sem_mod._CUSTOM_ENCODE_FNS.pop(str(eidos_dir.resolve()), None)
         m_dir_lock = resolve_semantic_model_dir(eidos_dir)
@@ -3360,10 +3364,10 @@ def test_dlt_2026_114_blast_radius_symbol_and_path_resolution() -> None:
     assert idx.resolve_blast_radius_targets("system.adoc") == ["SYS-EIDOS-001"]
     assert idx.resolve_blast_radius_targets("eidos/system.adoc") == ["SYS-EIDOS-001"]
 
-    # Co-owned source file (`src/eidos/core/index/query.py`) resolves all co-owning CMP-* seeds at depth=0
-    co_owned = idx.resolve_blast_radius_targets("src/eidos/core/index/query.py")
-    assert "CMP-FTS-QUERY-ENGINE" in co_owned and "CMP-GRAPH-TRAVERSAL-ENGINE" in co_owned
-    assert "CNT-EIDOS-INDEX" not in co_owned
+    # Disjoint query engine files resolve cleanly to their single owning CMP-* seeds (DLT-2026-139)
+    assert idx.resolve_blast_radius_targets("src/eidos/core/index/fts_query.py") == ["CMP-FTS-QUERY-ENGINE"]
+    assert idx.resolve_blast_radius_targets("src/eidos/core/index/traversal.py") == ["CMP-GRAPH-TRAVERSAL-ENGINE"]
+    assert idx.resolve_blast_radius_targets("src/eidos/core/index/query.py") == ["CNT-EIDOS-INDEX"]
 
     # 4. AST code symbol resolution
     assert idx.resolve_blast_radius_targets("detect_drift") == ["CMP-DRIFT-DETECTOR"]
@@ -3884,16 +3888,13 @@ def test_concurrent_wal_lock_thread_isolation_and_large_edge_rebuild(tmp_path: P
     src_file = repo_a / "src" / "wal" / "service.py"
     src_file.parent.mkdir(parents=True, exist_ok=True)
     src_file.write_text(
-        "class WalCoordinator:\n"
-        "    def flush_checkpoint_frames(self) -> int:\n"
-        "        return 1\n",
+        "class WalCoordinator:\n    def flush_checkpoint_frames(self) -> int:\n        return 1\n",
         encoding="utf-8",
     )
     test_file = repo_a / "tests" / "test_wal_service.py"
     test_file.parent.mkdir(parents=True, exist_ok=True)
     test_file.write_text(
-        "def test_wal_checkpoint_recovery_flow():\n"
-        "    assert True\n",
+        "def test_wal_checkpoint_recovery_flow():\n    assert True\n",
         encoding="utf-8",
     )
 
@@ -3977,13 +3978,11 @@ def test_concurrent_wal_lock_thread_isolation_and_large_edge_rebuild(tmp_path: P
                 "INSERT OR REPLACE INTO edges (source_id, target_id, rel_type) VALUES ('CNT-WAL', ?, 'contains_component');",
                 [(eid,) for eid in bulk_evict_ids],
             )
-        assert (
-            conn_bulk.execute("SELECT COUNT(*) FROM edges WHERE target_id LIKE 'CMP-SYNTH-%';").fetchone()[0] == 1150
-        )
+        assert conn_bulk.execute("SELECT COUNT(*) FROM edges WHERE target_id LIKE 'CMP-SYNTH-%';").fetchone()[0] == 1150
         rebuild_spec_edges(conn_bulk, updated_doc_ids=set(bulk_evict_ids))
-        remaining_bulk = conn_bulk.execute(
-            "SELECT COUNT(*) FROM edges WHERE target_id LIKE 'CMP-SYNTH-%';"
-        ).fetchone()[0]
+        remaining_bulk = conn_bulk.execute("SELECT COUNT(*) FROM edges WHERE target_id LIKE 'CMP-SYNTH-%';").fetchone()[
+            0
+        ]
         assert remaining_bulk == 0
         assert (
             conn_bulk.execute(
@@ -4283,9 +4282,15 @@ def test_epistemic_provenance_tags_and_confidence_filtering(tmp_path: Path) -> N
         assert coupling_cnt == 1
 
         # 3. Traverse CMP-WEB-FETCH with min_confidence=inferred vs derived vs observed
-        walk_inf = {n["id"]: n for n in idx.get_k_hop_neighborhood("CMP-WEB-FETCH", max_depth=1, min_confidence="inferred")}
-        walk_der = {n["id"]: n for n in idx.get_k_hop_neighborhood("CMP-WEB-FETCH", max_depth=1, min_confidence="derived")}
-        walk_obs = {n["id"]: n for n in idx.get_k_hop_neighborhood("CMP-WEB-FETCH", max_depth=1, min_confidence="observed")}
+        walk_inf = {
+            n["id"]: n for n in idx.get_k_hop_neighborhood("CMP-WEB-FETCH", max_depth=1, min_confidence="inferred")
+        }
+        walk_der = {
+            n["id"]: n for n in idx.get_k_hop_neighborhood("CMP-WEB-FETCH", max_depth=1, min_confidence="derived")
+        }
+        walk_obs = {
+            n["id"]: n for n in idx.get_k_hop_neighborhood("CMP-WEB-FETCH", max_depth=1, min_confidence="observed")
+        }
 
         assert "CNT-INFERRED" in walk_inf and walk_inf["CNT-INFERRED"]["confidence"] == "inferred"
         assert "CMP-API-ROUTES" in walk_inf and walk_inf["CMP-API-ROUTES"]["confidence"] == "derived"
@@ -4308,8 +4313,7 @@ def test_epistemic_provenance_tags_and_confidence_filtering(tmp_path: Path) -> N
         )
         upsert_edge(conn, "CMP-API-ROUTES", synth_inv, "asserts", "ast_symbol", "tests/t.py::test_x")
         walk_2hop = {
-            n["id"]: n
-            for n in idx.get_k_hop_neighborhood("CMP-WEB-FETCH", max_depth=2, min_confidence="derived")
+            n["id"]: n for n in idx.get_k_hop_neighborhood("CMP-WEB-FETCH", max_depth=2, min_confidence="derived")
         }
         assert synth_inv in walk_2hop
         assert walk_2hop[synth_inv]["depth"] == 2
@@ -4320,8 +4324,7 @@ def test_epistemic_provenance_tags_and_confidence_filtering(tmp_path: Path) -> N
         upsert_edge(conn, "CMP-API-ROUTES", synth_inv, "consumes_api", "ast_http", "src/api/server.py:1")
         conn.commit()
         walk_tie = {
-            n["id"]: n
-            for n in idx.get_k_hop_neighborhood("CMP-API-ROUTES", max_depth=1, min_confidence="inferred")
+            n["id"]: n for n in idx.get_k_hop_neighborhood("CMP-API-ROUTES", max_depth=1, min_confidence="inferred")
         }
         assert walk_tie[synth_inv]["provenance"] == "ast_symbol"
         assert walk_tie[synth_inv]["confidence"] == "observed"
@@ -4343,7 +4346,9 @@ def test_epistemic_provenance_tags_and_confidence_filtering(tmp_path: Path) -> N
         assert st_rich.exit_code == 0
         assert "Edges by Epistemic Provenance" in st_rich.stdout
 
-        srch_res = cli.invoke(app, ["index", "search", "Web Fetcher", "--no-semantic", "--path", str(eidos_dir), "--json"])
+        srch_res = cli.invoke(
+            app, ["index", "search", "Web Fetcher", "--no-semantic", "--path", str(eidos_dir), "--json"]
+        )
         assert srch_res.exit_code == 0
         srch_data = orjson.loads(srch_res.stdout)
         assert srch_data["results"][0]["provenance"] == "fts_bm25"
@@ -4363,7 +4368,18 @@ def test_epistemic_provenance_tags_and_confidence_filtering(tmp_path: Path) -> N
 
         br_obs = cli.invoke(
             app,
-            ["index", "blast-radius", "CMP-WEB-FETCH", "--depth", "1", "--min-confidence", "observed", "--path", str(eidos_dir), "--json"],
+            [
+                "index",
+                "blast-radius",
+                "CMP-WEB-FETCH",
+                "--depth",
+                "1",
+                "--min-confidence",
+                "observed",
+                "--path",
+                str(eidos_dir),
+                "--json",
+            ],
         )
         assert br_obs.exit_code == 0
         br_data = orjson.loads(br_obs.stdout)
@@ -4390,4 +4406,3 @@ def test_epistemic_provenance_tags_and_confidence_filtering(tmp_path: Path) -> N
         import eidos.core.index.graph_index as gi
 
         gi._INDEX_INSTANCES.pop(eidos_dir.resolve(), None)
-

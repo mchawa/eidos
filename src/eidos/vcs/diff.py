@@ -281,7 +281,12 @@ def _resolve_base_and_merge_base(
 
     mb = _resolve_merge_base(repo, candidate, head_ref, fail_loudly=False)
     if mb:
-        if head_ref != "HEAD" and head_sha and mb == head_sha and candidate in ("origin/main", "main", "origin/master", "master"):
+        if (
+            head_ref != "HEAD"
+            and head_sha
+            and mb == head_sha
+            and candidate in ("origin/main", "main", "origin/master", "master")
+        ):
             prev_ref = f"{head_ref}~1"
             prev_check = subprocess.run(
                 ["git", "rev-parse", "--verify", prev_ref],
@@ -422,9 +427,7 @@ def get_git_diff_files(
     git_root = find_git_root(repo)
     nested_roots = discover_nested_subproject_roots(repo)
     nested_prefixes: tuple[str, ...] = tuple(
-        f"{nr.relative_to(repo).as_posix().strip('/')}/"
-        for nr in nested_roots
-        if nr.is_relative_to(repo)
+        f"{nr.relative_to(repo).as_posix().strip('/')}/" for nr in nested_roots if nr.is_relative_to(repo)
     )
 
     if uncommitted:
@@ -518,7 +521,7 @@ def _has_structural_ast_change(
     file_path: Path | str,
 ) -> bool:
     """Return True if (old_content, new_content) for file_path has structural AST symbol changes."""
-    from eidos.core.index.ast_indexer import has_structural_changes
+    from eidos.core.index.ast_diff import has_structural_changes
 
     is_structural, _ = has_structural_changes(old_content, new_content, file_path)
     return is_structural

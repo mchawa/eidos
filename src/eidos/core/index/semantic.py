@@ -884,10 +884,14 @@ def setup_semantic_model(
                 headers = getattr(resp, "headers", None) or {}
                 content_len_hdr = headers.get("Content-Length") if hasattr(headers, "get") else None
                 total_bytes = (
-                    int(content_len_hdr) if content_len_hdr is not None and str(content_len_hdr).strip().isdigit() else None
+                    int(content_len_hdr)
+                    if content_len_hdr is not None and str(content_len_hdr).strip().isdigit()
+                    else None
                 )
                 if hasattr(headers, "get"):
-                    raw_etag = str(headers.get("X-Checksum-Sha256") or headers.get("X-Linked-Etag") or "").strip().strip('"')
+                    raw_etag = (
+                        str(headers.get("X-Checksum-Sha256") or headers.get("X-Linked-Etag") or "").strip().strip('"')
+                    )
                     if len(raw_etag) == 64 and all(c in "0123456789abcdefABCDEF" for c in raw_etag):
                         hdr_sha256 = raw_etag.lower()
                 if progress_cb is not None:
@@ -915,16 +919,16 @@ def setup_semantic_model(
                     f"Truncated download for '{rel_path}': Content-Length={total_bytes}, received={bytes_read} bytes."
                 )
             exp_size = expected_entry[0] if expected_entry is not None else None
-            exp_sha = (expected_entry[1].strip().lower() if expected_entry is not None and expected_entry[1] else "") or hdr_sha256
+            exp_sha = (
+                expected_entry[1].strip().lower() if expected_entry is not None and expected_entry[1] else ""
+            ) or hdr_sha256
             if exp_size is not None and bytes_read != exp_size:
                 raise ValueError(
                     f"Size mismatch for '{rel_path}': expected {exp_size} bytes, received {bytes_read} bytes."
                 )
             actual_sha = hasher.hexdigest()
             if exp_sha and actual_sha != exp_sha:
-                raise ValueError(
-                    f"SHA-256 verification failed for '{rel_path}': expected {exp_sha}, got {actual_sha}."
-                )
+                raise ValueError(f"SHA-256 verification failed for '{rel_path}': expected {exp_sha}, got {actual_sha}.")
             tmp_dest.replace(dest)
             st_final = dest.stat()
             sidecar_records[rel_path] = {
@@ -955,7 +959,7 @@ def setup_semantic_model(
 
 def _collect_embeddable_spec_records(conn: sqlite3.Connection) -> list[dict[str, str]]:
     """Collect active living specification and invariant records (excluding ``delta/mutation`` and ``product/exploration``)."""
-    from eidos.core.index.query import compound_identifier_subtokens
+    from eidos.core.index.fts_query import compound_identifier_subtokens
 
     rows = conn.execute(
         """

@@ -1,0 +1,27 @@
+---
+type: tech/component
+id: CMP-ARCHITECTURE-BOUNDARY-VALIDATOR
+title: ArchitectureBoundaryValidator
+container: CNT-EIDOS-CORE
+status: active
+source_path:
+  - src/eidos/core/spec/surface_validator.py
+  - src/eidos/core/spec/boundary_validator.py
+---
+= Component: ArchitectureBoundaryValidator
+:toc: left
+
+== Responsibility
+Enforces code-to-architecture conformance across active C4 specifications: static `== Public Surface` polyglot AST symbol & inheritance parity (`surface_validator.py`) and declarative `import_boundaries` / `import_boundary` coupling and monotonic `ratchet_baseline` evaluation (`boundary_validator.py`).
+
+== Key Responsibilities & Collaborators
+* **Scoped `== Public Surface` AST Parity & LRU Caching (`surface_validator.py`, `DEC-CORE-SCOPED-PUBLIC-SURFACE-AND-LRU-CACHE`)**: Verifies `::`-qualified, generic (`<T>`, `[T]`), multi-keyword, Go-receiver, polyglot inheritance (`:`, `extends`, `implements`, `<`), C# property/record/event, and per-class `== Public Surface` AST symbols on disk using strict `public` checks on `CNT-*` containers and component-scoped (`public` + `internal`/package-scoped, rejecting `private`/`protected`/`_`) checks on `CMP-*` components while skipping `.NET`/artifact filenames, bare prose backticks, and `bin/`/`obj/`/`node_modules/` directories via an 8,192-entry `(resolved_path, mtime_ns, st_size)` LRU cache (`PublicSurfaceValidator`).
+* **Executable Import Boundaries & Monotonic Ratchet Enforcement (`boundary_validator.py`, `DEC-CORE-DECLARATIVE-IMPORT-BOUNDARIES`)**: Validates disjoint `allow`/`deny` sets and declared tier slugs (`validate_import_boundary_declarations`) and evaluates synced `ast_import` and `ast_http` `code_couplings` against `ARCH-*.import_boundaries` (`tier_rules`, `enforce_declared_containers`, `ratchet_baseline`) and `CNT-*`/`CMP-*.import_boundary` rules via `evaluate_import_boundaries` after cold-cache-safe `sync_index(..., auto_semantic=False)`.
+
+== Public Surface
+* `PublicSurfaceValidator`
+* `validate_import_boundary_declarations(report: ValidationReport, root_dir: Path, schema_error_key_fn: Any) -> None`
+* `evaluate_import_boundaries(eidos_dir: Path, *, repo_root: Path | None = None, documents: list[SpecDocument] | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]`
+
+== Design Constraints & Operational Notes
+* **Deterministic Coupling Attribution**: Evaluates raw `code_couplings` rows independently from precedence-collapsed `edges` so declared `CTR-*` links never mask forbidden cross-boundary imports or HTTP calls.

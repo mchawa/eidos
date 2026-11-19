@@ -4,22 +4,24 @@ id: CMP-AST-SYMBOL-INDEXER
 title: AstSymbolIndexer
 container: CNT-EIDOS-INDEX
 status: active
-source_path: src/eidos/core/index/ast_indexer.py
+source_path:
+  - src/eidos/core/index/ast_indexer.py
+  - src/eidos/core/index/ast_preprocess.py
+  - src/eidos/core/index/ast_imports.py
 ---
 = Component: AstSymbolIndexer
 :toc: left
 
 == Responsibility
-Extracts polyglot AST code symbols (`CodeSymbol`), cross-file import specifiers (`extract_imports`), server HTTP route declarations (`extract_http_endpoints`), client HTTP call sites (`extract_http_requests`), public boundary symbol diffs, and invariant test bindings across 17 supported languages using `ast-grep-py` (`SgRoot`).
+Extracts polyglot AST code symbols (`CodeSymbol`), cross-file import specifiers (`extract_imports`), declared namespaces (`extract_declared_namespaces`), and invariant test bindings across 17 supported languages using `ast-grep-py` (`SgRoot`), delegating static HTTP route extraction to `CMP-HTTP-TOPOLOGY-LINKER` and structural/design diff classification to `CMP-AST-DIFF-CLASSIFIER`.
 
 == Key Responsibilities & Collaborators
-* **17-Language Structural AST & Interface Member Extraction (`AstGrepIndexer`)**: Parses Python, TypeScript, TSX, JavaScript, JSX, Go, Rust, Java, Kotlin, C, C++, C#, Ruby, PHP, Swift, Vue, and Svelte source files into `CodeSymbol` records with exact `line_start`/`line_end` coordinates, extracts C# `property_declaration`, `event_declaration`, `event_field_declaration`, `indexer_declaration`, public/internal `field_declaration`, and `record` primary-constructor property symbols with normalized signatures, interface/trait member signatures across TypeScript (`method_signature`, `property_signature`, `function_signature`), Go (`interface_type` specs), Rust (`trait_item` / `function_signature_item`), Java, and C#, length-preserving C/C++ macro normalization, C# `[Attribute]`-stripped visibility flags (`is_public` honoring enclosing class visibility and component-scoped `_is_component_surface_symbol` checks with `hidden_classes` filtering), and declared C#/Java/Kotlin namespaces (`extract_declared_namespaces`).
-* **Polyglot Static HTTP Endpoint & Client Request Extraction**: Extracts server route definitions (`extract_http_endpoints`, `kind="http_endpoint"`) across FastAPI/Flask/Starlette, Express/Fastify/Hono/Koa/NestJS/Next.js App Router, Go (`net/http`, Gin, Echo, Chi), Rust (`axum`, `actix-web`), Java/Kotlin Spring, and C# ASP.NET Core, plus client HTTP calls (`extract_http_requests`, `kind="http_request"`) across `fetch`, `EventSource`, `axios`, `ky`, Angular `this.http`, and Python `requests`/`httpx`, normalizing `:id`, `{id}`, `<int:id>`, `[id]`, and `${expr}` route segments to `{*}` (`normalize_http_route_path`) and resolving intra-file URL constants and prefix helpers.
-* **Overload-Safe Boundary Symbol Diffing & Import Extraction**: Disambiguates overloaded method/function keys in `public_symbol_map` and `boundary_symbol_map` with normalized parameter arity/signature suffixes so subsequent overload declarations never overwrite earlier ones, and extracts syntax-tree import targets (`extract_imports`) for `CMP-INCREMENTAL-SYNC-ENGINE`.
-* **Polyglot Test-Binding & Exact Token Resolution**: Identifies active test functions and `Class::method` targets across Python, TS/JS, Go, Rust, Java/Kotlin, and C# (`[Fact(...)]`, `[Theory(...)]`, `[TestCase(...)]`, `[TestMethod]`, `[DataTestMethod]` while rejecting `[Ignore]` and `Skip =` attributes) alongside disabled test modifiers (`test.skip`, `it.skip`, `test.todo`, `test.fixme`, `xit`, `xtest`) and suite-only `describe(...)` wrappers in `_extract_ts_test_call_title`; blanks commented-out code blocks and disabled preprocessor sections via `_strip_commented_out_code_blocks` while preserving doc comments, prose comments, string literals, Rust lifetimes, and `eidos:fixture` markers; and extracts exact `INV-*` / `POL-*` tokens via `INV_OR_POL_TOKEN_RE` (preserving trailing lowercase prose suffixes without colliding on uppercase suffix IDs).
+* **Source Preprocessing, Models & Visibility Helpers (`ast_preprocess.py`)**: Defines `CodeSymbol`, `TestFunctionBinding`, exact `INV-*` / `POL-*` token regexes (`INV_OR_POL_TOKEN_RE`), PEP 695/696 Python AST parsing (`_parse_python_ast`), length-preserving C/C++ export macro blanking, Vue/Svelte SFC `<script>` extraction, commented-out code & preprocessor blanking (`_strip_commented_out_code_blocks`), and polyglot visibility evaluation (`_is_public_symbol`, `_is_component_surface_symbol`).
+* **Polyglot Import, Namespace & Repo-Map Base (`ast_imports.py`)**: Implements `BaseAstIndexer` syntax-tree import extraction (`extract_imports`), declared C#/Java/Kotlin namespaces (`extract_declared_namespaces`), and token-budgeted structural repo-map formatting (`generate_repo_map`).
+* **17-Language Structural AST & Test-Binding Extraction (`ast_indexer.py`)**: Implements `AstGrepIndexer` across Python, TS/TSX, JS/JSX, Go, Rust, Java, Kotlin, C, C++, C#, Ruby, PHP, Swift, Vue, and Svelte with exact `line_start`/`line_end` coordinates, C# properties/events/fields/records, interface/trait member signatures, polyglot test-binding extraction (`list_test_functions`, `extract_test_file_cache_payload`), delegation to `CMP-HTTP-TOPOLOGY-LINKER` (`extract_http_endpoints`, `extract_http_requests`), and lazy `__getattr__` backward-compatible resolution for symbols moved to `CMP-AST-DIFF-CLASSIFIER` and `CMP-HTTP-TOPOLOGY-LINKER`.
 
 == Public Surface
-* `CodeSymbol`, `AstGrepIndexer`, `get_ast_indexer() -> AstGrepIndexer`, `normalize_http_route_path(raw_path: str) -> str`
+* `CodeSymbol`, `TestFunctionBinding`, `BaseAstIndexer`, `AstGrepIndexer`, `get_ast_indexer() -> AstGrepIndexer`
 * `AstGrepIndexer.extract_symbols(file_path: Path, content: str | None = None) -> list[CodeSymbol]`
 * `AstGrepIndexer.extract_imports(file_path: Path, content: str | None = None) -> list[str]`
 * `AstGrepIndexer.extract_http_endpoints(file_path: Path | str, content: str | None = None) -> list[CodeSymbol]`

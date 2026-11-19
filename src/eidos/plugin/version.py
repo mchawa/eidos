@@ -240,7 +240,8 @@ def _collect_diverged_or_skipped_skills(root: Path, *, check_disk: bool = True) 
 def check_plugin_version_status(project_dir: Path | None = None) -> dict[str, Any]:
     """Check version status and Stop hook health between bundled plugin and installed project plugin."""
     from eidos.core.workspace.project import _has_eidos_markers, find_git_root, find_repo_root
-    from eidos.plugin.installer import _read_manifest_targets, check_target_hook_health
+    from eidos.plugin.hook_adapters import check_target_hook_health
+    from eidos.plugin.installer import _read_manifest_targets
 
     base_dir = (project_dir or Path.cwd()).resolve()
     git_root = find_git_root(base_dir)

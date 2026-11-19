@@ -296,7 +296,11 @@ def _resolve_conn_db_path(conn: sqlite3.Connection, fallback_db_path: Path | Non
             return None
         if main_file:
             return Path(main_file).resolve()
-    if fallback_db_path is not None and str(fallback_db_path) != ":memory:" and Path(fallback_db_path).name != ":memory:":
+    if (
+        fallback_db_path is not None
+        and str(fallback_db_path) != ":memory:"
+        and Path(fallback_db_path).name != ":memory:"
+    ):
         return Path(fallback_db_path).resolve()
     return None
 
@@ -692,14 +696,14 @@ INSERT INTO edges (source_id, target_id, rel_type, provenance, evidence)
 VALUES (?, ?, ?, ?, ?)
 ON CONFLICT(source_id, target_id, rel_type) DO UPDATE SET
     evidence = CASE
-        WHEN {_PROVENANCE_RANK_SQL_EXPR.format(col='excluded.provenance')} > {_PROVENANCE_RANK_SQL_EXPR.format(col='edges.provenance')}
+        WHEN {_PROVENANCE_RANK_SQL_EXPR.format(col="excluded.provenance")} > {_PROVENANCE_RANK_SQL_EXPR.format(col="edges.provenance")}
             THEN CASE WHEN excluded.evidence != '' THEN excluded.evidence ELSE edges.evidence END
         WHEN edges.evidence = '' AND excluded.evidence != ''
             THEN excluded.evidence
         ELSE edges.evidence
     END,
     provenance = CASE
-        WHEN {_PROVENANCE_RANK_SQL_EXPR.format(col='excluded.provenance')} > {_PROVENANCE_RANK_SQL_EXPR.format(col='edges.provenance')}
+        WHEN {_PROVENANCE_RANK_SQL_EXPR.format(col="excluded.provenance")} > {_PROVENANCE_RANK_SQL_EXPR.format(col="edges.provenance")}
             THEN excluded.provenance
         ELSE edges.provenance
     END;
@@ -715,7 +719,9 @@ def normalize_confidence_level(min_confidence: str | None) -> str:
     """Validate and normalize a confidence threshold ('inferred' | 'derived' | 'observed')."""
     clean = (min_confidence or "inferred").strip().lower()
     if clean not in CONFIDENCE_RANK:
-        raise ValueError(f"Invalid min_confidence '{min_confidence}' (expected one of: {', '.join(VALID_CONFIDENCE_LEVELS)}).")
+        raise ValueError(
+            f"Invalid min_confidence '{min_confidence}' (expected one of: {', '.join(VALID_CONFIDENCE_LEVELS)})."
+        )
     return clean
 
 
@@ -739,3 +745,84 @@ def upsert_edge(
 ) -> None:
     """Insert or update an edge enforcing canonical provenance precedence."""
     conn.execute(_UPSERT_EDGE_SQL, (source_id, target_id, rel_type, provenance, evidence or ""))
+
+
+NON_AST_SYMBOL_KINDS: frozenset[str] = frozenset(
+    {
+        "specification_file",
+        "contract_path",
+        "test_binding",
+        "package_path",
+        "owned_path",
+        "source_path",
+        "inferred_path",
+    }
+)
+
+
+def build_spec_path_resolver(conn: sqlite3.Connection) -> Any:
+    """Build a callable resolving relative .adoc paths (with or without 'eidos/' prefix) to canonical entity IDs."""
+    path_to_id: dict[str, str] = {}
+    for p_id, p_fp in conn.execute("SELECT id, file_path FROM entities WHERE type != 'invariant';").fetchall():
+        if p_id and p_fp:
+            clean_fp = str(p_fp).replace("\\", "/").strip().lstrip("./").lower()
+            if clean_fp:
+                path_to_id[clean_fp] = str(p_id)
+                if clean_fp.startswith("eidos/"):
+                    path_to_id[clean_fp[6:]] = str(p_id)
+                else:
+                    path_to_id[f"eidos/{clean_fp}"] = str(p_id)
+
+    def _resolve_ref(raw_val: Any) -> str:
+        val = str(raw_val or "").strip()
+        if not val:
+            return ""
+        norm = val.replace("\\", "/").lstrip("./").lower()
+        if norm in path_to_id:
+            return path_to_id[norm]
+        if "/" in norm or norm.endswith(".adoc"):
+            for cand_path, cand_id in path_to_id.items():
+                if cand_path.endswith(f"/{norm}"):
+                    return cand_id
+        return val
+
+    return _resolve_ref
+
+
+def resolve_symbol_locations_in_db(
+    conn: sqlite3.Connection,
+    entity_id: str,
+    kind: str,
+    symbol: str,
+) -> list[dict[str, Any]]:
+    """Resolve persisted source coordinates (one entry per definition) for an AST symbol mapping."""
+    cursor = conn.cursor()
+    if kind == "method" and "." in symbol:
+        parent, name = symbol.rsplit(".", 1)
+        cursor.execute(
+            """
+            SELECT file_path, line_start, line_end, signature, parent_symbol FROM code_symbols
+            WHERE entity_id = ? AND kind = 'method' AND parent_symbol = ? AND symbol = ?
+            ORDER BY file_path, line_start;
+            """,
+            (entity_id, parent, name),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT file_path, line_start, line_end, signature, parent_symbol FROM code_symbols
+            WHERE entity_id = ? AND kind = ? AND symbol = ?
+            ORDER BY file_path, line_start;
+            """,
+            (entity_id, kind, symbol),
+        )
+    return [
+        {
+            "file": row["file_path"],
+            "line_start": row["line_start"],
+            "line_end": row["line_end"],
+            "signature": row["signature"],
+            "parent_symbol": row["parent_symbol"] or None,
+        }
+        for row in cursor.fetchall()
+    ]

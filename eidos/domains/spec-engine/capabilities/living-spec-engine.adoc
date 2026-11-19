@@ -4,7 +4,7 @@ id: CAP-PROD-001
 title: "Living Baseline Specification Engine"
 domain: DOM-SPEC-ENGINE
 status: active
-version: "1.13.0"
+version: "1.14.0"
 
 business:
   personas:
@@ -45,6 +45,8 @@ technical:
   components:
     - "CMP-SPEC-PARSER"
     - "CMP-SPEC-VALIDATOR"
+    - "CMP-CONTRACT-PARITY-VALIDATOR"
+    - "CMP-ARCHITECTURE-BOUNDARY-VALIDATOR"
     - "CMP-AST-SYMBOL-INDEXER"
     - "CMP-GRAPH-STORAGE"
     - "CMP-INCREMENTAL-SYNC-ENGINE"
@@ -89,6 +91,9 @@ technical:
     - id: INV-DEVCONTAINER-FEATURE-CONFORMANCE
       rule: "The OCI Dev Container Feature under devcontainer-features/src/eidos/ must maintain a schema-valid devcontainer-feature.json (exposing version, semantic, and pythonVersion options), an executable syntax-valid install.sh provisioning eidos-ai system-wide via uv with multi-distro prerequisite checks and Python <3.15 semantic guardrails, automated test scenarios under devcontainer-features/test/eidos/, sdist exclusion in pyproject.toml, and GHCR release automation in .github/workflows/ci.yml."
       test_binding: "tests/test_devcontainer_feature.py::test_devcontainer_feature_manifest_and_installer_conformance"
+    - id: INV-CORE-MODULAR-COMPONENT-COHESION
+      rule: "Active tech/component specifications in Eidos must maintain mutually disjoint source_path bindings on disk, intra-container submodule dependencies must remain acyclic without inverting C4 Level 3 dependency directions, and refactored facade modules must preserve backward-compatible public symbol imports."
+      test_binding: "tests/test_modular_architecture.py::test_modular_component_boundaries_and_facade_parity"
 ---
 = Capability: Living Baseline Specification Engine
 :toc: left
@@ -97,7 +102,7 @@ technical:
 Maintain an accurate, non-drifting representation of what the software product currently does across both business and technical dimensions.
 
 == Intent
-Traditional product requirements documents (PRDs) quickly become obsolete. This capability ensures that the `eidos/` directory is treated as living code: every document has an explicit type and JSON/YAML schema, is validated continuously, and forms an in-memory knowledge graph that AI agents and developer tools can query to understand the system state.
+Traditional product requirements documents (PRDs) quickly become obsolete. This capability ensures that the `eidos/` directory is treated as living code: every document has an explicit type and JSON/YAML schema, is validated continuously across `CMP-SPEC-VALIDATOR`, `CMP-CONTRACT-PARITY-VALIDATOR`, and `CMP-ARCHITECTURE-BOUNDARY-VALIDATOR` while preserving disjoint, acyclic component boundaries (`INV-CORE-MODULAR-COMPONENT-COHESION`), and forms an in-memory knowledge graph that AI agents and developer tools can query to understand the system state.
 
 Through an embedded SQLite Knowledge Graph (`eidos/.cache/index.db`), Eidos bridges human-readable AsciiDoc specifications with sub-millisecond relational queries, full-text lexical search (FTS5 BM25), and zero-drift incremental indexing.
 

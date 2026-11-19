@@ -4,24 +4,26 @@ id: CMP-INCREMENTAL-SYNC-ENGINE
 title: IncrementalSyncEngine
 container: CNT-EIDOS-INDEX
 status: active
-source_path: src/eidos/core/index/sync.py
+source_path:
+  - src/eidos/core/index/sync.py
+  - src/eidos/core/index/code_graph.py
+  - src/eidos/core/index/spec_edges.py
 ---
 = Component: IncrementalSyncEngine
 :toc: left
 
 == Responsibility
-Synchronizes living specifications (`eidos/`), governed source files (`source_path`), and polyglot test suites into the SQLite knowledge graph (`eidos/.cache/index.db`) using two-tier `mtime_ns` + `SHA-256` dirty detection, AST import dependency derivation, and canonical unidirectional edge reconstruction.
+Synchronizes living specifications (`eidos/`), governed source files (`source_path`), and polyglot test suites into the SQLite knowledge graph (`eidos/.cache/index.db`) across three cohesive submodules: serialized WAL dirty/sync coordination (`sync.py`), code ownership & AST import graph building (`code_graph.py`), and declarative spec & invariant test-binding edge reconstruction (`spec_edges.py`), delegating `ast_http` linking to `CMP-HTTP-TOPOLOGY-LINKER`.
 
 == Key Responsibilities & Collaborators
-* **Two-Tier Dirty Detection & Serialized Multi-Process Sync (`<5ms`, `DEC-INDEX-SERIALIZED-SYNC-AND-CSHARP-NAMESPACES`)**: Scans `eidos/`, test suites (including root and sibling `.NET` `*.Tests` / `*.UnitTests` directories while pruning `.NET` `bin/` outputs via `is_dotnet_bin_dir`), and governed `source_path` directories via single-pass `os.scandir` (`check_index_dirty`) while excluding nested child sub-project boundaries (`discover_nested_subproject_roots`), serializes `sync_index` (and opportunistic `check_index_dirty` mtime refreshes) across processes and threads under `_advisory_db_lock` + `BEGIN IMMEDIATE` transactions, re-checks `is_dirty()` under contention or `PRAGMA data_version` changes, self-heals previously misclassified `.NET` test files to `code/test`, and gates background worker spawning via `auto_semantic`.
-* **Entity, HTTP Endpoint/Request, Method/Test Symbol & FTS Indexing**: Populates `entities`, `code_symbols` (including `http_endpoint` and `http_request` symbols, 1-based `import` line coordinates, declared C#/Java/Kotlin `namespace` symbols, and automated test symbols marked with `is_test = 1`), `specs_fts` (projecting `'method'` alongside `'class'`, `'function'`, `'interface'`, `'struct'`, and `'enum'` while excluding `http_endpoint` and `http_request`), and `file_tokens_fts`, while excluding archived SpecDeltas (`eidos/deltas/archive/`) from `specs_fts`.
-* **Ownership Precedence, Static HTTP Auto-Linking & Provenance-Ranked Edge Reconstruction**: Prioritizes standalone `tech/component` (`CMP-*`) claims ahead of `tech/container` (`CNT-*`) fallback in `_CodeOwnershipResolver`, derives `consumes_api` and `depends_on` edges plus per-call-site `code_couplings` rows from AST imports (`ast_import`), C#/Java/Kotlin declared `namespace` matches, `.csproj`/`.fsproj`/`.vbproj` `<ProjectReference>` links, and `_derive_http_request_edges` (`ast_http`, matching non-test `is_test = 0` client `http_request` calls from both `CMP-*` and container-direct `CNT-*` files—with single-candidate base-path prefix disambiguation—against `http_endpoint` symbols and `openapi` / `http_json` `CTR-*` routes), writes all `edges` with explicit `provenance` precedence (`declared_spec > ast_import > ast_http > ast_symbol > inferred_ownership`) and `file:line` `evidence`, and uses batched `WHERE target_id IN (...)` lookups (`<= 500` parameters per batch) in `rebuild_spec_edges`.
+* **Two-Tier Dirty Detection & Serialized Multi-Process Sync (`sync.py`, `<5ms`, `DEC-INDEX-SERIALIZED-SYNC-AND-CSHARP-NAMESPACES`)**: Scans `eidos/`, test suites (including root and sibling `.NET` `*.Tests` / `*.UnitTests` directories while pruning `.NET` `bin/` outputs via `is_dotnet_bin_dir`), and governed `source_path` directories via single-pass `os.scandir` (`check_index_dirty`) while excluding nested child sub-project boundaries (`discover_nested_subproject_roots`), serializes `sync_index` (and opportunistic `check_index_dirty` mtime refreshes) across processes and threads under `_advisory_db_lock` + `BEGIN IMMEDIATE` transactions, re-checks `is_dirty()` under contention or `PRAGMA data_version` changes, self-heals previously misclassified `.NET` test files to `code/test`, and gates background worker spawning via `auto_semantic`.
+* **Code Ownership & Polyglot Import Graph Derivation (`code_graph.py`)**: Prioritizes standalone `tech/component` (`CMP-*`) claims ahead of `tech/container` (`CNT-*`) fallback in `_CodeOwnershipResolver`, persists `code_symbols` (`http_endpoint`, `http_request`, 1-based `import` coordinates, declared C#/Java/Kotlin `namespace` symbols, and `is_test` symbols), derives `consumes_api`/`depends_on` edges plus `code_couplings` rows from `ast_import`, C#/Java/Kotlin declared `namespace` matches, and `.csproj`/`.fsproj`/`.vbproj` `<ProjectReference>` links, and delegates cross-runtime HTTP route linking to `CMP-HTTP-TOPOLOGY-LINKER`.
+* **Declarative Spec Edge, Invariant Coverage & FTS Projection (`spec_edges.py`)**: Reconstructs canonical provenance-ranked spec edges (`rebuild_spec_edges`) using batched `WHERE target_id IN (...)` lookups (`<= 500` parameters per batch), indexes automated test bindings (`index_test_bindings`, `prune_stale_test_binding_edges`) and `has_test_coverage` reconciliation, and projects governed AST symbols into `specs_fts` while excluding archived SpecDeltas (`eidos/deltas/archive/`).
 
 == Public Surface
 * `check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]`
 * `sync_index(index: Any, force: bool = False, dirty_state: tuple[bool, list[Path], list[Path]] | None = None, strict: bool = False, *, auto_semantic: bool = True) -> IndexSyncStats`
 * `rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | None = None) -> None`
-* `build_spec_path_resolver(conn: sqlite3.Connection) -> Callable[[str], str]`
 
 == Design Constraints & Operational Notes
 * **Rename & Tombstone Eviction**: Evicts stale entities and child invariants keyed by `file_path` whenever a specification ID is renamed or a file is deleted from disk, and garbage-collects orphaned `spec_embeddings` rows (`DELETE FROM spec_embeddings WHERE entity_id NOT IN (SELECT id FROM entities)`) while preserving spec-only `content_sha256` embeddings across `sync_index(force=True)`.

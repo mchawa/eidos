@@ -46,6 +46,16 @@ decisions:
       - option: "Rely solely on postCreateCommand shell scripts in consumer repositories"
         reason_rejected: "Requires manual script duplication across repositories and delays first container startup instead of caching the Eidos CLI layer in the prebuilt devcontainer image."
     graduated_from: DLT-2026-118-PUBLISH-OFFICIAL-B0B3
+  - id: DEC-ARCH-MODULAR-COMPONENT-COHESION
+    title: "Hybrid C4 Level 3 Decomposition: Disjoint Component Ownership for Distinct Subsystems and Acyclic Multi-File Submodules for Internal Stages"
+    decision: "Promote genuinely distinct architectural responsibilities out of multi-concern modules into dedicated standalone CMP-* components with mutually disjoint source_path bindings (CMP-CONTRACT-PARITY-VALIDATOR, CMP-ARCHITECTURE-BOUNDARY-VALIDATOR, CMP-HTTP-TOPOLOGY-LINKER, CMP-AST-DIFF-CLASSIFIER, CMP-GIT-DIFF-INSPECTOR, CMP-INVARIANT-TRACEABILITY-VERIFIER, plus disjoint fts_query.py / traversal.py / hook_adapters.py bindings), keep tightly coupled internal pipeline stages as multi-file source_path arrays under their owning CMP-*, and use unidirectional facade imports (or lazy __getattr__ re-exports where needed) so legacy import paths remain intact without introducing circular C4 component edges."
+    rationale: "Splitting arbitrarily by line count fragments single responsibilities across artificial C4 boxes, whereas keeping unrelated concerns in single God-modules obscures C4 Level 3 topology, causes CMP-* source_path collisions (query.py and plugin/validator.py), and hides mutual import cycles."
+    rejected_alternatives:
+      - option: "Enforce an arbitrary hard line-count ceiling per file and create 1:1 CMP-* specs for every helper module"
+        reason_rejected: "Conflates physical file length with architectural responsibility and inflates C4 Level 3 diagrams with implementation-detail helper nodes."
+      - option: "Split files internally without promoting distinct subsystems or resolving shared source_path collisions"
+        reason_rejected: "Leaves C4 Level 3 component specs misrepresenting distinct subsystems and preserves overlapping CMP-* source_path bindings."
+    graduated_from: DLT-2026-139-DECOMPOSE-MULTI-6350
 ---
 = Eidos Global System Architecture (Arc42 & C4 Blueprint)
 :doctype: book
@@ -86,7 +96,7 @@ C4Context
 * **SpecDelta Diff Engine**: Evolutionary changes are composable semantic mutations (`add`, `modify`, `remove`, `deprecate`) stored flat in `eidos/deltas/`.
 * **Multi-Design Systems & W3C Tokens**: Product capabilities bridge business JTBD with technical code packages and W3C tokenized multi-brand design systems.
 * **Interactive Hierarchical C4 Explorer**: Living Web Portal provides dynamic, clickable drill-down from C4 Level 1 System Context to Level 2 Container Topologies and Level 3 Component Whiteboxes with breadcrumbs and slide-over component inspection, packaged via deterministic gzipped assets (`assets/portal/bundle.html.gz`) and a Hatch custom build hook.
-* **Embedded SQLite Knowledge Graph & FTS5 Retrieval**: High-speed, zero-dependency caching layer (`eidos/.cache/index.db`) decomposed into focused internal modules (`storage.py`, `sync.py`, `query.py`, `context.py`, `ast_indexer.py`) with sub-2ms dirty checking.
+* **Embedded SQLite Knowledge Graph & FTS5 Retrieval**: High-speed, zero-dependency caching layer (`eidos/.cache/index.db`) decomposed across disjoint C4 components (`CMP-GRAPH-STORAGE`, `CMP-INCREMENTAL-SYNC-ENGINE`, `CMP-FTS-QUERY-ENGINE`, `CMP-GRAPH-TRAVERSAL-ENGINE`, `CMP-TIERED-CONTEXT-COMPRESSOR`, `CMP-SEMANTIC-EMBEDDING-ENGINE`, `CMP-AST-SYMBOL-INDEXER`, `CMP-HTTP-TOPOLOGY-LINKER`, and `CMP-AST-DIFF-CLASSIFIER`) with sub-2ms dirty checking.
 * **Recursive CTE Blast-Radius & Impact Analysis**: Architectural blast radius and k-hop neighborhood traversal executed natively in SQLite via Common Table Expressions (CTEs).
 * **Tiered Context Compression Model**: Three-tier context extraction (`anchor`, `guardrails`, `deep`) reducing prompt token payloads by 60-80% for AI coding agents.
 * **Token-Budgeted Context Slicing**: Slices bounded C4 topologies, active invariants, and governing policies dynamically for AI agent contexts.
@@ -138,12 +148,12 @@ Furthermore, interface ownership strictly distinguishes between deployment bound
 * **Executable Import Boundary Governance (`import_boundaries` / `tier_rules`)**: `ARCH-EIDOS-001` enforces static `import_boundaries.tier_rules` across `eidos validate` and `eidos drift` (`core` and `extensibility` forbid `presentation` couplings; `persistence` forbids both `presentation` and `extensibility` couplings) with zero `ratchet_baseline` debt across all 7 Eidos containers.
 
 Container manifests interactively explorable in the Living Web Portal's Hierarchical C4 Explorer:
-* link:containers/core.adoc[`CNT-EIDOS-CORE` Container Specification (CMP-SPEC-PARSER, CMP-SPEC-VALIDATOR, ...)]
-* link:containers/vcs.adoc[`CNT-EIDOS-VCS` Container Specification (CMP-DRIFT-DETECTOR)]
-* link:containers/cli.adoc[`CNT-EIDOS-CLI` Container Specification (CMP-CLI-APP, CMP-CLI-SPEC-COMMANDS, ...)]
-* link:containers/plugin.adoc[`CNT-EIDOS-PLUGIN` Container Specification (CMP-PLUGIN-INSTALLER, CMP-PLUGIN-VALIDATOR, ...)]
-* link:containers/portal.adoc[`CNT-EIDOS-PORTAL` Container Specification (CMP-PORTAL-SERVER, CMP-PORTAL-GENERATOR, ...)]
-* link:containers/index.adoc[`CNT-EIDOS-INDEX` Container Specification (CMP-GRAPH-STORAGE, CMP-FTS-QUERY-ENGINE, ...)]
+* link:containers/core.adoc[`CNT-EIDOS-CORE` Container Specification (`CMP-SPEC-PARSER`, `CMP-SPEC-VALIDATOR`, `CMP-CONTRACT-PARITY-VALIDATOR`, `CMP-ARCHITECTURE-BOUNDARY-VALIDATOR`, ...)]
+* link:containers/vcs.adoc[`CNT-EIDOS-VCS` Container Specification (`CMP-DRIFT-DETECTOR`, `CMP-GIT-DIFF-INSPECTOR`, `CMP-INVARIANT-TRACEABILITY-VERIFIER`)]
+* link:containers/cli.adoc[`CNT-EIDOS-CLI` Container Specification (`CMP-CLI-APP`, `CMP-CLI-SPEC-COMMANDS`, ...)]
+* link:containers/plugin.adoc[`CNT-EIDOS-PLUGIN` Container Specification (`CMP-PLUGIN-INSTALLER`, `CMP-HOOK-MANAGER`, `CMP-PLUGIN-VALIDATOR`, `CMP-HOOK-RUNNER`)]
+* link:containers/portal.adoc[`CNT-EIDOS-PORTAL` Container Specification (`CMP-PORTAL-SERVER`, `CMP-PORTAL-GENERATOR`, ...)]
+* link:containers/index.adoc[`CNT-EIDOS-INDEX` Container Specification (`CMP-GRAPH-STORAGE`, `CMP-FTS-QUERY-ENGINE`, `CMP-GRAPH-TRAVERSAL-ENGINE`, `CMP-HTTP-TOPOLOGY-LINKER`, `CMP-AST-DIFF-CLASSIFIER`, ...)]
 * link:containers/docs.adoc[`CNT-EIDOS-DOCS` Container Specification (CMP-DOCS-GETTING-STARTED, CMP-DOCS-USER-GUIDES, ...)]
 
 == 6. Runtime View
