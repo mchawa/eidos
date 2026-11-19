@@ -39,14 +39,13 @@ The tree-grid toolbar provides instant macro/micro zoom controls:
 3. **Level 3 (All Specs)**: Unfolds all leaf specifications for complete system inspection.
 4. **Expand All / Collapse All**: One-click toggles across all nesting depths.
 
-== 3. Table Column Integrity & Traceability
-Each row preserves structured, tabular alignment across 5 clean columns without visual clutter:
-* **Specification Hierarchy**: Indented node hierarchy with hardware-accelerated rotating SVG chevrons (`rotate(0deg)` to `rotate(90deg)`), category icons, specification titles, and badge counts. Clicking on any parent row toggles section expansion.
-* **Document ID**: Unique kebab-cased or prefixed ID with copy-on-click chip and toast confirmation (`SYS-*`, `DOM-*`, `CAP-*`, `DS-*`, `SCR-*`, `ARCH-*`, `CMP-*`, `CTR-*`, `POL-*`, `DLT-*`).
-* **Type & Category**: Color-coded badges indicating schema archetype.
-* **Invariants / Tests**: Direct count of test bindings and policy invariant coverage.
-* **Status**: Validation health indicator (`● VALID`, `active`, `proposed`).
-* **Seamless Inspection**: Clicking anywhere on a specification row directly opens the rich `SpecReader` Inspector Modal with clickable cross-reference links (`CNT-*`, `CMP-*`, `CAP-*`, `DOM-*`, `POL-*`, `INV-*`, `DEC-*`, `DLT-*`), removing the need for a dedicated actions column.
+== 3. Table Column Integrity & Human-Readable Presentation
+Each row preserves structured, tabular alignment across 4 clean, human-readable columns without raw ID slugs, raw schema type slugs, raw file paths, or ASCII tree characters:
+* **Document**: Indented hierarchy with hardware-accelerated rotating SVG chevrons (`rotate(0deg)` to `rotate(90deg)`), category icons, human-readable document titles, and child counts. Clicking on any parent row toggles section expansion.
+* **Category**: Color-coded human-readable category badges (e.g. `Container`, `UI Component`, `Capability`, `Change Proposal`, `Interface Contract`).
+* **Section**: Resolved parent domain, container, or area title.
+* **Status**: Plain-language validation health indicator (`Valid` or `Needs Attention`) paired with humanized lifecycle status.
+* **Seamless Inspection**: Clicking anywhere on a document row directly opens the rich `SpecReader` Inspector Modal with resolved human-titled cross-reference links, while keeping canonical IDs searchable in the background search bar (`"Search documents..."`) and Tree View / List View switcher.
 
 == 4. Real-Time Branch Unfolding & Search Experience
 The enhanced search toolbar provides immediate, responsive discoverability:

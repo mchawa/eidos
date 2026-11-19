@@ -6,14 +6,10 @@ import {
   CheckCircle2,
   ArrowRight,
   Search,
-  Filter,
   X,
   FileCode,
-  Terminal,
-  ExternalLink,
   Lock,
   Layers,
-  Sparkles,
   AlertTriangle,
   ChevronRight,
   BookOpen,
@@ -24,6 +20,15 @@ import { Sheet } from "@/components/ui/sheet";
 import { AsciiDocRenderer } from "@/components/ui/AsciiDocRenderer";
 import { hasSpecBodyOrChunk } from "@/lib/specChunks";
 import { requestSpecNavigation } from "@/lib/specNav";
+import {
+  formatDisplayTitle,
+  formatSeverity,
+  formatStatus,
+  humanizeInvariantTitle,
+  humanizeToken,
+  resolveEntityTitle,
+  useEntityLabels,
+} from "@/lib/presentation";
 import { cn } from "@/lib/utils";
 import type {
   PortalData,
@@ -55,6 +60,7 @@ export function BusinessView({
   onClearSelected,
 }: BusinessViewProps) {
   const { domains, capabilities, personas, policies, invariants } = data;
+  const labelIndex = useEntityLabels();
 
   const [selectedEntity, setSelectedEntity] =
     React.useState<SelectedBusinessEntity | null>(null);
@@ -99,20 +105,11 @@ export function BusinessView({
     return map;
   }, [domains]);
 
-  const capabilitiesById = React.useMemo(() => {
-    const map = new Map<string, SpecCapability>();
-    capabilities.forEach((c) => map.set(c.id, c));
-    return map;
-  }, [capabilities]);
-
   const personasById = React.useMemo(() => {
     const map = new Map<string, SpecPersona>();
     personas.forEach((p) => {
       map.set(p.id, p);
-      // Also index by slug/filename if referenced as paths
-      if (p.path) {
-        map.set(p.path, p);
-      }
+      if (p.path) map.set(p.path, p);
     });
     return map;
   }, [personas]);
@@ -121,14 +118,11 @@ export function BusinessView({
     const map = new Map<string, SpecPolicy>();
     policies.forEach((p) => {
       map.set(p.id, p);
-      if (p.path) {
-        map.set(p.path, p);
-      }
+      if (p.path) map.set(p.path, p);
     });
     return map;
   }, [policies]);
 
-  // Filtering logic
   const query = searchQuery.toLowerCase().trim();
 
   const filteredPolicies = React.useMemo(() => {
@@ -177,14 +171,13 @@ export function BusinessView({
     return list.filter(
       (inv) =>
         inv.id.toLowerCase().includes(query) ||
-        (inv.title && inv.title.toLowerCase().includes(query)) ||
+        humanizeInvariantTitle(inv).toLowerCase().includes(query) ||
         inv.rule.toLowerCase().includes(query) ||
         (inv.category && inv.category.toLowerCase().includes(query)) ||
         (inv.test_binding && inv.test_binding.toLowerCase().includes(query))
     );
   }, [invariants, query]);
 
-  // Helper to resolve policy reference from path or ID
   const resolvePolicy = (ref: string): SpecPolicy | undefined => {
     if (policiesById.has(ref)) return policiesById.get(ref);
     for (const [id, pol] of policiesById.entries()) {
@@ -195,7 +188,6 @@ export function BusinessView({
     return undefined;
   };
 
-  // Helper to resolve persona reference from path or ID
   const resolvePersona = (ref: string): SpecPersona | undefined => {
     if (personasById.has(ref)) return personasById.get(ref);
     for (const [id, per] of personasById.entries()) {
@@ -206,27 +198,34 @@ export function BusinessView({
     return undefined;
   };
 
+  const drawerSubtitle = React.useMemo(() => {
+    if (!selectedEntity) return undefined;
+    switch (selectedEntity.type) {
+      case "domain":
+        return `${humanizeToken(selectedEntity.item.classification || "Core")} Domain`;
+      case "capability":
+        return resolveEntityTitle(selectedEntity.item.domain, labelIndex, "Product Capability");
+      case "policy":
+        return `${humanizeToken(selectedEntity.item.category)} Policy`;
+      case "persona":
+        return selectedEntity.item.role || humanizeToken(selectedEntity.item.archetype);
+      case "invariant":
+        return selectedEntity.item.source_title || humanizeToken(selectedEntity.item.category);
+    }
+  }, [selectedEntity, labelIndex]);
+
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       {/* Top Banner & Strategic Description */}
       <div className="p-5 sm:p-6 rounded-3xl bg-card border border-border/80 md-elevation-1 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-xs font-semibold px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
-                DDD Strategic Layer
-              </span>
-              <span className="text-xs text-muted-foreground font-mono">
-                SCR-PORTAL-BUSINESS
-              </span>
-            </div>
             <h2 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight">
-              Business Architecture & Living Governance
+              Business &amp; Product Governance
             </h2>
             <p className="text-xs text-muted-foreground max-w-3xl leading-relaxed">
-              Domain-Driven Design (DDD) Bounded Contexts (`DOM-*`), Product Capabilities (`CAP-*`),
-              non-negotiable System Governance Policies (`POL-*`), and Actor Personas (`PER-*`).
-              Click any element to inspect its full living specification and test bindings.
+              Product domains, customer capabilities, governance policies, user personas, and
+              automated system rules. Select any item to inspect its details.
             </p>
           </div>
 
@@ -270,7 +269,7 @@ export function BusinessView({
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-teal-500/20 bg-teal-500/10 text-teal-500 dark:text-teal-400 text-xs font-medium hover:bg-teal-500/20 transition-colors cursor-pointer"
             >
               <CheckCircle2 className="h-3.5 w-3.5" />
-              <span>{(invariants || []).length} Invariants</span>
+              <span>{(invariants || []).length} Rules</span>
             </button>
           </div>
         </div>
@@ -304,7 +303,7 @@ export function BusinessView({
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              Domains & Capabilities
+              Domains &amp; Capabilities
             </button>
             <button
               type="button"
@@ -317,7 +316,7 @@ export function BusinessView({
               )}
             >
               <ShieldCheck className="h-3 w-3" />
-              <span>System Policies (`POL-*`)</span>
+              <span>Policies</span>
             </button>
             <button
               type="button"
@@ -329,7 +328,7 @@ export function BusinessView({
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              Actor Personas
+              Personas
             </button>
             <button
               type="button"
@@ -342,7 +341,7 @@ export function BusinessView({
               )}
             >
               <CheckCircle2 className="h-3 w-3" />
-              <span>Invariants (`INV-*`)</span>
+              <span>Rules</span>
             </button>
           </div>
 
@@ -370,20 +369,20 @@ export function BusinessView({
         </div>
       </div>
 
-      {/* SECTION 1: BOUNDED PRODUCT DOMAINS & CAPABILITIES (DOM-* & CAP-*) */}
+      {/* SECTION 1: PRODUCT DOMAINS & CAPABILITIES */}
       {(filterCategory === "all" || filterCategory === "domains") && (
         <div id="businessDomainsSection" className="space-y-6 pt-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2">
             <div className="space-y-1">
               <h3 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-3">
                 <Briefcase className="h-6 w-6 text-primary shrink-0" />
-                <span>Bounded Product Domains & Capabilities (`DOM-*`, `CAP-*`)</span>
-                <Badge variant="outline" className="text-xs font-mono px-2 py-0.5">
+                <span>Product Domains &amp; Capabilities</span>
+                <Badge variant="outline" className="text-xs px-2 py-0.5">
                   {filteredDomains.length} Domains
                 </Badge>
               </h3>
               <p className="text-sm text-muted-foreground">
-                Domain-Driven Design bounded contexts, product capabilities, and contract specifications
+                Core product areas, customer capabilities, and governing rules
               </p>
             </div>
           </div>
@@ -403,23 +402,20 @@ export function BusinessView({
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-bold text-primary">
-                          {dom.id}
-                        </span>
                         <Badge
                           variant="outline"
                           className={cn(
-                            "text-[10px] uppercase font-semibold",
+                            "text-[10px] font-semibold",
                             dom.classification === "core"
                               ? "bg-purple-500/10 text-purple-400 border-purple-500/20"
                               : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
                           )}
                         >
-                          {dom.classification || "Domain"}
+                          {humanizeToken(dom.classification || "Core")}
                         </Badge>
                       </div>
                       <h3 className="text-base font-bold text-foreground">
-                        {dom.title}
+                        {formatDisplayTitle(dom.title, dom.id)}
                       </h3>
                     </div>
 
@@ -428,17 +424,17 @@ export function BusinessView({
                       onClick={() => setSelectedEntity({ type: "domain", item: dom })}
                       className="px-2.5 py-1 rounded-lg text-xs font-medium bg-muted/60 hover:bg-muted text-foreground transition-colors cursor-pointer shrink-0 flex items-center gap-1"
                     >
-                      <span>Inspect Domain</span>
+                      <span>View Domain</span>
                       <ChevronRight className="h-3 w-3" />
                     </button>
                   </div>
 
-                  {/* Domain Mission / Vision */}
+                  {/* Domain Mission */}
                   <p className="text-xs text-muted-foreground leading-relaxed">
                     {dom.mission}
                   </p>
 
-                  {/* In-Scope Responsibilities Preview */}
+                  {/* Core Responsibilities Preview */}
                   {dom.boundaries?.responsibilities && (
                     <div className="space-y-1.5 text-xs">
                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
@@ -458,15 +454,15 @@ export function BusinessView({
                     </div>
                   )}
 
-                  {/* Bound Capabilities Sub-List */}
+                  {/* Capabilities Sub-List */}
                   <div className="space-y-2 pt-3.5 border-t-2 border-border/80">
                     <div className="flex items-center justify-between">
                       <h4 className="text-[11px] font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                         <Layers className="h-3 w-3 text-emerald-400" />
-                        Bound Capabilities ({domCaps.length})
+                        Capabilities ({domCaps.length})
                       </h4>
                       <span className="text-[10px] text-muted-foreground">
-                        Click capability to inspect
+                        Select to read details
                       </span>
                     </div>
 
@@ -484,27 +480,23 @@ export function BusinessView({
                             className="p-3 rounded-xl border border-border/80 bg-muted/20 hover:bg-muted/50 hover:border-primary/50 transition-all cursor-pointer space-y-1.5 group"
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono text-xs font-semibold text-primary group-hover:underline">
-                                  {cap.id}
-                                </span>
+                              <h5 className="text-xs font-bold text-foreground group-hover:text-primary transition-colors">
+                                {formatDisplayTitle(cap.title, cap.id)}
+                              </h5>
+                              <div className="flex items-center gap-1.5 shrink-0">
                                 {cap.status && (
                                   <Badge
                                     variant="outline"
-                                    className="text-[9px] uppercase px-1 py-0"
+                                    className="text-[9px] px-1.5 py-0"
                                   >
-                                    {cap.status}
+                                    {formatStatus(cap.status)}
                                   </Badge>
                                 )}
+                                <span className="text-muted-foreground group-hover:text-primary transition-colors flex items-center text-[10px] font-medium">
+                                  Details <ArrowRight className="h-3 w-3 ml-0.5" />
+                                </span>
                               </div>
-                              <span className="text-muted-foreground group-hover:text-primary transition-colors flex items-center text-[10px] font-medium">
-                                Details <ArrowRight className="h-3 w-3 ml-0.5" />
-                              </span>
                             </div>
-
-                            <h5 className="text-xs font-bold text-foreground group-hover:text-primary transition-colors">
-                              {cap.title}
-                            </h5>
 
                             {cap.summary && (
                               <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">
@@ -513,10 +505,10 @@ export function BusinessView({
                             )}
 
                             {capInvariants.length > 0 && (
-                              <div className="flex items-center gap-1.5 text-[10px] text-emerald-500 dark:text-emerald-400 font-mono pt-1">
+                              <div className="flex items-center gap-1.5 text-[10px] text-emerald-500 dark:text-emerald-400 pt-1">
                                 <CheckCircle2 className="h-3 w-3 shrink-0" />
                                 <span>
-                                  {capInvariants.length} bound technical invariant(s)
+                                  {capInvariants.length} verified {capInvariants.length === 1 ? "rule" : "rules"}
                                 </span>
                               </div>
                             )}
@@ -532,7 +524,7 @@ export function BusinessView({
         </div>
       )}
 
-      {/* SECTION 2: SYSTEM GOVERNANCE POLICIES (POL-*) */}
+      {/* SECTION 2: GOVERNANCE POLICIES */}
       {(filterCategory === "all" || filterCategory === "policies") && (
         <div
           id="businessPoliciesSection"
@@ -545,13 +537,13 @@ export function BusinessView({
             <div className="space-y-1">
               <h3 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-3">
                 <ShieldCheck className="h-6 w-6 text-blue-500 shrink-0" />
-                <span>System Governance & Invariant Policies (`POL-*`)</span>
-                <Badge variant="outline" className="text-xs font-mono px-2 py-0.5">
+                <span>Governance Policies</span>
+                <Badge variant="outline" className="text-xs px-2 py-0.5">
                   {filteredPolicies.length} Active
                 </Badge>
               </h3>
               <p className="text-sm text-muted-foreground">
-                Mandatory quality gates, compliance constraints, and zero-drift invariants
+                Mandatory quality standards, compliance constraints, and system-wide rules
               </p>
             </div>
           </div>
@@ -561,34 +553,31 @@ export function BusinessView({
               const boundCapabilities = capabilities.filter((c) =>
                 c.business?.policies?.some((pRef) => pRef.includes(pol.id))
               );
+              const ruleCount = pol.invariants?.length || 0;
 
               return (
                 <Card
                   key={pol.id}
                   className="p-5 sm:p-6 space-y-4 border border-border/80 bg-card hover:border-primary/40 transition-colors shadow-xs"
                 >
-                  {/* Policy Header - Identical to Domain Card */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-bold text-primary">
-                          {pol.id}
-                        </span>
                         <Badge
                           variant="outline"
-                          className="text-[10px] uppercase font-semibold bg-blue-500/10 text-blue-400 border-blue-500/20"
+                          className="text-[10px] font-semibold bg-blue-500/10 text-blue-400 border-blue-500/20"
                         >
-                          {pol.category}
+                          {humanizeToken(pol.category)}
                         </Badge>
                         {pol.severity && (
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase bg-rose-500/15 text-rose-400 border border-rose-500/30 flex items-center gap-1">
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30 flex items-center gap-1">
                             <Lock className="h-2.5 w-2.5" />
-                            {pol.severity}
+                            {formatSeverity(pol.severity)}
                           </span>
                         )}
                       </div>
                       <h3 className="text-base font-bold text-foreground">
-                        {pol.title}
+                        {formatDisplayTitle(pol.title, pol.id)}
                       </h3>
                     </div>
 
@@ -597,41 +586,40 @@ export function BusinessView({
                       onClick={() => setSelectedEntity({ type: "policy", item: pol })}
                       className="px-2.5 py-1 rounded-lg text-xs font-medium bg-muted/60 hover:bg-muted text-foreground transition-colors cursor-pointer shrink-0 flex items-center gap-1"
                     >
-                      <span>Inspect Policy</span>
+                      <span>View Policy</span>
                       <ChevronRight className="h-3 w-3" />
                     </button>
                   </div>
 
-                  {/* Invariants Callout */}
+                  {/* Policy Rule Callout */}
                   {pol.invariants && pol.invariants.length > 0 && (
                     <div className="p-3.5 rounded-xl border border-border/80 bg-muted/20 space-y-2">
                       <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                         <div className="flex items-center gap-1.5">
                           <ShieldCheck className="h-3.5 w-3.5 text-blue-400" />
-                          <span>Policy Invariants ({pol.invariants.length})</span>
+                          <span>Enforced Rules ({pol.invariants.length})</span>
                         </div>
-                        <span className="font-mono text-blue-400">{pol.invariants[0].id}</span>
+                        {pol.invariants[0].test_binding && (
+                          <span className="text-emerald-500 normal-case font-medium">
+                            Test Verified
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs sm:text-sm font-medium text-foreground leading-relaxed">
                         "{pol.invariants[0].rule}"
                       </p>
-                      {pol.invariants[0].test_binding && (
-                        <p className="text-[11px] font-mono text-muted-foreground truncate">
-                          {pol.invariants[0].test_binding}
-                        </p>
-                      )}
                     </div>
                   )}
 
-                  {/* Card Footer / Bound Capabilities */}
+                  {/* Card Footer */}
                   <div className="pt-3.5 border-t-2 border-border/80 flex items-center justify-between text-xs text-muted-foreground">
-                    <span className="text-[11px] font-mono text-muted-foreground">
+                    <span className="text-[11px]">
                       {boundCapabilities.length > 0
-                        ? `${boundCapabilities.length} bound capability(ies)`
+                        ? `Applies to ${boundCapabilities.length} ${boundCapabilities.length === 1 ? "capability" : "capabilities"}`
                         : "System-wide Governance Policy"}
                     </span>
-                    <span className="text-[10px] font-mono text-muted-foreground">
-                      {pol.invariants?.length || 0} invariant(s)
+                    <span className="text-[11px]">
+                      {ruleCount} {ruleCount === 1 ? "rule" : "rules"}
                     </span>
                   </div>
                 </Card>
@@ -641,7 +629,7 @@ export function BusinessView({
         </div>
       )}
 
-      {/* SECTION 3: TARGET ACTOR PERSONAS (PER-*) */}
+      {/* SECTION 3: PERSONAS & STAKEHOLDERS */}
       {(filterCategory === "all" || filterCategory === "personas") && (
         <div
           id="businessPersonasSection"
@@ -654,13 +642,13 @@ export function BusinessView({
             <div className="space-y-1">
               <h3 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-3">
                 <UserCheck className="h-6 w-6 text-purple-400 shrink-0" />
-                <span>Target Actor Personas (`PER-*`)</span>
-                <Badge variant="outline" className="text-xs font-mono px-2 py-0.5">
+                <span>Personas &amp; Stakeholders</span>
+                <Badge variant="outline" className="text-xs px-2 py-0.5">
                   {filteredPersonas.length} Personas
                 </Badge>
               </h3>
               <p className="text-sm text-muted-foreground">
-                Human stakeholders, developer personas, and autonomous AI agents
+                Human stakeholders, engineering teams, and automated assistants using the system
               </p>
             </div>
           </div>
@@ -673,17 +661,14 @@ export function BusinessView({
                 className="p-5 sm:p-6 space-y-4 cursor-pointer hover:border-purple-400/60 hover:shadow-lg transition-all duration-150 group border border-border/80 bg-card rounded-2xl"
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs font-bold text-purple-400 group-hover:underline">
-                    {per.id}
-                  </span>
                   <Badge variant="outline" className="text-[10px]">
-                    {per.archetype}
+                    {humanizeToken(per.archetype)}
                   </Badge>
                 </div>
 
                 <div className="space-y-0.5">
                   <h4 className="text-sm font-bold text-foreground group-hover:text-purple-400 transition-colors">
-                    {per.title}
+                    {formatDisplayTitle(per.title, per.id)}
                   </h4>
                   <p className="text-xs text-muted-foreground">{per.role}</p>
                 </div>
@@ -704,7 +689,7 @@ export function BusinessView({
                 )}
 
                 <div className="pt-2 border-t border-border/60 flex items-center justify-end text-purple-400 text-xs font-semibold group-hover:translate-x-0.5 transition-transform">
-                  <span>Inspect Persona</span>
+                  <span>View Persona</span>
                   <ArrowRight className="h-3 w-3 ml-1" />
                 </div>
               </Card>
@@ -713,7 +698,7 @@ export function BusinessView({
         </div>
       )}
 
-      {/* SECTION 4: GOVERNANCE INVARIANTS & TEST BINDINGS (INV-*) */}
+      {/* SECTION 4: SYSTEM RULES & CHECKS */}
       {(filterCategory === "all" || filterCategory === "invariants") && (
         <div
           id="businessInvariantsSection"
@@ -726,13 +711,13 @@ export function BusinessView({
             <div className="space-y-1">
               <h3 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-3">
                 <CheckCircle2 className="h-6 w-6 text-teal-500 shrink-0" />
-                <span>Governance Invariants &amp; Test Bindings (`INV-*`)</span>
-                <Badge variant="outline" className="text-xs font-mono px-2 py-0.5">
-                  {filteredInvariants.length} Invariants
+                <span>System Rules &amp; Checks</span>
+                <Badge variant="outline" className="text-xs px-2 py-0.5">
+                  {filteredInvariants.length} Rules
                 </Badge>
               </h3>
               <p className="text-sm text-muted-foreground">
-                Executable architectural, capability, container, and component invariants with automated test bindings
+                Verified product, design, and architecture rules backed by automated tests
               </p>
             </div>
           </div>
@@ -745,31 +730,34 @@ export function BusinessView({
                 className="p-4 space-y-2.5 cursor-pointer hover:border-teal-500/60 hover:shadow-md transition-all duration-150 group border border-border/80 bg-card rounded-2xl"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono text-xs font-bold text-teal-500 dark:text-teal-400 group-hover:underline">
-                    {inv.id}
+                  <span className="text-xs font-bold text-foreground group-hover:text-teal-500 transition-colors">
+                    {humanizeInvariantTitle(inv)}
                   </span>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 shrink-0">
                     {inv.category && (
-                      <Badge variant="outline" className="text-[10px] font-mono">
-                        {inv.category}
+                      <Badge variant="outline" className="text-[10px]">
+                        {humanizeToken(inv.category)}
                       </Badge>
                     )}
                     {inv.severity && (
                       <Badge variant="outline" className="text-[10px]">
-                        {inv.severity}
+                        {formatSeverity(inv.severity)}
                       </Badge>
                     )}
                   </div>
                 </div>
-                <p className="text-xs text-foreground leading-relaxed line-clamp-2">
+                <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
                   {inv.rule}
                 </p>
-                {inv.test_binding && (
-                  <div className="pt-1 flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono">
-                    <Terminal className="h-3 w-3 shrink-0 text-teal-500" />
-                    <span className="truncate">{inv.test_binding}</span>
-                  </div>
-                )}
+                <div className="pt-1 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                  {inv.source_title && <span className="truncate">{inv.source_title}</span>}
+                  {inv.test_binding && inv.test_binding !== "N/A" && (
+                    <span className="inline-flex items-center gap-1 text-emerald-500 font-medium shrink-0">
+                      <CheckCircle2 className="h-3 w-3 shrink-0" />
+                      Test Verified
+                    </span>
+                  )}
+                </div>
               </Card>
             ))}
           </div>
@@ -786,17 +774,13 @@ export function BusinessView({
           }
         }}
         title={
-          selectedEntity?.type === "policy"
-            ? selectedEntity.item.title
-            : selectedEntity?.type === "domain"
-            ? selectedEntity.item.title
-            : selectedEntity?.type === "capability"
-            ? selectedEntity.item.title || "Capability"
-            : selectedEntity?.type === "invariant"
-            ? selectedEntity.item.title || selectedEntity.item.id
-            : selectedEntity?.item.title || "Persona"
+          selectedEntity?.type === "invariant"
+            ? humanizeInvariantTitle(selectedEntity.item)
+            : selectedEntity
+            ? formatDisplayTitle(selectedEntity.item.title, selectedEntity.item.id)
+            : "Details"
         }
-        subtitle={selectedEntity?.item.id}
+        subtitle={drawerSubtitle}
         maxWidth="6xl"
       >
         {selectedEntity && (
@@ -806,25 +790,20 @@ export function BusinessView({
               <div className="space-y-4">
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="primary">Policy</Badge>
-                  <Badge variant="outline">{selectedEntity.item.category}</Badge>
+                  <Badge variant="outline">{humanizeToken(selectedEntity.item.category)}</Badge>
                   {selectedEntity.item.severity && (
                     <Badge variant="warning">
-                      {selectedEntity.item.severity}
+                      {formatSeverity(selectedEntity.item.severity)}
                     </Badge>
-                  )}
-                  {selectedEntity.item.path && (
-                    <span className="font-mono text-[11px] text-muted-foreground px-2 py-0.5 rounded bg-muted/40">
-                      {selectedEntity.item.path}
-                    </span>
                   )}
                 </div>
 
-                {/* Policy Invariants */}
+                {/* Policy Rules */}
                 {selectedEntity.item.invariants && selectedEntity.item.invariants.length > 0 && (
                   <div className="space-y-2">
                     <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                       <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
-                      Enforced Policy Invariants ({selectedEntity.item.invariants.length})
+                      Enforced Policy Rules ({selectedEntity.item.invariants.length})
                     </h4>
                     <div className="space-y-2">
                       {selectedEntity.item.invariants.map((inv, idx) => (
@@ -833,13 +812,13 @@ export function BusinessView({
                           className="p-3.5 rounded-xl bg-blue-500/10 border-l-3 border-blue-500 text-xs space-y-1.5"
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <span className="font-mono font-bold text-blue-400">
-                              {inv.id}
+                            <span className="font-bold text-blue-400">
+                              {humanizeInvariantTitle(inv as SpecInvariant)}
                             </span>
                             {inv.test_binding && (
-                              <span className="font-mono text-[10px] text-muted-foreground truncate">
-                                {inv.test_binding}
-                              </span>
+                              <Badge variant="outline" className="text-[10px] text-emerald-500 border-emerald-500/30">
+                                Test Verified
+                              </Badge>
                             )}
                           </div>
                           <p className="font-medium text-foreground leading-relaxed">
@@ -851,7 +830,7 @@ export function BusinessView({
                   </div>
                 )}
 
-                {/* Bound Capabilities */}
+                {/* Related Capabilities */}
                 {(() => {
                   const boundCaps = capabilities.filter((c) =>
                     c.business?.policies?.some((pRef) =>
@@ -863,7 +842,7 @@ export function BusinessView({
                     <div className="space-y-2">
                       <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                         <Layers className="h-3.5 w-3.5 text-primary" />
-                        Bound Capabilities ({boundCaps.length})
+                        Related Capabilities ({boundCaps.length})
                       </h4>
                       <div className="space-y-2">
                         {boundCaps.map((c) => (
@@ -875,11 +854,8 @@ export function BusinessView({
                             }
                             className="w-full text-left p-2.5 rounded-xl bg-muted/20 hover:bg-muted/50 border border-border/70 flex items-center justify-between transition-colors cursor-pointer"
                           >
-                            <span className="font-mono font-semibold text-primary">
-                              {c.id}
-                            </span>
-                            <span className="text-xs font-medium text-foreground">
-                              {c.title}
+                            <span className="text-xs font-semibold text-foreground">
+                              {formatDisplayTitle(c.title, c.id)}
                             </span>
                             <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
                           </button>
@@ -889,12 +865,12 @@ export function BusinessView({
                   );
                 })()}
 
-                {/* Specification Body */}
+                {/* Document Body */}
                 {hasSpecBodyOrChunk(selectedEntity.item.id, selectedEntity.item.body) && (
                   <div className="space-y-2 pt-2">
                     <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                       <BookOpen className="h-3.5 w-3.5 text-purple-400" />
-                      Living Specification Rationale & Body
+                      Policy Details
                     </h4>
                     <AsciiDocRenderer specId={selectedEntity.item.id} content={selectedEntity.item.body || ""} />
                   </div>
@@ -908,30 +884,25 @@ export function BusinessView({
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="primary">Domain</Badge>
                   <Badge variant="outline">
-                    {selectedEntity.item.classification || "core"}
+                    {humanizeToken(selectedEntity.item.classification || "Core")}
                   </Badge>
-                  {selectedEntity.item.path && (
-                    <span className="font-mono text-[11px] text-muted-foreground px-2 py-0.5 rounded bg-muted/40">
-                      {selectedEntity.item.path}
-                    </span>
-                  )}
                 </div>
 
                 {/* Vision / Mission */}
                 <div className="space-y-1.5">
                   <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                    Domain Vision & Strategic Mission
+                    Domain Vision &amp; Mission
                   </h4>
                   <p className="p-3.5 rounded-xl bg-muted/20 border border-border/80 text-xs text-foreground leading-relaxed">
                     {selectedEntity.item.mission}
                   </p>
                 </div>
 
-                {/* Bounded Context Responsibilities */}
+                {/* Core Responsibilities */}
                 {selectedEntity.item.boundaries?.responsibilities && (
                   <div className="space-y-2">
                     <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                      In-Scope Domain Responsibilities
+                      In-Scope Responsibilities
                     </h4>
                     <ul className="space-y-1.5">
                       {selectedEntity.item.boundaries.responsibilities.map((r, i) => (
@@ -951,7 +922,7 @@ export function BusinessView({
                 {selectedEntity.item.boundaries?.out_of_scope && (
                   <div className="space-y-2">
                     <h4 className="text-xs font-bold text-foreground uppercase tracking-wider text-muted-foreground">
-                      Explicitly Out of Scope (Delegated)
+                      Out of Scope
                     </h4>
                     <ul className="space-y-1.5">
                       {selectedEntity.item.boundaries.out_of_scope.map((o, i) => (
@@ -959,7 +930,7 @@ export function BusinessView({
                           key={i}
                           className="flex items-start gap-2 p-2 rounded-lg bg-muted/30 border border-border/60 text-xs text-muted-foreground"
                         >
-                          <span className="text-muted-foreground font-mono">✕</span>
+                          <span className="text-muted-foreground">✕</span>
                           <span>{o}</span>
                         </li>
                       ))}
@@ -967,7 +938,7 @@ export function BusinessView({
                   </div>
                 )}
 
-                {/* Bound Capabilities in this Domain */}
+                {/* Capabilities in this Domain */}
                 {(() => {
                   const domCaps = capabilities.filter(
                     (c) =>
@@ -977,10 +948,8 @@ export function BusinessView({
                   return (
                     <div className="space-y-2 pt-2 border-t border-border/60">
                       <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center justify-between">
-                        <span>Bound Capabilities</span>
-                        <span className="font-mono text-muted-foreground">
-                          ({domCaps.length})
-                        </span>
+                        <span>Capabilities</span>
+                        <span className="text-muted-foreground">({domCaps.length})</span>
                       </h4>
                       <div className="space-y-2">
                         {domCaps.map((c) => (
@@ -992,14 +961,9 @@ export function BusinessView({
                             }
                             className="w-full text-left p-3 rounded-xl bg-muted/20 hover:bg-muted/50 border border-border/70 flex items-center justify-between transition-colors cursor-pointer group"
                           >
-                            <div className="space-y-0.5">
-                              <span className="font-mono font-semibold text-primary block">
-                                {c.id}
-                              </span>
-                              <span className="text-xs font-bold text-foreground group-hover:text-primary">
-                                {c.title}
-                              </span>
-                            </div>
+                            <span className="text-xs font-bold text-foreground group-hover:text-primary">
+                              {formatDisplayTitle(c.title, c.id)}
+                            </span>
                             <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-transform" />
                           </button>
                         ))}
@@ -1008,12 +972,12 @@ export function BusinessView({
                   );
                 })()}
 
-                {/* Specification Body */}
+                {/* Full Document */}
                 {hasSpecBodyOrChunk(selectedEntity.item.id, selectedEntity.item.body) && (
                   <div className="space-y-2 pt-2">
                     <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                       <BookOpen className="h-3.5 w-3.5 text-purple-400" />
-                      Living Specification Body
+                      Domain Details
                     </h4>
                     <AsciiDocRenderer specId={selectedEntity.item.id} content={selectedEntity.item.body || ""} />
                   </div>
@@ -1033,32 +997,32 @@ export function BusinessView({
                         const dom = domainsById.get(selectedEntity.item.domain);
                         if (dom) setSelectedEntity({ type: "domain", item: dom });
                       }}
-                      className="font-mono text-[11px] px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors cursor-pointer"
+                      className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors cursor-pointer"
                     >
-                      {selectedEntity.item.domain}
+                      {resolveEntityTitle(selectedEntity.item.domain, labelIndex)}
                     </button>
                   )}
                   {selectedEntity.item.status && (
-                    <Badge variant="outline">{selectedEntity.item.status}</Badge>
+                    <Badge variant="outline">{formatStatus(selectedEntity.item.status)}</Badge>
                   )}
                   {selectedEntity.item.version && (
                     <Badge variant="outline">v{selectedEntity.item.version}</Badge>
                   )}
                 </div>
 
-                {/* Summary & JTBD */}
+                {/* Purpose & Customer Outcome */}
                 <div className="space-y-1.5">
                   <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                    Customer Job-to-be-Done (JTBD)
+                    Purpose &amp; Customer Outcome
                   </h4>
                   <p className="p-3.5 rounded-xl bg-muted/20 border border-border/80 text-xs text-foreground leading-relaxed">
                     {selectedEntity.item.business?.jtbd ||
                       selectedEntity.item.summary ||
-                      "Strategic capability anchor."}
+                      "Core product capability."}
                   </p>
                 </div>
 
-                {/* Technical Invariants Matrix */}
+                {/* Verified Rules */}
                 {(() => {
                   const invs =
                     selectedEntity.item.invariants ||
@@ -1070,38 +1034,30 @@ export function BusinessView({
                       <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center justify-between">
                         <span className="flex items-center gap-1.5 text-emerald-400">
                           <CheckCircle2 className="h-3.5 w-3.5" />
-                          Technical Invariants & Test Bindings
+                          Verified Rules
                         </span>
-                        <span className="font-mono text-muted-foreground">
-                          ({invs.length})
-                        </span>
+                        <span className="text-muted-foreground">({invs.length})</span>
                       </h4>
                       <div className="space-y-2">
                         {invs.map((inv, idx) => (
                           <div
-                            key={idx}
+                            key={inv.id || idx}
                             className="p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 space-y-1.5 text-xs"
                           >
-                            <div className="flex items-center justify-between">
-                              <span className="font-mono font-bold text-emerald-500 dark:text-emerald-400">
-                                {inv.id}
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-bold text-emerald-500 dark:text-emerald-400">
+                                {humanizeInvariantTitle(inv as SpecInvariant)}
                               </span>
                               <Badge
                                 variant="outline"
-                                className="text-[9px] text-emerald-500 border-emerald-500/30"
+                                className="text-[10px] text-emerald-500 border-emerald-500/30 shrink-0"
                               >
-                                POL-002 Verified
+                                Test Verified
                               </Badge>
                             </div>
                             <p className="text-foreground/90 font-medium leading-relaxed">
                               {inv.rule}
                             </p>
-                            {inv.test_binding && (
-                              <div className="pt-1 flex items-center gap-1 text-[10px] text-muted-foreground font-mono">
-                                <Terminal className="h-3 w-3 shrink-0" />
-                                <span className="truncate">{inv.test_binding}</span>
-                              </div>
-                            )}
                           </div>
                         ))}
                       </div>
@@ -1114,41 +1070,39 @@ export function BusinessView({
                   <div className="space-y-2">
                     <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                       <FileCode className="h-3.5 w-3.5 text-primary" />
-                      Interface Contracts (`CTR-*`)
+                      Interface Contracts
                     </h4>
                     <div className="p-3 rounded-xl bg-muted/30 border border-border/80 flex flex-wrap gap-1.5">
-                      {selectedEntity.item.technical.contracts.map(
-                        (ctr, i) => (
-                          <button
-                            key={i}
-                            type="button"
-                            onClick={() => {
-                              setSelectedEntity(null);
-                              requestSpecNavigation(String(ctr));
-                            }}
-                            className="font-mono text-[10px] px-2 py-0.5 rounded bg-card border border-border hover:border-primary/50 text-primary font-bold cursor-pointer transition-colors"
-                          >
-                            {ctr}
-                          </button>
-                        )
-                      )}
+                      {selectedEntity.item.technical.contracts.map((ctr, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => {
+                            setSelectedEntity(null);
+                            requestSpecNavigation(String(ctr));
+                          }}
+                          className="text-[11px] px-2.5 py-0.5 rounded bg-card border border-border hover:border-primary/50 text-primary font-semibold cursor-pointer transition-colors"
+                        >
+                          {resolveEntityTitle(String(ctr), labelIndex)}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 )}
 
-                {/* Realizing Architecture Building Blocks */}
+                {/* Realizing System Architecture */}
                 {((selectedEntity.item.technical?.containers && selectedEntity.item.technical.containers.length > 0) ||
                   (selectedEntity.item.technical?.components && selectedEntity.item.technical.components.length > 0)) && (
                   <div className="space-y-2">
                     <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                       <Layers className="h-3.5 w-3.5 text-primary" />
-                      Realizing Architecture Building Blocks
+                      Supporting Architecture
                     </h4>
                     <div className="p-3 rounded-xl bg-muted/30 border border-border/80 space-y-2">
                       {selectedEntity.item.technical.containers && selectedEntity.item.technical.containers.length > 0 && (
                         <div>
                           <span className="text-[10px] font-bold text-muted-foreground uppercase">
-                            Containers (C4 Level 2)
+                            System Containers
                           </span>
                           <div className="flex flex-wrap gap-1.5 mt-1">
                             {selectedEntity.item.technical.containers.map((c, i) => (
@@ -1159,9 +1113,9 @@ export function BusinessView({
                                   setSelectedEntity(null);
                                   requestSpecNavigation(String(c));
                                 }}
-                                className="font-mono text-[10px] px-2 py-0.5 rounded bg-card border border-border hover:border-primary/50 text-primary font-bold cursor-pointer transition-colors"
+                                className="text-[11px] px-2.5 py-0.5 rounded bg-card border border-border hover:border-primary/50 text-primary font-semibold cursor-pointer transition-colors"
                               >
-                                {c}
+                                {resolveEntityTitle(String(c), labelIndex)}
                               </button>
                             ))}
                           </div>
@@ -1170,7 +1124,7 @@ export function BusinessView({
                       {selectedEntity.item.technical.components && selectedEntity.item.technical.components.length > 0 && (
                         <div>
                           <span className="text-[10px] font-bold text-muted-foreground uppercase">
-                            Components (C4 Level 3)
+                            Internal Components
                           </span>
                           <div className="flex flex-wrap gap-1.5 mt-1">
                             {selectedEntity.item.technical.components.map((c, i) => (
@@ -1181,9 +1135,9 @@ export function BusinessView({
                                   setSelectedEntity(null);
                                   requestSpecNavigation(String(c));
                                 }}
-                                className="font-mono text-[10px] px-2 py-0.5 rounded bg-card border border-border hover:border-primary/50 text-foreground cursor-pointer transition-colors"
+                                className="text-[11px] px-2.5 py-0.5 rounded bg-card border border-border hover:border-primary/50 text-foreground cursor-pointer transition-colors"
                               >
-                                {c}
+                                {resolveEntityTitle(String(c), labelIndex)}
                               </button>
                             ))}
                           </div>
@@ -1193,7 +1147,7 @@ export function BusinessView({
                   </div>
                 )}
 
-                {/* Business Alignment: Target Personas & Policies */}
+                {/* Personas & Policies */}
                 <div className="space-y-3 pt-2 border-t border-border/60">
                   {selectedEntity.item.business?.personas && (
                     <div className="space-y-1.5">
@@ -1214,7 +1168,7 @@ export function BusinessView({
                               className="px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/20 transition-colors cursor-pointer flex items-center gap-1"
                             >
                               <UserCheck className="h-3 w-3" />
-                              <span>{persona ? persona.title : pRef.split("/").pop()?.replace(".adoc", "")}</span>
+                              <span>{persona ? formatDisplayTitle(persona.title, persona.id) : resolveEntityTitle(pRef, labelIndex)}</span>
                             </button>
                           );
                         })}
@@ -1241,7 +1195,7 @@ export function BusinessView({
                               className="px-2.5 py-1 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors cursor-pointer flex items-center gap-1"
                             >
                               <ShieldCheck className="h-3 w-3" />
-                              <span>{policy ? policy.title : pRef.split("/").pop()?.replace(".adoc", "")}</span>
+                              <span>{policy ? formatDisplayTitle(policy.title, policy.id) : resolveEntityTitle(pRef, labelIndex)}</span>
                             </button>
                           );
                         })}
@@ -1250,12 +1204,12 @@ export function BusinessView({
                   )}
                 </div>
 
-                {/* Specification Body */}
+                {/* Full Document */}
                 {hasSpecBodyOrChunk(selectedEntity.item.id, selectedEntity.item.body) && (
                   <div className="space-y-2 pt-2">
                     <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                       <BookOpen className="h-3.5 w-3.5 text-purple-400" />
-                      Living Specification Body
+                      Capability Details
                     </h4>
                     <AsciiDocRenderer specId={selectedEntity.item.id} content={selectedEntity.item.body || ""} />
                   </div>
@@ -1267,30 +1221,23 @@ export function BusinessView({
             {selectedEntity.type === "persona" && (
               <div className="space-y-4">
                 <div className="flex flex-wrap gap-2">
-                  <Badge variant="primary">Actor Persona</Badge>
-                  <Badge variant="outline">{selectedEntity.item.archetype}</Badge>
-                  {selectedEntity.item.path && (
-                    <span className="font-mono text-[11px] text-muted-foreground px-2 py-0.5 rounded bg-muted/40">
-                      {selectedEntity.item.path}
-                    </span>
-                  )}
+                  <Badge variant="primary">Persona</Badge>
+                  <Badge variant="outline">{humanizeToken(selectedEntity.item.archetype)}</Badge>
                 </div>
 
-                {/* Role & Title */}
                 <div className="p-3.5 rounded-xl bg-muted/20 border border-border/80 space-y-1">
                   <h4 className="text-sm font-bold text-foreground">
-                    {selectedEntity.item.title}
+                    {formatDisplayTitle(selectedEntity.item.title, selectedEntity.item.id)}
                   </h4>
                   <p className="text-xs text-purple-400 font-medium">
                     {selectedEntity.item.role}
                   </p>
                 </div>
 
-                {/* Goals */}
                 {selectedEntity.item.goals && (
                   <div className="space-y-2">
                     <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                      Strategic Goals & Desired Outcomes
+                      Goals &amp; Desired Outcomes
                     </h4>
                     <ul className="space-y-1.5">
                       {selectedEntity.item.goals.map((goal, i) => (
@@ -1306,11 +1253,10 @@ export function BusinessView({
                   </div>
                 )}
 
-                {/* Pain Points */}
                 {selectedEntity.item.pain_points && (
                   <div className="space-y-2">
                     <h4 className="text-xs font-bold text-foreground uppercase tracking-wider text-rose-400">
-                      Pain Points & Architectural Friction
+                      Pain Points &amp; Challenges
                     </h4>
                     <ul className="space-y-1.5">
                       {selectedEntity.item.pain_points.map((pain, i) => (
@@ -1326,19 +1272,18 @@ export function BusinessView({
                   </div>
                 )}
 
-                {/* Interaction Modes */}
                 {selectedEntity.item.interaction_modes && (
                   <div className="space-y-2">
                     <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                      System Interaction Modes
+                      How They Interact
                     </h4>
                     <ul className="space-y-1.5">
                       {selectedEntity.item.interaction_modes.map((mode, i) => (
                         <li
                           key={i}
-                          className="flex items-start gap-2 p-2 rounded-lg bg-card border border-border text-xs text-foreground/90 font-mono text-[11px]"
+                          className="flex items-start gap-2 p-2 rounded-lg bg-card border border-border text-xs text-foreground/90"
                         >
-                          <Terminal className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
+                          <ArrowRight className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
                           <span>{mode}</span>
                         </li>
                       ))}
@@ -1346,12 +1291,11 @@ export function BusinessView({
                   </div>
                 )}
 
-                {/* Specification Body */}
                 {hasSpecBodyOrChunk(selectedEntity.item.id, selectedEntity.item.body) && (
                   <div className="space-y-2 pt-2">
                     <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                       <BookOpen className="h-3.5 w-3.5 text-purple-400" />
-                      Living Specification Profile
+                      Persona Profile
                     </h4>
                     <AsciiDocRenderer specId={selectedEntity.item.id} content={selectedEntity.item.body || ""} />
                   </div>
@@ -1359,45 +1303,36 @@ export function BusinessView({
               </div>
             )}
 
-            {/* INVARIANT DETAIL DRAWER */}
+            {/* RULE / INVARIANT DETAIL DRAWER */}
             {selectedEntity.type === "invariant" && (
               <div className="space-y-4">
                 <div className="flex flex-wrap gap-2">
-                  <Badge variant="primary">Invariant</Badge>
+                  <Badge variant="primary">Verified Rule</Badge>
                   {selectedEntity.item.category && (
-                    <Badge variant="outline">{selectedEntity.item.category}</Badge>
+                    <Badge variant="outline">{humanizeToken(selectedEntity.item.category)}</Badge>
                   )}
                   {selectedEntity.item.severity && (
-                    <Badge variant="warning">{selectedEntity.item.severity}</Badge>
+                    <Badge variant="warning">{formatSeverity(selectedEntity.item.severity)}</Badge>
                   )}
-                  {selectedEntity.item.path && (
-                    <span className="font-mono text-[11px] text-muted-foreground px-2 py-0.5 rounded bg-muted/40">
-                      {selectedEntity.item.path}
-                    </span>
+                  {selectedEntity.item.test_binding && selectedEntity.item.test_binding !== "N/A" && (
+                    <Badge variant="success">Test Verified</Badge>
                   )}
                 </div>
 
-                {/* Invariant Rule */}
                 <div className="space-y-1.5">
                   <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                     <CheckCircle2 className="h-3.5 w-3.5 text-teal-500" />
-                    Executable Invariant Rule
+                    Rule Statement
                   </h4>
                   <div className="p-3.5 rounded-xl bg-teal-500/10 border-l-3 border-teal-500 text-xs font-medium text-foreground leading-relaxed">
                     "{selectedEntity.item.rule}"
                   </div>
                 </div>
 
-                {/* Test Binding */}
-                {selectedEntity.item.test_binding && (
-                  <div className="space-y-1.5">
-                    <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                      <Terminal className="h-3.5 w-3.5 text-primary" />
-                      Automated Test Binding
-                    </h4>
-                    <div className="p-3 rounded-xl bg-muted/30 border border-border/80 font-mono text-xs text-foreground">
-                      {selectedEntity.item.test_binding}
-                    </div>
+                {selectedEntity.item.source_title && (
+                  <div className="p-3 rounded-xl bg-muted/30 border border-border/80 text-xs text-muted-foreground">
+                    <span className="font-semibold text-foreground">Defined in: </span>
+                    {selectedEntity.item.source_title}
                   </div>
                 )}
               </div>

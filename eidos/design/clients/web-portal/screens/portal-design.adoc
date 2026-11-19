@@ -20,7 +20,7 @@ states:
   - name: "active"
     description: "Interactive tokens studio, UI component inventory, client switcher, interaction flows, and screen state machine visualizer."
   - name: "empty"
-    description: "Graceful empty state displayed when no design systems (DS-*) or W3C DTCG design tokens are configured in the repository."
+    description: "Graceful empty state displayed when no design systems or design tokens are configured in the repository."
   - name: "error"
     description: "Alert state when tokens or design specifications fail validation."
 ---
@@ -28,12 +28,12 @@ states:
 :toc: left
 
 == 1. View Purpose & Design Scope
-The Design Systems View (`SCR-PORTAL-DESIGN`) connects business capabilities with the visual user experience:
-* **Client Applications & Multi-Experience (CLT-*)**: Interactive client switcher (`designClientSelect`), client container bindings, and scoped screen topologies.
-* **Empty State Resilience**: Gracefully handles repositories with zero configured design systems by displaying an informational banner and clean onboarding card instead of empty token swatches.
-* **Interaction Flows (FLOW-*)**: Client-internal journeys (`FLOW-PORTAL-EXPLORATION`) and multi-client (`clients.length > 1`) or `cross_client` omnichannel flows (`FLOW-CLI-SERVE-AND-BROWSE`) with dynamic Mermaid diagrams.
-* **Multi-Design Systems Catalog (DS-*)**: Registered design systems, base inheritance, and client brand overrides, with `aria-pressed` selection state and explicit `<label for="designClientSelect">` control association.
-* **W3C DTCG Tokens Studio & Recursive W3C Token Tree**: Visual swatches for brand palettes, neutral surfaces, functional feedback colors, spacing scales, and typography, paired with a generic recursive W3C DTCG token tree explorer with search filtering and multi-system `DS-*` selector tabs.
-* **UI Component Contracts (UIC-*)**: Visual component manifests normalizing both string and `{ name, description }` `$defs/state_entry` / variant objects with visible inline state descriptions (never relying on hover-only `title` tooltips) and accessibility invariants (WCAG, ARIA `aria-pressed`, keyboard navigation).
-* **Screen State Machines & Slots (SCR-*)**: Mermaid-powered state machine diagrams detailing screen transitions, resilient string/array/object `slots` formatting, and hydrated AsciiDoc specification reader drawers (`Inspect Screen Spec`).
+The Design Systems View (`SCR-PORTAL-DESIGN`) connects product capabilities with the visual user experience using resolved human titles and humanized labels (eliminating raw ID prefixes, literal backticks, leading state colons, and raw filename stems):
+* **Client Applications & Multi-Experience**: Interactive client switcher (`designClientSelect`) displaying human client titles, resolved container and design-system badges, and scoped screen and capability titles.
+* **Empty State Resilience**: Gracefully handles repositories with zero configured design systems by displaying an informational banner and clean onboarding card without raw directory paths.
+* **Interaction Flows**: Single-Client Flow and Cross-Client Flow journeys with humanized flow-type badges and dynamic Mermaid diagrams resolving participant client titles and screen titles.
+* **Design Systems Catalog**: Registered design systems, base inheritance, and brand overrides using resolved titles, `aria-pressed` selection state, and explicit `<label for="designClientSelect">` control association.
+* **Design Tokens Studio & All Design Tokens**: Visual swatches for brand palettes, Dark Background / Light Background neutral surfaces, feedback colors, spacing scales, corner radii, and typography, paired with a searchable **All Design Tokens** explorer with humanized token paths and tooltips.
+* **UI Components**: Component cards normalizing both string and `{ name, description }` states and variants with humanized category, variant, and state labels (e.g. `Loading`, `Populated`, `Default` without CSS colons), visible inline descriptions, and plain `Test Verified` indicators.
+* **Screen States & Layout Slots**: Mermaid-powered state diagrams with humanized state names, resilient string/array/object `slots` formatting with humanized slot names and resolved component titles, and hydrated AsciiDoc specification reader drawers (`Inspect Screen Spec`).
 

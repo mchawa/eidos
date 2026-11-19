@@ -28,7 +28,7 @@ The Portal Living Specification Reader (`UIC-PORTAL-READER`) establishes the rea
   - Subsection Headings (H3): `18px` semibold with visual hierarchy.
   - Body Copy: `15.5px`–`16px` with relaxed `1.8` line-height.
   - Code Snippets: `13px` monospace with syntax styling and one-click copy.
-* **Human-Centric Specification Header**: Replaces raw JSON frontmatter dumps with clean status badges, bound invariants (`INV-*`), personas, and a collapsible metadata drawer.
+* **Human-Centric Specification Header**: Renders human-readable document titles, clean category badges, plain `Valid` / `Needs Attention` health pills, humanized status badges, resolved parent domain and container title links with clean tooltips, and human-titled cross-reference links via `EntityLabelProvider`—omitting raw ID copy chips, raw file path pills, and raw YAML/JSON frontmatter inspectors from visible reader chrome.
 * **High-Contrast Dark Theme**: Clean neutral zinc surfaces (`#121215`), elevated popovers (`#18181b`), readable muted foregrounds (`#a1a1aa`), and distinct borders (`#27272a`) ensuring effortless legibility comparable to light mode.
 
 == 2. Dynamic Table of Contents (TOC) & On-This-Page Navigation

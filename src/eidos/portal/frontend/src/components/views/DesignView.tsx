@@ -3,10 +3,7 @@ import {
   Palette,
   Laptop,
   Workflow,
-  CheckCircle2,
   Box,
-  Layers,
-  ShieldCheck,
   Copy,
   Check,
   Code2,
@@ -14,9 +11,6 @@ import {
   FileText,
   Sliders,
   Sparkles,
-  ExternalLink,
-  ChevronRight,
-  Terminal,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,15 +18,19 @@ import { Sheet } from "@/components/ui/sheet";
 import { AsciiDocRenderer } from "@/components/ui/AsciiDocRenderer";
 import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
 import { hasSpecBodyOrChunk } from "@/lib/specChunks";
+import {
+  formatDisplayTitle,
+  formatFlowType,
+  humanizeToken,
+  humanizeTokenPath,
+  resolveEntityTitle,
+  useEntityLabels,
+} from "@/lib/presentation";
 import { cn } from "@/lib/utils";
 import type {
   PortalData,
-  SpecClient,
-  SpecFlow,
   SpecScreenState,
-  SpecUIComponent,
   SpecUIVariant,
-  SpecScreen,
 } from "@/types";
 
 function normalizeVariantEntry(v: SpecUIVariant | string): SpecUIVariant {
@@ -51,14 +49,27 @@ function normalizeStateEntry(st: SpecScreenState | string): SpecScreenState {
   };
 }
 
-function formatSlotValue(val: unknown): string {
-  if (typeof val === "string") return val;
+function formatSlotValue(val: unknown, labelIndex: Map<string, string>): string {
+  if (typeof val === "string") return resolveEntityTitle(val, labelIndex, humanizeToken(val));
   if (Array.isArray(val)) {
-    return val.map((item) => (typeof item === "string" ? item : JSON.stringify(item))).join(", ");
+    return val
+      .map((item) =>
+        typeof item === "string"
+          ? resolveEntityTitle(item, labelIndex, humanizeToken(item))
+          : JSON.stringify(item)
+      )
+      .join(", ");
   }
   if (val && typeof val === "object") {
     return Object.entries(val as Record<string, unknown>)
-      .map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`)
+      .map(
+        ([k, v]) =>
+          `${humanizeToken(k)}: ${
+            typeof v === "string"
+              ? resolveEntityTitle(v, labelIndex, humanizeToken(v))
+              : JSON.stringify(v)
+          }`
+      )
       .join(", ");
   }
   return String(val ?? "");
@@ -81,6 +92,7 @@ export function DesignView({
   initialSelectedNonce,
   onClearSelected,
 }: DesignViewProps) {
+  const labelIndex = useEntityLabels();
   const { clients = [], flows = [], design_systems = [], ui_components = [], screens = [] } = data;
   const defaultDS = design_systems.find((s) => !s.extends) || design_systems[0];
   const [selectedDSId, setSelectedDSId] = React.useState<string>(defaultDS?.id || "");
@@ -132,8 +144,8 @@ export function DesignView({
       if (hasSpecBodyOrChunk(uic.id, uic.body)) {
         setInspectingItem({
           id: uic.id,
-          title: uic.title || uic.id,
-          subtitle: `${uic.id} • ${uic.category || "UI Component"}`,
+          title: formatDisplayTitle(uic.title, uic.id),
+          subtitle: humanizeToken(uic.category || "UI Component"),
           body: uic.body,
         });
       }
@@ -145,8 +157,8 @@ export function DesignView({
       if (hasSpecBodyOrChunk(fl.id, fl.body)) {
         setInspectingItem({
           id: fl.id,
-          title: fl.title || fl.id,
-          subtitle: `${fl.id} • ${fl.flow_type || "Flow"}`,
+          title: formatDisplayTitle(fl.title, fl.id),
+          subtitle: formatFlowType(fl.flow_type),
           body: fl.body,
         });
       }
@@ -197,38 +209,27 @@ export function DesignView({
               No Design Systems Configured
             </h2>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              This repository does not have any design systems (`DS-*`), W3C design tokens (`tokens.json`), multi-client surfaces (`CLT-*`), or UI components configured in <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">eidos/design/</code>.
+              This project does not have any design systems, design tokens, client apps, or UI
+              components configured yet.
             </p>
-          </div>
-          <div className="pt-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-muted/40 border border-border/60 text-xs text-muted-foreground font-mono">
-              <span>Directory: eidos/design/systems/</span>
-            </div>
           </div>
         </div>
       </div>
     );
   }
 
-  const renderClientFlows = () => {
-    return flows.filter(
-      (f) => f.client === selectedClientId || (Array.isArray(f.clients) && f.clients.includes(selectedClientId))
-    );
-  };
+  const clientFlows = flows.filter(
+    (f) => f.client === selectedClientId || (Array.isArray(f.clients) && f.clients.includes(selectedClientId))
+  );
 
-  const renderOmnichannelFlows = () => {
-    return flows.filter(
-      (f) =>
-        !f.client ||
-        f.client === "all" ||
-        f.client === "omnichannel" ||
-        f.flow_type === "cross_client" ||
-        (Array.isArray(f.clients) && f.clients.length > 1)
-    );
-  };
-
-  const clientFlows = renderClientFlows();
-  const omnichannelFlows = renderOmnichannelFlows();
+  const omnichannelFlows = flows.filter(
+    (f) =>
+      !f.client ||
+      f.client === "all" ||
+      f.client === "omnichannel" ||
+      f.flow_type === "cross_client" ||
+      (Array.isArray(f.clients) && f.clients.length > 1)
+  );
 
   const handleCopy = (text: string, label: string) => {
     navigator.clipboard?.writeText(text);
@@ -236,52 +237,50 @@ export function DesignView({
     setTimeout(() => setCopiedToken(null), 1800);
   };
 
-  // Extract living W3C tokens or provide structured fallbacks
   const brandColors = [
-    { label: "Primary (Brand)", hex: activeDS?.tokens?.color?.brand?.primary?.$value || "#3b82f6", path: "color.brand.primary", desc: activeDS?.tokens?.color?.brand?.primary?.$description },
+    { label: "Primary Brand", hex: activeDS?.tokens?.color?.brand?.primary?.$value || "#3b82f6", path: "color.brand.primary", desc: activeDS?.tokens?.color?.brand?.primary?.$description },
     { label: "Primary Hover", hex: activeDS?.tokens?.color?.brand?.primary_hover?.$value || "#2563eb", path: "color.brand.primary_hover", desc: activeDS?.tokens?.color?.brand?.primary_hover?.$description },
     { label: "Accent Highlight", hex: activeDS?.tokens?.color?.brand?.accent?.$value || "#8b5cf6", path: "color.brand.accent", desc: activeDS?.tokens?.color?.brand?.accent?.$description },
   ];
 
   const feedbackColors = [
-    { label: "Success Feedback", hex: activeDS?.tokens?.color?.feedback?.success?.$value || "#10b981", path: "color.feedback.success", desc: activeDS?.tokens?.color?.feedback?.success?.$description },
-    { label: "Warning Feedback", hex: activeDS?.tokens?.color?.feedback?.warning?.$value || "#f59e0b", path: "color.feedback.warning", desc: activeDS?.tokens?.color?.feedback?.warning?.$description },
-    { label: "Danger Feedback", hex: activeDS?.tokens?.color?.feedback?.danger?.$value || "#ef4444", path: "color.feedback.danger", desc: activeDS?.tokens?.color?.feedback?.danger?.$description },
+    { label: "Success", hex: activeDS?.tokens?.color?.feedback?.success?.$value || "#10b981", path: "color.feedback.success", desc: activeDS?.tokens?.color?.feedback?.success?.$description },
+    { label: "Warning", hex: activeDS?.tokens?.color?.feedback?.warning?.$value || "#f59e0b", path: "color.feedback.warning", desc: activeDS?.tokens?.color?.feedback?.warning?.$description },
+    { label: "Danger", hex: activeDS?.tokens?.color?.feedback?.danger?.$value || "#ef4444", path: "color.feedback.danger", desc: activeDS?.tokens?.color?.feedback?.danger?.$description },
   ];
 
   const surfaceColors = [
-    { label: "Surface Dark BG", hex: activeDS?.tokens?.color?.surface?.dark_bg?.$value || "#090d16", path: "color.surface.dark_bg", desc: activeDS?.tokens?.color?.surface?.dark_bg?.$description },
-    { label: "Surface Dark Card", hex: activeDS?.tokens?.color?.surface?.dark_card?.$value || "#111827", path: "color.surface.dark_card", desc: activeDS?.tokens?.color?.surface?.dark_card?.$description },
-    { label: "Surface Dark Hover", hex: activeDS?.tokens?.color?.surface?.dark_card_hover?.$value || "#1f2937", path: "color.surface.dark_card_hover", desc: activeDS?.tokens?.color?.surface?.dark_card_hover?.$description },
-    { label: "Surface Light BG", hex: activeDS?.tokens?.color?.surface?.light_bg?.$value || "#f8fafc", path: "color.surface.light_bg", desc: activeDS?.tokens?.color?.surface?.light_bg?.$description },
-    { label: "Surface Light Card", hex: activeDS?.tokens?.color?.surface?.light_card?.$value || "#ffffff", path: "color.surface.light_card", desc: activeDS?.tokens?.color?.surface?.light_card?.$description },
-    { label: "Surface Light Hover", hex: activeDS?.tokens?.color?.surface?.light_card_hover?.$value || "#f1f5f9", path: "color.surface.light_card_hover", desc: activeDS?.tokens?.color?.surface?.light_card_hover?.$description },
+    { label: "Dark Background", hex: activeDS?.tokens?.color?.surface?.dark_bg?.$value || "#090d16", path: "color.surface.dark_bg", desc: activeDS?.tokens?.color?.surface?.dark_bg?.$description },
+    { label: "Dark Surface", hex: activeDS?.tokens?.color?.surface?.dark_card?.$value || "#111827", path: "color.surface.dark_card", desc: activeDS?.tokens?.color?.surface?.dark_card?.$description },
+    { label: "Dark Hover", hex: activeDS?.tokens?.color?.surface?.dark_card_hover?.$value || "#1f2937", path: "color.surface.dark_card_hover", desc: activeDS?.tokens?.color?.surface?.dark_card_hover?.$description },
+    { label: "Light Background", hex: activeDS?.tokens?.color?.surface?.light_bg?.$value || "#f8fafc", path: "color.surface.light_bg", desc: activeDS?.tokens?.color?.surface?.light_bg?.$description },
+    { label: "Light Surface", hex: activeDS?.tokens?.color?.surface?.light_card?.$value || "#ffffff", path: "color.surface.light_card", desc: activeDS?.tokens?.color?.surface?.light_card?.$description },
+    { label: "Light Hover", hex: activeDS?.tokens?.color?.surface?.light_card_hover?.$value || "#f1f5f9", path: "color.surface.light_card_hover", desc: activeDS?.tokens?.color?.surface?.light_card_hover?.$description },
   ];
 
-  // Token swatches for preserved id="tokenSwatchesGrid"
   const allColorSwatches = [...brandColors, ...feedbackColors, surfaceColors[0], surfaceColors[1]];
 
-  // Spacing tokens
   const spacingTokens = [
-    { name: "xs", val: activeDS?.tokens?.spacing?.xs?.$value || "4px", px: 4 },
-    { name: "sm", val: activeDS?.tokens?.spacing?.sm?.$value || "8px", px: 8 },
-    { name: "md", val: activeDS?.tokens?.spacing?.md?.$value || "16px", px: 16 },
-    { name: "lg", val: activeDS?.tokens?.spacing?.lg?.$value || "24px", px: 24 },
-    { name: "xl", val: activeDS?.tokens?.spacing?.xl?.$value || "32px", px: 32 },
+    { name: "Extra Small", val: activeDS?.tokens?.spacing?.xs?.$value || "4px", px: 4 },
+    { name: "Small", val: activeDS?.tokens?.spacing?.sm?.$value || "8px", px: 8 },
+    { name: "Medium", val: activeDS?.tokens?.spacing?.md?.$value || "16px", px: 16 },
+    { name: "Large", val: activeDS?.tokens?.spacing?.lg?.$value || "24px", px: 24 },
+    { name: "Extra Large", val: activeDS?.tokens?.spacing?.xl?.$value || "32px", px: 32 },
   ];
 
-  // Radius tokens
   const radiusTokens = [
-    { name: "sm", val: activeDS?.tokens?.border?.radius?.sm?.$value || "4px", cls: "rounded-xs" },
-    { name: "md", val: activeDS?.tokens?.border?.radius?.md?.$value || "8px", cls: "rounded-md" },
-    { name: "lg", val: activeDS?.tokens?.border?.radius?.lg?.$value || "12px", cls: "rounded-xl" },
-    { name: "full", val: activeDS?.tokens?.border?.radius?.full?.$value || "9999px", cls: "rounded-full" },
+    { name: "Small", val: activeDS?.tokens?.border?.radius?.sm?.$value || "4px", cls: "rounded-xs" },
+    { name: "Medium", val: activeDS?.tokens?.border?.radius?.md?.$value || "8px", cls: "rounded-md" },
+    { name: "Large", val: activeDS?.tokens?.border?.radius?.lg?.$value || "12px", cls: "rounded-xl" },
+    { name: "Pill", val: activeDS?.tokens?.border?.radius?.full?.$value || "9999px", cls: "rounded-full" },
   ];
 
   const typographyTokens = activeDS?.tokens?.typography?.font_family || {
     sans: { $value: "'Inter', system-ui, -apple-system, sans-serif" },
     mono: { $value: "'JetBrains Mono', monospace" },
   };
+
+  const activeDSTitle = activeDS ? formatDisplayTitle(activeDS.title || activeDS.brand_name, activeDS.id) : "";
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
@@ -291,29 +290,25 @@ export function DesignView({
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <h2 className="text-base font-bold text-foreground tracking-tight">
-                Design Systems & Multi-Client Surfaces
+                Design Systems &amp; User Experience
               </h2>
-              {design_systems.length > 0 ? (
-                <Badge variant="outline" className="text-[10px] font-mono border-primary/40 text-primary">
-                  W3C DTCG
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="text-[10px] font-mono border-amber-500/40 text-amber-500 bg-amber-500/10">
+              {design_systems.length === 0 && (
+                <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-500 bg-amber-500/10">
                   No Design Systems Configured
                 </Badge>
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              Living design tokens, multi-client experience surfaces (`CLT-*`), UI components (`UIC-*`), screen state machines (`SCR-*`), and omnichannel flows (`FLOW-*`).
+              Design tokens, client applications, reusable UI components, screens, and user flows.
             </p>
           </div>
 
           {/* Quick Metrics */}
-          <div className="flex items-center gap-3 shrink-0 text-xs">
+          <div className="flex flex-wrap items-center gap-3 shrink-0 text-xs">
             <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-muted/40 border border-border/60">
               <Palette className="h-3.5 w-3.5 text-primary" />
               <span className="font-semibold text-foreground">{design_systems.length}</span>
-              <span className="text-[11px] text-muted-foreground">DS</span>
+              <span className="text-[11px] text-muted-foreground">Design Systems</span>
             </div>
             <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-muted/40 border border-border/60">
               <Box className="h-3.5 w-3.5 text-indigo-400" />
@@ -339,7 +334,7 @@ export function DesignView({
             <div className="space-y-0.5">
               <span className="font-bold">No Design Systems Configured</span>
               <p className="text-muted-foreground text-[11px]">
-                No active design system specification (`DS-*`) or W3C token repository found in <code className="font-mono bg-background/50 px-1 py-0.5 rounded">eidos/design/systems/</code>.
+                No design systems or design tokens are configured for this project yet.
               </p>
             </div>
           </div>
@@ -349,8 +344,8 @@ export function DesignView({
         <div className="flex items-center gap-1 mt-4 pt-3 border-t border-border/60 overflow-x-auto no-scrollbar">
           {[
             { id: "all", label: "Full Overview", icon: LayoutGrid },
-            { id: "tokens", label: "W3C Design Tokens", icon: Palette },
-            { id: "clients", label: "Client Surfaces", icon: Laptop },
+            { id: "tokens", label: "Design Tokens", icon: Palette },
+            { id: "clients", label: "Client Apps", icon: Laptop },
             { id: "components", label: `UI Components (${ui_components.length})`, icon: Box },
             { id: "screens", label: `Screens & States (${screens.length})`, icon: Sliders },
             { id: "flows", label: `User Flows (${flows.length})`, icon: Workflow },
@@ -378,18 +373,19 @@ export function DesignView({
         </div>
       </div>
 
-      {/* SECTION 1: W3C DTCG Token Studio */}
+      {/* SECTION 1: Design Tokens Studio */}
       {(activeTab === "all" || activeTab === "tokens") && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-sm font-bold text-foreground tracking-tight flex items-center gap-2">
               <Palette className="h-4 w-4 text-primary" />
-              W3C DTCG Living Design Tokens Studio (`tokens.json`)
+              Design Tokens Studio
             </h3>
             {design_systems.length > 0 ? (
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 {design_systems.map((ds) => {
                   const isSel = activeDS?.id === ds.id;
+                  const dsTitle = formatDisplayTitle(ds.title || ds.brand_name, ds.id);
                   return (
                     <button
                       key={ds.id}
@@ -397,16 +393,16 @@ export function DesignView({
                       aria-pressed={isSel}
                       onClick={() => setSelectedDSId(ds.id)}
                       className={cn(
-                        "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl font-mono text-xs border transition-colors cursor-pointer",
+                        "inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs border transition-colors cursor-pointer",
                         isSel
                           ? "bg-primary/15 text-primary border-primary/40 font-bold"
                           : "bg-card text-muted-foreground border-border/70 hover:text-foreground"
                       )}
                     >
-                      <span>{ds.id}</span>
+                      <span>{dsTitle}</span>
                       {ds.extends && (
                         <span className="text-[10px] text-muted-foreground">
-                          extends {ds.extends}
+                          extends {resolveEntityTitle(ds.extends, labelIndex)}
                         </span>
                       )}
                     </button>
@@ -414,7 +410,7 @@ export function DesignView({
                 })}
               </div>
             ) : (
-              <Badge variant="outline" className="text-xs font-mono text-muted-foreground">
+              <Badge variant="outline" className="text-xs text-muted-foreground">
                 No Design System
               </Badge>
             )}
@@ -428,244 +424,238 @@ export function DesignView({
               <div className="space-y-1.5 max-w-md mx-auto">
                 <h4 className="text-base sm:text-lg font-bold text-foreground">No Design Systems Configured</h4>
                 <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
-                  No living W3C DTCG design tokens or design system specifications (`DS-*`) were found in <code className="font-mono text-[11px] bg-muted px-1.5 py-0.5 rounded">eidos/design/systems/</code>.
-                </p>
-              </div>
-              <div className="pt-1">
-                <p className="text-xs text-muted-foreground">
-                  To configure a design system, declare a specification and <code className="font-mono text-[11px] bg-muted px-1.5 py-0.5 rounded">tokens.json</code> under <code className="font-mono text-[11px] bg-muted px-1.5 py-0.5 rounded">eidos/design/systems/&lt;name&gt;/</code>.
+                  No design systems or color, spacing, and typography tokens have been configured yet.
                 </p>
               </div>
             </Card>
           ) : (
             <Card className="p-5 space-y-6">
-            {/* Preserved id="tokenSwatchesGrid" for tests & automated hooks */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <Sparkles className="h-3.5 w-3.5 text-primary" />
-                  Primary & Feedback Palettes
-                </h4>
-                <span className="text-[11px] text-muted-foreground">Click hex or token to copy</span>
-              </div>
-              <div
-                id="tokenSwatchesGrid"
-                className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3"
-              >
-                {allColorSwatches.map((t, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => handleCopy(t.hex, t.path)}
-                    className="group space-y-2 p-2.5 rounded-xl border border-border/70 bg-muted/20 hover:bg-muted/50 hover:border-primary/50 transition-all flex flex-col items-center text-center cursor-pointer relative"
-                    title={t.desc || t.path}
-                  >
-                    <div
-                      className="h-10 w-full rounded-lg md-elevation-1 border border-white/10 group-hover:scale-105 transition-transform"
-                      style={{ backgroundColor: t.hex }}
-                    />
-                    <div className="flex items-center gap-1">
-                      <span className="font-mono text-[10px] font-bold text-foreground">
-                        {t.hex}
-                      </span>
-                      {copiedToken === t.path ? (
-                        <Check className="h-3 w-3 text-emerald-500" />
-                      ) : (
-                        <Copy className="h-2.5 w-2.5 opacity-0 group-hover:opacity-60 transition-opacity" />
-                      )}
-                    </div>
-                    <span className="text-[10px] text-muted-foreground line-clamp-1">
-                      {t.label}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Extended Surface & Border Tokens */}
-            <div className="pt-4 border-t border-border/60">
-              <h4 className="text-xs font-bold text-foreground uppercase tracking-wider mb-3">
-                Surfaces & Semantic Themes
-              </h4>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                {surfaceColors.map((s, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => handleCopy(s.hex, s.path)}
-                    className="p-3 rounded-xl border border-border/70 bg-card hover:border-primary/40 transition-all flex flex-col items-center text-center cursor-pointer group"
-                  >
-                    <div
-                      className="h-8 w-full rounded-md border border-border/60 mb-2"
-                      style={{ backgroundColor: s.hex }}
-                    />
-                    <span className="font-mono text-[10px] font-semibold text-foreground">
-                      {s.hex}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">
-                      {s.label}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Spacing & Radius Visual Studio */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-border/60">
-              {/* Spacing Scale */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <Sliders className="h-3.5 w-3.5 text-primary" />
-                  Spacing Scale (`tokens.spacing`)
-                </h4>
-                <div className="space-y-2">
-                  {spacingTokens.map((sp) => (
-                    <div
-                      key={sp.name}
-                      onClick={() => handleCopy(sp.val, `spacing.${sp.name}`)}
-                      className="flex items-center justify-between p-2 rounded-xl bg-muted/20 border border-border/60 hover:bg-muted/40 transition-colors cursor-pointer text-xs"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-primary w-8">{sp.name}</span>
-                        <span className="font-mono text-[11px] text-muted-foreground w-12">{sp.val}</span>
-                      </div>
-                      <div className="flex-1 max-w-[160px] flex items-center justify-start px-2">
-                        <div
-                          className="h-3 bg-primary/60 rounded-xs"
-                          style={{ width: `${Math.min(140, sp.px * 3.5)}px` }}
-                        />
-                      </div>
-                      <span className="text-[10px] font-mono text-muted-foreground">
-                        {sp.px}px
-                      </span>
-                    </div>
-                  ))}
+              {/* Preserved id="tokenSwatchesGrid" */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-primary" />
+                    Brand &amp; Status Colors
+                  </h4>
+                  <span className="text-[11px] text-muted-foreground">Click any swatch to copy</span>
                 </div>
-              </div>
-
-              {/* Border Radius Tokens */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <Box className="h-3.5 w-3.5 text-indigo-400" />
-                  Border Radius Curvature (`tokens.border.radius`)
-                </h4>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {radiusTokens.map((rad) => (
+                <div
+                  id="tokenSwatchesGrid"
+                  className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3"
+                >
+                  {allColorSwatches.map((t, idx) => (
                     <div
-                      key={rad.name}
-                      onClick={() => handleCopy(rad.val, `border.radius.${rad.name}`)}
-                      className="p-3 rounded-xl bg-muted/20 border border-border/60 hover:bg-muted/40 transition-colors cursor-pointer flex flex-col items-center text-center gap-2"
+                      key={idx}
+                      onClick={() => handleCopy(t.hex, t.path)}
+                      className="group space-y-2 p-2.5 rounded-xl border border-border/70 bg-muted/20 hover:bg-muted/50 hover:border-primary/50 transition-all flex flex-col items-center text-center cursor-pointer relative"
+                      title={t.desc || t.label}
                     >
                       <div
-                        className={cn(
-                          "h-12 w-12 border-2 border-primary bg-primary/10 flex items-center justify-center text-[10px] font-mono font-bold text-primary",
-                          rad.cls
+                        className="h-10 w-full rounded-lg md-elevation-1 border border-white/10 group-hover:scale-105 transition-transform"
+                        style={{ backgroundColor: t.hex }}
+                      />
+                      <div className="flex items-center gap-1">
+                        <span className="font-mono text-[10px] font-bold text-foreground">
+                          {t.hex}
+                        </span>
+                        {copiedToken === t.path ? (
+                          <Check className="h-3 w-3 text-emerald-500" />
+                        ) : (
+                          <Copy className="h-2.5 w-2.5 opacity-0 group-hover:opacity-60 transition-opacity" />
                         )}
-                      >
-                        {rad.val}
                       </div>
-                      <span className="font-mono text-xs font-bold text-foreground">
-                        {rad.name}
+                      <span className="text-[10px] text-muted-foreground line-clamp-1">
+                        {t.label}
                       </span>
                     </div>
                   ))}
                 </div>
               </div>
-            </div>
 
-            {/* Typography Tokens */}
-            <div className="pt-4 border-t border-border/60 space-y-3">
-              <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                <FileText className="h-3.5 w-3.5 text-emerald-400" />
-                Typography System (`tokens.typography.font_family`)
-              </h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="p-3.5 rounded-xl bg-muted/20 border border-border/60 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-foreground">Sans-Serif Font Family</span>
-                    <Badge variant="outline" className="text-[10px] font-mono">sans</Badge>
-                  </div>
-                  <p className="font-mono text-[11px] text-primary">{typographyTokens.sans?.$value}</p>
-                  <p className="text-xs text-muted-foreground pt-1" style={{ fontFamily: typographyTokens.sans?.$value }}>
-                    The quick brown fox jumps over the lazy dog. 0123456789
-                  </p>
-                </div>
-                <div className="p-3.5 rounded-xl bg-muted/20 border border-border/60 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-foreground">Monospace Code Family</span>
-                    <Badge variant="outline" className="text-[10px] font-mono">mono</Badge>
-                  </div>
-                  <p className="font-mono text-[11px] text-primary">{typographyTokens.mono?.$value}</p>
-                  <p className="text-xs text-muted-foreground font-mono pt-1" style={{ fontFamily: typographyTokens.mono?.$value }}>
-                    {`const livingPortal = resolveLivingSpec("${activeDS?.id || "DS-BASE"}");`}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Recursive W3C Token Tree Explorer */}
-            {flattenedTokenTree.length > 0 && (
-              <div className="pt-4 border-t border-border/60 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                    <Code2 className="h-3.5 w-3.5 text-primary" />
-                    Recursive W3C Token Tree Explorer ({flattenedTokenTree.length} tokens)
-                  </h4>
-                  <span className="text-[11px] text-muted-foreground font-mono">
-                    Click any token row to copy value
-                  </span>
-                </div>
-                <div className="max-h-72 overflow-y-auto rounded-xl border border-border/70 divide-y divide-border/50 bg-muted/10">
-                  {flattenedTokenTree.map((tk) => (
+              {/* Extended Surface Colors */}
+              <div className="pt-4 border-t border-border/60">
+                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider mb-3">
+                  Surfaces &amp; Themes
+                </h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                  {surfaceColors.map((s, idx) => (
                     <div
-                      key={tk.path}
-                      onClick={() => handleCopy(tk.value, tk.path)}
-                      className="px-3 py-2 flex items-center justify-between gap-3 text-xs hover:bg-muted/40 transition-colors cursor-pointer"
+                      key={idx}
+                      onClick={() => handleCopy(s.hex, s.path)}
+                      className="p-3 rounded-xl border border-border/70 bg-card hover:border-primary/40 transition-all flex flex-col items-center text-center cursor-pointer group"
+                      title={s.desc || s.label}
                     >
-                      <div className="flex items-center gap-2 min-w-0">
-                        {tk.value.startsWith("#") && (
-                          <span
-                            className="h-3.5 w-3.5 rounded border border-border shrink-0"
-                            style={{ backgroundColor: tk.value }}
-                          />
-                        )}
-                        <span className="font-mono font-semibold text-primary truncate">
-                          {tk.path}
-                        </span>
-                        {tk.type && (
-                          <Badge variant="outline" className="text-[9px] font-mono">
-                            {tk.type}
-                          </Badge>
-                        )}
-                        {tk.description && (
-                          <span className="text-[11px] text-muted-foreground truncate hidden md:inline">
-                            — {tk.description}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0 font-mono text-[11px] text-foreground">
-                        <span className="truncate max-w-[220px]">{tk.value}</span>
-                        {copiedToken === tk.path ? (
-                          <Check className="h-3 w-3 text-emerald-500" />
-                        ) : (
-                          <Copy className="h-3 w-3 text-muted-foreground" />
-                        )}
-                      </div>
+                      <div
+                        className="h-8 w-full rounded-md border border-border/60 mb-2"
+                        style={{ backgroundColor: s.hex }}
+                      />
+                      <span className="font-mono text-[10px] font-semibold text-foreground">
+                        {s.hex}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">
+                        {s.label}
+                      </span>
                     </div>
                   ))}
                 </div>
               </div>
-            )}
-          </Card>
+
+              {/* Spacing & Corner Radius */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-border/60">
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <Sliders className="h-3.5 w-3.5 text-primary" />
+                    Spacing Scale
+                  </h4>
+                  <div className="space-y-2">
+                    {spacingTokens.map((sp) => (
+                      <div
+                        key={sp.name}
+                        onClick={() => handleCopy(sp.val, `spacing.${sp.name}`)}
+                        className="flex items-center justify-between p-2 rounded-xl bg-muted/20 border border-border/60 hover:bg-muted/40 transition-colors cursor-pointer text-xs"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-foreground w-24">{sp.name}</span>
+                          <span className="font-mono text-[11px] text-muted-foreground w-12">{sp.val}</span>
+                        </div>
+                        <div className="flex-1 max-w-[160px] flex items-center justify-start px-2">
+                          <div
+                            className="h-3 bg-primary/60 rounded-xs"
+                            style={{ width: `${Math.min(140, sp.px * 3.5)}px` }}
+                          />
+                        </div>
+                        <span className="text-[10px] font-mono text-muted-foreground">
+                          {sp.px}px
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <Box className="h-3.5 w-3.5 text-indigo-400" />
+                    Corner Radius
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    {radiusTokens.map((rad) => (
+                      <div
+                        key={rad.name}
+                        onClick={() => handleCopy(rad.val, `border.radius.${rad.name}`)}
+                        className="p-3 rounded-xl bg-muted/20 border border-border/60 hover:bg-muted/40 transition-colors cursor-pointer flex flex-col items-center text-center gap-2"
+                      >
+                        <div
+                          className={cn(
+                            "h-12 w-12 border-2 border-primary bg-primary/10 flex items-center justify-center text-[10px] font-mono font-bold text-primary",
+                            rad.cls
+                          )}
+                        >
+                          {rad.val}
+                        </div>
+                        <span className="text-xs font-semibold text-foreground">
+                          {rad.name}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Typography */}
+              <div className="pt-4 border-t border-border/60 space-y-3">
+                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                  <FileText className="h-3.5 w-3.5 text-emerald-400" />
+                  Typography
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="p-3.5 rounded-xl bg-muted/20 border border-border/60 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-foreground">Sans-Serif Font Family</span>
+                      <Badge variant="outline" className="text-[10px]">Body &amp; UI</Badge>
+                    </div>
+                    <p className="text-[11px] text-primary">{typographyTokens.sans?.$value}</p>
+                    <p className="text-xs text-muted-foreground pt-1" style={{ fontFamily: typographyTokens.sans?.$value }}>
+                      The quick brown fox jumps over the lazy dog. 0123456789
+                    </p>
+                  </div>
+                  <div className="p-3.5 rounded-xl bg-muted/20 border border-border/60 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-foreground">Monospace Font Family</span>
+                      <Badge variant="outline" className="text-[10px]">Code</Badge>
+                    </div>
+                    <p className="text-[11px] text-primary">{typographyTokens.mono?.$value}</p>
+                    <p className="text-xs text-muted-foreground font-mono pt-1" style={{ fontFamily: typographyTokens.mono?.$value }}>
+                      0123456789 — ABCDEF abcdef &#123;&#125; [] =&gt;
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* All Design Tokens Explorer */}
+              {flattenedTokenTree.length > 0 && (
+                <div className="pt-4 border-t border-border/60 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      <Code2 className="h-3.5 w-3.5 text-primary" />
+                      All Design Tokens ({flattenedTokenTree.length})
+                    </h4>
+                    <span className="text-[11px] text-muted-foreground">
+                      Click any row to copy value
+                    </span>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto rounded-xl border border-border/70 divide-y divide-border/50 bg-muted/10">
+                    {flattenedTokenTree.map((tk) => (
+                      <div
+                        key={tk.path}
+                        onClick={() => handleCopy(tk.value, tk.path)}
+                        className="px-3 py-2 flex items-center justify-between gap-3 text-xs hover:bg-muted/40 transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          {tk.value.startsWith("#") && (
+                            <span
+                              className="h-3.5 w-3.5 rounded border border-border shrink-0"
+                              style={{ backgroundColor: tk.value }}
+                            />
+                          )}
+                          <span className="font-semibold text-foreground truncate">
+                            {humanizeTokenPath(tk.path)}
+                          </span>
+                          {tk.type && (
+                            <Badge variant="outline" className="text-[10px]">
+                              {humanizeToken(tk.type)}
+                            </Badge>
+                          )}
+                          {tk.description && (
+                            <span className="text-[11px] text-muted-foreground truncate hidden md:inline">
+                              — {tk.description}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0 font-mono text-[11px] text-foreground">
+                          <span className="truncate max-w-[220px]">{tk.value}</span>
+                          {copiedToken === tk.path ? (
+                            <Check className="h-3 w-3 text-emerald-500" />
+                          ) : (
+                            <Copy className="h-3 w-3 text-muted-foreground" />
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </Card>
           )}
         </div>
       )}
 
-      {/* SECTION 2: Client Applications & Experience Surfaces */}
+      {/* SECTION 2: Client Applications */}
       {(activeTab === "all" || activeTab === "clients") && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-sm font-bold text-foreground tracking-tight flex items-center gap-2">
               <Laptop className="h-4 w-4 text-indigo-400" />
-              Client Applications & Experience Surfaces
+              Client Applications
             </h3>
             <div className="flex items-center gap-2">
               <label
@@ -682,89 +672,78 @@ export function DesignView({
               >
                 {clients.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.id} ({c.title || c.id})
+                    {formatDisplayTitle(c.title, c.id)}
                   </option>
                 ))}
               </select>
             </div>
           </div>
 
-          {/* Active Client Details Card */}
           {activeClient && (
             <Card id="activeClientDetails" className="p-5 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2.5">
-                  <span className="font-mono text-sm font-bold text-primary">
-                    {activeClient.id}
-                  </span>
-                  <Badge variant="outline" className="capitalize text-xs font-medium">
-                    {activeClient.platform || activeClient.client_type || "web"}
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h4 className="text-sm font-bold text-foreground">
+                    {formatDisplayTitle(activeClient.title, activeClient.id)}
+                  </h4>
+                  <Badge variant="outline" className="text-xs font-medium">
+                    {humanizeToken(activeClient.platform || activeClient.client_type || "Web")}
                   </Badge>
-                  {activeClient.container && (
-                    <Badge variant="secondary" className="font-mono text-[11px]">
-                      {activeClient.container}
+                  {activeClient.container && activeClient.container !== "N/A" && (
+                    <Badge variant="secondary" className="text-[11px]">
+                      {resolveEntityTitle(activeClient.container, labelIndex)}
                     </Badge>
                   )}
                 </div>
                 <div className="flex items-center gap-2 text-xs">
-                  <span className="text-muted-foreground">Bound Design System:</span>
-                  <span className="font-mono font-bold text-primary">
-                    {activeClient.design_system || activeDS?.id || "—"}
+                  <span className="text-muted-foreground">Design System:</span>
+                  <span className="font-semibold text-primary">
+                    {activeClient.design_system
+                      ? resolveEntityTitle(activeClient.design_system, labelIndex)
+                      : activeDSTitle || "—"}
                   </span>
                 </div>
               </div>
 
-              <div>
-                <h4 className="text-sm font-bold text-foreground">
-                  {activeClient.title || activeClient.id}
-                </h4>
-                <p className="text-xs text-muted-foreground leading-relaxed mt-1">
-                  {activeClient.description || "Responsive living client surface implementation."}
-                </p>
-              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                {activeClient.description || "Responsive client application surface."}
+              </p>
 
-              {/* Supported Screens & Bound Capabilities */}
+              {/* Supported Screens & Capabilities */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-border/60 text-xs">
                 <div className="space-y-1.5">
                   <span className="text-[11px] font-bold text-foreground uppercase tracking-wider block">
                     Supported Screens ({activeClient.screens?.length || screens.length})
                   </span>
                   <div className="flex flex-wrap gap-1.5">
-                    {(activeClient.screens || screens.map((s) => s.id)).map((scr, idx) => {
-                      const scrName = typeof scr === "string" ? scr.split("/").pop()?.replace(".adoc", "").toUpperCase() : scr;
-                      return (
-                        <span
-                          key={idx}
-                          className="px-2 py-0.5 rounded-lg bg-muted/40 border border-border/60 font-mono text-[10px] text-foreground"
-                        >
-                          {scrName}
-                        </span>
-                      );
-                    })}
+                    {(activeClient.screens || screens.map((s) => s.id)).map((scr, idx) => (
+                      <span
+                        key={idx}
+                        className="px-2.5 py-0.5 rounded-lg bg-muted/40 border border-border/60 text-[11px] text-foreground"
+                      >
+                        {resolveEntityTitle(String(scr), labelIndex)}
+                      </span>
+                    ))}
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
                   <span className="text-[11px] font-bold text-foreground uppercase tracking-wider block">
-                    Bound Capabilities ({activeClient.capabilities?.length || 0})
+                    Capabilities ({activeClient.capabilities?.length || 0})
                   </span>
                   <div className="flex flex-wrap gap-1.5">
-                    {(activeClient.capabilities || []).map((cap, idx) => {
-                      const capName = cap.split("/").pop()?.replace(".adoc", "");
-                      return (
-                        <span
-                          key={idx}
-                          className="px-2 py-0.5 rounded-lg bg-primary/10 border border-primary/20 font-mono text-[10px] text-primary"
-                        >
-                          {capName}
-                        </span>
-                      );
-                    })}
+                    {(activeClient.capabilities || []).map((cap, idx) => (
+                      <span
+                        key={idx}
+                        className="px-2.5 py-0.5 rounded-lg bg-primary/10 border border-primary/20 text-[11px] text-primary font-medium"
+                      >
+                        {resolveEntityTitle(cap, labelIndex)}
+                      </span>
+                    ))}
                   </div>
                 </div>
               </div>
 
-              {/* Client Spec Inspector Trigger */}
               {hasSpecBodyOrChunk(activeClient.id, activeClient.body) && (
                 <div className="pt-2 flex justify-end">
                   <button
@@ -772,15 +751,15 @@ export function DesignView({
                     onClick={() =>
                       setInspectingItem({
                         id: activeClient.id,
-                        title: activeClient.title || activeClient.id,
-                        subtitle: `${activeClient.id} • ${activeClient.platform || "web"}`,
+                        title: formatDisplayTitle(activeClient.title, activeClient.id),
+                        subtitle: humanizeToken(activeClient.platform || "Web"),
                         body: activeClient.body,
                       })
                     }
                     className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline cursor-pointer font-medium"
                   >
                     <FileText className="h-3.5 w-3.5" />
-                    <span>View Living Client Spec Body</span>
+                    <span>Read Client Details</span>
                   </button>
                 </div>
               )}
@@ -789,16 +768,17 @@ export function DesignView({
         </div>
       )}
 
-      {/* SECTION 3: Living UI Components Catalog */}
+      {/* SECTION 3: UI Components */}
       {(activeTab === "all" || activeTab === "components") && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-foreground tracking-tight flex items-center gap-2">
               <Box className="h-4 w-4 text-primary" />
-              Living UI Components Catalog (`UIC-*`)
+              UI Components
             </h3>
             <span className="text-xs text-muted-foreground">
-              {ui_components.length} components registered{activeDS?.id ? ` in \`${activeDS.id}\`` : ""}
+              {ui_components.length} {ui_components.length === 1 ? "component" : "components"}
+              {activeDSTitle ? ` in ${activeDSTitle}` : ""}
             </span>
           </div>
 
@@ -811,36 +791,30 @@ export function DesignView({
                 normalizedVariants[0]?.name ||
                 "default";
               const activeVariantObj = normalizedVariants.find((v) => v.name === currentVariant);
+              const compTitle = formatDisplayTitle(comp.title, comp.id);
 
               return (
                 <Card key={comp.id} className="p-4 space-y-3 flex flex-col justify-between">
                   <div className="space-y-2.5">
-                    {/* Header Badges */}
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="font-mono text-xs font-bold text-primary">
-                        {comp.id}
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <Badge variant="outline" className="text-[10px] uppercase font-mono">
-                          {comp.category || comp.component_type || "component"}
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-xs font-bold text-foreground">
+                        {compTitle}
+                      </h4>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Badge variant="outline" className="text-[10px]">
+                          {humanizeToken(comp.category || comp.component_type || "Component")}
                         </Badge>
                         {comp.invariants && comp.invariants.length > 0 && (
-                          <Badge variant="secondary" className="text-[10px] font-mono">
-                            {comp.invariants.length} INV
+                          <Badge variant="secondary" className="text-[10px]">
+                            {comp.invariants.length} {comp.invariants.length === 1 ? "rule" : "rules"}
                           </Badge>
                         )}
                       </div>
                     </div>
 
-                    {/* Title & Description */}
-                    <div>
-                      <h4 className="text-xs font-bold text-foreground">
-                        {comp.title || comp.id}
-                      </h4>
-                      <p className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">
-                        {comp.description || activeVariantObj?.description || "Living reusable UI component spec."}
-                      </p>
-                    </div>
+                    <p className="text-[11px] text-muted-foreground line-clamp-2">
+                      {comp.description || activeVariantObj?.description || "Reusable UI component."}
+                    </p>
 
                     {/* Interactive Variants Selector */}
                     {normalizedVariants.length > 0 && (
@@ -863,13 +837,13 @@ export function DesignView({
                                   }))
                                 }
                                 className={cn(
-                                  "px-2 py-0.5 rounded-lg text-[10px] font-mono transition-colors cursor-pointer",
+                                  "px-2 py-0.5 rounded-lg text-[10px] transition-colors cursor-pointer",
                                   isSelected
                                     ? "bg-primary text-primary-foreground font-semibold"
                                     : "bg-muted/40 text-muted-foreground hover:text-foreground"
                                 )}
                               >
-                                {v.name}
+                                {humanizeToken(v.name)}
                               </button>
                             );
                           })}
@@ -886,17 +860,19 @@ export function DesignView({
                     {normalizedStates.length > 0 && (
                       <div className="space-y-1">
                         <span className="text-[10px] font-bold text-foreground uppercase tracking-wider block">
-                          Declared States
+                          States
                         </span>
                         <div className="flex flex-wrap gap-1">
                           {normalizedStates.map((st, idx) => (
                             <div
                               key={`${st.name}-${idx}`}
-                              className="px-1.5 py-0.5 rounded-md bg-muted/30 border border-border/60 text-[9px] text-muted-foreground max-w-full"
+                              className="px-2 py-0.5 rounded-md bg-muted/30 border border-border/60 text-[10px] text-muted-foreground max-w-full"
                             >
-                              <span className="font-mono text-foreground font-semibold">:{st.name}</span>
+                              <span className="text-foreground font-semibold">
+                                {humanizeToken(st.name)}
+                              </span>
                               {st.description && (
-                                <span className="font-sans ml-1 text-muted-foreground">
+                                <span className="ml-1 text-muted-foreground">
                                   — {st.description}
                                 </span>
                               )}
@@ -907,18 +883,17 @@ export function DesignView({
                     )}
                   </div>
 
-                  {/* Invariant Traceability Footer */}
+                  {/* Verification Footer */}
                   <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[10px]">
                     {typeof comp.invariants?.[0]?.test_binding === "string" && comp.invariants[0].test_binding ? (
-                      <span
-                        className="font-mono text-emerald-500 truncate max-w-[190px]"
-                        title={comp.invariants[0].test_binding}
-                      >
-                        ✓ {comp.invariants[0].test_binding.split("::").pop()}
+                      <span className="text-emerald-500 font-medium">
+                        Test Verified
                       </span>
                     ) : (
-                      <span className="text-muted-foreground font-mono">
-                        {comp.design_system || activeDS?.id || "—"}
+                      <span className="text-muted-foreground">
+                        {comp.design_system
+                          ? resolveEntityTitle(comp.design_system, labelIndex)
+                          : activeDSTitle || "—"}
                       </span>
                     )}
 
@@ -928,14 +903,14 @@ export function DesignView({
                         onClick={() =>
                           setInspectingItem({
                             id: comp.id,
-                            title: comp.title || comp.id,
-                            subtitle: `${comp.id} • ${comp.category || "UI Component"}`,
+                            title: compTitle,
+                            subtitle: humanizeToken(comp.category || "UI Component"),
                             body: comp.body,
                           })
                         }
                         className="text-primary hover:underline font-medium cursor-pointer"
                       >
-                        Spec Doc →
+                        Read Details →
                       </button>
                     )}
                   </div>
@@ -946,16 +921,16 @@ export function DesignView({
         </div>
       )}
 
-      {/* SECTION 4: Living Screens & State Machines */}
+      {/* SECTION 4: Screens & States */}
       {(activeTab === "all" || activeTab === "screens") && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-sm font-bold text-foreground tracking-tight flex items-center gap-2">
               <Sliders className="h-4 w-4 text-emerald-400" />
-              Living Screen Architectures & State Machines (`SCR-*`)
+              Screens &amp; States
             </h3>
             <span className="text-xs text-muted-foreground">
-              {screens.length} living screens declared
+              {screens.length} {screens.length === 1 ? "screen" : "screens"}
             </span>
           </div>
 
@@ -970,14 +945,19 @@ export function DesignView({
                   aria-pressed={isSelected}
                   onClick={() => setSelectedScreenId(scr.id)}
                   className={cn(
-                    "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-mono transition-all cursor-pointer whitespace-nowrap",
+                    "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs transition-all cursor-pointer whitespace-nowrap",
                     isSelected
                       ? "bg-primary text-primary-foreground md-elevation-1 font-bold"
                       : "bg-card border border-border/70 text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <span>{scr.id}</span>
-                  <span className={cn("text-[10px] px-1.5 py-0.2 rounded-md font-sans", isSelected ? "bg-white/20 text-white" : "bg-muted text-muted-foreground")}>
+                  <span>{formatDisplayTitle(scr.title, scr.id)}</span>
+                  <span
+                    className={cn(
+                      "text-[10px] px-1.5 py-0.2 rounded-md",
+                      isSelected ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
+                    )}
+                  >
                     {scr.route || "/"}
                   </span>
                 </button>
@@ -985,22 +965,19 @@ export function DesignView({
             })}
           </div>
 
-          {/* Active Screen Details & Mermaid State Machine */}
+          {/* Active Screen Details & State Flow */}
           {activeScreen && (
             <Card className="p-5 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-sm font-bold text-primary">
-                      {activeScreen.id}
-                    </span>
-                    <Badge variant="outline" className="font-mono text-xs text-emerald-400 border-emerald-400/30">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-sm font-bold text-foreground">
+                      {formatDisplayTitle(activeScreen.title, activeScreen.id)}
+                    </h4>
+                    <Badge variant="outline" className="text-xs text-emerald-400 border-emerald-400/30">
                       Route: {activeScreen.route || "/"}
                     </Badge>
                   </div>
-                  <h4 className="text-sm font-bold text-foreground">
-                    {activeScreen.title || activeScreen.id}
-                  </h4>
                 </div>
                 <div className="flex items-center gap-2">
                   {hasSpecBodyOrChunk(activeScreen.id, activeScreen.body) && (
@@ -1009,8 +986,8 @@ export function DesignView({
                       onClick={() =>
                         setInspectingItem({
                           id: activeScreen.id,
-                          title: activeScreen.title || activeScreen.id,
-                          subtitle: `${activeScreen.id} • Route: ${activeScreen.route}`,
+                          title: formatDisplayTitle(activeScreen.title, activeScreen.id),
+                          subtitle: `Route: ${activeScreen.route || "/"}`,
                           body: activeScreen.body,
                         })
                       }
@@ -1023,11 +1000,11 @@ export function DesignView({
                 </div>
               </div>
 
-              {/* Layout Slots Table */}
+              {/* Layout Regions & Components */}
               {activeScreen.slots && Object.keys(activeScreen.slots).length > 0 && (
                 <div className="space-y-2 pt-2 border-t border-border/60">
                   <span className="text-[11px] font-bold text-foreground uppercase tracking-wider block">
-                    Layout Slots & Bound UI Components
+                    Layout Regions &amp; Components
                   </span>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
                     {Object.entries(activeScreen.slots).map(([slot, compId]) => (
@@ -1035,11 +1012,11 @@ export function DesignView({
                         key={slot}
                         className="p-2 rounded-lg bg-muted/20 border border-border/60 text-xs space-y-0.5"
                       >
-                        <span className="text-[10px] text-muted-foreground font-mono block truncate">
-                          {slot}
+                        <span className="text-[10px] text-muted-foreground block truncate">
+                          {humanizeToken(slot)}
                         </span>
-                        <span className="font-mono text-[11px] font-bold text-primary block truncate">
-                          {formatSlotValue(compId)}
+                        <span className="text-[11px] font-semibold text-primary block truncate">
+                          {formatSlotValue(compId, labelIndex)}
                         </span>
                       </div>
                     ))}
@@ -1047,11 +1024,11 @@ export function DesignView({
                 </div>
               )}
 
-              {/* Declared Screen States */}
+              {/* Screen States */}
               {Array.isArray(activeScreen.states) && activeScreen.states.length > 0 && (
                 <div className="space-y-2 pt-2 border-t border-border/60">
                   <span className="text-[11px] font-bold text-foreground uppercase tracking-wider block">
-                    Declared Screen States ({activeScreen.states.length})
+                    Screen States ({activeScreen.states.length})
                   </span>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                     {activeScreen.states.map((st: any, idx) => {
@@ -1060,10 +1037,10 @@ export function DesignView({
                       return (
                         <div
                           key={idx}
-                          className="p-2 rounded-lg bg-muted/20 border border-border/60 text-xs space-y-0.5"
+                          className="p-2.5 rounded-lg bg-muted/20 border border-border/60 text-xs space-y-0.5"
                         >
-                          <span className="font-mono font-semibold text-foreground">
-                            :{name}
+                          <span className="font-semibold text-foreground">
+                            {humanizeToken(name)}
                           </span>
                           {desc && (
                             <p className="text-[11px] text-muted-foreground line-clamp-2">
@@ -1077,16 +1054,16 @@ export function DesignView({
                 </div>
               )}
 
-              {/* Mermaid State Machine Diagram */}
+              {/* State Flow Diagram */}
               {activeScreen.mermaid && (
                 <div className="space-y-2 pt-2 border-t border-border/60">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                       <Workflow className="h-3.5 w-3.5 text-primary" />
-                      Visual State Transition Machine (`mermaid: stateDiagram-v2`)
+                      State Flow Diagram
                     </span>
-                    <span className="text-[10px] text-muted-foreground font-mono">
-                      Auto-zoom and pan enabled
+                    <span className="text-[10px] text-muted-foreground">
+                      Drag to pan • Scroll to zoom
                     </span>
                   </div>
                   <MermaidDiagram
@@ -1103,13 +1080,13 @@ export function DesignView({
         </div>
       )}
 
-      {/* SECTION 5: Interaction Flows & Multi-Client Journeys */}
+      {/* SECTION 5: User Flows & Journeys */}
       {(activeTab === "all" || activeTab === "flows") && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-sm font-bold text-foreground tracking-tight flex items-center gap-2">
               <Workflow className="h-4 w-4 text-purple-400" />
-              Interaction Flows & Omnichannel User Journeys (`FLOW-*`)
+              User Flows &amp; Journeys
             </h3>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1 bg-muted/40 p-0.5 rounded-lg border border-border/60 text-xs">
@@ -1123,7 +1100,7 @@ export function DesignView({
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  2-Columns
+                  2 Columns
                 </button>
                 <button
                   type="button"
@@ -1139,48 +1116,44 @@ export function DesignView({
                 </button>
               </div>
               <span className="text-xs text-muted-foreground hidden sm:inline">
-                {flows.length} declared user journeys
+                {flows.length} user {flows.length === 1 ? "journey" : "journeys"}
               </span>
             </div>
           </div>
 
           <div className={cn("grid gap-4", flowsLayout === "split" ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1")}>
-            {/* Client Specific Flows Panel */}
+            {/* Client Flows Panel */}
             <div id="clientFlowsPanel" className="space-y-3">
               <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                 <Workflow className="h-4 w-4 text-primary" />
-                Client Specific Flows ({clientFlows.length})
+                Client Flows ({clientFlows.length})
               </h4>
               <div className="space-y-3">
                 {clientFlows.length === 0 ? (
                   <div className="p-4 rounded-xl border border-dashed border-border/80 text-xs text-muted-foreground text-center">
-                    No specific flows declared for this client.
+                    No flows declared for this client.
                   </div>
                 ) : (
                   clientFlows.map((flow) => (
                     <Card key={flow.id} className="p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono text-xs font-bold text-primary">
-                          {flow.id}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground font-mono">
-                          Trigger: {flow.trigger || flow.flow_type || "User Initiated"}
-                        </span>
-                      </div>
-                      <div>
-                        <h5 className="text-xs font-semibold text-foreground">
-                          {flow.title || flow.id}
+                      <div className="flex items-center justify-between gap-2">
+                        <h5 className="text-xs font-bold text-foreground">
+                          {formatDisplayTitle(flow.title, flow.id)}
                         </h5>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
-                          {flow.description || "Living client interaction flow."}
-                        </p>
+                        <Badge variant="outline" className="text-[10px] shrink-0">
+                          {flow.trigger ? humanizeToken(flow.trigger) : formatFlowType(flow.flow_type)}
+                        </Badge>
                       </div>
+                      {flow.description && (
+                        <p className="text-[11px] text-muted-foreground">
+                          {flow.description}
+                        </p>
+                      )}
 
-                      {/* Steps Timeline */}
                       {flow.steps && flow.steps.length > 0 && (
                         <div className="space-y-1.5 pt-2 border-t border-border/60">
                           <span className="text-[10px] font-bold text-foreground uppercase tracking-wider block">
-                            Journey Sequence ({flow.steps.length} steps)
+                            Journey Steps ({flow.steps.length})
                           </span>
                           <div className="space-y-1.5">
                             {flow.steps.map((st) => (
@@ -1212,11 +1185,10 @@ export function DesignView({
                         </div>
                       )}
 
-                      {/* Mermaid Flow Diagram */}
                       {flow.mermaid && (
                         <div className="pt-2 border-t border-border/60 space-y-1">
                           <span className="text-[10px] font-bold text-foreground uppercase tracking-wider block">
-                            Interactive Flowchart
+                            Flow Diagram
                           </span>
                           <MermaidDiagram
                             id={`flow-${flow.id}`}
@@ -1233,97 +1205,95 @@ export function DesignView({
               </div>
             </div>
 
-            {/* Omnichannel Flows Panel */}
+            {/* Cross-Client Flows Panel */}
             <div id="omnichannelFlowsPanel" className="space-y-3">
               <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                 <Workflow className="h-4 w-4 text-purple-400" />
-                Omnichannel & Lifecycle Flows ({omnichannelFlows.length})
+                Cross-Client Flows ({omnichannelFlows.length})
               </h4>
               <div className="space-y-3">
                 {omnichannelFlows.length === 0 ? (
                   <div className="p-4 rounded-xl border border-dashed border-border/80 text-xs text-muted-foreground text-center">
-                    No omnichannel flows declared.
+                    No cross-client flows declared.
                   </div>
                 ) : (
                   omnichannelFlows.map((flow) => (
-                  <Card key={flow.id} className="p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs font-bold text-purple-400">
-                        {flow.id}
-                      </span>
-                      <Badge variant="outline" className="text-[10px] font-mono capitalize">
-                        {flow.client || flow.flow_type || "omnichannel"}
-                      </Badge>
-                    </div>
-                    <div>
-                      <h5 className="text-xs font-semibold text-foreground">
-                        {flow.title || flow.id}
-                      </h5>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
-                        {flow.description || "Omnichannel developer interaction flow."}
-                      </p>
-                    </div>
+                    <Card key={flow.id} className="p-4 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <h5 className="text-xs font-bold text-foreground">
+                          {formatDisplayTitle(flow.title, flow.id)}
+                        </h5>
+                        <Badge variant="outline" className="text-[10px] shrink-0">
+                          {flow.client
+                            ? resolveEntityTitle(flow.client, labelIndex)
+                            : formatFlowType(flow.flow_type || "cross_client")}
+                        </Badge>
+                      </div>
+                      {flow.description && (
+                        <p className="text-[11px] text-muted-foreground">
+                          {flow.description}
+                        </p>
+                      )}
 
-                    {/* Steps Timeline */}
-                    {flow.steps && flow.steps.length > 0 && (
-                      <div className="space-y-1.5 pt-2 border-t border-border/60">
-                        <span className="text-[10px] font-bold text-foreground uppercase tracking-wider block">
-                          Sequence Steps
-                        </span>
-                        <div className="space-y-1.5">
-                          {flow.steps.map((st) => (
-                            <div
-                              key={st.step}
-                              className="flex items-start gap-2 text-xs p-2 rounded-lg bg-muted/20 border border-border/50"
-                            >
-                              <span className="h-4 w-4 rounded-full bg-purple-500/20 text-purple-400 font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5">
-                                {st.step}
-                              </span>
-                              <div className="space-y-0.5">
-                                <span className="font-semibold text-foreground text-[11px]">
-                                  {st.title || st.action}
+                      {flow.steps && flow.steps.length > 0 && (
+                        <div className="space-y-1.5 pt-2 border-t border-border/60">
+                          <span className="text-[10px] font-bold text-foreground uppercase tracking-wider block">
+                            Sequence Steps
+                          </span>
+                          <div className="space-y-1.5">
+                            {flow.steps.map((st) => (
+                              <div
+                                key={st.step}
+                                className="flex items-start gap-2 text-xs p-2 rounded-lg bg-muted/20 border border-border/50"
+                              >
+                                <span className="h-4 w-4 rounded-full bg-purple-500/20 text-purple-400 font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5">
+                                  {st.step}
                                 </span>
-                                {st.action && st.title && (
-                                  <p className="text-[10px] text-muted-foreground font-mono">
-                                    {st.action}
-                                  </p>
-                                )}
-                                {st.outcome && (
-                                  <p className="text-[10px] text-emerald-400">
-                                    ↳ {st.outcome}
-                                  </p>
-                                )}
+                                <div className="space-y-0.5">
+                                  <span className="font-semibold text-foreground text-[11px]">
+                                    {st.title || st.action}
+                                  </span>
+                                  {st.action && st.title && (
+                                    <p className="text-[10px] text-muted-foreground">
+                                      {st.action}
+                                    </p>
+                                  )}
+                                  {st.outcome && (
+                                    <p className="text-[10px] text-emerald-400">
+                                      ↳ {st.outcome}
+                                    </p>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
 
-                    {/* Mermaid Sequence/Flow Diagram */}
-                    {flow.mermaid && (
-                      <div className="pt-2 border-t border-border/60 space-y-1">
-                        <span className="text-[10px] font-bold text-foreground uppercase tracking-wider block">
-                          Visual Sequence Diagram
-                        </span>
-                        <MermaidDiagram
-                          id={`omni-flow-${flow.id}`}
-                          code={flow.mermaid}
-                          darkMode={darkMode}
-                          minHeight="360px"
-                          expandedHeight="600px"
-                        />
-                      </div>
-                    )}
-                  </Card>
-                )))}
+                      {flow.mermaid && (
+                        <div className="pt-2 border-t border-border/60 space-y-1">
+                          <span className="text-[10px] font-bold text-foreground uppercase tracking-wider block">
+                            Sequence Diagram
+                          </span>
+                          <MermaidDiagram
+                            id={`omni-flow-${flow.id}`}
+                            code={flow.mermaid}
+                            darkMode={darkMode}
+                            minHeight="360px"
+                            expandedHeight="600px"
+                          />
+                        </div>
+                      )}
+                    </Card>
+                  ))
+                )}
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Living Spec Inspector Drawer Sheet */}
+      {/* Design Spec Inspector Drawer Sheet */}
       <Sheet
         open={Boolean(inspectingItem)}
         onOpenChange={(open) => {

@@ -89,7 +89,7 @@ export function Sheet({
               </h2>
             )}
             {subtitle && (
-              <p className="text-xs text-muted-foreground font-mono truncate">
+              <p className="text-xs text-muted-foreground truncate">
                 {subtitle}
               </p>
             )}

@@ -15,6 +15,7 @@ import {
   Palette,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatCommandCategory } from "@/lib/presentation";
 
 export interface CommandItem {
   id: string;
@@ -163,7 +164,7 @@ export function CommandDialog({
               setQuery(e.target.value);
               setSelectedIndex(0);
             }}
-            placeholder="Search specifications, C4 components, invariants (CMD+K)..."
+            placeholder="Search domains, architecture, design, changes..."
             className="w-full bg-transparent px-3 py-3.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
           />
           <kbd className="hidden sm:inline-flex items-center gap-1 rounded bg-muted px-2 py-0.5 text-[10px] font-mono text-muted-foreground border border-border">
@@ -174,7 +175,7 @@ export function CommandDialog({
         <div className="max-h-96 overflow-y-auto p-2 space-y-1">
           {filteredItems.length === 0 ? (
             <div className="py-8 text-center text-sm text-muted-foreground">
-              No matching specifications found for "{query}".
+              No matching documents found for "{query}".
             </div>
           ) : (
             filteredItems.map((item, idx) => (
@@ -196,8 +197,7 @@ export function CommandDialog({
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-xs font-mono">{item.id}</span>
-                    <span className="truncate text-foreground/90 font-medium">
+                    <span className="truncate text-foreground/90 font-semibold">
                       {item.title}
                     </span>
                   </div>
@@ -207,8 +207,8 @@ export function CommandDialog({
                     </p>
                   )}
                 </div>
-                <span className="text-[10px] font-mono text-muted-foreground uppercase px-2 py-0.5 rounded bg-muted/60">
-                  {item.category}
+                <span className="text-[11px] font-medium text-muted-foreground px-2 py-0.5 rounded bg-muted/60 shrink-0">
+                  {formatCommandCategory(item.category)}
                 </span>
               </div>
             ))

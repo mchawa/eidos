@@ -25,8 +25,16 @@ import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
 import { AsciiDocRenderer } from "@/components/ui/AsciiDocRenderer";
 import { requestSpecNavigation } from "@/lib/specNav";
+import {
+  formatContainerType,
+  formatDisplayTitle,
+  formatProtocol,
+  humanizeInvariantTitle,
+  resolveEntityTitle,
+  useEntityLabels,
+} from "@/lib/presentation";
 import { cn } from "@/lib/utils";
-import type { PortalData, SpecComponent, SpecContract } from "@/types";
+import type { PortalData, SpecComponent, SpecContract, SpecInvariant } from "@/types";
 
 export interface ArchitectureViewProps {
   data: PortalData;
@@ -53,6 +61,10 @@ const getTierStyle = (tierId?: string) => {
   }
 };
 
+function sanitizeNodeSlug(id: string): string {
+  return id.replace(/[^a-zA-Z0-9_]/g, "_");
+}
+
 export function ArchitectureView({
   data,
   darkMode = true,
@@ -60,9 +72,10 @@ export function ArchitectureView({
   initialComponentNonce,
   onClearSelectedComponent,
 }: ArchitectureViewProps) {
+  const labelIndex = useEntityLabels();
   const [level, setLevelState] = React.useState<1 | 2 | 3>(1);
   const [selectedContainerId, setSelectedContainerId] = React.useState<string>(
-    data.components[0]?.id || "CNT-CORE"
+    data.components[0]?.id || ""
   );
   const [zoom, setZoom] = React.useState<number>(1);
   const [pan, setPan] = React.useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -73,6 +86,13 @@ export function ArchitectureView({
   const [inspectedContract, setInspectedContract] = React.useState<SpecContract | null>(null);
   const [blastTargetId, setBlastTargetId] = React.useState<string>("");
   const [diagramError, setDiagramError] = React.useState<string | null>(null);
+
+  const selectedContainerTitle = React.useMemo(() => {
+    const comp = data.components.find((c) => c.id === selectedContainerId);
+    return comp
+      ? formatDisplayTitle(comp.title, comp.id)
+      : resolveEntityTitle(selectedContainerId, labelIndex, "Container");
+  }, [data.components, selectedContainerId, labelIndex]);
 
   React.useEffect(() => {
     if (!initialComponentId) return;
@@ -88,7 +108,6 @@ export function ArchitectureView({
       setInspectorOpen(true);
       return;
     }
-    // Check if initialComponentId is a Level 3 internal component (CMP-*)
     for (const c of data.components || []) {
       const sub = (c.internal_components || []).find((ic) => ic.id === initialComponentId);
       if (sub) {
@@ -131,11 +150,7 @@ export function ArchitectureView({
 
     const hop1 = new Set<string>([...upstream1, ...downstream1]);
     const hop2 = new Set<string>([...upstream2, ...downstream2]);
-    const allImpacted = new Set<string>([
-      blastTargetId,
-      ...hop1,
-      ...hop2,
-    ]);
+    const allImpacted = new Set<string>([blastTargetId, ...hop1, ...hop2]);
 
     return {
       targetId: blastTargetId,
@@ -149,11 +164,11 @@ export function ArchitectureView({
     };
   }, [blastTargetId, data.edges]);
 
-  // Apply 1-hop / 2-hop / target / dimmed blast-radius styling directly onto C4 SVG nodes
+  // Apply direct / indirect / target / dimmed blast-radius styling directly onto SVG nodes
   const applyBlastRadiusToSvg = React.useCallback(() => {
     if (!diagramRef.current) return;
     const nodes = diagramRef.current.querySelectorAll(
-      '[data-c4-entity], [id*="CNT-"], [id*="CMP-"], [id*="SYS-"], .node'
+      '[data-c4-entity], [id*="CNT-"], [id*="CNT_"], [id*="CMP-"], [id*="CMP_"], [id*="SYS-"], .node'
     );
     const nodeMatchesEntity = (el: Element, entityId: string): boolean => {
       if (!entityId) return false;
@@ -161,7 +176,7 @@ export function ArchitectureView({
       if (explicit === entityId) return true;
       const txt = el.textContent || "";
       const nid = el.id || "";
-      const slug = entityId.replace(/-/g, "_");
+      const slug = sanitizeNodeSlug(entityId);
       return txt.includes(entityId) || nid.includes(slug) || nid.includes(entityId);
     };
 
@@ -260,14 +275,11 @@ export function ArchitectureView({
     applyBlastRadiusToSvg();
   }, [applyBlastRadiusToSvg, level, selectedContainerId]);
 
-  // Dynamic active tiers from components
   const activeTiers = React.useMemo(() => {
     const tierMap = new Map<string, { id: string; name: string }>();
     data.components.forEach((c) => {
-      if (c.tier) {
-        if (!tierMap.has(c.tier)) {
-          tierMap.set(c.tier, { id: c.tier, name: c.tier_name || c.tier });
-        }
+      if (c.tier && !tierMap.has(c.tier)) {
+        tierMap.set(c.tier, { id: c.tier, name: c.tier_name || c.tier });
       }
     });
     return Array.from(tierMap.values());
@@ -279,7 +291,6 @@ export function ArchitectureView({
   const dragStartRef = React.useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const hasMovedRef = React.useRef(false);
 
-  // Auto-fit diagram to compute optimal, crisp zoom level
   const autoFitDiagram = React.useCallback(() => {
     if (!diagramRef.current || !containerRef.current) return;
     const svgEl = diagramRef.current.querySelector("svg");
@@ -303,7 +314,6 @@ export function ArchitectureView({
       return;
     }
 
-    // Set SVG and diagramRef to natural dimensions so 1 unit = 1 physical px
     svgEl.removeAttribute("width");
     svgEl.removeAttribute("height");
     svgEl.style.width = `${svgWidth}px`;
@@ -321,16 +331,11 @@ export function ArchitectureView({
     const scaleY = containerHeight / svgHeight;
     const optimalScale = Math.min(scaleX, scaleY);
 
-    // Natural fit within viewport:
-    // If diagram is smaller than viewport (optimalScale >= 1.0), cap at 1.0 so it never blows up.
-    // If diagram is larger than viewport (optimalScale < 1.0, e.g. Level 2 Containers or Level 3 Components),
-    // scale to optimalScale so all containers, links, and text fit 100% within the viewport!
     const clampedZoom = Number(Math.min(1.0, optimalScale).toFixed(2));
     setZoom(clampedZoom);
     setPan({ x: 0, y: 0 });
   }, []);
 
-  // Drag & Pan Event Handlers
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
     isDraggingRef.current = true;
@@ -365,7 +370,6 @@ export function ArchitectureView({
     }
   };
 
-  // Attach native non-passive wheel listener so scrolling inside the C4 diagram zooms without scrolling the page
   React.useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -379,20 +383,19 @@ export function ArchitectureView({
     return () => el.removeEventListener("wheel", onNativeWheel);
   }, []);
 
-  // Compute active diagram definition
   const currentDiagramSource = React.useMemo(() => {
     if (level === 1) {
       return data.diagrams.c4_context || "graph TD\nUser[User]-->System[System]";
     } else if (level === 2) {
-      return data.diagrams.c4_containers || "graph TD\nCore[CNT-CORE]";
+      return data.diagrams.c4_containers || "graph TD\nCore[System]";
     } else {
       const compMap = data.diagrams.c4_components || {};
       return (
         compMap[selectedContainerId] ||
-        `graph TD\n${selectedContainerId.replace(/-/g, "_")}[${selectedContainerId}]`
+        `graph TD\n${sanitizeNodeSlug(selectedContainerId || "System")}["${selectedContainerTitle}"]`
       );
     }
-  }, [level, selectedContainerId, data.diagrams]);
+  }, [level, selectedContainerId, selectedContainerTitle, data.diagrams]);
 
   const setC4Level = (lvl: 1 | 2 | 3) => {
     setLevelState(lvl);
@@ -418,7 +421,7 @@ export function ArchitectureView({
   const decorateC4Nodes = React.useCallback(() => {
     if (!diagramRef.current) return;
     const nodes = diagramRef.current.querySelectorAll(
-      '[id*="CNT-"], [id*="CNT_"], [id*="CMP-"], [id*="CMP_"], [id*="SYS-"], [id*="SYS"], .node'
+      '[id*="CNT-"], [id*="CNT_"], [id*="CMP-"], [id*="CMP_"], [id*="SYS-"], [id*="SYS"], [id*="mod_"], [id*="peer_"], [id*="ctr_"], .node'
     );
     const sysTitle = data.overview?.system_title || "";
     const sysId = data.overview?.system_id || "SYS";
@@ -430,67 +433,71 @@ export function ArchitectureView({
 
       if (level === 1) {
         if (
-          text.includes("SYS") ||
           (sysTitle && text.includes(sysTitle)) ||
           (sysId && text.includes(sysId)) ||
           nodeId.includes("SYS")
         ) {
           node.setAttribute("data-c4-entity", sysId);
-          node.setAttribute("title", "Click to drill down into Level 2: Containers");
+          node.setAttribute("title", "Click to explore System Containers");
         }
       } else if (level === 2) {
         const matched = data.components.find(
           (c) =>
-            text.includes(c.id) ||
+            nodeId.includes(sanitizeNodeSlug(c.id)) ||
+            nodeId.includes(c.id) ||
             text.includes(c.title) ||
-            nodeId.includes(c.id.replace(/-/g, "_")) ||
-            nodeId.includes(c.id)
+            text.includes(c.id)
         );
         if (matched) {
+          const matchedTitle = formatDisplayTitle(matched.title, matched.id);
           node.setAttribute("data-c4-entity", matched.id);
-          node.setAttribute(
-            "title",
-            `Click to drill down into ${matched.id} (${matched.title}) Level 3 Components`
-          );
+          node.setAttribute("title", `Click to explore ${matchedTitle} components`);
         } else {
-          node.setAttribute("title", "Click container to drill down into Level 3: Components");
+          node.setAttribute("title", "Click a container to explore its components");
         }
       } else if (level === 3) {
         const peerMatch = data.components.find(
           (c) =>
-            (text.includes(c.id) && (text.includes("Peer") || nodeId.includes("peer_"))) ||
-            nodeId.includes(`peer_${c.id.replace(/-/g, "_")}`)
+            nodeId.includes(`peer_${sanitizeNodeSlug(c.id)}`) ||
+            (text.includes(c.id) && (text.includes("Related Container") || nodeId.includes("peer_")))
         );
         const ctrMatch = (data.contracts || []).find(
-          (ct) => text.includes(ct.id) || nodeId.includes(ct.id.replace(/-/g, "_"))
+          (ct) =>
+            nodeId.includes(`ctr_${sanitizeNodeSlug(ct.id)}`) ||
+            nodeId.includes(sanitizeNodeSlug(ct.id)) ||
+            text.includes(ct.id)
         );
         const currentComp = data.components.find((c) => c.id === selectedContainerId);
         const matchedSub = currentComp
           ? (currentComp.internal_components || []).find(
               (sub, idx) =>
-                (sub.id && text.includes(sub.id)) ||
-                (sub.title && text.includes(sub.title)) ||
-                nodeId.includes(`mod_${selectedContainerId.replace(/-/g, "_")}_${idx}`)
+                (sub.id && nodeId.includes(`mod_${sanitizeNodeSlug(sub.id)}`)) ||
+                (sub.id && nodeId.includes(sanitizeNodeSlug(sub.id))) ||
+                nodeId.includes(`mod_${sanitizeNodeSlug(selectedContainerId)}_${idx}`) ||
+                (sub.title && text.includes(formatDisplayTitle(sub.title, sub.id))) ||
+                (sub.title && text.includes(sub.title))
             )
           : undefined;
 
         if (peerMatch) {
+          const peerTitle = formatDisplayTitle(peerMatch.title, peerMatch.id);
           node.setAttribute("data-c4-entity", peerMatch.id);
-          node.setAttribute("title", "Click to navigate to peer container");
+          node.setAttribute("title", `Click to open ${peerTitle}`);
         } else if (ctrMatch) {
+          const ctrTitle = formatDisplayTitle(ctrMatch.title, ctrMatch.id);
           node.setAttribute("data-c4-entity", ctrMatch.id);
-          node.setAttribute("title", `Click to inspect contract ${ctrMatch.id}`);
+          node.setAttribute("title", `Click to view ${ctrTitle}`);
         } else {
           if (matchedSub?.id) {
             node.setAttribute("data-c4-entity", matchedSub.id);
           }
-          node.setAttribute("title", "Click to inspect module details");
+          node.setAttribute("title", "Click to view component details");
         }
       }
     });
   }, [level, data.overview, data.components, data.contracts, selectedContainerId]);
 
-  // Post-render DOM event delegation for C4 node drill-down under Mermaid securityLevel: "strict"
+  // Post-render DOM event delegation for diagram node drill-down under Mermaid securityLevel: "strict"
   const handleDiagramClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (hasMovedRef.current) return;
     const target = e.target as Element | null;
@@ -511,7 +518,6 @@ export function ArchitectureView({
     if (level === 1) {
       if (
         entityAttr === sysId ||
-        text.includes("SYS") ||
         (sysTitle && text.includes(sysTitle)) ||
         (sysId && text.includes(sysId)) ||
         nodeId.includes("SYS")
@@ -525,10 +531,10 @@ export function ArchitectureView({
       const matched = data.components.find(
         (c) =>
           entityAttr === c.id ||
-          text.includes(c.id) ||
+          nodeId.includes(sanitizeNodeSlug(c.id)) ||
+          nodeId.includes(c.id) ||
           text.includes(c.title) ||
-          nodeId.includes(c.id.replace(/-/g, "_")) ||
-          nodeId.includes(c.id)
+          text.includes(c.id)
       );
       if (matched) {
         drillDownToContainer(matched.id);
@@ -539,8 +545,9 @@ export function ArchitectureView({
     if (level === 3) {
       const peerMatch = data.components.find(
         (c) =>
-          (text.includes(c.id) && (text.includes("Peer") || nodeId.includes("peer_"))) ||
-          nodeId.includes(`peer_${c.id.replace(/-/g, "_")}`)
+          entityAttr === c.id ||
+          nodeId.includes(`peer_${sanitizeNodeSlug(c.id)}`) ||
+          (text.includes(c.id) && (text.includes("Related Container") || nodeId.includes("peer_")))
       );
       if (peerMatch) {
         drillDownToContainer(peerMatch.id);
@@ -550,8 +557,9 @@ export function ArchitectureView({
       const ctrClicked = (data.contracts || []).find(
         (ct) =>
           entityAttr === ct.id ||
-          text.includes(ct.id) ||
-          nodeId.includes(ct.id.replace(/-/g, "_"))
+          nodeId.includes(`ctr_${sanitizeNodeSlug(ct.id)}`) ||
+          nodeId.includes(sanitizeNodeSlug(ct.id)) ||
+          text.includes(ct.id)
       );
       if (ctrClicked) {
         setInspectedContract(ctrClicked);
@@ -562,9 +570,11 @@ export function ArchitectureView({
       if (currentComp) {
         const matchedSub = (currentComp.internal_components || []).find(
           (sub, idx) =>
-            (sub.id && (entityAttr === sub.id || text.includes(sub.id))) ||
-            (sub.title && text.includes(sub.title)) ||
-            nodeId.includes(`mod_${selectedContainerId.replace(/-/g, "_")}_${idx}`)
+            (sub.id && (entityAttr === sub.id || nodeId.includes(`mod_${sanitizeNodeSlug(sub.id)}`))) ||
+            (sub.id && nodeId.includes(sanitizeNodeSlug(sub.id))) ||
+            nodeId.includes(`mod_${sanitizeNodeSlug(selectedContainerId)}_${idx}`) ||
+            (sub.title && text.includes(formatDisplayTitle(sub.title, sub.id))) ||
+            (sub.title && text.includes(sub.title))
         );
         openC4Inspector(currentComp, matchedSub?.id || null);
       }
@@ -574,7 +584,6 @@ export function ArchitectureView({
   const applyBlastRef = React.useRef(applyBlastRadiusToSvg);
   applyBlastRef.current = applyBlastRadiusToSvg;
 
-  // Render diagram when source changes
   React.useEffect(() => {
     let isCancelled = false;
     const renderDiagram = async () => {
@@ -593,7 +602,6 @@ export function ArchitectureView({
           }
           decorateC4Nodes();
           applyBlastRef.current();
-          // Automatically calculate and apply optimal readable zoom level
           requestAnimationFrame(() => {
             autoFitDiagram();
           });
@@ -603,7 +611,8 @@ export function ArchitectureView({
           if (diagramRef.current) {
             diagramRef.current.replaceChildren();
           }
-          setDiagramError(err instanceof Error ? err.message : String(err));
+          setDiagramError("Unable to render architecture diagram.");
+          console.warn("Architecture diagram render error:", err);
         }
       }
     };
@@ -618,7 +627,7 @@ export function ArchitectureView({
     <div className="space-y-4 animate-in fade-in duration-200">
       {/* Top Toolbar / Controls */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-card border border-border md-elevation-1">
-        {/* C4 Level Switcher */}
+        {/* Architecture Zoom Level Switcher */}
         <div id="c4LevelSwitcher" className="flex items-center gap-1.5 bg-muted/60 p-1 rounded-full border border-border/60">
           <button
             id="btnC4Level1"
@@ -629,7 +638,7 @@ export function ArchitectureView({
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            Level 1: Context
+            System Context
           </button>
           <button
             id="btnC4Level2"
@@ -640,7 +649,7 @@ export function ArchitectureView({
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            Level 2: Containers
+            Containers
           </button>
           <button
             id="btnC4Level3"
@@ -651,11 +660,11 @@ export function ArchitectureView({
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            Level 3: Components
+            Components
           </button>
         </div>
 
-        {/* Level 2 Breadcrumbs */}
+        {/* Containers Breadcrumbs */}
         {level === 2 && (
           <div id="c4Breadcrumbs" className="flex items-center gap-2 text-xs">
             <button
@@ -664,14 +673,14 @@ export function ArchitectureView({
               title="Return to System Context"
             >
               <ArrowUp className="h-3 w-3" />
-              <span>Context (L1)</span>
+              <span>System Context</span>
             </button>
             <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="font-semibold text-primary font-mono text-[11px]">Containers (L2)</span>
+            <span className="font-semibold text-primary text-xs">Containers</span>
           </div>
         )}
 
-        {/* Level 3 Breadcrumbs and selector */}
+        {/* Components Breadcrumbs and selector */}
         {level === 3 && (
           <div id="c4Breadcrumbs" className="flex items-center gap-2 text-xs min-w-0">
             <button
@@ -679,7 +688,7 @@ export function ArchitectureView({
               className="p-1 rounded-lg bg-muted/60 text-muted-foreground hover:text-foreground flex items-center gap-1 px-2 cursor-pointer transition-colors shrink-0"
               title="Return to System Context"
             >
-              <span>Context</span>
+              <span>System Context</span>
             </button>
             <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             <button
@@ -696,23 +705,23 @@ export function ArchitectureView({
               id="c4ContainerSelect"
               value={selectedContainerId}
               onChange={(e) => drillDownToContainer(e.target.value)}
-              className="bg-card border border-border text-xs rounded-lg px-2.5 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono max-w-[200px] sm:max-w-[280px] md:max-w-[340px] truncate"
+              className="bg-card border border-border text-xs rounded-lg px-2.5 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[200px] sm:max-w-[280px] md:max-w-[340px] truncate"
             >
               {data.components.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.id} ({c.title})
+                  {formatDisplayTitle(c.title, c.id)}
                 </option>
               ))}
             </select>
           </div>
         )}
 
-        {/* Advanced Zoom & Pan Controls */}
+        {/* Zoom & Pan Controls */}
         <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-full border border-border/60">
           <button
             onClick={() => setZoom((z) => Math.max(0.35, +(z - 0.15).toFixed(2)))}
             className="p-1.5 rounded-full hover:bg-card text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            title="Zoom Out (-)"
+            title="Zoom Out"
           >
             <ZoomOut className="h-4 w-4" />
           </button>
@@ -722,14 +731,14 @@ export function ArchitectureView({
           <button
             onClick={() => setZoom((z) => Math.min(3.0, +(z + 0.15).toFixed(2)))}
             className="p-1.5 rounded-full hover:bg-card text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            title="Zoom In (+)"
+            title="Zoom In"
           >
             <ZoomIn className="h-4 w-4" />
           </button>
           <button
             onClick={autoFitDiagram}
             className="p-1.5 rounded-full hover:bg-card text-muted-foreground hover:text-primary transition-colors cursor-pointer"
-            title="Fit Diagram to Screen (Auto-zoom)"
+            title="Fit Diagram to Screen"
           >
             <Maximize2 className="h-3.5 w-3.5" />
           </button>
@@ -739,7 +748,7 @@ export function ArchitectureView({
               setPan({ x: 0, y: 0 });
             }}
             className="p-1.5 rounded-full hover:bg-card text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            title="Reset to 100% (1:1)"
+            title="Reset Zoom"
           >
             <RotateCcw className="h-3.5 w-3.5" />
           </button>
@@ -749,19 +758,19 @@ export function ArchitectureView({
               setTimeout(autoFitDiagram, 150);
             }}
             className="p-1.5 rounded-full hover:bg-card text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            title={isExpanded ? "Collapse Viewport Height" : "Expand Viewport Height"}
+            title={isExpanded ? "Collapse Diagram Height" : "Expand Diagram Height"}
           >
             {isExpanded ? <Shrink className="h-3.5 w-3.5" /> : <Expand className="h-3.5 w-3.5" />}
           </button>
         </div>
       </div>
 
-      {/* C4 View Level Indicator & Tier Legend */}
+      {/* View Level Indicator & Tier Legend */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-1">
         {level === 2 && activeTiers.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider font-mono">
-              Tiers:
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+              Layers:
             </span>
             {activeTiers.map((tier) => {
               const style = getTierStyle(tier.id);
@@ -783,12 +792,12 @@ export function ArchitectureView({
           </div>
         )}
         <div className="ml-auto">
-          <span className="text-[11px] text-muted-foreground font-mono hidden sm:inline">
+          <span className="text-xs text-muted-foreground hidden sm:inline">
             {level === 1
-              ? "C4 Level 1: System Context"
+              ? "System Context"
               : level === 2
-              ? "C4 Level 2: Container Topology & Hierarchy"
-              : `C4 Level 3: Whitebox (${selectedContainerId})`}
+              ? "Container Overview"
+              : `Inside ${selectedContainerTitle}`}
           </span>
         </div>
       </div>
@@ -806,18 +815,16 @@ export function ArchitectureView({
           isExpanded ? "h-[800px]" : "h-[580px]"
         )}
       >
-        {/* Floating Pan & Zoom Hint */}
-        <div className="absolute bottom-3 left-3 z-20 pointer-events-none flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-background/80 backdrop-blur-md border border-border/80 text-[10px] text-muted-foreground font-mono">
+        <div className="absolute bottom-3 left-3 z-20 pointer-events-none flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-background/80 backdrop-blur-md border border-border/80 text-[10px] text-muted-foreground">
           <Move className="h-3 w-3 text-primary" />
           <span>Drag to pan • Scroll to zoom</span>
         </div>
 
-        {/* Floating Fit to View Quick Action */}
         <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1">
           <button
             onClick={autoFitDiagram}
             className="px-2.5 py-1 rounded-lg bg-background/80 hover:bg-background backdrop-blur-md border border-border/80 text-[11px] text-foreground font-medium flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
-            title="Auto-fit Diagram"
+            title="Fit to View"
           >
             <Maximize2 className="h-3 w-3 text-primary" />
             <span>Fit to View</span>
@@ -827,7 +834,7 @@ export function ArchitectureView({
         {diagramError && (
           <div
             role="alert"
-            className="absolute inset-x-4 top-4 z-30 rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-xs text-rose-400 font-mono whitespace-pre-wrap"
+            className="absolute inset-x-4 top-4 z-30 rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-xs text-rose-400"
           >
             {diagramError}
           </div>
@@ -851,25 +858,25 @@ export function ArchitectureView({
           <div className="flex items-center gap-2">
             <Crosshair className="h-4 w-4 text-rose-400" />
             <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
-              Interactive Blast Radius Simulator (1–2 Hop Graph BFS)
+              Interactive Blast Radius Simulator
             </h4>
           </div>
           <div className="flex items-center gap-2">
             <select
               value={blastTargetId}
               onChange={(e) => setBlastTargetId(e.target.value)}
-              className="bg-muted/50 border border-border text-xs rounded-xl px-3 py-1.5 text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+              className="bg-muted/50 border border-border text-xs rounded-xl px-3 py-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             >
-              <option value="">Select Container or Component to Simulate Impact...</option>
+              <option value="">Select a container or component to inspect impact...</option>
               {data.components.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.id} ({c.title})
+                  {formatDisplayTitle(c.title, c.id)}
                 </option>
               ))}
               {data.components.flatMap((c) =>
                 (c.internal_components || []).map((ic) => (
                   <option key={`${c.id}-${ic.id}`} value={ic.id}>
-                    ↳ {ic.id} ({ic.title})
+                    ↳ {formatDisplayTitle(ic.title, ic.id)}
                   </option>
                 ))
               )}
@@ -888,35 +895,35 @@ export function ArchitectureView({
 
         {blastRadiusReport && (
           <div className="space-y-2.5 pt-2 border-t border-border/60 text-xs">
-            <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.9)]" />
-                Target ({blastRadiusReport.targetId})
+                Selected ({resolveEntityTitle(blastRadiusReport.targetId, labelIndex)})
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.85)]" />
-                1-Hop Direct Impact ({blastRadiusReport.hop1.size})
+                Direct Impact ({blastRadiusReport.hop1.size})
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-full border border-dashed border-amber-400 bg-amber-500/30" />
-                2-Hop Secondary Impact ({blastRadiusReport.hop2.size})
+                Indirect Impact ({blastRadiusReport.hop2.size})
               </span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="p-3 rounded-xl bg-muted/20 border border-border/60 space-y-1.5">
                 <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
-                  1-Hop &amp; 2-Hop Upstream Dependents ({blastRadiusReport.upstream1.length + blastRadiusReport.upstream2.length})
+                  Used By ({blastRadiusReport.upstream1.length + blastRadiusReport.upstream2.length})
                 </span>
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1.5">
                   {blastRadiusReport.upstream1.map((id) => (
                     <button
                       key={id}
                       type="button"
                       onClick={() => requestSpecNavigation(id)}
-                      className="px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 font-mono text-[10px] cursor-pointer"
-                      title="1-Hop Direct Upstream Dependent"
+                      className="px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 text-[11px] font-medium cursor-pointer"
+                      title="Direct Impact"
                     >
-                      1-hop • {id}
+                      {resolveEntityTitle(id, labelIndex)}
                     </button>
                   ))}
                   {blastRadiusReport.upstream2.map((id) => (
@@ -924,10 +931,10 @@ export function ArchitectureView({
                       key={id}
                       type="button"
                       onClick={() => requestSpecNavigation(id)}
-                      className="px-2 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-dashed border-amber-500/30 font-mono text-[10px] cursor-pointer"
-                      title="2-Hop Secondary Upstream Dependent"
+                      className="px-2 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-dashed border-amber-500/30 text-[11px] font-medium cursor-pointer"
+                      title="Indirect Impact"
                     >
-                      2-hop • {id}
+                      {resolveEntityTitle(id, labelIndex)}
                     </button>
                   ))}
                   {blastRadiusReport.upstream1.length + blastRadiusReport.upstream2.length === 0 && (
@@ -937,18 +944,18 @@ export function ArchitectureView({
               </div>
               <div className="p-3 rounded-xl bg-muted/20 border border-border/60 space-y-1.5">
                 <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
-                  1-Hop &amp; 2-Hop Downstream Dependencies ({blastRadiusReport.downstream1.length + blastRadiusReport.downstream2.length})
+                  Depends On ({blastRadiusReport.downstream1.length + blastRadiusReport.downstream2.length})
                 </span>
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1.5">
                   {blastRadiusReport.downstream1.map((id) => (
                     <button
                       key={id}
                       type="button"
                       onClick={() => requestSpecNavigation(id)}
-                      className="px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 font-mono text-[10px] cursor-pointer"
-                      title="1-Hop Direct Downstream Dependency"
+                      className="px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 text-[11px] font-medium cursor-pointer"
+                      title="Direct Dependency"
                     >
-                      1-hop • {id}
+                      {resolveEntityTitle(id, labelIndex)}
                     </button>
                   ))}
                   {blastRadiusReport.downstream2.map((id) => (
@@ -956,10 +963,10 @@ export function ArchitectureView({
                       key={id}
                       type="button"
                       onClick={() => requestSpecNavigation(id)}
-                      className="px-2 py-0.5 rounded bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-dashed border-blue-500/30 font-mono text-[10px] cursor-pointer"
-                      title="2-Hop Secondary Downstream Dependency"
+                      className="px-2 py-0.5 rounded bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-dashed border-blue-500/30 text-[11px] font-medium cursor-pointer"
+                      title="Indirect Dependency"
                     >
-                      2-hop • {id}
+                      {resolveEntityTitle(id, labelIndex)}
                     </button>
                   ))}
                   {blastRadiusReport.downstream1.length + blastRadiusReport.downstream2.length === 0 && (
@@ -972,19 +979,19 @@ export function ArchitectureView({
         )}
       </Card>
 
-      {/* Container Cards List & Prominent Section Divider */}
+      {/* Container Cards List */}
       <div className="pt-12 mt-10 border-t-2 border-border/80 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2">
           <div className="space-y-1">
             <h3 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-3">
               <Box className="h-6 w-6 text-primary shrink-0" />
-              <span>Declared Containers & Deployable Units</span>
-              <Badge variant="outline" className="text-xs font-mono px-2 py-0.5">
+              <span>System Containers</span>
+              <Badge variant="outline" className="text-xs px-2 py-0.5">
                 {data.components.length} Containers
               </Badge>
             </h3>
             <p className="text-sm text-muted-foreground">
-              C4 Level 2 architectural boundaries, runtime environments, and deployable service packages
+              Applications, services, and packages that make up the system
             </p>
           </div>
         </div>
@@ -1000,55 +1007,57 @@ export function ArchitectureView({
             const outboundDeps = getDepIds(
               comp.dependencies?.internal_containers as Array<string | { container?: string; id?: string }>
             );
+            const compTitle = formatDisplayTitle(comp.title, comp.id);
+            const domainTitle =
+              comp.domain && comp.domain !== "N/A"
+                ? resolveEntityTitle(comp.domain, labelIndex)
+                : "";
             return (
               <Card
                 key={comp.id}
                 className="hover:border-primary/50 transition-all p-5 space-y-3.5 group flex flex-col justify-between border border-border/80 bg-card rounded-2xl"
               >
                 <div className="space-y-2.5">
-                  <div className="flex items-center justify-between gap-1 flex-wrap">
-                    <span className="font-mono text-xs font-bold text-primary group-hover:underline">
-                      {comp.id}
-                    </span>
-                    <div className="flex items-center gap-1.5">
+                  <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       {comp.tier && (() => {
                         const style = getTierStyle(comp.tier);
                         return (
                           <span
                             className={cn(
-                              "text-[10px] font-mono px-2 py-0.5 rounded-full font-semibold border",
+                              "text-[10px] px-2 py-0.5 rounded-full font-semibold border",
                               style.bg,
                               style.text,
                               style.border
                             )}
                           >
-                            {comp.tier_name || comp.container_type}
+                            {comp.tier_name || formatContainerType(comp.container_type)}
                           </span>
                         );
                       })()}
-                      <Badge variant="outline">{comp.container_type}</Badge>
+                      <Badge variant="outline">{formatContainerType(comp.container_type)}</Badge>
                     </div>
                   </div>
-                  <h4 className="text-sm font-semibold text-foreground">{comp.title}</h4>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
-                    <span className="truncate">{comp.source_path}</span>
-                    {comp.domain && comp.domain !== "N/A" && (
-                      <span className="px-1.5 py-0.5 rounded bg-muted text-[10px] text-muted-foreground shrink-0 font-semibold">
-                        {comp.domain}
+                  <h4 className="text-sm font-bold text-foreground group-hover:text-primary transition-colors">
+                    {compTitle}
+                  </h4>
+                  {domainTitle && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="px-2 py-0.5 rounded bg-muted text-[11px] text-muted-foreground font-medium">
+                        {domainTitle}
                       </span>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-muted-foreground line-clamp-2">
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
                     {comp.responsibility || comp.summary || "Core system container"}
                   </p>
-                  {/* Inter-Container Dependency Metric */}
-                  <div className="flex items-center gap-2 pt-1 text-[10px] text-muted-foreground font-mono">
+                  <div className="flex items-center gap-2 pt-1 text-[11px] text-muted-foreground">
                     <span className="bg-muted/50 px-2 py-0.5 rounded border border-border/40">
-                      {outboundDeps.length} dependencies
+                      {outboundDeps.length} {outboundDeps.length === 1 ? "dependency" : "dependencies"}
                     </span>
                     <span>•</span>
                     <span className="bg-muted/50 px-2 py-0.5 rounded border border-border/40">
-                      {inboundDeps.length} dependents
+                      {inboundDeps.length} {inboundDeps.length === 1 ? "dependent" : "dependents"}
                     </span>
                   </div>
                 </div>
@@ -1056,15 +1065,15 @@ export function ArchitectureView({
                   <button
                     onClick={() => drillDownToContainer(comp.id)}
                     className="flex-1 py-1.5 px-2.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
-                    title={`Navigate to ${comp.id} Level 3 Components`}
+                    title={`Explore ${compTitle} components`}
                   >
-                    <span>Explore Level 3</span>
+                    <span>Explore Components</span>
                     <ChevronRight className="h-3 w-3" />
                   </button>
                   <button
                     onClick={() => openC4Inspector(comp)}
                     className="py-1.5 px-2.5 rounded-lg bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground font-medium transition-colors cursor-pointer"
-                    title="Inspect Details"
+                    title={`View ${compTitle} details`}
                   >
                     Details
                   </button>
@@ -1075,60 +1084,59 @@ export function ArchitectureView({
         </div>
       </div>
 
-      {/* Boundary Interface Contracts (CTR-*) Section */}
+      {/* Boundary Interface Contracts Section */}
       {data.contracts && data.contracts.length > 0 && (
         <div id="architectureContractsSection" className="space-y-4 pt-6 border-t border-border/60">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-foreground uppercase tracking-wider flex items-center gap-2">
               <FileCode className="h-4 w-4 text-emerald-400" />
-              Boundary Interface Contracts (`CTR-*`)
+              Boundary Interface Contracts
             </h3>
-            <span className="text-xs font-mono text-muted-foreground">
-              {data.contracts.length} contracts
+            <span className="text-xs text-muted-foreground">
+              {data.contracts.length} {data.contracts.length === 1 ? "contract" : "contracts"}
             </span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {data.contracts.map((ctr) => (
-              <Card
-                key={ctr.id}
-                onClick={() => setInspectedContract(ctr)}
-                className="p-4 space-y-2 border-border/80 bg-card hover:border-emerald-500/50 cursor-pointer transition-all flex flex-col justify-between group"
-              >
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-xs font-bold text-emerald-400 group-hover:underline">
-                      {ctr.id}
-                    </span>
-                    <Badge variant="outline" className="text-[10px] font-mono">
-                      {ctr.protocol}
-                    </Badge>
+            {data.contracts.map((ctr) => {
+              const providerTitle = resolveEntityTitle(ctr.container, labelIndex);
+              return (
+                <Card
+                  key={ctr.id}
+                  onClick={() => setInspectedContract(ctr)}
+                  className="p-4 space-y-2 border-border/80 bg-card hover:border-emerald-500/50 cursor-pointer transition-all flex flex-col justify-between group"
+                >
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-xs font-bold text-foreground group-hover:text-emerald-400 transition-colors">
+                        {formatDisplayTitle(ctr.title, ctr.id)}
+                      </h4>
+                      <Badge variant="outline" className="text-[10px] shrink-0">
+                        {formatProtocol(ctr.protocol)}
+                      </Badge>
+                    </div>
+                    {providerTitle && (
+                      <div className="text-[11px] text-muted-foreground">
+                        Provided by {providerTitle}
+                      </div>
+                    )}
                   </div>
-                  <h4 className="text-xs font-bold text-foreground">{ctr.title}</h4>
-                  <div className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
-                    <span>Provider: {ctr.container}</span>
-                  </div>
-                </div>
-                {ctr.specification_file && ctr.specification_file !== "N/A" && (
-                  <p className="text-[10px] font-mono text-muted-foreground truncate pt-1 border-t border-border/50">
-                    {ctr.specification_file}
-                  </p>
-                )}
-              </Card>
-            ))}
+                </Card>
+              );
+            })}
           </div>
         </div>
       )}
 
-      {/* Architectural Decisions (DEC-*) Section */}
+      {/* Architectural Decisions Section */}
       {data.decisions && data.decisions.length > 0 && (
         <div id="architectureDecisionsSection" className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-foreground uppercase tracking-wider flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-amber-500" />
-              Architectural Decisions (`DEC-*`)
+              Architectural Decisions
             </h3>
-            <span className="text-xs font-mono text-muted-foreground">
-              {data.decisions.length} decisions
+            <span className="text-xs text-muted-foreground">
+              {data.decisions.length} {data.decisions.length === 1 ? "decision" : "decisions"}
             </span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1138,22 +1146,21 @@ export function ArchitectureView({
                 className="p-4 space-y-2 border-border/80 bg-card flex flex-col justify-between"
               >
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-xs font-bold text-amber-500">{dec.id}</span>
-                    {dec.source_id && (
-                      <Badge variant="outline" className="text-[10px] font-mono">
-                        {dec.source_id}
-                      </Badge>
-                    )}
-                  </div>
-                  <h4 className="text-xs font-bold text-foreground">{dec.title}</h4>
+                  {dec.source_id && (
+                    <Badge variant="outline" className="text-[10px]">
+                      {resolveEntityTitle(dec.source_id, labelIndex, "Architecture")}
+                    </Badge>
+                  )}
+                  <h4 className="text-xs font-bold text-foreground">
+                    {formatDisplayTitle(dec.title, dec.id)}
+                  </h4>
                   <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">
                     {dec.decision}
                   </p>
                 </div>
                 {dec.rationale && (
                   <p className="text-[11px] text-muted-foreground/80 italic pt-1 border-t border-border/50 line-clamp-2">
-                    Rationale: {dec.rationale}
+                    Why: {dec.rationale}
                   </p>
                 )}
               </Card>
@@ -1162,32 +1169,42 @@ export function ArchitectureView({
         </div>
       )}
 
-      {/* C4 Inspector Sheet Drawer (id="c4InspectorDrawer") */}
+      {/* Container Inspector Sheet Drawer (id="c4InspectorDrawer") */}
       <Sheet
         open={inspectorOpen}
         onOpenChange={(open) => {
           setInspectorOpen(open);
           if (!open) onClearSelectedComponent?.();
         }}
-        title={inspectedComponent?.title || "Component Inspector"}
-        subtitle={inspectedComponent?.id}
+        title={
+          inspectedComponent
+            ? formatDisplayTitle(inspectedComponent.title, inspectedComponent.id)
+            : "Container Details"
+        }
+        subtitle={
+          inspectedComponent
+            ? `${formatContainerType(inspectedComponent.container_type)}${
+                inspectedComponent.tier_name ? ` • ${inspectedComponent.tier_name}` : ""
+              }`
+            : undefined
+        }
       >
         <div id="c4InspectorDrawer" className="space-y-5">
           {inspectedComponent && (
             <>
               <div className="flex flex-wrap gap-2">
-                <Badge variant="primary">{inspectedComponent.container_type}</Badge>
-                <Badge variant="default">{inspectedComponent.runtime}</Badge>
-                <span className="font-mono text-xs text-muted-foreground px-2 py-0.5 rounded bg-muted">
-                  {inspectedComponent.source_path}
-                </span>
+                <Badge variant="primary">
+                  {formatContainerType(inspectedComponent.container_type)}
+                </Badge>
+                {inspectedComponent.runtime && inspectedComponent.runtime !== "N/A" && (
+                  <Badge variant="default">{inspectedComponent.runtime}</Badge>
+                )}
               </div>
 
-              {/* Architectural Responsibility / Summary */}
               {(inspectedComponent.responsibility || inspectedComponent.summary) && (
                 <div className="p-3.5 rounded-2xl bg-muted/20 border border-border/60 text-xs space-y-1">
                   <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
-                    Architectural Responsibility
+                    Responsibility
                   </span>
                   <p className="text-muted-foreground leading-relaxed">
                     {inspectedComponent.responsibility || inspectedComponent.summary}
@@ -1195,11 +1212,11 @@ export function ArchitectureView({
                 </div>
               )}
 
-              {/* Internal Components Whitebox */}
+              {/* Internal Components */}
               <div className="space-y-2">
                 <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                   <Layers className="h-4 w-4 text-primary" />
-                  Internal Subsystems & Components ({inspectedComponent.internal_components?.length || 0})
+                  Internal Components ({inspectedComponent.internal_components?.length || 0})
                 </h4>
                 <div className="space-y-2">
                   {(inspectedComponent.internal_components || []).map((sub, i) => (
@@ -1213,24 +1230,16 @@ export function ArchitectureView({
                       )}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-bold text-primary">{sub.id}</span>
-                        </div>
-                        <span className="font-semibold text-foreground">{sub.title}</span>
+                        <span className="font-bold text-foreground">
+                          {formatDisplayTitle(sub.title, sub.id)}
+                        </span>
                       </div>
                       <p className="text-muted-foreground">{sub.responsibility}</p>
-                      {sub.source_path && (
-                        <p className="font-mono text-[10px] text-muted-foreground/80">
-                          {Array.isArray(sub.source_path)
-                            ? sub.source_path.join(", ")
-                            : sub.source_path}
-                        </p>
-                      )}
                       {sub.invariants && sub.invariants.length > 0 && (
                         <div className="pt-1.5 border-t border-border/50 space-y-1">
                           <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
                             <ShieldCheck className="h-3 w-3" />
-                            Component Invariants ({sub.invariants.length})
+                            Verified Rules ({sub.invariants.length})
                           </span>
                           {sub.invariants.map((inv, idx) => (
                             <div
@@ -1238,12 +1247,12 @@ export function ArchitectureView({
                               className="p-2 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-[11px] space-y-0.5"
                             >
                               <div className="flex items-center justify-between gap-2">
-                                <span className="font-mono font-bold text-emerald-400">
-                                  {inv.id}
+                                <span className="font-semibold text-emerald-400">
+                                  {humanizeInvariantTitle(inv as SpecInvariant)}
                                 </span>
                                 {inv.test_binding && (
-                                  <span className="font-mono text-[10px] text-muted-foreground truncate">
-                                    {inv.test_binding}
+                                  <span className="text-[10px] text-emerald-500 shrink-0">
+                                    Test Verified
                                   </span>
                                 )}
                               </div>
@@ -1256,19 +1265,16 @@ export function ArchitectureView({
                         <div className="pt-1.5 border-t border-border/50 space-y-1">
                           <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider flex items-center gap-1">
                             <Sparkles className="h-3 w-3" />
-                            Component Decisions ({sub.decisions.length})
+                            Design Decisions ({sub.decisions.length})
                           </span>
                           {sub.decisions.map((dec, idx) => (
                             <div
                               key={dec.id || idx}
                               className="p-2 rounded-lg bg-amber-500/5 border border-amber-500/20 text-[11px] space-y-0.5"
                             >
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="font-mono font-bold text-amber-500">
-                                  {dec.id}
-                                </span>
-                                <span className="font-semibold text-foreground">{dec.title}</span>
-                              </div>
+                              <span className="font-semibold text-foreground block">
+                                {formatDisplayTitle(dec.title, dec.id)}
+                              </span>
                               <p className="text-muted-foreground">{dec.decision}</p>
                             </div>
                           ))}
@@ -1279,12 +1285,12 @@ export function ArchitectureView({
                 </div>
               </div>
 
-              {/* Container-Level Invariants */}
+              {/* Container Rules */}
               {inspectedComponent.invariants && inspectedComponent.invariants.length > 0 && (
                 <div className="space-y-2">
                   <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                     <ShieldCheck className="h-4 w-4 text-emerald-400" />
-                    Container Invariants ({inspectedComponent.invariants.length})
+                    Container Rules ({inspectedComponent.invariants.length})
                   </h4>
                   <div className="space-y-2">
                     {inspectedComponent.invariants.map((inv, idx) => (
@@ -1293,10 +1299,12 @@ export function ArchitectureView({
                         className="p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 text-xs space-y-1"
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <span className="font-mono font-bold text-emerald-400">{inv.id}</span>
+                          <span className="font-semibold text-emerald-400">
+                            {humanizeInvariantTitle(inv as SpecInvariant)}
+                          </span>
                           {inv.test_binding && (
-                            <span className="font-mono text-[10px] text-muted-foreground truncate">
-                              {inv.test_binding}
+                            <span className="text-[10px] text-emerald-500 shrink-0">
+                              Test Verified
                             </span>
                           )}
                         </div>
@@ -1307,18 +1315,17 @@ export function ArchitectureView({
                 </div>
               )}
 
-              {/* Inter-Container Dependency Connections */}
+              {/* Dependencies & Contracts */}
               <div className="space-y-3">
                 <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                   <FileCode className="h-4 w-4 text-indigo-400" />
-                  Inter-Container Dependencies &amp; Contracts
+                  Dependencies &amp; Interfaces
                 </h4>
-                {/* Outgoing Dependencies */}
                 <div className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-1.5 text-xs">
                   <div className="flex items-center justify-between">
-                    <p className="font-semibold text-foreground">Upstream Dependencies (Consumes)</p>
-                    <span className="text-[10px] font-mono text-muted-foreground">
-                      {inspectedComponent.dependencies?.internal_containers?.length || 0} internal
+                    <p className="font-semibold text-foreground">Depends On</p>
+                    <span className="text-[10px] text-muted-foreground">
+                      {inspectedComponent.dependencies?.internal_containers?.length || 0} containers
                     </span>
                   </div>
                   {inspectedComponent.dependencies?.internal_containers &&
@@ -1332,16 +1339,19 @@ export function ArchitectureView({
                             ? rawDep
                             : rawDep?.container || rawDep?.id || "";
                         const targetComp = data.components.find((c) => c.id === depId);
+                        const depTitle = targetComp
+                          ? formatDisplayTitle(targetComp.title, targetComp.id)
+                          : resolveEntityTitle(depId, labelIndex);
                         return (
                           <button
                             key={`${depId}-${idx}`}
                             onClick={() => {
                               if (targetComp) openC4Inspector(targetComp);
                             }}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[11px] bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-pointer"
-                            title={targetComp?.title || depId}
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-pointer"
+                            title={depTitle}
                           >
-                            <span>{depId}</span>
+                            <span>{depTitle}</span>
                             <ChevronRight className="h-3 w-3" />
                           </button>
                         );
@@ -1349,12 +1359,12 @@ export function ArchitectureView({
                     </div>
                   ) : (
                     <p className="text-muted-foreground text-[11px] italic">
-                      None (Foundation core container)
+                      None (foundational container)
                     </p>
                   )}
                 </div>
 
-                {/* Incoming Dependents */}
+                {/* Used By */}
                 <div className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-1.5 text-xs">
                   {(() => {
                     const dependents = data.components.filter((c) =>
@@ -1362,36 +1372,40 @@ export function ArchitectureView({
                         (c.dependencies?.internal_containers || []) as Array<
                           string | { container?: string; id?: string }
                         >
-                      ).some((item) =>
-                        (typeof item === "string" ? item : item?.container || item?.id || "") ===
-                        inspectedComponent.id
+                      ).some(
+                        (item) =>
+                          (typeof item === "string" ? item : item?.container || item?.id || "") ===
+                          inspectedComponent.id
                       )
                     );
                     return (
                       <>
                         <div className="flex items-center justify-between">
-                          <p className="font-semibold text-foreground">Downstream Dependents</p>
-                          <span className="text-[10px] font-mono text-muted-foreground">
-                            {dependents.length} consumers
+                          <p className="font-semibold text-foreground">Used By</p>
+                          <span className="text-[10px] text-muted-foreground">
+                            {dependents.length} {dependents.length === 1 ? "consumer" : "consumers"}
                           </span>
                         </div>
                         {dependents.length > 0 ? (
                           <div className="flex flex-wrap gap-1.5 pt-1">
-                            {dependents.map((dep) => (
-                              <button
-                                key={dep.id}
-                                onClick={() => openC4Inspector(dep)}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[11px] bg-muted hover:bg-muted/80 text-foreground transition-colors cursor-pointer"
-                                title={dep.title}
-                              >
-                                <span>{dep.id}</span>
-                                <ChevronRight className="h-3 w-3" />
-                              </button>
-                            ))}
+                            {dependents.map((dep) => {
+                              const depTitle = formatDisplayTitle(dep.title, dep.id);
+                              return (
+                                <button
+                                  key={dep.id}
+                                  onClick={() => openC4Inspector(dep)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-medium bg-muted hover:bg-muted/80 text-foreground transition-colors cursor-pointer"
+                                  title={depTitle}
+                                >
+                                  <span>{depTitle}</span>
+                                  <ChevronRight className="h-3 w-3" />
+                                </button>
+                              );
+                            })}
                           </div>
                         ) : (
                           <p className="text-muted-foreground text-[11px] italic">
-                            No internal containers depend on this unit
+                            No other containers depend on this one
                           </p>
                         )}
                       </>
@@ -1403,7 +1417,7 @@ export function ArchitectureView({
                 {inspectedComponent.dependencies?.external_services &&
                   inspectedComponent.dependencies.external_services.length > 0 && (
                     <div className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-1.5 text-xs">
-                      <p className="font-semibold text-foreground">External Platform Services</p>
+                      <p className="font-semibold text-foreground">External Services</p>
                       <div className="flex flex-wrap gap-1.5 pt-1">
                         {(inspectedComponent.dependencies.external_services as Array<
                           string | { name?: string; service?: string; relationship?: string }
@@ -1417,7 +1431,7 @@ export function ArchitectureView({
                           return (
                             <span
                               key={idx}
-                              className="px-2 py-0.5 rounded-md font-mono text-[10px] bg-muted text-muted-foreground border border-border/40"
+                              className="px-2 py-0.5 rounded-md text-[11px] bg-muted text-muted-foreground border border-border/40"
                             >
                               {extLabel}
                             </span>
@@ -1427,15 +1441,18 @@ export function ArchitectureView({
                     </div>
                   )}
 
-                {/* Boundary Contracts (Clickable) */}
+                {/* Interface Contracts */}
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-1">
-                    <p className="font-semibold text-foreground">Provides Contracts</p>
+                    <p className="font-semibold text-foreground">Provides Interfaces</p>
                     <div className="flex flex-wrap gap-1">
                       {(inspectedComponent.contracts?.provides || []).length > 0 ? (
                         (inspectedComponent.contracts?.provides || []).map((cid, idx) => {
                           const ctrId = String(cid).split("(")[0].trim();
                           const ctrObj = (data.contracts || []).find((ct) => ct.id === ctrId);
+                          const ctrTitle = ctrObj
+                            ? formatDisplayTitle(ctrObj.title, ctrObj.id)
+                            : resolveEntityTitle(ctrId, labelIndex);
                           return (
                             <button
                               key={idx}
@@ -1448,24 +1465,27 @@ export function ArchitectureView({
                                   requestSpecNavigation(ctrId);
                                 }
                               }}
-                              className="font-mono text-[11px] px-2 py-0.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 cursor-pointer"
+                              className="text-[11px] font-medium px-2 py-0.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 cursor-pointer"
                             >
-                              {ctrId}
+                              {ctrTitle}
                             </button>
                           );
                         })
                       ) : (
-                        <span className="text-muted-foreground font-mono text-[11px]">None</span>
+                        <span className="text-muted-foreground text-[11px]">None</span>
                       )}
                     </div>
                   </div>
                   <div className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-1">
-                    <p className="font-semibold text-foreground">Consumes Contracts</p>
+                    <p className="font-semibold text-foreground">Uses Interfaces</p>
                     <div className="flex flex-wrap gap-1">
                       {(inspectedComponent.contracts?.consumes || []).length > 0 ? (
                         (inspectedComponent.contracts?.consumes || []).map((cid, idx) => {
                           const ctrId = String(cid).split("(")[0].trim();
                           const ctrObj = (data.contracts || []).find((ct) => ct.id === ctrId);
+                          const ctrTitle = ctrObj
+                            ? formatDisplayTitle(ctrObj.title, ctrObj.id)
+                            : resolveEntityTitle(ctrId, labelIndex);
                           return (
                             <button
                               key={idx}
@@ -1478,43 +1498,42 @@ export function ArchitectureView({
                                   requestSpecNavigation(ctrId);
                                 }
                               }}
-                              className="font-mono text-[11px] px-2 py-0.5 rounded bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 cursor-pointer"
+                              className="text-[11px] font-medium px-2 py-0.5 rounded bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 cursor-pointer"
                             >
-                              {ctrId}
+                              {ctrTitle}
                             </button>
                           );
                         })
                       ) : (
-                        <span className="text-muted-foreground font-mono text-[11px]">None</span>
+                        <span className="text-muted-foreground text-[11px]">None</span>
                       )}
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Embedded Architectural Decisions (DEC-*) */}
+              {/* Architectural Decisions */}
               {inspectedComponent.decisions && inspectedComponent.decisions.length > 0 && (
                 <div className="space-y-2">
                   <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                     <Sparkles className="h-4 w-4 text-amber-500" />
-                    Embedded Architectural Decisions ({inspectedComponent.decisions.length})
+                    Architectural Decisions ({inspectedComponent.decisions.length})
                   </h4>
                   <div className="space-y-2">
                     {inspectedComponent.decisions.map((dec, i) => (
                       <div key={i} className="p-3 rounded-xl border border-border/70 bg-card text-xs space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono font-bold text-amber-500">{dec.id}</span>
-                          <span className="font-semibold text-foreground">{dec.title}</span>
-                        </div>
+                        <span className="font-semibold text-foreground block">
+                          {formatDisplayTitle(dec.title, dec.id)}
+                        </span>
                         <p className="text-muted-foreground text-xs leading-relaxed">{dec.decision}</p>
                         {dec.rationale && (
                           <p className="text-[11px] text-muted-foreground/80 italic">
-                            Rationale: {dec.rationale}
+                            Why: {dec.rationale}
                           </p>
                         )}
                         {dec.rejected_alternatives && dec.rejected_alternatives.length > 0 && (
                           <div className="pt-1 text-[10px] text-muted-foreground">
-                            <span className="font-semibold text-rose-400">Rejected Alternatives: </span>
+                            <span className="font-semibold text-rose-400">Alternatives Considered: </span>
                             {dec.rejected_alternatives.map((ra) => ra.option).join(", ")}
                           </div>
                         )}
@@ -1524,12 +1543,12 @@ export function ArchitectureView({
                 </div>
               )}
 
-              {/* Living Specification Document Body rendered via AsciiDocRenderer */}
+              {/* Full Documentation */}
               {hasSpecBodyOrChunk(inspectedComponent.id, inspectedComponent.description) && (
                 <div className="space-y-2 pt-2 border-t border-border/60">
                   <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                     <BookOpen className="h-3.5 w-3.5 text-purple-400" />
-                    Living Container Specification (`CNT-*`)
+                    Full Specification
                   </h4>
                   <div className="max-h-[360px] overflow-y-auto rounded-xl p-3 bg-card border border-border/60">
                     <AsciiDocRenderer
@@ -1550,7 +1569,7 @@ export function ArchitectureView({
                   }}
                   className="w-full"
                 >
-                  View Whitebox Architecture Diagram
+                  Explore Internal Components
                 </Button>
               </div>
             </>
@@ -1558,7 +1577,7 @@ export function ArchitectureView({
         </div>
       </Sheet>
 
-      {/* Boundary Contract Inspector Sheet (CTR-*) */}
+      {/* Interface Contract Inspector Sheet */}
       <Sheet
         open={Boolean(inspectedContract)}
         onOpenChange={(open) => {
@@ -1567,14 +1586,18 @@ export function ArchitectureView({
             onClearSelectedComponent?.();
           }
         }}
-        title={inspectedContract?.title || "Interface Contract"}
-        subtitle={inspectedContract?.id}
+        title={
+          inspectedContract
+            ? formatDisplayTitle(inspectedContract.title, inspectedContract.id)
+            : "Interface Contract"
+        }
+        subtitle={inspectedContract ? formatProtocol(inspectedContract.protocol) : undefined}
         maxWidth="4xl"
       >
         {inspectedContract && (
           <div className="space-y-4 text-xs">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="primary">{inspectedContract.protocol}</Badge>
+              <Badge variant="primary">{formatProtocol(inspectedContract.protocol)}</Badge>
               {inspectedContract.container && inspectedContract.container !== "N/A" && (
                 <button
                   type="button"
@@ -1583,23 +1606,18 @@ export function ArchitectureView({
                     setInspectedContract(null);
                     if (cnt) openC4Inspector(cnt);
                   }}
-                  className="font-mono text-xs px-2.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 cursor-pointer"
+                  className="text-xs font-medium px-2.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 cursor-pointer"
                 >
-                  Provider: {inspectedContract.container}
+                  Provided by {resolveEntityTitle(inspectedContract.container, labelIndex)}
                 </button>
               )}
-              {inspectedContract.specification_file &&
-                inspectedContract.specification_file !== "N/A" && (
-                  <span className="font-mono text-muted-foreground px-2 py-0.5 rounded bg-muted">
-                    {inspectedContract.specification_file}
-                  </span>
-                )}
             </div>
             {hasSpecBodyOrChunk(inspectedContract.id, inspectedContract.description) && (
               <div className="p-4 rounded-2xl bg-card border border-border/80">
                 <AsciiDocRenderer
                   specId={inspectedContract.id}
                   content={inspectedContract.description || ""}
+                  title={formatDisplayTitle(inspectedContract.title, inspectedContract.id)}
                 />
               </div>
             )}

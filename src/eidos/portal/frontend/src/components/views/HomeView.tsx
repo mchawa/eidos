@@ -17,6 +17,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { requestSpecNavigation } from "@/lib/specNav";
+import {
+  formatDisplayTitle,
+  humanizeInvariantTitle,
+  resolveEntityTitle,
+  useEntityLabels,
+} from "@/lib/presentation";
 import type { PortalData, SpecDriftStatus } from "@/types";
 
 export interface HomeViewProps {
@@ -42,6 +48,7 @@ export function HomeView({
   onInspectSpec,
 }: HomeViewProps) {
   const { overview, validation } = data;
+  const labelIndex = useEntityLabels();
   const [diagnosticsOpen, setDiagnosticsOpen] = React.useState(false);
   const activeDeltasCount =
     (data.deltas?.proposed?.length || 0) +
@@ -63,25 +70,25 @@ export function HomeView({
 
   const metricCards = [
     {
-      label: "Living Specifications",
+      label: "Specifications",
       value: overview.total_specs,
-      subtext: `${overview.valid_specs} Validated`,
+      subtext: `${overview.valid_specs} Verified`,
       icon: Layers,
       color: "text-blue-600 dark:text-blue-400",
       bg: "bg-blue-500/10 dark:bg-blue-400/15",
       tab: "catalog",
     },
     {
-      label: "C4 Containers & Units",
+      label: "System Containers",
       value: overview.components_count,
-      subtext: "Deployable Units",
+      subtext: "Services & Apps",
       icon: Box,
       color: "text-indigo-600 dark:text-indigo-400",
       bg: "bg-indigo-500/10 dark:bg-indigo-400/15",
       tab: "architecture",
     },
     {
-      label: "Active SpecDeltas",
+      label: "Active Changes",
       value: activeDeltasCount,
       subtext: `${appliedDeltasCount} Applied • ${overview.deltas_count} Total`,
       icon: GitPullRequest,
@@ -90,18 +97,18 @@ export function HomeView({
       tab: "deltas",
     },
     {
-      label: "Technical Explorations",
+      label: "Explorations",
       value: overview.explorations_count ?? (data.explorations?.length || 0),
-      subtext: "Discovery Spikes",
+      subtext: "Research & Spikes",
       icon: Lightbulb,
       color: "text-amber-600 dark:text-amber-400",
       bg: "bg-amber-500/10 dark:bg-amber-400/15",
       tab: "explorations",
     },
     {
-      label: "Invariants Enforced",
+      label: "Verified Rules",
       value: data.invariants?.length || 0,
-      subtext: "POL-002 Traceability",
+      subtext: "Automated Checks",
       icon: ShieldCheck,
       color: "text-emerald-600 dark:text-emerald-400",
       bg: "bg-emerald-500/10 dark:bg-emerald-400/15",
@@ -115,32 +122,28 @@ export function HomeView({
       <div className="rounded-3xl p-6 sm:p-8 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-transparent border border-border/70 relative overflow-hidden">
         <div className="max-w-3xl space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-xs font-semibold px-3 py-1 rounded-full bg-primary/20 text-primary border border-primary/30">
-              {overview.system_id}
-            </span>
             <button
               type="button"
               onClick={() => setDiagnosticsOpen(true)}
               className="cursor-pointer transition-transform hover:scale-105"
-              title="Open Validation & Governance Diagnostics Drawer"
+              title="Open Validation & Governance Diagnostics"
             >
               <Badge variant={overview.is_clean ? "success" : "warning"}>
-                {overview.is_clean ? "Zero Drift Verified" : "Drift Attention"}
+                {overview.is_clean ? "All Checks Passing" : "Needs Attention"}
               </Badge>
             </button>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight">
-            {overview.system_title}
+            {formatDisplayTitle(overview.system_title, overview.system_id)}
           </h1>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            Git-native living architecture documentation synthesized continuously
-            from machine-readable AsciiDoc specifications, Arc42/C4 container models,
-            and W3C DTCG design tokens. Zero dead documentation, zero ADRs.
+            Always-current system documentation covering product domains, architecture,
+            design systems, and planned changes.
           </p>
         </div>
       </div>
 
-      {/* Live Workspace Drift Status Card */}
+      {/* Live Workspace Status Card */}
       <Card id="workspaceDriftCard" className="border-border/80">
         <CardContent className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
@@ -156,56 +159,59 @@ export function HomeView({
             <div className="space-y-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-sm font-bold text-foreground tracking-tight">
-                  Workspace Drift Status
+                  Documentation Health
                 </h2>
                 <Badge variant={driftClean ? "success" : "warning"}>
                   {driftStatus
                     ? driftStatus.error
-                      ? "Drift Check Failed"
+                      ? "Check Failed"
                       : driftClean
-                      ? "Clean"
-                      : "Drift Detected"
+                      ? "Up to Date"
+                      : "Updates Needed"
                     : overview.is_clean
-                    ? "Clean"
-                    : "Attention"}
+                    ? "Verified"
+                    : "Needs Attention"}
                 </Badge>
                 {isLiveMode && (
-                  <span className="font-mono text-[10px] text-muted-foreground">
-                    SSE Live Stream
+                  <span className="text-[11px] font-medium text-emerald-500">
+                    Live
                   </span>
                 )}
               </div>
               <p className="text-xs text-muted-foreground">
                 {driftStatus?.error
-                  ? `Drift check failed closed: ${driftStatus.error}`
+                  ? "Unable to complete the workspace sync check."
                   : driftStatus
                   ? driftClean
-                    ? "Governed source paths, tests, and living specifications are synchronized with zero architectural drift."
-                    : `${driftImpactedFiles.length} impacted file(s) across ${driftTouchedComponents.length} governed component(s) require spec synchronization.`
+                    ? "Source code, automated checks, and documentation are fully in sync."
+                    : `${driftImpactedFiles.length} changed ${driftImpactedFiles.length === 1 ? "file" : "files"} across ${driftTouchedComponents.length} ${driftTouchedComponents.length === 1 ? "area" : "areas"} need documentation updates.`
                   : overview.is_clean
-                  ? "Static specification snapshot verified with zero validation or cross-reference errors."
-                  : "Specification snapshot reports validation or cross-reference attention."}
+                  ? "All documents and links are verified with zero issues."
+                  : "Some documents or references require attention."}
               </p>
               {driftTouchedComponents.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  {driftTouchedComponents.slice(0, 6).map((cid) => (
-                    <button
-                      key={cid}
-                      type="button"
-                      onClick={() => requestSpecNavigation(cid)}
-                      className="font-mono text-[10px] px-2 py-0.5 rounded-md bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/25 cursor-pointer"
-                    >
-                      {cid}
-                    </button>
-                  ))}
+                  {driftTouchedComponents.slice(0, 6).map((cid) => {
+                    const compTitle = resolveEntityTitle(cid, labelIndex);
+                    return (
+                      <button
+                        key={cid}
+                        type="button"
+                        onClick={() => requestSpecNavigation(cid)}
+                        className="text-[11px] font-medium px-2.5 py-0.5 rounded-md bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/25 cursor-pointer"
+                      >
+                        {compTitle}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {driftStatus && (
-              <span className="font-mono text-xs px-2.5 py-1 rounded-xl bg-muted/50 text-muted-foreground border border-border/60">
-                {driftImpactedFiles.length} Impacted File{driftImpactedFiles.length === 1 ? "" : "s"}
+              <span className="text-xs px-2.5 py-1 rounded-xl bg-muted/50 text-muted-foreground border border-border/60">
+                {driftImpactedFiles.length} Changed {driftImpactedFiles.length === 1 ? "File" : "Files"}
               </span>
             )}
             <Button
@@ -235,7 +241,7 @@ export function HomeView({
                   <p className="text-xs font-medium text-muted-foreground">
                     {m.label}
                   </p>
-                  <p className="text-2xl font-bold tracking-tight text-foreground font-mono">
+                  <p className="text-2xl font-bold tracking-tight text-foreground">
                     {m.value}
                   </p>
                   <p className="text-[11px] text-muted-foreground flex items-center gap-1">
@@ -259,31 +265,31 @@ export function HomeView({
           <div className="p-6 space-y-4">
             <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
               <CheckCircle2 className="h-5 w-5 text-primary" />
-              Living System Invariants
+              System Rules &amp; Checks
             </h2>
             <div className="space-y-3">
               {(data.invariants || []).slice(0, 4).map((inv, i) => (
                 <div
-                  key={i}
+                  key={inv.id || i}
                   className="p-3.5 rounded-xl border border-border/60 bg-muted/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-muted/40 transition-colors"
                 >
-                  <div className="space-y-1">
+                  <div className="space-y-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-semibold text-primary">
-                        {inv.id}
-                      </span>
-                      <span className="text-xs font-medium text-foreground">
-                        {inv.title || inv.category}
+                      <span className="text-xs font-semibold text-foreground">
+                        {humanizeInvariantTitle(inv)}
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground line-clamp-1">
                       {inv.rule}
                     </p>
                   </div>
-                  {inv.test_binding && (
-                    <span className="text-[10px] font-mono text-muted-foreground px-2 py-0.5 rounded bg-muted/60 shrink-0">
-                      {inv.test_binding}
-                    </span>
+                  {inv.test_binding && inv.test_binding !== "N/A" && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] text-emerald-500 border-emerald-500/30 shrink-0"
+                    >
+                      Test Verified
+                    </Badge>
                   )}
                 </div>
               ))}
@@ -295,31 +301,31 @@ export function HomeView({
                 onClick={() => onNavigateTab("catalog")}
                 className="gap-2 text-xs"
               >
-                Inspect All Invariants & Specifications
+                Browse All Rules &amp; Documents
                 <ArrowRight className="h-3.5 w-3.5" />
               </Button>
             </div>
           </div>
         </Card>
 
-        {/* Quick System Actions */}
+        {/* How Documentation Stays Current */}
         <Card>
           <div className="p-6 space-y-4">
             <h2 className="text-base font-bold text-foreground tracking-tight">
-              Governance & Workflows
+              How Documentation Stays Current
             </h2>
             <div className="space-y-3 text-xs text-muted-foreground">
               <div className="p-3 rounded-xl bg-muted/30 border border-border/60">
-                <p className="font-semibold text-foreground mb-1">Direct Mode</p>
-                <p>Routine local changes co-evolve code and living specifications in the same commit.</p>
+                <p className="font-semibold text-foreground mb-1">Routine Updates</p>
+                <p>Day-to-day code fixes and refinements update their documentation together in the same change.</p>
               </div>
               <div className="p-3 rounded-xl bg-muted/30 border border-border/60">
-                <p className="font-semibold text-foreground mb-1">Planned Mode (SpecDeltas)</p>
-                <p>High-impact, breaking mutations are scoped via formal SpecDeltas before application.</p>
+                <p className="font-semibold text-foreground mb-1">Planned Changes</p>
+                <p>Larger cross-cutting improvements are proposed, reviewed, and tracked before rollout.</p>
               </div>
               <div className="p-3 rounded-xl bg-muted/30 border border-border/60">
-                <p className="font-semibold text-foreground mb-1">Zero ADR Policy</p>
-                <p>Architecture evolves directly in living specs without static decision record graveyards.</p>
+                <p className="font-semibold text-foreground mb-1">Living Decisions</p>
+                <p>Design rationale and trade-offs stay attached directly to the system areas they govern.</p>
               </div>
               <Button
                 variant="outline"
@@ -328,7 +334,7 @@ export function HomeView({
                 className="w-full text-xs gap-1.5 mt-1"
               >
                 <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-                Inspect Validation &amp; Governance Diagnostics
+                Open Validation &amp; Governance Diagnostics
               </Button>
             </div>
           </div>
@@ -340,7 +346,7 @@ export function HomeView({
         open={diagnosticsOpen}
         onOpenChange={setDiagnosticsOpen}
         title="Validation & Governance Diagnostics"
-        subtitle={`${overview.valid_specs}/${overview.total_specs} Specifications Valid`}
+        subtitle={`${overview.valid_specs} of ${overview.total_specs} Documents Verified`}
         maxWidth="3xl"
       >
         <div className="space-y-4 text-xs">
@@ -354,17 +360,17 @@ export function HomeView({
               <div>
                 <p className="font-bold text-foreground">
                   {overview.is_clean
-                    ? "All Living Specifications & Cross-References Verified"
-                    : "Schema or Reference Attention Required"}
+                    ? "All Documents & Links Verified"
+                    : "Document or Link Attention Required"}
                 </p>
                 <p className="text-muted-foreground">
-                  {overview.valid_specs} of {overview.total_specs} documents conform to schema contracts •{" "}
-                  {brokenRefs.length} broken cross-reference(s)
+                  {overview.valid_specs} of {overview.total_specs} documents verified •{" "}
+                  {brokenRefs.length} broken {brokenRefs.length === 1 ? "link" : "links"}
                 </p>
               </div>
             </div>
             <Badge variant={overview.is_clean ? "success" : "warning"}>
-              {overview.is_clean ? "CLEAN" : "ATTENTION"}
+              {overview.is_clean ? "Healthy" : "Needs Attention"}
             </Badge>
           </div>
 
@@ -372,11 +378,12 @@ export function HomeView({
             <div className="space-y-2">
               <h4 className="font-bold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
                 <FileWarning className="h-3.5 w-3.5" />
-                Schema Validation Errors ({schemaErrorEntries.length})
+                Validation Issues ({schemaErrorEntries.length})
               </h4>
               <div className="space-y-2">
                 {schemaErrorEntries.map(([path, errs]) => {
                   const normPath = normalizeSchemaErrorPath(path);
+                  const docTitle = resolveEntityTitle(normPath, labelIndex);
                   return (
                     <div
                       key={path}
@@ -388,9 +395,9 @@ export function HomeView({
                           setDiagnosticsOpen(false);
                           requestSpecNavigation(normPath);
                         }}
-                        className="font-mono font-bold text-rose-400 hover:underline cursor-pointer text-left"
+                        className="font-semibold text-rose-400 hover:underline cursor-pointer text-left"
                       >
-                        {normPath}
+                        {docTitle}
                       </button>
                       <ul className="list-disc pl-4 text-muted-foreground space-y-0.5">
                         {(errs || []).map((msg, i) => (
@@ -408,13 +415,13 @@ export function HomeView({
             <div className="space-y-2">
               <h4 className="font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Link2Off className="h-3.5 w-3.5" />
-                Broken Cross-References ({brokenRefs.length})
+                Broken Links ({brokenRefs.length})
               </h4>
               <div className="space-y-1.5">
                 {brokenRefs.map((ref, idx) => (
                   <div
                     key={idx}
-                    className="p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5 font-mono text-[11px] text-foreground"
+                    className="p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5 text-xs text-foreground"
                   >
                     {ref}
                   </div>
@@ -426,7 +433,7 @@ export function HomeView({
           {invalidSpecs.length > 0 && schemaErrorEntries.length === 0 && (
             <div className="space-y-2">
               <h4 className="font-bold text-rose-400 uppercase tracking-wider">
-                Invalid Specification Documents ({invalidSpecs.length})
+                Documents Needing Attention ({invalidSpecs.length})
               </h4>
               {invalidSpecs.map((sp) => (
                 <div
@@ -437,8 +444,8 @@ export function HomeView({
                   }}
                   className="p-3 rounded-xl border border-rose-500/30 bg-rose-500/5 cursor-pointer hover:bg-rose-500/10"
                 >
-                  <div className="font-mono font-bold text-rose-400">
-                    {sp.id} ({sp.path})
+                  <div className="font-semibold text-rose-400">
+                    {formatDisplayTitle(sp.title, sp.id)}
                   </div>
                   {(sp.errors || []).map((e, i) => (
                     <p key={i} className="text-muted-foreground mt-0.5">
@@ -453,10 +460,10 @@ export function HomeView({
           {overview.is_clean && schemaErrorEntries.length === 0 && brokenRefs.length === 0 && (
             <div className="p-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 text-center space-y-1.5">
               <p className="font-semibold text-emerald-400">
-                Zero Schema Errors &amp; Zero Broken Cross-References
+                Zero Validation Issues &amp; Zero Broken Links
               </p>
               <p className="text-muted-foreground">
-                Every living specification in this repository satisfies structural validation and invariant binding gates.
+                Every document in this repository passes all structural and verification checks.
               </p>
             </div>
           )}

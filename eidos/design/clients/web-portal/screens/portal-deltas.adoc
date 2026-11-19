@@ -21,14 +21,14 @@ states:
 :toc: left
 
 == 1. View Purpose & Change Lifecycle
-The SpecDeltas View (`SCR-PORTAL-DELTAS`) tracks the atomic lifecycle of architectural mutations through an interactive Kanban board:
-* **Proposed**: Newly formulated change requests awaiting architectural review.
-* **In Review**: Deltas undergoing review by Human-in-the-Loop or peer agents.
-* **Approved**: Verified deltas ready for implementation.
-* **Applied**: Merged and reconciled deltas whose mutations have been integrated into living specs.
-* **Rejected**: Withdrawn or disapproved mutations preserved for transparent historical auditability.
-* **Archived**: Historical SpecDeltas under `deltas/archive/` grouped into a dedicated paginated column and status filter pill while preserving their underlying `applied`/`rejected` outcome badges.
-* **Dynamic Workflow States**: Dynamically surfaces any custom organizational status tag declared in delta frontmatter.
-* **Chronological Timeline & Search Bar**: Dual-mode view switcher toggling between the multi-column Kanban Board and a chronological evolution timeline grouped by date (`applied_at` / `created_at`), paired with instant search filtering across delta IDs, titles, motivations, and target spec IDs.
-* **Detailed AsciiDoc Specification Inspection**: Clicking any card opens a spacious centered modal displaying motivation, declared mutations, calculated blast radius, and the full rendered AsciiDoc specification body (or a `git log` hint for archived deltas).
+The Changes View (`SCR-PORTAL-DELTAS`) tracks **Change Proposals** across their lifecycle through an interactive Kanban board and timeline using humanized statuses (`Proposed`, `In Review`, `Approved`, `Applied`, `Rejected`, `Archived`) and humanized change kinds (`Feature`, `Improvement`, `Bug Fix`):
+* **Proposed**: Newly formulated change proposals awaiting review.
+* **In Review**: Proposals undergoing review by stakeholders or peer agents.
+* **Approved**: Verified proposals ready for implementation.
+* **Applied**: Completed proposals whose changes have been integrated into living documentation.
+* **Rejected**: Withdrawn or declined proposals preserved for historical auditability.
+* **Archived**: Historical proposals grouped into a dedicated paginated column (`Show More Changes`) and status filter pill while preserving their humanized outcome badges.
+* **Dynamic Workflow States**: Dynamically surfaces any custom organizational status tag in humanized Title Case.
+* **Chronological Timeline & Search Bar**: Dual-mode view switcher toggling between the Kanban Board and a chronological timeline grouped by date, paired with instant search (`"Filter changes by title, summary, or status..."`) that keeps canonical IDs searchable internally without displaying raw slugs.
+* **Detailed Specification Inspection**: Clicking any card opens a centered modal leading with the human title, summary, resolved affected item titles, humanized change operations (`Add`, `Update`, `Remove`), and the full rendered AsciiDoc body (without raw VCS shell snippets or raw JSON `expect:` dumps).
 

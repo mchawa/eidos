@@ -4,7 +4,7 @@ id: CAP-EXP-001
 title: "Interactive Living Web Portal & Visual Documentation Engine"
 domain: DOM-EXPERIENCE-PORTAL
 status: active
-version: "1.2.0"
+version: "1.3.0"
 
 business:
   personas:
@@ -71,6 +71,9 @@ technical:
     - id: INV-PORTAL-LIVE-DRIFT-SSE
       rule: "eidos portal serve must track eidos/, src/, and tests/ modifications in its snapshot cache, fail closed on _get_cached_drift errors, stream live updates via GET /api/events (SSE) wired to /api/drift in the UI, format object-typed external_systems in C4 Level 1 diagrams without Python dict reprs, and hydrate Screen Spec bodies and Exploration exit_criteria/recommendations."
       test_binding: "tests/test_portal.py::test_portal_live_drift_sse_c4_context_and_screen_hydration"
+    - id: INV-PORTAL-HUMAN-READABLE-UI
+      rule: "The Living Web Portal UI and generated Mermaid diagrams must present resolved human-readable titles, humanized enum/state/type labels, and plain-language copy across all views, tooltips, and placeholders—never rendering raw Eidos ID slugs, raw schema type slugs, literal backticks, raw filesystem/test paths, or unnecessary technical jargon—while keeping canonical IDs internal for hash deep linking, DOM/Mermaid click delegation, and hidden search indexing."
+      test_binding: "tests/test_portal.py::test_portal_human_readable_ui_and_slug_free_diagrams"
 ---
 = Capability: Interactive Living Web Portal & Visual Documentation Engine
 :toc: left
@@ -86,5 +89,6 @@ Technical specifications and architecture models are often trapped in raw text f
 * Slide-over component inspection drawer, lazy local `specs/<id>.json` body loading (with `--single-file` offline archive support), DOMPurify `SANITIZE_DOM` AsciiDoc rendering, and shareable `window.location.hash` (`#/...`) deep linking revealing module responsibilities, source paths, bound contracts, and catalog specifications.
 * Same-origin loopback `Host` header isolation and real-time Server-Sent Events (`GET /api/events`) streaming live workspace and uncommitted drift (`/api/drift`) updates across `eidos/`, `src/`, and `tests/`.
 * Interactive SpecDelta Kanban dashboard and Chronological Timeline tracking proposed, in-review, and applied mutations.
-* Full-text fuzzy search (`⌘K`), real-time schema filtering, and inline validation diagnostics across all catalog entities.
+* Full-text fuzzy search (`⌘K`), real-time category filtering, and inline validation diagnostics across all catalog entities.
+* **Human-First, Slug-Free Presentation (`INV-PORTAL-HUMAN-READABLE-UI`)**: Renders human-readable titles, humanized statuses/types/states, plain-language copy, and clean Mermaid diagram labels across every view, navigation chrome, command palette, specification reader, and diagram while keeping canonical IDs strictly internal for routing, DOM/Mermaid click binding, and search indexing.
 

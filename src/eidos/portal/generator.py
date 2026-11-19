@@ -19,6 +19,7 @@ from eidos.portal.mermaid import (
     _generate_c4_containers_mermaid,
     _generate_c4_context_mermaid,
     _generate_screen_state_mermaid,
+    _humanize_token,
 )
 from eidos.portal.mermaid import (
     _sanitize_mermaid_block as _sanitize_mermaid_block,
@@ -393,6 +394,11 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         policies.append(pol)
 
     # Invariants list (hydrated from indexed invariant entities in ArchitecturalIndex)
+    spec_title_by_id: dict[str, str] = {
+        str(s.get("id") or ""): str(s.get("title") or "")
+        for s in specs
+        if s.get("id") and s.get("title")
+    }
     invariants: list[dict[str, Any]] = []
     for inv_ent in arch_idx.get_entities(entity_type="invariant"):
         iid = str(inv_ent.get("id") or "").strip()
@@ -402,15 +408,18 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         src_id = str(inv_ent.get("source_id") or "")
         rule = inv_ent.get("rule")
         tb = inv_ent.get("test_binding") or "N/A"
+        inv_title = _humanize_token(iid) or iid
+        src_title = spec_title_by_id.get(src_id) or _humanize_token(src_id)
         if src_doc_type == "product/policy":
             invariants.append(
                 {
                     "id": iid,
-                    "title": iid,
+                    "title": inv_title,
                     "rule": rule or "Policy invariant rule.",
                     "category": inv_ent.get("category") or "governance",
                     "severity": inv_ent.get("severity") or "blocking",
                     "source_type": f"policy ({src_id})",
+                    "source_title": src_title,
                     "test_binding": tb,
                 }
             )
@@ -418,10 +427,11 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             invariants.append(
                 {
                     "id": iid,
-                    "title": iid,
+                    "title": inv_title,
                     "rule": rule,
                     "category": "capability",
                     "source_type": f"capability ({src_id})",
+                    "source_title": src_title,
                     "test_binding": tb,
                 }
             )
@@ -429,10 +439,11 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             invariants.append(
                 {
                     "id": iid,
-                    "title": iid,
+                    "title": inv_title,
                     "rule": rule or "UI component invariant.",
                     "category": "design",
                     "source_type": f"ui_component ({src_id})",
+                    "source_title": src_title,
                     "test_binding": tb,
                 }
             )
@@ -440,10 +451,11 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             invariants.append(
                 {
                     "id": iid,
-                    "title": iid,
+                    "title": inv_title,
                     "rule": rule or "Component technical invariant.",
                     "category": "architecture",
                     "source_type": f"component ({src_id})",
+                    "source_title": src_title,
                     "test_binding": tb,
                 }
             )
@@ -451,10 +463,11 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             invariants.append(
                 {
                     "id": iid,
-                    "title": iid,
+                    "title": inv_title,
                     "rule": rule or "Container operational invariant.",
                     "category": "architecture",
                     "source_type": f"container ({src_id})",
+                    "source_title": src_title,
                     "test_binding": tb,
                 }
             )
@@ -639,7 +652,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     )
     c4_components_mermaid: dict[str, str] = {}
     for comp in components:
-        c4_components_mermaid[comp["id"]] = _generate_c4_component_mermaid(comp, components)
+        c4_components_mermaid[comp["id"]] = _generate_c4_component_mermaid(comp, components, contracts=contracts)
 
     overview = {
         "system_id": system_id,
@@ -863,6 +876,16 @@ def _extract_design_systems(
         if sys_item["id"] in ds_to_client:
             sys_item["client"] = ds_to_client[sys_item["id"]]
 
+    clients_by_id: dict[str, str] = {c["id"]: str(c.get("title") or c["id"]) for c in clients if c.get("id")}
+    screens_by_id: dict[str, str] = {}
+    for scr in specs_by_type.get("design/screen", []):
+        stitle = str(scr.get("title") or scr["id"])
+        screens_by_id[scr["id"]] = stitle
+        spath = str(scr.get("path") or "")
+        if spath:
+            screens_by_id[spath] = stitle
+            screens_by_id[Path(spath).stem] = stitle
+
     # Flows
     flows: list[dict[str, Any]] = []
     for fl in specs_by_type.get("design/flow", []):
@@ -871,7 +894,14 @@ def _extract_design_systems(
         flow_type = fm.get("flow_type", "client_internal")
         steps = fm.get("steps", [])
         body = fl.get("body", "")
-        mermaid = _extract_or_generate_flow_mermaid(fl_id, flow_type, steps, body)
+        mermaid = _extract_or_generate_flow_mermaid(
+            fl_id,
+            flow_type,
+            steps,
+            body,
+            clients_by_id=clients_by_id,
+            screens_by_id=screens_by_id,
+        )
         derived_clients = list(flw_to_clients.get(fl_id, []))
         flows.append(
             {

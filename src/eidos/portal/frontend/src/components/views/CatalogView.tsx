@@ -20,15 +20,18 @@ import {
   Layers,
   FileCode,
   Smartphone,
-  Eye,
-  Workflow,
-  Sparkles,
   Users,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
 import { SpecReader } from "@/components/ui/SpecReader";
+import {
+  formatDisplayTitle,
+  formatSpecType,
+  resolveEntityTitle,
+  useEntityLabels,
+} from "@/lib/presentation";
 import { cn } from "@/lib/utils";
 import type { PortalData, SpecItem } from "@/types";
 
@@ -56,8 +59,8 @@ export interface SubGroupNode {
   badge?: string;
   description?: string;
   icon?: any;
-  parentSpec?: SpecItem; // When the node itself is a specification (e.g. Domain, Client, System)
-  specs: SpecItem[]; // Leaf child specifications
+  parentSpec?: SpecItem;
+  specs: SpecItem[];
 }
 
 export interface HierarchyBranch {
@@ -76,8 +79,8 @@ export interface HierarchyBranch {
 const SPEC_CATEGORIES: SpecCategoryDefinition[] = [
   {
     id: "domains",
-    name: "Bounded Domains & Capabilities",
-    description: "Strategic DDD bounded contexts, product capabilities, and invariants",
+    name: "Domains & Capabilities",
+    description: "Product areas, capabilities, and business rules",
     icon: Briefcase,
     color: "text-indigo-500",
     badgeBg: "bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
@@ -85,8 +88,8 @@ const SPEC_CATEGORIES: SpecCategoryDefinition[] = [
   },
   {
     id: "architecture",
-    name: "Architecture & Technology",
-    description: "System Arc42 topology, C4 containers, and interface contracts",
+    name: "Architecture & Systems",
+    description: "System structure, containers, components, and interfaces",
     icon: Network,
     color: "text-blue-500",
     badgeBg: "bg-blue-500/10 text-blue-500 border-blue-500/20",
@@ -94,8 +97,8 @@ const SPEC_CATEGORIES: SpecCategoryDefinition[] = [
   },
   {
     id: "design",
-    name: "Design Systems & Surfaces",
-    description: "W3C DTCG tokens, multi-client applications, screens, UI components, and flows",
+    name: "Design Systems & Experience",
+    description: "Design tokens, client apps, screens, UI components, and user flows",
     icon: Palette,
     color: "text-pink-500",
     badgeBg: "bg-pink-500/10 text-pink-500 border-pink-500/20",
@@ -109,8 +112,8 @@ const SPEC_CATEGORIES: SpecCategoryDefinition[] = [
   },
   {
     id: "governance",
-    name: "Governance, Policies & System",
-    description: "Global system definitions and living invariant policies",
+    name: "Overview & Policies",
+    description: "System overview and organization-wide governance policies",
     icon: ShieldCheck,
     color: "text-emerald-500",
     badgeBg: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
@@ -119,7 +122,7 @@ const SPEC_CATEGORIES: SpecCategoryDefinition[] = [
   {
     id: "personas_research",
     name: "Personas & Explorations",
-    description: "Actor archetypes, JTBD goals, and experimental technical spikes",
+    description: "User personas and research explorations",
     icon: Lightbulb,
     color: "text-amber-500",
     badgeBg: "bg-amber-500/10 text-amber-500 border-amber-500/20",
@@ -127,8 +130,8 @@ const SPEC_CATEGORIES: SpecCategoryDefinition[] = [
   },
   {
     id: "deltas",
-    name: "SpecDelta Mutations",
-    description: "Formal planned architectural mutations and migrations",
+    name: "Change Proposals",
+    description: "Planned changes and system evolution history",
     icon: GitBranch,
     color: "text-purple-500",
     badgeBg: "bg-purple-500/10 text-purple-500 border-purple-500/20",
@@ -137,6 +140,7 @@ const SPEC_CATEGORIES: SpecCategoryDefinition[] = [
 ];
 
 export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: CatalogViewProps) {
+  const labelIndex = useEntityLabels();
   const [searchQuery, setSearchQuery] = React.useState("");
   const [selectedType, setSelectedType] = React.useState("all");
   const [viewMode, setViewMode] = React.useState<"hierarchy" | "flat">("hierarchy");
@@ -172,14 +176,14 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusSpecId, focusNonce]);
 
-  // Group specs by type
   const specTypes = React.useMemo(() => {
     const set = new Set<string>();
     data.specs.forEach((s) => set.add(s.type));
-    return Array.from(set).sort();
+    return Array.from(set).sort((a, b) =>
+      formatSpecType(a).localeCompare(formatSpecType(b))
+    );
   }, [data.specs]);
 
-  // Pre-compute lowercased heading/metadata search index per spec
   const specSearchMap = React.useMemo(() => {
     const map = new Map<string, string>();
     data.specs.forEach((s) => {
@@ -197,13 +201,12 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
         .join(" ");
       map.set(
         s.id,
-        `${s.id} ${s.title} ${s.path} ${s.type} ${headings} ${fmSummary}`.toLowerCase()
+        `${s.id} ${s.title} ${s.path} ${s.type} ${formatSpecType(s.type)} ${headings} ${fmSummary}`.toLowerCase()
       );
     });
     return map;
   }, [data.specs]);
 
-  // Filter specs
   const filteredSpecs = React.useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     return data.specs.filter((s) => {
@@ -218,14 +221,24 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
     });
   }, [data.specs, searchQuery, selectedType, specSearchMap]);
 
-  // Construct Multi-Level Hierarchy (Category -> SubGroup/Parent Entity -> Leaf Specifications)
+  const resolveSpecSection = React.useCallback(
+    (spec: SpecItem): string => {
+      const fm = spec.frontmatter || {};
+      if (fm.domain) return resolveEntityTitle(String(fm.domain), labelIndex);
+      if (fm.container) return resolveEntityTitle(String(fm.container), labelIndex);
+      if (fm.design_system) return resolveEntityTitle(String(fm.design_system), labelIndex);
+      const cat = SPEC_CATEGORIES.find((c) => c.types.includes(spec.type));
+      return cat?.name || "General";
+    },
+    [labelIndex]
+  );
+
   const hierarchicalBranches = React.useMemo<HierarchyBranch[]>(() => {
     return SPEC_CATEGORIES.map((cat) => {
       const catSpecs = filteredSpecs.filter((s) => cat.types.includes(s.type));
       const subgroups: SubGroupNode[] = [];
 
       if (cat.id === "domains") {
-        // Multi-level: Domain (DOM-*) -> Bound Capabilities (CAP-*)
         const domainSpecs = catSpecs.filter((s) => s.type === "product/domain");
         const capSpecs = catSpecs.filter((s) => s.type === "product/capability");
         const assignedCaps = new Set<string>();
@@ -240,16 +253,14 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
 
           subgroups.push({
             id: `subgroup-${dom.id}`,
-            name: dom.title || dom.id,
+            name: formatDisplayTitle(dom.title, dom.id),
             badge: "Domain",
             icon: Briefcase,
-            description: dom.frontmatter?.classification || "Bounded Context",
             parentSpec: dom,
             specs: domCaps,
           });
         });
 
-        // Any orphan capabilities
         const orphanCaps = capSpecs.filter((c) => !assignedCaps.has(c.id));
         if (orphanCaps.length > 0) {
           subgroups.push({
@@ -261,9 +272,6 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
           });
         }
       } else if (cat.id === "design") {
-        // Multi-level:
-        // 1. Design Systems (DS-*) -> UI Components (UIC-*)
-        // 2. Client Applications (CLT-*) -> Screens (SCR-*) & Flows (FLOW-*)
         const dsSpecs = catSpecs.filter((s) => s.type === "design/system");
         const uicSpecs = catSpecs.filter((s) => s.type === "design/ui-component");
         const clientSpecs = catSpecs.filter((s) => s.type === "design/client");
@@ -280,7 +288,7 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
           );
           subgroups.push({
             id: `subgroup-${ds.id}`,
-            name: ds.title || ds.id,
+            name: formatDisplayTitle(ds.title, ds.id),
             badge: "Design System",
             icon: Palette,
             parentSpec: ds,
@@ -310,15 +318,14 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
           );
           subgroups.push({
             id: `subgroup-${clt.id}`,
-            name: clt.title || clt.id,
-            badge: "Client Surface",
+            name: formatDisplayTitle(clt.title, clt.id),
+            badge: "Client App",
             icon: Smartphone,
             parentSpec: clt,
             specs: [...clientScreens, ...clientFlows],
           });
         });
 
-        // Any leftover design specs not bound
         const boundIds = new Set(
           subgroups.flatMap((g) => [
             ...(g.parentSpec ? [g.parentSpec.id] : []),
@@ -329,40 +336,33 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
         if (leftover.length > 0) {
           subgroups.push({
             id: "subgroup-other-design",
-            name: "Other Design Specifications",
+            name: "Other Design Documents",
             badge: "Design",
             icon: Palette,
             specs: leftover,
           });
         }
       } else if (cat.id === "architecture") {
-        // Multi-level:
-        // 1. System Architecture (ARCH-*)
-        // 2. C4 Containers (CNT-*)
-        // 3. C4 Components (CMP-*)
-        // 4. Interface Contracts (CTR-*)
         const archOverview = catSpecs.filter((s) => s.type === "tech/architecture");
         const containers = catSpecs.filter((s) => s.type === "tech/container");
         const components = catSpecs.filter((s) => s.type === "tech/component");
         const contracts = catSpecs.filter((s) => s.type === "tech/contract");
 
-        if (archOverview.length > 0) {
-          archOverview.forEach((arch) => {
-            subgroups.push({
-              id: `subgroup-${arch.id}`,
-              name: arch.title || arch.id,
-              badge: "Arc42 Architecture",
-              icon: Network,
-              parentSpec: arch,
-              specs: [],
-            });
+        archOverview.forEach((arch) => {
+          subgroups.push({
+            id: `subgroup-${arch.id}`,
+            name: formatDisplayTitle(arch.title, arch.id),
+            badge: "Architecture",
+            icon: Network,
+            parentSpec: arch,
+            specs: [],
           });
-        }
+        });
 
         if (containers.length > 0) {
           subgroups.push({
             id: "subgroup-c4-containers",
-            name: "C4 Level 2 Containers & Deployable Units",
+            name: "System Containers",
             badge: "Containers",
             icon: Box,
             specs: containers,
@@ -372,7 +372,7 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
         if (components.length > 0) {
           subgroups.push({
             id: "arch-components",
-            name: "Components (C4 L3)",
+            name: "Internal Components",
             badge: "Components",
             icon: Layers,
             specs: components,
@@ -382,24 +382,21 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
         if (contracts.length > 0) {
           subgroups.push({
             id: "subgroup-c4-contracts",
-            name: "Interface & Protocol Contracts (CTR-*)",
+            name: "Interface Contracts",
             badge: "Contracts",
             icon: FileCode,
             specs: contracts,
           });
         }
       } else if (cat.id === "governance") {
-        // Multi-level:
-        // 1. System Definition (SYS-*)
-        // 2. Non-Negotiable System Policies (POL-*)
         const systemSpecs = catSpecs.filter((s) => s.type === "product/system");
         const policySpecs = catSpecs.filter((s) => s.type === "product/policy");
 
         systemSpecs.forEach((sys) => {
           subgroups.push({
             id: `subgroup-${sys.id}`,
-            name: sys.title || sys.id,
-            badge: "System Definition",
+            name: formatDisplayTitle(sys.title, sys.id),
+            badge: "System Overview",
             icon: ShieldCheck,
             parentSpec: sys,
             specs: [],
@@ -409,23 +406,20 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
         if (policySpecs.length > 0) {
           subgroups.push({
             id: "subgroup-policies",
-            name: "Living System Policies (POL-*)",
+            name: "Governance Policies",
             badge: "Policies",
             icon: ShieldCheck,
             specs: policySpecs,
           });
         }
       } else if (cat.id === "personas_research") {
-        // Multi-level:
-        // 1. Actor Personas (PER-*)
-        // 2. Technical Explorations & Spikes (EXP-*)
         const personas = catSpecs.filter((s) => s.type === "product/persona");
         const explorations = catSpecs.filter((s) => s.type === "product/exploration");
 
         if (personas.length > 0) {
           subgroups.push({
             id: "subgroup-personas",
-            name: "Target Actor Personas (Human & AI Agents)",
+            name: "Personas",
             badge: "Personas",
             icon: Users,
             specs: personas,
@@ -435,14 +429,13 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
         if (explorations.length > 0) {
           subgroups.push({
             id: "subgroup-explorations",
-            name: "Hypothesis Spikes & Technical Explorations",
+            name: "Explorations & Research",
             badge: "Explorations",
             icon: Lightbulb,
             specs: explorations,
           });
         }
       } else if (cat.id === "deltas") {
-        // Multi-level: Group by status (Applied vs Pending vs Archived)
         const isArch = (s: SpecItem) =>
           Boolean(
             s.path && s.path.replace(/\\/g, "/").includes("deltas/archive/")
@@ -458,7 +451,7 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
         if (applied.length > 0) {
           subgroups.push({
             id: "subgroup-deltas-applied",
-            name: `Applied SpecDeltas (${applied.length})`,
+            name: `Applied Changes (${applied.length})`,
             badge: "Applied",
             icon: GitBranch,
             specs: applied,
@@ -468,8 +461,8 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
         if (pending.length > 0) {
           subgroups.push({
             id: "subgroup-deltas-pending",
-            name: `Proposed & In-Review SpecDeltas (${pending.length})`,
-            badge: "Pending",
+            name: `Open Change Proposals (${pending.length})`,
+            badge: "Open",
             icon: GitBranch,
             specs: pending,
           });
@@ -478,7 +471,7 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
         if (archived.length > 0) {
           subgroups.push({
             id: "subgroup-deltas-archived",
-            name: `Archived SpecDeltas (${archived.length})`,
+            name: `Archived Changes (${archived.length})`,
             badge: "Archived",
             icon: GitBranch,
             specs: archived,
@@ -486,7 +479,6 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
         }
       }
 
-      // Compute counts
       const allSubSpecs: SpecItem[] = [];
       subgroups.forEach((sg) => {
         if (sg.parentSpec) allSubSpecs.push(sg.parentSpec);
@@ -503,7 +495,6 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
     });
   }, [filteredSpecs]);
 
-  // Track expanded state for both Level 1 (categories) and Level 2 (subgroups)
   const [expandedNodes, setExpandedNodes] = React.useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
     SPEC_CATEGORIES.forEach((c) => {
@@ -512,7 +503,6 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
     return initial;
   });
 
-  // Expand all branches and subgroups when user types a search query
   React.useEffect(() => {
     if (searchQuery.trim()) {
       const allOpen: Record<string, boolean> = {};
@@ -562,7 +552,7 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search specifications by ID, title, or path..."
+              placeholder="Search documents..."
               className="w-full bg-muted/40 border border-border text-xs rounded-xl pl-9 pr-14 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             />
             <kbd
@@ -573,7 +563,7 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
             </kbd>
           </div>
 
-          {/* Type Filter */}
+          {/* Category Filter */}
           <div className="tree-select-wrapper">
             <select
               id="catalogTypeFilter"
@@ -581,10 +571,10 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
               onChange={(e) => setSelectedType(e.target.value)}
               className="bg-muted/40 border border-border text-xs rounded-xl px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             >
-              <option value="all">All Spec Types ({data.specs.length})</option>
+              <option value="all">All Categories ({data.specs.length})</option>
               {specTypes.map((t) => (
                 <option key={t} value={t}>
-                  {t}
+                  {formatSpecType(t)}
                 </option>
               ))}
             </select>
@@ -593,15 +583,14 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
           {/* Match pill count */}
           <span
             id="catalogSearchMatchPill"
-            className="text-xs font-mono text-muted-foreground px-2.5 py-1 rounded-full bg-muted/60"
+            className="text-xs text-muted-foreground px-2.5 py-1 rounded-full bg-muted/60"
           >
-            {filteredSpecs.length} spec(s)
+            {filteredSpecs.length} {filteredSpecs.length === 1 ? "document" : "documents"}
           </span>
         </div>
 
         {/* View Mode & Hierarchy Controls */}
         <div className="flex items-center gap-2 text-xs">
-          {/* View Mode Switcher */}
           <div className="flex items-center bg-muted/60 p-0.5 rounded-xl border border-border/60">
             <button
               onClick={() => setViewMode("hierarchy")}
@@ -611,10 +600,10 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
                   ? "bg-card text-foreground font-semibold md-elevation-1"
                   : "text-muted-foreground hover:text-foreground"
               )}
-              title="Multi-Level Hierarchical Tree"
+              title="Tree View"
             >
               <ListTree className="h-3.5 w-3.5 text-primary" />
-              <span>Multi-Level Hierarchy</span>
+              <span>Tree View</span>
             </button>
             <button
               onClick={() => setViewMode("flat")}
@@ -624,16 +613,15 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
                   ? "bg-card text-foreground font-semibold md-elevation-1"
                   : "text-muted-foreground hover:text-foreground"
               )}
-              title="Flat Table View"
+              title="List View"
             >
               <TableIcon className="h-3.5 w-3.5" />
-              <span>Flat</span>
+              <span>List View</span>
             </button>
           </div>
 
           <span className="text-border">|</span>
 
-          {/* Expand / Collapse Controls */}
           <div className="flex items-center gap-1">
             <button
               onClick={expandAllTreeGrid}
@@ -651,34 +639,29 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
         </div>
       </div>
 
-      {/* Specifications TreeGrid Table */}
+      {/* Documents TreeGrid Table */}
       <Card className="p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table id="specsTreeGridTable" className="w-full text-left text-xs">
             <thead className="bg-muted/40 border-b border-border text-muted-foreground font-semibold uppercase tracking-wider text-[10px]">
               <tr>
-                <th className="py-3 px-4 w-5/12">Specification Hierarchy & Document</th>
-                <th className="py-3 px-4 w-2/12">Type</th>
-                <th className="py-3 px-4 w-3/12">File Path</th>
-                <th className="py-3 px-4 w-2/12">Schema Conformance</th>
+                <th className="py-3 px-4 w-5/12">Document</th>
+                <th className="py-3 px-4 w-2/12">Category</th>
+                <th className="py-3 px-4 w-3/12">Section</th>
+                <th className="py-3 px-4 w-2/12">Status</th>
               </tr>
             </thead>
             <tbody id="specsTreeGridBody" className="divide-y divide-border/60">
               {filteredSpecs.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="py-12 text-center text-muted-foreground">
-                    No specifications match your search query "{searchQuery}".
+                    No documents match "{searchQuery}".
                   </td>
                 </tr>
               ) : viewMode === "hierarchy" ? (
-                // MULTI-LEVEL HIERARCHICAL TREE VIEW:
-                // Level 1: Category Branch
-                // Level 2: SubGroup / Parent Entity
-                // Level 3: Leaf Specifications
                 hierarchicalBranches.map((branch) => {
                   if (branch.total === 0) return null;
                   const isCatExpanded = Boolean(expandedNodes[branch.id]);
-                  const Icon = branch.icon;
 
                   return (
                     <React.Fragment key={branch.id}>
@@ -687,7 +670,7 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
                         onClick={() => toggleTreeGridRow(branch.id)}
                         className="bg-muted/30 hover:bg-muted/60 cursor-pointer select-none transition-colors border-t-2 border-border/80"
                       >
-                        <td colSpan={2} className="py-2.5 px-4">
+                        <td colSpan={3} className="py-2.5 px-4">
                           <div className="flex items-center gap-2.5">
                             <span className="p-1 rounded-md text-muted-foreground hover:text-foreground transition-colors">
                               {isCatExpanded ? (
@@ -703,49 +686,41 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
                                 <Folder className="h-4 w-4" />
                               )}
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
                               <span className="font-bold text-xs text-foreground tracking-tight">
                                 {branch.name}
                               </span>
-                              <span className="text-[11px] text-muted-foreground hidden sm:inline">
+                              <span className="text-[11px] text-muted-foreground hidden sm:inline truncate">
                                 • {branch.description}
                               </span>
                             </div>
                           </div>
                         </td>
-                        <td className="py-2.5 px-4 font-mono text-[11px] text-muted-foreground">
-                          {branch.types.join(", ") || "various"}
-                        </td>
                         <td className="py-2.5 px-4">
                           <div className="flex items-center gap-2">
-                            <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-semibold">
-                              {branch.total} spec(s)
+                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-semibold">
+                              {branch.total} {branch.total === 1 ? "item" : "items"}
                             </span>
-                            <span className="text-emerald-500 font-mono text-[10px] font-semibold">
+                            <span className="text-emerald-500 text-[11px] font-semibold">
                               {branch.validCount}/{branch.total} Valid
                             </span>
                           </div>
                         </td>
                       </tr>
 
-                      {/* LEVEL 2 & 3: Subgroups and Child Specs */}
+                      {/* LEVEL 2 & 3: Subgroups and Child Documents */}
                       {isCatExpanded &&
-                        branch.subgroups.map((subgroup, sgIdx) => {
-                          const isSgExpanded =
-                            expandedNodes[subgroup.id] !== false; // default open
+                        branch.subgroups.map((subgroup) => {
+                          const isSgExpanded = expandedNodes[subgroup.id] !== false;
                           const hasChildren = subgroup.specs.length > 0;
                           const SgIcon = subgroup.icon || Folder;
-                          const isLastSg = sgIdx === branch.subgroups.length - 1;
 
                           return (
                             <React.Fragment key={subgroup.id}>
                               {/* LEVEL 2: SubGroup / Parent Entity Row */}
                               <tr className="hover:bg-muted/30 transition-colors border-t border-border/40 group">
-                                <td className="py-2 px-4 pl-8">
+                                <td className="py-2 px-4 pl-9">
                                   <div className="flex items-center gap-2">
-                                    <span className="text-muted-foreground/60 font-mono text-xs select-none shrink-0">
-                                      {isLastSg ? "└── " : "├── "}
-                                    </span>
                                     {hasChildren ? (
                                       <button
                                         type="button"
@@ -762,19 +737,16 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
                                         )}
                                       </button>
                                     ) : (
-                                      <span className="w-3.5" />
+                                      <span className="w-4" />
                                     )}
                                     <SgIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                                     {subgroup.parentSpec ? (
                                       <div
                                         onClick={() => setInspectedSpec(subgroup.parentSpec!)}
-                                        className="flex items-center gap-2 cursor-pointer hover:underline"
+                                        className="flex items-center gap-2 cursor-pointer hover:underline min-w-0"
                                       >
-                                        <span className="font-mono font-bold text-primary text-xs">
-                                          {subgroup.parentSpec.id}
-                                        </span>
-                                        <span className="text-foreground font-semibold truncate max-w-xs">
-                                          {subgroup.parentSpec.title}
+                                        <span className="text-foreground font-semibold truncate max-w-md group-hover:text-primary transition-colors">
+                                          {formatDisplayTitle(subgroup.parentSpec.title, subgroup.parentSpec.id)}
                                         </span>
                                       </div>
                                     ) : (
@@ -782,13 +754,8 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
                                         {subgroup.name}
                                       </span>
                                     )}
-                                    {subgroup.badge && (
-                                      <Badge variant="outline" className="text-[9px] uppercase px-1 py-0">
-                                        {subgroup.badge}
-                                      </Badge>
-                                    )}
                                     {hasChildren && (
-                                      <span className="text-[10px] text-muted-foreground font-mono">
+                                      <span className="text-[11px] text-muted-foreground">
                                         ({subgroup.specs.length})
                                       </span>
                                     )}
@@ -797,87 +764,80 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
                                 <td className="py-2 px-4">
                                   {subgroup.parentSpec ? (
                                     <Badge variant="outline" className="text-[10px]">
-                                      {subgroup.parentSpec.type}
+                                      {formatSpecType(subgroup.parentSpec.type)}
                                     </Badge>
                                   ) : (
-                                    <span className="font-mono text-[11px] text-muted-foreground">
-                                      group
+                                    <span className="text-[11px] text-muted-foreground">
+                                      {subgroup.badge || "Group"}
                                     </span>
                                   )}
                                 </td>
-                                <td className="py-2 px-4 font-mono text-muted-foreground text-[11px] truncate max-w-xs">
-                                  {subgroup.parentSpec?.path || `${subgroup.specs.length} spec(s)`}
+                                <td className="py-2 px-4 text-muted-foreground text-[11px] truncate max-w-xs">
+                                  {subgroup.parentSpec
+                                    ? branch.name
+                                    : `${subgroup.specs.length} ${subgroup.specs.length === 1 ? "document" : "documents"}`}
                                 </td>
                                 <td className="py-2 px-4">
                                   {subgroup.parentSpec ? (
                                     subgroup.parentSpec.is_valid ? (
-                                      <span className="inline-flex items-center gap-1 text-emerald-500 font-semibold font-mono text-[11px]">
+                                      <span className="inline-flex items-center gap-1 text-emerald-500 font-semibold text-[11px]">
                                         <CheckCircle2 className="h-3 w-3" />
-                                        VALID
+                                        Valid
                                       </span>
                                     ) : (
-                                      <span className="inline-flex items-center gap-1 text-red-500 font-semibold font-mono text-[11px]">
+                                      <span className="inline-flex items-center gap-1 text-red-500 font-semibold text-[11px]">
                                         <AlertCircle className="h-3 w-3" />
-                                        INVALID
+                                        Needs Attention
                                       </span>
                                     )
                                   ) : (
-                                    <span className="text-muted-foreground font-mono text-[10px]">
-                                      {subgroup.specs.filter((s) => s.is_valid).length}/{subgroup.specs.length} valid
+                                    <span className="text-muted-foreground text-[11px]">
+                                      {subgroup.specs.filter((s) => s.is_valid).length}/{subgroup.specs.length} Valid
                                     </span>
                                   )}
                                 </td>
                               </tr>
 
-                              {/* LEVEL 3: Leaf Specifications under Subgroup */}
+                              {/* LEVEL 3: Leaf Documents under Subgroup */}
                               {isSgExpanded &&
                                 hasChildren &&
-                                subgroup.specs.map((spec, specIdx) => {
-                                  const isLastLeaf = specIdx === subgroup.specs.length - 1;
-                                  return (
-                                    <tr
-                                      key={spec.id}
-                                      onClick={() => setInspectedSpec(spec)}
-                                      className="hover:bg-muted/40 cursor-pointer transition-colors group"
-                                    >
-                                      <td className="py-2 px-4 pl-16">
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-muted-foreground/50 font-mono text-xs select-none shrink-0">
-                                            {isLastLeaf ? "└── " : "├── "}
-                                          </span>
-                                          <FileText className="h-3 w-3 text-muted-foreground shrink-0 group-hover:text-primary transition-colors" />
-                                          <span className="font-mono font-bold text-primary group-hover:underline">
-                                            {spec.id}
-                                          </span>
-                                          <span className="text-foreground font-medium truncate max-w-sm">
-                                            {spec.title}
-                                          </span>
-                                        </div>
-                                      </td>
-                                      <td className="py-2 px-4">
-                                        <Badge variant="outline" className="text-[10px]">
-                                          {spec.type}
-                                        </Badge>
-                                      </td>
-                                      <td className="py-2 px-4 font-mono text-muted-foreground text-[11px] truncate max-w-xs">
-                                        {spec.path}
-                                      </td>
-                                      <td className="py-2 px-4">
-                                        {spec.is_valid ? (
-                                          <span className="inline-flex items-center gap-1 text-emerald-500 font-semibold font-mono text-[11px]">
-                                            <CheckCircle2 className="h-3 w-3" />
-                                            VALID
-                                          </span>
-                                        ) : (
-                                          <span className="inline-flex items-center gap-1 text-red-500 font-semibold font-mono text-[11px]">
-                                            <AlertCircle className="h-3 w-3" />
-                                            INVALID
-                                          </span>
-                                        )}
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
+                                subgroup.specs.map((spec) => (
+                                  <tr
+                                    key={spec.id}
+                                    onClick={() => setInspectedSpec(spec)}
+                                    className="hover:bg-muted/40 cursor-pointer transition-colors group"
+                                  >
+                                    <td className="py-2 px-4 pl-16">
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0 group-hover:text-primary transition-colors" />
+                                        <span className="text-foreground font-medium truncate max-w-md group-hover:text-primary transition-colors">
+                                          {formatDisplayTitle(spec.title, spec.id)}
+                                        </span>
+                                      </div>
+                                    </td>
+                                    <td className="py-2 px-4">
+                                      <Badge variant="outline" className="text-[10px]">
+                                        {formatSpecType(spec.type)}
+                                      </Badge>
+                                    </td>
+                                    <td className="py-2 px-4 text-muted-foreground text-[11px] truncate max-w-xs">
+                                      {subgroup.name}
+                                    </td>
+                                    <td className="py-2 px-4">
+                                      {spec.is_valid ? (
+                                        <span className="inline-flex items-center gap-1 text-emerald-500 font-semibold text-[11px]">
+                                          <CheckCircle2 className="h-3 w-3" />
+                                          Valid
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center gap-1 text-red-500 font-semibold text-[11px]">
+                                          <AlertCircle className="h-3 w-3" />
+                                          Needs Attention
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
                             </React.Fragment>
                           );
                         })}
@@ -885,7 +845,7 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
                   );
                 })
               ) : (
-                // Flat Table View
+                // List View
                 filteredSpecs.map((spec) => (
                   <tr
                     key={spec.id}
@@ -893,33 +853,31 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
                     className="hover:bg-muted/30 cursor-pointer transition-colors group"
                   >
                     <td className="py-3 px-4">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-primary group-hover:underline">
-                          {spec.id}
-                        </span>
-                        <span className="text-foreground font-medium truncate max-w-xs">
-                          {spec.title}
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0 group-hover:text-primary transition-colors" />
+                        <span className="text-foreground font-medium truncate max-w-md group-hover:text-primary transition-colors">
+                          {formatDisplayTitle(spec.title, spec.id)}
                         </span>
                       </div>
                     </td>
                     <td className="py-3 px-4">
                       <Badge variant="outline" className="text-[10px]">
-                        {spec.type}
+                        {formatSpecType(spec.type)}
                       </Badge>
                     </td>
-                    <td className="py-3 px-4 font-mono text-muted-foreground text-[11px] truncate max-w-sm">
-                      {spec.path}
+                    <td className="py-3 px-4 text-muted-foreground text-[11px] truncate max-w-sm">
+                      {resolveSpecSection(spec)}
                     </td>
                     <td className="py-3 px-4">
                       {spec.is_valid ? (
-                        <span className="inline-flex items-center gap-1 text-emerald-500 font-semibold font-mono text-[11px]">
+                        <span className="inline-flex items-center gap-1 text-emerald-500 font-semibold text-[11px]">
                           <CheckCircle2 className="h-3.5 w-3.5" />
-                          VALID
+                          Valid
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-red-500 font-semibold font-mono text-[11px]">
+                        <span className="inline-flex items-center gap-1 text-red-500 font-semibold text-[11px]">
                           <AlertCircle className="h-3.5 w-3.5" />
-                          INVALID
+                          Needs Attention
                         </span>
                       )}
                     </td>
@@ -931,12 +889,12 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
         </div>
       </Card>
 
-      {/* Specification Inspector Sheet */}
+      {/* Document Inspector Sheet */}
       <Sheet
         open={Boolean(inspectedSpec)}
         onOpenChange={(open) => !open && setInspectedSpec(null)}
-        title={inspectedSpec?.title || "Specification"}
-        subtitle={inspectedSpec?.id}
+        title={inspectedSpec ? formatDisplayTitle(inspectedSpec.title, inspectedSpec.id) : "Document"}
+        subtitle={inspectedSpec ? formatSpecType(inspectedSpec.type) : undefined}
         maxWidth="6xl"
       >
         {inspectedSpec && (

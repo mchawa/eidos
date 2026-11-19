@@ -344,10 +344,10 @@ def test_c4_level2_container_hierarchy_and_connections():
     assert 'CNT_EIDOS_CLI -->|"In-Process Python API"| CNT_EIDOS_CORE' in c4_containers
     assert 'CNT_EIDOS_CLI -->|"Queries &amp; Stores Data"| CNT_EIDOS_INDEX' in c4_containers
     assert 'CNT_EIDOS_CLI -->|"In-Process Python API"| CNT_EIDOS_PLUGIN' in c4_containers
-    assert 'CNT_EIDOS_CLI -->|"HTTP JSON • [CTR-EIDOS-PORTAL]"| CNT_EIDOS_PORTAL' in c4_containers
+    assert 'CNT_EIDOS_CLI -->|"HTTP JSON • Eidos Living Web Portal HTTP Interface Contract"| CNT_EIDOS_PORTAL' in c4_containers
     assert 'CNT_EIDOS_PORTAL -->|"In-Process Python API"| CNT_EIDOS_CORE' in c4_containers
     assert 'CNT_EIDOS_PORTAL -->|"Queries &amp; Stores Data"| CNT_EIDOS_INDEX' in c4_containers
-    assert 'CNT_EIDOS_DOCS -->|"HTTP JSON • Consumes [CTR-EIDOS-PORTAL]"| CNT_EIDOS_PORTAL' in c4_containers
+    assert 'CNT_EIDOS_DOCS -->|"HTTP JSON • Eidos Living Web Portal HTTP Interface Contract"| CNT_EIDOS_PORTAL' in c4_containers
     assert 'CNT_EIDOS_PLUGIN -->|"In-Process Python API"| CNT_EIDOS_CORE' in c4_containers
     assert 'CNT_EIDOS_INDEX -->|"In-Process Python API"| CNT_EIDOS_CORE' in c4_containers
 
@@ -952,7 +952,7 @@ def test_portal_mermaid_diagram_generators_and_asset_fallbacks(tmp_path, monkeyp
         ],
         "",
     )
-    assert "flowchart LR" in journey_diag and "home" in journey_diag and "..." in journey_diag
+    assert "flowchart LR" in journey_diag and "Home" in journey_diag and "..." in journey_diag
 
     # 3. _generate_c4_containers_mermaid & _generate_c4_component_mermaid edge branches
     c4_cnts = _generate_c4_containers_mermaid(
@@ -1022,7 +1022,7 @@ def test_portal_mermaid_diagram_generators_and_asset_fallbacks(tmp_path, monkeyp
         {"id": "CNT-EMPTY", "title": "Empty", "internal_components": []},
         [{"id": "CNT-EMPTY", "title": "Empty"}],
     )
-    assert "Core Container Logic" in c4_empty_cmp
+    assert "Core Logic" in c4_empty_cmp
 
     # 4. portal/assets.py FileNotFoundError fallback paths
     def _raise_fnf(_subpath=""):
@@ -1235,7 +1235,7 @@ def test_portal_lazy_assets_hatch_mtime_gate_all_personas_and_c4_component_edges
         ],
     }
     diag_dep = _generate_c4_component_mermaid(cnt_dependent, [cnt_dependent])
-    assert "mod_CNT_DEP_0 -.-> mod_CNT_DEP_1" in diag_dep
+    assert "mod_CMP_CALLER -.-> mod_CMP_CALLEE" in diag_dep
 
     # 5. Promoted tech/component specs preserve domain and AST-derived dependencies in get_portal_data
     from eidos.portal.generator import get_portal_data
@@ -1289,7 +1289,7 @@ def test_portal_lazy_assets_hatch_mtime_gate_all_personas_and_c4_component_edges
     prom_a = next(ic for ic in app_cnt["internal_components"] if ic["id"] == "CMP-PROM-A")
     assert prom_a["domain"] == "DOM-CORE"
     assert prom_a["dependencies"] == ["CMP-PROM-B"]
-    assert "mod_CNT_APP_0 -.-> mod_CNT_APP_1" in pdata["diagrams"]["c4_components"]["CNT-APP"]
+    assert "mod_CMP_PROM_A -.-> mod_CMP_PROM_B" in pdata["diagrams"]["c4_components"]["CNT-APP"]
 
 
 def test_group_d4_portal_regressions(tmp_path):  # eidos:fixture
@@ -1414,7 +1414,7 @@ contracts:
     # 1. Inter-container dependencies derived from contracts for frontend and Mermaid
     web_comp = next(c for c in pdata["components"] if c["id"] == "CNT-WEB")
     assert web_comp["dependencies"]["internal_containers"] == ["CNT-CORE"]
-    assert "Consumes [CTR-CORE]" in pdata["diagrams"]["c4_containers"]
+    assert "Uses Core" in pdata["diagrams"]["c4_containers"]
 
     # 2. Non-dict invariant strings ignored without crash and INV-SHARED-001 deduplicated once
     inv_ids = [i["id"] for i in pdata["invariants"]]
@@ -1426,7 +1426,8 @@ contracts:
     assert "&lt;script&gt;" in pdata["diagrams"]["c4_context"]
     assert "&lt;Admin&gt;" in pdata["diagrams"]["c4_context"]
     assert "&lt;Engineer&gt;" in pdata["diagrams"]["c4_containers"]
-    assert "&lt;20&gt;" in pdata["diagrams"]["c4_containers"]
+    assert "&lt;App&gt;" in pdata["diagrams"]["c4_containers"]
+    assert "<20>" not in pdata["diagrams"]["c4_containers"]
     assert "&lt;App&gt;" in pdata["diagrams"]["c4_components"]["CNT-WEB"]
 
     # 4. EidosPortalHandler static_dir path traversal protection and POST /api/validate resolved path comparison
@@ -1833,8 +1834,8 @@ def test_portal_static_scalability_and_deep_linking(tmp_path: Path):
     assert "Interactive Blast Radius Simulator" in PORTAL_HTML_TEMPLATE
     assert "Boundary Interface Contracts" in PORTAL_HTML_TEMPLATE
     assert "Validation & Governance Diagnostics" in PORTAL_HTML_TEMPLATE
-    assert "Recursive W3C Token Tree" in PORTAL_HTML_TEMPLATE
-    assert "Show More Deltas" in PORTAL_HTML_TEMPLATE
+    assert "All Design Tokens" in PORTAL_HTML_TEMPLATE
+    assert "Show More Changes" in PORTAL_HTML_TEMPLATE
     assert "overscroll-contain" in PORTAL_HTML_TEMPLATE
     assert "deltas/archive/" in PORTAL_HTML_TEMPLATE
     assert "explorations/archive/" in PORTAL_HTML_TEMPLATE
@@ -1863,9 +1864,9 @@ def test_portal_xss_sanitization_path_containment_and_host_cors_isolation(tmp_pa
     assert "SANITIZE_DOM" in PORTAL_HTML_TEMPLATE
     assert "spec-" in PORTAL_HTML_TEMPLATE
 
-    arch_view_src = Path(
-        "src/eidos/portal/frontend/src/components/views/ArchitectureView.tsx"
-    ).read_text(encoding="utf-8")
+    arch_view_src = Path("src/eidos/portal/frontend/src/components/views/ArchitectureView.tsx").read_text(
+        encoding="utf-8"
+    )
     assert "String(err)" not in arch_view_src or "innerHTML" not in arch_view_src.split("catch")[1]
     assert "if (hasMovedRef.current) return;" in arch_view_src
     assert "blast-radius-1-hop" in arch_view_src and "blast-radius-2-hop" in arch_view_src
@@ -1929,9 +1930,7 @@ def test_portal_xss_sanitization_path_containment_and_host_cors_isolation(tmp_pa
         encoding="utf-8",
     )
     # Sibling tokens.json must NOT be loaded if explicit tokens.manifest escapes repo_root
-    (ds_dir / "tokens.json").write_text(
-        '{"fallback": {"$value": "SHOULD_NOT_LOAD_ON_TRAVERSAL"}}', encoding="utf-8"
-    )
+    (ds_dir / "tokens.json").write_text('{"fallback": {"$value": "SHOULD_NOT_LOAD_ON_TRAVERSAL"}}', encoding="utf-8")
     escape_symlink = ds_dir / "symlink_tokens.json"
     escape_symlink.symlink_to(outside_secret)
 
@@ -2057,9 +2056,7 @@ def test_portal_xss_sanitization_path_containment_and_host_cors_isolation(tmp_pa
     assert dummy_handler._is_allowed_host("other.local:3000") is False
 
 
-def test_portal_live_drift_sse_c4_context_and_screen_hydration(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_portal_live_drift_sse_c4_context_and_screen_hydration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Verify INV-PORTAL-LIVE-DRIFT-SSE:
     - _compute_eidos_mtime_snapshot tracks governed src/ and tests/ trees alongside eidos/
     - _get_cached_drift fails closed (is_clean=False, drift_detected=True, error=...) on exceptions
@@ -2082,7 +2079,10 @@ def test_portal_live_drift_sse_c4_context_and_screen_hydration(
 
     assert _compute_eidos_mtime_snapshot(tmp_path / "missing_eidos") == (0, 0, 0)
     assert _to_repo_rel_posix("./eidos/system.adoc", tmp_path.resolve()) == "eidos/system.adoc"
-    assert _to_repo_rel_posix(Path("/nonexistent_outside_root/x.adoc"), tmp_path.resolve()) == "/nonexistent_outside_root/x.adoc"
+    assert (
+        _to_repo_rel_posix(Path("/nonexistent_outside_root/x.adoc"), tmp_path.resolve())
+        == "/nonexistent_outside_root/x.adoc"
+    )
 
     ec_dict, f_dict, rec_dict = _extract_exploration_fields(
         {"exit_criteria": {"max_duration": "2d", "benchmark": "<50ms"}},
@@ -2131,7 +2131,7 @@ def test_portal_live_drift_sse_c4_context_and_screen_hydration(
     )
     (ws / "eidos" / "domains" / "core" / "capabilities" / "live-cap.adoc").write_text(
         f'---\ntype: product/capability\nid: CAP-LIVE-001\ntitle: "Live Cap"\nstatus: active\ndomain: DOM-LIVE\n'
-        f'technical:\n  containers:\n    - CNT-LIVE\n  invariants:\n    - id: {inv_live_uncov}\n'
+        f"technical:\n  containers:\n    - CNT-LIVE\n  invariants:\n    - id: {inv_live_uncov}\n"
         f'      rule: "Must track live drift invariants."\n'
         f'      test_binding: "tests/test_mod.py::test_missing_live_binding"\n---\n= Live Cap\n',
         encoding="utf-8",
@@ -2140,7 +2140,7 @@ def test_portal_live_drift_sse_c4_context_and_screen_hydration(
         '---\ntype: product/exploration\nid: EXP-LIVE-001\ntitle: "Spike"\nstatus: adopted\n'
         'hypothesis: "Test SSE"\ndecision:\n  outcome: adopted\n  resulting_deltas:\n    - DLT-2026-001\n'
         '  learnings: "SSE works"\n---\n= Spike\n\n== 1. Scope\n* *Exit Criteria*: Sub-second drift push.\n\n'
-        '== 4. Exit Criteria\n* Zero hanging daemon threads.\n',
+        "== 4. Exit Criteria\n* Zero hanging daemon threads.\n",
         encoding="utf-8",
     )
     src_file = ws / "src" / "pkg" / "mod.py"
@@ -2203,9 +2203,7 @@ def test_portal_live_drift_sse_c4_context_and_screen_hydration(
 
         mut_thread = threading.Thread(target=_mutate_src_soon, daemon=True)
         mut_thread.start()
-        with urllib.request.urlopen(
-            f"http://127.0.0.1:{port}/api/events?max_events=2", timeout=5
-        ) as sse_stream:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/events?max_events=2", timeout=5) as sse_stream:
             stream_body = sse_stream.read().decode("utf-8")
             frames = [ln[6:] for ln in stream_body.splitlines() if ln.startswith("data: ")]
             assert len(frames) == 2
@@ -2320,7 +2318,7 @@ def test_portal_server_disconnect_resilience_gzip_lock_isolation_and_dotnet_snap
     obj_dir = svc_dir / "obj"
     bin_dir.mkdir(parents=True, exist_ok=True)
     obj_dir.mkdir(parents=True, exist_ok=True)
-    (svc_dir / "GBF.Service.csproj").write_text("<Project Sdk=\"Microsoft.NET.Sdk\" />\n", encoding="utf-8")
+    (svc_dir / "GBF.Service.csproj").write_text('<Project Sdk="Microsoft.NET.Sdk" />\n', encoding="utf-8")
     dll_file = bin_dir / "GBF.dll"
     obj_file = obj_dir / "project.assets.json"
     cs_file = svc_dir / "PartyService.cs"
@@ -2330,36 +2328,40 @@ def test_portal_server_disconnect_resilience_gzip_lock_isolation_and_dotnet_snap
 
     # Container uses a YAML list for source_path and wildcard component path
     (eidos_dir / "architecture" / "containers" / "gbf.adoc").write_text(
-        "\n".join([
-            "---",
-            "type: tech/container",
-            "id: CNT-GBF",
-            "title: GBF Service",
-            "status: active",
-            "container_type: service",
-            "runtime: .NET 8",
-            "domain: DOM-CORE",
-            "source_path:",
-            "  - GBFSolution/GBF.Service",
-            "---",
-            "= Container: GBF Service",
-            "",
-        ]),
+        "\n".join(
+            [
+                "---",
+                "type: tech/container",
+                "id: CNT-GBF",
+                "title: GBF Service",
+                "status: active",
+                "container_type: service",
+                "runtime: .NET 8",
+                "domain: DOM-CORE",
+                "source_path:",
+                "  - GBFSolution/GBF.Service",
+                "---",
+                "= Container: GBF Service",
+                "",
+            ]
+        ),
         encoding="utf-8",
     )
     (eidos_dir / "architecture" / "components" / "party.adoc").write_text(
-        "\n".join([
-            "---",
-            "type: tech/component",
-            "id: CMP-PARTY",
-            "title: PartyService",
-            "container: CNT-GBF",
-            "status: active",
-            'source_path: "GBFSolution/GBF.Service/*.cs"',
-            "---",
-            "= Component: PartyService",
-            "",
-        ]),
+        "\n".join(
+            [
+                "---",
+                "type: tech/component",
+                "id: CMP-PARTY",
+                "title: PartyService",
+                "container: CNT-GBF",
+                "status: active",
+                'source_path: "GBFSolution/GBF.Service/*.cs"',
+                "---",
+                "= Component: PartyService",
+                "",
+            ]
+        ),
         encoding="utf-8",
     )
 
@@ -2499,9 +2501,7 @@ def test_portal_server_disconnect_resilience_gzip_lock_isolation_and_dotnet_snap
 
             def _fetch_sse() -> None:
                 try:
-                    with urllib.request.urlopen(
-                        f"http://127.0.0.1:{port}/api/events?once=1", timeout=5
-                    ) as sse_resp:
+                    with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/events?once=1", timeout=5) as sse_resp:
                         sse_resp.read()
                 finally:
                     sse_done.set()
@@ -2565,3 +2565,170 @@ def test_portal_server_disconnect_resilience_gzip_lock_isolation_and_dotnet_snap
             gi._INDEX_INSTANCE = None
 
 
+def test_portal_human_readable_ui_and_slug_free_diagrams():
+    """Verify INV-PORTAL-HUMAN-READABLE-UI: slug-free, jargon-free portal UI bundle, humanized invariants, and human-readable Mermaid labels with stable component-ID-derived node IDs."""
+    from eidos.portal.mermaid import (
+        _extract_or_generate_flow_mermaid,
+        _generate_c4_component_mermaid,
+        _generate_screen_state_mermaid,
+        _humanize_container_type,
+        _humanize_protocol,
+        _humanize_token,
+    )
+
+    # 1. Unit checks for mermaid humanization helpers and backward-compatible optional kwargs
+    assert _humanize_token("") == ""
+    assert _humanize_token("mobile_drawer_open") == "Mobile Drawer Open"
+    assert _humanize_token("CMP-PORTAL-ASSETS") == "Portal Assets"
+    assert _humanize_token("http_json") == "HTTP JSON"
+    assert _humanize_container_type("web_app") == "Web App"
+    assert _humanize_container_type("custom_daemon") == "Custom Daemon"
+    assert _humanize_protocol("python_protocol") == "Python API"
+    assert _humanize_protocol("grpc_stream") == "Grpc Stream"
+
+    # Component diagram fallback without contracts kwarg + with contracts kwarg
+    sample_comp = {
+        "id": "CNT-SAMPLE",
+        "title": "Sample Service",
+        "dependencies": {"internal_containers": ["CNT-PEER"]},
+        "contracts": {"provides": ["CTR-SAMPLE-API"], "consumes": []},
+        "internal_components": [
+            {
+                "id": "CMP-SAMPLE-ENGINE",
+                "title": "SampleEngine",
+                "responsibility": "Processes requests cleanly.",
+                "file_path": "src/sample/engine.py",
+                "contracts_provided": ["CTR-SAMPLE-API"],
+                "contracts_consumed": [],
+            },
+            {
+                "title": "Fallback Module",
+                "responsibility": "Handles fallback without explicit ID.",
+                "contracts_provided": [],
+                "contracts_consumed": [],
+            },
+        ],
+    }
+    comp_mermaid_no_kwarg = _generate_c4_component_mermaid(
+        sample_comp,
+        [{"id": "CNT-PEER", "title": "Peer Service"}],
+    )
+    assert "mod_CMP_SAMPLE_ENGINE[" in comp_mermaid_no_kwarg
+    assert "<b>Sample Engine</b>" in comp_mermaid_no_kwarg
+    assert "src/sample/engine.py" not in comp_mermaid_no_kwarg
+    assert "CMP-SAMPLE-ENGINE" not in comp_mermaid_no_kwarg
+    assert "CNT-PEER" not in comp_mermaid_no_kwarg
+    assert "Peer Service" in comp_mermaid_no_kwarg
+    assert "CTR-SAMPLE-API" not in comp_mermaid_no_kwarg
+    assert "Sample API" in comp_mermaid_no_kwarg
+
+    comp_mermaid_with_contracts = _generate_c4_component_mermaid(
+        sample_comp,
+        [{"id": "CNT-PEER", "title": "Peer Service"}],
+        contracts=[{"id": "CTR-SAMPLE-API", "title": "Sample HTTP Interface", "protocol": "http_json"}],
+    )
+    assert "Sample HTTP Interface" in comp_mermaid_with_contracts
+    assert "Interface Contract" in comp_mermaid_with_contracts
+
+    # Screen state Mermaid uses readable state aliases
+    state_diagram = _generate_screen_state_mermaid(
+        "SCR-SAMPLE",
+        [
+            {"name": "mobile_drawer_open", "description": "Drawer visible"},
+            "ready_state",
+        ],
+        [],
+    )
+    assert 'state "Mobile Drawer Open" as mobile_drawer_open' in state_diagram
+    assert 'state "Ready State" as ready_state' in state_diagram
+
+    # Flow Mermaid resolves client & screen titles and falls back gracefully when lookup maps are omitted
+    seq_steps = [
+        {"step": 1, "client": "CLT-WEB-PORTAL", "title": "Browse", "action": "Open overview"},
+        {"step": 2, "client": "CLT-CLI", "title": "Serve", "action": "Start portal"},
+    ]
+    flow_seq_resolved = _extract_or_generate_flow_mermaid(
+        "FLOW-TEST",
+        "cross_client",
+        seq_steps,
+        "",
+        clients_by_id={"CLT-WEB-PORTAL": "Web Living Documentation Portal"},
+    )
+    assert "participant CLT_WEB_PORTAL as Web Living Documentation Portal" in flow_seq_resolved
+    assert "participant CLT_CLI as CLI" in flow_seq_resolved
+
+    journey_steps = [
+        {"step": 1, "title": "Inspect", "screen": "eidos/design/clients/web-portal/screens/portal-home.adoc"},
+        {"step": 2, "title": "Review"},
+    ]
+    flow_jrn_resolved = _extract_or_generate_flow_mermaid(
+        "FLOW-JRN",
+        "user_journey",
+        journey_steps,
+        "",
+        screens_by_id={"portal-home": "Portal Overview Screen"},
+    )
+    assert "Portal Overview Screen" in flow_jrn_resolved
+    assert "[portal-home]" not in flow_jrn_resolved
+
+    flow_jrn_fallback = _extract_or_generate_flow_mermaid("FLOW-JRN", "user_journey", journey_steps, "")
+    assert "Portal Home" in flow_jrn_fallback
+
+    # 2. Live repository get_portal_data() verification
+    data = get_portal_data(Path("eidos"))
+    c4_context = data["diagrams"]["c4_context"]
+    assert "SYS[" in c4_context
+    assert "SYS-EIDOS-001" not in c4_context
+
+    c4_containers = data["diagrams"]["c4_containers"]
+    assert "CNT_EIDOS_PORTAL[" in c4_containers
+    assert "Web App" in c4_containers
+    assert "CLI App" in c4_containers
+    assert "web_app" not in c4_containers
+    assert "cli_app" not in c4_containers
+    assert "[CTR-EIDOS-PORTAL]" not in c4_containers
+    assert "<b>CNT-EIDOS-PORTAL</b>" not in c4_containers
+
+    portal_l3 = data["diagrams"]["c4_components"]["CNT-EIDOS-PORTAL"]
+    assert "mod_CMP_PORTAL_ASSETS[" in portal_l3
+    assert "mod_CMP_PORTAL_GENERATOR[" in portal_l3
+    assert "Level 2 Container: CNT-EIDOS-PORTAL" not in portal_l3
+    assert "<b>CMP-PORTAL-ASSETS</b>" not in portal_l3
+
+    # Every live Level 3 diagram omits literal backticks and raw internal IDs inside visible labels
+    raw_inline_re = re.compile(r"\b(?:SYS|DOM|CAP|POL|PER|INV|DEC|CNT|CMP|CTR|DS|CLT|SCR|UIC|FLOW|DLT|EXP)-[A-Z0-9_-]+\b")
+    for cid, diag in data["diagrams"]["c4_components"].items():
+        for lbl in re.findall(r'"([^"]+)"', diag):
+            assert "`" not in lbl, f"Backtick leaked in c4_components[{cid}]: {lbl}"
+            assert not raw_inline_re.search(lbl), f"Raw Eidos ID leaked in c4_components[{cid}]: {lbl}"
+
+    # Live flow diagrams (including explicit [mermaid] blocks) resolve CLT-* and SCR-* IDs to human titles
+    flows_by_id = {f["id"]: f for f in data.get("flows", [])}
+    assert "SCR-PORTAL-HOME" not in flows_by_id["FLOW-PORTAL-EXPLORATION"]["mermaid"]
+    assert "SCR-PORTAL-CATALOG" not in flows_by_id["FLOW-PORTAL-EXPLORATION"]["mermaid"]
+    assert "Portal Executive Dashboard" in flows_by_id["FLOW-PORTAL-EXPLORATION"]["mermaid"]
+    assert "CLT-WEB-PORTAL" not in flows_by_id["FLOW-CLI-SERVE-AND-BROWSE"]["mermaid"]
+    assert "Web Living Documentation Portal" in flows_by_id["FLOW-CLI-SERVE-AND-BROWSE"]["mermaid"]
+
+    # Invariants have humanized titles and resolved source_title
+    invariants = data["invariants"]
+    assert invariants
+    for inv in invariants:
+        assert not str(inv.get("title", "")).startswith("INV-"), f"Raw INV title leaked: {inv}"
+        assert inv.get("source_title"), f"Missing source_title on invariant: {inv}"
+        assert not str(inv.get("source_title", "")).startswith(("POL-", "CAP-", "CNT-", "CMP-"))
+
+    # 3. Compiled air-gapped portal bundle excludes removed slugs and technical jargon
+    for banned in (
+        "SCR-PORTAL-BUSINESS",
+        "DDD Strategic Layer",
+        "SSE Live Stream",
+        "POL-002 Traceability",
+        "1\u20132 Hop Graph BFS",
+        "Zero ADR Policy",
+        "Recursive W3C Token Tree",
+        "Show More Deltas",
+        "Inspect Raw YAML",
+        "Synthesizing Living Specifications...",
+    ):
+        assert banned not in PORTAL_HTML_TEMPLATE, f"Removed UI copy still present in portal bundle: {banned}"

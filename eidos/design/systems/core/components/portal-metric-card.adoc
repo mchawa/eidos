@@ -21,7 +21,7 @@ states:
 :toc: left
 
 == 1. Visual Presentation
-The Dashboard Metric Card (`UIC-PORTAL-METRIC-CARD`) displays high-level system indicators (e.g. Total Specs, Domains, Capabilities, Invariants, C4 Containers, SpecDeltas).
+The Dashboard Metric Card (`UIC-PORTAL-METRIC-CARD`) displays high-level system indicators using plain human terminology (e.g. Specifications, Domains, Capabilities, System Containers, Active Changes, and Automated Checks).
 Each card features:
 * Numeric metric value with high visual weight.
 * Categorical uppercase subtitle label.

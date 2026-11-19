@@ -1,20 +1,21 @@
 import * as React from "react";
 import {
   FileText,
-  Copy,
-  Check,
-  Code2,
-  ChevronDown,
-  ChevronUp,
   ShieldCheck,
   Layers,
-  GitBranch,
   List,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { AsciiDocRenderer, useAsciiDocOutline } from "@/components/ui/AsciiDocRenderer";
 import { requestSpecNavigation } from "@/lib/specNav";
 import { useResolvedSpecBody } from "@/lib/specChunks";
+import {
+  formatDisplayTitle,
+  formatSpecType,
+  formatStatus,
+  resolveEntityTitle,
+  useEntityLabels,
+} from "@/lib/presentation";
 import { cn } from "@/lib/utils";
 
 export interface SpecReaderItem {
@@ -38,13 +39,10 @@ export interface SpecReaderProps {
 
 export function SpecReader({
   spec,
-  onClose,
   className,
-  isModal = false,
 }: SpecReaderProps) {
-  const [showRawFrontmatter, setShowRawFrontmatter] = React.useState(false);
-  const [copiedId, setCopiedId] = React.useState(false);
   const [activeHeadingId, setActiveHeadingId] = React.useState<string>("");
+  const labelIndex = useEntityLabels();
 
   const stageRef = React.useRef<HTMLDivElement>(null);
   const { body: resolvedBody, frontmatter: loadedFrontmatter, loading: loadingChunk } =
@@ -102,12 +100,6 @@ export function SpecReader({
     return () => scrollTarget.removeEventListener("scroll", handleScroll);
   }, [outline]);
 
-  const handleCopyId = () => {
-    navigator.clipboard.writeText(spec.id);
-    setCopiedId(true);
-    setTimeout(() => setCopiedId(false), 2000);
-  };
-
   const handleTocClick = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
     e.preventDefault();
     const el = document.getElementById(id);
@@ -121,126 +113,71 @@ export function SpecReader({
   const fm = effectiveFrontmatter || {};
   const domainBinding = fm.domain;
   const containerBinding = fm.container;
-  const invariants = fm.blast_radius?.invariants_to_enforce || fm.invariants;
-  const vcs = fm.vcs;
+  const invariants = fm.blast_radius?.invariants_to_enforce || fm.invariants || fm.technical?.invariants;
+  const domainTitle = domainBinding ? resolveEntityTitle(String(domainBinding), labelIndex) : "";
+  const containerTitle = containerBinding ? resolveEntityTitle(String(containerBinding), labelIndex) : "";
+  const displayTitle = formatDisplayTitle(spec.title, spec.id);
 
   return (
     <div ref={stageRef} className={cn("space-y-4 spec-reader-stage w-full", className)}>
-      {/* Human-Centric Specification Metadata Header Card */}
+      {/* Human-Centric Document Metadata Header Card */}
       <div className="p-4 sm:p-5 rounded-2xl bg-card border border-border/80 md-elevation-1 space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-2 flex-1 min-w-[280px]">
-            {/* Breadcrumb Path & Badges */}
+            {/* Category & Status Badges */}
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="primary">{spec.type}</Badge>
+              <Badge variant="primary">{formatSpecType(spec.type)}</Badge>
               <Badge variant={spec.is_valid !== false ? "success" : "danger"}>
-                {spec.is_valid !== false ? "● VALID" : "INVALID"}
+                {spec.is_valid !== false ? "Valid" : "Needs Attention"}
               </Badge>
               {spec.status && (
-                <Badge variant="outline" className="capitalize">
-                  {spec.status}
+                <Badge variant="outline">
+                  {formatStatus(spec.status)}
                 </Badge>
               )}
-              {spec.path && (
-                <span className="font-mono text-xs text-muted-foreground px-2 py-0.5 rounded bg-muted/60 truncate max-w-sm">
-                  {spec.path}
-                </span>
-              )}
             </div>
 
-            {/* Document Title & Copyable ID */}
+            {/* Document Title */}
             <div className="flex flex-wrap items-center gap-3 pt-1">
               <h1 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight">
-                {spec.title || spec.id}
+                {displayTitle}
               </h1>
-              <button
-                type="button"
-                onClick={handleCopyId}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-semibold bg-muted hover:bg-muted/80 text-foreground transition-colors cursor-pointer border border-border/60"
-                title="Copy Specification ID"
-              >
-                {copiedId ? (
-                  <>
-                    <Check className="h-3.5 w-3.5 text-emerald-500" />
-                    <span className="text-emerald-500 font-bold">{spec.id}</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span>{spec.id}</span>
-                  </>
-                )}
-              </button>
             </div>
           </div>
-
         </div>
 
         {/* High-Level Relationship Badges (Clickable Cross-Entity Navigation) */}
-        {(domainBinding || containerBinding || invariants || vcs) && (
+        {(domainTitle || containerTitle || (Array.isArray(invariants) && invariants.length > 0)) && (
           <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/60 text-xs">
-            {domainBinding && (
+            {domainBinding && domainTitle && (
               <button
                 type="button"
                 onClick={() => requestSpecNavigation(String(domainBinding))}
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 font-medium transition-colors cursor-pointer"
-                title={`Navigate to Domain ${domainBinding}`}
+                title={`Open ${domainTitle}`}
               >
                 <Layers className="h-3.5 w-3.5" />
-                <span>Domain: {domainBinding}</span>
+                <span>Domain: {domainTitle}</span>
               </button>
             )}
-            {containerBinding && (
+            {containerBinding && containerTitle && (
               <button
                 type="button"
                 onClick={() => requestSpecNavigation(String(containerBinding))}
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 font-medium transition-colors cursor-pointer"
-                title={`Navigate to Container ${containerBinding}`}
+                title={`Open ${containerTitle}`}
               >
                 <FileText className="h-3.5 w-3.5" />
-                <span>Container: {containerBinding}</span>
+                <span>Container: {containerTitle}</span>
               </button>
             )}
             {Array.isArray(invariants) && invariants.length > 0 && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
                 <ShieldCheck className="h-3.5 w-3.5" />
-                <span>{invariants.length} Invariants Enforced</span>
+                <span>
+                  {invariants.length} {invariants.length === 1 ? "Rule" : "Rules"} Verified
+                </span>
               </span>
-            )}
-            {vcs?.branch && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-zinc-800 text-zinc-300 border border-zinc-700 font-mono text-[11px]">
-                <GitBranch className="h-3.5 w-3.5 text-primary" />
-                <span>{vcs.branch}</span>
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Collapsible Raw Frontmatter Accordion (Clean, Non-Blocking) */}
-        {effectiveFrontmatter && (
-          <div className="pt-2 border-t border-border/60">
-            <button
-              type="button"
-              onClick={() => setShowRawFrontmatter((prev) => !prev)}
-              className="text-xs font-medium text-muted-foreground hover:text-foreground flex items-center gap-1.5 cursor-pointer py-1"
-            >
-              <Code2 className="h-3.5 w-3.5 text-primary" />
-              <span>
-                {showRawFrontmatter ? "Hide Raw Frontmatter" : "Inspect Raw YAML / JSON Frontmatter"}
-              </span>
-              {showRawFrontmatter ? (
-                <ChevronUp className="h-3.5 w-3.5" />
-              ) : (
-                <ChevronDown className="h-3.5 w-3.5" />
-              )}
-            </button>
-
-            {showRawFrontmatter && (
-              <div className="mt-2 animate-in fade-in duration-200">
-                <pre className="p-4 rounded-xl bg-zinc-900 dark:bg-zinc-950 border border-border/80 font-mono text-xs text-zinc-100 overflow-x-auto max-h-60 overflow-y-auto leading-relaxed shadow-inner">
-                  {JSON.stringify(effectiveFrontmatter, null, 2)}
-                </pre>
-              </div>
             )}
           </div>
         )}
@@ -248,22 +185,22 @@ export function SpecReader({
 
       {/* Main Reading Stage & Dynamic Outline TOC */}
       <div className="flex items-start gap-5">
-        {/* Specification Prose Content */}
+        {/* Document Prose Content */}
         <div className="flex-1 min-w-0">
           {loadingChunk ? (
             <div className="p-8 rounded-2xl bg-card border border-border text-center text-muted-foreground italic">
-              Loading specification {spec.id}…
+              Loading document…
             </div>
           ) : resolvedBody ? (
             <AsciiDocRenderer
               specId={spec.id}
               bodyChunk={spec.body_chunk}
               content={resolvedBody}
-              title={spec.title}
+              title={displayTitle}
             />
           ) : (
             <div className="p-8 rounded-2xl bg-card border border-border text-center text-muted-foreground">
-              No specification body declared for {spec.id}.
+              No content available for this document.
             </div>
           )}
         </div>

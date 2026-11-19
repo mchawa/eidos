@@ -43,6 +43,16 @@ decisions:
       - option: "Load Mermaid.js and Asciidoctor.js from public CDNs to shrink index.html"
         reason_rejected: "Violates INV-PORTAL-AIR-GAPPED-BUNDLE and breaks offline / air-gapped enterprise environments."
     graduated_from: DLT-2026-132-HARDEN-WEB-D1D8
+  - id: DEC-PORTAL-HUMAN-FIRST-PRESENTATION
+    title: "Enforce Human-First Presentation Layer via React Context While Keeping Canonical IDs Strictly Internal"
+    decision: "Centralize UI title resolution and formatting in EntityLabelProvider / useEntityLabels (src/eidos/portal/frontend/src/lib/presentation.ts) paired with human-readable Mermaid labels in src/eidos/portal/mermaid.py and invariant title enrichment in src/eidos/portal/generator.py, keeping canonical IDs strictly internal to /api/data JSON, hash routes, DOM data attributes, stable Mermaid node IDs, and hidden search indexes."
+    rationale: "Rendering raw identifiers and internal jargon directly in UI chrome or tooltips creates cognitive friction for stakeholders. Supplying the entity label index via React Context avoids prop-drilling across AsciiDocRenderer call sites while keeping renderAsciiDoc() pure, and stable component-ID-derived Mermaid node IDs preserve exact click and blast-radius binding after title humanization."
+    rejected_alternatives:
+      - option: "Strip canonical IDs and enum keys from /api/data JSON payloads in generator.py"
+        reason_rejected: "Breaks CTR-EIDOS-PORTAL consumers, DEC-PORTAL-HASH-ROUTING deep links, client-side Blast Radius graph edge matching, and lazy ./specs/<id>.json chunk loading."
+      - option: "Hide slugs behind an opt-in 'Clean Mode' toggle while keeping raw IDs visible by default"
+        reason_rejected: "Leaves the default portal experience cluttered with raw slugs and jargon."
+    graduated_from: DLT-2026-140-REMOVE-SLUGS-E1D7
 ---
 = Container: Eidos Living Web Portal (C4 Level 2 Container)
 :toc: left
@@ -53,6 +63,7 @@ This container represents the graphical web interface under `src/eidos/portal/` 
 == Internal Structure & Key Mechanisms
 * **Dual Deployment Modes & Loopback Isolation (`CTR-EIDOS-PORTAL`, `DEC-PORTAL-STRICT-SANITIZATION-AND-SSE-CHUNKING`)**: Operates either as a same-origin isolated HTTP + Server-Sent Events preview server (`eidos portal serve`, validating `Host` headers and streaming live `eidos/` + `src/` + `tests/` drift/version updates over `/api/events` alongside `/api/data`, `/api/version`, `/api/drift`, and `/api/validate`) or as a zero-backend static site export (`eidos portal build`, emitting chunked `./assets/*` + `./specs/<id>.json` by default or a standalone `index.html` with `--single-file`).
 * **Strict XSS Sanitization & Payload Chunking (`DEC-PORTAL-PAYLOAD-DEDUP-AND-CLIENT-BFS`, `DEC-PORTAL-STRICT-SANITIZATION-AND-SSE-CHUNKING`)**: Configures Mermaid with `securityLevel: "strict"` and DOM-delegated C4 drill-down listeners, enforces DOMPurify `SANITIZE_DOM: true` and `idprefix: "spec-"` on AsciiDoc bodies, restricts `tokens.manifest` inside `repo_root`, and lazy-loads per-spec `./specs/<id>.json` body chunks on SpecReader open while retaining pre-computed `data.edges` and `data.validation` for instant client-side Blast Radius simulation.
+* **Human-First UI & Diagram Presentation (`DEC-PORTAL-HUMAN-FIRST-PRESENTATION`, `INV-PORTAL-HUMAN-READABLE-UI`)**: Separates internal canonical identifiers (preserved in `/api/data` wire JSON, `#/<tab>/<id>` hash routes, `data-c4-entity`/`data-spec-ref` DOM hooks, stable component-ID-derived Mermaid node IDs, and invisible `searchText` indexes) from all user-facing headings, badges, breadcrumbs, tooltips, placeholders, cross-reference links, and diagram node labels via `EntityLabelProvider` in `CMP-PORTAL-ASSETS` and humanized Mermaid/invariant synthesis in `CMP-PORTAL-GENERATOR`.
 
 == Air-Gapped Bundle (`INV-PORTAL-AIR-GAPPED-BUNDLE`)
 Both the single-file bundle served by `eidos portal serve` (and `eidos portal build --single-file`) and the default chunked static export (`eidos portal build`, emitting local `./assets/*` and `./specs/<id>.json`) load zero scripts, stylesheets, fonts, or other subresources from remote origins, so C4 diagrams and the specification reader work in air-gapped environments (and over `file://` with `--single-file`):

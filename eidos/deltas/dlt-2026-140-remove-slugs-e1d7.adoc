@@ -1,0 +1,322 @@
+---
+type: delta/mutation
+id: DLT-2026-140-REMOVE-SLUGS-E1D7
+title: "Remove Slugs, Raw IDs, and Technical Jargon Across the Living Web Portal UI"
+status: applied
+vcs:
+  branch: main
+  base_commit: 619d49498949e56cea6ab0b25156ff5b0fe99425
+intent:
+  kind: feature
+  motivation: "Make the Living Web Portal clean, human-readable, and immediately accessible to non-technical and technical readers alike by eliminating all visible raw entity ID slugs (SYS-*, DOM-*, CAP-*, POL-*, PER-*, INV-*, DEC-*, CNT-*, CMP-*, CTR-*, DS-*, CLT-*, SCR-*, UIC-*, FLOW-*, DLT-*, EXP-*), raw schema type slugs (e.g. tech/container, design/ui-component), raw snake_case/kebab-case enum and state tokens (e.g. in_review, web_app, :mobile_drawer_open), literal backticked prefix noise in JSX headings, raw repository file paths and pytest test-binding paths, leaking native browser title tooltips/placeholders/error strings, and unnecessary internal/framework jargon (DDD, Arc42, C4 Level 1/2/3, Whitebox, 1-2 Hop Graph BFS, W3C DTCG, JTBD, SSE Live Stream, POL-002 Traceability, Schema Conformance, Zero ADR Policy) across every portal view, navigation chrome, command palette, specification reader, and generated Mermaid diagram—while retaining canonical IDs strictly internally for hash deep-linking (#/<tab>/<id>), stable DOM/Mermaid click delegation, and invisible search indexing."
+mutations:
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+    details: "Introduce src/eidos/portal/frontend/src/lib/presentation.ts (EntityLabelProvider, useEntityLabels, buildEntityLabelIndex, resolveEntityTitle, humanizeToken, formatSpecType, formatContainerType, formatProtocol, formatStatus, formatDeltaKind, formatFlowType, formatSeverity, formatTabLabel, humanizeInvariantTitle) and update App.tsx, NavigationRail.tsx, HomeView.tsx, BusinessView.tsx, ArchitectureView.tsx, DesignView.tsx, DeltasView.tsx, ExplorationsView.tsx, CatalogView.tsx, SpecReader.tsx, AsciiDocRenderer.tsx, MermaidDiagram.tsx, and command.tsx to eliminate all visible raw ID slugs, schema type slugs, literal backticks, snake_case/kebab-case tokens, raw file/test paths, leaking title tooltips/placeholders/error labels, and technical jargon while keeping canonical IDs internal for routing, stable DOM/Mermaid node matching, and searchText; rebuild assets/portal/bundle.html.gz."
+    expect:
+      frontmatter:
+        container: "CNT-EIDOS-PORTAL"
+        status: "active"
+      body:
+        contains:
+          - "presentation.ts"
+          - "EntityLabelProvider"
+          - "buildEntityLabelIndex"
+          - "humanizeToken"
+          - "DEC-PORTAL-HUMAN-FIRST-PRESENTATION"
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+    details: "Update Mermaid diagram synthesis in src/eidos/portal/mermaid.py and invariant metadata synthesis in src/eidos/portal/generator.py so System Context, Container, Component, Screen State, and Interaction Flow diagrams emit clean human-readable node/subgraph/edge/participant labels (resolving system, container, component, contract, client, and screen titles and humanizing container types and state names) while emitting stable component-ID-derived internal Mermaid node IDs (e.g. mod_<CMP_SLUG>) for DOM click/blast-radius binding, preserving unidirectional generator.py -> mermaid.py imports and direct re-export identity (INV-CORE-MODULAR-COMPONENT-COHESION), and enriching synthesized invariant items with humanized titles and owning entity source_title."
+    expect:
+      frontmatter:
+        container: "CNT-EIDOS-PORTAL"
+        status: "active"
+        source_path:
+          - "src/eidos/portal/generator.py"
+          - "src/eidos/portal/mermaid.py"
+      body:
+        contains:
+          - "source_title"
+          - "mod_"
+          - "human-readable"
+          - "DEC-PORTAL-HUMAN-FIRST-PRESENTATION"
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+    details: "Record DEC-PORTAL-HUMAN-FIRST-PRESENTATION in eidos/architecture/containers/portal.adoc decisions frontmatter and document the separation between internal canonical IDs (JSON/routing/stable Mermaid node IDs/search) and human-first UI/diagram presentation."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-PORTAL-HUMAN-FIRST-PRESENTATION"
+      body:
+        contains:
+          - "DEC-PORTAL-HUMAN-FIRST-PRESENTATION"
+          - "INV-PORTAL-HUMAN-READABLE-UI"
+  - operation: modify
+    target: CAP-EXP-001
+    details: "Bump CAP-EXP-001 to version 1.3.0 in eidos/domains/experience-portal/capabilities/living-web-portal.adoc, add INV-PORTAL-HUMAN-READABLE-UI under technical.invariants, and update capability prose to specify human-first, slug-free UI and diagram presentation."
+    expect:
+      frontmatter:
+        version: "1.3.0"
+        technical.invariants.id:
+          - "INV-PORTAL-HUMAN-READABLE-UI"
+      body:
+        contains:
+          - "INV-PORTAL-HUMAN-READABLE-UI"
+          - "human-readable"
+  - operation: add
+    target: INV-PORTAL-HUMAN-READABLE-UI
+    details: "Bind INV-PORTAL-HUMAN-READABLE-UI in CAP-EXP-001 to tests/test_portal.py::test_portal_human_readable_ui_and_slug_free_diagrams verifying slug-free, jargon-free portal UI copy, tooltips, placeholders, humanized enum/state/type rendering, and human-readable Mermaid labels."
+    expect:
+      frontmatter:
+        rule: "never rendering raw Eidos ID slugs"
+        test_binding: "tests/test_portal.py::test_portal_human_readable_ui_and_slug_free_diagrams"
+  - operation: modify
+    target: UIC-PORTAL-SHELL
+    details: "Update eidos/design/systems/core/components/portal-shell.adoc so the top header breadcrumb renders human-readable section titles matching the navigation rail (never raw uppercase route keys) and plain-language live status indicators."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "human-readable"
+          - "breadcrumb"
+  - operation: modify
+    target: UIC-PORTAL-SIDEBAR
+    details: "Update eidos/design/systems/core/components/portal-sidebar.adoc to specify plain human navigation labels (Overview, Business & Domains, Architecture, Changes, Explorations, Catalog, Design Systems) and jargon-free search prompt."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "Changes"
+          - "Catalog"
+          - "Search documentation"
+  - operation: modify
+    target: UIC-PORTAL-METRIC-CARD
+    details: "Update eidos/design/systems/core/components/portal-metric-card.adoc to align example KPI labels with plain human terminology (Specifications, Domains, Capabilities, System Containers, Active Changes, Automated Checks) rather than C4 Containers and SpecDeltas jargon."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "System Containers"
+          - "Active Changes"
+        not_contains:
+          - "C4 Containers"
+  - operation: modify
+    target: UIC-PORTAL-READER
+    details: "Update eidos/design/systems/core/components/portal-reader.adoc to specify human category badges, plain Valid/Needs Attention status pills, resolved parent domain/container title links, human-titled cross-reference links via EntityLabelProvider, clean tooltips, and removal of raw ID copy chips, raw file path pills, and raw JSON/YAML frontmatter dumps from visible reader chrome."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "human-readable"
+          - "Needs Attention"
+        not_contains:
+          - "raw JSON frontmatter dumps"
+  - operation: modify
+    target: SCR-PORTAL-HOME
+    details: "Update eidos/design/clients/web-portal/screens/portal-home.adoc to remove the raw system ID banner pill and technical jargon (Arc42/C4, W3C DTCG, Zero ADR, SSE Live Stream, POL-002 Traceability, Planned Mode) and resolve drift-impacted components, invariants, and diagnostics entries to human titles."
+    expect:
+      frontmatter:
+        route: "/"
+        status: "active"
+      body:
+        contains:
+          - "human-readable"
+          - "Live"
+        not_contains:
+          - "SSE Live Stream"
+  - operation: modify
+    target: SCR-PORTAL-BUSINESS
+    details: "Update eidos/design/clients/web-portal/screens/portal-business.adoc to remove DDD/JTBD/POL-002 jargon, visible SCR-PORTAL-BUSINESS banner badges, literal backticked prefix patterns, raw file paths, and raw test_binding paths in favor of clean human titles and plain Test Verified badges."
+    expect:
+      frontmatter:
+        route: "/business"
+        status: "active"
+      body:
+        contains:
+          - "human-readable"
+          - "Test Verified"
+        not_contains:
+          - "JTBD"
+  - operation: modify
+    target: SCR-PORTAL-ARCHITECTURE
+    details: "Update eidos/design/clients/web-portal/screens/portal-architecture.adoc to specify plain System Context / Containers / Components navigation labels (dropping L1/L2/L3, Whitebox, and 1-2 Hop Graph BFS jargon), resolved entity titles across dropdowns, cards, blast-radius chips, tooltips, inspector drawers, and human-labeled Mermaid diagrams with stable component-ID-derived node IDs."
+    expect:
+      frontmatter:
+        route: "/architecture"
+        status: "active"
+      body:
+        contains:
+          - "System Context"
+          - "Direct Impact"
+          - "human-readable"
+  - operation: modify
+    target: SCR-PORTAL-DESIGN
+    details: "Update eidos/design/clients/web-portal/screens/portal-design.adoc to remove W3C DTCG, backticked prefix tokens, CSS pseudo-class state colons (:loading), raw filename stems, BG abbreviations, and snake_case slot/category/variant slugs in favor of resolved human titles and humanized labels."
+    expect:
+      frontmatter:
+        route: "/design"
+        status: "active"
+      body:
+        contains:
+          - "Design Tokens Studio"
+          - "humanized"
+        not_contains:
+          - "W3C DTCG"
+  - operation: modify
+    target: SCR-PORTAL-DELTAS
+    details: "Update eidos/design/clients/web-portal/screens/portal-deltas.adoc to replace Planned Mode / Mutation Board / DLT-* / VCS / raw expect JSON terminology with plain Changes / Change Proposals copy, humanized statuses and kinds, and resolved affected item titles."
+    expect:
+      frontmatter:
+        route: "/deltas"
+        status: "active"
+      body:
+        contains:
+          - "Change Proposals"
+          - "humanized"
+  - operation: modify
+    target: SCR-PORTAL-EXPLORATIONS
+    details: "Update eidos/design/clients/web-portal/screens/portal-explorations.adoc to remove EXP-* / DLT-* raw slugs, Planned Mode tooltips, and raw file paths, presenting exploration titles, humanized status/outcome badges, and resolved resulting change proposal titles."
+    expect:
+      frontmatter:
+        route: "/explorations"
+        status: "active"
+      body:
+        contains:
+          - "Explorations & Research"
+          - "human-readable"
+  - operation: modify
+    target: SCR-PORTAL-CATALOG
+    details: "Update eidos/design/clients/web-portal/screens/portal-catalog.adoc to replace raw Document IDs, raw schema type slugs (tech/container, design/ui-component), raw File Path column, ASCII tree characters, and Schema Conformance VALID/INVALID caps with clean Document, Category, Section, and Status (Valid / Needs Attention) columns."
+    expect:
+      frontmatter:
+        route: "/catalog"
+        status: "active"
+      body:
+        contains:
+          - "Category"
+          - "Needs Attention"
+          - "human-readable"
+        not_contains:
+          - "Document ID"
+---
+= SpecDelta: Remove Slugs, Raw IDs, and Technical Jargon Across the Living Web Portal UI
+:toc: left
+:icons: font
+:sectnums:
+
+== Problem Statement
+
+Auditing the Living Web Portal frontend (`src/eidos/portal/frontend/src/`) and backend payload/diagram synthesizers (`src/eidos/portal/generator.py` and `src/eidos/portal/mermaid.py`) reveals pervasive raw slugs, internal identifiers, literal Markdown backticks, raw repository paths, leaking native tooltips/placeholders, and internal framework jargon across every visible screen:
+
+1. **Raw Entity ID Slugs as Primary UI Headlines, Badges, Tooltips & Dropdown Labels**:
+   * Cards, list rows, modal subtitles, dropdown `<option>` items, filter pills, native `title="..."` tooltips, and command palette results lead with raw prefixed IDs (`SYS-EIDOS-001`, `DOM-EXPERIENCE-PORTAL`, `CAP-EXP-001`, `POL-001-GIT-SOURCE-OF-TRUTH`, `PER-SOFTWARE-ENGINEER`, `INV-PORTAL-LIVE-DRIFT-SSE`, `DEC-PORTAL-HASH-ROUTING`, `CNT-EIDOS-PORTAL`, `CMP-PORTAL-ASSETS`, `CTR-EIDOS-PORTAL`, `DS-CORE`, `CLT-WEB-PORTAL`, `SCR-PORTAL-HOME`, `UIC-PORTAL-SHELL`, `FLOW-PORTAL-EXPLORATION`, `DLT-2026-132-HARDEN-WEB-D1D8`, `EXP-2026-006`) instead of human titles.
+   * `BusinessView.tsx` prints the internal screen ID `SCR-PORTAL-BUSINESS` verbatim in the page banner.
+   * `DesignView.tsx` strips filenames to uppercase or kebab-case slugs (`PORTAL-HOME`, `living-web-portal`) for client screens/capabilities, prints `DS-CORE` / `DS-BASE` in tabs and typography previews, and uses `Surface Dark BG` / `Surface Light BG` abbreviations.
+   * `App.tsx` renders the raw route key (`activeTab`) in uppercase monospace (`HOME`, `BUSINESS`, `DELTAS`, `CATALOG`) in the sticky top header breadcrumb instead of the human view name.
+   * `generator.py` sets every synthesized invariant's `title` to its raw `INV-*` ID and sets `source_type` to raw slug strings such as `policy (POL-001-GIT-SOURCE-OF-TRUTH)`.
+2. **Raw Schema Type Slugs, `snake_case`/`kebab-case` Enum Tokens & CSS Colon Prefixes**:
+   * `CatalogView.tsx` displays raw schema slugs (`product/capability`, `tech/container`, `design/ui-component`, `delta/mutation`) in the type filter `<select>`, branch summary cells, and every row badge, alongside all-caps `VALID`/`INVALID` and ASCII tree characters (`├──`, `└──`).
+   * `ArchitectureView.tsx` displays raw `container_type` (`web_app`, `cli_app`) and `protocol` (`http_json`, `cli_args`, `python_protocol`) values directly in badges.
+   * `DesignView.tsx` renders raw `category` (`data_display`, `data-display`), raw variant slugs (`focused-prose`, `high-contrast-dark`), raw `snake_case` layout slot keys (`hero_archetype_banner`, `hero_stat_grid`), raw `flow_type` (`client_internal`, `cross_client`), and CSS pseudo-class colon prefixes (`:loading`, `:populated`, `:mobile_drawer_open`, `:section_active`).
+   * `BusinessView.tsx` displays raw `archetype` (`human_architect`, `ai_agent`), `severity` (`blocking`), and `category` values, while `DeltasView.tsx` displays raw `in_review` and `enabler` values.
+3. **Literal Backticked Prefix Noise, Tooltips, Placeholders & Unnecessary Technical Jargon**:
+   * JSX text strings across `BusinessView.tsx`, `ArchitectureView.tsx`, `DesignView.tsx`, `DeltasView.tsx`, and `ExplorationsView.tsx` contain literal backtick characters rendered verbatim in the browser: `` (`DOM-*`) ``, `` (`CAP-*`) ``, `` (`POL-*`) ``, `` (`PER-*`) ``, `` (`INV-*`) ``, `` (`CTR-*`) ``, `` (`CNT-*`) ``, `` (`DEC-*`) ``, `` (`DLT-*`) ``, `` (`EXP-*`) ``, `` (`DS-*`) ``, `` (`CLT-*`) ``, `` (`UIC-*`) ``, `` (`SCR-*`) ``, `` (`FLOW-*`) ``, `` (`tokens.json`) ``, `` (`tokens.spacing`) ``, `` (`tokens.border.radius`) ``, `` (`tokens.typography.font_family`) ``, and `` (`mermaid: stateDiagram-v2`) ``.
+   * Internal engineering and methodology jargon clutters headlines, descriptions, tooltips, placeholders, and error/loading banners across all views: `DDD Strategic Layer`, `Domain-Driven Design (DDD) Bounded Contexts`, `Arc42/C4`, `C4 Level 1/2/3`, `Whitebox`, `1–2 Hop Graph BFS`, `W3C DTCG`, `Recursive W3C Token Tree Explorer`, `JTBD`, `POL-002 Traceability`, `POL-002 Verified`, `SSE Live Stream`, `Schema Conformance`, `Multi-Level Hierarchy`, `Zero ADR Policy`, `Direct Mode` / `Planned Mode (SpecDeltas)`, `Target VCS Branch`, `git checkout ...`, raw JSON `expect:` dumps, `Synthesizing Living Specifications...`, `Mermaid rendering error:`, `AsciiDoc rendering failed.`, `Search specifications (CMD+K)`, `Search specifications, C4 components, invariants (CMD+K)...`, `Search specifications by ID, title, or path...`, and `Filter by ID, title, branch, intent...`.
+4. **Raw Filesystem Paths & Pytest Bindings in User-Facing Cards, Tooltips & Readers**:
+   * `SpecReader.tsx`, `CatalogView.tsx`, `BusinessView.tsx`, `DeltasView.tsx`, `ExplorationsView.tsx`, `ArchitectureView.tsx`, `DesignView.tsx`, and `HomeView.tsx` surface raw `.adoc` paths (`eidos/domains/experience-portal/capabilities/living-web-portal.adoc`), empty-state directory paths (`eidos/design/systems/`, `tokens.json`), raw `source_path` arrays, raw `pytest` test bindings (`tests/test_portal.py::test_...` both visibly and in `title` tooltips), and an `"Inspect Raw YAML / JSON Frontmatter"` raw JSON dump toggle.
+5. **Raw Slugs Inside Generated Mermaid Diagrams (`src/eidos/portal/mermaid.py`)**:
+   * C4 Level 1–3, Screen State, and Flow Mermaid diagrams emitted by `src/eidos/portal/mermaid.py` embed raw `SYS-*`, `CNT-*`, `CMP-*`, `CTR-*`, `CLT-*` IDs, raw `web_app`/`cli_app` container types, raw Python/TS file paths, raw `snake_case` state names (`mobile_drawer_open`), and raw `.adoc` filename stems (`[portal-home]`) directly inside visible SVG node labels.
+
+== Proposed Specification Changes
+
+=== 1. Centralized Human-First Presentation Layer & React Context (`CMP-PORTAL-ASSETS`, `DEC-PORTAL-HUMAN-FIRST-PRESENTATION`)
+Introduce `src/eidos/portal/frontend/src/lib/presentation.ts` as the single source of truth for human-readable UI formatting and entity-title resolution:
+
+* **`EntityLabelProvider` & `useEntityLabels()` Context**: Mounted once in `App.tsx` around the shell and command palette so every view, modal, `SpecReader`, `AsciiDocRenderer`, and `CommandDialog` resolves entity titles automatically without prop-drilling, while keeping `renderAsciiDoc()` in `src/eidos/portal/frontend/src/lib/asciidoc.ts` pure (preserving `asciidoc.test.ts` unchanged).
+* **`buildEntityLabelIndex(data: PortalData)` & `resolveEntityTitle(ref, index)`**: Indexes every spec, domain, capability, policy, persona, invariant, decision, container, internal component, contract, design system, client, screen, UI component, flow, delta, and exploration by canonical ID and repo-relative `.adoc` path. Resolves any cross-reference to its clean human title (never printing raw IDs or `.adoc` filenames); if an unindexed slug is encountered, strips known entity prefixes (`SYS-`, `DOM-`, `CAP-`, `POL-`, `PER-`, `INV-`, `DEC-`, `CNT-`, `CMP-`, `CTR-`, `DS-`, `CLT-`, `SCR-`, `UIC-`, `FLOW-`, `DLT-`, `EXP-`) and formats to Title Case.
+* **Curated Enum & Token Formatters**:
+  * `formatTabLabel(tab)`: `home` → `Overview`, `business` → `Business & Domains`, `architecture` → `Architecture`, `deltas` → `Changes`, `explorations` → `Explorations`, `catalog` → `Catalog`, `design` → `Design Systems`.
+  * `formatSpecType(type)`: maps all 16 schema types to clean nouns (`product/system` → `System Overview`, `product/domain` → `Domain`, `product/capability` → `Capability`, `product/policy` → `Policy`, `product/persona` → `Persona`, `product/exploration` → `Exploration`, `tech/architecture` → `Architecture`, `tech/container` → `Container`, `tech/component` → `Component`, `tech/contract` → `Interface Contract`, `design/system` → `Design System`, `design/client` → `Client App`, `design/screen` → `Screen`, `design/ui-component` → `UI Component`, `design/flow` → `User Flow`, `delta/mutation` → `Change Proposal`).
+  * `formatContainerType(raw)`: `web_app` → `Web App`, `cli_app` → `CLI App`, `frontend_spa` → `Web App`, `mobile_app` → `Mobile App`, `desktop_app` → `Desktop App`, `library` → `Library`, `service` → `Service`, `database` → `Database`, `plugin` → `Plugin`, `worker` → `Background Worker` (fallback: `humanizeToken`).
+  * `formatProtocol(raw)`: `http_json` → `HTTP JSON`, `cli_args` → `CLI`, `python_protocol` → `Python API`, `openapi` → `OpenAPI`, `graphql` → `GraphQL`, `protobuf` → `Protobuf`, `json_schema` → `JSON Schema`.
+  * `formatStatus(raw)`: `proposed` → `Proposed`, `in_review` → `In Review`, `approved` → `Approved`, `applied` → `Applied`, `rejected` → `Rejected`, `archived` → `Archived`, `in_progress` → `In Progress`, `adopted` → `Adopted`, `discarded` → `Discarded`, `active` → `Active`, `draft` → `Draft`, `planned` → `Planned`, `deprecated` → `Deprecated`, `retired` → `Retired`.
+  * `formatDeltaKind(raw)`: `feature` → `Feature`, `enabler` → `Improvement`, `bug` → `Bug Fix`.
+  * `formatFlowType(raw)`: `client_internal` → `Single-Client Flow`, `cross_client` → `Cross-Client Flow`, `omnichannel` → `Cross-Client Flow`.
+  * `formatSeverity(raw)`: `blocking` → `Mandatory`, `warning` → `Warning`, `advisory` → `Advisory`.
+  * `humanizeToken(raw)`: converts `snake_case`, `kebab-case`, and dotted keys into Title Case while preserving well-known acronyms (`UI`, `API`, `CLI`, `HTTP`, `JSON`, `SQL`, `AI`, `KPI`).
+  * `humanizeInvariantTitle(inv)`: derives a concise readable title from an invariant's explicit title or humanized slug (never returning a raw `INV-*` ID).
+* **Invisible Internal ID Retention**: Canonical IDs remain strictly internal in `/api/data`, `window.location.hash` (`#/<tab>/<id>`), DOM navigation hooks (`data-c4-entity`, `data-spec-ref`), stable component-ID-derived Mermaid node IDs, and hidden `searchText` strings in `CommandDialog` and view search filters so bookmarking, click navigation, and typing an ID into search continue working seamlessly.
+
+=== 2. Screen-by-Screen, Component, Tooltip & Placeholder Cleanup (`UIC-PORTAL-SHELL`, `UIC-PORTAL-SIDEBAR`, `UIC-PORTAL-METRIC-CARD`, `UIC-PORTAL-READER`, `SCR-PORTAL-*`)
+* **Shell, Sidebar, Command Palette & Shared UI (`App.tsx`, `NavigationRail.tsx`, `command.tsx`, `MermaidDiagram.tsx`, `AsciiDocRenderer.tsx`)**:
+  * Top header breadcrumb renders `formatTabLabel(activeTab)` in sans-serif instead of uppercase monospace `activeTab`; loading banner reads `"Loading documentation..."` instead of `"Synthesizing Living Specifications..."`.
+  * Sidebar labels: `Overview`, `Business & Domains`, `Architecture`, `Changes`, `Explorations`, `Catalog`, `Design Systems`; search button copy and `title` tooltip read `"Search documentation..."` / `"Search documentation"` (no `CMD+K` jargon in tooltip).
+  * Command Palette (`CommandDialog`): placeholder reads `"Search domains, architecture, design, changes..."`; removes leading monospace `item.id`, displays human `title`, resolved human `subtitle`, and human category badge (`Container`, `Component`, `Contract`, `Decision`, `Design`, `Rule`, `Change`, `Policy`, `Domain`, `Capability`, `Persona`, `Exploration`, `Document`), while keeping IDs/paths searchable in `searchText`.
+  * Error fallbacks: `MermaidDiagram.tsx` shows `"Unable to render diagram."` (never `"Mermaid rendering error:"` + raw Mermaid code dump); `AsciiDocRenderer.tsx` shows `"Unable to render document."` (never `"AsciiDoc rendering failed."`).
+* **Home (`HomeView.tsx`, `SCR-PORTAL-HOME`, `UIC-PORTAL-METRIC-CARD`)**:
+  * Remove `overview.system_id` pill from hero banner; rewrite hero subtitle to plain language without `Arc42/C4`, `W3C DTCG`, or `Zero ADR` jargon.
+  * Replace `"SSE Live Stream"` with `"Live"`; resolve drift-impacted component chips to human titles; replace `"C4 Containers & Units"` / `"Deployable Units"` / `"Active SpecDeltas"` / `"POL-002 Traceability"` with `"System Containers"` / `"Services & Apps"` / `"Active Changes"` / `"Automated Checks"`.
+  * Replace `"Governance & Workflows"` cards (`Direct Mode`, `Planned Mode (SpecDeltas)`, `Zero ADR Policy`) with plain-language `"How Documentation Stays Current"` cards (`Routine Updates`, `Planned Changes`, `Living Decisions`).
+  * In System Rules/Invariants list, display humanized rule label + clean `"Test Verified"` pill instead of raw `inv.id` and `tests/...::test_...`.
+  * In Validation & Governance Diagnostics drawer, display resolved document titles instead of raw `.adoc` paths and `sp.id (sp.path)`.
+* **Business & Domains (`BusinessView.tsx`, `SCR-PORTAL-BUSINESS`)**:
+  * Remove `SCR-PORTAL-BUSINESS`, `DDD Strategic Layer`, `JTBD`, `POL-002 Verified`, all literal backticks (`` `DOM-*` ``, `` `CAP-*` ``, `` `POL-*` ``, `` `PER-*` ``, `` `INV-*` ``, `` `CTR-*` ``), raw IDs, raw `.adoc` paths, and raw `test_binding` paths.
+  * Lead every domain, capability, policy, persona, and invariant card/drawer with its human title; humanize classification, category, severity, status, and archetype badges; resolve bound domain, container, component, contract, persona, and policy chips to human titles; replace raw test bindings with `"Test Verified"` indicators.
+* **Architecture (`ArchitectureView.tsx`, `SCR-PORTAL-ARCHITECTURE`)**:
+  * Replace level tabs/breadcrumbs with plain `"System Context"`, `"Containers"`, `"Components"` (preserving `#c4LevelSwitcher`, `#btnC4Level1`–`3`, `#c4Breadcrumbs`, `#c4ContainerSelect`, `#c4DiagramContainer`, `#c4ActiveDiagram`, `#c4InspectorDrawer` DOM IDs); replace `"C4 Level 3: Whitebox (...)"` with `"Inside <Container Title>"` and `"View Whitebox Architecture Diagram"` with `"Explore Internal Components"`.
+  * Clean all node/button `title` tooltips (`"Click to explore <Container Title> components"`, `"Click to inspect <Contract Title>"` — never exposing `matched.id`, `ctrMatch.id`, or `"Level 3 Components"`).
+  * Match Level 3 component nodes via stable component-ID-derived Mermaid node IDs (`nodeId.includes(sub.id.replace(/-/g, "_"))`) rather than fragile positional array indices so clicks and blast-radius highlights remain exact after title humanization.
+  * Blast Radius panel: keep `"Interactive Blast Radius Simulator"` heading (dropping `"(1–2 Hop Graph BFS)"`), display human titles in the target `<select>`, target legend, and `"Direct Impact"` / `"Indirect Impact"` chips (no `1-hop • CNT-*`).
+  * Container, Contract, and Decision cards & inspector drawers: lead with human titles, humanize `container_type` and `protocol`, resolve `domain`, `container`, upstream/downstream dependencies, contracts, and `source_id` to human titles, drop literal `` (`CTR-*`) `` / `` (`DEC-*`) `` / `` (`CNT-*`) `` backticks, and remove raw filesystem paths and raw `test_binding` paths from primary chrome.
+* **Design Systems (`DesignView.tsx`, `SCR-PORTAL-DESIGN`)**:
+  * Remove `W3C DTCG`, `DS` abbreviation, `BG` abbreviations (`Dark Background`, `Light Background`), literal backticked prefixes (`DS-*`, `CLT-*`, `UIC-*`, `SCR-*`, `FLOW-*`, `tokens.json`, `tokens.spacing`, `tokens.border.radius`, `tokens.typography.font_family`, `mermaid: stateDiagram-v2`), `DS-BASE` monospace code sample, and raw directory/file paths in empty states (`eidos/design/systems/`, `tokens.json`).
+  * Resolve design system tabs, client selector `<option>` labels, client container/design-system badges, supported screens, bound capabilities, screen selector pills, and screen layout slot values to human titles; humanize layout slot names (`Hero Archetype Banner`), token names (`Brand Primary Hover`), categories (`Data Display`), variant names (`Focused Prose`), flow types (`Single-Client Flow` / `Cross-Client Flow`), and state names (`Loading`, `Populated`, `Section Active` — no leading `:` colon).
+  * Rename `"Recursive W3C Token Tree Explorer"` to `"All Design Tokens"`, replace raw test function names (`✓ test_...`) and `title={test_binding}` tooltips with `"Test Verified"`, and replace token hover `title={t.desc || t.path}` with `title={t.desc || t.label}`.
+* **Changes / SpecDeltas (`DeltasView.tsx`, `SCR-PORTAL-DELTAS`)**:
+  * Rename board header to `"Change Proposals"` (dropping `"(Planned Mode)"` and `` (`DLT-*`) ``), placeholder to `"Filter changes by title, summary, or status..."`, replace `"mutation(s)"` with `"change"` / `"changes"`, and `"Show More Deltas"` with `"Show More Changes"`.
+  * Lead Kanban cards, timeline rows, and detail drawer with human title (dropping raw `delta.id` headline/subtitle and raw `.adoc` path); humanize status (`In Review`) and kind (`Feature`, `Improvement`, `Bug Fix`); resolve mutation targets and affected/impacted pills to human entity titles; remove raw `Target VCS Branch` / `git checkout ...` shell snippets and raw JSON `expect:` dumps from visible UI.
+* **Explorations (`ExplorationsView.tsx`, `SCR-PORTAL-EXPLORATIONS`)**:
+  * Rename banner to `"Explorations & Research"` (dropping `` (`EXP-*`) ``), remove raw `exp.id` and `.adoc` path pills, humanize status and outcome badges, resolve resulting change proposal buttons to their human titles, and clean tooltips (`"Open <Change Title>"` instead of `"Jump to SpecDelta DLT-..."` / `"Planned Mode"`).
+* **Catalog (`CatalogView.tsx`, `SCR-PORTAL-CATALOG`)**:
+  * Humanize all category titles/descriptions, search placeholder (`"Search documents..."`), and type filter `<select>` options (never showing `product/capability` or `design/ui-component` slugs); switch `"Multi-Level Hierarchy"` / `"Flat"` to `"Tree View"` / `"List View"`.
+  * Update table headers to `Document`, `Category`, `Section`, `Status`; remove `{branch.types.join(", ")}` raw schema slug cells, raw `spec.id` prefixes, raw `spec.path` filesystem paths, ASCII box-drawing characters (`├──`, `└──`), and all-caps `VALID`/`INVALID` (`Valid` / `Needs Attention`).
+* **Specification Reader & AsciiDoc Renderer (`SpecReader.tsx`, `AsciiDocRenderer.tsx`, `UIC-PORTAL-READER`)**:
+  * Display `formatSpecType(spec.type)` badge, `Valid` / `Needs Attention` pill, humanized status badge, and resolved human titles + clean tooltips (`"Open <Domain Title>"`, `"Open <Container Title>"`) on relationship buttons.
+  * Remove raw `spec.path` pill, raw copyable `spec.id` chip, raw `vcs.branch` badge, and `"Inspect Raw YAML / JSON Frontmatter"` raw JSON dump button from visible reader chrome.
+  * In `AsciiDocRenderer.tsx`, read the entity label map via `useEntityLabels()` so bare auto-generated `a[data-spec-ref]` cross-reference text matching a raw ID slug displays the resolved human title while keeping `data-spec-ref` intact for navigation.
+
+=== 3. Human-Readable Mermaid Diagrams & Enriched Invariant Metadata (`CMP-PORTAL-GENERATOR`, `INV-PORTAL-HUMAN-READABLE-UI`)
+* **System Context (`src/eidos/portal/mermaid.py::_generate_c4_context_mermaid`)**: Display `<b>{clean_title}</b><br/><i>Software System</i>` without raw `SYS-*` slug; keep Mermaid node ID `SYS` intact for click drill-down.
+* **Container Topology (`src/eidos/portal/mermaid.py::_generate_c4_containers_mermaid`)**: Render `System Boundary: {clean_sys_title}` (no `({system_id})`), render container nodes as `<b>{ctitle}</b><br/><i>{human_container_type}</i>` (no bold `CNT-*` prefix, no raw `web_app`/`cli_app` snake_case), and format contract edge labels with contract titles (e.g. `HTTP JSON • Eidos Living Web Portal HTTP Interface`) instead of raw `[CTR-*]` slugs; keep internal Mermaid node IDs (`CNT_*`, `SUB_TIER_*`, `SYS_BOUNDARY`) intact for DOM click binding and blast-radius SVG matching.
+* **Component Breakdown (`src/eidos/portal/mermaid.py::_generate_c4_component_mermaid`)**: Render subgraph title as `{clean_title}` (no `Level 2 Container: CNT-*`), emit stable component-ID-derived node IDs (`mod_{cmp_id_slug}` when `mid` is present, falling back to `mod_{cid}_{idx}`), render module nodes as `<b>{human_title}</b><br/><span>{resp}</span>` (no raw `CMP-*` prefix and no raw `source_path`), and resolve peer container and contract node labels to human titles rather than raw `CNT-*`/`CTR-*` IDs while keeping internal `peer_*` and `ctr_*` node IDs intact.
+* **Screen States (`src/eidos/portal/mermaid.py::_generate_screen_state_mermaid`)**: Emit Mermaid `state "Human State Name" as state_id` declarations so every state renders as Title Case (`Mobile Drawer Open`, `Loading`, `Active`) instead of `mobile_drawer_open`.
+* **Interaction Flows (`src/eidos/portal/mermaid.py::_extract_or_generate_flow_mermaid`)**: Resolve participant labels from client titles (`participant CLT_WEB_PORTAL as Web Living Documentation Portal`) and screen labels from screen titles instead of raw `CLT-*` IDs or `.adoc` filename stems (`[portal-home]`).
+* **Invariant Metadata (`src/eidos/portal/generator.py::get_portal_data`)**: Populate humanized `title` (never echoing raw `INV-*` slug) and `source_title` (human title of owning policy/capability/component/container) on synthesized invariant records.
+
+== Implementation Plan
+
+1. **Centralized Presentation Layer, Context & Frontend UI Cleanup (`src/eidos/portal/frontend/src/lib/presentation.ts`, `src/eidos/portal/frontend/src/App.tsx`, `src/eidos/portal/frontend/src/components/layout/NavigationRail.tsx`, `src/eidos/portal/frontend/src/components/ui/SpecReader.tsx`, `src/eidos/portal/frontend/src/components/ui/AsciiDocRenderer.tsx`, `src/eidos/portal/frontend/src/components/ui/MermaidDiagram.tsx`, `src/eidos/portal/frontend/src/components/ui/command.tsx`, `src/eidos/portal/frontend/src/components/views/*.tsx`)**:
+   * Create `src/eidos/portal/frontend/src/lib/presentation.ts` (`CMP-PORTAL-ASSETS`) with `EntityLabelProvider`, `useEntityLabels`, `buildEntityLabelIndex`, `resolveEntityTitle`, `humanizeToken`, and curated human formatters for all schema types, container types, protocols, statuses, delta kinds, flow types, severities, tab labels, and invariant titles.
+   * Wrap the portal root in `<EntityLabelProvider>` in `App.tsx` and update `NavigationRail.tsx`, `command.tsx`, `SpecReader.tsx`, `AsciiDocRenderer.tsx`, `MermaidDiagram.tsx`, `HomeView.tsx`, `BusinessView.tsx`, `ArchitectureView.tsx`, `DesignView.tsx`, `DeltasView.tsx`, `ExplorationsView.tsx`, and `CatalogView.tsx` to render exclusively human-readable titles, labels, tooltips, placeholders, and loading/empty/error states while keeping canonical IDs internal for hash routing (`DEC-PORTAL-HASH-ROUTING`), stable DOM/Mermaid click/blast-radius hooks (`#c4LevelSwitcher`, `#btnC4Level1`–`3`, `#c4Breadcrumbs`, `#c4ContainerSelect`, `#c4DiagramContainer`, `#c4ActiveDiagram`, `#c4InspectorDrawer`, `data-c4-entity`, `data-spec-ref`), and invisible `searchText`.
+   * Keep `src/eidos/portal/frontend/src/lib/asciidoc.ts` pure (no changes needed; `asciidoc.test.ts` remains green) and keep `src/eidos/portal/frontend/src/types.ts` backward-compatible (optional `source_title?: string` on `SpecInvariant`, body-only/type-only under `CMP-PORTAL-ASSETS`).
+2. **Backend Diagram Label Humanization & Invariant Title Synthesis (`src/eidos/portal/mermaid.py`, `src/eidos/portal/generator.py` — owned by `CMP-PORTAL-GENERATOR` under `CNT-EIDOS-PORTAL`)**:
+   * Update `_generate_c4_context_mermaid`, `_generate_c4_containers_mermaid`, `_generate_c4_component_mermaid`, `_generate_screen_state_mermaid`, and `_extract_or_generate_flow_mermaid` in `src/eidos/portal/mermaid.py` to render resolved human titles and humanized container types/states while emitting stable component-ID-derived Mermaid node IDs (`SYS`, `CNT_*`, `mod_<CMP_SLUG>`, `peer_*`, `ctr_*`, `SUB_TIER_*`, `SYS_BOUNDARY`).
+   * Declare any new title-lookup parameters (`contracts_by_id`, `clients_by_id`, `screens_by_id`, etc.) on `mermaid.py` builders as optional keyword parameters defaulting to `None` (with graceful slug-humanization fallback) so direct unit-test callers remain backward-compatible.
+   * Preserve `INV-CORE-MODULAR-COMPONENT-COHESION`: keep `src/eidos/portal/mermaid.py` strictly leaf-acyclic (zero imports from `generator.py`; title maps flow unidirectionally `generator.py` → `mermaid.py`) and preserve direct re-export object identity (`eidos.portal.generator._generate_c4_context_mermaid is eidos.portal.mermaid._generate_c4_context_mermaid`, never introducing a wrapper function in `generator.py`).
+   * Pass title lookup maps from `src/eidos/portal/generator.py` into `mermaid.py` builders and populate humanized `title` and `source_title` on synthesized invariant dictionaries in `get_portal_data` while preserving all existing `/api/data` contract fields (`CTR-EIDOS-PORTAL` unchanged; no HTTP endpoint or breaking wire-format changes).
+3. **Rebuild Air-Gapped Portal Assets (`assets/portal/bundle.html.gz` — covered via `CMP-PORTAL-ASSETS` / `CNT-EIDOS-PORTAL`)**:
+   * Run `cd src/eidos/portal/frontend && pnpm test && pnpm build:assets` and verify `python3 scripts/build_assets.py --check` confirms zero remote subresources and uncompressed bundle size `<= 5 MiB` (`INV-PORTAL-AIR-GAPPED-BUNDLE`).
+4. **Automated Frontend & Backend Verification (`src/eidos/portal/frontend/tests/presentation.test.ts`, `src/eidos/portal/frontend/tests/design-view.test.ts`, `tests/test_portal.py`)**:
+   * Add `src/eidos/portal/frontend/tests/presentation.test.ts` (Vitest SSR `renderToStaticMarkup` wrapped in `EntityLabelProvider` across `HomeView`, `BusinessView`, `ArchitectureView`, `DesignView`, `DeltasView`, `ExplorationsView`, `CatalogView`, `NavigationRail`, `SpecReader`, and `CommandDialog`) asserting zero visible raw Eidos ID prefixes (`SYS-`, `DOM-`, `CAP-`, `POL-`, `PER-`, `INV-`, `DEC-`, `CNT-`, `CMP-`, `CTR-`, `DS-`, `CLT-`, `SCR-`, `UIC-`, `FLOW-`, `DLT-`, `EXP-`) in rendered text, `title` tooltips, and `placeholder` attributes, zero raw schema type slugs (`tech/container`, `design/ui-component`), zero literal backticks, zero CSS `:state` colons, and zero banned jargon terms (`DDD Strategic Layer`, `Whitebox`, `W3C DTCG`, `SSE Live Stream`, `POL-002 Traceability`, `1–2 Hop Graph BFS`, `Zero ADR Policy`, `Planned Mode`).
+   * Update `src/eidos/portal/frontend/tests/design-view.test.ts` to wrap in `EntityLabelProvider` and assert humanized state names (`Loading`, `Populated`, `Default`) and resolved UI component titles instead of `:loading` / `UIC-LEGACY-BADGE`.
+   * Add `tests/test_portal.py::test_portal_human_readable_ui_and_slug_free_diagrams` (bound to `INV-PORTAL-HUMAN-READABLE-UI`) verifying human-readable Mermaid labels and stable component-ID-derived node IDs across C4 L1–L3, screen states, and flows, humanized invariant titles/`source_title`, and clean UI copy in `PORTAL_HTML_TEMPLATE`; update existing copy assertions in `tests/test_portal.py::test_c4_level2_container_hierarchy_and_connections` and `tests/test_portal.py::test_portal_static_scalability_and_deep_linking` to align with the cleaned labels.
+   * Run `tests/test_modular_architecture.py::test_modular_component_boundaries_and_facade_parity` (`INV-CORE-MODULAR-COMPONENT-COHESION`) and verify `pytest --cov=src/eidos --cov-report=json:coverage.json` maintains strictly `>90.0%` per-file statement coverage on both `src/eidos/portal/generator.py` and `src/eidos/portal/mermaid.py` per `POL-005`.
+5. **Living Specification Reconciliation (`eidos/`)**:
+   * Update `CMP-PORTAL-ASSETS`, `CMP-PORTAL-GENERATOR`, `CNT-EIDOS-PORTAL` (adding `DEC-PORTAL-HUMAN-FIRST-PRESENTATION`), `CAP-EXP-001` (`1.3.0`, adding `INV-PORTAL-HUMAN-READABLE-UI`), `UIC-PORTAL-SHELL`, `UIC-PORTAL-SIDEBAR`, `UIC-PORTAL-METRIC-CARD`, `UIC-PORTAL-READER`, and all 7 screen specs (`SCR-PORTAL-HOME`, `SCR-PORTAL-BUSINESS`, `SCR-PORTAL-ARCHITECTURE`, `SCR-PORTAL-DESIGN`, `SCR-PORTAL-DELTAS`, `SCR-PORTAL-EXPLORATIONS`, `SCR-PORTAL-CATALOG`).
+   * Unchanged neighbor specs (`CLT-WEB-PORTAL`, `DS-CORE`, `CTR-EIDOS-PORTAL`) are intentionally excluded from `mutations:` to avoid `UNMODIFIED` verification errors (`CLT-WEB-PORTAL` covered via `SCR-PORTAL-*` and `CNT-EIDOS-PORTAL`; `DS-CORE` tokens unchanged; `CTR-EIDOS-PORTAL` endpoints unchanged).
+   * Run `eidos delta verify DLT-2026-140 --json`, `eidos delta apply DLT-2026-140`, and `eidos drift --uncommitted --json`.

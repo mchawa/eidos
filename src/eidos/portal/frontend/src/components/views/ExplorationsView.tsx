@@ -4,13 +4,9 @@ import {
   Compass,
   CheckCircle2,
   Clock,
-  HelpCircle,
   XCircle,
   ArrowRight,
   GitPullRequest,
-  Target,
-  FileQuestion,
-  FlaskConical,
   Gauge,
   BookOpen,
   Filter,
@@ -22,6 +18,13 @@ import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
 import { AsciiDocRenderer } from "@/components/ui/AsciiDocRenderer";
 import { hasSpecBodyOrChunk } from "@/lib/specChunks";
+import {
+  formatDisplayTitle,
+  formatStatus,
+  humanizeToken,
+  resolveEntityTitle,
+  useEntityLabels,
+} from "@/lib/presentation";
 import { cn } from "@/lib/utils";
 import type { PortalData, SpecExploration } from "@/types";
 
@@ -71,6 +74,7 @@ export function ExplorationsView({
   initialSelectedNonce,
   onClearSelected,
 }: ExplorationsViewProps) {
+  const labelIndex = useEntityLabels();
   const [selectedExp, setSelectedExp] = React.useState<SpecExploration | null>(null);
   const [filterText, setFilterText] = React.useState<string>("");
   const [statusFilter, setStatusFilter] = React.useState<string>("all");
@@ -91,13 +95,11 @@ export function ExplorationsView({
     const q = filterText.toLowerCase();
     return rawExplorations.filter((exp) => {
       const archived = isExplorationArchived(exp);
-      // Status filter
       if (statusFilter === "archived") {
         if (!archived) return false;
       } else if (statusFilter !== "all") {
         if (archived || exp.status !== statusFilter) return false;
       }
-      // Text filter
       if (!q) return true;
       const findings = getExplorationFindings(exp).toLowerCase();
       const recommendation = getExplorationRecommendation(exp).toLowerCase();
@@ -108,10 +110,14 @@ export function ExplorationsView({
         (exp.hypothesis && exp.hypothesis.toLowerCase().includes(q)) ||
         findings.includes(q) ||
         recommendation.includes(q) ||
-        deltas.some((d) => d.toLowerCase().includes(q))
+        deltas.some(
+          (d) =>
+            d.toLowerCase().includes(q) ||
+            resolveEntityTitle(d, labelIndex).toLowerCase().includes(q)
+        )
       );
     });
-  }, [rawExplorations, filterText, statusFilter]);
+  }, [rawExplorations, filterText, statusFilter, labelIndex]);
 
   // Counts by status
   const counts = React.useMemo(() => {
@@ -139,28 +145,28 @@ export function ExplorationsView({
       switch (status) {
         case "adopted":
           return (
-            <Badge variant="success" className="capitalize flex items-center gap-1">
+            <Badge variant="success" className="flex items-center gap-1">
               <CheckCircle2 className="h-3 w-3" />
               Adopted
             </Badge>
           );
         case "in_progress":
           return (
-            <Badge variant="primary" className="capitalize flex items-center gap-1">
+            <Badge variant="primary" className="flex items-center gap-1">
               <Compass className="h-3 w-3 animate-spin" />
               In Progress
             </Badge>
           );
         case "proposed":
           return (
-            <Badge variant="warning" className="capitalize flex items-center gap-1">
+            <Badge variant="warning" className="flex items-center gap-1">
               <Clock className="h-3 w-3" />
               Proposed
             </Badge>
           );
         case "discarded":
           return (
-            <Badge variant="danger" className="capitalize flex items-center gap-1">
+            <Badge variant="danger" className="flex items-center gap-1">
               <XCircle className="h-3 w-3" />
               Discarded
             </Badge>
@@ -169,8 +175,8 @@ export function ExplorationsView({
           return null;
         default:
           return (
-            <Badge variant="outline" className="capitalize">
-              {status}
+            <Badge variant="outline">
+              {formatStatus(status)}
             </Badge>
           );
       }
@@ -182,7 +188,7 @@ export function ExplorationsView({
 
     return (
       <span className="inline-flex items-center gap-1.5">
-        <Badge variant="outline" className="capitalize flex items-center gap-1 border-slate-500/30 text-slate-400">
+        <Badge variant="outline" className="flex items-center gap-1 border-slate-500/30 text-slate-400">
           <Archive className="h-3 w-3" />
           Archived
         </Badge>
@@ -200,14 +206,14 @@ export function ExplorationsView({
             <div className="flex items-center gap-2">
               <h2 className="text-base sm:text-lg font-bold text-foreground tracking-tight flex items-center gap-2">
                 <Lightbulb className="h-5 w-5 text-amber-500" />
-                Technical Explorations & Architectural Spikes (`EXP-*`)
+                Explorations &amp; Research
               </h2>
-              <span className="font-mono text-xs px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold border border-amber-500/20">
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold border border-amber-500/20">
                 {rawExplorations.length} Tracked
               </span>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Hypothesis-driven architectural research, feasibility benchmarks, and spike validations that graduate into formal SpecDeltas.
+              Research investigations, experiments, and findings that inform future system changes.
             </p>
           </div>
 
@@ -216,7 +222,7 @@ export function ExplorationsView({
               type="text"
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
-              placeholder="Search hypotheses, spikes, learnings..."
+              placeholder="Search hypotheses, research, learnings..."
               className="bg-muted/50 border border-border text-xs rounded-xl px-3 py-1.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-full sm:w-72"
             />
           </div>
@@ -334,38 +340,38 @@ export function ExplorationsView({
                 onClick={() => setSelectedExp(exp)}
               >
                 <div className="space-y-3">
-                  {/* Header: ID, Status, Resulting Deltas */}
+                  {/* Header: Status & Resulting Changes */}
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-amber-500 dark:text-amber-400 group-hover:underline">
-                        {exp.id}
-                      </span>
                       {getStatusBadge(exp.status, isExplorationArchived(exp))}
                     </div>
                     {deltas.length > 0 && (
                       <div className="flex flex-wrap items-center gap-1.5">
-                        {deltas.map((deltaId) => (
-                          <button
-                            key={deltaId}
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onNavigateDelta?.(deltaId);
-                            }}
-                            className="font-mono text-[11px] px-2 py-0.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/20 flex items-center gap-1 transition-colors cursor-pointer"
-                            title={`Jump to SpecDelta ${deltaId}`}
-                          >
-                            <GitPullRequest className="h-3 w-3" />
-                            <span>{deltaId}</span>
-                          </button>
-                        ))}
+                        {deltas.map((deltaId) => {
+                          const deltaTitle = resolveEntityTitle(deltaId, labelIndex, "Resulting Change");
+                          return (
+                            <button
+                              key={deltaId}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onNavigateDelta?.(deltaId);
+                              }}
+                              className="text-[11px] font-medium px-2 py-0.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/20 flex items-center gap-1 transition-colors cursor-pointer max-w-[240px]"
+                              title={`Open ${deltaTitle}`}
+                            >
+                              <GitPullRequest className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{deltaTitle}</span>
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
 
                   {/* Title */}
                   <h3 className="text-sm font-bold text-foreground leading-snug group-hover:text-primary transition-colors">
-                    {exp.title}
+                    {formatDisplayTitle(exp.title, exp.id)}
                   </h3>
 
                   {/* Hypothesis Callout */}
@@ -375,12 +381,12 @@ export function ExplorationsView({
                       Hypothesis
                     </div>
                     <p className="line-clamp-3 leading-relaxed">
-                      {exp.hypothesis || "Investigating feasibility and architectural trade-offs."}
+                      {exp.hypothesis || "Investigating feasibility and design trade-offs."}
                     </p>
                   </div>
                 </div>
 
-                {/* Footer Specs & Learnings Preview */}
+                {/* Footer Learnings Preview */}
                 <div className="space-y-3 pt-3 border-t border-border/60">
                   {findings && (
                     <p className="text-xs text-muted-foreground line-clamp-2 italic leading-relaxed">
@@ -394,12 +400,14 @@ export function ExplorationsView({
                     </p>
                   )}
 
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-muted-foreground">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
                     <span>
-                      {exitCriteriaCount > 0 ? `${exitCriteriaCount} exit criteria` : ""}
+                      {exitCriteriaCount > 0
+                        ? `${exitCriteriaCount} success ${exitCriteriaCount === 1 ? "criterion" : "criteria"}`
+                        : ""}
                     </span>
-                    <span className="flex items-center gap-1 text-primary font-sans font-medium group-hover:translate-x-0.5 transition-transform text-xs">
-                      Inspect Investigation <ArrowRight className="h-3.5 w-3.5" />
+                    <span className="flex items-center gap-1 text-primary font-medium group-hover:translate-x-0.5 transition-transform text-xs">
+                      Read Investigation <ArrowRight className="h-3.5 w-3.5" />
                     </span>
                   </div>
                 </div>
@@ -409,7 +417,7 @@ export function ExplorationsView({
         </div>
       )}
 
-      {/* Exploration Detail Modal (Centered Sheet with AsciiDocRenderer) */}
+      {/* Exploration Detail Modal */}
       <Sheet
         open={Boolean(selectedExp)}
         onOpenChange={(open) => {
@@ -418,8 +426,8 @@ export function ExplorationsView({
             onClearSelected?.();
           }
         }}
-        title={selectedExp?.title || "Architectural Exploration"}
-        subtitle={selectedExp?.id}
+        title={selectedExp ? formatDisplayTitle(selectedExp.title, selectedExp.id) : "Exploration"}
+        subtitle={selectedExp ? formatStatus(selectedExp.status) : undefined}
         maxWidth="6xl"
       >
         {selectedExp && (() => {
@@ -429,39 +437,37 @@ export function ExplorationsView({
           const outcome = selectedExp.decision?.outcome || "";
           return (
             <div className="space-y-6">
-              {/* Top Meta Badges & Resulting Delta Bridge */}
+              {/* Top Meta Badges & Resulting Change Bridge */}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
                   {getStatusBadge(selectedExp.status, isExplorationArchived(selectedExp))}
                   {outcome && (
-                    <Badge variant="outline" className="font-mono text-xs uppercase">
-                      Outcome: {outcome}
+                    <Badge variant="outline" className="text-xs">
+                      Outcome: {formatStatus(outcome)}
                     </Badge>
-                  )}
-                  {selectedExp.path && (
-                    <span className="text-xs font-mono text-muted-foreground bg-muted/50 px-2.5 py-1 rounded-xl">
-                      {selectedExp.path}
-                    </span>
                   )}
                 </div>
 
                 {deltas.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2">
-                    {deltas.map((deltaId) => (
-                      <button
-                        key={deltaId}
-                        type="button"
-                        onClick={() => {
-                          onNavigateDelta?.(deltaId);
-                        }}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/30 text-xs font-mono font-semibold transition-all cursor-pointer"
-                        title="Jump to resulting SpecDelta in Planned Mode"
-                      >
-                        <GitPullRequest className="h-3.5 w-3.5" />
-                        <span>Resulting Delta: {deltaId}</span>
-                        <ArrowRight className="h-3 w-3" />
-                      </button>
-                    ))}
+                    {deltas.map((deltaId) => {
+                      const deltaTitle = resolveEntityTitle(deltaId, labelIndex, "Resulting Change");
+                      return (
+                        <button
+                          key={deltaId}
+                          type="button"
+                          onClick={() => {
+                            onNavigateDelta?.(deltaId);
+                          }}
+                          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/30 text-xs font-semibold transition-all cursor-pointer max-w-md"
+                          title={`Open ${deltaTitle}`}
+                        >
+                          <GitPullRequest className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate">Resulting Change: {deltaTitle}</span>
+                          <ArrowRight className="h-3 w-3 shrink-0" />
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -470,29 +476,26 @@ export function ExplorationsView({
               <div className="space-y-2">
                 <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                   <Lightbulb className="h-4 w-4 text-amber-500" />
-                  Core Hypothesis Under Investigation
+                  Hypothesis Under Investigation
                 </h4>
                 <p className="text-xs sm:text-sm text-foreground leading-relaxed p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20">
                   {selectedExp.hypothesis}
                 </p>
               </div>
 
-              {/* Architectural Decision & Empirical Learnings */}
+              {/* Decision & Empirical Findings */}
               {(outcome || findings || recommendation) && (
                 <div className="space-y-2">
                   <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                     <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                    Architectural Decision & Empirical Findings
+                    Decision &amp; Findings
                   </h4>
                   <div className="p-4 rounded-2xl bg-muted/30 border border-border/70 space-y-2 text-xs">
                     {outcome && (
                       <div className="flex items-center gap-2">
                         <span className="text-muted-foreground font-semibold">Outcome:</span>
-                        <Badge
-                          variant={outcome === "adopted" ? "success" : "outline"}
-                          className="capitalize"
-                        >
-                          {outcome}
+                        <Badge variant={outcome === "adopted" ? "success" : "outline"}>
+                          {formatStatus(outcome)}
                         </Badge>
                       </div>
                     )}
@@ -511,7 +514,7 @@ export function ExplorationsView({
                 </div>
               )}
 
-              {/* Exit Criteria */}
+              {/* Success Criteria */}
               {(Array.isArray(selectedExp.exit_criteria)
                 ? selectedExp.exit_criteria.length > 0
                 : Boolean(
@@ -521,12 +524,12 @@ export function ExplorationsView({
                 <div className="space-y-2">
                   <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                     <Gauge className="h-4 w-4 text-indigo-400" />
-                    Exit Criteria & Benchmarks
+                    Success Criteria &amp; Benchmarks
                   </h4>
                   {Array.isArray(selectedExp.exit_criteria) ? (
                     <div className="p-3.5 rounded-2xl bg-muted/20 border border-border/60 text-xs space-y-1.5">
                       {selectedExp.exit_criteria.map((crit, idx) => (
-                        <div key={idx} className="font-mono text-xs text-foreground">
+                        <div key={idx} className="text-xs text-foreground">
                           • {crit}
                         </div>
                       ))}
@@ -542,9 +545,9 @@ export function ExplorationsView({
                           )}
                         >
                           <span className="text-[10px] font-semibold text-muted-foreground uppercase">
-                            {key.replace(/_/g, " ")}
+                            {humanizeToken(key)}
                           </span>
-                          <p className="font-mono text-xs text-foreground bg-muted/40 p-2 rounded-xl">
+                          <p className="text-xs text-foreground bg-muted/40 p-2 rounded-xl">
                             {typeof val === "object" ? JSON.stringify(val) : String(val)}
                           </p>
                         </div>
@@ -554,12 +557,12 @@ export function ExplorationsView({
                 </div>
               )}
 
-              {/* Full Living Specification Document */}
+              {/* Full Document */}
               {hasSpecBodyOrChunk(selectedExp.id, selectedExp.body) && (
                 <div className="space-y-2 pt-2 border-t border-border/60">
                   <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                     <BookOpen className="h-3.5 w-3.5 text-purple-400" />
-                    Living Specification Document (`EXP-*`)
+                    Full Document
                   </h4>
                   <AsciiDocRenderer specId={selectedExp.id} content={selectedExp.body || ""} />
                 </div>

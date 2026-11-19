@@ -302,9 +302,8 @@ export function MermaidDiagram({
 
       {/* Diagram Canvas */}
       {error ? (
-        <div className="w-full p-4 overflow-auto">
-          <p className="text-xs text-destructive font-semibold mb-1">Mermaid rendering error:</p>
-          <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap">{code}</pre>
+        <div role="alert" className="w-full p-4 text-center">
+          <p className="text-xs text-destructive font-semibold">Unable to render diagram.</p>
         </div>
       ) : (
         <div

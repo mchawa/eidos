@@ -15,7 +15,7 @@ states:
   - name: "loading"
     description: "Skeleton loader displayed during domain retrieval."
   - name: "active"
-    description: "Interactive view presenting product domains, capabilities with JTBD, policy invariants, and personas."
+    description: "Interactive view presenting product domains, capabilities, policies, system rules, and personas with human-readable titles."
   - name: "error"
     description: "Alert state when product specifications are missing or invalid."
 ---
@@ -23,10 +23,10 @@ states:
 :toc: left
 
 == 1. View Purpose & Business Context
-The Business Architecture View (`SCR-PORTAL-BUSINESS`) leads the product-engineering conversation by establishing what problems the system solves, how it is governed, and who it serves:
-* **Domains (DOM-*)**: Bounded contexts, core responsibilities, and strategic classification (core, supporting, generic).
-* **Capabilities (CAP-*)**: Customer Jobs-to-be-Done (JTBD), success metrics, and clickable technical capability anchors (`CNT-*` containers and `CTR-*` contracts) plus experience links (`SCR-*`, `FLOW-*`, `UIC-*`).
-* **Policies (POL-*)**: System-wide governance policies and compliance constraints.
-* **Personas (PER-*)**: Human and AI agent actors operating within the system lifecycle.
-* **Invariants Matrix (INV-*)**: Non-negotiable executable invariant rules and automated test bindings.
+The Business Architecture View (`SCR-PORTAL-BUSINESS`) leads the product-engineering conversation using clean human-readable titles, humanized badges, and plain-language labels (never rendering raw ID slugs, literal backticks, or raw test file paths):
+* **Domains**: Core areas of the product, responsibilities, and humanized classification badges.
+* **Capabilities**: Customer outcomes, ownership, and clickable resolved links to bound domains, containers, interface contracts, personas, and policies.
+* **Policies**: Organization-wide rules and compliance constraints with humanized category and severity badges (`Mandatory`, `Warning`, `Advisory`).
+* **Personas**: Human and automated actors with humanized archetype badges and resolved capability links.
+* **System Rules & Automated Verification**: Non-negotiable rules presented with humanized rule titles, resolved owning entity titles, and plain `Test Verified` indicators.
 

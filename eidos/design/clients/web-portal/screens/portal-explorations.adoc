@@ -21,11 +21,11 @@ states:
 :toc: left
 
 == 1. View Purpose & Discovery Lifecycle
-The Technical Explorations View (`SCR-PORTAL-EXPLORATIONS`) tracks hypothesis-driven architectural research and spikes:
+The **Explorations & Research** View (`SCR-PORTAL-EXPLORATIONS`) tracks hypothesis-driven architectural research and spikes with human-readable titles, humanized status/outcome badges, and resolved links to resulting change proposals (never showing raw ID slugs or raw file paths):
 * **Hypotheses & Questions**: Documents core problem statements and research questions under investigation.
-* **Empirical Spikes**: Tracks targeted proof-of-concept tasks and sandboxed Git branch validations.
+* **Empirical Spikes**: Tracks targeted proof-of-concept tasks and research experiments.
 * **Exit Criteria & Recommendations**: Enforces explicit time-boxing, hydrated `exit_criteria` checklists, and structured `recommendation` summaries extracted from exploration specifications.
-* **Decisions & Learnings**: Displays outcomes (`adopted`, `discarded`, `proposed`) and empirical takeaways, plus an `Archived` status filter pill and badge for archived explorations under `explorations/archive/`.
-* **Resulting SpecDelta Bridge**: 1-click navigation into resulting Planned Mode mutations (`DLT-*`).
+* **Decisions & Learnings**: Displays humanized outcome badges (`Adopted`, `Discarded`, `Proposed`, `In Progress`) and empirical takeaways, plus an `Archived` status filter pill and badge for archived explorations.
+* **Resulting Change Proposal Bridge**: 1-click navigation into resulting change proposals displaying each proposal's human-readable title and clean `"Open <Change Title>"` tooltip.
 * **Detailed AsciiDoc Specification Inspection**: Centered modal inspection with complete rendered AsciiDoc rationale.
 

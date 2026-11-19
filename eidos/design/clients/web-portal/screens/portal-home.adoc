@@ -23,10 +23,10 @@ states:
 :toc: left
 
 == 1. View Layout & Visual Hierarchy
-The Home View (`SCR-PORTAL-HOME`) serves as the central landing page and executive dashboard of the Eidos Living Web Portal:
-* **System Archetype Banner**: Summarizes the system identity (`SYS-EIDOS-001`), root governance rules, and specification validation health.
-* **KPI Metrics Grid**: Surfaces critical system figures at a glance: Total Living Specs, Domains, Capabilities, Invariants, C4 Containers, UI Components, and SpecDeltas.
-* **Quick Navigation Hub**: Direct entry points to Business Architecture, Design Systems, Technical Topologies, and SpecDeltas.
-* **Validation & Governance Diagnostics**: Collapsible static/live diagnostics drawer surfacing repository-relative schema validation errors (`schema_errors`), broken cross-references (`broken_references`), and live Server-Sent Events (`/api/events`) uncommitted drift status (`/api/drift`) with clickable links to open offending specs.
-* **Recent SpecDeltas Feed**: Summarizes active mutations, proposed changes, and recently applied architectural evolutions.
+The Home View (`SCR-PORTAL-HOME`) serves as the central landing page and executive dashboard of the Eidos Living Web Portal with human-readable titles and plain-language labels throughout:
+* **System Overview Banner**: Summarizes the system title, plain-language overview, and specification validation health (`Up to Date`, `Sync Needed`, and `Live` real-time status) without raw system ID slugs or methodology jargon.
+* **KPI Metrics Grid**: Surfaces critical system figures at a glance: Specifications, Domains, Capabilities, System Containers, Active Changes, and Automated Checks.
+* **Quick Navigation & How Documentation Stays Current**: Direct entry points to Business & Domains, Architecture, Design Systems, and Changes alongside plain-language guidance cards (Routine Updates, Planned Changes, Living Decisions).
+* **Validation & Governance Diagnostics**: Collapsible static/live diagnostics drawer surfacing validation issues, broken links, and real-time uncommitted drift with human-readable document and component titles linked directly to the corresponding specification reader.
+* **Recent Changes Feed & System Rules**: Summarizes recent change proposals and verified rules using humanized titles and plain `Test Verified` indicators.
 

@@ -2,6 +2,7 @@ import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 import { DesignView } from "@/components/views/DesignView";
+import { EntityLabelProvider } from "@/lib/presentation";
 import type { PortalData } from "@/types";
 
 describe("INV-PORTAL-LIVE-DRIFT-SSE: DesignView schema resilience", () => {
@@ -118,15 +119,26 @@ describe("INV-PORTAL-LIVE-DRIFT-SSE: DesignView schema resilience", () => {
       },
     };
 
-    const html = renderToStaticMarkup(React.createElement(DesignView, { data }));
+    const html = renderToStaticMarkup(
+      React.createElement(
+        EntityLabelProvider,
+        { data },
+        React.createElement(DesignView, { data })
+      )
+    );
 
-    expect(html).toContain(":loading");
+    expect(html).toContain("Loading");
     expect(html).toContain("Executing async WCF query handler via MessagesHandlerProxy.");
-    expect(html).toContain(":populated");
-    expect(html).toContain(":default");
-    expect(html).toContain("compact");
-    expect(html).toContain("UIC-LEGACY-BADGE, UIC-EXPORT");
-    expect(html).toContain("component: UIC-SCANNING-FORM, mode: modal");
+    expect(html).toContain("Populated");
+    expect(html).toContain("Default");
+    expect(html).toContain("Compact");
+    expect(html).toContain("Legacy Badge, Export");
+    expect(html).toContain("Component: Scanning Form, Mode: Modal");
+    expect(html).not.toContain(":loading");
+    expect(html).not.toContain(":populated");
+    expect(html).not.toContain(":default");
+    expect(html).not.toContain("UIC-LEGACY-BADGE");
+    expect(html).not.toContain("UIC-SCANNING-FORM");
     expect(html).toContain('for="designClientSelect"');
     expect(html).toContain('aria-pressed="true"');
   });

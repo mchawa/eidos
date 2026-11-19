@@ -58,7 +58,7 @@ export function NavigationRail({
     { key: "architecture", label: "Architecture", icon: Network, id: "tab-architecture" },
     {
       key: "deltas",
-      label: "SpecDeltas",
+      label: "Changes",
       icon: GitBranch,
       id: "tab-deltas",
       badge: deltasCount > 0 ? `${deltasCount}` : undefined,
@@ -72,7 +72,7 @@ export function NavigationRail({
     },
     {
       key: "catalog",
-      label: "Living Catalog",
+      label: "Catalog",
       icon: Layers,
       id: "tab-catalog",
       badge: `${totalSpecs}`,
@@ -146,12 +146,12 @@ export function NavigationRail({
                 ? "w-10 h-10 justify-center p-0 hover:text-foreground"
                 : "w-full text-xs py-2 px-3 text-left"
             )}
-            title="Search specifications (CMD+K)"
+            title="Search documentation"
           >
             <Search className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-foreground" />
             {!collapsed && (
               <>
-                <span className="flex-1 truncate">Search living specs...</span>
+                <span className="flex-1 truncate">Search documentation...</span>
                 <kbd className="font-mono text-[10px] bg-card px-1.5 py-0.5 rounded border border-border text-muted-foreground">
                   ⌘K
                 </kbd>

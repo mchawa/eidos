@@ -11,6 +11,20 @@ import { CommandDialog, type CommandItem } from "@/components/ui/command";
 import type { PortalData, SpecDriftStatus } from "@/types";
 import { SPEC_NAV_EVENT, resolveSpecTarget, type SpecNavDetail } from "@/lib/specNav";
 import { loadSpecChunk, registerSpecChunks } from "@/lib/specChunks";
+import {
+  EntityLabelProvider,
+  buildEntityLabelIndex,
+  formatContainerType,
+  formatDisplayTitle,
+  formatFlowType,
+  formatProtocol,
+  formatSpecType,
+  formatStatus,
+  formatTabLabel,
+  humanizeInvariantTitle,
+  humanizeToken,
+  resolveEntityTitle,
+} from "@/lib/presentation";
 
 const VALID_TABS = new Set<TabKey>([
   "home",
@@ -448,6 +462,7 @@ export function App() {
   // Build searchable items for CMD+K spotlight search with pre-indexed lowercased searchText
   const commandItems: CommandItem[] = React.useMemo(() => {
     if (!data) return [];
+    const labelIndex = buildEntityLabelIndex(data);
     const items: CommandItem[] = [];
     const seenIds = new Set<string>();
     const extractHeadings = (body?: string) =>
@@ -460,10 +475,11 @@ export function App() {
     data.components.forEach((c) => {
       seenIds.add(c.id);
       const headings = extractHeadings(c.description);
+      const containerTitle = formatDisplayTitle(c.title, c.id);
       items.push({
         id: c.id,
-        title: c.title,
-        subtitle: c.source_path,
+        title: containerTitle,
+        subtitle: c.responsibility || formatContainerType(c.container_type),
         searchText: `${c.id} ${c.title} ${c.source_path} ${c.responsibility || ""} ${headings}`.toLowerCase(),
         category: "components",
         raw: c,
@@ -473,9 +489,9 @@ export function App() {
           seenIds.add(ic.id);
           items.push({
             id: ic.id,
-            title: ic.title || ic.id,
-            subtitle: `${c.id} • ${Array.isArray(ic.source_path) ? ic.source_path.join(", ") : ic.source_path || ""}`,
-            searchText: `${ic.id} ${ic.title || ""} ${ic.responsibility || ""} ${c.id}`.toLowerCase(),
+            title: formatDisplayTitle(ic.title, ic.id),
+            subtitle: ic.responsibility ? `${containerTitle} • ${ic.responsibility}` : containerTitle,
+            searchText: `${ic.id} ${ic.title || ""} ${ic.responsibility || ""} ${c.id} ${containerTitle}`.toLowerCase(),
             category: "components",
             raw: ic,
           });
@@ -486,11 +502,14 @@ export function App() {
     // Boundary Contracts (CTR-*)
     (data.contracts || []).forEach((ct) => {
       seenIds.add(ct.id);
+      const providerTitle = resolveEntityTitle(ct.container, labelIndex);
       items.push({
         id: ct.id,
-        title: ct.title,
-        subtitle: `${ct.protocol} • ${ct.container}`,
-        searchText: `${ct.id} ${ct.title} ${ct.protocol} ${ct.container} ${extractHeadings(ct.description)}`.toLowerCase(),
+        title: formatDisplayTitle(ct.title, ct.id),
+        subtitle: providerTitle
+          ? `${formatProtocol(ct.protocol)} • ${providerTitle}`
+          : formatProtocol(ct.protocol),
+        searchText: `${ct.id} ${ct.title} ${ct.protocol} ${ct.container} ${providerTitle} ${extractHeadings(ct.description)}`.toLowerCase(),
         category: "contracts",
         raw: ct,
       });
@@ -500,11 +519,12 @@ export function App() {
     (data.decisions || []).forEach((dec) => {
       if (dec.id && !seenIds.has(dec.id)) {
         seenIds.add(dec.id);
+        const ownerTitle = resolveEntityTitle(dec.source_id, labelIndex, "Architecture");
         items.push({
           id: dec.id,
-          title: dec.title,
-          subtitle: `${dec.source_id || "Architecture"} • ${dec.decision?.slice(0, 80) || ""}`,
-          searchText: `${dec.id} ${dec.title} ${dec.decision || ""} ${dec.rationale || ""} ${dec.source_id || ""}`.toLowerCase(),
+          title: formatDisplayTitle(dec.title, dec.id),
+          subtitle: `${ownerTitle} • ${dec.decision?.slice(0, 80) || ""}`,
+          searchText: `${dec.id} ${dec.title} ${dec.decision || ""} ${dec.rationale || ""} ${dec.source_id || ""} ${ownerTitle}`.toLowerCase(),
           category: "decisions",
           raw: dec,
         });
@@ -516,7 +536,7 @@ export function App() {
       seenIds.add(inv.id);
       items.push({
         id: inv.id,
-        title: inv.title || inv.category,
+        title: humanizeInvariantTitle(inv),
         subtitle: inv.rule,
         searchText: `${inv.id} ${inv.title || ""} ${inv.category || ""} ${inv.rule || ""} ${inv.test_binding || ""}`.toLowerCase(),
         category: "invariants",
@@ -536,8 +556,8 @@ export function App() {
       seenIds.add(d.id);
       items.push({
         id: d.id,
-        title: d.title,
-        subtitle: d.status,
+        title: formatDisplayTitle(d.title, d.id),
+        subtitle: formatStatus(d.status),
         searchText: `${d.id} ${d.title} ${d.status} ${d.motivation || ""} ${extractHeadings(d.body)}`.toLowerCase(),
         category: "deltas",
         raw: d,
@@ -549,8 +569,8 @@ export function App() {
       seenIds.add(pol.id);
       items.push({
         id: pol.id,
-        title: pol.title,
-        subtitle: pol.invariants?.[0]?.rule || pol.category,
+        title: formatDisplayTitle(pol.title, pol.id),
+        subtitle: pol.invariants?.[0]?.rule || humanizeToken(pol.category),
         searchText: `${pol.id} ${pol.title} ${pol.category} ${extractHeadings(pol.body)}`.toLowerCase(),
         category: "policies",
         raw: pol,
@@ -562,7 +582,7 @@ export function App() {
       seenIds.add(dom.id);
       items.push({
         id: dom.id,
-        title: dom.title,
+        title: formatDisplayTitle(dom.title, dom.id),
         subtitle: dom.mission,
         searchText: `${dom.id} ${dom.title} ${dom.mission || ""} ${extractHeadings(dom.body)}`.toLowerCase(),
         category: "domains",
@@ -575,7 +595,7 @@ export function App() {
       seenIds.add(cap.id);
       items.push({
         id: cap.id,
-        title: cap.title || cap.id,
+        title: formatDisplayTitle(cap.title, cap.id),
         subtitle: cap.summary,
         searchText: `${cap.id} ${cap.title || ""} ${cap.summary || ""} ${extractHeadings(cap.body)}`.toLowerCase(),
         category: "capabilities",
@@ -588,8 +608,8 @@ export function App() {
       seenIds.add(per.id);
       items.push({
         id: per.id,
-        title: per.title,
-        subtitle: per.role,
+        title: formatDisplayTitle(per.title, per.id),
+        subtitle: per.role || humanizeToken(per.archetype),
         searchText: `${per.id} ${per.title} ${per.role || ""} ${extractHeadings(per.body)}`.toLowerCase(),
         category: "personas",
         raw: per,
@@ -601,8 +621,8 @@ export function App() {
       seenIds.add(exp.id);
       items.push({
         id: exp.id,
-        title: exp.title,
-        subtitle: `${exp.status} • ${exp.hypothesis?.slice(0, 80) || ""}`,
+        title: formatDisplayTitle(exp.title, exp.id),
+        subtitle: `${formatStatus(exp.status)} • ${exp.hypothesis?.slice(0, 80) || ""}`,
         searchText: `${exp.id} ${exp.title} ${exp.status} ${exp.hypothesis || ""} ${extractHeadings(exp.body)}`.toLowerCase(),
         category: "explorations",
         raw: exp,
@@ -619,10 +639,16 @@ export function App() {
     ].forEach((de: any) => {
       if (de.id && !seenIds.has(de.id)) {
         seenIds.add(de.id);
+        const sub =
+          de.route ||
+          (de.platform ? humanizeToken(de.platform) : "") ||
+          (de.category ? humanizeToken(de.category) : "") ||
+          (de.flow_type ? formatFlowType(de.flow_type) : "") ||
+          "Design System";
         items.push({
           id: de.id,
-          title: de.title || de.id,
-          subtitle: de.route || de.platform || de.category || de.flow_type || "Design",
+          title: formatDisplayTitle(de.title, de.id),
+          subtitle: sub,
           searchText: `${de.id} ${de.title || ""} ${de.route || ""} ${de.category || ""}`.toLowerCase(),
           category: "design",
           raw: de,
@@ -636,8 +662,8 @@ export function App() {
         seenIds.add(s.id);
         items.push({
           id: s.id,
-          title: s.title,
-          subtitle: s.path,
+          title: formatDisplayTitle(s.title, s.id),
+          subtitle: formatSpecType(s.type),
           searchText: `${s.id} ${s.title} ${s.path} ${extractHeadings(s.body)}`.toLowerCase(),
           category: "specs",
           raw: s,
@@ -682,16 +708,17 @@ export function App() {
 
   if (!data) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground font-mono text-xs">
+      <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground text-xs">
         <div className="flex items-center gap-3">
           <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <span>Synthesizing Living Specifications...</span>
+          <span>Loading documentation...</span>
         </div>
       </div>
     );
   }
 
   return (
+    <EntityLabelProvider data={data}>
     <div className="flex min-h-screen w-full bg-background text-foreground antialiased portal-shell">
       {/* Sidebar Rail (UIC-PORTAL-SIDEBAR) */}
       <NavigationRail
@@ -714,12 +741,12 @@ export function App() {
           <div className="flex items-center gap-2 text-xs">
             <span className="font-semibold text-muted-foreground">Eidos</span>
             <span className="text-border">/</span>
-            <span className="font-mono font-bold text-primary uppercase">
-              {activeTab}
+            <span className="font-semibold text-primary">
+              {formatTabLabel(activeTab)}
             </span>
           </div>
           {!isStaticBundle && (
-            <div className="flex items-center gap-3 text-[11px] font-mono text-muted-foreground">
+            <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
               {driftStatus && (
                 <span
                   className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold ${
@@ -729,8 +756,8 @@ export function App() {
                   }`}
                 >
                   {driftStatus.is_clean && !driftStatus.drift_detected
-                    ? "Workspace Clean"
-                    : "Drift Detected"}
+                    ? "Up to Date"
+                    : "Sync Needed"}
                 </span>
               )}
               <div className="flex items-center gap-1.5">
@@ -739,7 +766,7 @@ export function App() {
                     liveSyncActive ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
                   }`}
                 />
-                <span>{liveSyncActive ? "Live Sync" : "Offline"}</span>
+                <span>{liveSyncActive ? "Live" : "Offline"}</span>
               </div>
             </div>
           )}
@@ -830,5 +857,6 @@ export function App() {
         onSelect={handleCommandSelect}
       />
     </div>
+    </EntityLabelProvider>
   );
 }

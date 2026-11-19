@@ -5,6 +5,158 @@ import re
 from pathlib import Path
 from typing import Any
 
+_ACRONYM_MAP: dict[str, str] = {
+    "ui": "UI",
+    "ux": "UX",
+    "api": "API",
+    "cli": "CLI",
+    "http": "HTTP",
+    "https": "HTTPS",
+    "json": "JSON",
+    "sql": "SQL",
+    "ai": "AI",
+    "kpi": "KPI",
+    "html": "HTML",
+    "css": "CSS",
+    "svg": "SVG",
+    "url": "URL",
+    "vcs": "VCS",
+    "sdk": "SDK",
+    "db": "DB",
+    "id": "ID",
+    "ast": "AST",
+    "sse": "SSE",
+    "spa": "SPA",
+    "rrf": "RRF",
+    "fts": "FTS",
+    "c4": "C4",
+    "xss": "XSS",
+    "cors": "CORS",
+    "wal": "WAL",
+    "yaml": "YAML",
+    "toc": "TOC",
+    "onnx": "ONNX",
+}
+
+_ENTITY_PREFIX_RE = re.compile(
+    r"^(?:SYS|DOM|CAP|POL|PER|INV|DEC|CNT|CMP|CTR|DS|CLT|SCR|UIC|FLOW|DLT|EXP)-",
+    re.IGNORECASE,
+)
+
+_RAW_INLINE_ID_RE = re.compile(
+    r"\b(?:SYS|DOM|CAP|POL|PER|INV|DEC|CNT|CMP|CTR|DS|CLT|SCR|UIC|FLOW|DLT|EXP)-[A-Z0-9_-]+\b"
+)
+
+_PAREN_CODE_RE = re.compile(r"\s*\((?:`[^`]+`|[\s,;&/:-]|and|or|plus|via|e\.g\.)+\)", re.IGNORECASE)
+
+_CONTAINER_TYPE_LABELS: dict[str, str] = {
+    "web_app": "Web App",
+    "cli_app": "CLI App",
+    "frontend_spa": "Web App",
+    "mobile_app": "Mobile App",
+    "desktop_app": "Desktop App",
+    "library": "Library",
+    "service": "Service",
+    "microservice": "Microservice",
+    "database": "Database",
+    "storage": "Storage",
+    "plugin": "Plugin",
+    "extension": "Extension",
+    "worker": "Background Worker",
+    "background_worker": "Background Worker",
+    "gateway": "API Gateway",
+    "api_gateway": "API Gateway",
+    "engine": "Engine",
+    "package": "Package",
+}
+
+_PROTOCOL_LABELS: dict[str, str] = {
+    "http_json": "HTTP JSON",
+    "cli_args": "CLI",
+    "python_protocol": "Python API",
+    "openapi": "OpenAPI",
+    "graphql": "GraphQL",
+    "protobuf": "Protobuf",
+    "json_schema": "JSON Schema",
+}
+
+
+def _humanize_token(raw: str) -> str:
+    """Convert raw Eidos slugs, snake_case, kebab-case, or CamelCase into clean Title Case."""
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    text = _ENTITY_PREFIX_RE.sub("", text)
+    text = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
+    text = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", text)
+    text = re.sub(r"[_./-]+", " ", text)
+    words: list[str] = []
+    for part in text.split():
+        low = part.lower()
+        if low in _ACRONYM_MAP:
+            words.append(_ACRONYM_MAP[low])
+        elif part.isupper() and len(part) <= 3:
+            words.append(part)
+        else:
+            words.append(part[0].upper() + part[1:].lower())
+    return " ".join(words)
+
+
+def _humanize_container_type(raw: str) -> str:
+    """Return a clean human label for a container_type enum value."""
+    key = str(raw or "").strip().lower()
+    if key in _CONTAINER_TYPE_LABELS:
+        return _CONTAINER_TYPE_LABELS[key]
+    return _humanize_token(raw) or "Container"
+
+
+def _humanize_protocol(raw: str) -> str:
+    """Return a clean human label for a contract protocol enum value."""
+    key = str(raw or "").strip().lower()
+    if key in _PROTOCOL_LABELS:
+        return _PROTOCOL_LABELS[key]
+    return _humanize_token(raw) or "API"
+
+
+def _clean_mermaid_summary(text: str, max_len: int = 140) -> str:
+    """Summarize component prose for Mermaid cards without backticks, file refs, or raw entity IDs."""
+    cleaned = str(text or "").strip()
+    if not cleaned:
+        return ""
+    cleaned = _PAREN_CODE_RE.sub("", cleaned)
+    cleaned = cleaned.replace("`", "")
+    cleaned = _RAW_INLINE_ID_RE.sub(lambda m: _humanize_token(m.group(0)), cleaned)
+    cleaned = re.sub(r"\s+([,.;:])", r"\1", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if len(cleaned) > max_len:
+        cut = cleaned[: max_len - 3].rsplit(" ", 1)[0].rstrip(" ,;:-")
+        cleaned = f"{cut}..." if cut else cleaned[: max_len - 3] + "..."
+    return cleaned
+
+
+def _humanize_explicit_mermaid_block(block: str, lookup: dict[str, str]) -> str:
+    """Resolve raw entity IDs inside visible labels and participant aliases of authored Mermaid blocks."""
+    if not block:
+        return block
+
+    def _resolve_id(match: re.Match[str]) -> str:
+        eid = match.group(0)
+        resolved = lookup.get(eid) or _humanize_token(eid)
+        return resolved.replace('"', "'")
+
+    out_lines: list[str] = []
+    for line in block.splitlines():
+        alias_match = re.match(r"^(\s*(?:participant|actor)\s+\S+\s+as\s+)(.+)$", line)
+        if alias_match:
+            line = alias_match.group(1) + _RAW_INLINE_ID_RE.sub(_resolve_id, alias_match.group(2))
+        line = re.sub(
+            r'"([^"]*)"',
+            lambda m: '"' + _RAW_INLINE_ID_RE.sub(_resolve_id, m.group(1)) + '"',
+            line,
+        )
+        out_lines.append(line)
+    return "\n".join(out_lines)
+
 
 def _generate_c4_context_mermaid(
     personas: list[dict[str, Any]],
@@ -12,15 +164,16 @@ def _generate_c4_context_mermaid(
     system_title: str,
     external_systems: list[Any] | None = None,
 ) -> str:
-    """Generate Mermaid syntax for C4 Level 1 System Context from declared personas and external_systems."""
-    clean_title = html.escape(str(system_title or ""), quote=True)
+    """Generate Mermaid syntax for C4 Level 1 System Context with human-readable labels."""
+    display_title = str(system_title or "").strip() or _humanize_token(system_id) or "Software System"
+    clean_title = html.escape(display_title, quote=True).replace('"', "'")
     lines = [
         "graph TD",
         "  classDef actor fill:#0284c7,stroke:#0369a1,color:#fff,stroke-width:2px,rx:6px;",
         "  classDef system fill:#059669,stroke:#047857,color:#fff,stroke-width:3px,rx:8px;",
         "  classDef external fill:#334155,stroke:#475569,color:#fff,stroke-width:2px,rx:6px;",
         "",
-        f"  SYS[\"<div style='padding:10px 14px;font-size:15px;'><b>{html.escape(str(system_id or 'SYS-001'), quote=True)}</b><br/>{clean_title}<br/><i>[Software System]</i></div>\"]:::system",
+        f"  SYS[\"<div style='padding:10px 14px;font-size:15px;'><b>{clean_title}</b><br/><i>Software System</i></div>\"]:::system",
     ]
 
     ext_edges: list[tuple[str, str]] = []
@@ -42,23 +195,24 @@ def _generate_c4_context_mermaid(
         ext_role = html.escape(raw_role, quote=True)
         ext_proto = html.escape(raw_proto, quote=True)
         lines.append(
-            f"  {ext_node_id}[\"<div style='padding:8px 12px;'><b>{ext_name}</b><br/>{ext_role}<br/><i>[{ext_proto}]</i></div>\"]:::external"
+            f"  {ext_node_id}[\"<div style='padding:8px 12px;'><b>{ext_name}</b><br/>{ext_role}<br/><i>{ext_proto}</i></div>\"]:::external"
         )
         ext_edges.append((ext_node_id, ext_proto.replace("|", "/")))
 
     for p in personas:
-        pid = p.get("id", "PER")
-        ptitle = html.escape(str(p.get("title", pid)), quote=True)
+        pid = str(p.get("id") or "PER")
+        ptitle = html.escape(str(p.get("title") or _humanize_token(pid)), quote=True)
+        prole = html.escape(str(p.get("role") or _humanize_token(str(p.get("archetype") or "Stakeholder"))), quote=True)
         node_id = pid.replace("-", "_")
         lines.append(
-            f"  {node_id}[\"<div style='padding:8px 12px;'><b>{ptitle}</b><br/>Persona Actor<br/><i>[Human / Autonomous Lead]</i></div>\"]:::actor"
+            f"  {node_id}[\"<div style='padding:8px 12px;'><b>{ptitle}</b><br/><i>{prole}</i></div>\"]:::actor"
         )
 
     lines.append("")
     for p in personas:
-        pid = p.get("id", "PER")
+        pid = str(p.get("id") or "PER")
         node_id = pid.replace("-", "_")
-        lines.append(f"  {node_id} ==>|Interacts & Collaborates| SYS")
+        lines.append(f"  {node_id} ==>|Interacts With| SYS")
 
     for ext_node_id, ext_proto in ext_edges:
         lines.append(f'  SYS ==>|"{ext_proto}"| {ext_node_id}')
@@ -153,12 +307,9 @@ def _generate_c4_containers_mermaid(
     contracts: list[dict[str, Any]] | None = None,
     personas: list[dict[str, Any]] | None = None,
 ) -> str:
-    """Generate Mermaid syntax for C4 Level 2 Containers with tiered hierarchy and explicit connections.
-
-    Completely generic: dynamically derives active tiers, inter-container dependencies,
-    contract bindings, upstream personas, and external services from living specifications.
-    """
-    clean_sys_title = html.escape(str(system_title or "System Architecture")).replace('"', "'")
+    """Generate Mermaid syntax for C4 Level 2 Containers with human-readable labels and tiered hierarchy."""
+    display_sys = str(system_title or "").strip() or _humanize_token(system_id) or "System Architecture"
+    clean_sys_title = html.escape(display_sys).replace('"', "'")
     lines = [
         "graph TD",
         "  classDef uiContainer fill:#0284c7,stroke:#0369a1,color:#fff,stroke-width:2px,rx:8px;",
@@ -198,18 +349,14 @@ def _generate_c4_containers_mermaid(
 
     personas_list = personas or []
     if personas_list:
-        selected_personas = personas_list
-        for p in selected_personas:
-            pid = p.get("id", "PER")
+        for p in personas_list:
+            pid = str(p.get("id") or "PER")
             node_id = pid.replace("-", "_")
-            ptitle = html.escape(str(p.get("title", pid))).replace('"', "'")
-            prole = html.escape(str(p.get("role", "Actor"))).replace('"', "'")
-            ptype = html.escape(
-                str(p.get("archetype", p.get("role_type", "Human Lead"))).replace("_", " ").title()
-            ).replace('"', "'")
+            ptitle = html.escape(str(p.get("title") or _humanize_token(pid))).replace('"', "'")
+            prole = html.escape(str(p.get("role") or _humanize_token(str(p.get("archetype") or "Stakeholder")))).replace('"', "'")
 
             actor_lines.append(
-                f"  {node_id}[\"<div style='padding:6px 10px;'><b>{ptitle}</b><br/>{prole}<br/><i>[{ptype}]</i></div>\"]:::actor"
+                f"  {node_id}[\"<div style='padding:6px 10px;'><b>{ptitle}</b><br/><i>{prole}</i></div>\"]:::actor"
             )
             actor_nodes_rendered.append(node_id)
 
@@ -250,7 +397,7 @@ def _generate_c4_containers_mermaid(
                 actor_edge_lines.append(f'  {node_id} ==>|"{clean_l}"| {ep_node}')
     else:
         actor_lines.append(
-            "  ACTOR_USERS[\"<div style='padding:6px 10px;'><b>System Users &amp; Clients</b><br/>Primary Actors<br/><i>[Users &amp; Clients]</i></div>\"]:::actor"
+            "  ACTOR_USERS[\"<div style='padding:6px 10px;'><b>System Users &amp; Clients</b><br/><i>Primary Users</i></div>\"]:::actor"
         )
         actor_nodes_rendered.append("ACTOR_USERS")
         for ep in entrypoints:
@@ -276,9 +423,7 @@ def _generate_c4_containers_mermaid(
         lines.append("")
 
     # 3. System Boundary & Tiered Subgraphs (Generically grouped and ordered)
-    lines.append(
-        f'  subgraph SYS_BOUNDARY ["📦 System Boundary: {clean_sys_title} ({html.escape(str(system_id or "SYS-001"))})"]'
-    )
+    lines.append(f'  subgraph SYS_BOUNDARY ["📦 System Boundary: {clean_sys_title}"]')
 
     containers_by_tier: dict[str, list[dict[str, Any]]] = {}
     for c in components:
@@ -306,11 +451,10 @@ def _generate_c4_containers_mermaid(
         for c in tier_containers:
             cid = c["id"]
             node_id = cid.replace("-", "_")
-            ctitle = html.escape(str(c.get("title", cid))).replace('"', "'")
-            ctype = html.escape(str(c.get("container_type", "container"))).replace('"', "'")
-            runtime = html.escape(str(c.get("runtime", "N/A"))).replace('"', "'")
+            ctitle = html.escape(str(c.get("title") or _humanize_token(cid))).replace('"', "'")
+            ctype = html.escape(_humanize_container_type(str(c.get("container_type") or "container"))).replace('"', "'")
             lines.append(
-                f"      {node_id}[\"<div style='padding:8px 12px;'><b>{html.escape(cid)}</b><br/>{ctitle}<br/><i>[{ctype} • {runtime}]</i></div>\"]:::{style_class}"
+                f"      {node_id}[\"<div style='padding:8px 12px;'><b>{ctitle}</b><br/><i>{ctype}</i></div>\"]:::{style_class}"
             )
         lines.append("    end")
 
@@ -373,7 +517,7 @@ def _generate_c4_containers_mermaid(
     if ext_service_nodes:
         for ext in ext_service_nodes.values():
             lines.append(
-                f"  {ext['id']}[\"<div style='padding:6px 10px;'><b>{ext['title']}</b><br/><i>[{ext['sub']}]</i></div>\"]:::external"
+                f"  {ext['id']}[\"<div style='padding:6px 10px;'><b>{ext['title']}</b><br/><i>{ext['sub']}</i></div>\"]:::external"
             )
         lines.append("")
 
@@ -387,6 +531,10 @@ def _generate_c4_containers_mermaid(
     contracts_by_id = {ct["id"]: ct for ct in (contracts or [])}
     drawn_connections: set[tuple[str, str]] = set()
     container_edge_lines: list[str] = []
+
+    def _contract_titles(ids: list[str]) -> str:
+        resolved = [str((contracts_by_id.get(cid) or {}).get("title") or _humanize_token(cid)) for cid in ids]
+        return ", ".join(resolved)
 
     for c in components:
         src_id = c["id"]
@@ -417,21 +565,15 @@ def _generate_c4_containers_mermaid(
                 ctr_id = matching_contracts[0]
                 ctr_meta = contracts_by_id.get(ctr_id, {})
                 proto = ctr_meta.get("protocol")
-                if proto:
-                    proto_str = proto.replace("_", " ").upper()
-                    label = f"{proto_str} • Consumes [{', '.join(matching_contracts)}]"
-                else:
-                    label = f"Consumes [{', '.join(matching_contracts)}]"
+                titles_str = _contract_titles(matching_contracts)
+                label = f"{_humanize_protocol(proto)} • {titles_str}" if proto else f"Uses {titles_str}"
             # 2. Target provides a contract
             elif tgt_provides:
                 ctr_id = tgt_provides[0]
                 ctr_meta = contracts_by_id.get(ctr_id, {})
                 proto = ctr_meta.get("protocol")
-                if proto:
-                    proto_str = proto.replace("_", " ").upper()
-                    label = f"{proto_str} • [{', '.join(tgt_provides)}]"
-                else:
-                    label = f"Consumes [{', '.join(tgt_provides)}]"
+                titles_str = _contract_titles(tgt_provides)
+                label = f"{_humanize_protocol(proto)} • {titles_str}" if proto else f"Uses {titles_str}"
             # 3. Database / Storage target
             elif tgt_c.get("container_type") in ("database", "storage") or any(
                 k in tgt_id for k in ("INDEX", "DB", "STORAGE", "SQLITE", "SQL")
@@ -482,14 +624,19 @@ def _generate_c4_containers_mermaid(
     return "\n".join(lines)
 
 
-def _generate_c4_component_mermaid(component: dict[str, Any], all_components: list[dict[str, Any]]) -> str:
-    """Generate Mermaid syntax for C4 Level 3 Component Whitebox View of a single container."""
+def _generate_c4_component_mermaid(
+    component: dict[str, Any],
+    all_components: list[dict[str, Any]],
+    *,
+    contracts: list[dict[str, Any]] | None = None,
+) -> str:
+    """Generate Mermaid syntax for a container's internal component breakdown with human-readable labels."""
     cid = str(component.get("id") or "CNT")
-    clean_title = html.escape(str(component.get("title") or cid)).replace('"', "'")
-    str(component.get("container_type") or "library")
-    str(component.get("runtime") or "N/A").replace('"', "'")
+    clean_title = html.escape(str(component.get("title") or _humanize_token(cid))).replace('"', "'")
     internals = component.get("internal_components") or []
     box_id = f"subgraph_{cid.replace('-', '_')}"
+    comps_by_id = {str(c.get("id")): c for c in (all_components or []) if c.get("id")}
+    contracts_by_id = {str(ct.get("id")): ct for ct in (contracts or []) if ct.get("id")}
 
     lines = [
         "graph TD",
@@ -497,42 +644,48 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
         "  classDef peer fill:#1e293b,stroke:#475569,color:#94a3b8,stroke-width:1.5px,rx:6px,stroke-dasharray: 4 4;",
         "  classDef contract fill:#064e3b,stroke:#10b981,color:#fff,stroke-width:2px,rx:6px;",
         "",
-        f'  subgraph {box_id} ["📦 Level 2 Container: {html.escape(cid)} ({clean_title})"]',
+        f'  subgraph {box_id} ["📦 {clean_title}"]',
     ]
 
+    mod_ids: list[str] = []
     if not internals:
         fallback_id = f"mod_{cid.replace('-', '_')}_main"
+        mod_ids.append(fallback_id)
         lines.append(
-            f"    {fallback_id}[\"<div style='padding:10px 14px;min-width:300px;max-width:420px;white-space:normal;word-break:break-word;'><b>{clean_title}</b><br/><i>Core Container Logic</i></div>\"]:::module"
+            f"    {fallback_id}[\"<div style='padding:10px 14px;min-width:260px;max-width:400px;white-space:normal;word-break:break-word;'><b>{clean_title}</b><br/><i>Core Logic</i></div>\"]:::module"
         )
     else:
         mod_node_by_ref: dict[str, str] = {}
         for idx, mod in enumerate(internals):
             mid = mod.get("id")
-            mtitle = str(mod.get("title") or f"Module {idx + 1}").replace('"', "'")
-            title_text = (
-                f"<b>{html.escape(str(mid))}: {html.escape(mtitle)}</b>" if mid else f"<b>{html.escape(mtitle)}</b>"
-            )
-            resp = str(mod.get("responsibility") or "").replace('"', "'")
-            raw_spath = mod.get("source_path") or ""
-            spath = (
-                ", ".join(str(p) for p in raw_spath if p is not None) if isinstance(raw_spath, list) else str(raw_spath)
-            ).replace('"', "'")
-            mod_id = f"mod_{cid.replace('-', '_')}_{idx}"
+            raw_mtitle = str(mod.get("title") or "").strip()
+            if not raw_mtitle or raw_mtitle == mid:
+                display_mtitle = _humanize_token(str(mid or f"Module {idx + 1}"))
+            elif " " not in raw_mtitle and not raw_mtitle.isupper():
+                display_mtitle = _humanize_token(raw_mtitle)
+            else:
+                display_mtitle = raw_mtitle
+            display_mtitle = display_mtitle.replace('"', "'")
+            resp = _clean_mermaid_summary(str(mod.get("responsibility") or "")).replace('"', "'")
+            if isinstance(mid, str) and mid.strip():
+                mod_id = f"mod_{re.sub(r'[^a-zA-Z0-9_]', '_', mid.strip())}"
+            else:
+                mod_id = f"mod_{cid.replace('-', '_')}_{idx}"
+            mod_ids.append(mod_id)
             if isinstance(mid, str) and mid.strip():
                 mod_node_by_ref[mid.strip()] = mod_id
-            if isinstance(mtitle, str) and mtitle.strip():
-                mod_node_by_ref[mtitle.strip()] = mod_id
+            if raw_mtitle:
+                mod_node_by_ref[raw_mtitle] = mod_id
+            resp_html = f"<br/><span style='font-size:11px;color:#cbd5e1;'>{html.escape(resp)}</span>" if resp else ""
             lines.append(
-                f"    {mod_id}[\"<div style='padding:10px 14px;text-align:left;min-width:300px;max-width:420px;white-space:normal;word-break:break-word;line-height:1.45;'>"
-                f"{title_text}<br/><small style='color:#93c5fd;font-family:monospace;font-size:10px;'>{html.escape(spath)}</small><br/>"
-                f"<span style='font-size:11px;color:#cbd5e1;'>{html.escape(resp)}</span></div>\"]:::module"
+                f"    {mod_id}[\"<div style='padding:10px 14px;text-align:left;min-width:260px;max-width:400px;white-space:normal;word-break:break-word;line-height:1.45;'>"
+                f"<b>{html.escape(display_mtitle)}</b>{resp_html}</div>\"]:::module"
             )
 
         # Render intra-container component dependencies derived via AST imports
         drawn_mod_edges: set[tuple[str, str]] = set()
         for idx, mod in enumerate(internals):
-            src_mod_id = f"mod_{cid.replace('-', '_')}_{idx}"
+            src_mod_id = mod_ids[idx]
             dep_targets = [
                 str(item) for item in (mod.get("consumes_components") or mod.get("dependencies") or []) if item
             ]
@@ -555,36 +708,36 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
         )
         if dep_id and dep_id != cid:
             peer_node = f"peer_{re.sub(r'[^a-zA-Z0-9_]', '_', dep_id)}"
+            peer_title = str((comps_by_id.get(dep_id) or {}).get("title") or _humanize_token(dep_id)).replace('"', "'")
             lines.append(
-                f"  {peer_node}[\"<div style='padding:8px 12px;'><b>{html.escape(dep_id)}</b><br/><i>[Peer Container]</i></div>\"]:::peer"
+                f"  {peer_node}[\"<div style='padding:8px 12px;'><b>{html.escape(peer_title)}</b><br/><i>Related Container</i></div>\"]:::peer"
             )
-            first_mod = f"mod_{cid.replace('-', '_')}_0" if internals else f"mod_{cid.replace('-', '_')}_main"
-            lines.append(f'  {first_mod} ==>|"Consumes / Depends On"| {peer_node}')
+            lines.append(f'  {mod_ids[0]} ==>|"Depends On"| {peer_node}')
 
     # Provided contracts
-    contracts = component.get("contracts") or {}
-    provides = (contracts.get("provides") or []) if isinstance(contracts, dict) else []
+    contracts_cfg = component.get("contracts") or {}
+    provides = (contracts_cfg.get("provides") or []) if isinstance(contracts_cfg, dict) else []
     for raw_ctr in provides:
         ctr_id = (str(raw_ctr.get("id") or "") if isinstance(raw_ctr, dict) else str(raw_ctr)).split("(", 1)[0].strip()
         if not ctr_id:
             continue
         ctr_node = f"ctr_{re.sub(r'[^a-zA-Z0-9_]', '_', ctr_id)}"
+        ctr_title = str((contracts_by_id.get(ctr_id) or {}).get("title") or _humanize_token(ctr_id)).replace('"', "'")
         lines.append(
-            f"  {ctr_node}[\"<div style='padding:8px 12px;'><b>{html.escape(ctr_id)}</b><br/><i>[Interface Contract]</i></div>\"]:::contract"
+            f"  {ctr_node}[\"<div style='padding:8px 12px;'><b>{html.escape(ctr_title)}</b><br/><i>Interface Contract</i></div>\"]:::contract"
         )
-        last_mod = (
-            f"mod_{cid.replace('-', '_')}_{len(internals) - 1}" if internals else f"mod_{cid.replace('-', '_')}_main"
-        )
-        lines.append(f'  {last_mod} -->|"Provides Interface"| {ctr_node}')
+        lines.append(f'  {mod_ids[-1]} -->|"Provides Interface"| {ctr_node}')
 
     return "\n".join(lines)
 
 
 def _generate_screen_state_mermaid(screen_id: str, states: list[Any], transitions: list[dict[str, Any]]) -> str:
-    """Generate Mermaid stateDiagram-v2 syntax for screen state transitions."""
+    """Generate Mermaid stateDiagram-v2 syntax for screen state transitions with humanized labels."""
     clean_id = re.sub(r"[^a-zA-Z0-9_]", "_", str(screen_id or "screen"))
     lines = ["stateDiagram-v2", "  direction LR"]
     if not states:
+        display_screen = html.escape(_humanize_token(screen_id) or "Screen", quote=True).replace('"', "'")
+        lines.append(f'  state "{display_screen}" as {clean_id}')
         lines.append(f"  [*] --> {clean_id}")
         return "\n".join(lines)
 
@@ -594,9 +747,15 @@ def _generate_screen_state_mermaid(screen_id: str, states: list[Any], transition
         return cleaned or f"state_{fallback_idx}"
 
     state_names: list[str] = []
+    declared: set[str] = set()
     for idx, s in enumerate(states):
         raw_name = (s.get("name") or s.get("id") or f"state_{idx}") if isinstance(s, dict) else (s or f"state_{idx}")
-        state_names.append(_sanitize_state_id(raw_name, idx))
+        sid = _sanitize_state_id(raw_name, idx)
+        state_names.append(sid)
+        if sid not in declared:
+            declared.add(sid)
+            human_label = html.escape(_humanize_token(str(raw_name)) or sid, quote=True).replace('"', "'")
+            lines.append(f'  state "{human_label}" as {sid}')
 
     lines.append(f"  [*] --> {state_names[0]}")
     for t in transitions or []:
@@ -629,15 +788,48 @@ def _sanitize_mermaid_block(raw_code: str) -> str:
     return "\n".join(safe_lines).strip()
 
 
-def _extract_or_generate_flow_mermaid(flow_id: str, flow_type: str, steps: list[dict[str, Any]], body: str) -> str:
-    """Extract authored Mermaid block from spec body or generate from steps."""
+def _extract_or_generate_flow_mermaid(
+    flow_id: str,
+    flow_type: str,
+    steps: list[dict[str, Any]],
+    body: str,
+    *,
+    clients_by_id: dict[str, str] | None = None,
+    screens_by_id: dict[str, str] | None = None,
+) -> str:
+    """Extract authored Mermaid block from spec body or generate human-labeled flow from steps."""
+    clt_lookup = clients_by_id or {}
+    scr_lookup = screens_by_id or {}
+
     match = re.search(r"\[mermaid\]\s*\n----\s*\n(.*?)\n----", body or "", re.DOTALL)
     if match:
         sanitized = _sanitize_mermaid_block(match.group(1))
-        return sanitized or "flowchart LR\n  Start --> End"
+        if not sanitized:
+            return "flowchart LR\n  Start --> End"
+        combined_lookup = {**scr_lookup, **clt_lookup}
+        return _humanize_explicit_mermaid_block(sanitized, combined_lookup)
 
     if not steps:
         return "flowchart LR\n  Start --> End"
+
+    def _resolve_client_label(raw_clt: str) -> str:
+        key = raw_clt.strip()
+        if key in clt_lookup:
+            return clt_lookup[key]
+        if _ENTITY_PREFIX_RE.match(key):
+            return _humanize_token(key)
+        return key
+
+    def _resolve_screen_label(raw_scr: str) -> str:
+        key = raw_scr.strip()
+        if not key:
+            return ""
+        stem = Path(key).stem
+        if key in scr_lookup:
+            return scr_lookup[key]
+        if stem in scr_lookup:
+            return scr_lookup[stem]
+        return _humanize_token(stem)
 
     if flow_type == "cross_client":
         lines = ["sequenceDiagram", "  autonumber"]
@@ -652,8 +844,8 @@ def _extract_or_generate_flow_mermaid(flow_id: str, flow_type: str, steps: list[
             participants.append("Client")
         for idx, p in enumerate(participants):
             p_clean = re.sub(r"[^a-zA-Z0-9_]", "_", p).strip("_") or f"Client_{idx + 1}"
-            p_escaped = html.escape(p.replace("\n", " "), quote=True)
-            lines.append(f"  participant {p_clean} as {p_escaped}")
+            p_label = html.escape(_resolve_client_label(p).replace("\n", " "), quote=True)
+            lines.append(f"  participant {p_clean} as {p_label}")
         for idx, s in enumerate(steps):
             if not isinstance(s, dict):
                 continue
@@ -666,8 +858,8 @@ def _extract_or_generate_flow_mermaid(flow_id: str, flow_type: str, steps: list[
             title = html.escape(raw_title, quote=True)
             action = html.escape(raw_action, quote=True)
             outcome = html.escape(raw_outcome, quote=True)
-            screen_stem = html.escape(Path(raw_screen).stem, quote=True) if raw_screen else ""
-            note_suffix = f" [{screen_stem}]" if screen_stem else ""
+            screen_label = html.escape(_resolve_screen_label(raw_screen), quote=True) if raw_screen else ""
+            note_suffix = f" ({screen_label})" if screen_label else ""
             lines.append(f"  Note over {clt}: {title}{note_suffix}")
             msg = f"{action} ({outcome})" if outcome else action
             lines.append(f"  {clt}->>{clt}: {msg}")
@@ -682,8 +874,8 @@ def _extract_or_generate_flow_mermaid(flow_id: str, flow_type: str, steps: list[
             step_label_num = html.escape(str(raw_step_num), quote=True)
             title = html.escape(str(s.get("title") or f"Step {raw_step_num}").replace("\n", " "), quote=True)
             raw_screen = str(s.get("screen") or "").replace("\n", " ")
-            scr_stem = html.escape(Path(raw_screen).stem, quote=True) if raw_screen else ""
-            scr_label = f"<br/><small>{scr_stem}</small>" if scr_stem else ""
+            scr_text = html.escape(_resolve_screen_label(raw_screen), quote=True) if raw_screen else ""
+            scr_label = f"<br/><small>{scr_text}</small>" if scr_text else ""
             raw_outcome = str(s.get("outcome") or "").replace("\n", " ")
             outcome_label = f"<br/><i>{html.escape(raw_outcome, quote=True)}</i>" if raw_outcome else ""
             lines.append(f'  step{step_id}["<b>Step {step_label_num}: {title}</b>{scr_label}{outcome_label}"]')

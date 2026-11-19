@@ -177,6 +177,7 @@ export interface SpecInvariant {
   category: string;
   severity?: string;
   source_type: "policy" | "capability" | "container" | "component" | string;
+  source_title?: string;
   test_binding?: string;
   path?: string;
 }

@@ -11,7 +11,6 @@ import {
   Filter,
   Sparkles,
   HelpCircle,
-  Tag,
   Crosshair,
   LayoutGrid,
   ListOrdered,
@@ -24,6 +23,15 @@ import { Sheet } from "@/components/ui/sheet";
 import { AsciiDocRenderer } from "@/components/ui/AsciiDocRenderer";
 import { hasSpecBodyOrChunk } from "@/lib/specChunks";
 import { requestSpecNavigation } from "@/lib/specNav";
+import {
+  formatDeltaKind,
+  formatDisplayTitle,
+  formatMutationOperation,
+  formatStatus,
+  humanizeToken,
+  resolveEntityTitle,
+  useEntityLabels,
+} from "@/lib/presentation";
 import { cn } from "@/lib/utils";
 import type { PortalData, SpecDelta, SpecMutation } from "@/types";
 
@@ -53,18 +61,12 @@ export function formatAffectsCategory(category: string): string {
   if (AFFECTS_CATEGORY_LABELS[category]) {
     return AFFECTS_CATEGORY_LABELS[category];
   }
-  if (category.endsWith("ies")) {
-    return `${category.slice(0, -3)}y`;
-  }
-  if (category.endsWith("s")) {
-    return category.slice(0, -1);
-  }
-  return category;
+  return humanizeToken(category);
 }
 
 export function getMutationTarget(m?: SpecMutation | null): string {
-  if (!m) return "Target Specification";
-  return m.target || m.title || "Target Specification";
+  if (!m) return "Target Item";
+  return m.target || m.title || "Target Item";
 }
 
 export function isDeltaArchived(d: SpecDelta): boolean {
@@ -143,6 +145,7 @@ export function DeltasView({
   initialDeltaNonce,
   onClearSelectedDelta,
 }: DeltasViewProps) {
+  const labelIndex = useEntityLabels();
   const [selectedDelta, setSelectedDelta] = React.useState<SpecDelta | null>(null);
   const [filterText, setFilterText] = React.useState<string>("");
   const [selectedStatusFilter, setSelectedStatusFilter] = React.useState<string>("all");
@@ -169,7 +172,6 @@ export function DeltasView({
     }
   }, [initialDeltaId, initialDeltaNonce, data.deltas]);
 
-  // Dynamically resolve all columns: standard 5 + any custom status in data.deltas
   const columns: ColumnConfig[] = React.useMemo(() => {
     const cols = [...STANDARD_COLUMNS];
     const standardKeys = new Set(cols.map((c) => c.key));
@@ -179,9 +181,7 @@ export function DeltasView({
         if (!standardKeys.has(statusKey)) {
           cols.push({
             key: statusKey,
-            label: statusKey
-              .replace(/_/g, " ")
-              .replace(/\b\w/g, (c) => c.toUpperCase()),
+            label: formatStatus(statusKey),
             icon: HelpCircle,
             color: "text-zinc-500 dark:text-zinc-400",
             bg: "bg-zinc-500/10 dark:bg-zinc-500/15",
@@ -194,7 +194,6 @@ export function DeltasView({
     return cols;
   }, [data.deltas]);
 
-  // Index deltas by status with search filter (routing archived deltas into the 'archived' bucket)
   const deltasByStatus = React.useMemo(() => {
     const raw = data.deltas || {};
     const q = filterText.toLowerCase();
@@ -206,6 +205,7 @@ export function DeltasView({
           d.title.toLowerCase().includes(q) ||
           (d.motivation && d.motivation.toLowerCase().includes(q)) ||
           (d.kind && d.kind.toLowerCase().includes(q)) ||
+          (d.status && d.status.toLowerCase().includes(q)) ||
           (d.vcs?.branch && d.vcs.branch.toLowerCase().includes(q))
       );
     };
@@ -236,12 +236,10 @@ export function DeltasView({
     return record;
   }, [data.deltas, filterText, columns]);
 
-  // Total count
   const totalCount = React.useMemo(() => {
     return Object.values(deltasByStatus).reduce((acc, list) => acc + list.length, 0);
   }, [deltasByStatus]);
 
-  // Filter columns if user selected a single status pill
   const activeColumns = React.useMemo(() => {
     if (selectedStatusFilter === "all") return columns;
     return columns.filter((c) => c.key === selectedStatusFilter);
@@ -256,14 +254,14 @@ export function DeltasView({
             <div className="flex items-center gap-2">
               <h2 className="text-base sm:text-lg font-bold text-foreground tracking-tight flex items-center gap-2">
                 <GitBranch className="h-5 w-5 text-primary" />
-                SpecDelta Mutation Board (Planned Mode)
+                Change Proposals
               </h2>
-              <span className="font-mono text-xs px-2.5 py-0.5 rounded-full bg-primary/10 text-primary font-semibold border border-primary/20">
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-primary/10 text-primary font-semibold border border-primary/20">
                 {totalCount} Total
               </span>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Machine-readable architectural mutations governed by formal SpecDeltas (`DLT-*`). Full status lifecycle visibility.
+              Track proposed, in-review, approved, and applied changes across the system.
             </p>
           </div>
 
@@ -281,7 +279,7 @@ export function DeltasView({
                 )}
               >
                 <LayoutGrid className="h-3.5 w-3.5 text-primary" />
-                <span>Kanban</span>
+                <span>Board</span>
               </button>
               <button
                 type="button"
@@ -301,7 +299,7 @@ export function DeltasView({
               type="text"
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
-              placeholder="Filter by ID, title, branch, intent..."
+              placeholder="Filter changes by title, summary, or status..."
               className="bg-muted/50 border border-border text-xs rounded-xl px-3 py-1.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-full sm:w-64"
             />
           </div>
@@ -310,7 +308,7 @@ export function DeltasView({
         {/* Status Lifecycle Filter Pills */}
         <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/60">
           <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1 mr-1">
-            <Filter className="h-3 w-3" /> Statuses:
+            <Filter className="h-3 w-3" /> Status:
           </span>
           <button
             type="button"
@@ -342,57 +340,57 @@ export function DeltasView({
               >
                 <Icon className="h-3 w-3" />
                 <span>{col.label}</span>
-                <span className="font-mono text-[10px] opacity-75">({count})</span>
+                <span className="text-[10px] opacity-75">({count})</span>
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Kanban Grid or Chronological Timeline */}
+      {/* Board or Chronological Timeline */}
       {viewLayout === "timeline" ? (
         <div className="space-y-3 max-w-4xl mx-auto">
           {activeColumns
             .flatMap((col) => deltasByStatus[col.key] || [])
             .sort((a, b) => b.id.localeCompare(a.id))
             .slice(0, appliedVisibleCount)
-            .map((delta) => (
-              <Card
-                key={delta.id}
-                onClick={() => setSelectedDelta(delta)}
-                className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer hover:border-primary/50 transition-all group"
-              >
-                <div className="space-y-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-primary group-hover:underline">
-                      {delta.id}
-                    </span>
-                    {isDeltaArchived(delta) && (
-                      <Badge variant="outline" className="uppercase font-mono text-[10px] border-slate-500/30 text-slate-400">
-                        archived
+            .map((delta) => {
+              const changeCount = delta.mutations?.length || 0;
+              return (
+                <Card
+                  key={delta.id}
+                  onClick={() => setSelectedDelta(delta)}
+                  className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer hover:border-primary/50 transition-all group"
+                >
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {isDeltaArchived(delta) && (
+                        <Badge variant="outline" className="text-[10px] border-slate-500/30 text-slate-400">
+                          Archived
+                        </Badge>
+                      )}
+                      <Badge variant="outline" className="text-[10px]">
+                        {formatStatus(delta.status)}
                       </Badge>
+                      <Badge variant="outline" className="text-[10px]">
+                        {formatDeltaKind(delta.kind)}
+                      </Badge>
+                    </div>
+                    <h4 className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors truncate">
+                      {formatDisplayTitle(delta.title, delta.id)}
+                    </h4>
+                    {delta.motivation && (
+                      <p className="text-xs text-muted-foreground line-clamp-1">
+                        {delta.motivation}
+                      </p>
                     )}
-                    <Badge variant="outline" className="uppercase font-mono text-[10px]">
-                      {delta.status}
-                    </Badge>
-                    <Badge variant="outline" className="text-[10px]">
-                      {delta.kind}
-                    </Badge>
                   </div>
-                  <h4 className="text-sm font-semibold text-foreground truncate">
-                    {delta.title}
-                  </h4>
-                  {delta.motivation && (
-                    <p className="text-xs text-muted-foreground line-clamp-1">
-                      {delta.motivation}
-                    </p>
-                  )}
-                </div>
-                <div className="text-xs font-mono text-muted-foreground shrink-0">
-                  {delta.mutations?.length || 0} mutation(s)
-                </div>
-              </Card>
-            ))}
+                  <div className="text-xs text-muted-foreground shrink-0">
+                    {changeCount} {changeCount === 1 ? "change" : "changes"}
+                  </div>
+                </Card>
+              );
+            })}
           {activeColumns.flatMap((col) => deltasByStatus[col.key] || []).length >
             appliedVisibleCount && (
             <div className="pt-2 text-center">
@@ -402,7 +400,7 @@ export function DeltasView({
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-muted hover:bg-muted/80 text-foreground border border-border/60 cursor-pointer"
               >
                 <ChevronDown className="h-3.5 w-3.5" />
-                <span>Show More Deltas</span>
+                <span>Show More Changes</span>
               </button>
             </div>
           )}
@@ -446,11 +444,11 @@ export function DeltasView({
                       <div className={`p-1.5 rounded-lg ${col.bg} ${col.color}`}>
                         <Icon className="h-4 w-4" />
                       </div>
-                      <span className="font-bold text-xs text-foreground uppercase tracking-wide">
+                      <span className="font-bold text-xs text-foreground tracking-wide">
                         {col.label}
                       </span>
                     </div>
-                    <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                       {fullList.length}
                     </span>
                   </div>
@@ -459,51 +457,54 @@ export function DeltasView({
                   <div className="space-y-2.5 overflow-y-auto max-h-[700px] pr-1">
                     {list.length === 0 ? (
                       <div className="py-12 text-center text-xs text-muted-foreground/60 border border-dashed border-border/60 rounded-xl px-4">
-                        No {col.label.toLowerCase()} deltas
+                        No {col.label.toLowerCase()} changes
                       </div>
                     ) : (
                       <>
-                        {list.map((delta) => (
-                          <Card
-                            key={delta.id}
-                            className="p-3.5 space-y-2.5 cursor-pointer hover:border-primary/50 transition-all hover:md-elevation-2 group"
-                            onClick={() => setSelectedDelta(delta)}
-                          >
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="font-mono text-xs font-bold text-primary group-hover:underline truncate">
-                                {delta.id}
-                              </span>
-                              <Badge variant="outline" className="text-[10px] shrink-0">
-                                {delta.kind}
-                              </Badge>
-                            </div>
-
-                            <h4 className="text-xs font-medium text-foreground line-clamp-2 leading-relaxed">
-                              {delta.title}
-                            </h4>
-
-                            {delta.vcs?.branch && (
-                              <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground truncate bg-muted/40 px-2 py-1 rounded-lg">
-                                <GitBranch className="h-3 w-3 text-purple-400 shrink-0" />
-                                <span className="truncate">{delta.vcs.branch}</span>
-                              </div>
-                            )}
-
-                            {delta.mutations && delta.mutations.length > 0 && (
-                              <div className="pt-1 flex items-center justify-between text-[10px] text-muted-foreground font-mono">
-                                <div className="flex items-center gap-1">
-                                  <FileDiff className="h-3 w-3 text-primary shrink-0" />
-                                  <span>{delta.mutations.length} mutation(s)</span>
-                                </div>
-                                {delta.mutations[0] && (
-                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground truncate max-w-[120px]">
-                                    {getMutationTarget(delta.mutations[0])}
-                                  </span>
+                        {list.map((delta) => {
+                          const changeCount = delta.mutations?.length || 0;
+                          const firstTargetTitle = delta.mutations?.[0]
+                            ? resolveEntityTitle(getMutationTarget(delta.mutations[0]), labelIndex)
+                            : "";
+                          return (
+                            <Card
+                              key={delta.id}
+                              className="p-3.5 space-y-2.5 cursor-pointer hover:border-primary/50 transition-all hover:md-elevation-2 group"
+                              onClick={() => setSelectedDelta(delta)}
+                            >
+                              <div className="flex items-center justify-between gap-1">
+                                <Badge variant="outline" className="text-[10px] shrink-0">
+                                  {formatDeltaKind(delta.kind)}
+                                </Badge>
+                                {isDeltaArchived(delta) && (
+                                  <Badge variant="outline" className="text-[10px] border-slate-500/30 text-slate-400">
+                                    {formatStatus(delta.status)}
+                                  </Badge>
                                 )}
                               </div>
-                            )}
-                          </Card>
-                        ))}
+
+                              <h4 className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors line-clamp-2 leading-relaxed">
+                                {formatDisplayTitle(delta.title, delta.id)}
+                              </h4>
+
+                              {delta.mutations && delta.mutations.length > 0 && (
+                                <div className="pt-1 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <FileDiff className="h-3 w-3 text-primary shrink-0" />
+                                    <span>
+                                      {changeCount} {changeCount === 1 ? "change" : "changes"}
+                                    </span>
+                                  </div>
+                                  {firstTargetTitle && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground truncate max-w-[140px]">
+                                      {firstTargetTitle}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </Card>
+                          );
+                        })}
                         {isPaginatedCol && fullList.length > appliedVisibleCount && (
                           <button
                             type="button"
@@ -526,7 +527,7 @@ export function DeltasView({
         </div>
       )}
 
-      {/* Delta Detail Sheet (Centered Modal with AsciiDocRenderer) */}
+      {/* Change Detail Sheet */}
       <Sheet
         open={Boolean(selectedDelta)}
         onOpenChange={(open) => {
@@ -535,8 +536,12 @@ export function DeltasView({
             onClearSelectedDelta?.();
           }
         }}
-        title={selectedDelta?.title || "SpecDelta Details"}
-        subtitle={selectedDelta?.id}
+        title={selectedDelta ? formatDisplayTitle(selectedDelta.title, selectedDelta.id) : "Change Details"}
+        subtitle={
+          selectedDelta
+            ? `${formatDeltaKind(selectedDelta.kind)} • ${formatStatus(selectedDelta.status)}`
+            : undefined
+        }
         maxWidth="6xl"
       >
         {selectedDelta && (
@@ -544,117 +549,85 @@ export function DeltasView({
             {/* Header Badges */}
             <div className="flex flex-wrap items-center gap-2">
               {isDeltaArchived(selectedDelta) && (
-                <Badge variant="outline" className="uppercase font-mono text-[11px] border-slate-500/30 text-slate-400">
+                <Badge variant="outline" className="text-[11px] border-slate-500/30 text-slate-400">
                   Archived
                 </Badge>
               )}
-              <Badge variant="primary" className="uppercase font-mono text-[11px]">
-                {selectedDelta.status}
+              <Badge variant="primary" className="text-[11px]">
+                {formatStatus(selectedDelta.status)}
               </Badge>
               <Badge variant="outline" className="text-xs">
-                Kind: {selectedDelta.kind}
+                {formatDeltaKind(selectedDelta.kind)}
               </Badge>
-              {selectedDelta.path && (
-                <span className="text-xs font-mono text-muted-foreground bg-muted/50 px-2.5 py-1 rounded-xl">
-                  {selectedDelta.path}
-                </span>
-              )}
             </div>
 
-            {/* VCS Branch Callout */}
-            {selectedDelta.vcs?.branch && (
-              <div className="p-3.5 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <GitBranch className="h-4 w-4 text-purple-400 shrink-0" />
-                  <span className="text-xs font-semibold text-purple-400">Target VCS Branch:</span>
-                  <span className="font-mono text-xs font-bold text-foreground">
-                    {selectedDelta.vcs.branch}
-                  </span>
-                </div>
-                <code className="text-[10px] font-mono bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-md">
-                  git checkout {selectedDelta.vcs.branch}
-                </code>
-              </div>
-            )}
-
-            {/* Motivation & Strategic Intent */}
+            {/* Summary & Purpose */}
             <div className="space-y-2">
               <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                 <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-                Motivation & Strategic Intent
+                Summary &amp; Motivation
               </h4>
               <p className="text-xs text-muted-foreground leading-relaxed p-3.5 rounded-2xl bg-muted/20 border border-border/60">
-                {selectedDelta.motivation || "Standard architectural evolution."}
+                {selectedDelta.motivation || "Planned system update."}
               </p>
             </div>
 
-            {/* Declared Mutations */}
+            {/* Planned Changes */}
             <div className="space-y-2.5">
               <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
                   <FileDiff className="h-3.5 w-3.5 text-primary" />
-                  Declared Mutations
+                  Planned Changes
                 </span>
-                <span className="font-mono text-muted-foreground text-xs">
+                <span className="text-muted-foreground text-xs">
                   ({selectedDelta.mutations?.length || 0})
                 </span>
               </h4>
               <div className="space-y-2">
-                {(selectedDelta.mutations || []).map((m, i) => (
-                  <div
-                    key={i}
-                    className="p-3.5 rounded-2xl border border-border/70 bg-card text-xs space-y-2"
-                  >
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold text-primary uppercase font-mono text-[10px] px-2 py-0.5 rounded-lg bg-primary/10 border border-primary/20">
-                        {m.operation}
-                      </span>
-                      <span className="font-mono font-semibold text-foreground">
-                        {getMutationTarget(m)}
-                      </span>
-                    </div>
-                    {m.details && (
-                      <p className="text-muted-foreground text-xs leading-relaxed pl-1">
-                        {m.details}
-                      </p>
-                    )}
-                    {m.expect && Object.keys(m.expect).length > 0 && (
-                      <div className="pt-2 border-t border-border/40 text-[11px] font-mono space-y-1">
-                        <span className="text-[10px] text-muted-foreground uppercase font-sans font-semibold tracking-wider">
-                          Expected Post-Conditions
+                {(selectedDelta.mutations || []).map((m, i) => {
+                  const rawTarget = getMutationTarget(m);
+                  const targetTitle = resolveEntityTitle(rawTarget, labelIndex, "Target Item");
+                  return (
+                    <div
+                      key={i}
+                      className="p-3.5 rounded-2xl border border-border/70 bg-card text-xs space-y-2"
+                    >
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-primary text-[11px] px-2 py-0.5 rounded-lg bg-primary/10 border border-primary/20">
+                          {formatMutationOperation(m.operation)}
                         </span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {Object.entries(m.expect).map(([k, v]) => (
-                            <span
-                              key={k}
-                              className="px-2 py-0.5 rounded-lg bg-muted/60 text-muted-foreground border border-border/50 text-[10px]"
-                            >
-                              <span className="text-primary font-semibold">{k}:</span>{" "}
-                              {typeof v === "object" ? JSON.stringify(v) : String(v)}
-                            </span>
-                          ))}
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleEntityPillClick(rawTarget)}
+                          className="font-semibold text-foreground hover:text-primary hover:underline cursor-pointer text-left"
+                        >
+                          {targetTitle}
+                        </button>
                       </div>
-                    )}
-                  </div>
-                ))}
+                      {m.details && (
+                        <p className="text-muted-foreground text-xs leading-relaxed pl-1">
+                          {m.details}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
-            {/* Affects & Blast Radius */}
+            {/* Impact & Affected Areas */}
             {(selectedDelta.affects || selectedDelta.blast_radius) && (
               <div className="space-y-3">
                 <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                   <Crosshair className="h-3.5 w-3.5 text-rose-400" />
-                  Impact &amp; Blast Radius
+                  Affected Areas
                 </h4>
 
                 <div className="p-4 rounded-2xl bg-muted/20 border border-border/60 text-xs space-y-3">
-                  {/* Strategic Affects */}
                   {selectedDelta.affects && (
                     <div className="space-y-2">
                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
-                        Directly Affected Specifications
+                        Directly Affected Items
                       </span>
                       <div className="flex flex-wrap gap-1.5">
                         {Object.entries(selectedDelta.affects).map(([category, items]) =>
@@ -664,10 +637,14 @@ export function DeltasView({
                                 key={`${category}-${idx}`}
                                 type="button"
                                 onClick={() => handleEntityPillClick(String(item))}
-                                className="inline-flex items-center rounded-md border border-border px-2 py-0.5 font-mono text-[10px] hover:border-primary/50 hover:bg-primary/10 transition-colors cursor-pointer"
+                                className="inline-flex items-center rounded-md border border-border px-2 py-0.5 text-[11px] hover:border-primary/50 hover:bg-primary/10 transition-colors cursor-pointer"
                               >
-                                <span className="text-muted-foreground mr-1 capitalize">{formatAffectsCategory(category)}:</span>
-                                <span className="font-semibold text-foreground">{item}</span>
+                                <span className="text-muted-foreground mr-1">
+                                  {formatAffectsCategory(category)}:
+                                </span>
+                                <span className="font-semibold text-foreground">
+                                  {resolveEntityTitle(String(item), labelIndex)}
+                                </span>
                               </button>
                             ))
                           ) : null
@@ -676,7 +653,6 @@ export function DeltasView({
                     </div>
                   )}
 
-                  {/* Calculated Blast Radius */}
                   {selectedDelta.blast_radius &&
                     Boolean(
                       selectedDelta.blast_radius.impact_level ||
@@ -693,24 +669,24 @@ export function DeltasView({
                         {selectedDelta.blast_radius.impact_level && (
                           <div className="flex items-center gap-2">
                             <span className="text-muted-foreground">Impact Level:</span>
-                            <Badge variant="outline" className="font-mono text-[10px] uppercase font-bold text-amber-400">
-                              {selectedDelta.blast_radius.impact_level}
+                            <Badge variant="outline" className="text-[11px] font-semibold text-amber-400">
+                              {humanizeToken(selectedDelta.blast_radius.impact_level)}
                             </Badge>
                           </div>
                         )}
 
                         {selectedDelta.blast_radius.impacted_containers && selectedDelta.blast_radius.impacted_containers.length > 0 && (
                           <div>
-                            <span className="text-muted-foreground">Impacted Containers: </span>
+                            <span className="text-muted-foreground">Affected Containers: </span>
                             <div className="flex flex-wrap gap-1 mt-1">
                               {selectedDelta.blast_radius.impacted_containers.map((c: string, idx: number) => (
                                 <button
                                   key={idx}
                                   type="button"
                                   onClick={() => handleEntityPillClick(c)}
-                                  className="font-mono text-[10px] px-2 py-0.5 rounded bg-muted hover:bg-primary/15 text-primary border border-border/50 cursor-pointer transition-colors"
+                                  className="text-[11px] px-2 py-0.5 rounded bg-muted hover:bg-primary/15 text-primary border border-border/50 cursor-pointer transition-colors"
                                 >
-                                  {c}
+                                  {resolveEntityTitle(c, labelIndex)}
                                 </button>
                               ))}
                             </div>
@@ -719,16 +695,16 @@ export function DeltasView({
 
                         {selectedDelta.blast_radius.impacted_components && selectedDelta.blast_radius.impacted_components.length > 0 && (
                           <div>
-                            <span className="text-muted-foreground">Impacted Components: </span>
+                            <span className="text-muted-foreground">Affected Components: </span>
                             <div className="flex flex-wrap gap-1 mt-1">
                               {selectedDelta.blast_radius.impacted_components.map((c: string, idx: number) => (
                                 <button
                                   key={idx}
                                   type="button"
                                   onClick={() => handleEntityPillClick(c)}
-                                  className="font-mono text-[10px] px-2 py-0.5 rounded bg-muted hover:bg-primary/15 text-foreground border border-border/50 cursor-pointer transition-colors"
+                                  className="text-[11px] px-2 py-0.5 rounded bg-muted hover:bg-primary/15 text-foreground border border-border/50 cursor-pointer transition-colors"
                                 >
-                                  {c}
+                                  {resolveEntityTitle(c, labelIndex)}
                                 </button>
                               ))}
                             </div>
@@ -737,16 +713,16 @@ export function DeltasView({
 
                         {selectedDelta.blast_radius.invariants_to_enforce && selectedDelta.blast_radius.invariants_to_enforce.length > 0 && (
                           <div>
-                            <span className="text-muted-foreground">Invariants to Enforce: </span>
+                            <span className="text-muted-foreground">Rules Verified: </span>
                             <div className="flex flex-wrap gap-1 mt-1">
                               {selectedDelta.blast_radius.invariants_to_enforce.map((inv: string, idx: number) => (
                                 <button
                                   key={idx}
                                   type="button"
                                   onClick={() => handleEntityPillClick(inv)}
-                                  className="font-mono text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 font-bold cursor-pointer transition-colors"
+                                  className="text-[11px] px-2 py-0.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 font-medium cursor-pointer transition-colors"
                                 >
-                                  {inv}
+                                  {resolveEntityTitle(inv, labelIndex)}
                                 </button>
                               ))}
                             </div>
@@ -755,11 +731,11 @@ export function DeltasView({
 
                         {selectedDelta.blast_radius.impacted_design_systems && selectedDelta.blast_radius.impacted_design_systems.length > 0 && (
                           <div>
-                            <span className="text-muted-foreground">Impacted Design Systems: </span>
+                            <span className="text-muted-foreground">Affected Design Systems: </span>
                             <div className="flex flex-wrap gap-1 mt-1">
                               {selectedDelta.blast_radius.impacted_design_systems.map((ds: string, idx: number) => (
-                                <span key={idx} className="font-mono text-[10px] px-2 py-0.5 rounded bg-violet-500/10 text-violet-400 border border-violet-500/20">
-                                  {ds}
+                                <span key={idx} className="text-[11px] px-2 py-0.5 rounded bg-violet-500/10 text-violet-400 border border-violet-500/20">
+                                  {resolveEntityTitle(ds, labelIndex)}
                                 </span>
                               ))}
                             </div>
@@ -768,11 +744,11 @@ export function DeltasView({
 
                         {selectedDelta.blast_radius.impacted_screens && selectedDelta.blast_radius.impacted_screens.length > 0 && (
                           <div>
-                            <span className="text-muted-foreground">Impacted Screens: </span>
+                            <span className="text-muted-foreground">Affected Screens: </span>
                             <div className="flex flex-wrap gap-1 mt-1">
                               {selectedDelta.blast_radius.impacted_screens.map((scr: string, idx: number) => (
-                                <span key={idx} className="font-mono text-[10px] px-2 py-0.5 rounded bg-pink-500/10 text-pink-400 border border-pink-500/20">
-                                  {scr}
+                                <span key={idx} className="text-[11px] px-2 py-0.5 rounded bg-pink-500/10 text-pink-400 border border-pink-500/20">
+                                  {resolveEntityTitle(scr, labelIndex)}
                                 </span>
                               ))}
                             </div>
@@ -781,11 +757,11 @@ export function DeltasView({
 
                         {selectedDelta.blast_radius.impacted_personas && selectedDelta.blast_radius.impacted_personas.length > 0 && (
                           <div>
-                            <span className="text-muted-foreground">Impacted Personas: </span>
+                            <span className="text-muted-foreground">Affected Personas: </span>
                             <div className="flex flex-wrap gap-1 mt-1">
                               {selectedDelta.blast_radius.impacted_personas.map((p: string, idx: number) => (
-                                <span key={idx} className="font-mono text-[10px] px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border/50">
-                                  {p}
+                                <span key={idx} className="text-[11px] px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border/50">
+                                  {resolveEntityTitle(p, labelIndex)}
                                 </span>
                               ))}
                             </div>
@@ -797,12 +773,12 @@ export function DeltasView({
               </div>
             )}
 
-            {/* Living Specification Body rendered via AsciiDocRenderer */}
+            {/* Full Document */}
             {hasSpecBodyOrChunk(selectedDelta.id, selectedDelta.body) && (
               <div className="space-y-2 pt-2 border-t border-border/60">
                 <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                   <BookOpen className="h-3.5 w-3.5 text-purple-400" />
-                  Living Specification Document (`DLT-*`)
+                  Full Proposal Document
                 </h4>
                 <AsciiDocRenderer specId={selectedDelta.id} content={selectedDelta.body || ""} />
               </div>
