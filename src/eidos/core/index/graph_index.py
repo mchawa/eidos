@@ -61,6 +61,7 @@ from eidos.core.index.sync import (
 )
 from eidos.core.index.traversal import (
     compute_delta_impact_in_db,
+    compute_governance_health,
     execute_incoming_references,
     execute_k_hop_traversal,
     query_spec_catalog_in_db,
@@ -521,6 +522,16 @@ class ArchitecturalIndex:
         return compute_delta_impact_in_db(
             self._get_connection(),
             mutations=mutations,
+        )
+
+    def get_governance_health(self, *, validation_report: Any = None) -> dict[str, Any]:
+        """Compute deterministic architecture governance health metrics from the synchronized knowledge graph."""
+        self._ensure_synced()
+        return compute_governance_health(
+            self._get_connection(),
+            repo_root=self.root,
+            eidos_dir=self.eidos_dir,
+            validation_report=validation_report,
         )
 
 

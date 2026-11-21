@@ -59,6 +59,7 @@ Manages the embedded SQLite architectural knowledge graph and FTS5 hybrid search
   - `repo-map [--max-tokens <tokens>] [--json] [--path <path>]`: Generates a token-budgeted structural repo map outline (classes, functions, methods, routes) for AI coding agents in Markdown or JSON (`--json`).
   - `find-symbol <query> [--limit <n>] [--json] [--path <path>]`: Locates code symbols (including class methods, `http_endpoint` / `http_request` symbols, and automated test symbols) across polyglot AST source files and links them to associated living component specifications. Each `--json` match carries `provenance`, `confidence`, `file_path` (the owning *specification* path), and a `location` object (`file`, `line_start`, `line_end`, `signature`, `parent_symbol`) pointing at the source definition, or `null` for non-AST matches.
   - `semantic [action] [--model <variant>] [--force] [--path <path>] [--json]`: Manages and inspects the optional SHA-256 verified Harrier-OSS-v1-0.6B ONNX semantic embedding index (`status`, `setup`, or `sync`).
+  - `health [--path <path>] [--json]`: Displays a deterministic architecture governance health scorecard quantifying source file ownership coverage (and unowned files), active `CNT-*`/`CMP-*` `== Public Surface` coverage, verified `CTR-*` `specification_file` coverage, active `CAP-*` bound-invariant coverage, validation warning counts, and `ratchet_baseline` import debt in Rich table or `--json` format.
 
 === `eidos portal`
 Manages the interactive Living Web Portal and documentation site export.

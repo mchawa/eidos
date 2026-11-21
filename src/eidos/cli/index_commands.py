@@ -552,3 +552,77 @@ def index_semantic_cmd(
     else:
         console.print(f"[bold red]Error:[/bold red] {msg}")
     raise typer.Exit(code=1)
+
+
+@index_app.command("health")
+def index_health_cmd(
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Path to eidos directory (defaults to ./eidos).",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output architecture governance health scorecard as machine-readable JSON.",
+    ),
+):
+    """Display an architecture governance health scorecard across source ownership, Public Surface, contracts, invariants, warnings, and ratchet debt."""
+    eidos_dir = resolve_cli_eidos_dir(path)
+    idx = get_architectural_index(eidos_dir=eidos_dir)
+    health = idx.get_governance_health()
+
+    if json_output:
+        typer.echo(orjson.dumps(health, option=orjson.OPT_INDENT_2).decode("utf-8"))
+        return
+
+    src = health["source_ownership"]
+    surf = health["public_surface"]
+    ctrs = health["contracts"]
+    caps = health["capabilities"]
+    val = health["validation"]
+    ratchet = health["ratchet_debt"]
+
+    table = Table(title="Eidos Architecture Governance Health Scorecard", show_header=True, header_style="bold magenta")
+    table.add_column("Governance Dimension", style="bold cyan")
+    table.add_column("Score / Count", justify="right", style="bold white")
+    table.add_column("Details", style="dim")
+
+    table.add_row(
+        "Source File Ownership",
+        f"{src['coverage_pct']:.1f}%",
+        f"{src['owned_code_files']}/{src['total_code_files']} code files owned ({len(src['unowned_files'])} unowned)",
+    )
+    table.add_row(
+        "Public Surface Coverage",
+        f"{surf['coverage_pct']:.1f}%",
+        f"{surf['documented_entities']}/{surf['total_entities']} active containers/components with == Public Surface",
+    )
+    table.add_row(
+        "Contract Verification",
+        f"{ctrs['coverage_pct']:.1f}%",
+        f"{ctrs['verified_with_spec_file']}/{ctrs['total_active']} active contracts with specification_file",
+    )
+    table.add_row(
+        "Capability Invariant Coverage",
+        f"{caps['coverage_pct']:.1f}%",
+        f"{caps['with_bound_invariants']}/{caps['total_active']} active capabilities ({caps['bound_invariants']}/{caps['total_invariants']} bound invariants)",
+    )
+    val_badge = "[bold green]CLEAN[/bold green]" if val["is_clean"] else "[bold red]ERRORS[/bold red]"
+    table.add_row(
+        "Validation Health",
+        val_badge,
+        f"{val['error_count']} error(s), {val['warning_count']} advisory warning(s)",
+    )
+    table.add_row(
+        "Import Ratchet Debt",
+        f"{ratchet['total_max_imports']}",
+        f"{ratchet['entry_count']} ratchet_baseline entry(ies)",
+    )
+    console.print(table)
+
+    if src["unowned_files"]:
+        preview = ", ".join(src["unowned_files"][:10])
+        suffix = f" (+{len(src['unowned_files']) - 10} more)" if len(src["unowned_files"]) > 10 else ""
+        console.print(f"\n[bold yellow]Unowned Code Files:[/bold yellow] {preview}{suffix}")

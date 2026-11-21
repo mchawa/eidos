@@ -1,0 +1,134 @@
+---
+type: delta/mutation
+id: DLT-2026-154-ADD-ARCHITECTURE-GOVERNANCE-HEALTH-4C33
+title: "Add Architecture Governance Health Scorecard to Index CLI and Portal"
+status: applied
+intent:
+  kind: feature
+  motivation: "Architects and engineering leads currently lack a single deterministic governance health scorecard quantifying source file ownership coverage, Public Surface documentation rate, contract specification_file verification rate, capability invariant coverage, and import-boundary ratchet debt across the repository."
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+    details: "Add deterministic compute_governance_health(conn, repo_root, eidos_dir) query in src/eidos/core/index/traversal.py returning source file ownership percentage, unowned code file list, active CNT-*/CMP-* Public Surface coverage, active CTR-* specification_file coverage, CAP-* bound-invariant coverage, validation warning count, and ratchet_baseline debt totals. Update eidos/architecture/components/graph-traversal-engine.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/core/index/traversal.py"
+      body:
+        contains:
+          - "compute_governance_health"
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    details: "Expose get_governance_health() facade method on ArchitecturalIndex in src/eidos/core/index/graph_index.py delegating to CMP-GRAPH-TRAVERSAL-ENGINE.compute_governance_health. Update eidos/architecture/components/graph-storage.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/index/storage.py"
+          - "src/eidos/core/index/graph_index.py"
+      body:
+        contains:
+          - "get_governance_health"
+  - operation: modify
+    target: CMP-CLI-INDEX-COMMANDS
+    details: "Expose `eidos index health [--path PATH] [--json]` in src/eidos/cli/index_commands.py rendering a Rich scorecard table or structured JSON health report. Update eidos/architecture/components/cli-index-commands.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/cli/index_commands.py"
+      body:
+        contains:
+          - "health"
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+    details: "Include governance_health metrics in PortalGenerator output (src/eidos/portal/generator.py). Update eidos/architecture/components/portal-generator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/portal/generator.py"
+          - "src/eidos/portal/mermaid.py"
+      body:
+        contains:
+          - "governance_health"
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+    details: "Render a Governance Health Scorecard card in src/eidos/portal/frontend/src/views/HomeView.tsx and rebuild assets/portal/bundle.html.gz within the 5 MiB air-gapped budget. Update eidos/architecture/components/portal-assets.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/portal/assets.py"
+          - "src/eidos/portal/frontend/scripts/build_assets.py"
+          - "src/eidos/portal/frontend/scripts/hatch_build.py"
+          - "src/eidos/portal/frontend/src"
+      body:
+        contains:
+          - "governance_health"
+  - operation: modify
+    target: SCR-PORTAL-HOME
+    details: "Document the Governance Health Scorecard card on the Portal Home view in eidos/design/clients/web-portal/screens/portal-home.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "Health"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Document `eidos index health [--path <path>] [--json]` in eidos/architecture/contracts/cli.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "health"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Document `eidos index health` in docs/guides/cli.md (`INV-DOCS-SYNCHRONIZATION`), and update eidos/architecture/components/docs-user-guides.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/guides"
+      body:
+        contains:
+          - "index health"
+  - operation: modify
+    target: CAP-AGENT-002
+    details: "Extend CAP-AGENT-002 in eidos/domains/agent-intelligence/capabilities/cap-agent-002.adoc with INV-INDEX-GOVERNANCE-HEALTH-SCORECARD."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-INDEX-GOVERNANCE-HEALTH-SCORECARD"
+      body:
+        contains:
+          - "INV-INDEX-GOVERNANCE-HEALTH-SCORECARD"
+  - operation: add
+    target: INV-INDEX-GOVERNANCE-HEALTH-SCORECARD
+    details: "Bind INV-INDEX-GOVERNANCE-HEALTH-SCORECARD in CAP-AGENT-002 to tests/test_graph_index.py::test_index_governance_health_scorecard_cli_and_portal."
+    expect:
+      frontmatter:
+        rule: "health"
+        test_binding: "tests/test_graph_index.py::test_index_governance_health_scorecard_cli_and_portal"
+vcs:
+  branch: main
+  base_commit: 7106d5477b53ace59adfe4ed4b141a9bfc0ee951
+---
+= SpecDelta: Add Architecture Governance Health Scorecard to Index CLI and Portal
+:toc: left
+
+== Problem Statement
+While `eidos index status` reports SQLite table counts and `eidos validate` checks individual rules, teams lack a single deterministic governance health scorecard showing what fraction of their codebase is actually covered by living specs (source file ownership `%`, `== Public Surface` adoption, verified `CTR-*` contracts, invariant-backed capabilities, advisory warnings, and `ratchet_baseline` debt).
+
+== Proposed Specification Changes
+* **`CMP-GRAPH-TRAVERSAL-ENGINE` (`src/eidos/core/index/traversal.py`) & `ArchitecturalIndex`**: Compute deterministic governance metrics directly from the synced SQLite knowledge graph (`entities`, `indexed_files`, `symbol_mappings`, `code_couplings`) and validation report.
+* **`CMP-CLI-INDEX-COMMANDS` (`src/eidos/cli/index_commands.py`), `CTR-EIDOS-CLI` & `CMP-DOCS-USER-GUIDES`**: Expose `eidos index health [--path PATH] [--json]`, update `tests/fixtures/cli_command_tree.json` and `docs/guides/cli.md`.
+* **`CMP-PORTAL-GENERATOR` (`src/eidos/portal/generator.py`) & `CMP-PORTAL-ASSETS`**: Export `governance_health` in the portal data graph and render a clean scorecard card on the Portal Home view.
+* **`CAP-AGENT-002`**: Add and bind `INV-INDEX-GOVERNANCE-HEALTH-SCORECARD`.
+
+== Implementation Plan
+1. **Health Metrics Query & Facade (`CMP-GRAPH-TRAVERSAL-ENGINE`, `CMP-GRAPH-STORAGE`)**: Implement `compute_governance_health` in `src/eidos/core/index/traversal.py` and expose `get_governance_health` on `ArchitecturalIndex` in `src/eidos/core/index/graph_index.py` (`CNT-EIDOS-INDEX` covered via `CMP-GRAPH-TRAVERSAL-ENGINE` and `CMP-GRAPH-STORAGE`).
+2. **CLI & Portal Surfacing (`CMP-CLI-INDEX-COMMANDS`, `CTR-EIDOS-CLI`, `CMP-PORTAL-GENERATOR`, `CMP-PORTAL-ASSETS`, `SCR-PORTAL-HOME`)**: Add `eidos index health` in `src/eidos/cli/index_commands.py`, include `governance_health` in `src/eidos/portal/generator.py`, render in `src/eidos/portal/frontend/src/views/HomeView.tsx`, update `eidos/design/clients/web-portal/screens/portal-home.adoc`, rebuild `assets/portal/bundle.html.gz`, and update `tests/fixtures/cli_command_tree.json`.
+3. **Docs, Living Specs & Tests (`POL-005-STATEMENT-TEST-COVERAGE`, `INV-DOCS-SYNCHRONIZATION`)**: Update `docs/guides/cli.md`, all declared specs, and add `tests/test_graph_index.py::test_index_governance_health_scorecard_cli_and_portal`.
+4. **Verification**: Run `pytest`, `eidos delta verify DLT-2026-154 --json`, `eidos delta apply DLT-2026-154`, and `eidos drift --uncommitted --json`.

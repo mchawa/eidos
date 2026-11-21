@@ -405,6 +405,41 @@ export interface SpecValidationSummary {
   warning_count?: number;
 }
 
+export interface GovernanceHealth {
+  source_ownership: {
+    total_code_files: number;
+    owned_code_files: number;
+    coverage_pct: number;
+    unowned_files: string[];
+  };
+  public_surface: {
+    total_entities: number;
+    documented_entities: number;
+    coverage_pct: number;
+  };
+  contracts: {
+    total_active: number;
+    verified_with_spec_file: number;
+    coverage_pct: number;
+  };
+  capabilities: {
+    total_active: number;
+    with_bound_invariants: number;
+    total_invariants: number;
+    bound_invariants: number;
+    coverage_pct: number;
+  };
+  validation: {
+    is_clean: boolean;
+    error_count: number;
+    warning_count: number;
+  };
+  ratchet_debt: {
+    entry_count: number;
+    total_max_imports: number;
+  };
+}
+
 export interface SpecDriftStatus {
   is_clean: boolean;
   drift_detected: boolean;
@@ -425,6 +460,7 @@ export interface SpecDriftStatus {
 export interface PortalData {
   overview: SpecOverview;
   validation?: SpecValidationSummary;
+  governance_health?: GovernanceHealth;
   edges?: SpecEdge[];
   components: SpecComponent[];
   contracts: SpecContract[];

@@ -33,7 +33,9 @@ def test_context_slice_by_file(tmp_path, monkeypatch):
     cap_ids = {c["id"] for c in res.capabilities}
     assert "CAP-PROD-001" in cap_ids
     inv_ids = {i["id"] for i in res.invariants}
-    assert "INV-SPEC-VALIDATION" in inv_ids
+    assert inv_ids & {"INV-SPEC-VALIDATION", "INV-VALIDATION-WARNINGS-PORTAL-AND-CI-ESCALATION"}
+    val_slice = get_context_slice(files=["src/eidos/core/spec/validator.py"])
+    assert "INV-SPEC-VALIDATION" in {i["id"] for i in val_slice.invariants}
 
     # Governing policies
     policy_ids = {p["id"] for p in res.policies}

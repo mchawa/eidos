@@ -323,6 +323,18 @@ Options:
 * `--json`: Output semantic index telemetry as machine-readable JSON.
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
+#### `eidos index health`
+Display a deterministic architecture governance health scorecard across source file ownership coverage, `== Public Surface` adoption, verified contract `specification_file` bindings, capability bound-invariant coverage, advisory validation warnings, and import-boundary `ratchet_baseline` debt.
+
+```bash
+eidos index health
+eidos index health --json
+```
+
+Options:
+* `--json`: Output governance health scorecard metrics as machine-readable JSON.
+* `-p, --path PATH`: Path to specifications directory (default: `eidos`).
+
 ---
 
 ## 4. Living Catalog & Mutations

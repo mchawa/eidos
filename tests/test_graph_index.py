@@ -4462,3 +4462,193 @@ def test_epistemic_provenance_tags_and_confidence_filtering(tmp_path: Path) -> N
         import eidos.core.index.graph_index as gi
 
         gi._INDEX_INSTANCES.pop(eidos_dir.resolve(), None)
+
+
+def test_index_governance_health_scorecard_cli_and_portal(tmp_path):
+    """Verify INV-INDEX-GOVERNANCE-HEALTH-SCORECARD across ArchitecturalIndex, eidos index health, and Living Web Portal."""
+    import orjson
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.portal.assets import get_portal_html_template
+    from eidos.portal.generator import get_portal_data
+
+    repo = tmp_path / "health-scorecard-repo"
+    init_repository(repo, title="Health Scorecard Repo")
+    eidos_dir = repo / "eidos"
+
+    (repo / "src" / "owned").mkdir(parents=True)
+    (repo / "src" / "owned" / "service.py").write_text("def handle():\n    return 1\n", encoding="utf-8")
+    (repo / "src" / "unowned").mkdir(parents=True)
+    (repo / "src" / "unowned" / "orphan.py").write_text("def stray():\n    return 2\n", encoding="utf-8")
+    (repo / "tests").mkdir(parents=True)
+    (repo / "tests" / "test_svc.py").write_text(
+        "def test_inv_health():\n    # INV-HEALTH-001\n    assert True\n",  # eidos:fixture
+        encoding="utf-8",
+    )
+    (repo / "openapi.yaml").write_text(
+        "openapi: 3.1.0\ninfo:\n  title: API\n  version: 1.0.0\npaths:\n  /ping:\n    get:\n      responses:\n        '200':\n          description: ok\n",
+        encoding="utf-8",
+    )
+
+    (eidos_dir / "architecture" / "system-architecture.adoc").write_text(
+        "---\n"
+        "type: tech/architecture\n"
+        "id: ARCH-HEALTH-001\n"
+        "title: Health Architecture\n"
+        "status: active\n"
+        "c4_context:\n"
+        "  actors: []\n"
+        "import_boundaries:\n"
+        "  tier_rules:\n"
+        "    - tier: app\n"
+        "      deny_tiers: [infra]\n"
+        "  ratchet_baseline:\n"
+        "    - source: CNT-APP\n"
+        "      target: CNT-INFRA\n"
+        "      max_imports: 3\n"
+        "---\n"
+        "= Health Architecture\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "domains" / "core").mkdir(parents=True)
+    (eidos_dir / "domains" / "core" / "domain.adoc").write_text(
+        "---\ntype: product/domain\nid: DOM-CORE\ntitle: Core Domain\nstatus: active\nclassification: core\n---\n= Core Domain\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "app.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-APP\n"
+        "title: App Container\n"
+        "status: active\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "tier: app\n"
+        "source_path: src/owned\n"
+        "---\n"
+        "= App Container\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "infra.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-INFRA\n"
+        "title: Infra Container\n"
+        "status: active\n"
+        "container_type: library\n"
+        "runtime: Python 3.12\n"
+        "tier: infra\n"
+        "source_path: src/owned/service.py\n"
+        "---\n"
+        "= Infra Container\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "svc.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-SVC\n"
+        "title: Service Component\n"
+        "container: CNT-APP\n"
+        "status: active\n"
+        "source_path: src/owned/service.py\n"
+        "---\n"
+        "= Service Component\n\n"
+        "== Responsibility\nHandles requests.\n\n"
+        "== Public Surface\n* `handle()`\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "contracts" / "api.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "id: CTR-API\n"
+        "title: Public API\n"
+        "status: active\n"
+        "protocol: openapi\n"
+        "container: CNT-APP\n"
+        "specification_file: openapi.yaml\n"
+        "---\n"
+        "= Public API\n\n"
+        "== Endpoints\n* `GET /ping`\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "contracts" / "unbound.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "id: CTR-UNBOUND\n"
+        "title: Unbound Contract\n"
+        "status: active\n"
+        "protocol: other\n"
+        "custom_protocol: CustomWire\n"
+        "container: CNT-APP\n"
+        "---\n"
+        "= Unbound Contract\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "domains" / "core" / "capabilities").mkdir(parents=True)
+    (eidos_dir / "domains" / "core" / "capabilities" / "cap-1.adoc").write_text(
+        "---\n"
+        "type: product/capability\n"
+        "id: CAP-CORE-001\n"
+        "title: Core Processing\n"
+        "domain: DOM-CORE\n"
+        "status: active\n"
+        "technical:\n"
+        "  containers: [CNT-APP]\n"
+        "  invariants:\n"
+        "    - id: INV-HEALTH-001\n"  # eidos:fixture
+        "      rule: Service must stay healthy.\n"
+        "      test_binding: tests/test_svc.py::test_inv_health\n"
+        "---\n"
+        "= Core Processing\n",
+        encoding="utf-8",
+    )
+
+    idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=repo, eidos_dir=eidos_dir)
+    try:
+        health = idx.get_governance_health()
+        assert health["source_ownership"]["total_code_files"] == 2
+        assert health["source_ownership"]["owned_code_files"] == 1
+        assert health["source_ownership"]["coverage_pct"] == 50.0
+        assert health["source_ownership"]["unowned_files"] == ["src/unowned/orphan.py"]
+
+        assert health["public_surface"]["total_entities"] == 3
+        assert health["public_surface"]["documented_entities"] == 1
+        assert health["public_surface"]["coverage_pct"] == 33.3
+
+        assert health["contracts"]["total_active"] == 2
+        assert health["contracts"]["verified_with_spec_file"] == 1
+        assert health["contracts"]["coverage_pct"] == 50.0
+
+        assert health["capabilities"]["total_active"] == 1
+        assert health["capabilities"]["with_bound_invariants"] == 1
+        assert health["capabilities"]["bound_invariants"] == 1
+        assert health["capabilities"]["coverage_pct"] == 100.0
+
+        assert health["ratchet_debt"]["entry_count"] == 1
+        assert health["ratchet_debt"]["total_max_imports"] == 3
+
+        # CLI --json and Rich table output
+        cli = CliRunner()
+        res_json = cli.invoke(app, ["index", "health", "--path", str(eidos_dir), "--json"])
+        assert res_json.exit_code == 0, res_json.stdout
+        parsed = orjson.loads(res_json.stdout)
+        assert parsed["source_ownership"]["coverage_pct"] == 50.0
+        assert parsed["ratchet_debt"]["total_max_imports"] == 3
+
+        res_rich = cli.invoke(app, ["index", "health", "--path", str(eidos_dir)])
+        assert res_rich.exit_code == 0, res_rich.stdout
+        assert "Governance Health Scorecard" in res_rich.stdout
+        assert "src/unowned/orphan.py" in res_rich.stdout
+
+        # Portal generator and compiled bundle
+        pdata = get_portal_data(eidos_dir)
+        assert pdata["governance_health"]["source_ownership"]["coverage_pct"] == 50.0
+        assert pdata["governance_health"]["ratchet_debt"]["total_max_imports"] == 3
+        assert "Governance Health Scorecard" in get_portal_html_template()
+    finally:
+        idx.close()
+        import eidos.core.index.graph_index as gi
+
+        gi._INDEX_INSTANCES.pop(eidos_dir.resolve(), None)

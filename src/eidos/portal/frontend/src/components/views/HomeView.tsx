@@ -273,6 +273,82 @@ export function HomeView({
         })}
       </div>
 
+      {/* Governance Health Scorecard */}
+      {data.governance_health && (
+        <Card id="governanceHealthCard" className="border-border/80">
+          <CardContent className="p-5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="space-y-0.5">
+                <h2 className="text-sm font-bold text-foreground tracking-tight">
+                  Governance Health Scorecard
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Deterministic repository coverage across source ownership, documented surfaces, contracts, and test-backed rules.
+                </p>
+              </div>
+              <Badge variant={data.governance_health.validation.is_clean ? "success" : "warning"}>
+                {data.governance_health.validation.warning_count > 0
+                  ? `${data.governance_health.validation.warning_count} Advisory ${
+                      data.governance_health.validation.warning_count === 1 ? "Warning" : "Warnings"
+                    }`
+                  : "Zero Advisory Warnings"}
+              </Badge>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-xs">
+              <div className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-1">
+                <p className="text-muted-foreground font-medium">Source Ownership</p>
+                <p className="text-lg font-bold text-foreground">
+                  {data.governance_health.source_ownership.coverage_pct.toFixed(1)}%
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  {data.governance_health.source_ownership.owned_code_files} /{" "}
+                  {data.governance_health.source_ownership.total_code_files} files
+                </p>
+              </div>
+              <div className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-1">
+                <p className="text-muted-foreground font-medium">Public Surfaces</p>
+                <p className="text-lg font-bold text-foreground">
+                  {data.governance_health.public_surface.coverage_pct.toFixed(1)}%
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  {data.governance_health.public_surface.documented_entities} /{" "}
+                  {data.governance_health.public_surface.total_entities} documented
+                </p>
+              </div>
+              <div className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-1">
+                <p className="text-muted-foreground font-medium">Verified Contracts</p>
+                <p className="text-lg font-bold text-foreground">
+                  {data.governance_health.contracts.coverage_pct.toFixed(1)}%
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  {data.governance_health.contracts.verified_with_spec_file} /{" "}
+                  {data.governance_health.contracts.total_active} bound
+                </p>
+              </div>
+              <div className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-1">
+                <p className="text-muted-foreground font-medium">Verified Capabilities</p>
+                <p className="text-lg font-bold text-foreground">
+                  {data.governance_health.capabilities.coverage_pct.toFixed(1)}%
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  {data.governance_health.capabilities.bound_invariants} bound checks
+                </p>
+              </div>
+              <div className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-1">
+                <p className="text-muted-foreground font-medium">Boundary Debt</p>
+                <p className="text-lg font-bold text-foreground">
+                  {data.governance_health.ratchet_debt.total_max_imports}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  {data.governance_health.ratchet_debt.entry_count} baseline{" "}
+                  {data.governance_health.ratchet_debt.entry_count === 1 ? "entry" : "entries"}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Core Architectural Pillars */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <Card className="lg:col-span-2">

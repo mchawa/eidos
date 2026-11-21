@@ -1710,7 +1710,8 @@
       "blast-radius",
       "repo-map",
       "find-symbol",
-      "semantic"
+      "semantic",
+      "health"
     ],
     "panel": "Knowledge Graph & AI Context",
     "params": [],
@@ -2208,6 +2209,47 @@
     "path": [
       "index",
       "semantic"
+    ]
+  },
+  {
+    "help": "Display an architecture governance health scorecard across source ownership, Public Surface, contracts, invariants, warnings, and ratchet debt.",
+    "hidden": false,
+    "order": [],
+    "panel": null,
+    "params": [
+      {
+        "default": "None",
+        "envvar": "None",
+        "help": "Path to eidos directory (defaults to ./eidos).",
+        "kind": "TyperOption",
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "default": "False",
+        "envvar": "None",
+        "help": "Output architecture governance health scorecard as machine-readable JSON.",
+        "kind": "TyperOption",
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "BOOL"
+      }
+    ],
+    "path": [
+      "index",
+      "health"
     ]
   },
   {

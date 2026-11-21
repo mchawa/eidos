@@ -226,6 +226,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
 
     from eidos.core.index.graph_index import get_architectural_index
     from eidos.core.index.sync import build_spec_path_resolver
+    from eidos.core.index.traversal import compute_governance_health
 
     arch_idx = get_architectural_index(eidos_dir=eidos_path, repo_root=eidos_path.parent)
     now_mono = time.monotonic()
@@ -701,9 +702,17 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         "warning_count": len(report.warnings),
     }
 
+    governance_health = compute_governance_health(
+        conn,
+        repo_root=repo_root_resolved,
+        eidos_dir=eidos_path,
+        validation_report=report,
+    )
+
     return {
         "overview": overview,
         "validation": validation_summary,
+        "governance_health": governance_health,
         "edges": edges_list,
         "system_architecture": arch_doc,
         "specs": specs,

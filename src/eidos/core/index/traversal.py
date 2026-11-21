@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
@@ -13,10 +14,11 @@ from eidos.core.index.ast_indexer import AstGrepIndexer
 from eidos.core.index.storage import (
     allowed_provenances_for_confidence,
     build_spec_path_resolver,
+    get_cached_spec_document,
     provenance_to_confidence,
 )
 from eidos.core.spec.models import resolve_entity_prefix_meta
-from eidos.core.workspace.project import match_path_pattern
+from eidos.core.workspace.project import _POLYGLOT_TEST_CODE_EXTS, extract_entity_paths, match_path_pattern
 
 
 def resolve_blast_radius_targets(
@@ -765,3 +767,153 @@ def compute_delta_impact_in_db(
     derived_affects = {k: v for k, v in aff_lists.items() if v}
     derived_blast_radius = {k: v for k, v in br_lists.items() if v}
     return derived_affects, derived_blast_radius
+
+
+_PUBLIC_SURFACE_HEADING_RE = re.compile(r"^==+\s+Public\s+Surface\b", re.MULTILINE | re.IGNORECASE)
+
+
+def _pct(numerator: int, denominator: int) -> float:
+    return round(100.0 * numerator / denominator, 1) if denominator > 0 else 100.0
+
+
+def compute_governance_health(
+    conn: sqlite3.Connection,
+    repo_root: Path,
+    eidos_dir: Path,
+    *,
+    validation_report: Any = None,
+) -> dict[str, Any]:
+    """Compute a deterministic architecture governance health scorecard from the synced knowledge graph."""
+    root_res = repo_root.resolve()
+    eidos_res = eidos_dir.resolve()
+
+    if validation_report is None:
+        from eidos.core.spec.validator import SpecValidator
+
+        validation_report = SpecValidator().validate_directory(eidos_res)
+
+    # 1. Active entities by type
+    ent_rows = conn.execute(
+        "SELECT id, type, status, file_path, data_json FROM entities WHERE type != 'invariant';"
+    ).fetchall()
+
+    owned_patterns: list[str] = []
+    surface_total = 0
+    surface_documented = 0
+    contracts_total = 0
+    contracts_verified = 0
+    caps_total = 0
+    caps_with_bound = 0
+    cap_invs_total = 0
+    cap_invs_bound = 0
+    ratchet_entries = 0
+    ratchet_max_imports = 0
+
+    for r in ent_rows:
+        etype = str(r["type"] or "")
+        status = str(r["status"] or "active").strip().lower()
+        if status in ("deprecated", "retired"):
+            continue
+        data = orjson.loads(r["data_json"]) if r["data_json"] else {}
+        if not isinstance(data, dict):
+            data = {}
+
+        if etype in ("tech/container", "tech/component"):
+            owned_patterns.extend(extract_entity_paths(data))
+            surface_total += 1
+            raw_fp = str(r["file_path"] or "").strip()
+            spec_p = Path(raw_fp)
+            if not spec_p.is_absolute():
+                cand = root_res / spec_p
+                spec_p = cand if cand.is_file() else (eidos_res / spec_p)
+            if spec_p.is_file():
+                doc, _, _ = get_cached_spec_document(spec_p)
+                body_txt = (doc.body if doc is not None else "") or ""
+                if _PUBLIC_SURFACE_HEADING_RE.search(body_txt):
+                    surface_documented += 1
+
+        elif etype == "tech/contract":
+            contracts_total += 1
+            if extract_entity_paths({"specification_file": data.get("specification_file")}):
+                contracts_verified += 1
+
+        elif etype == "product/capability":
+            caps_total += 1
+            tech = data.get("technical") if isinstance(data.get("technical"), dict) else {}
+            invs = tech.get("invariants") if isinstance(tech.get("invariants"), list) else []
+            has_bound = False
+            for inv in invs:
+                if not isinstance(inv, dict):
+                    continue
+                cap_invs_total += 1
+                tb = str(inv.get("test_binding") or "").strip()
+                if tb and tb.upper() != "N/A":
+                    cap_invs_bound += 1
+                    has_bound = True
+            if has_bound:
+                caps_with_bound += 1
+
+        elif etype == "tech/architecture":
+            ib = data.get("import_boundaries") if isinstance(data.get("import_boundaries"), dict) else {}
+            ratchet = ib.get("ratchet_baseline") if isinstance(ib.get("ratchet_baseline"), list) else []
+            for entry in ratchet:
+                if isinstance(entry, dict):
+                    ratchet_entries += 1
+                    ratchet_max_imports += int(entry.get("max_imports") or 0)
+
+    # 2. Source file ownership across indexed production code files
+    code_rows = conn.execute(
+        "SELECT rel_path FROM indexed_files WHERE doc_type = 'code/source' ORDER BY rel_path ASC;"
+    ).fetchall()
+    total_code_files = 0
+    owned_code_files = 0
+    unowned_files: list[str] = []
+    for cr in code_rows:
+        rel_p = str(cr["rel_path"] or "").strip().replace("\\", "/")
+        if not rel_p or Path(rel_p).suffix.lower() not in _POLYGLOT_TEST_CODE_EXTS:
+            continue
+        total_code_files += 1
+        if any(match_path_pattern(rel_p, pat) > 0 for pat in owned_patterns):
+            owned_code_files += 1
+        else:
+            unowned_files.append(rel_p)
+
+    schema_errs = getattr(validation_report, "schema_errors", None) or {}
+    broken_refs = getattr(validation_report, "broken_references", None) or []
+    warnings = getattr(validation_report, "warnings", None) or []
+    error_count = sum(len(v) for v in schema_errs.values()) + len(broken_refs)
+
+    return {
+        "source_ownership": {
+            "total_code_files": total_code_files,
+            "owned_code_files": owned_code_files,
+            "coverage_pct": _pct(owned_code_files, total_code_files),
+            "unowned_files": unowned_files,
+        },
+        "public_surface": {
+            "total_entities": surface_total,
+            "documented_entities": surface_documented,
+            "coverage_pct": _pct(surface_documented, surface_total),
+        },
+        "contracts": {
+            "total_active": contracts_total,
+            "verified_with_spec_file": contracts_verified,
+            "coverage_pct": _pct(contracts_verified, contracts_total),
+        },
+        "capabilities": {
+            "total_active": caps_total,
+            "with_bound_invariants": caps_with_bound,
+            "total_invariants": cap_invs_total,
+            "bound_invariants": cap_invs_bound,
+            "coverage_pct": _pct(caps_with_bound, caps_total),
+        },
+        "validation": {
+            "is_clean": bool(getattr(validation_report, "is_clean", False)),
+            "error_count": error_count,
+            "warning_count": len(warnings),
+        },
+        "ratchet_debt": {
+            "entry_count": ratchet_entries,
+            "total_max_imports": ratchet_max_imports,
+        },
+    }
