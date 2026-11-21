@@ -1,0 +1,83 @@
+---
+type: delta/mutation
+id: DLT-2026-165-ADD-CODE-FIRST-REST-7CE2
+title: "Add Code-First REST Controller Discovery to eidos spec discover"
+status: applied
+intent:
+  kind: feature
+  motivation: "eidos spec discover currently detects schema-first interface artifacts (OpenAPI, AsyncAPI, Protobuf, GraphQL, OpenRPC), leaving code-first REST APIs (ASP.NET Core Controllers / Minimal APIs, FastAPI, NestJS, Express, Spring Boot) undiscovered as rest_http contract candidates during brownfield onboarding."
+mutations:
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+    details: "Extend discover_repository_blueprint in src/eidos/core/lifecycle/scaffolder.py to scan non-test polyglot source directories via CMP-HTTP-TOPOLOGY-LINKER (extract_http_endpoints_with_metadata) and emit protocol: 'rest_http' contract candidates (suggested_id, protocol, specification_file, route_count, already_mapped) for code-first modern REST controller/router roots while honoring DEC-CORE-MODERN-REST-PARITY-ONLY (zero legacy SOAP/WCF or Web API 2). Update eidos/architecture/components/lifecycle-scaffolder.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/lifecycle/scaffolder.py"
+          - "src/eidos/core/lifecycle/catalog.py"
+      body:
+        contains:
+          - "rest_http"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Document code-first rest_http controller/router root discovery under `eidos spec discover` in eidos/architecture/contracts/cli.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "rest_http"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Document code-first rest_http controller/router root discovery under `eidos spec discover` in docs/guides/cli.md (`INV-DOCS-SYNCHRONIZATION`), and update eidos/architecture/components/docs-user-guides.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/guides"
+      body:
+        contains:
+          - "rest_http"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Extend CAP-PROD-001 in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc with INV-BROWNFIELD-REST-CONTROLLER-DISCOVERY."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-BROWNFIELD-REST-CONTROLLER-DISCOVERY"
+      body:
+        contains:
+          - "INV-BROWNFIELD-REST-CONTROLLER-DISCOVERY"
+  - operation: add
+    target: INV-BROWNFIELD-REST-CONTROLLER-DISCOVERY
+    details: "Bind INV-BROWNFIELD-REST-CONTROLLER-DISCOVERY in CAP-PROD-001 to tests/test_scaffolder.py::test_spec_discover_code_first_rest_http_controllers."
+    expect:
+      frontmatter:
+        rule: "rest_http"
+        test_binding: "tests/test_scaffolder.py::test_spec_discover_code_first_rest_http_controllers"
+vcs:
+  branch: main
+  base_commit: 0912edd982113b35971257fb712f7c01626710cb
+---
+= SpecDelta: Add Code-First REST Controller Discovery to eidos spec discover
+:toc: left
+
+== Problem Statement
+Many production services define HTTP endpoints code-first (ASP.NET Core `[ApiController]` / Minimal APIs, FastAPI `@app.get`/`APIRouter`, NestJS `@Controller`, Express/Hono routers, Spring `@RestController`) without committing a static OpenAPI YAML/JSON file. Currently `discover_repository_blueprint` (`eidos spec discover`) discovers schema-first contracts (`openapi`, `asyncapi`, `protobuf`, `graphql`, `json_rpc_stdio`) but misses code-first REST controller roots, forcing onboarding teams to manually hunt for `rest_http` `specification_file` targets.
+
+== Proposed Specification Changes
+* **`CMP-LIFECYCLE-SCAFFOLDER` (`src/eidos/core/lifecycle/scaffolder.py`)**:
+  * During `discover_repository_blueprint(repo_root, eidos_dir)`, inspect non-test polyglot source files (`.cs`, `.py`, `.ts`, `.js`, `.java`, `.kt`, `.go`) via `CMP-HTTP-TOPOLOGY-LINKER` (`extract_http_endpoints_with_metadata`, respecting `ARCH-EIDOS-001` `core` tier boundaries) and group files with `>= 1` discovered modern HTTP route by their enclosing controller/router directory (or single file when standalone).
+  * Emit deterministic `protocol: "rest_http"` entries in `blueprint["contracts"]` carrying `suggested_id` (`CTR-*-HTTP`), `protocol: "rest_http"`, `specification_file` (directory or file path), `route_count`, and `already_mapped` (matching active `CTR-*` `specification_file` paths/globs), skipping test roots and directories already covered by a discovered `rest_http` contract.
+  * Honor `DEC-CORE-MODERN-REST-PARITY-ONLY` (zero legacy SOAP/WCF or .NET Framework Web API 2 heuristics).
+* **`CTR-EIDOS-CLI` (`eidos/architecture/contracts/cli.adoc`) & `CMP-DOCS-USER-GUIDES` (`docs/guides/cli.md`)**:
+  * Document code-first `rest_http` controller root detection under `eidos spec discover`.
+* **`CAP-PROD-001` (`eidos/domains/spec-engine/capabilities/living-spec-engine.adoc`)**:
+  * Add and bind `INV-BROWNFIELD-REST-CONTROLLER-DISCOVERY` to `tests/test_scaffolder.py::test_spec_discover_code_first_rest_http_controllers`.
+
+== Implementation Plan
+1. **Code-First REST Discovery (`CMP-LIFECYCLE-SCAFFOLDER`)**: Extend `discover_repository_blueprint` in `src/eidos/core/lifecycle/scaffolder.py` (`CNT-EIDOS-CORE` covered via `CMP-LIFECYCLE-SCAFFOLDER`) to reuse `extract_http_endpoints_with_metadata` from `CMP-HTTP-TOPOLOGY-LINKER` (`src/eidos/core/index/ast_http.py`, read-only caller; no mutation needed) and emit grouped `rest_http` contract candidates. Note: `src/eidos/cli/spec_commands.py` already renders all `blueprint["contracts"]` rows (`CNT-EIDOS-CLI` unchanged).
+2. **Living Specs & Docs (`CMP-LIFECYCLE-SCAFFOLDER`, `CTR-EIDOS-CLI`, `CMP-DOCS-USER-GUIDES`, `CAP-PROD-001`, `INV-BROWNFIELD-REST-CONTROLLER-DISCOVERY`)**: Update `eidos/architecture/components/lifecycle-scaffolder.adoc`, `eidos/architecture/contracts/cli.adoc`, `docs/guides/cli.md`, `eidos/architecture/components/docs-user-guides.adoc`, and `eidos/domains/spec-engine/capabilities/living-spec-engine.adoc`.
+3. **Tests & Coverage (`POL-005-STATEMENT-TEST-COVERAGE`)**: Add `tests/test_scaffolder.py::test_spec_discover_code_first_rest_http_controllers` covering ASP.NET Core `Controllers/`, FastAPI `APIRouter`, NestJS `@Controller`, and Spring `@RestController` discovery, `already_mapped` matching against active `rest_http` contracts, and `>90.0%` coverage on `scaffolder.py`.
+4. **Verification**: Run `pytest tests/test_scaffolder.py tests/test_docs_sync.py`, `eidos delta verify DLT-2026-165 --json`, `eidos delta apply DLT-2026-165`, and `eidos drift --uncommitted --fail-on-warnings --json`.

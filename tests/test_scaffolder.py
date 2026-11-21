@@ -2188,3 +2188,132 @@ def test_init_repository_ci_workflow_templates(tmp_path):
     res_bad = runner.invoke(app, ["init", str(tmp_path / "bad-ci-cli"), "--ci", "circleci"])
     assert res_bad.exit_code == 1
     assert "Unsupported --ci provider" in res_bad.stdout
+
+
+def test_spec_discover_code_first_rest_http_controllers(tmp_path):
+    """Verify INV-BROWNFIELD-REST-CONTROLLER-DISCOVERY: discover_repository_blueprint detects code-first modern REST
+    controller/router roots across ASP.NET Core, FastAPI, NestJS, Spring Boot, and Go, reports route_count and
+    already_mapped status, skips tests, and ignores legacy WCF/SOAP contracts (DEC-CORE-MODERN-REST-PARITY-ONLY)."""
+    import orjson
+
+    from eidos.core.lifecycle.scaffolder import discover_repository_blueprint
+    from eidos.core.spec.parser import dump_spec_document, parse_spec_file
+
+    repo = tmp_path / "code-first-rest-repo"
+    init_repository(repo, title="Code-First REST Repo")
+    eidos_dir = repo / "eidos"
+
+    # 1. ASP.NET Core Controllers directory (2 controllers grouped under directory) + legacy WCF service (ignored)
+    aspnet_ctrl = repo / "services" / "orders-api" / "Controllers"
+    aspnet_ctrl.mkdir(parents=True)
+    (aspnet_ctrl / "OrdersController.cs").write_text(
+        'using Microsoft.AspNetCore.Mvc;\n'
+        '[ApiController]\n[Route("api/orders")]\n'
+        'public class OrdersController : ControllerBase {\n'
+        '    [HttpGet("{id}")]\n    public IActionResult GetOrder(int id) => Ok();\n'
+        '    [HttpPost]\n    public IActionResult CreateOrder() => Ok();\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    (aspnet_ctrl / "ItemsController.cs").write_text(
+        'using Microsoft.AspNetCore.Mvc;\n'
+        '[ApiController]\n[Route("api/items")]\n'
+        'public class ItemsController : ControllerBase {\n'
+        '    [HttpGet]\n    public IActionResult ListItems() => Ok();\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    wcf_dir = repo / "services" / "legacy-wcf"
+    wcf_dir.mkdir(parents=True)
+    (wcf_dir / "LegacyService.cs").write_text(
+        "[ServiceContract]\npublic interface ILegacyService {\n    [OperationContract]\n    string Ping();\n}\n",
+        encoding="utf-8",
+    )
+
+    # 2. FastAPI standalone router file
+    fastapi_dir = repo / "services" / "billing" / "src"
+    fastapi_dir.mkdir(parents=True)
+    (fastapi_dir / "app.py").write_text(
+        'from fastapi import FastAPI\napp = FastAPI()\n'
+        '@app.get("/v1/invoices")\ndef list_invoices():\n    return []\n'
+        '@app.post("/v1/invoices")\ndef create_invoice():\n    return {}\n',
+        encoding="utf-8",
+    )
+
+    # 3. NestJS controller inside controllers/
+    nest_dir = repo / "services" / "catalog" / "src" / "controllers"
+    nest_dir.mkdir(parents=True)
+    (nest_dir / "products.controller.ts").write_text(
+        '@Controller("products")\nexport class ProductsController {\n'
+        '  @Get(":id")\n  findOne() { return {}; }\n'
+        '}\n',
+        encoding="utf-8",
+    )
+
+    # 4. Spring Boot RestController
+    spring_dir = repo / "services" / "ledger" / "src" / "main" / "java" / "com" / "acme"
+    spring_dir.mkdir(parents=True)
+    (spring_dir / "LedgerController.java").write_text(
+        '@RestController\n@RequestMapping("/api/ledger")\n'
+        'public class LedgerController {\n'
+        '    @GetMapping("/entries")\n    public String list() { return "[]"; }\n'
+        '}\n',
+        encoding="utf-8",
+    )
+
+    # 5. Go HTTP router
+    go_dir = repo / "services" / "gateway"
+    go_dir.mkdir(parents=True)
+    (go_dir / "router.go").write_text(
+        'package main\nimport "net/http"\nfunc setup(mux *http.ServeMux) {\n'
+        '    mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {})\n'
+        '}\n',
+        encoding="utf-8",
+    )
+
+    # 6. Test files with routes must be ignored
+    (repo / "services" / "billing" / "src" / "test_app.py").write_text(
+        '@app.get("/fake-test-route")\ndef fake(): pass\n',
+        encoding="utf-8",
+    )
+
+    # Map ASP.NET Core Controllers directory in an active rest_http contract to verify already_mapped
+    ctr_p = create_spec(eidos_dir, "contract", "CTR-ORDERS-HTTP", "Orders REST HTTP Contract")
+    ctr_doc = parse_spec_file(ctr_p)
+    ctr_doc.frontmatter["protocol"] = "rest_http"
+    ctr_doc.frontmatter["specification_file"] = "services/orders-api/Controllers"
+    ctr_doc.frontmatter["status"] = "active"
+    ctr_p.write_text(dump_spec_document(ctr_doc.frontmatter, ctr_doc.body), encoding="utf-8")
+
+    bp = discover_repository_blueprint(repo_root=repo, eidos_dir=eidos_dir)
+    rest_contracts = {c["specification_file"]: c for c in bp["contracts"] if c["protocol"] == "rest_http"}
+
+    assert "services/orders-api/Controllers" in rest_contracts
+    assert rest_contracts["services/orders-api/Controllers"]["route_count"] == 3
+    assert rest_contracts["services/orders-api/Controllers"]["already_mapped"] is True
+    assert rest_contracts["services/orders-api/Controllers"]["suggested_id"].endswith("-HTTP")
+
+    assert "services/billing/src/app.py" in rest_contracts
+    assert rest_contracts["services/billing/src/app.py"]["route_count"] == 2
+    assert rest_contracts["services/billing/src/app.py"]["already_mapped"] is False
+
+    assert "services/catalog/src/controllers" in rest_contracts
+    assert rest_contracts["services/catalog/src/controllers"]["route_count"] == 1
+    assert rest_contracts["services/catalog/src/controllers"]["already_mapped"] is False
+
+    assert "services/ledger/src/main/java/com/acme/LedgerController.java" in rest_contracts
+    assert rest_contracts["services/ledger/src/main/java/com/acme/LedgerController.java"]["route_count"] == 1
+
+    assert "services/gateway/router.go" in rest_contracts
+    assert rest_contracts["services/gateway/router.go"]["route_count"] == 1
+
+    # Legacy WCF and test files must never be proposed
+    assert not any("legacy-wcf" in k for k in rest_contracts)
+    assert not any("test_app.py" in k for k in rest_contracts)
+
+    # CLI JSON parity
+    cli_res = runner.invoke(app, ["spec", "discover", "--path", str(repo), "--json"])
+    assert cli_res.exit_code == 0, cli_res.stdout
+    cli_payload = orjson.loads(cli_res.stdout)
+    cli_rest = [c for c in cli_payload["contracts"] if c["protocol"] == "rest_http"]
+    assert len(cli_rest) == 5

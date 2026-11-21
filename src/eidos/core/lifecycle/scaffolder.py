@@ -951,6 +951,106 @@ def _inspect_manifest_container(cur: Path, root: Path, filenames: list[str]) -> 
     return found
 
 
+_REST_HTTP_DISCOVERY_EXTS: frozenset[str] = frozenset(
+    {".cs", ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".java", ".kt", ".kts", ".go"}
+)
+_REST_HTTP_GROUP_DIR_NAMES: frozenset[str] = frozenset(
+    {"controllers", "controller", "routers", "router", "routes", "endpoints", "handlers", "api"}
+)
+_REST_HTTP_GENERIC_PARENTS: frozenset[str] = frozenset(
+    {"src", "app", "main", "java", "kotlin", "pkg", "internal", "cmd", "lib"}
+)
+
+
+def _is_test_source_filename(filename: str) -> bool:
+    """Return True when a filename follows common polyglot unit/integration test naming conventions."""
+    lower = filename.lower()
+    stem = Path(lower).stem
+    return (
+        stem.startswith("test_")
+        or stem.endswith(("_test", "_tests", ".test", ".spec", "tests", "test"))
+        or ".test." in lower
+        or ".spec." in lower
+    )
+
+
+def _has_modern_http_route_hint(suffix: str, content: str) -> bool:
+    """Fast substring pre-filter before AST HTTP route extraction (DEC-CORE-MODERN-REST-PARITY-ONLY)."""
+    if not content:
+        return False
+    if suffix == ".cs":
+        return "Http" in content or ".Map" in content
+    if suffix == ".py":
+        return "@" in content and any(
+            tok in content for tok in (".get(", ".post(", ".put(", ".delete(", ".patch(", ".route(", ".api_route(")
+        )
+    if suffix in (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"):
+        return any(
+            tok in content
+            for tok in (
+                "@Controller",
+                "@Get",
+                "@Post",
+                "@Put",
+                "@Delete",
+                "@Patch",
+                ".get(",
+                ".post(",
+                ".put(",
+                ".delete(",
+                ".patch(",
+                ".route(",
+            )
+        )
+    if suffix in (".java", ".kt", ".kts"):
+        return "Mapping" in content or any(tok in content for tok in ("@GET", "@POST", "@PUT", "@DELETE", "@PATCH"))
+    if suffix == ".go":
+        return "HandleFunc" in content or any(
+            tok in content
+            for tok in (".GET(", ".POST(", ".PUT(", ".DELETE(", ".PATCH(", ".Get(", ".Post(", ".Put(", ".Delete(", ".Patch(")
+        )
+    return False
+
+
+def _rest_contract_label(spec_target: str, is_dir: bool) -> str:
+    """Derive a descriptive uppercase-friendly slug label for a discovered rest_http contract candidate."""
+    parts = [p for p in spec_target.replace("\\", "/").split("/") if p and p != "."]
+    if not parts:
+        return "API-HTTP"
+    if not is_dir:
+        stem = Path(parts[-1]).stem
+        parents = [p for p in parts[:-1] if p.lower() not in _REST_HTTP_GENERIC_PARENTS]
+        if stem.lower() in ("main", "app", "index", "server", "routes", "router", "program") and parents:
+            return f"{parents[-1]}-HTTP"
+        if parents:
+            return f"{parents[-1]}-{stem}-HTTP"
+        return f"{stem}-HTTP"
+    tail = parts[-1]
+    if tail.lower() in (_REST_HTTP_GROUP_DIR_NAMES | _REST_HTTP_GENERIC_PARENTS):
+        meaningful = [p for p in parts[:-1] if p.lower() not in _REST_HTTP_GENERIC_PARENTS]
+        if meaningful:
+            return f"{meaningful[-1]}-HTTP"
+    return f"{tail}-HTTP"
+
+
+def _is_contract_target_mapped(
+    spec_target: str,
+    member_files: list[str],
+    mapped_contract_patterns: list[str],
+) -> bool:
+    """Return True when a discovered rest_http directory or file set is covered by an active CTR-* specification_file."""
+    if not mapped_contract_patterns:
+        return False
+    if _is_source_path_mapped(spec_target, mapped_contract_patterns):
+        return True
+    if any(match_path_pattern(spec_target, pat) for pat in mapped_contract_patterns):
+        return True
+    return bool(member_files) and all(
+        any(match_path_pattern(rf, pat) or _is_source_path_mapped(rf, [pat]) for pat in mapped_contract_patterns)
+        for rf in member_files
+    )
+
+
 def discover_repository_blueprint(
     repo_root: Path,
     eidos_dir: Path | None = None,
@@ -980,6 +1080,8 @@ def discover_repository_blueprint(
     contracts: list[dict[str, Any]] = []
     test_roots: list[str] = []
     code_top_dirs: set[str] = set()
+    rest_routes_by_dir: dict[str, list[tuple[str, int]]] = {}
+    http_indexer: Any = None
     seen_cnt_ids: set[str] = set()
     seen_ctr_ids: set[str] = set()
     skip_top_non_code = {"docs", "assets", "eidos", "scripts", "examples", "samples"}
@@ -1020,12 +1122,19 @@ def discover_repository_blueprint(
                 }
             )
 
+        top_seg = cur_rel.split("/", 1)[0] if cur_rel != "." else ""
+        in_non_code_top = bool(top_seg and top_seg.lower() in skip_top_non_code)
+
         for fn in sorted(filenames):
             rel_file = fn if cur_rel == "." else f"{cur_rel}/{fn}"
             protocol = _detect_contract_protocol(fn)
             if protocol is not None:
                 stem = Path(fn).stem
-                label = f"{cur.name}-{stem}" if cur_rel != "." and stem.lower() in ("openapi", "swagger", "schema", "asyncapi") else stem
+                label = (
+                    f"{cur.name}-{stem}"
+                    if cur_rel != "." and stem.lower() in ("openapi", "swagger", "schema", "asyncapi")
+                    else stem
+                )
                 already_mapped = any(match_path_pattern(rel_file, pat) for pat in mapped_contract_patterns)
                 contracts.append(
                     {
@@ -1035,10 +1144,50 @@ def discover_repository_blueprint(
                         "already_mapped": already_mapped,
                     }
                 )
-            elif Path(fn).suffix.lower() in _POLYGLOT_TEST_CODE_EXTS and cur_rel != ".":
-                top_seg = cur_rel.split("/", 1)[0]
-                if top_seg.lower() not in skip_top_non_code:
+            else:
+                suffix = Path(fn).suffix.lower()
+                if suffix in _POLYGLOT_TEST_CODE_EXTS and cur_rel != "." and not in_non_code_top:
                     code_top_dirs.add(top_seg)
+                if (
+                    suffix in _REST_HTTP_DISCOVERY_EXTS
+                    and not in_non_code_top
+                    and not _is_test_source_filename(fn)
+                ):
+                    full_file = cur / fn
+                    try:
+                        if full_file.stat().st_size > 262_144:
+                            continue
+                        content = full_file.read_text(encoding="utf-8", errors="ignore")
+                    except OSError:
+                        continue
+                    if _has_modern_http_route_hint(suffix, content):
+                        if http_indexer is None:
+                            from eidos.core.index.ast_indexer import get_ast_indexer
+
+                            http_indexer = get_ast_indexer()
+                        from eidos.core.index.ast_http import extract_http_endpoints_with_metadata
+
+                        endpoints = extract_http_endpoints_with_metadata(http_indexer, full_file, content)
+                        if endpoints:
+                            rest_routes_by_dir.setdefault(cur_rel, []).append((rel_file, len(endpoints)))
+
+    for dir_rel in sorted(rest_routes_by_dir):
+        entries = rest_routes_by_dir[dir_rel]
+        dir_leaf = dir_rel.rsplit("/", 1)[-1].lower() if dir_rel != "." else ""
+        use_dir = dir_rel != "." and (len(entries) > 1 or dir_leaf in _REST_HTTP_GROUP_DIR_NAMES)
+        spec_target = dir_rel if use_dir else entries[0][0]
+        route_count = sum(cnt for _, cnt in entries)
+        member_files = [rf for rf, _ in entries]
+        label = _rest_contract_label(spec_target, is_dir=use_dir)
+        contracts.append(
+            {
+                "suggested_id": _slugify_entity_id("CTR", label, seen_ctr_ids),
+                "protocol": "rest_http",
+                "specification_file": spec_target,
+                "route_count": route_count,
+                "already_mapped": _is_contract_target_mapped(spec_target, member_files, mapped_contract_patterns),
+            }
+        )
 
     unmapped_roots_set: set[str] = set()
     for cnt in containers:
