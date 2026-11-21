@@ -1,0 +1,85 @@
+---
+type: delta/mutation
+id: DLT-2026-150-ADD-EARLIER-SPECDELTA-AUTHORING-39A4
+title: "Add Earlier SpecDelta Authoring Guardrails for Changelog Hygiene and Duplicate Decision Hints"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Two SpecDelta authoring pitfalls currently pass eidos validate or produce cryptic errors only late in testing: (1) raw AsciiDoc file extensions in delta intent motivation text leak into compiled CHANGELOG output, and (2) declaring a DEC-* ID in both a proposed delta's decisions block and a target container's expect post-condition produces a generic duplicate-ID collision without explaining that planned decisions belong on the owning container or component."
+mutations:
+  - operation: modify
+    target: CMP-CHANGELOG-GENERATOR
+    details: "Sanitize raw AsciiDoc specification path references when rendering SpecDelta motivation summaries in src/eidos/core/lifecycle/changelog.py so compiled CHANGELOG.md output never emits broken raw AsciiDoc file links. Update eidos/architecture/components/changelog-generator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/core/lifecycle/changelog.py"
+      body:
+        contains:
+          - "sanitize"
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+    details: "Add a targeted authoring diagnostic in verify_delta_mutations (src/eidos/core/lifecycle/delta_verifier.py) whenever a SpecDelta declares a DEC-* ID in both its own decisions frontmatter and a mutation's expect.frontmatter.decisions.id, guiding authors to record the planned decision solely on the owning CNT-*/CMP-* specification. Update eidos/architecture/components/delta-engine.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/lifecycle/delta_engine.py"
+          - "src/eidos/core/lifecycle/delta_verifier.py"
+          - "src/eidos/core/lifecycle/archiver.py"
+      body:
+        contains:
+          - "decisions.id"
+          - "duplicate"
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: "Enrich duplicate DEC-* diagnostics in src/eidos/core/spec/validator.py with a concise remediation hint when one of the colliding documents is a delta/mutation SpecDelta. Update eidos/architecture/components/spec-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/validator.py"
+          - "src/eidos/core/spec/design_validation.py"
+      body:
+        contains:
+          - "DEC-*"
+  - operation: modify
+    target: CAP-PROD-002
+    details: "Extend CAP-PROD-002 in eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc with INV-DELTA-AUTHORING-GUARDRAILS."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-DELTA-AUTHORING-GUARDRAILS"
+      body:
+        contains:
+          - "INV-DELTA-AUTHORING-GUARDRAILS"
+  - operation: add
+    target: INV-DELTA-AUTHORING-GUARDRAILS
+    details: "Bind INV-DELTA-AUTHORING-GUARDRAILS in CAP-PROD-002 to tests/test_delta_engine.py::test_delta_authoring_guardrails_changelog_hygiene_and_duplicate_dec_hint."
+    expect:
+      frontmatter:
+        rule: "DEC-*"
+        test_binding: "tests/test_delta_engine.py::test_delta_authoring_guardrails_changelog_hygiene_and_duplicate_dec_hint"
+vcs:
+  branch: main
+  base_commit: 7106d5477b53ace59adfe4ed4b141a9bfc0ee951
+---
+= SpecDelta: Add Earlier SpecDelta Authoring Guardrails for Changelog Hygiene and Duplicate Decision Hints
+:toc: left
+
+== Problem Statement
+Dogfooding Planned Mode across multi-delta features exposed two avoidable late-feedback authoring pitfalls:
+1. **Changelog AsciiDoc link leakage**: Including a raw AsciiDoc filename inside a SpecDelta's `intent.motivation` passes `eidos validate` and `eidos delta apply`, only to fail `INV-DELTA-CHANGELOG-GENERATION` later when `ChangelogGenerator` compiles `CHANGELOG.md`.
+2. **Cryptic duplicate `DEC-*` collisions**: Recording a planned `DEC-*` inside both a SpecDelta's top-level `decisions:` block and a target container's `mutations[].expect.frontmatter.decisions.id` triggers a global duplicate `DEC-*` error once the container is updated, without immediately flagging the conflict during `eidos delta verify` or hinting that planned decisions belong strictly on the owning `CNT-*`/`CMP-*` spec.
+
+== Proposed Specification Changes
+* **`CMP-CHANGELOG-GENERATOR` (`src/eidos/core/lifecycle/changelog.py`)**: Deterministically sanitize raw AsciiDoc path extensions in rendered SpecDelta changelog motivation lines while preserving clean backticked entity badges.
+* **`CMP-DELTA-ENGINE` (`src/eidos/core/lifecycle/delta_verifier.py`) & `CMP-SPEC-VALIDATOR` (`src/eidos/core/spec/validator.py`)**: Detect overlapping `DEC-*` IDs declared in both `DLT-*.decisions` and `mutations[].expect.frontmatter.decisions.id` in `verify_delta_mutations` and enrich `SpecValidator` duplicate `DEC-*` diagnostics involving a `delta/mutation` with a clear remediation hint.
+* **`CAP-PROD-002`**: Add and bind `INV-DELTA-AUTHORING-GUARDRAILS`.
+
+== Implementation Plan
+1. **Changelog Sanitization (`CMP-CHANGELOG-GENERATOR`)**: Sanitize raw AsciiDoc file references in `src/eidos/core/lifecycle/changelog.py` (`CNT-EIDOS-CORE` covered via `CMP-CHANGELOG-GENERATOR`, `CMP-DELTA-ENGINE`, and `CMP-SPEC-VALIDATOR`).
+2. **Duplicate `DEC-*` Authoring Hints (`CMP-DELTA-ENGINE`, `CMP-SPEC-VALIDATOR`)**: Add overlap detection in `src/eidos/core/lifecycle/delta_verifier.py` and targeted remediation messaging in `src/eidos/core/spec/validator.py`.
+3. **Living Specs, Tests & Coverage (`POL-005-STATEMENT-TEST-COVERAGE`)**: Update all declared living specs and add `tests/test_delta_engine.py::test_delta_authoring_guardrails_changelog_hygiene_and_duplicate_dec_hint`.
+4. **Verification**: Run `pytest`, `eidos delta verify DLT-2026-150 --json`, `eidos delta apply DLT-2026-150`, and `eidos drift --uncommitted --json`.

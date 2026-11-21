@@ -4,7 +4,7 @@ id: CAP-PROD-002
 title: "SpecDelta Semantic Mutation Engine"
 domain: DOM-SPEC-ENGINE
 status: active
-version: "2.4.0"
+version: "2.5.0"
 
 business:
   personas:
@@ -43,6 +43,9 @@ technical:
     - id: INV-DELTA-CLI-INSPECTION
       rule: "'eidos delta show <ID>' must resolve both active (eidos/deltas/) and archived (eidos/deltas/archive/) SpecDeltas by full ID, unambiguous prefix, or path and emit complete frontmatter, mutations, and body output in Rich and --json modes."
       test_binding: "tests/test_delta_engine.py::test_delta_show_active_and_archived_cli"
+    - id: INV-DELTA-AUTHORING-GUARDRAILS
+      rule: "ChangelogGenerator must sanitize raw AsciiDoc file extensions in rendered SpecDelta summaries so compiled CHANGELOG.md output never leaks broken raw file links, while verify_delta_mutations and SpecValidator must detect duplicate DEC-* declarations spanning a SpecDelta's decisions frontmatter and a target specification or expect.frontmatter.decisions.id with targeted remediation guidance."
+      test_binding: "tests/test_delta_engine.py::test_delta_authoring_guardrails_changelog_hygiene_and_duplicate_dec_hint"
 ---
 = Capability: SpecDelta Semantic Mutation Engine
 :toc: left
@@ -57,7 +60,7 @@ Replaces traditional essay-style RFCs with declarative, machine-verifiable mutat
 * **Orthogonal Composable Scope (`mutations[].operation` + `target`)**: Establishes non-empty composable `mutations[].operation` (`add` | `modify` | `remove` | `deprecate`, rejecting vacuous `mutations: []`) and prefix-resolved `mutations[].target` (determining the target entity kind across all 14 Eidos prefixes) as the single source of truth for SpecDelta scope and `x-eidos-ref` cross-reference validation, while 0-hop `affects` and k-hop `blast_radius` (including `invariants_to_enforce`) are derived dynamically from the living specification graph.
 * **Standalone Blueprint Creation, Collision-Free Delta IDs & CLI Inspection (`create_delta`, `generate_collision_free_delta_id`, `eidos delta show`)**: Scans local `eidos/deltas/`, `eidos/deltas/archive/`, and visible Git branch delta refs to derive a mandatory title `<SLUG>` and engine-computed `<4HEX>` hash suffix (`DLT-YYYY-NNN-<SLUG>-<4HEX>`), enforces unambiguous prefix resolution in `find_spec_by_id_or_path` (rejecting bare year-only prefixes), exposes first-class `eidos delta show <ID> [--json]` inspection across active and archived SpecDeltas (`INV-DELTA-CLI-INSPECTION`), and tracks the 5 canonical `delta_status` states (`proposed`, `in_review`, `approved`, `applied`, `rejected`).
 * **Default-Verified Application (`eidos delta apply [--verify/--no-verify]`)**: Enforces declarative mutation verification by default (`verify=True` unless `--no-verify` is explicitly supplied), rejects empty `mutations: []`, verifies all composable `(operation, target_prefix)` pairs, updates YAML scalars safely via `_set_frontmatter_scalar`, and validates the updated `status: applied` SpecDelta via `SpecValidator` prior to committing to disk (`INV-MUTATION-REVERSIBILITY`).
-* **Modification-Evidence Verification (`eidos delta verify`)**: Evaluates closed-schema declarative `expect:` post-conditions across `add`, `modify`, `remove`, and `deprecate` mutations (including `null` dotted-key deletion assertions and exact `test_binding` matching) alongside CRLF-normalized, shallow-clone-safe baseline digest verification (`INV-DELTA-VERIFY-MODIFICATION-EVIDENCE`).
+* **Modification-Evidence Verification & Authoring Guardrails (`eidos delta verify`, `INV-DELTA-AUTHORING-GUARDRAILS`)**: Evaluates closed-schema declarative `expect:` post-conditions across `add`, `modify`, `remove`, and `deprecate` mutations (including `null` dotted-key deletion assertions and exact `test_binding` matching) alongside CRLF-normalized, shallow-clone-safe baseline digest verification (`INV-DELTA-VERIFY-MODIFICATION-EVIDENCE`), catches duplicate `DEC-*` declarations spanning a SpecDelta's `decisions` frontmatter and `expect.frontmatter.decisions.id` early with targeted authoring guidance, and sanitizes raw AsciiDoc file references when compiling `CHANGELOG.md`.
 * **Subdirectory Archive Partitioning & Multi-Line Exploration Preservation (`eidos delta archive [--keep-recent 15]`, `archive_explorations`)**: Retains all active SpecDeltas and Explorations plus the most recent `keep_recent` (default `15`) terminal artifacts in hot directories while moving older terminal SpecDeltas and Explorations into `archive/` subdirectories with full multi-line section preservation and Git-resolved changelog provenance (`INV-DELTA-EXPLORATION-ARCHIVE-LEDGER`).
 * **Index-Driven Spec-Scoped Deletion Auditing (`eidos delta audit`)**: Pre-filters governed candidate files via the SQLite FTS5 `file_tokens_fts` inverted token table in `eidos/.cache/index.db`, honors `path` and `pattern` `tombstone.allowed_reasons` exemptions, resolves historical `delta/mutation` and `product/exploration` statuses in $O(1)$ from `entities`, and classifies leaks by `indexed_files.doc_type` and container `source_path` ownership (`INV-DELTA-DELETION-AUDIT`).
 

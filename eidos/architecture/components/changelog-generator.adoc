@@ -14,7 +14,7 @@ Compiles applied SpecDeltas (`eidos/deltas/` and `eidos/deltas/archive/`) and Gi
 
 == Key Responsibilities & Collaborators
 * **Frontmatter-Verified SpecDelta & Tag Ancestry Resolution**: Scans applied SpecDeltas (`status: applied`), keys and deduplicates entries by full canonical delta ID (avoiding `short_id` prefix collisions), verifies `status: applied` transitions strictly inside parsed YAML frontmatter rather than prose code blocks, and groups entries by SemVer Git release tags or `[Unreleased]`.
-* **Dynamic `SYS-*` Project Header & Keep a Changelog Formatting**: Resolves the project display name dynamically from the repository's `SYS-*` `product/system` specification (falling back to the repository directory name without hardcoded self-references) and classifies SpecDeltas and conventional commits into `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, and `Security` sections.
+* **Dynamic `SYS-*` Project Header & Keep a Changelog Formatting**: Resolves the project display name dynamically from the repository's `SYS-*` `product/system` specification (falling back to the repository directory name without hardcoded self-references), classifies SpecDeltas and conventional commits into `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, and `Security` sections, and deterministically sanitizes raw AsciiDoc file extensions in rendered SpecDelta motivation summaries while preserving entity badges (`INV-DELTA-AUTHORING-GUARDRAILS`).
 
 == Public Surface
 * `ChangelogGenerator(repo_root: Path | None = None, eidos_dir: Path | None = None, repo_url: str | None = None)`

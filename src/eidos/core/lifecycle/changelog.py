@@ -13,6 +13,19 @@ from typing import Any
 from eidos.core.spec.parser import extract_frontmatter, parse_spec_file
 
 
+def _sanitize_changelog_text(text: str) -> str:
+    """Deterministically sanitize raw .adoc path/filename extensions in changelog prose while preserving entity badges."""
+    if not text:
+        return ""
+    # Replace wildcard '*.adoc' tokens with 'AsciiDoc'
+    cleaned = re.sub(r"(?i)\*\.adoc\b", "AsciiDoc", text)
+    # Strip '.adoc' suffix from path/filename tokens (e.g. eidos/architecture/containers/core.adoc -> eidos/architecture/containers/core)
+    cleaned = re.sub(r"(?i)([A-Za-z0-9_./-]+)\.adoc\b", r"\1", cleaned)
+    # Replace any remaining standalone '.adoc' extension mentions (e.g. '`.adoc` files')
+    cleaned = re.sub(r"(?i)(?<![A-Za-z0-9_/-])\.adoc\b", "AsciiDoc", cleaned)
+    return cleaned
+
+
 def _frontmatter_status_and_id(raw_text: str) -> tuple[str, str]:
     """Extract normalized (status_lower, id_upper) strictly from YAML frontmatter."""
     fm, _, err = extract_frontmatter(raw_text)
@@ -389,7 +402,7 @@ class ChangelogGenerator:
                     # Extract first sentence or summary (avoiding splits on 'vs.' or SemVer '2.0.0')
                     clean_mot = re.sub(r"\s+", " ", motivation).strip()
                     sentences = re.split(r"(?<!\bvs)(?<!\d\.\d)(?<=[.!?])\s+(?=[A-Z`\"'(])", clean_mot)
-                    summary = sentences[0] if sentences else clean_mot
+                    summary = _sanitize_changelog_text(sentences[0] if sentences else clean_mot)
                 else:
                     summary = ""
 
@@ -512,8 +525,8 @@ class ChangelogGenerator:
         from eidos.core.lifecycle.delta_engine import normalize_delta_mutation
 
         delta_id = str(delta.get("id") or "")
-        title = str(delta.get("title") or "")
-        summary = str(delta.get("summary") or "")
+        title = _sanitize_changelog_text(str(delta.get("title") or ""))
+        summary = _sanitize_changelog_text(str(delta.get("summary") or ""))
         kind = str(delta.get("kind") or "feature").lower()
         raw_mutations = delta.get("mutations") or []
         norm_mutations = [normalize_delta_mutation(m) for m in raw_mutations if isinstance(m, dict)]

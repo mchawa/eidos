@@ -438,9 +438,17 @@ class SpecValidator:
                 if dec_id in decision_owners or dec_id in catalog_ids:
                     prev_doc = decision_owners.get(dec_id) or report.entity_index.get(dec_id)
                     prev_name = prev_doc.file_path.name if prev_doc else doc.file_path.name
-                    report.broken_references.append(
+                    msg = (
                         f"Duplicate entity ID '{dec_id}' found in {doc.file_path.name} (already defined in {prev_name})"
                     )
+                    if doc.doc_type == "delta/mutation" or (
+                        prev_doc is not None and prev_doc.doc_type == "delta/mutation"
+                    ):
+                        msg += (
+                            " — Hint: record planned DEC-* decisions solely on the owning CNT-*/CMP-* specification "
+                            "(not duplicated in the SpecDelta's decisions frontmatter)."
+                        )
+                    report.broken_references.append(msg)
                 else:
                     decision_owners[dec_id] = doc
                     catalog_ids.add(dec_id)

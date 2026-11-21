@@ -649,6 +649,39 @@ def _is_shallow_committed_delta(
     return False
 
 
+def _extract_decision_ids(raw_decisions: Any) -> set[str]:
+    """Extract non-empty DEC-* identifiers from a frontmatter decisions list."""
+    ids: set[str] = set()
+    if isinstance(raw_decisions, list):
+        for entry in raw_decisions:
+            if isinstance(entry, dict):
+                dec_id = str(entry.get("id") or "").strip()
+                if dec_id:
+                    ids.add(dec_id)
+    return ids
+
+
+def _extract_expected_decision_ids(mutation: dict[str, Any]) -> set[str]:
+    """Extract expected DEC-* IDs declared under mutation.expect.frontmatter.decisions.id."""
+    expect = mutation.get("expect")
+    if not isinstance(expect, dict):
+        return set()
+    exp_fm = expect.get("frontmatter")
+    if not isinstance(exp_fm, dict):
+        return set()
+    ids: set[str] = set()
+    raw_dec_ids = exp_fm.get("decisions.id")
+    if isinstance(raw_dec_ids, str) and raw_dec_ids.strip():
+        ids.add(raw_dec_ids.strip())
+    elif isinstance(raw_dec_ids, list):
+        for item in raw_dec_ids:
+            if isinstance(item, str) and item.strip():
+                ids.add(item.strip())
+    raw_decs = exp_fm.get("decisions")
+    ids.update(_extract_decision_ids(raw_decs))
+    return ids
+
+
 def verify_delta_mutations(
     eidos_dir: Path,
     delta_id_or_path: str,
@@ -696,6 +729,8 @@ def verify_delta_mutations(
     rev_cache: dict[Path, list[str]] = {}
     blob_cache: dict[tuple[str, str], tuple[bytes | None, dict[str, Any] | None]] = {}
 
+    delta_decision_ids = _extract_decision_ids(doc.frontmatter.get("decisions"))
+
     items: list[MutationVerificationItem] = []
     for raw_m in raw_mutations:
         m = normalize_delta_mutation(raw_m) if isinstance(raw_m, dict) else {}
@@ -714,7 +749,17 @@ def verify_delta_mutations(
         t_meta = resolve_entity_prefix_meta(lookup_target) or resolve_entity_prefix_meta(target)
         entity_kind = t_meta[1] if t_meta else None
 
-        if op not in SUPPORTED_MUTATION_OPERATIONS:
+        overlapping_decisions = sorted(delta_decision_ids & _extract_expected_decision_ids(m))
+        if overlapping_decisions:
+            verified = False
+            status = "DUPLICATE_DECISION"
+            failure_reason = (
+                f"Duplicate decision ID(s) {', '.join(overlapping_decisions)} declared in both this SpecDelta's "
+                f"'decisions' frontmatter and mutation '{target}' expect.frontmatter.decisions.id. "
+                "Record planned DEC-* decisions solely on the owning CNT-*/CMP-* specification."
+            )
+
+        elif op not in SUPPORTED_MUTATION_OPERATIONS:
             verified = False
             status = "UNSUPPORTED_ACTION"
             failure_reason = f"Unsupported mutation operation '{op}'."

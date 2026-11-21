@@ -2148,3 +2148,115 @@ def test_delta_engine_and_cli_lifecycle_branches(tmp_path):
     subprocess.run(["git", "commit", "-m", "c2"], cwd=ws, check=True, capture_output=True)
     fb_ok, _, _ = verify_delta_mutations(eidos_dir, "DLT-2026-081")
     assert fb_ok
+
+
+def test_delta_authoring_guardrails_changelog_hygiene_and_duplicate_dec_hint(tmp_path: Path) -> None:
+    """INV-DELTA-AUTHORING-GUARDRAILS: sanitize raw .adoc paths in changelog summaries and hint on duplicate DEC-* collisions."""
+    from eidos.core.lifecycle.changelog import ChangelogGenerator, _sanitize_changelog_text
+    from eidos.core.spec.validator import SpecValidator
+
+    # 1. Changelog sanitization strips raw .adoc extensions while keeping entity badges intact
+    assert _sanitize_changelog_text("") == ""
+    sanitized = _sanitize_changelog_text(
+        "Update `eidos/architecture/containers/core.adoc` and *.adoc files plus `.adoc` references for `CNT-APP`."
+    )
+    assert ".adoc" not in sanitized.lower()
+    assert "`CNT-APP`" in sanitized
+    assert "eidos/architecture/containers/core" in sanitized
+
+    ws = tmp_path / "ws"
+    eidos_dir = ws / "eidos"
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True)
+    (eidos_dir / "deltas").mkdir(parents=True)
+    (ws / "src" / "app").mkdir(parents=True)
+    (ws / "src" / "app" / "core.py").write_text("def run() -> None:\n    pass\n", encoding="utf-8")
+
+    (eidos_dir / "system.adoc").write_text(
+        "---\ntype: product/system\nid: SYS-TEST\ntitle: Test System\nstatus: active\nversion: '1.0.0'\n"
+        "summary: Test system.\n---\n= Test System\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "app.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-APP\ntitle: App Container\nstatus: active\n"
+        "technology: Python\nsource_path: src/app\n"
+        "decisions:\n"
+        "  - id: DEC-APP-SHARED\n"
+        "    title: Shared Decision\n"
+        "    status: accepted\n"
+        "    rationale: Owned on the container.\n"
+        "---\n= Container: App\n",
+        encoding="utf-8",
+    )
+
+    # Applied delta whose motivation contains raw .adoc path references
+    (eidos_dir / "deltas" / "dlt-2026-101-hygiene.adoc").write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-101-HYGIENE\ntitle: Update core.adoc Hygiene\nstatus: applied\n"
+        "intent:\n  kind: enabler\n  motivation: Sanitize eidos/architecture/containers/app.adoc and *.adoc mentions for `CNT-APP`.\n"
+        "mutations:\n  - operation: modify\n    target: CNT-APP\n---\n= Hygiene\n",
+        encoding="utf-8",
+    )
+
+    gen = ChangelogGenerator(repo_root=ws, eidos_dir=eidos_dir)
+    md = gen.generate_changelog(include_unreleased=True)
+    assert "DLT-2026-101-HYGIENE" in md
+    assert "`CNT-APP`" in md
+    assert ".adoc" not in md.lower()
+
+    # 2. verify_delta_mutations detects overlapping DEC-* in DLT-*.decisions and expect.frontmatter.decisions.id
+    dlt_dup = eidos_dir / "deltas" / "dlt-2026-102-dup-dec.adoc"
+    dlt_dup.write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-102-DUP-DEC\ntitle: Duplicate Decision Test\nstatus: proposed\n"
+        "intent:\n  kind: enabler\n  motivation: Test duplicate decision detection.\n"
+        "decisions:\n"
+        "  - id: DEC-APP-SHARED\n"
+        "    title: Shared Decision\n"
+        "    status: accepted\n"
+        "    rationale: Mistakenly duplicated on delta.\n"
+        "mutations:\n"
+        "  - operation: modify\n"
+        "    target: CNT-APP\n"
+        "    expect:\n"
+        "      frontmatter:\n"
+        "        decisions.id:\n"
+        "          - DEC-APP-SHARED\n"
+        "---\n= Duplicate Decision Test\n",
+        encoding="utf-8",
+    )
+
+    ok, _msg, report = verify_delta_mutations(eidos_dir, "DLT-2026-102-DUP-DEC")
+    assert not ok
+    assert report is not None
+    assert len(report.mutations) == 1
+    assert report.mutations[0].status == "DUPLICATE_DECISION"
+    assert "DEC-APP-SHARED" in (report.mutations[0].failure_reason or "")
+    assert "owning CNT-*/CMP-*" in (report.mutations[0].failure_reason or "")
+
+    # Also test scalar decisions.id and decisions list dict forms in expect.frontmatter
+    dlt_dup_scalar = eidos_dir / "deltas" / "dlt-2026-103-dup-scalar.adoc"
+    dlt_dup_scalar.write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-103-DUP-SCALAR\ntitle: Scalar Decision Test\nstatus: proposed\n"
+        "intent:\n  kind: enabler\n  motivation: Test scalar duplicate decision detection.\n"
+        "decisions:\n"
+        "  - id: DEC-APP-SHARED\n"
+        "    title: Shared Decision\n"
+        "    status: accepted\n"
+        "    rationale: Mistakenly duplicated on delta.\n"
+        "mutations:\n"
+        "  - operation: modify\n"
+        "    target: CNT-APP\n"
+        "    expect:\n"
+        "      frontmatter:\n"
+        "        decisions.id: DEC-APP-SHARED\n"
+        "---\n= Scalar Decision Test\n",
+        encoding="utf-8",
+    )
+    ok_s, _, rep_s = verify_delta_mutations(eidos_dir, "DLT-2026-103-DUP-SCALAR")
+    assert not ok_s
+    assert rep_s is not None and rep_s.mutations[0].status == "DUPLICATE_DECISION"
+
+    # 3. SpecValidator enriches duplicate DEC-* broken_references when a delta/mutation collides with a container
+    v_report = SpecValidator().validate_directory(eidos_dir, check_import_boundaries=False)
+    dec_errs = [e for e in v_report.broken_references if "DEC-APP-SHARED" in e]
+    assert dec_errs
+    assert any("Hint: record planned DEC-* decisions solely on the owning CNT-*/CMP-*" in e for e in dec_errs)
+
