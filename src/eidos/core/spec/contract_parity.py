@@ -8,7 +8,10 @@ from typing import ClassVar
 
 from eidos.core.index.ast_http import (
     HttpEndpointMeta,
+    _extract_fastapi_auth_deps,
     _parse_cs_authorize_args,
+    _parse_nestjs_auth_decorators,
+    _parse_spring_auth_annotations,
     collect_aspnet_core_controller_bases,
     extract_http_endpoints_with_metadata,
     normalize_http_route_path,
@@ -373,9 +376,30 @@ class ContractParityValidator:
         text: str,
         auth_cell: str = "",
     ) -> tuple[str, tuple[str, ...], tuple[str, ...]] | None:
-        """Extract opt-in auth requirement (mode, policies, roles) from a contract route row or line."""
+        """Extract opt-in polyglot auth requirement (mode, policies, roles) from a contract route row or line."""
         if _AUTH_EXPLICIT_ALLOW_ANON_RE.search(text):
             return ("allow_anonymous", (), ())
+
+        # Spring annotations (@PermitAll, @PreAuthorize, @Secured, @RolesAllowed)
+        sp_anon, sp_auth, sp_pols, sp_roles = _parse_spring_auth_annotations(text)
+        if sp_anon:
+            return ("allow_anonymous", (), ())
+        if sp_auth:
+            return ("authorize", tuple(sp_pols), tuple(sp_roles))
+
+        # NestJS decorators (@Public(), @UseGuards(...), @Roles(...))
+        ns_pub, ns_auth, ns_guards, ns_roles = _parse_nestjs_auth_decorators(text)
+        if ns_pub:
+            return ("allow_anonymous", (), ())
+        if ns_auth:
+            return ("authorize", tuple(ns_guards), tuple(ns_roles))
+
+        # FastAPI Security(...) / Depends(...)
+        fa_deps = _extract_fastapi_auth_deps(text, require_auth_name=False)
+        if fa_deps:
+            return ("authorize", tuple(fa_deps), ())
+
+        # ASP.NET Core [Authorize(...)] / RequireAuthorization(...)
         auth_matches = list(_AUTH_EXPLICIT_AUTHORIZE_RE.finditer(text))
         if auth_matches:
             policies: list[str] = []
@@ -777,10 +801,10 @@ class ContractParityValidator:
                             and cand not in defined_set
                             and cand not in seen_phantom
                         ):
-                                seen_phantom.add(cand)
-                                report.broken_references.append(
-                                    f"Contract drift in {doc.file_path.name}: documented JSON-RPC method '{cand}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
-                                )
+                            seen_phantom.add(cand)
+                            report.broken_references.append(
+                                f"Contract drift in {doc.file_path.name}: documented JSON-RPC method '{cand}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
+                            )
                     continue
 
                 for m_doc in re.finditer(

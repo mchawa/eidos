@@ -1261,6 +1261,280 @@ def _extract_aspnet_core_endpoints(
     return endpoints
 
 
+def _parse_spring_auth_annotations(text: str) -> tuple[bool, bool, list[str], list[str]]:
+    """Parse Spring @PermitAll, @PreAuthorize, @Secured, @RolesAllowed annotations from a snippet."""
+    has_permit_all = bool(re.search(r"@PermitAll\b", text))
+    has_auth = False
+    policies: list[str] = []
+    roles: list[str] = []
+
+    for m_pre in re.finditer(r"@PreAuthorize\s*\(\s*\"([^\"]*)\"\s*\)", text):
+        has_auth = True
+        expr = m_pre.group(1)
+        for m_r in re.finditer(r"has(?:Any)?Role\s*\(([^)]+)\)", expr):
+            for tok in re.findall(r"['\"]([^'\"]+)['\"]", m_r.group(1)):
+                roles.append(tok)
+                if tok.startswith("ROLE_"):
+                    roles.append(tok[5:])
+        for m_a in re.finditer(r"has(?:Any)?Authority\s*\(([^)]+)\)", expr):
+            for tok in re.findall(r"['\"]([^'\"]+)['\"]", m_a.group(1)):
+                policies.append(tok)
+
+    for m_sec in re.finditer(r"@(?:Secured|RolesAllowed)\s*\(([^)]+)\)", text):
+        has_auth = True
+        for tok in re.findall(r"['\"]([^'\"]+)['\"]", m_sec.group(1)):
+            roles.append(tok)
+            if tok.startswith("ROLE_"):
+                roles.append(tok[5:])
+
+    return has_permit_all, has_auth, list(dict.fromkeys(policies)), list(dict.fromkeys(roles))
+
+
+def _enrich_spring_endpoint_auth(
+    cleaned: str,
+    struct_syms: list[CodeSymbol],
+    metas: list[HttpEndpointMeta],
+) -> list[HttpEndpointMeta]:
+    """Populate Spring @PreAuthorize/@Secured/@RolesAllowed/@PermitAll auth metadata on Java/Kotlin endpoints."""
+    lines = cleaned.splitlines()
+    cls_auth: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {}
+    for cls_sym in [s for s in struct_syms if s.kind == "class"]:
+        start_ln = max(0, cls_sym.line_start - 1)
+        end_ln = start_ln + 1
+        while end_ln < min(len(lines), start_ln + 12) and "{" not in lines[end_ln - 1]:
+            end_ln += 1
+        win = "\n".join(lines[max(0, start_ln - 8) : end_ln])
+        has_anon, has_auth, pols, roles = _parse_spring_auth_annotations(win)
+        if has_anon:
+            cls_auth[cls_sym.name] = ("allow_anonymous", (), ())
+        elif has_auth:
+            cls_auth[cls_sym.name] = ("authorize", tuple(pols), tuple(roles))
+
+    out: list[HttpEndpointMeta] = []
+    for ep in metas:
+        ep_idx = max(0, ep.line_start - 1)
+        # Collect contiguous annotation lines above/around the endpoint line without crossing a previous method body
+        win_lines: list[str] = []
+        for idx in range(ep_idx, max(-1, ep_idx - 10), -1):
+            ln = lines[idx] if idx < len(lines) else ""
+            if idx < ep_idx and ("{" in ln or "}" in ln or ";" in ln):
+                break
+            win_lines.append(ln)
+        for idx in range(ep_idx + 1, min(len(lines), ep_idx + 4)):
+            ln = lines[idx]
+            if "@" in ln:
+                win_lines.append(ln)
+            elif "{" in ln or ";" in ln:
+                break
+        win = "\n".join(reversed(win_lines))
+        has_anon, has_auth, act_pols, act_roles = _parse_spring_auth_annotations(win)
+        c_mode, c_pols, c_roles = cls_auth.get(ep.parent_symbol or "", ("unannotated", (), ()))
+        if has_anon:
+            eff_mode, eff_pols, eff_roles = "allow_anonymous", (), ()
+        elif has_auth:
+            eff_mode = "authorize"
+            eff_pols = tuple(dict.fromkeys([*c_pols, *act_pols])) if c_mode == "authorize" else tuple(act_pols)
+            eff_roles = tuple(dict.fromkeys([*c_roles, *act_roles])) if c_mode == "authorize" else tuple(act_roles)
+        else:
+            eff_mode, eff_pols, eff_roles = c_mode, c_pols, c_roles
+        out.append(
+            HttpEndpointMeta(
+                method=ep.method,
+                path=ep.path,
+                raw_signature=ep.raw_signature,
+                line_start=ep.line_start,
+                line_end=ep.line_end,
+                parent_symbol=ep.parent_symbol,
+                auth_mode=eff_mode,
+                auth_policies=eff_pols,
+                auth_roles=eff_roles,
+            )
+        )
+    return out
+
+
+def _parse_nestjs_auth_decorators(text: str) -> tuple[bool, bool, list[str], list[str]]:
+    """Parse NestJS @Public(), @UseGuards(...), and @Roles(...) decorators from a snippet."""
+    has_public = bool(re.search(r"@Public\s*\(\s*\)", text))
+    has_auth = False
+    guards: list[str] = []
+    roles: list[str] = []
+
+    for m_g in re.finditer(r"@UseGuards\s*\(([^)]*)\)", text):
+        has_auth = True
+        for arg in _split_top_level_args(m_g.group(1)):
+            clean_g = re.sub(r"^new\s+", "", arg.strip()).split("(", 1)[0].strip()
+            if clean_g:
+                guards.append(clean_g)
+    for m_r in re.finditer(r"@Roles\s*\(([^)]+)\)", text):
+        has_auth = True
+        for tok in re.findall(r"['\"]([^'\"]+)['\"]", m_r.group(1)):
+            roles.append(tok)
+    return has_public, has_auth, list(dict.fromkeys(guards)), list(dict.fromkeys(roles))
+
+
+def _enrich_nestjs_endpoint_auth(
+    cleaned: str,
+    struct_syms: list[CodeSymbol],
+    metas: list[HttpEndpointMeta],
+) -> list[HttpEndpointMeta]:
+    """Populate NestJS @UseGuards/@Roles/@Public auth metadata on TS/JS controller endpoints."""
+    if "@Controller" not in cleaned:
+        return metas
+    lines = cleaned.splitlines()
+    cls_auth: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {}
+    ctrl_classes: set[str] = set()
+    for cls_sym in [s for s in struct_syms if s.kind == "class"]:
+        start_ln = max(0, cls_sym.line_start - 1)
+        end_ln = start_ln + 1
+        while end_ln < min(len(lines), start_ln + 12) and "{" not in lines[end_ln - 1]:
+            end_ln += 1
+        win = "\n".join(lines[max(0, start_ln - 8) : end_ln])
+        if "@Controller" not in win:
+            continue
+        ctrl_classes.add(cls_sym.name)
+        has_pub, has_auth, guards, roles = _parse_nestjs_auth_decorators(win)
+        if has_pub:
+            cls_auth[cls_sym.name] = ("allow_anonymous", (), ())
+        elif has_auth:
+            cls_auth[cls_sym.name] = ("authorize", tuple(guards), tuple(roles))
+
+    out: list[HttpEndpointMeta] = []
+    for ep in metas:
+        if ep.parent_symbol not in ctrl_classes:
+            out.append(ep)
+            continue
+        ep_idx = max(0, ep.line_start - 1)
+        win_lines: list[str] = []
+        for idx in range(ep_idx, max(-1, ep_idx - 10), -1):
+            ln = lines[idx] if idx < len(lines) else ""
+            if idx < ep_idx and ("{" in ln or "}" in ln or ";" in ln):
+                break
+            win_lines.append(ln)
+        for idx in range(ep_idx + 1, min(len(lines), ep_idx + 4)):
+            ln = lines[idx]
+            if "@" in ln:
+                win_lines.append(ln)
+            elif "{" in ln or ";" in ln:
+                break
+        win = "\n".join(reversed(win_lines))
+        has_pub, has_auth, act_guards, act_roles = _parse_nestjs_auth_decorators(win)
+        c_mode, c_guards, c_roles = cls_auth.get(ep.parent_symbol or "", ("unannotated", (), ()))
+        if has_pub:
+            eff_mode, eff_guards, eff_roles = "allow_anonymous", (), ()
+        elif has_auth:
+            eff_mode = "authorize"
+            eff_guards = tuple(dict.fromkeys([*c_guards, *act_guards])) if c_mode == "authorize" else tuple(act_guards)
+            eff_roles = tuple(dict.fromkeys([*c_roles, *act_roles])) if c_mode == "authorize" else tuple(act_roles)
+        else:
+            eff_mode, eff_guards, eff_roles = c_mode, c_guards, c_roles
+        out.append(
+            HttpEndpointMeta(
+                method=ep.method,
+                path=ep.path,
+                raw_signature=ep.raw_signature,
+                line_start=ep.line_start,
+                line_end=ep.line_end,
+                parent_symbol=ep.parent_symbol,
+                auth_mode=eff_mode,
+                auth_policies=eff_guards,
+                auth_roles=eff_roles,
+            )
+        )
+    return out
+
+
+_FASTAPI_AUTH_DEP_HINT_RE = re.compile(
+    r"(?:auth|user|token|jwt|guard|role|perm|scope|admin|session|api_?key|oauth|bearer|verify|require|current)",
+    re.IGNORECASE,
+)
+
+
+def _extract_fastapi_auth_deps(snippet: str, *, require_auth_name: bool) -> list[str]:
+    """Extract FastAPI Security(...) and Depends(...) auth dependency names and scopes."""
+    found: list[str] = []
+    for m_sec in re.finditer(r"\bSecurity\s*\(", snippet):
+        args_txt, _ = _extract_balanced_call_args(snippet, m_sec.end() - 1)
+        args = _split_top_level_args(args_txt)
+        if args:
+            fn = args[0].split("(", 1)[0].strip()
+            if fn:
+                found.append(fn)
+        m_sc = re.search(r"scopes\s*=\s*\[([^\]]*)\]", args_txt)
+        if m_sc:
+            found.extend(re.findall(r"['\"]([^'\"]+)['\"]", m_sc.group(1)))
+    for m_dep in re.finditer(r"\bDepends\s*\(", snippet):
+        args_txt, _ = _extract_balanced_call_args(snippet, m_dep.end() - 1)
+        args = _split_top_level_args(args_txt)
+        if args:
+            fn = args[0].split("(", 1)[0].strip()
+            if fn and (not require_auth_name or _FASTAPI_AUTH_DEP_HINT_RE.search(fn)):
+                found.append(fn)
+    return list(dict.fromkeys(found))
+
+
+def _enrich_fastapi_endpoint_auth(cleaned: str, metas: list[HttpEndpointMeta]) -> list[HttpEndpointMeta]:
+    """Populate FastAPI Security/Depends auth metadata on Python endpoints."""
+    router_deps: dict[str, list[str]] = {}
+    for m_r in re.finditer(r"([A-Za-z_][A-Za-z0-9_]*)\s*=\s*APIRouter\s*\(", cleaned):
+        args_txt, _ = _extract_balanced_call_args(cleaned, m_r.end() - 1)
+        deps = _extract_fastapi_auth_deps(args_txt, require_auth_name=False)
+        if deps:
+            router_deps[m_r.group(1)] = deps
+    for m_inc in re.finditer(r"\.include_router\s*\(", cleaned):
+        args_txt, _ = _extract_balanced_call_args(cleaned, m_inc.end() - 1)
+        args = _split_top_level_args(args_txt)
+        if args:
+            rname = args[0].strip()
+            deps = _extract_fastapi_auth_deps(args_txt, require_auth_name=False)
+            if deps:
+                router_deps[rname] = list(dict.fromkeys([*router_deps.get(rname, []), *deps]))
+
+    lines = cleaned.splitlines()
+    out: list[HttpEndpointMeta] = []
+    for ep in metas:
+        start_idx = max(0, ep.line_start - 1)
+        end_idx = min(len(lines), max(ep.line_end, ep.line_start) + 8)
+        snippet = "\n".join(lines[start_idx:end_idx])
+        # Cut snippet at the start of the next decorator/def body after the handler signature ':'
+        m_sig_end = re.search(
+            r"(?:async\s+)?def\s+[A-Za-z_][A-Za-z0-9_]*\s*\((?:[^()]|\([^()]*\))*\)\s*(?:->[^:]+)?:", snippet
+        )
+        if m_sig_end:
+            snippet = snippet[: m_sig_end.end()]
+        dec_line = lines[start_idx] if start_idx < len(lines) else ""
+        m_obj = re.search(r"@([A-Za-z_][A-Za-z0-9_]*)\.", dec_line)
+        r_deps = list(router_deps.get(m_obj.group(1), [])) if m_obj else []
+        # Decorator-level dependencies=[...] (any Depends/Security counts) vs handler params (Security or auth-named Depends)
+        m_def = re.search(r"\b(?:async\s+)?def\b", snippet)
+        dec_part = snippet[: m_def.start()] if m_def else snippet
+        sig_part = snippet[m_def.start() :] if m_def else ""
+        all_deps = list(
+            dict.fromkeys(
+                [
+                    *r_deps,
+                    *_extract_fastapi_auth_deps(dec_part, require_auth_name=False),
+                    *_extract_fastapi_auth_deps(sig_part, require_auth_name=True),
+                ]
+            )
+        )
+        eff_mode = "authorize" if all_deps else "unannotated"
+        out.append(
+            HttpEndpointMeta(
+                method=ep.method,
+                path=ep.path,
+                raw_signature=ep.raw_signature,
+                line_start=ep.line_start,
+                line_end=ep.line_end,
+                parent_symbol=ep.parent_symbol,
+                auth_mode=eff_mode,
+                auth_policies=tuple(all_deps),
+                auth_roles=(),
+            )
+        )
+    return out
+
+
 def extract_http_endpoints_with_metadata(
     indexer: Any,
     p: Path,
@@ -1269,7 +1543,7 @@ def extract_http_endpoints_with_metadata(
     _symbols: list[CodeSymbol] | None = None,
     base_controllers: dict[str, dict[str, Any]] | None = None,
 ) -> list[HttpEndpointMeta]:
-    """Extract normalized modern HTTP endpoints plus authorization metadata for contract parity."""
+    """Extract normalized modern HTTP endpoints plus polyglot authorization metadata for contract parity."""
     if not content:
         return []
     suffix = p.suffix.lower()
@@ -1280,7 +1554,8 @@ def extract_http_endpoints_with_metadata(
         struct_syms = _symbols if _symbols is not None else indexer.extract_symbols(p, content)
         return _extract_aspnet_core_endpoints(cleaned, struct_syms, base_controllers=base_controllers)
 
-    syms = _extract_polyglot_http_endpoints(indexer, p, content, _symbols=_symbols)
+    struct_syms = _symbols if _symbols is not None else indexer.extract_symbols(p, content)
+    syms = _extract_polyglot_http_endpoints(indexer, p, content, _symbols=struct_syms)
     out: list[HttpEndpointMeta] = []
     for sym in syms:
         if " " not in sym.name:
@@ -1296,6 +1571,15 @@ def extract_http_endpoints_with_metadata(
                 parent_symbol=sym.parent_symbol,
             )
         )
+    if not out:
+        return out
+    cleaned = _blank_comments_outside_strings(content, hash_comments=(suffix == ".py"))
+    if suffix in (".java", ".kt", ".kts"):
+        return _enrich_spring_endpoint_auth(cleaned, struct_syms, out)
+    if suffix in (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"):
+        return _enrich_nestjs_endpoint_auth(cleaned, struct_syms, out)
+    if suffix == ".py":
+        return _enrich_fastapi_endpoint_auth(cleaned, out)
     return out
 
 

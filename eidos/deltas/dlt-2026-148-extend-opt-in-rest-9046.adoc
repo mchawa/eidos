@@ -1,0 +1,100 @@
+---
+type: delta/mutation
+id: DLT-2026-148-EXTEND-OPT-IN-REST-9046
+title: "Extend Opt-In REST HTTP Authorization Parity to Spring, NestJS, and FastAPI"
+status: applied
+intent:
+  kind: feature
+  motivation: "Opt-in authorization attribute parity for rest_http contracts currently extracts authorization metadata only for C# ASP.NET Core, leaving modern Java/Kotlin Spring, TypeScript NestJS, and Python FastAPI services with route parity but no authorization drift checks."
+mutations:
+  - operation: modify
+    target: CMP-HTTP-TOPOLOGY-LINKER
+    details: "Extend extract_http_endpoints_with_metadata in src/eidos/core/index/ast_http.py to populate HttpEndpointMeta auth_mode, auth_policies, and auth_roles for Java/Kotlin Spring (@PreAuthorize, @Secured, @RolesAllowed, @PermitAll with class-to-method inheritance), TypeScript NestJS (@UseGuards(...), @Public() with controller-to-handler inheritance), and Python FastAPI (Depends/Security auth dependencies on router or endpoint decorators/parameters). Update eidos/architecture/components/http-topology-linker.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/index/ast_http.py"
+          - "src/eidos/core/index/http_linker.py"
+      body:
+        contains:
+          - "PreAuthorize"
+          - "UseGuards"
+          - "FastAPI"
+  - operation: modify
+    target: CMP-CONTRACT-PARITY-VALIDATOR
+    details: "Extend _parse_doc_auth_expectation and _verify_rest_http_contract in src/eidos/core/spec/contract_parity.py to recognize polyglot opt-in auth declarations (@PreAuthorize, @Secured, @RolesAllowed, @PermitAll, @UseGuards, @Public, Depends/Security alongside existing ASP.NET Core syntax and Auth table columns) and report contradictions deterministically. Update eidos/architecture/components/contract-parity-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/contract_parity.py"
+          - "src/eidos/core/spec/cli_contract_parity.py"
+      body:
+        contains:
+          - "Spring"
+          - "NestJS"
+          - "FastAPI"
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: "Update modern REST HTTP authorization parity scope in eidos/architecture/containers/core.adoc to include Spring, NestJS, and FastAPI alongside ASP.NET Core."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "Spring"
+          - "NestJS"
+          - "FastAPI"
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: "Update modern rest_http opt-in authorization parity documentation in docs/concepts/how-eidos-works.md (`INV-DOCS-SYNCHRONIZATION`), and update eidos/architecture/components/docs-core-concepts.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/concepts"
+      body:
+        contains:
+          - "NestJS"
+          - "Spring"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Extend CAP-PROD-001 in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc with INV-CONTRACT-POLYGLOT-AUTH-PARITY."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-CONTRACT-POLYGLOT-AUTH-PARITY"
+      body:
+        contains:
+          - "INV-CONTRACT-POLYGLOT-AUTH-PARITY"
+  - operation: add
+    target: INV-CONTRACT-POLYGLOT-AUTH-PARITY
+    details: "Bind INV-CONTRACT-POLYGLOT-AUTH-PARITY in CAP-PROD-001 to tests/test_contract_parity.py::test_polyglot_rest_http_authorization_parity_spring_nestjs_fastapi."
+    expect:
+      frontmatter:
+        rule: "Spring"
+        test_binding: "tests/test_contract_parity.py::test_polyglot_rest_http_authorization_parity_spring_nestjs_fastapi"
+vcs:
+  branch: main
+  base_commit: 7106d5477b53ace59adfe4ed4b141a9bfc0ee951
+---
+= SpecDelta: Extend Opt-In REST HTTP Authorization Parity to Spring, NestJS, and FastAPI
+:toc: left
+
+== Problem Statement
+`DLT-2026-142` introduced `HttpEndpointMeta` (`auth_mode`, `auth_policies`, `auth_roles`) and opt-in contradiction-only authorization verification in `_verify_rest_http_contract`, currently populated only for C# ASP.NET Core. Modern Java/Kotlin Spring, TypeScript NestJS, and Python FastAPI services already have static route extraction in `ast_http.py`, but their authorization annotations (`@PreAuthorize`, `@Secured`, `@RolesAllowed`, `@PermitAll`, `@UseGuards`, `@Public`, `Security(...)`/`Depends(...)`) are not yet extracted or checked against `CTR-*` contracts.
+
+== Proposed Specification Changes
+* **`CMP-HTTP-TOPOLOGY-LINKER` (`src/eidos/core/index/ast_http.py`)**: Populate `HttpEndpointMeta` auth fields deterministically for:
+  - **Spring (Java/Kotlin)**: `@PreAuthorize(...)`, `@Secured(...)`, `@RolesAllowed(...)`, and `@PermitAll` with controller-to-method inheritance and method-level overrides.
+  - **NestJS (TypeScript/JavaScript)**: `@UseGuards(...)` and `@Public()` with controller-to-handler inheritance and handler-level overrides.
+  - **FastAPI (Python)**: `Security(...)` and `Depends(...)` auth/guard dependencies on `APIRouter(dependencies=[...])`, route decorator `dependencies=[...]`, or handler parameter defaults.
+* **`CMP-CONTRACT-PARITY-VALIDATOR` (`src/eidos/core/spec/contract_parity.py`)**: Recognize Spring/NestJS/FastAPI auth tokens alongside ASP.NET Core tokens and `Auth` table columns in `_parse_doc_auth_expectation`, preserving opt-in contradiction-only semantics (plain route tables without auth declarations remain unaffected).
+* **`CNT-EIDOS-CORE`, `CMP-DOCS-CORE-CONCEPTS` & `CAP-PROD-001`**: Synchronize docs and bind `INV-CONTRACT-POLYGLOT-AUTH-PARITY`.
+
+== Implementation Plan
+1. **Polyglot Auth Metadata Extraction (`CMP-HTTP-TOPOLOGY-LINKER`)**: Extend `src/eidos/core/index/ast_http.py` (`CNT-EIDOS-INDEX` covered via `CMP-HTTP-TOPOLOGY-LINKER`) to populate `auth_mode`, `auth_policies`, and `auth_roles` across Spring, NestJS, and FastAPI without affecting existing route extraction.
+2. **Polyglot Opt-In Auth Verification (`CMP-CONTRACT-PARITY-VALIDATOR`)**: Extend `_parse_doc_auth_expectation` and contradiction messages in `src/eidos/core/spec/contract_parity.py`.
+3. **Docs, Living Specs & Tests (`POL-005-STATEMENT-TEST-COVERAGE`)**: Update `docs/concepts/how-eidos-works.md`, all declared specs, and add `tests/test_contract_parity.py::test_polyglot_rest_http_authorization_parity_spring_nestjs_fastapi` verifying clean parity, role/policy/guard contradictions, and `>90.0%` per-file statement coverage.
+4. **Verification**: Run `pytest`, `eidos delta verify DLT-2026-148 --json`, `eidos delta apply DLT-2026-148`, and `eidos drift --uncommitted --json`.

@@ -794,3 +794,277 @@ switch (req.method) {
     assert "phantom_tool" in joined
     assert "failed to parse" in joined
     assert "root must be a mapping" in joined
+
+
+def test_polyglot_rest_http_authorization_parity_spring_nestjs_fastapi(tmp_path: Path) -> None:
+    """Verify INV-CONTRACT-POLYGLOT-AUTH-PARITY: opt-in Spring, NestJS, and FastAPI authorization parity checks."""
+    ws = tmp_path / "polyglot_auth_ws"
+    eidos_dir = ws / "eidos"
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True)
+    (eidos_dir / "architecture" / "contracts").mkdir(parents=True)
+
+    # 1. Java Spring controller with class-level @PreAuthorize, method @Secured/@RolesAllowed, and @PermitAll override
+    _write(
+        ws / "src" / "spring" / "BillingController.java",
+        """
+@RestController
+@RequestMapping("/api/billing")
+@PreAuthorize("hasAuthority('billing:read')")
+public class BillingController {
+    @GetMapping("/invoices")
+    public List<String> listInvoices() { return List.of(); }
+
+    @PostMapping("/refunds")
+    @Secured({"ROLE_ADMIN", "ROLE_FINANCE"})
+    public void refund() {}
+
+    @DeleteMapping("/invoices/{id}")
+    @RolesAllowed("SUPERADMIN")
+    public void deleteInvoice() {}
+
+    @GetMapping("/health")
+    @PermitAll
+    public String health() { return "ok"; }
+}
+
+@RestController
+@RequestMapping("/api/public-spring")
+@PermitAll
+public class PublicSpringController {
+    @GetMapping("/info")
+    public String info() { return "ok"; }
+
+    @PostMapping("/ops")
+    @PreAuthorize("hasRole('ROLE_OPS')")
+    public void ops() {}
+}
+""",
+    )
+
+    # 2. TypeScript NestJS controller with @UseGuards, @Roles, and @Public() override
+    _write(
+        ws / "src" / "nestjs" / "orders.controller.ts",
+        """
+@Controller('api/orders')
+@UseGuards(JwtAuthGuard)
+export class OrdersController {
+  @Get()
+  findAll() { return []; }
+
+  @Post()
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  create() { return {}; }
+
+  @Get('public-status')
+  @Public()
+  status() { return 'ok'; }
+}
+
+@Controller('api/public-nest')
+@Public()
+export class PublicNestController {
+  @Get('info')
+  info() { return 'ok'; }
+}
+""",
+    )
+
+    # 3. Python FastAPI router with router-level Depends, include_router dependencies, handler Security/Depends, and open route
+    _write(
+        ws / "src" / "fastapi_app" / "routes.py",
+        """
+from fastapi import APIRouter, Depends, FastAPI, Security
+
+app = FastAPI()
+admin_router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_admin)])
+ops_router = APIRouter(prefix="/ops")
+
+@admin_router.get("/metrics")
+async def get_metrics():
+    return {}
+
+@ops_router.get("/audit")
+async def get_audit():
+    return {}
+
+app.include_router(ops_router, prefix="/api", dependencies=[Depends(require_ops)])
+
+@app.post("/api/tokens")
+async def create_token(ctx = Security(verify_oauth, scopes=["tokens:write"])):
+    return {}
+
+@app.get("/api/profile")
+async def get_profile(user = Depends(get_current_user)):
+    return {}
+
+@app.get("/api/ping")
+async def ping():
+    return {"ok": True}
+""",
+    )
+
+    _write(
+        eidos_dir / "architecture" / "containers" / "poly.adoc",
+        "---\ntype: tech/container\nid: CNT-POLY\ntitle: Polyglot APIs\nstatus: active\n"
+        "container_type: service\nruntime: Polyglot\nsource_path:\n  - src/spring\n  - src/nestjs\n  - src/fastapi_app\n---\n= Polyglot APIs\n",
+    )
+
+    spring_ctr = eidos_dir / "architecture" / "contracts" / "spring.adoc"
+    nest_ctr = eidos_dir / "architecture" / "contracts" / "nest.adoc"
+    fa_ctr = eidos_dir / "architecture" / "contracts" / "fastapi.adoc"
+
+    _write(
+        spring_ctr,
+        """---
+type: tech/contract
+id: CTR-SPRING
+title: Spring Billing API
+status: active
+protocol: rest_http
+container: CNT-POLY
+specification_file: src/spring
+---
+= Spring Billing API
+
+|===
+| Method | Path | Auth
+| `GET` | `/api/billing/invoices` | `@PreAuthorize("hasAuthority('billing:read')")`
+| `POST` | `/api/billing/refunds` | `@Secured({"ROLE_ADMIN"})`
+| `DELETE` | `/api/billing/invoices/{id}` | `@RolesAllowed("SUPERADMIN")`
+| `GET` | `/api/billing/health` | `@PermitAll`
+| `GET` | `/api/public-spring/info` | `@PermitAll`
+| `POST` | `/api/public-spring/ops` | `@PreAuthorize("hasRole('OPS')")`
+|===
+""",
+    )
+    _write(
+        nest_ctr,
+        """---
+type: tech/contract
+id: CTR-NEST
+title: NestJS Orders API
+status: active
+protocol: rest_http
+container: CNT-POLY
+specification_file: src/nestjs
+---
+= NestJS Orders API
+
+|===
+| Method | Path | Auth
+| `GET` | `/api/orders` | `@UseGuards(JwtAuthGuard)`
+| `POST` | `/api/orders` | `@UseGuards(JwtAuthGuard, RolesGuard)` `@Roles('admin')`
+| `GET` | `/api/orders/public-status` | `@Public()`
+| `GET` | `/api/public-nest/info` | `@Public()`
+|===
+""",
+    )
+    _write(
+        fa_ctr,
+        """---
+type: tech/contract
+id: CTR-FASTAPI
+title: FastAPI Service API
+status: active
+protocol: rest_http
+container: CNT-POLY
+specification_file: src/fastapi_app
+---
+= FastAPI Service API
+
+|===
+| Method | Path | Auth
+| `GET` | `/api/admin/metrics` | `Depends(require_admin)`
+| `GET` | `/api/ops/audit` | `Depends(require_ops)`
+| `POST` | `/api/tokens` | `Security(verify_oauth, scopes=["tokens:write"])`
+| `GET` | `/api/profile` | `Depends(get_current_user)`
+| `GET` | `/api/ping` | Public
+|===
+""",
+    )
+
+    validator = SpecValidator()
+    clean_rep = validator.validate_directory(eidos_dir, check_import_boundaries=False)
+    assert clean_rep.is_clean, (
+        f"Expected clean polyglot auth parity: {clean_rep.schema_errors} / {clean_rep.broken_references}"
+    )
+
+    # Introduce contradictions across all 3 frameworks
+    _write(
+        spring_ctr,
+        """---
+type: tech/contract
+id: CTR-SPRING
+title: Spring Billing API
+status: active
+protocol: rest_http
+container: CNT-POLY
+specification_file: src/spring
+---
+= Spring Billing API
+
+|===
+| Method | Path | Auth
+| `GET` | `/api/billing/invoices` | `@PermitAll`
+| `POST` | `/api/billing/refunds` | `@RolesAllowed("WRONG_ROLE")`
+| `DELETE` | `/api/billing/invoices/{id}` | `@RolesAllowed("SUPERADMIN")`
+| `GET` | `/api/billing/health` | `@PreAuthorize("isAuthenticated()")`
+|===
+""",
+    )
+    _write(
+        nest_ctr,
+        """---
+type: tech/contract
+id: CTR-NEST
+title: NestJS Orders API
+status: active
+protocol: rest_http
+container: CNT-POLY
+specification_file: src/nestjs
+---
+= NestJS Orders API
+
+|===
+| Method | Path | Auth
+| `GET` | `/api/orders` | `@Public()`
+| `POST` | `/api/orders` | `@UseGuards(MissingGuard)`
+| `GET` | `/api/orders/public-status` | `@UseGuards(JwtAuthGuard)`
+|===
+""",
+    )
+    _write(
+        fa_ctr,
+        """---
+type: tech/contract
+id: CTR-FASTAPI
+title: FastAPI Service API
+status: active
+protocol: rest_http
+container: CNT-POLY
+specification_file: src/fastapi_app
+---
+= FastAPI Service API
+
+|===
+| Method | Path | Auth
+| `GET` | `/api/admin/metrics` | Public
+| `POST` | `/api/tokens` | `Security(verify_oauth, scopes=["wrong:scope"])`
+| `GET` | `/api/profile` | `Depends(get_current_user)`
+| `GET` | `/api/ping` | `Depends(require_admin)`
+|===
+""",
+    )
+    bad_rep = validator.validate_directory(eidos_dir, check_import_boundaries=False)
+    assert not bad_rep.is_clean
+    joined = "\n".join(bad_rep.broken_references)
+    assert "/api/billing/invoices" in joined
+    assert "WRONG_ROLE" in joined
+    assert "/api/billing/health" in joined
+    assert "/api/orders" in joined
+    assert "MissingGuard" in joined
+    assert "/api/orders/public-status" in joined
+    assert "/api/admin/metrics" in joined
+    assert "wrong:scope" in joined
+    assert "/api/ping" in joined
