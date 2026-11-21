@@ -1048,7 +1048,7 @@ def build_tiered_context_slice(
             inv_focus_tokens -= _focus_noise
             inv_leaf_tokens -= _focus_noise
 
-        def _cap_inv_rank_key(item: tuple[int, dict[str, Any]]) -> tuple[int, int, int, int, int]:
+        def _cap_inv_rank_key(item: tuple[int, dict[str, Any]]) -> tuple[int, int, int, int, int, int]:
             inv_obj = item[1]
             id_toks = _tokenize_text(str(inv_obj.get("id", "")).replace("_", " ").replace("-", " "))
             tb_raw = str(inv_obj.get("test_binding", "") or "")
@@ -1057,13 +1057,16 @@ def build_tiered_context_slice(
             )
             tb_file_stem = tb_raw.split("::", 1)[0].rsplit("/", 1)[-1].rsplit(".", 1)[0]
             tb_file_toks = _tokenize_text(tb_file_stem.replace("_", " ").replace("-", " "))
+            tb_file_core = tb_file_toks - {"test", "tests"}
             leaf_id_hits = len(inv_leaf_tokens & id_toks)
             focus_id_hits = len(inv_focus_tokens & id_toks)
+            exact_tb_file = 1 if (inv_leaf_tokens and tb_file_core == inv_leaf_tokens) else 0
             leaf_tb_hits = len(inv_leaf_tokens & tb_file_toks)
             tb_tiebreak = len(inv_focus_tokens & tb_toks) if (leaf_id_hits or focus_id_hits or leaf_tb_hits) else 0
             return (
                 -leaf_id_hits,
                 -focus_id_hits,
+                -exact_tb_file,
                 -leaf_tb_hits,
                 -tb_tiebreak,
                 item[0],
