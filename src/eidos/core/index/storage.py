@@ -23,8 +23,8 @@ import orjson
 if TYPE_CHECKING:
     from eidos.core.spec.models import SpecDocument
 
-# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-137).
-SCHEMA_VERSION = "2.20.0"
+# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-145).
+SCHEMA_VERSION = "2.21.0"
 
 # In-process parsed SpecDocument cache keyed by resolved Path -> (mtime_ns, st_size, sha256, SpecDocument)
 _PARSED_SPEC_MEM_CACHE: dict[Path, tuple[int, int, str, SpecDocument]] = {}
@@ -39,6 +39,7 @@ _MANAGED_TABLES = (
     "indexed_files",
     "spec_validation_cache",
     "test_binding_cache",
+    "public_surface_cache",
     "spec_embeddings",
     "specs_fts",
     "file_tokens_fts",
@@ -73,6 +74,14 @@ CREATE TABLE IF NOT EXISTS test_binding_cache (
     sha256 TEXT NOT NULL,
     functions_json TEXT NOT NULL,
     file_tokens_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public_surface_cache (
+    file_path TEXT PRIMARY KEY,
+    mtime_ns INTEGER NOT NULL,
+    st_size INTEGER NOT NULL,
+    extractor_version TEXT NOT NULL,
+    payload_json TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS spec_embeddings (
@@ -762,6 +771,68 @@ def save_test_binding_cache(
                 "INSERT OR REPLACE INTO metadata (key, value) VALUES ('test_binding_cache_ver', ?);",
                 (_TEST_BINDING_CACHE_VERSION,),
             )
+
+
+def load_public_surface_cache(
+    db_path: Path,
+    *,
+    extractor_version: str | None = None,
+) -> dict[str, tuple[int, int, str, str]]:
+    """Load cached Public Surface AST symbol rows from ``db_path`` without blocking on DDL locks."""
+    cached_rows: dict[str, tuple[int, int, str, str]] = {}
+    with (
+        contextlib.suppress(OSError, sqlite3.Error),
+        contextlib.closing(open_cache_connection(db_path, allow_ddl=False, sqlite_timeout=0.5)) as conn,
+    ):
+        if extractor_version is not None:
+            cursor = conn.execute(
+                "SELECT file_path, mtime_ns, st_size, extractor_version, payload_json "
+                "FROM public_surface_cache WHERE extractor_version = ?;",
+                (extractor_version,),
+            )
+        else:
+            cursor = conn.execute(
+                "SELECT file_path, mtime_ns, st_size, extractor_version, payload_json FROM public_surface_cache;"
+            )
+        for row in cursor:
+            cached_rows[str(row["file_path"])] = (
+                int(row["mtime_ns"]),
+                int(row["st_size"]),
+                str(row["extractor_version"]),
+                str(row["payload_json"]),
+            )
+    return cached_rows
+
+
+def save_public_surface_cache(
+    db_path: Path,
+    to_upsert: list[tuple[str, int, int, str, str]],
+    deleted_keys: list[str] | None = None,
+) -> None:
+    """Opportunistically upsert and prune ``public_surface_cache`` entries without blocking on contended locks."""
+    if not to_upsert and not deleted_keys:
+        return
+    with contextlib.suppress(OSError, sqlite3.Error), _advisory_db_lock(db_path, non_blocking=True) as acquired:
+        if not acquired:
+            return
+        with (
+            contextlib.closing(open_cache_connection(db_path, sqlite_timeout=0.5)) as conn,
+            _immediate_write_transaction(conn),
+        ):
+            if deleted_keys:
+                conn.executemany(
+                    "DELETE FROM public_surface_cache WHERE file_path = ?;",
+                    [(k,) for k in deleted_keys],
+                )
+            if to_upsert:
+                conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO public_surface_cache
+                    (file_path, mtime_ns, st_size, extractor_version, payload_json)
+                    VALUES (?, ?, ?, ?, ?);
+                    """,
+                    to_upsert,
+                )
 
 
 EDGE_PROVENANCE_PRECEDENCE: dict[str, int] = {

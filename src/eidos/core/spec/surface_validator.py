@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 from typing import Any, ClassVar
 
+import orjson
 from ast_grep_py import SgRoot
 
 from eidos.core.index.ast_diff import (
@@ -53,6 +54,7 @@ class PublicSurfaceValidator:
         return re.sub(r"^[ \t]*//[^\r\n]*$", "", cleaned, flags=re.MULTILINE)
 
     _PUBLIC_SURFACE_CACHE_MAX_ENTRIES: ClassVar[int] = 8192
+    _PUBLIC_SURFACE_EXTRACTOR_VERSION: ClassVar[str] = "1"
 
     _PUBLIC_SURFACE_SYMBOL_CACHE: ClassVar[
         dict[
@@ -63,6 +65,90 @@ class PublicSurfaceValidator:
             ],
         ]
     ] = {}
+    _PENDING_PERSIST_ROWS: ClassVar[dict[str, tuple[str, int, int, str, str]]] = {}
+
+    @staticmethod
+    def _serialize_public_surface_entry(
+        pub_result: tuple[set[str], set[str], set[str], dict[str, set[str]], dict[str, set[str]]],
+        cmp_result: tuple[set[str], set[str], set[str], dict[str, set[str]], dict[str, set[str]]],
+    ) -> str:
+        def _pack(
+            entry: tuple[set[str], set[str], set[str], dict[str, set[str]], dict[str, set[str]]],
+        ) -> list[Any]:
+            syms, clss, meths, cls_meths, bases = entry
+            return [
+                sorted(syms),
+                sorted(clss),
+                sorted(meths),
+                {k: sorted(v) for k, v in sorted(cls_meths.items())},
+                {k: sorted(v) for k, v in sorted(bases.items())},
+            ]
+
+        return orjson.dumps([_pack(pub_result), _pack(cmp_result)]).decode("utf-8")
+
+    @staticmethod
+    def _deserialize_public_surface_entry(
+        payload_json: str,
+    ) -> (
+        tuple[
+            tuple[set[str], set[str], set[str], dict[str, set[str]], dict[str, set[str]]],
+            tuple[set[str], set[str], set[str], dict[str, set[str]], dict[str, set[str]]],
+        ]
+        | None
+    ):
+        try:
+            raw = orjson.loads(payload_json)
+            if not isinstance(raw, list) or len(raw) != 2:
+                return None
+
+            def _unpack(
+                arr: Any,
+            ) -> tuple[set[str], set[str], set[str], dict[str, set[str]], dict[str, set[str]]]:
+                syms, clss, meths, cls_meths, bases = arr
+                return (
+                    set(syms),
+                    set(clss),
+                    set(meths),
+                    {str(k): set(v) for k, v in cls_meths.items()},
+                    {str(k): set(v) for k, v in bases.items()},
+                )
+
+            return _unpack(raw[0]), _unpack(raw[1])
+        except (ValueError, TypeError, AttributeError):
+            return None
+
+    @classmethod
+    def hydrate_persistent_cache(cls, db_path: Path) -> int:
+        """Batch-hydrate the in-memory Public Surface LRU cache from SQLite public_surface_cache (non-blocking)."""
+        from eidos.core.index.storage import load_public_surface_cache
+
+        rows = load_public_surface_cache(db_path, extractor_version=cls._PUBLIC_SURFACE_EXTRACTOR_VERSION)
+        loaded = 0
+        for file_path, (mtime_ns, st_size, _ver, payload_json) in rows.items():
+            cache_key = (file_path, mtime_ns, st_size)
+            if cache_key in cls._PUBLIC_SURFACE_SYMBOL_CACHE:
+                continue
+            parsed = cls._deserialize_public_surface_entry(payload_json)
+            if parsed is None:
+                continue
+            while len(cls._PUBLIC_SURFACE_SYMBOL_CACHE) >= cls._PUBLIC_SURFACE_CACHE_MAX_ENTRIES:
+                oldest_key = next(iter(cls._PUBLIC_SURFACE_SYMBOL_CACHE))
+                cls._PUBLIC_SURFACE_SYMBOL_CACHE.pop(oldest_key, None)
+            cls._PUBLIC_SURFACE_SYMBOL_CACHE[cache_key] = parsed
+            loaded += 1
+        return loaded
+
+    @classmethod
+    def flush_persistent_cache(cls, db_path: Path) -> int:
+        """Opportunistically persist newly extracted Public Surface entries to SQLite public_surface_cache."""
+        if not cls._PENDING_PERSIST_ROWS:
+            return 0
+        from eidos.core.index.storage import save_public_surface_cache
+
+        rows = list(cls._PENDING_PERSIST_ROWS.values())
+        cls._PENDING_PERSIST_ROWS.clear()
+        save_public_surface_cache(db_path, rows)
+        return len(rows)
 
     _PUBLIC_SURFACE_SKIP_EXTENSIONS: ClassVar[tuple[str, ...]] = (
         ".md",
@@ -553,6 +639,13 @@ class PublicSurfaceValidator:
         pub_result = (pub_syms, pub_clss, pub_meths, pub_cls_meths, pub_bases)
         cmp_result = (cmp_syms, cmp_clss, cmp_meths, cmp_cls_meths, cmp_bases)
         cls._PUBLIC_SURFACE_SYMBOL_CACHE[cache_key] = (pub_result, cmp_result)
+        cls._PENDING_PERSIST_ROWS[str(resolved_file)] = (
+            str(resolved_file),
+            st.st_mtime_ns,
+            st.st_size,
+            cls._PUBLIC_SURFACE_EXTRACTOR_VERSION,
+            cls._serialize_public_surface_entry(pub_result, cmp_result),
+        )
         return cmp_result if include_component_internal else pub_result
 
     @staticmethod

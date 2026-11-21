@@ -38,7 +38,7 @@ The architectural index requires **zero external database daemons** and **zero t
 
 * Built on Python's standard library **`sqlite3`** in WAL (Write-Ahead Logging) mode, utilizing native SQLite 3.x FTS5 and recursive Common Table Expressions (CTEs).
 * Decomposed across 9 disjoint C4 Level 3 components in `src/eidos/core/index/`: `CMP-GRAPH-STORAGE` (`storage.py`, `graph_index.py`), `CMP-INCREMENTAL-SYNC-ENGINE` (`sync.py`, `code_graph.py`, `spec_edges.py`), `CMP-FTS-QUERY-ENGINE` (`fts_query.py`), `CMP-GRAPH-TRAVERSAL-ENGINE` (`traversal.py`), `CMP-TIERED-CONTEXT-COMPRESSOR` (`context.py`, `context_globs.py`, `context_models.py`), `CMP-SEMANTIC-EMBEDDING-ENGINE` (`semantic.py`), `CMP-AST-SYMBOL-INDEXER` (`ast_indexer.py`, `ast_preprocess.py`, `ast_imports.py`), `CMP-HTTP-TOPOLOGY-LINKER` (`ast_http.py`, `http_linker.py`), and `CMP-AST-DIFF-CLASSIFIER` (`ast_diff.py`), plus a thin backward-compatible `query.py` facade.
-* Stores all relational graph data, epistemic `edges.provenance` + `file:line` `evidence`, per-call-site `code_couplings`, AST symbol coordinates, inverted file token FTS tables, optional ONNX semantic embeddings, and validation/test caches inside a single self-contained, 100% stateless derived file: `eidos/.cache/index.db` (canonical `SCHEMA_VERSION = "2.20.0"`).
+* Stores all relational graph data, epistemic `edges.provenance` + `file:line` `evidence`, per-call-site `code_couplings`, AST symbol coordinates, inverted file token FTS tables, optional ONNX semantic embeddings, and validation/test/public-surface caches inside a single self-contained, 100% stateless derived file: `eidos/.cache/index.db` (canonical `SCHEMA_VERSION = "2.21.0"`).
 * Automatically performs drop-and-rebuild migration on schema version upgrades (preserving content-addressed `spec_embeddings` across `eidos index sync --force`) and self-heals on database corruption.
 * The `eidos/.cache/` directory is isolated via `eidos/.gitignore`, keeping Git repositories pristine.
 
@@ -51,7 +51,7 @@ You never need to remember to run a manual build command before querying.
 ### 1. Automatic On-Demand Bootstrapping
 The first time any command requiring architectural context is invoked (`eidos context`, `eidos index`, `eidos spec list`, or agent skills), Eidos automatically:
 1. Creates `eidos/.cache/` if it does not exist.
-2. Initializes the 12 SQLite tables (`entities`, `edges`, `code_couplings`, `indexed_files`, `symbol_mappings`, `code_symbols`, `spec_validation_cache`, `test_binding_cache`, `spec_embeddings`, `specs_fts`, `file_tokens_fts`, and `metadata`).
+2. Initializes the 13 SQLite tables (`entities`, `edges`, `code_couplings`, `indexed_files`, `symbol_mappings`, `code_symbols`, `spec_validation_cache`, `test_binding_cache`, `public_surface_cache`, `spec_embeddings`, `specs_fts`, `file_tokens_fts`, and `metadata`).
 3. Indexes all living specifications, AST code symbols (including `http_endpoint` and `http_request` symbols), governed file tokens, and test bindings in ~100ms.
 
 ### 2. Zero-Drift Freshness (`_ensure_synced`)

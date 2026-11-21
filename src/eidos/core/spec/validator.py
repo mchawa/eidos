@@ -1177,6 +1177,10 @@ class SpecValidator:
         }
         active_arch_docs: list[SpecDocument] = []
         surface_validator = PublicSurfaceValidator()
+        ps_spec_root, _ = resolve_spec_and_repo_roots(root_dir)
+        ps_db_path = ps_spec_root / ".cache" / "index.db"
+        if ps_db_path.is_file():
+            surface_validator.hydrate_persistent_cache(ps_db_path)
         repo_symbol_acc = surface_validator._new_repo_symbol_accumulator()
         for doc in report.documents:
             model = doc.model
@@ -1251,6 +1255,8 @@ class SpecValidator:
 
         if active_arch_docs:
             surface_validator._verify_prose_symbol_drift(active_arch_docs, repo_root, root_dir, report, repo_symbol_acc)
+        if ps_spec_root.is_dir():
+            surface_validator.flush_persistent_cache(ps_db_path)
 
     def _validate_test_bindings(
         self,

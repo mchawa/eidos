@@ -5967,3 +5967,107 @@ def test_active_to_deprecated_and_undeclared_tier_warnings(tmp_path: Path) -> No
     assert "EXP-2026-099-HIST" not in joined
     # Retired container CNT-RETIRED with tier 'cor' must NOT trigger undeclared tier warning
     assert "active container 'CNT-RETIRED'" not in joined
+
+
+def test_persistent_public_surface_symbol_cache_hit_invalidation_and_nonblocking_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify INV-INDEX-PUBLIC-SURFACE-CACHE: SQLite public_surface_cache hit, invalidation, and non-blocking lock fallback."""
+    import os
+    import time
+
+    from eidos.core.index.ast_indexer import AstGrepIndexer
+    from eidos.core.index.storage import (
+        _db_lock_path,
+        load_public_surface_cache,
+        save_public_surface_cache,
+    )
+    from eidos.core.spec.surface_validator import PublicSurfaceValidator
+
+    ws = tmp_path / "ps_cache_ws"
+    eidos_dir = ws / "eidos"
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True)
+    (eidos_dir / "architecture" / "components").mkdir(parents=True)
+    (ws / "src" / "pkg").mkdir(parents=True)
+    src_file = ws / "src" / "pkg" / "engine.py"
+    src_file.write_text("class Engine:\n    def run(self) -> int:\n        return 1\n", encoding="utf-8")
+
+    (eidos_dir / "architecture" / "containers" / "core.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-CORE\ntitle: Core\nstatus: active\n"
+        "container_type: library\nruntime: Python\nsource_path: src/pkg\n---\n= Core\n\n== Public Surface\n* `Engine`\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "eng.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-ENG\ntitle: Engine\nstatus: active\n"
+        "container: CNT-CORE\nsource_path: src/pkg/engine.py\n---\n= Engine\n\n== Public Surface\n* `Engine.run()`\n",
+        encoding="utf-8",
+    )
+
+    db_path = eidos_dir / ".cache" / "index.db"
+    PublicSurfaceValidator._PUBLIC_SURFACE_SYMBOL_CACHE.clear()
+    PublicSurfaceValidator._PENDING_PERSIST_ROWS.clear()
+
+    # 1. Cold run parses AST and persists to public_surface_cache
+    rep1 = SpecValidator().validate_directory(eidos_dir, check_import_boundaries=False)
+    assert rep1.is_clean, f"Cold validate failed: {rep1.schema_errors} / {rep1.broken_references}"
+    rows = load_public_surface_cache(db_path)
+    assert str(src_file.resolve()) in rows
+
+    # 2. Clear in-memory cache; warm run hydrates from SQLite with zero AstGrepIndexer.extract_symbols calls
+    PublicSurfaceValidator._PUBLIC_SURFACE_SYMBOL_CACHE.clear()
+    PublicSurfaceValidator._PENDING_PERSIST_ROWS.clear()
+    orig_extract = AstGrepIndexer.extract_symbols
+    extract_calls = 0
+
+    def _spy_extract(self, *args, **kwargs):
+        nonlocal extract_calls
+        extract_calls += 1
+        return orig_extract(self, *args, **kwargs)
+
+    monkeypatch.setattr(AstGrepIndexer, "extract_symbols", _spy_extract)
+    rep2 = SpecValidator().validate_directory(eidos_dir, check_import_boundaries=False)
+    assert rep2.is_clean
+    assert extract_calls == 0, "Expected warm validation to hit public_surface_cache without AST re-parsing"
+
+    # Second hydrate when key is already in memory is a no-op
+    assert PublicSurfaceValidator.hydrate_persistent_cache(db_path) == 0
+
+    # 3. Editing source file invalidates cache immediately and catches drift
+    src_file.write_text("class Engine:\n    def execute(self) -> int:\n        return 2\n", encoding="utf-8")
+    os.utime(src_file, ns=(time.time_ns() + 2_000_000_000, time.time_ns() + 2_000_000_000))
+    rep3 = SpecValidator().validate_directory(eidos_dir, check_import_boundaries=False)
+    assert not rep3.is_clean
+    assert any("Engine.run" in b for b in rep3.broken_references)
+    assert extract_calls >= 1
+
+    # Restore valid source file and test corrupt payload + deleted_keys + non-blocking lock contention
+    src_file.write_text("class Engine:\n    def run(self) -> int:\n        return 3\n", encoding="utf-8")
+    os.utime(src_file, ns=(time.time_ns() + 4_000_000_000, time.time_ns() + 4_000_000_000))
+    assert PublicSurfaceValidator._deserialize_public_surface_entry("not-json") is None
+    assert PublicSurfaceValidator._deserialize_public_surface_entry("[1]") is None
+    save_public_surface_cache(db_path, [(str(src_file.resolve()), 1, 1, "1", "corrupt")])
+    PublicSurfaceValidator._PUBLIC_SURFACE_SYMBOL_CACHE.clear()
+    assert PublicSurfaceValidator.hydrate_persistent_cache(db_path) == 0
+    save_public_surface_cache(db_path, [], deleted_keys=[str(src_file.resolve())])
+    assert str(src_file.resolve()) not in load_public_surface_cache(db_path)
+    assert PublicSurfaceValidator.flush_persistent_cache(db_path) == 0
+
+    # 4. Contended index.db.lock skips save_public_surface_cache without blocking
+    if os.name != "nt":
+        import fcntl
+
+        lock_p = _db_lock_path(db_path)
+        lock_p.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(lock_p), os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            PublicSurfaceValidator._PUBLIC_SURFACE_SYMBOL_CACHE.clear()
+            PublicSurfaceValidator._PENDING_PERSIST_ROWS.clear()
+            t0 = time.monotonic()
+            rep4 = SpecValidator().validate_directory(eidos_dir, check_import_boundaries=False)
+            elapsed = time.monotonic() - t0
+            assert rep4.is_clean
+            assert elapsed < 3.0
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)

@@ -1,0 +1,125 @@
+---
+type: delta/mutation
+id: DLT-2026-145-PERSIST-PUBLIC-SURFACE-AST-8EFC
+title: "Persist Public Surface AST Symbol Cache in SQLite Index"
+status: applied
+intent:
+  kind: enabler
+  motivation: "PublicSurfaceValidator currently caches extracted public and component-scoped AST symbols only in an in-memory per-process dictionary, forcing every cold eidos validate invocation to re-parse all declared CNT-* and CMP-* source files from disk; persisting content-and-stat-keyed public-surface symbol summaries in index.db via non-blocking opportunistic cache I/O will accelerate repeated validation runs on large solutions without risking stale reads."
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    details: "Add a public_surface_cache SQLite table (bump SCHEMA_VERSION in src/eidos/core/index/storage.py) plus non-blocking load_public_surface_cache and save_public_surface_cache helpers using open_cache_connection(..., allow_ddl=False) and _advisory_db_lock(..., non_blocking=True) with short SQLite busy timeout so contended readers/writers fall back cleanly to live AST parsing. Update eidos/architecture/components/graph-storage.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/index/storage.py"
+          - "src/eidos/core/index/graph_index.py"
+      body:
+        contains:
+          - "public_surface_cache"
+          - "load_public_surface_cache"
+          - "save_public_surface_cache"
+  - operation: modify
+    target: CMP-ARCHITECTURE-BOUNDARY-VALIDATOR
+    details: "Hydrate and flush PublicSurfaceValidator._PUBLIC_SURFACE_SYMBOL_CACHE in src/eidos/core/spec/surface_validator.py against CMP-GRAPH-STORAGE's non-blocking public_surface_cache keyed by (resolved_path, mtime_ns, st_size, extractor_version), falling back seamlessly to live AST extraction when index.db is missing, contended, or outdated. Update eidos/architecture/components/architecture-boundary-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/surface_validator.py"
+          - "src/eidos/core/spec/boundary_validator.py"
+      body:
+        contains:
+          - "public_surface_cache"
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: "Load persistent public_surface_cache entries once at the start of SpecValidator._validate_source_and_contract_paths in src/eidos/core/spec/validator.py and flush newly parsed entries non-blockingly at the end of the pass. Update eidos/architecture/components/spec-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/validator.py"
+          - "src/eidos/core/spec/design_validation.py"
+      body:
+        contains:
+          - "public_surface_cache"
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+    details: "Update SCHEMA_VERSION table count and record DEC-INDEX-PERSISTENT-PUBLIC-SURFACE-CACHE in eidos/architecture/containers/index.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-INDEX-PERSISTENT-PUBLIC-SURFACE-CACHE"
+      body:
+        contains:
+          - "public_surface_cache"
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: "Update SQLite schema table list and SCHEMA_VERSION in docs/concepts/how-eidos-works.md and docs/concepts/architectural-index.md (`INV-DOCS-SYNCHRONIZATION`), and update eidos/architecture/components/docs-core-concepts.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/concepts"
+      body:
+        contains:
+          - "public_surface_cache"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Update SCHEMA_VERSION in docs/guides/cli.md (`INV-DOCS-SYNCHRONIZATION`), and update eidos/architecture/components/docs-user-guides.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/guides"
+      body:
+        contains:
+          - "cli.md"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Update SCHEMA_VERSION reported by `eidos index status` in eidos/architecture/contracts/cli.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "SCHEMA_VERSION"
+  - operation: modify
+    target: CAP-AGENT-002
+    details: "Extend CAP-AGENT-002 in eidos/domains/agent-intelligence/capabilities/cap-agent-002.adoc with INV-INDEX-PUBLIC-SURFACE-CACHE."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-INDEX-PUBLIC-SURFACE-CACHE"
+      body:
+        contains:
+          - "INV-INDEX-PUBLIC-SURFACE-CACHE"
+  - operation: add
+    target: INV-INDEX-PUBLIC-SURFACE-CACHE
+    details: "Bind INV-INDEX-PUBLIC-SURFACE-CACHE in CAP-AGENT-002 to tests/test_validator.py::test_persistent_public_surface_symbol_cache_hit_invalidation_and_nonblocking_fallback."
+    expect:
+      frontmatter:
+        rule: "public_surface_cache"
+        test_binding: "tests/test_validator.py::test_persistent_public_surface_symbol_cache_hit_invalidation_and_nonblocking_fallback"
+vcs:
+  branch: main
+  base_commit: 7106d5477b53ace59adfe4ed4b141a9bfc0ee951
+---
+= SpecDelta: Persist Public Surface AST Symbol Cache in SQLite Index
+:toc: left
+
+== Problem Statement
+`SpecValidator` persists schema verdicts (`spec_validation_cache`) and test AST symbols (`test_binding_cache`) in `eidos/.cache/index.db`, but `PublicSurfaceValidator._PUBLIC_SURFACE_SYMBOL_CACHE` lives strictly in process memory. Every cold `eidos validate` CLI run therefore re-parses all active `CNT-*` and `CMP-*` source files from scratch, adding unnecessary latency on large polyglot solutions (>1,000 files).
+
+== Proposed Specification Changes
+* **`CMP-GRAPH-STORAGE` (`src/eidos/core/index/storage.py`) & `CNT-EIDOS-INDEX`**: Add a stateless, disposable `public_surface_cache` table keyed by `(file_path, mtime_ns, st_size, extractor_version)` storing `orjson`-serialized public and component-scoped symbol tuples, bump `SCHEMA_VERSION`, and expose strictly non-blocking `load_public_surface_cache` (`allow_ddl=False`) and `save_public_surface_cache` (`non_blocking=True` advisory lock + short busy timeout). Record `DEC-INDEX-PERSISTENT-PUBLIC-SURFACE-CACHE` (`graduated_from: DLT-2026-145-PERSIST-PUBLIC-SURFACE-AST-8EFC`, rejecting blocking cache writes and rejecting skipping `mtime_ns`/`st_size` invalidation).
+* **`CMP-ARCHITECTURE-BOUNDARY-VALIDATOR` (`src/eidos/core/spec/surface_validator.py`) & `CMP-SPEC-VALIDATOR` (`src/eidos/core/spec/validator.py`)**: Batch-hydrate `_PUBLIC_SURFACE_SYMBOL_CACHE` from `public_surface_cache` once per `validate_directory` call and flush newly parsed files non-blockingly at the end, immediately invalidating any entry whose `(mtime_ns, st_size, extractor_version)` changed and never reading stale data.
+* **`CMP-DOCS-CORE-CONCEPTS` & `CAP-AGENT-002`**: Sync table counts and `SCHEMA_VERSION` in `docs/concepts/how-eidos-works.md` and `docs/concepts/architectural-index.md`, and bind `INV-INDEX-PUBLIC-SURFACE-CACHE`.
+
+== Implementation Plan
+1. **Storage Schema & Non-Blocking Helpers (`CMP-GRAPH-STORAGE`, `CNT-EIDOS-INDEX`)**: Add `public_surface_cache` DDL, bump `SCHEMA_VERSION`, and implement `load_public_surface_cache` / `save_public_surface_cache` in `src/eidos/core/index/storage.py`.
+2. **Validator Integration (`CMP-ARCHITECTURE-BOUNDARY-VALIDATOR`, `CMP-SPEC-VALIDATOR`)**: Wire batch load/flush in `src/eidos/core/spec/surface_validator.py` and `src/eidos/core/spec/validator.py` (`CNT-EIDOS-CORE` covered via `CMP-SPEC-VALIDATOR` and `CMP-ARCHITECTURE-BOUNDARY-VALIDATOR`), preserving exact LRU bounds and zero blocking under lock contention.
+3. **Docs, Living Specs & Tests (`POL-005-STATEMENT-TEST-COVERAGE`)**: Update `docs/concepts/how-eidos-works.md`, `docs/concepts/architectural-index.md`, `docs/guides/cli.md` (if `SCHEMA_VERSION` appears there — check `INV-DOCS-SYNCHRONIZATION`), all declared component/container/capability specs, and add `tests/test_validator.py::test_persistent_public_surface_symbol_cache_hit_invalidation_and_nonblocking_fallback`.
+4. **Verification**: Run `pytest` (>90.0% per-file coverage), `eidos delta verify DLT-2026-145 --json`, `eidos delta apply DLT-2026-145`, and `eidos drift --uncommitted --json`.
