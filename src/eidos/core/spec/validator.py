@@ -676,6 +676,8 @@ class SpecValidator:
                                 f"Invalid entity reference type in {doc.file_path.name}: "
                                 f"{label} '{val}' in {field_path} has type '{actual_type}', expected {expected_types}"
                             )
+                        elif ref_doc is not None:
+                            self._warn_if_deprecated_dependency(doc, ref_doc, val, field_path, report)
                         break
             return
 
@@ -762,6 +764,35 @@ class SpecValidator:
                     f"Invalid entity reference type in {doc.file_path.name}: "
                     f"{label} '{val}' in {field_path} has type '{actual_type}', expected {p_meta[2]}"
                 )
+                return
+
+        target_doc = report.entity_index.get(val)
+        if target_doc is not None:
+            self._warn_if_deprecated_dependency(doc, target_doc, val, field_path, report)
+
+    @staticmethod
+    def _warn_if_deprecated_dependency(
+        doc: SpecDocument,
+        target_doc: SpecDocument,
+        ref_val: str,
+        field_path: str,
+        report: ValidationReport,
+    ) -> None:
+        """Emit a non-blocking warning when an active living spec references a deprecated or retired entity."""
+        if doc.doc_type in ("delta/mutation", "product/exploration"):
+            return
+        if str(doc.model.status or "").strip().lower() != "active":
+            return
+        target_status = str(target_doc.model.status or "").strip().lower()
+        if target_status not in ("deprecated", "retired"):
+            return
+        target_label = target_doc.doc_id or ref_val
+        warn = (
+            f"Deprecated dependency warning in {doc.file_path.name}: "
+            f"active {doc.doc_type} '{doc.doc_id}' references {target_status} entity '{target_label}' in '{field_path}'"
+        )
+        if warn not in report.warnings:
+            report.warnings.append(warn)
 
     @staticmethod
     def _schema_error_key(doc_path: Path, root_dir: Path | None = None, repo_root: Path | None = None) -> str:

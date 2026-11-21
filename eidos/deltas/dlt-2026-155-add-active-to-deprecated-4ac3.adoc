@@ -1,0 +1,84 @@
+---
+type: delta/mutation
+id: DLT-2026-155-ADD-ACTIVE-TO-DEPRECATED-4AC3
+title: "Add Active-to-Deprecated Dependency and Undeclared Tier Guardrail Warnings"
+status: applied
+intent:
+  kind: feature
+  motivation: "Two silent governance regressions currently pass eidos validate without feedback: (1) status: active specifications continuing to reference deprecated or retired entities (CNT-*, CMP-*, CTR-*, DS-*, CLT-*), and (2) CNT-* containers declaring a tier slug (e.g. a typo like cor instead of core) that does not appear in ARCH-*.import_boundaries.tier_rules, silently bypassing tier boundary enforcement."
+mutations:
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: "Emit non-blocking ValidationReport.warnings in src/eidos/core/spec/validator.py whenever a status: active non-delta specification references a deprecated or retired catalog entity via schema x-eidos-ref fields. Update eidos/architecture/components/spec-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/validator.py"
+          - "src/eidos/core/spec/design_validation.py"
+      body:
+        contains:
+          - "deprecated"
+          - "warnings"
+  - operation: modify
+    target: CMP-ARCHITECTURE-BOUNDARY-VALIDATOR
+    details: "Extend validate_import_boundary_declarations in src/eidos/core/spec/boundary_validator.py to emit a ValidationReport.warnings entry whenever ARCH-*.import_boundaries.tier_rules is configured and an active CNT-* container declares a tier slug absent from all tier_rules keys and allow/deny targets. Update eidos/architecture/components/architecture-boundary-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/surface_validator.py"
+          - "src/eidos/core/spec/boundary_validator.py"
+      body:
+        contains:
+          - "tier"
+          - "warnings"
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: "Document active-to-deprecated dependency warnings and undeclared container tier warnings in eidos/architecture/containers/core.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "deprecated"
+          - "tier"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Extend CAP-PROD-001 in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc with INV-LIFECYCLE-AND-TIER-GUARDRAIL-WARNINGS."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-LIFECYCLE-AND-TIER-GUARDRAIL-WARNINGS"
+      body:
+        contains:
+          - "INV-LIFECYCLE-AND-TIER-GUARDRAIL-WARNINGS"
+  - operation: add
+    target: INV-LIFECYCLE-AND-TIER-GUARDRAIL-WARNINGS
+    details: "Bind INV-LIFECYCLE-AND-TIER-GUARDRAIL-WARNINGS in CAP-PROD-001 to tests/test_validator.py::test_active_to_deprecated_and_undeclared_tier_warnings."
+    expect:
+      frontmatter:
+        rule: "deprecated"
+        test_binding: "tests/test_validator.py::test_active_to_deprecated_and_undeclared_tier_warnings"
+vcs:
+  branch: main
+  base_commit: 7106d5477b53ace59adfe4ed4b141a9bfc0ee951
+---
+= SpecDelta: Add Active-to-Deprecated Dependency and Undeclared Tier Guardrail Warnings
+:toc: left
+
+== Problem Statement
+1. **Rotting references to retired/deprecated entities**: When a container, component, contract, design system, or client transitions to `status: deprecated` or `status: retired`, `status: active` specs that still reference it continue to pass `eidos validate` silently with zero warning.
+2. **Silent `tier_rules` bypass on typos**: `ARCH-*.import_boundaries.tier_rules` evaluates rules by matching each `CNT-*.tier` string. If a container mistypes `tier: cor` instead of `tier: core`, `validate_import_boundary_declarations` does not flag the undeclared tier slug, silently exempting that container from tier rules.
+
+== Proposed Specification Changes
+* **`CMP-SPEC-VALIDATOR` (`src/eidos/core/spec/validator.py`)**: During cross-reference validation, emit a non-blocking `ValidationReport.warnings` entry whenever a `status: active` living specification (excluding `delta/mutation` and `product/exploration` historical records) references an entity whose `status` is `deprecated` or `retired`.
+* **`CMP-ARCHITECTURE-BOUNDARY-VALIDATOR` (`src/eidos/core/spec/boundary_validator.py`)**: When `ARCH-*.import_boundaries.tier_rules` is non-empty, compute the set of known tier slugs (all `tier_rules` keys plus all `allow`/`deny` targets) and emit a `ValidationReport.warnings` entry for any `status: active` `CNT-*` declaring a `tier` not in that set.
+* **`CNT-EIDOS-CORE` & `CAP-PROD-001`**: Update living specs and bind `INV-LIFECYCLE-AND-TIER-GUARDRAIL-WARNINGS`.
+
+== Implementation Plan
+1. **Lifecycle Dependency Warning (`CMP-SPEC-VALIDATOR`)**: Add active-to-deprecated/retired `x-eidos-ref` warning check in `src/eidos/core/spec/validator.py` (preserving zero warnings on Eidos's own catalog).
+2. **Undeclared Tier Check (`CMP-ARCHITECTURE-BOUNDARY-VALIDATOR`)**: Add tier-slug warning check in `validate_import_boundary_declarations` (`src/eidos/core/spec/boundary_validator.py`).
+3. **Living Specs, Tests & Coverage (`POL-005-STATEMENT-TEST-COVERAGE`)**: Update all declared specs and add `tests/test_validator.py::test_active_to_deprecated_and_undeclared_tier_warnings` verifying non-blocking `warnings`, zero false warnings on Eidos's catalog, and `>90.0%` coverage.
+4. **Verification**: Run `pytest`, `eidos delta verify DLT-2026-155 --json`, `eidos delta apply DLT-2026-155`, and `eidos drift --uncommitted --json`.

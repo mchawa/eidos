@@ -5878,3 +5878,92 @@ def test_advisory_warnings_overscoped_source_path_and_prose_symbols(tmp_path: Pa
     drift_term = runner.invoke(cli_app, ["drift", "--path", str(eidos_dir), "--uncommitted"])
     assert drift_term.exit_code == 0, drift_term.output
     assert "Advisory Validation Warnings" in drift_term.output
+
+
+def test_active_to_deprecated_and_undeclared_tier_warnings(tmp_path: Path) -> None:
+    """Verify INV-LIFECYCLE-AND-TIER-GUARDRAIL-WARNINGS: non-blocking warnings for active->deprecated/retired refs and undeclared CNT-*.tier slugs."""
+    # 1. Eidos's own catalog must remain clean with zero warnings
+    repo_eidos = Path(__file__).parent.parent / "eidos"
+    self_rep = SpecValidator().validate_directory(repo_eidos, check_import_boundaries=False)
+    assert self_rep.is_clean
+    assert self_rep.warnings == []
+
+    # 2. Synthetic workspace testing both lifecycle dependency warnings and undeclared tier warnings
+    ws = tmp_path / "lifecycle_tier_ws"
+    eidos_dir = ws / "eidos"
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True)
+    (eidos_dir / "architecture" / "components").mkdir(parents=True)
+    (eidos_dir / "architecture" / "contracts").mkdir(parents=True)
+    (eidos_dir / "deltas").mkdir(parents=True)
+    (eidos_dir / "explorations").mkdir(parents=True)
+    (ws / "src" / "legacy").mkdir(parents=True)
+    (ws / "src" / "app").mkdir(parents=True)
+    (ws / "src" / "legacy" / "mod.py").write_text("def legacy_fn() -> None:\n    pass\n", encoding="utf-8")
+    (ws / "src" / "app" / "mod.py").write_text("def app_fn() -> None:\n    pass\n", encoding="utf-8")
+
+    (eidos_dir / "architecture" / "architecture.adoc").write_text(
+        "---\ntype: tech/architecture\nid: ARCH-MAIN\ntitle: Main Arch\nstatus: active\n"
+        "c4_context:\n  actors: []\n"
+        "import_boundaries:\n"
+        "  tier_rules:\n"
+        "    presentation:\n"
+        "      allow: [core]\n"
+        "    core:\n"
+        "      deny: [presentation]\n"
+        "---\n= Main Arch\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "legacy.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-LEGACY\ntitle: Legacy Service\nstatus: deprecated\n"
+        "container_type: service\nruntime: Python\nsource_path: src/legacy\ntier: core\n---\n= Legacy\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "retired-bus.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-RETIRED\ntitle: Retired Bus\nstatus: retired\n"
+        "container_type: service\nruntime: Python\nsource_path: src/legacy\ntier: cor\n---\n= Retired\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "app.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-APP\ntitle: App Container\nstatus: active\n"
+        "container_type: service\nruntime: Python\nsource_path: src/app\ntier: cor\n---\n= App\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "active-comp.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-ACTIVE-COMP\ntitle: Active Comp\nstatus: active\n"
+        "container: CNT-LEGACY\nsource_path: src/app/mod.py\n---\n= Active Comp\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "contracts" / "active-ctr.adoc").write_text(
+        "---\ntype: tech/contract\nid: CTR-ACTIVE-PATH\ntitle: Active Contract\nstatus: active\n"
+        "protocol: openapi\ncontainer: eidos/architecture/containers/retired-bus.adoc\n---\n= Active Contract\n",
+        encoding="utf-8",
+    )
+    # Historical SpecDelta and Exploration referencing deprecated entity must NOT warn
+    (eidos_dir / "deltas" / "dlt-2026-099-hist.adoc").write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-099-HIST\ntitle: Historical\nstatus: proposed\n"
+        "intent:\n  kind: enabler\n  motivation: Cleanup.\n"
+        "mutations:\n  - operation: deprecate\n    target: CNT-LEGACY\n---\n= Historical\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "explorations" / "exp-2026-099-hist.adoc").write_text(
+        "---\ntype: product/exploration\nid: EXP-2026-099-HIST\ntitle: Historical Exp\nstatus: in_progress\n"
+        "decision:\n  outcome: adopted\n  resulting_deltas:\n    - DLT-2026-099-HIST\n---\n= Historical Exp\n",
+        encoding="utf-8",
+    )
+    # Non-active (draft) component referencing deprecated entity must NOT warn
+    (eidos_dir / "architecture" / "components" / "draft-comp.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-DRAFT-COMP\ntitle: Draft Comp\nstatus: draft\n"
+        "container: CNT-LEGACY\nsource_path: src/app/mod.py\n---\n= Draft Comp\n",
+        encoding="utf-8",
+    )
+
+    rep = SpecValidator().validate_directory(eidos_dir, check_import_boundaries=False)
+    assert rep.is_clean, f"Guardrail warnings must be non-blocking: {rep.schema_errors} / {rep.broken_references}"
+    joined = "\n".join(rep.warnings)
+    assert "CMP-ACTIVE-COMP" in joined and "CNT-LEGACY" in joined and "deprecated" in joined
+    assert "CTR-ACTIVE-PATH" in joined and "CNT-RETIRED" in joined and "retired" in joined
+    assert "CNT-APP" in joined and "'cor'" in joined
+    assert "DLT-2026-099-HIST" not in joined
+    assert "EXP-2026-099-HIST" not in joined
+    # Retired container CNT-RETIRED with tier 'cor' must NOT trigger undeclared tier warning
+    assert "active container 'CNT-RETIRED'" not in joined

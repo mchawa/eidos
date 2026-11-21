@@ -25,6 +25,7 @@ def validate_import_boundary_declarations(
         clean = ref.strip().replace("\\", "/").lstrip("./")
         return path_to_id.get(clean, clean)
 
+    declared_rule_tiers: set[str] = set()
     for doc in report.documents:
         err_key = schema_error_key_fn(doc.file_path, root_dir=root_dir, repo_root=repo_root)
 
@@ -44,7 +45,12 @@ def validate_import_boundary_declarations(
                 _record_decl_err(f"import_boundary has overlapping allow and deny targets: {', '.join(overlap)}")
         ibs = doc.model.import_boundaries
         if ibs is not None and doc.doc_type == "tech/architecture":
+            is_arch_active = (doc.model.status or "active").strip().lower() not in ("deprecated", "retired")
             for src_tier, rule in ibs.tier_rules.items():
+                if is_arch_active:
+                    declared_rule_tiers.add(src_tier)
+                    declared_rule_tiers.update(rule.allow)
+                    declared_rule_tiers.update(rule.deny)
                 if src_tier not in valid_tiers:
                     _record_decl_err(f"import_boundaries.tier_rules references unresolved tier '{src_tier}'")
                 t_overlap = sorted(set(rule.allow) & set(rule.deny))
@@ -57,6 +63,23 @@ def validate_import_boundary_declarations(
                         _record_decl_err(
                             f"import_boundaries.tier_rules.{src_tier} references unresolved tier '{target_t}'"
                         )
+
+    if declared_rule_tiers:
+        known_tiers_str = ", ".join(sorted(declared_rule_tiers))
+        for doc in report.documents:
+            if doc.doc_type != "tech/container":
+                continue
+            if (doc.model.status or "active").strip().lower() != "active":
+                continue
+            tier_slug = (doc.model.tier or "").strip()
+            if tier_slug and tier_slug not in declared_rule_tiers:
+                warn = (
+                    f"Undeclared tier warning in {doc.file_path.name}: "
+                    f"active container '{doc.doc_id}' declares tier '{tier_slug}' which is not referenced in "
+                    f"ARCH-*.import_boundaries.tier_rules (known tiers: {known_tiers_str})"
+                )
+                if warn not in report.warnings:
+                    report.warnings.append(warn)
 
 
 def _build_doc_path_to_id_map(documents: list[SpecDocument], repo_root: Path) -> dict[str, str]:
