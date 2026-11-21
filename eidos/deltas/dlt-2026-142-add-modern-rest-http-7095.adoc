@@ -1,0 +1,123 @@
+---
+type: delta/mutation
+id: DLT-2026-142-ADD-MODERN-REST-HTTP-7095
+title: "Add Modern REST HTTP Contract Parity and Authorization Attribute Verification"
+status: applied
+intent:
+  kind: feature
+  motivation: "Bidirectional contract parity currently verifies openapi, protobuf/grpc_proto, graphql, json_schema, python_protocol, and cli_args, causing modern REST HTTP contracts (protocol: rest_http / http_json) backed by ASP.NET Core controllers/Minimal APIs or polyglot REST frameworks to pass eidos validate silently even when endpoints are omitted or [Authorize]/[AllowAnonymous] annotations drift from the contract."
+mutations:
+  - operation: modify
+    target: CMP-HTTP-TOPOLOGY-LINKER
+    details: "Extend ASP.NET Core extraction in src/eidos/core/index/ast_http.py with deterministic helper(s) returning modern endpoint metadata: (1) normalized (METHOD, path) fixing [action] token substitution, leading '/' and '~/' action root overrides, and full action attribute-block scanning for [Route(...)] before or after [Http*]; (2) effective controller/action [Authorize(...)] (including Roles/Policy) / [AllowAnonymous] and Minimal API MapGroup/Map* .RequireAuthorization(...) / .AllowAnonymous() state, strictly excluding legacy SOAP/WCF and Web API 2 syntax. Also recognize protocol: rest_http alongside http_json in _extract_contract_http_routes in src/eidos/core/index/http_linker.py. Update eidos/architecture/components/http-topology-linker.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/index/ast_http.py"
+          - "src/eidos/core/index/http_linker.py"
+      body:
+        contains:
+          - "rest_http"
+          - "Authorize"
+  - operation: modify
+    target: CMP-CONTRACT-PARITY-VALIDATOR
+    details: "Register rest_http and http_json in ContractParityValidator._CONTRACT_PROTOCOL_VERIFIERS in src/eidos/core/spec/contract_parity.py with _verify_rest_http_contract(doc, spec_target, report): support specification_file pointing to a modern REST source file, directory, or glob/brace-glob pattern; extract code endpoints via CMP-HTTP-TOPOLOGY-LINKER; enforce bidirectional (METHOD, normalized_path) parity (skipping reverse phantom-route scans when 0 framework endpoints are extracted so custom/stdlib servers like BaseHTTPRequestHandler do not false-positive); and enforce opt-in contradiction-only auth parity whenever a CTR-* route entry explicitly states [Authorize] / [Authorize(Roles/Policy=...)] / RequireAuthorization or [AllowAnonymous] / AllowAnonymous (or an Auth table column). Update eidos/architecture/components/contract-parity-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/contract_parity.py"
+          - "src/eidos/core/spec/cli_contract_parity.py"
+      body:
+        contains:
+          - "rest_http"
+          - "_verify_rest_http_contract"
+          - "Authorize"
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: "Allow _validate_source_and_contract_paths in src/eidos/core/spec/validator.py to pass multi-file glob/brace-glob or directory specification_file targets through to ContractParityValidator._verify_contract_protocol for rest_http / http_json contracts without collapsing a glob to only matches[0]. Update eidos/architecture/components/spec-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/validator.py"
+          - "src/eidos/core/spec/design_validation.py"
+      body:
+        contains:
+          - "rest_http"
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: "Update specification_file description in assets/schemas/v1/tech/contract.schema.yaml to document single-file, directory, or glob targets for modern rest_http / http_json source contracts, and record DEC-CORE-MODERN-REST-PARITY-ONLY in eidos/architecture/containers/core.adoc explicitly excluding legacy SOAP/WCF and Web API 2."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-CORE-MODERN-REST-PARITY-ONLY"
+      body:
+        contains:
+          - "rest_http"
+          - "ASP.NET Core"
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: "Document modern rest_http / http_json bidirectional (METHOD, path) and opt-in authorization parity (and non-support for legacy SOAP/WCF) in docs/concepts/how-eidos-works.md (`INV-DOCS-SYNCHRONIZATION`), and update eidos/architecture/components/docs-core-concepts.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/concepts"
+      body:
+        contains:
+          - "rest_http"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Update eidos validate contract parity summary in docs/guides/cli.md to include modern rest_http / http_json parity (`INV-DOCS-SYNCHRONIZATION`), and update eidos/architecture/components/docs-user-guides.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/guides"
+      body:
+        contains:
+          - "rest_http"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Extend CAP-PROD-001 in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc with INV-CONTRACT-REST-HTTP-PARITY."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-CONTRACT-REST-HTTP-PARITY"
+      body:
+        contains:
+          - "INV-CONTRACT-REST-HTTP-PARITY"
+  - operation: add
+    target: INV-CONTRACT-REST-HTTP-PARITY
+    details: "Bind INV-CONTRACT-REST-HTTP-PARITY in CAP-PROD-001 to tests/test_contract_parity.py::test_rest_http_bidirectional_route_and_authorize_parity."
+    expect:
+      frontmatter:
+        rule: "rest_http"
+        test_binding: "tests/test_contract_parity.py::test_rest_http_bidirectional_route_and_authorize_parity"
+vcs:
+  branch: main
+  base_commit: f5fb0f2a5d56e8ea5d4c9c092a82e329bda97372
+---
+= SpecDelta: Add Modern REST HTTP Contract Parity and Authorization Attribute Verification
+:toc: left
+
+== Problem Statement
+`ContractParityValidator` currently enforces bidirectional parity only for `openapi`/`rest_openapi`, `protobuf`/`grpc_proto`, `graphql`, `json_schema`, `python_protocol`, and `cli_args`. Modern HTTP/REST contracts (`protocol: rest_http` or `http_json`) implemented directly in code—such as ASP.NET Core controllers (`[Route]`, `[HttpGet|Post|Put|Patch|Delete]`) and Minimal APIs (`MapGet`/`MapPost`/...)—silently bypass parity verification in `eidos validate`, allowing omitted endpoints and drifted `[Authorize]` / `[AllowAnonymous]` annotations to pass undetected.
+
+**Explicit Scope Boundary (No Legacy Technologies)**: This SpecDelta targets **modern** REST HTTP frameworks only (ASP.NET Core controllers & Minimal APIs plus modern polyglot REST frameworks already parsed by `ast_http.py`). Legacy SOAP/WCF (`soap_wcf`, `[ServiceContract]`/`[OperationContract]`, `.svc`, `.wsdl`, `.asmx`) and legacy .NET Framework ASP.NET Web API 2 / WebForms (`[RoutePrefix]`, `[AcceptVerbs]`, `IHttpHandler`, `.aspx`) are intentionally excluded.
+
+== Proposed Specification Changes
+* **`CMP-HTTP-TOPOLOGY-LINKER` (`src/eidos/core/index/ast_http.py`, `src/eidos/core/index/http_linker.py`)**: Fix ASP.NET Core route extraction (`[action]` token substitution, leading `/` and `~/` root overrides, full action attribute-block scanning for `[Route(...)]` above or below `[Http*]`), extract effective ASP.NET Core authorization attributes (`[Authorize(...)]` including `Roles`/`Policy`, `[AllowAnonymous]`, Minimal API `MapGroup`/`Map*` `.RequireAuthorization(...)` / `.AllowAnonymous()`), and link `protocol: rest_http` contract route tables in `_extract_contract_http_routes`.
+* **`CMP-CONTRACT-PARITY-VALIDATOR` (`src/eidos/core/spec/contract_parity.py`)**: Add `_verify_rest_http_contract` for `rest_http` and `http_json` supporting single-file, directory, and glob/brace-glob `specification_file` targets, checking bidirectional `(METHOD, normalized_path)` parity (skipping reverse phantom-route scans when 0 framework endpoints are extracted so custom/stdlib servers such as `BaseHTTPRequestHandler` do not false-positive) and opt-in contradiction-only `[Authorize]` / `[Authorize(Roles/Policy=...)]` / `[AllowAnonymous]` parity when explicitly documented on a route entry (100% deterministic per `POL-004-ZERO-AI-CALL-DEPENDENCY`).
+* **`CMP-SPEC-VALIDATOR` (`src/eidos/core/spec/validator.py`)**: Preserve directory and multi-file glob/brace-glob `specification_file` patterns when dispatching `rest_http` / `http_json` parity verification.
+* **`CNT-EIDOS-CORE` (`assets/schemas/v1/tech/contract.schema.yaml`, `eidos/architecture/containers/core.adoc`)**: Document directory/glob `specification_file` support and record `DEC-CORE-MODERN-REST-PARITY-ONLY` (`graduated_from: DLT-2026-142-ADD-MODERN-REST-HTTP-7095`, documenting modern ASP.NET Core + polyglot REST parity and recording legacy SOAP/WCF and .NET Framework Web API 2 / WebForms as `rejected_alternatives`).
+* **`CMP-DOCS-CORE-CONCEPTS`, `CMP-DOCS-USER-GUIDES` & `CAP-PROD-001`**: Synchronize `docs/concepts/how-eidos-works.md` and `docs/guides/cli.md` (`INV-DOCS-SYNCHRONIZATION`) and add `INV-CONTRACT-REST-HTTP-PARITY` in `eidos/domains/spec-engine/capabilities/living-spec-engine.adoc`.
+
+== Implementation Plan
+1. **Modern ASP.NET Core Route & Auth Extraction (`CMP-HTTP-TOPOLOGY-LINKER`)**: Add deterministic endpoint+auth metadata extraction in `src/eidos/core/index/ast_http.py` fixing `[action]` substitution, leading `/` and `~/` root overrides, and full action attribute-block scanning (`[Route(...)]` before or after `[Http*]`, inheriting controller-level `[Authorize(...)]`/`[AllowAnonymous]` with action-level overrides, plus Minimal API `MapGroup`/endpoint `.RequireAuthorization(...)`/`.AllowAnonymous()`), and add `rest_http` support in `src/eidos/core/index/http_linker.py` (`CNT-EIDOS-INDEX` covered via `CMP-HTTP-TOPOLOGY-LINKER`).
+2. **Bidirectional `rest_http` Parity Verifier (`CMP-CONTRACT-PARITY-VALIDATOR`, `CMP-SPEC-VALIDATOR`)**: Implement `_verify_rest_http_contract` in `src/eidos/core/spec/contract_parity.py` reusing `ast_http` extractors for `(METHOD, normalized_path)` parity (with `{*}` route-parameter normalization, reverse-scan exclusion of non-interface/contrast prose sections, zero-route fallback skipping reverse scans when 0 framework endpoints are extracted, and opt-in contradiction-only auth/policy/role verification), and pass uncollapsed glob/directory `specification_file` targets from `src/eidos/core/spec/validator.py`.
+3. **Schema & Documentation Sync (`CNT-EIDOS-CORE`, `CMP-DOCS-CORE-CONCEPTS`, `CMP-DOCS-USER-GUIDES`)**: Update `assets/schemas/v1/tech/contract.schema.yaml`, `docs/concepts/how-eidos-works.md`, and `docs/guides/cli.md`, preserving `INV-ENGINE-GENERICITY` and `INV-DOCS-SYNCHRONIZATION`.
+4. **Living Specs, Tests & Coverage (`POL-005-STATEMENT-TEST-COVERAGE`)**: Update all declared `CMP-*` specs, `CNT-EIDOS-CORE` (`DEC-CORE-MODERN-REST-PARITY-ONLY`), and `CAP-PROD-001` (`INV-CONTRACT-REST-HTTP-PARITY`). Add `tests/test_contract_parity.py::test_rest_http_bidirectional_route_and_authorize_parity` covering missing/phantom `(METHOD, path)` routes, `[action]` / root-override / `[Route]`-above-`[Http*]` extraction, opt-in `[Authorize]`/`Roles`/`Policy`/`[AllowAnonymous]` contradictions, Minimal APIs, directory/glob `specification_file`, zero-route fallback (custom/stdlib servers), and verifying `>90.0%` per-file statement coverage.
+5. **Verification**: Run `pytest`, `eidos delta verify DLT-2026-142 --json`, `eidos delta apply DLT-2026-142`, and `eidos drift --uncommitted --json`.

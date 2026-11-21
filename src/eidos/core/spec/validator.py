@@ -929,22 +929,34 @@ class SpecValidator:
             ):
                 report.broken_references.append(f"Broken reference in {source_file.name}: cannot locate '{val}'")
 
-    def _resolve_source_path(self, repo_root: Path, root_dir: Path, raw_path: str) -> Path | None:
-        """Resolve a non-.adoc source path or glob pattern (including {a,b} brace globs) against repo_root or root_dir."""
+    def _resolve_all_source_paths(self, repo_root: Path, root_dir: Path, raw_path: str) -> list[Path]:
+        """Resolve a non-.adoc source path or glob pattern (including {a,b} brace globs) to all matching paths."""
         p = raw_path.strip()
         if not p or p.upper() in ("N/A", "TBD", "NONE") or p.endswith(".adoc"):
-            return None
+            return []
+        resolved: list[Path] = []
+        seen: set[Path] = set()
         for expanded in expand_brace_globs(p):
             if any(ch in expanded for ch in ("*", "?", "[")):
                 matches = sorted(repo_root.glob(expanded)) or sorted(root_dir.glob(expanded))
-                if matches:
-                    return matches[0]
+                for m in matches:
+                    if m not in seen:
+                        seen.add(m)
+                        resolved.append(m)
                 continue
             for base in (repo_root, root_dir):
                 cand = base / expanded
                 if cand.exists():
-                    return cand
-        return None
+                    if cand not in seen:
+                        seen.add(cand)
+                        resolved.append(cand)
+                    break
+        return resolved
+
+    def _resolve_source_path(self, repo_root: Path, root_dir: Path, raw_path: str) -> Path | None:
+        """Resolve a non-.adoc source path or glob pattern (including {a,b} brace globs) against repo_root or root_dir."""
+        matches = self._resolve_all_source_paths(repo_root, root_dir, raw_path)
+        return matches[0] if matches else None
 
     _TEST_SYMBOL_CACHE: ClassVar[dict[tuple[str, int, str], tuple[set[str], set[str]]]] = {}
 
@@ -1166,15 +1178,28 @@ class SpecValidator:
                     and sf.strip().upper() not in ("N/A", "TBD", "NONE")
                     and not sf.strip().endswith(".adoc")
                 ):
-                    resolved_sf = self._resolve_source_path(repo_root, root_dir, sf)
-                    if resolved_sf is None:
-                        report.broken_references.append(
-                            f"Broken specification_file in {doc.file_path.name}: "
-                            f"Contract '{doc.doc_id}' references '{sf}' which does not exist on disk"
-                        )
+                    protocol = str(model.protocol or "").strip().lower()
+                    if protocol in ("rest_http", "http_json"):
+                        resolved_targets = self._resolve_all_source_paths(repo_root, root_dir, sf)
+                        if not resolved_targets:
+                            report.broken_references.append(
+                                f"Broken specification_file in {doc.file_path.name}: "
+                                f"Contract '{doc.doc_id}' references '{sf}' which does not exist on disk"
+                            )
+                        else:
+                            target_arg: Path | list[Path] = (
+                                resolved_targets[0] if len(resolved_targets) == 1 else resolved_targets
+                            )
+                            self._verify_contract_protocol(protocol, doc, target_arg, report)
                     else:
-                        protocol = str(model.protocol or "").strip().lower()
-                        self._verify_contract_protocol(protocol, doc, resolved_sf, report)
+                        resolved_sf = self._resolve_source_path(repo_root, root_dir, sf)
+                        if resolved_sf is None:
+                            report.broken_references.append(
+                                f"Broken specification_file in {doc.file_path.name}: "
+                                f"Contract '{doc.doc_id}' references '{sf}' which does not exist on disk"
+                            )
+                        else:
+                            self._verify_contract_protocol(protocol, doc, resolved_sf, report)
 
     def _validate_test_bindings(
         self,
@@ -1287,7 +1312,7 @@ class SpecValidator:
         ContractParityValidator()._verify_graphql_contract(doc, spec_file, report)
 
     def _verify_contract_protocol(
-        self, protocol: str, doc: SpecDocument, spec_file: Path, report: ValidationReport
+        self, protocol: str, doc: SpecDocument, spec_file: Path | list[Path], report: ValidationReport
     ) -> None:
         ContractParityValidator()._verify_contract_protocol(protocol, doc, spec_file, report)
 

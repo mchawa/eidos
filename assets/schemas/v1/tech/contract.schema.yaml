@@ -31,7 +31,7 @@ properties:
     $ref: "#/$defs/container_ref"
   specification_file:
     $ref: "#/$defs/non_empty_string"
-    description: "Relative path from repository root to the raw interface schema file (e.g. contracts/api.openapi.yaml)."
+    description: "Relative path from repository root to the raw interface schema file (e.g. contracts/api.openapi.yaml) or a modern REST HTTP source file, directory, or glob/brace-glob pattern (e.g. src/Api/Controllers or src/Api/{Controllers,Endpoints}/**/*.cs) for rest_http / http_json contracts."
   version:
     $ref: "#/$defs/semver"
   decisions:

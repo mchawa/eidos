@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,26 @@ from eidos.core.index.ast_preprocess import (
 
 _HTTP_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"})
 _NEXT_APP_ROUTE_RE = re.compile(r"(?:^|/)(?:src/)?app/(.+)/route\.(?:ts|tsx|js|jsx|mjs)$")
+_CS_HTTP_ATTR_RE = re.compile(r"^Http(Get|Post|Put|Patch|Delete|Head|Options)(?:Attribute)?$")
+_CS_METHOD_NAME_RE = re.compile(
+    r"^(?:(?:public|private|protected|internal|static|virtual|override|async|sealed|new|partial)\s+)*"
+    r"[A-Za-z_][A-Za-z0-9_<>,.\[\]?\s]*?\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>{};]+>)?\s*\("
+)
+
+
+@dataclass(frozen=True)
+class HttpEndpointMeta:
+    """Static HTTP endpoint metadata extracted from modern server source files."""
+
+    method: str
+    path: str
+    raw_signature: str
+    line_start: int
+    line_end: int
+    parent_symbol: str | None = None
+    auth_mode: str | None = None
+    auth_policies: tuple[str, ...] = ()
+    auth_roles: tuple[str, ...] = ()
 
 
 def _blank_comments_outside_strings(content: str, *, hash_comments: bool) -> str:
@@ -682,44 +703,427 @@ def _extract_polyglot_http_endpoints(
         return results
 
     # 7. C# ASP.NET Core: [Route] + [HttpGet]/[HttpPost] + Minimal APIs MapGet/MapPost
-    cs_prefixes: dict[str, str] = {}
-    for cls_sym in [s for s in struct_syms if s.kind == "class"]:
-        cls_idx = sum(len(ln) + 1 for ln in cleaned.splitlines()[: max(0, cls_sym.line_start - 1)])
-        win = cleaned[max(0, cls_idx - 260) : cls_idx + 200]
-        m_rt = re.search(r"\[\s*Route\s*\(\s*\"([^\"]+)\"\s*\)\s*\]", win)
-        if m_rt:
-            ctrl_slug = re.sub(r"Controller$", "", cls_sym.name, flags=re.IGNORECASE).lower()
-            cs_prefixes[cls_sym.name] = re.sub(r"\[\s*controller\s*\]", ctrl_slug, m_rt.group(1), flags=re.IGNORECASE)
-
-    for m_cs in re.finditer(
-        r"\[\s*Http(Get|Post|Put|Patch|Delete|Head|Options)(?:\s*\(\s*\"([^\"]*)\"\s*\))?\s*\]",
-        cleaned,
-    ):
-        line_no = cleaned.count("\n", 0, m_cs.start()) + 1
-        parent_cls = _enclosing_parent_at_line(struct_syms, line_no)
-        sub_p = m_cs.group(2) or ""
-        if not sub_p:
-            near = cleaned[m_cs.end() : m_cs.end() + 140]
-            m_sub_rt = re.match(r"\s*\[\s*Route\s*\(\s*\"([^\"]+)\"\s*\)\s*\]", near)
-            if m_sub_rt:
-                sub_p = m_sub_rt.group(1)
-        full_p = _join_http_paths(cs_prefixes.get(parent_cls or "", ""), sub_p)
-        if full_p:
-            _emit(m_cs.group(1), full_p, sub_p or "/", m_cs.start(), m_cs.end())
-
-    map_groups: dict[str, str] = {}
-    for m_mg in re.finditer(
-        r"\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\.MapGroup\s*\(\s*\"([^\"]+)\"",
-        cleaned,
-    ):
-        map_groups[m_mg.group(1)] = _join_http_paths(map_groups.get(m_mg.group(2), ""), m_mg.group(3))
-    for m_min in re.finditer(
-        r"\b([A-Za-z_][A-Za-z0-9_]*)\.Map(Get|Post|Put|Patch|Delete|Head|Options)\s*\(\s*\"([^\"]+)\"",
-        cleaned,
-    ):
-        obj, verb, raw_p = m_min.group(1), m_min.group(2), m_min.group(3)
-        _emit(verb, _join_http_paths(map_groups.get(obj, ""), raw_p), raw_p, m_min.start(), m_min.end())
+    for ep in _extract_aspnet_core_endpoints(cleaned, struct_syms):
+        if (f"{ep.method} {ep.path}", ep.line_start) in seen:
+            continue
+        seen.add((f"{ep.method} {ep.path}", ep.line_start))
+        results.append(
+            CodeSymbol(
+                name=f"{ep.method} {ep.path}",
+                kind="http_endpoint",
+                file_path=str(p),
+                line_start=ep.line_start,
+                line_end=ep.line_end,
+                signature=ep.raw_signature or ep.path,
+                parent_symbol=ep.parent_symbol,
+            )
+        )
     return results
+
+
+def _scan_cs_attr_bracket(text: str, open_idx: int) -> int:
+    """Return matching ']' index for a C# attribute list starting at '[', or -1."""
+    depth = 0
+    in_q: str | None = None
+    esc = False
+    for idx in range(open_idx, len(text)):
+        ch = text[idx]
+        if esc:
+            esc = False
+            continue
+        if ch == "\\":
+            esc = True
+            continue
+        if in_q is not None:
+            if ch == in_q:
+                in_q = None
+            continue
+        if ch in ('"', "'"):
+            in_q = ch
+            continue
+        if ch == "[":
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+            if depth == 0:
+                return idx
+    return -1
+
+
+def _parse_cs_authorize_args(args_str: str) -> tuple[list[str], list[str]]:
+    """Extract (policies, roles) from a C# [Authorize(...)] argument list."""
+    policies: list[str] = []
+    roles: list[str] = []
+    for arg in _split_top_level_args(args_str):
+        if "=" in arg:
+            key, val = arg.split("=", 1)
+            k = key.strip()
+            lit, _ = _unquote_str_token(val.strip())
+            if lit is None:
+                continue
+            if k == "Policy" and lit.strip():
+                policies.append(lit.strip())
+            elif k == "Roles":
+                roles.extend(r.strip() for r in lit.split(",") if r.strip())
+        else:
+            lit, _ = _unquote_str_token(arg.strip())
+            if lit and lit.strip():
+                policies.append(lit.strip())
+    return policies, roles
+
+
+def _parse_cs_template_arg(args_str: str) -> str:
+    """Extract the route template string literal from [Route(...)] or [HttpGet(...)]."""
+    for arg in _split_top_level_args(args_str):
+        if "=" in arg:
+            key, val = arg.split("=", 1)
+            if key.strip() == "Template":
+                lit, _ = _unquote_str_token(val.strip())
+                return lit or ""
+        else:
+            lit, _ = _unquote_str_token(arg.strip())
+            if lit is not None:
+                return lit
+    return ""
+
+
+def _parse_cs_attr_block(
+    cleaned: str,
+    brackets: list[tuple[int, int]],
+) -> tuple[list[tuple[str, str, int, int]], list[str], bool, bool, list[str], list[str]]:
+    """Parse contiguous C# '[...]' brackets into (http_attrs, route_templates, has_anon, has_auth, policies, roles)."""
+    http_attrs: list[tuple[str, str, int, int]] = []
+    route_templates: list[str] = []
+    has_anon = False
+    has_auth = False
+    policies: list[str] = []
+    roles: list[str] = []
+    for b_start, b_end in brackets:
+        inner = cleaned[b_start + 1 : b_end]
+        for raw_attr in _split_top_level_args(inner):
+            item = raw_attr.strip()
+            if not item:
+                continue
+            if ":" in item and "(" not in item.split(":", 1)[0]:
+                item = item.split(":", 1)[1].strip()
+            paren_idx = item.find("(")
+            if paren_idx != -1:
+                raw_name = item[:paren_idx].strip()
+                args_str, _ = _extract_balanced_call_args(item, paren_idx)
+            else:
+                raw_name = item
+                args_str = ""
+            short_name = raw_name.rsplit(".", 1)[-1].strip()
+            if short_name in ("AllowAnonymous", "AllowAnonymousAttribute"):
+                has_anon = True
+            elif short_name in ("Authorize", "AuthorizeAttribute"):
+                has_auth = True
+                p_list, r_list = _parse_cs_authorize_args(args_str)
+                policies.extend(p_list)
+                roles.extend(r_list)
+            elif short_name in ("Route", "RouteAttribute"):
+                tmpl = _parse_cs_template_arg(args_str)
+                if tmpl:
+                    route_templates.append(tmpl)
+            else:
+                m_http = _CS_HTTP_ATTR_RE.match(short_name)
+                if m_http:
+                    verb = m_http.group(1).upper()
+                    tmpl = _parse_cs_template_arg(args_str) if args_str else ""
+                    http_attrs.append((verb, tmpl, b_start, b_end + 1))
+    return http_attrs, route_templates, has_anon, has_auth, list(dict.fromkeys(policies)), list(dict.fromkeys(roles))
+
+
+def _collect_cs_attr_blocks(cleaned: str) -> list[list[tuple[int, int]]]:
+    """Collect contiguous top-level C# '[...]' attribute blocks (excluding array indexers)."""
+    blocks: list[list[tuple[int, int]]] = []
+    n = len(cleaned)
+    i = 0
+    in_q: str | None = None
+    esc = False
+    while i < n:
+        ch = cleaned[i]
+        if esc:
+            esc = False
+            i += 1
+            continue
+        if ch == "\\" and in_q is not None:
+            esc = True
+            i += 1
+            continue
+        if in_q is not None:
+            if ch == in_q:
+                in_q = None
+            i += 1
+            continue
+        if ch in ('"', "'"):
+            in_q = ch
+            i += 1
+            continue
+        if ch == "[":
+            # Verify '[' is at attribute-preamble position (not an array indexer like arr[0]).
+            j = i - 1
+            while j >= 0 and cleaned[j] in " \t\r\n":
+                j -= 1
+            if j < 0 or cleaned[j] in "{};":
+                group: list[tuple[int, int]] = []
+                cur = i
+                while cur < n and cleaned[cur] == "[":
+                    end = _scan_cs_attr_bracket(cleaned, cur)
+                    if end == -1:
+                        break
+                    group.append((cur, end))
+                    nxt = end + 1
+                    while nxt < n and cleaned[nxt] in " \t\r\n":
+                        nxt += 1
+                    if nxt < n and cleaned[nxt] == "[":
+                        cur = nxt
+                    else:
+                        cur = end + 1
+                        break
+                if group:
+                    blocks.append(group)
+                    i = group[-1][1] + 1
+                    continue
+        i += 1
+    return blocks
+
+
+def _parse_cs_fluent_chain_auth(cleaned: str, start_idx: int) -> tuple[str | None, list[str]]:
+    """Inspect a Minimal API fluent call chain after MapGroup/Map* up to ';' for RequireAuthorization / AllowAnonymous."""
+    n = len(cleaned)
+    i = start_idx
+    has_anon = False
+    has_auth = False
+    policies: list[str] = []
+    while i < n:
+        while i < n and cleaned[i] in " \t\r\n":
+            i += 1
+        if i >= n or cleaned[i] != ".":
+            break
+        m_call = re.match(r"\.([A-Za-z_][A-Za-z0-9_]*)\s*\(", cleaned[i:])
+        if not m_call:
+            break
+        method_name = m_call.group(1)
+        args_txt, close_p = _extract_balanced_call_args(cleaned, i + m_call.end() - 1)
+        if method_name == "AllowAnonymous":
+            has_anon = True
+        elif method_name == "RequireAuthorization":
+            has_auth = True
+            for arg in _split_top_level_args(args_txt):
+                lit, _ = _unquote_str_token(arg.strip())
+                if lit and lit.strip():
+                    policies.append(lit.strip())
+        i = close_p + 1 if close_p != -1 else i + m_call.end()
+    if has_anon:
+        return "allow_anonymous", []
+    if has_auth:
+        return "authorize", list(dict.fromkeys(policies))
+    return None, []
+
+
+def _extract_aspnet_core_endpoints(cleaned: str, struct_syms: list[CodeSymbol]) -> list[HttpEndpointMeta]:
+    """Deterministically extract modern ASP.NET Core controller and Minimal API routes plus effective auth metadata."""
+    blocks = _collect_cs_attr_blocks(cleaned)
+    # 1. Map controller class attributes ([Route], [Authorize], [AllowAnonymous]) by class name.
+    cls_prefixes: dict[str, str] = {}
+    cls_auth: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {}
+    cls_names = {s.name for s in struct_syms if s.kind == "class"}
+    for group in blocks:
+        tail = cleaned[group[-1][1] + 1 : group[-1][1] + 240]
+        m_cls = re.match(
+            r"^\s*(?:(?:public|internal|private|protected|sealed|abstract|partial|static)\s+)*class\s+([A-Za-z_][A-Za-z0-9_]*)\b",
+            tail,
+        )
+        if not m_cls:
+            continue
+        cname = m_cls.group(1)
+        if cls_names and cname not in cls_names:
+            continue
+        _http_a, routes, has_anon, has_auth, pols, roles = _parse_cs_attr_block(cleaned, group)
+        ctrl_slug = re.sub(r"Controller$", "", cname, flags=re.IGNORECASE).lower()
+        if routes:
+            cls_prefixes[cname] = re.sub(r"\[\s*controller\s*\]", ctrl_slug, routes[0], flags=re.IGNORECASE)
+        if has_anon:
+            cls_auth[cname] = ("allow_anonymous", (), ())
+        elif has_auth:
+            cls_auth[cname] = ("authorize", tuple(pols), tuple(roles))
+
+    endpoints: list[HttpEndpointMeta] = []
+    seen_ep: set[tuple[str, str, int]] = set()
+
+    def _add_ep(ep: HttpEndpointMeta) -> None:
+        key = (ep.method, ep.path, ep.line_start)
+        if key not in seen_ep:
+            seen_ep.add(key)
+            endpoints.append(ep)
+
+    # 2. Extract controller action endpoints from attribute blocks containing [HttpGet|Post|Put|Patch|Delete|Head|Options].
+    for group in blocks:
+        http_attrs, route_templates, has_anon, has_auth, act_pols, act_roles = _parse_cs_attr_block(cleaned, group)
+        if not http_attrs:
+            continue
+        block_start = group[0][0]
+        block_end = group[-1][1] + 1
+        line_start = cleaned.count("\n", 0, block_start) + 1
+        parent_cls = _enclosing_parent_at_line(struct_syms, line_start)
+        tail = cleaned[block_end : block_end + 260].lstrip()
+        m_meth = _CS_METHOD_NAME_RE.match(tail)
+        action_slug = m_meth.group(1).lower() if m_meth else ""
+        ctrl_slug = re.sub(r"Controller$", "", parent_cls or "", flags=re.IGNORECASE).lower()
+
+        c_mode, c_pols, c_roles = cls_auth.get(parent_cls or "", ("unannotated", (), ()))
+        if has_anon:
+            eff_mode, eff_pols, eff_roles = "allow_anonymous", (), ()
+        elif has_auth:
+            eff_mode = "authorize"
+            eff_pols = tuple(dict.fromkeys([*c_pols, *act_pols])) if c_mode == "authorize" else tuple(act_pols)
+            eff_roles = tuple(dict.fromkeys([*c_roles, *act_roles])) if c_mode == "authorize" else tuple(act_roles)
+        else:
+            eff_mode, eff_pols, eff_roles = c_mode, c_pols, c_roles
+
+        base_prefix = cls_prefixes.get(parent_cls or "", "")
+        for verb, http_tmpl, attr_start, attr_end in http_attrs:
+            cand_tmpls = [http_tmpl] if http_tmpl else (route_templates or [""])
+            ep_line_start = cleaned.count("\n", 0, attr_start) + 1
+            ep_line_end = cleaned.count("\n", 0, attr_end) + 1
+            for sub_tmpl in cand_tmpls:
+                t_clean = sub_tmpl.strip()
+                if t_clean.startswith("~/"):
+                    raw_combined = t_clean[1:]
+                elif t_clean.startswith("/"):
+                    raw_combined = t_clean
+                else:
+                    raw_combined = (
+                        f"{base_prefix.rstrip('/')}/{t_clean.lstrip('/')}"
+                        if (base_prefix and t_clean)
+                        else (base_prefix or t_clean)
+                    )
+                if ctrl_slug:
+                    raw_combined = re.sub(r"\[\s*controller\s*\]", ctrl_slug, raw_combined, flags=re.IGNORECASE)
+                if action_slug:
+                    raw_combined = re.sub(r"\[\s*action\s*\]", action_slug, raw_combined, flags=re.IGNORECASE)
+                if raw_combined and not raw_combined.startswith("/"):
+                    raw_combined = "/" + raw_combined
+                norm_p = normalize_http_route_path(raw_combined)
+                if norm_p:
+                    _add_ep(
+                        HttpEndpointMeta(
+                            method=verb,
+                            path=norm_p,
+                            raw_signature=t_clean or "/",
+                            line_start=ep_line_start,
+                            line_end=max(ep_line_start, ep_line_end),
+                            parent_symbol=parent_cls,
+                            auth_mode=eff_mode,
+                            auth_policies=eff_pols,
+                            auth_roles=eff_roles,
+                        )
+                    )
+
+    # 3. Extract Minimal API MapGroup + MapGet/MapPost/... + fluent .RequireAuthorization() / .AllowAnonymous().
+    map_groups: dict[str, tuple[str, str, tuple[str, ...]]] = {}
+    for m_mg in re.finditer(
+        r"\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\.MapGroup\s*\(",
+        cleaned,
+    ):
+        var_name, parent_var = m_mg.group(1), m_mg.group(2)
+        args_txt, close_p = _extract_balanced_call_args(cleaned, m_mg.end() - 1)
+        args = _split_top_level_args(args_txt)
+        if not args:
+            continue
+        raw_pref, _ = _unquote_str_token(args[0])
+        if raw_pref is None:
+            continue
+        p_pref, p_mode, p_pols = map_groups.get(parent_var, ("", "unannotated", ()))
+        full_pref = _join_http_paths(p_pref, raw_pref)
+        chain_mode, chain_pols = _parse_cs_fluent_chain_auth(cleaned, close_p + 1) if close_p != -1 else (None, [])
+        if chain_mode == "allow_anonymous":
+            g_mode, g_pols = "allow_anonymous", ()
+        elif chain_mode == "authorize":
+            g_mode = "authorize"
+            g_pols = tuple(dict.fromkeys([*p_pols, *chain_pols])) if p_mode == "authorize" else tuple(chain_pols)
+        else:
+            g_mode, g_pols = p_mode, p_pols
+        map_groups[var_name] = (full_pref, g_mode, g_pols)
+
+    for m_min in re.finditer(
+        r"\b([A-Za-z_][A-Za-z0-9_]*)\.Map(Get|Post|Put|Patch|Delete|Head|Options)\s*\(",
+        cleaned,
+    ):
+        obj, verb = m_min.group(1), m_min.group(2).upper()
+        args_txt, close_p = _extract_balanced_call_args(cleaned, m_min.end() - 1)
+        args = _split_top_level_args(args_txt)
+        if not args:
+            continue
+        raw_p, _ = _unquote_str_token(args[0])
+        if raw_p is None:
+            continue
+        g_pref, g_mode, g_pols = map_groups.get(obj, ("", "unannotated", ()))
+        norm_p = _join_http_paths(g_pref, raw_p)
+        if not norm_p:
+            continue
+        chain_mode, chain_pols = _parse_cs_fluent_chain_auth(cleaned, close_p + 1) if close_p != -1 else (None, [])
+        if chain_mode == "allow_anonymous":
+            eff_mode, eff_pols = "allow_anonymous", ()
+        elif chain_mode == "authorize":
+            eff_mode = "authorize"
+            eff_pols = tuple(dict.fromkeys([*g_pols, *chain_pols])) if g_mode == "authorize" else tuple(chain_pols)
+        else:
+            eff_mode, eff_pols = g_mode, g_pols
+        ep_line_start = cleaned.count("\n", 0, m_min.start()) + 1
+        ep_line_end = cleaned.count("\n", 0, close_p if close_p != -1 else m_min.end()) + 1
+        _add_ep(
+            HttpEndpointMeta(
+                method=verb,
+                path=norm_p,
+                raw_signature=raw_p,
+                line_start=ep_line_start,
+                line_end=max(ep_line_start, ep_line_end),
+                parent_symbol=_enclosing_parent_at_line(struct_syms, ep_line_start),
+                auth_mode=eff_mode,
+                auth_policies=eff_pols,
+                auth_roles=(),
+            )
+        )
+    return endpoints
+
+
+def extract_http_endpoints_with_metadata(
+    indexer: Any,
+    p: Path,
+    content: str,
+    *,
+    _symbols: list[CodeSymbol] | None = None,
+) -> list[HttpEndpointMeta]:
+    """Extract normalized modern HTTP endpoints plus ASP.NET Core authorization metadata for contract parity."""
+    if not content:
+        return []
+    suffix = p.suffix.lower()
+    if suffix == ".cs":
+        if "Http" not in content and ".Map" not in content:
+            return []
+        cleaned = _blank_comments_outside_strings(content, hash_comments=False)
+        struct_syms = _symbols if _symbols is not None else indexer.extract_symbols(p, content)
+        return _extract_aspnet_core_endpoints(cleaned, struct_syms)
+
+    syms = _extract_polyglot_http_endpoints(indexer, p, content, _symbols=_symbols)
+    out: list[HttpEndpointMeta] = []
+    for sym in syms:
+        if " " not in sym.name:
+            continue
+        verb, norm_p = sym.name.split(" ", 1)
+        out.append(
+            HttpEndpointMeta(
+                method=verb,
+                path=norm_p,
+                raw_signature=sym.signature or norm_p,
+                line_start=sym.line_start,
+                line_end=sym.line_end,
+                parent_symbol=sym.parent_symbol,
+            )
+        )
+    return out
 
 
 def _extract_polyglot_http_requests(

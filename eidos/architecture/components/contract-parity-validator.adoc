@@ -12,11 +12,11 @@ source_path:
 :toc: left
 
 == Responsibility
-Verifies bidirectional parity between `CTR-*` living interface contract specifications and their declared `specification_file` code or schema artifacts across all 6 supported contract protocols (`cli_args`, `python_protocol`, `openapi` / `rest_openapi`, `protobuf` / `grpc_proto`, `graphql`, and `json_schema`).
+Verifies bidirectional parity between `CTR-*` living interface contract specifications and their declared `specification_file` code or schema artifacts across all 7 supported contract protocols (`cli_args`, `python_protocol`, `openapi` / `rest_openapi`, `rest_http` / `http_json`, `protobuf` / `grpc_proto`, `graphql`, and `json_schema`).
 
 == Key Responsibilities & Collaborators
 * **CLI Interface AST Parity (`cli_contract_parity.py`)**: Parses Python Typer (including imported `add_typer` sub-apps and decorator helpers), Click, and `argparse` command/option/positional trees via `_parse_python_ast` and verifies bidirectional parity (`verify_cli_contract_commands`) against AsciiDoc CLI contract command tables after stripping AsciiDoc comments (`strip_asciidoc_comments`).
-* **Multi-Protocol Bidirectional Parity (`contract_parity.py`)**: Dispatches `CTR-*` protocol verification via `ContractParityValidator` across Python `Protocol`/ABC signatures, left-bounded `openapi` / `rest_openapi` HTTP routes (scoping reverse checks away from boundary/out-of-scope sections and contrastive prose clauses), identical backtick-scoped `protobuf` / `grpc_proto` verification (`rpc`, `service`, and top-level `message`/`enum`), `graphql` SDL queries/mutations/subscriptions, and `json_schema` definitions.
+* **Multi-Protocol Bidirectional Parity (`contract_parity.py`, `DEC-CORE-MODERN-REST-PARITY-ONLY`)**: Dispatches `CTR-*` protocol verification via `ContractParityValidator` across Python `Protocol`/ABC signatures, left-bounded `openapi` / `rest_openapi` HTTP routes (scoping reverse checks away from boundary/out-of-scope sections and contrastive prose clauses), modern `rest_http` / `http_json` source-backed HTTP contracts (`_verify_rest_http_contract`, resolving single-file, directory, or glob/brace-glob `specification_file` targets via `CMP-HTTP-TOPOLOGY-LINKER` to enforce bidirectional `(METHOD, normalized_path)` parity with a zero-route fallback for custom/stdlib servers plus opt-in contradiction-only `[Authorize]` / `Roles` / `Policy` / `[AllowAnonymous]` verification for ASP.NET Core controllers and Minimal APIs), identical backtick-scoped `protobuf` / `grpc_proto` verification (`rpc`, `service`, and top-level `message`/`enum`), `graphql` SDL queries/mutations/subscriptions, and `json_schema` definitions.
 
 == Public Surface
 * `ContractParityValidator`

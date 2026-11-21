@@ -1,17 +1,65 @@
 """Multi-protocol bidirectional CTR-* interface contract parity validator (CMP-CONTRACT-PARITY-VALIDATOR)."""
 
 import ast
+import os
 import re
 from pathlib import Path
 from typing import ClassVar
 
+from eidos.core.index.ast_http import (
+    HttpEndpointMeta,
+    _parse_cs_authorize_args,
+    extract_http_endpoints_with_metadata,
+    normalize_http_route_path,
+)
+from eidos.core.index.ast_indexer import get_ast_indexer
 from eidos.core.spec.cli_contract_parity import _parse_python_ast, verify_cli_contract_commands
 from eidos.core.spec.models import SpecDocument, ValidationReport
 from eidos.core.spec.parser import YamlError, safe_load_yaml
+from eidos.core.workspace.project import STANDARD_EXCLUDED_DIRS
+
+_HTTP_VERBS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"})
+_REST_HTTP_SOURCE_EXTS = frozenset(
+    {
+        ".py",
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs",
+        ".mts",
+        ".cts",
+        ".go",
+        ".rs",
+        ".java",
+        ".kt",
+        ".kts",
+        ".cs",
+    }
+)
+_REST_HTTP_SKIP_DIRS = STANDARD_EXCLUDED_DIRS | {"bin", "obj"}
+_NON_IFACE_HEADING_RE = re.compile(
+    r"\b(?:architectural\s+boundary|boundary|context|background|non[- ]goals?|out[- ]of[- ]scope|exclusions?|excluded|notes?|operational\s+notes|design\s+constraints|quality\s+attributes|migration|deprecated|history|rationale|alternatives?)\b",
+    re.IGNORECASE,
+)
+_CONTRAST_CUE_RE = re.compile(
+    r"\b(?:unlike|out[- ]of[- ]scope|exclud(?:ed|es|ing)|instead\s+of|rather\s+than|does\s+not\s+expose|not\s+exposed|do\s+not\s+(?:call|expose|use)|not\s+part\s+of|handled\s+by|owned\s+by|belongs?\s+to|delegated\s+to|legacy|deprecated)\b",
+    re.IGNORECASE,
+)
+_AUTH_HEADER_RE = re.compile(r"\b(?:auth|authorization|security|access)\b", re.IGNORECASE)
+_AUTH_EXPLICIT_ALLOW_ANON_RE = re.compile(r"(?:\[\s*AllowAnonymous\s*\]|\bAllowAnonymous\b)")
+_AUTH_EXPLICIT_AUTHORIZE_RE = re.compile(
+    r"(?:\[\s*Authorize(?:\s*\(([^)]*)\))?\s*\]|\b(?:Authorize|RequireAuthorization)\s*\(([^)]*)\))"
+)
+_AUTH_COL_ANON_RE = re.compile(r"\b(?:anonymous|public|none|unauthenticated|allowanonymous)\b", re.IGNORECASE)
+_AUTH_COL_AUTH_RE = re.compile(
+    r"\b(?:authorize|authorized|authenticated|protected|required|bearer|jwt)\b", re.IGNORECASE
+)
 
 
 class ContractParityValidator:
-    """Verifies bidirectional parity between CTR-* contract specs and specification_file targets across 6 protocols."""
+    """Verifies bidirectional parity between CTR-* contract specs and specification_file targets across 7 protocols."""
 
     def _verify_cli_contract_commands(self, doc: SpecDocument, cli_file: Path, report: ValidationReport) -> None:
         verify_cli_contract_commands(doc, cli_file, report)
@@ -104,33 +152,7 @@ class ContractParityValidator:
                     f"Contract drift in {doc.file_path.name}: OpenAPI path '{route}' defined in '{spec_file.name}' is not documented in contract '{doc.doc_id}'"
                 )
 
-        http_verbs = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
-        stripped_for_rev = re.sub(
-            r"(?ms)^(?:----|```)[^\r\n]*\r?\n.*?^(?:----|```)\s*$",
-            "",
-            body,
-        )
-        non_iface_heading_re = re.compile(
-            r"\b(?:architectural\s+boundary|boundary|context|background|non[- ]goals?|out[- ]of[- ]scope|exclusions?|excluded|notes?|operational\s+notes|design\s+constraints|quality\s+attributes|migration|deprecated|history|rationale|alternatives?)\b",
-            re.IGNORECASE,
-        )
-        contrast_cue_re = re.compile(
-            r"\b(?:unlike|out[- ]of[- ]scope|exclud(?:ed|es|ing)|instead\s+of|rather\s+than|does\s+not\s+expose|not\s+exposed|do\s+not\s+(?:call|expose|use)|not\s+part\s+of|handled\s+by|owned\s+by|belongs?\s+to|delegated\s+to|legacy|deprecated)\b",
-            re.IGNORECASE,
-        )
-        h2_matches = list(re.finditer(r"^==\s+([^\r\n]+)", stripped_for_rev, re.MULTILINE))
-        sections_to_scan: list[str] = []
-        if not h2_matches:
-            sections_to_scan.append(stripped_for_rev)
-        else:
-            if h2_matches[0].start() > 0:
-                sections_to_scan.append(stripped_for_rev[: h2_matches[0].start()])
-            for idx_h, hm in enumerate(h2_matches):
-                sec_end = h2_matches[idx_h + 1].start() if idx_h + 1 < len(h2_matches) else len(stripped_for_rev)
-                heading_txt = hm.group(1).strip()
-                if len(h2_matches) > 1 and non_iface_heading_re.search(heading_txt):
-                    continue
-                sections_to_scan.append(stripped_for_rev[hm.end() : sec_end])
+        sections_to_scan = self._iter_contract_interface_sections(body)
 
         doc_route_candidates: list[str] = []
         for sec_chunk in sections_to_scan:
@@ -138,7 +160,7 @@ class ContractParityValidator:
                 stripped_line = raw_line.strip()
                 if stripped_line.startswith("|") and not stripped_line.startswith("|==="):
                     cells = [c.strip().strip("`*") for c in stripped_line.split("|")[1:]]
-                    if any(c.upper() in http_verbs for c in cells):
+                    if any(c.upper() in _HTTP_VERBS for c in cells):
                         for cell in cells:
                             if re.fullmatch(r"/[A-Za-z0-9._~/{}:-]*", cell):
                                 doc_route_candidates.append(cell)
@@ -148,7 +170,7 @@ class ContractParityValidator:
                 ):
                     if not stripped_line.startswith("|"):
                         clause_before = re.split(r"[.;!?]", raw_line[: m.start()])[-1]
-                        if contrast_cue_re.search(clause_before):
+                        if _CONTRAST_CUE_RE.search(clause_before):
                             continue
                     doc_route_candidates.append(m.group(1))
 
@@ -301,11 +323,243 @@ class ContractParityValidator:
                     f"Contract drift in {doc.file_path.name}: documented GraphQL operation '{doc_op}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
                 )
 
+    @staticmethod
+    def _iter_contract_interface_sections(body: str) -> list[str]:
+        """Strip fenced code blocks and non-interface/contrastive H2 sections from a contract body."""
+        stripped_for_rev = re.sub(
+            r"(?ms)^(?:----|```)[^\r\n]*\r?\n.*?^(?:----|```)\s*$",
+            "",
+            body,
+        )
+        h2_matches = list(re.finditer(r"^==\s+([^\r\n]+)", stripped_for_rev, re.MULTILINE))
+        sections_to_scan: list[str] = []
+        if not h2_matches:
+            sections_to_scan.append(stripped_for_rev)
+        else:
+            if h2_matches[0].start() > 0:
+                sections_to_scan.append(stripped_for_rev[: h2_matches[0].start()])
+            for idx_h, hm in enumerate(h2_matches):
+                sec_end = h2_matches[idx_h + 1].start() if idx_h + 1 < len(h2_matches) else len(stripped_for_rev)
+                heading_txt = hm.group(1).strip()
+                if len(h2_matches) > 1 and _NON_IFACE_HEADING_RE.search(heading_txt):
+                    continue
+                sections_to_scan.append(stripped_for_rev[hm.end() : sec_end])
+        return sections_to_scan
+
+    @staticmethod
+    def _collect_rest_http_source_files(spec_target: Path | list[Path]) -> list[Path]:
+        """Expand a file, directory, or path list into deduplicated modern REST HTTP source files."""
+        targets = [spec_target] if isinstance(spec_target, Path) else list(spec_target)
+        files: list[Path] = []
+        seen: set[Path] = set()
+        for target in targets:
+            if target.is_file():
+                if target.suffix.lower() in _REST_HTTP_SOURCE_EXTS and target not in seen:
+                    seen.add(target)
+                    files.append(target)
+            elif target.is_dir():
+                for dirpath, dirnames, filenames in os.walk(target):
+                    dirnames[:] = sorted(d for d in dirnames if d not in _REST_HTTP_SKIP_DIRS and not d.startswith("."))
+                    for fname in sorted(filenames):
+                        cand = Path(dirpath) / fname
+                        if cand.suffix.lower() in _REST_HTTP_SOURCE_EXTS and cand not in seen:
+                            seen.add(cand)
+                            files.append(cand)
+        return files
+
+    @staticmethod
+    def _parse_doc_auth_expectation(
+        text: str,
+        auth_cell: str = "",
+    ) -> tuple[str, tuple[str, ...], tuple[str, ...]] | None:
+        """Extract opt-in auth requirement (mode, policies, roles) from a contract route row or line."""
+        if _AUTH_EXPLICIT_ALLOW_ANON_RE.search(text):
+            return ("allow_anonymous", (), ())
+        auth_matches = list(_AUTH_EXPLICIT_AUTHORIZE_RE.finditer(text))
+        if auth_matches:
+            policies: list[str] = []
+            roles: list[str] = []
+            for m in auth_matches:
+                args_str = m.group(1) or m.group(2) or ""
+                if args_str.strip():
+                    p_list, r_list = _parse_cs_authorize_args(args_str)
+                    policies.extend(p_list)
+                    roles.extend(r_list)
+            return ("authorize", tuple(dict.fromkeys(policies)), tuple(dict.fromkeys(roles)))
+        if auth_cell:
+            if _AUTH_COL_ANON_RE.search(auth_cell):
+                return ("allow_anonymous", (), ())
+            if _AUTH_COL_AUTH_RE.search(auth_cell):
+                return ("authorize", (), ())
+        return None
+
+    def _extract_documented_rest_http_routes(
+        self,
+        body: str,
+    ) -> dict[tuple[str, str], tuple[str, tuple[str, ...], tuple[str, ...]] | None]:
+        """Parse documented (METHOD, normalized_path) routes and opt-in auth expectations from a CTR-* body."""
+        documented: dict[tuple[str, str], tuple[str, tuple[str, ...], tuple[str, ...]] | None] = {}
+
+        def _record(
+            method: str,
+            raw_path: str,
+            auth_exp: tuple[str, tuple[str, ...], tuple[str, ...]] | None,
+        ) -> None:
+            if "..." in raw_path or "*" in raw_path:
+                return
+            norm_p = normalize_http_route_path(raw_path)
+            if not norm_p:
+                return
+            key = (method.upper(), norm_p)
+            if key not in documented or (documented[key] is None and auth_exp is not None):
+                documented[key] = auth_exp
+
+        for sec_chunk in self._iter_contract_interface_sections(body):
+            in_table = False
+            auth_col_idx: int | None = None
+            header_seen = False
+            for raw_line in sec_chunk.splitlines():
+                stripped_line = raw_line.strip()
+                if stripped_line.startswith("|==="):
+                    in_table = not in_table
+                    auth_col_idx = None
+                    header_seen = False
+                    continue
+                if stripped_line.startswith("|"):
+                    cells = [c.strip() for c in stripped_line.split("|")[1:]]
+                    clean_cells = [c.strip("`*") for c in cells]
+                    if in_table and not header_seen:
+                        header_seen = True
+                        for idx, c in enumerate(clean_cells):
+                            if _AUTH_HEADER_RE.search(c):
+                                auth_col_idx = idx
+                                break
+                        # If this first row already looks like a header (no HTTP verb + path), skip to data rows.
+                        if not any(re.fullmatch(r"/[A-Za-z0-9._~/{}:-]*", c) for c in clean_cells) and not re.search(
+                            r"\b(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+/",
+                            stripped_line,
+                        ):
+                            continue
+                    auth_cell = (
+                        clean_cells[auth_col_idx]
+                        if auth_col_idx is not None and auth_col_idx < len(clean_cells)
+                        else ""
+                    )
+                    row_auth = self._parse_doc_auth_expectation(stripped_line, auth_cell)
+
+                    row_methods: list[str] = []
+                    row_paths: list[str] = []
+                    for cell in clean_cells:
+                        m_combined = re.fullmatch(
+                            r"(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(/[A-Za-z0-9._~/{}:-]*)",
+                            cell,
+                        )
+                        if m_combined:
+                            _record(m_combined.group(1), m_combined.group(2), row_auth)
+                            continue
+                        if re.fullmatch(r"/[A-Za-z0-9._~/{}:-]*", cell):
+                            row_paths.append(cell)
+                            continue
+                        cell_verbs = [tok for tok in re.findall(r"\b[A-Z]{3,7}\b", cell) if tok in _HTTP_VERBS]
+                        if cell_verbs and re.fullmatch(r"[A-Za-z,\s/`*]+", cell):
+                            row_methods.extend(cell_verbs)
+                    for verb in row_methods:
+                        for path_val in row_paths:
+                            _record(verb, path_val, row_auth)
+                    continue
+
+                for m in re.finditer(
+                    r"`\s*(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(/[A-Za-z0-9._~/{}:-]*)(?:\s[^`\r\n]*)?`",
+                    raw_line,
+                ):
+                    clause_before = re.split(r"[.;!?]", raw_line[: m.start()])[-1]
+                    if _CONTRAST_CUE_RE.search(clause_before):
+                        continue
+                    line_auth = self._parse_doc_auth_expectation(raw_line[m.end() :])
+                    _record(m.group(1), m.group(2), line_auth)
+        return documented
+
+    def _verify_rest_http_contract(
+        self,
+        doc: SpecDocument,
+        spec_target: Path | list[Path],
+        report: ValidationReport,
+    ) -> None:
+        """Verify bidirectional (METHOD, path) and opt-in ASP.NET Core auth parity for rest_http / http_json contracts (DLT-2026-142)."""
+        source_files = self._collect_rest_http_source_files(spec_target)
+        if not source_files:
+            return
+        display_label = (
+            spec_target.name
+            if isinstance(spec_target, Path)
+            else str(doc.model.specification_file or source_files[0].name)
+        )
+        indexer = get_ast_indexer()
+        code_endpoints: dict[tuple[str, str], list[HttpEndpointMeta]] = {}
+        for sf in source_files:
+            try:
+                content = sf.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            for ep in extract_http_endpoints_with_metadata(indexer, sf, content):
+                code_endpoints.setdefault((ep.method, ep.path), []).append(ep)
+
+        # Zero-route fallback: skip reverse scans when 0 framework endpoints are extracted (e.g. custom/stdlib servers).
+        if not code_endpoints:
+            return
+
+        body = self._strip_asciidoc_comments(doc.body or "")
+        doc_routes = self._extract_documented_rest_http_routes(body)
+
+        for method, norm_path in sorted(code_endpoints):
+            if (method, norm_path) not in doc_routes:
+                report.broken_references.append(
+                    f"Contract drift in {doc.file_path.name}: REST HTTP endpoint '{method} {norm_path}' defined in '{display_label}' is not documented in contract '{doc.doc_id}'"
+                )
+
+        for method, norm_path in doc_routes:
+            if (method, norm_path) not in code_endpoints:
+                report.broken_references.append(
+                    f"Contract drift in {doc.file_path.name}: documented REST HTTP endpoint '{method} {norm_path}' in contract '{doc.doc_id}' does not exist in '{display_label}'"
+                )
+
+        for route_key, auth_exp in doc_routes.items():
+            if auth_exp is None or route_key not in code_endpoints:
+                continue
+            method, norm_path = route_key
+            exp_mode, exp_policies, exp_roles = auth_exp
+            cs_eps = [ep for ep in code_endpoints[route_key] if ep.auth_mode is not None]
+            if not cs_eps:
+                continue
+            ep = cs_eps[0]
+            if exp_mode == "authorize":
+                if ep.auth_mode != "authorize":
+                    report.broken_references.append(
+                        f"Contract drift in {doc.file_path.name}: REST HTTP endpoint '{method} {norm_path}' in contract '{doc.doc_id}' documents [Authorize] but code in '{display_label}' has effective auth '{ep.auth_mode}'"
+                    )
+                    continue
+                for pol in exp_policies:
+                    if pol not in ep.auth_policies:
+                        report.broken_references.append(
+                            f"Contract drift in {doc.file_path.name}: REST HTTP endpoint '{method} {norm_path}' in contract '{doc.doc_id}' documents [Authorize(Policy = \"{pol}\")] not matched in '{display_label}'"
+                        )
+                for role in exp_roles:
+                    if role not in ep.auth_roles:
+                        report.broken_references.append(
+                            f"Contract drift in {doc.file_path.name}: REST HTTP endpoint '{method} {norm_path}' in contract '{doc.doc_id}' documents [Authorize(Roles = \"{role}\")] not matched in '{display_label}'"
+                        )
+            elif exp_mode == "allow_anonymous" and ep.auth_mode == "authorize":
+                report.broken_references.append(
+                    f"Contract drift in {doc.file_path.name}: REST HTTP endpoint '{method} {norm_path}' in contract '{doc.doc_id}' documents [AllowAnonymous] but code in '{display_label}' enforces [Authorize]"
+                )
+
     _CONTRACT_PROTOCOL_VERIFIERS: ClassVar[dict[str, str]] = {
         "cli_args": "_verify_cli_contract_commands",
         "python_protocol": "_verify_python_protocol_contract",
         "rest_openapi": "_verify_rest_openapi_contract",
         "openapi": "_verify_rest_openapi_contract",
+        "rest_http": "_verify_rest_http_contract",
+        "http_json": "_verify_rest_http_contract",
         "json_schema": "_verify_json_schema_contract",
         "grpc_proto": "_verify_grpc_proto_contract",
         "protobuf": "_verify_grpc_proto_contract",
@@ -313,13 +567,17 @@ class ContractParityValidator:
     }
 
     def _verify_contract_protocol(
-        self, protocol: str, doc: SpecDocument, spec_file: Path, report: ValidationReport
+        self,
+        protocol: str,
+        doc: SpecDocument,
+        spec_file: Path | list[Path],
+        report: ValidationReport,
     ) -> None:
         """Dispatch contract-to-specification_file verification via _CONTRACT_PROTOCOL_VERIFIERS."""
         method_name = self._CONTRACT_PROTOCOL_VERIFIERS.get(protocol)
         if not method_name:
             return
-        if protocol == "cli_args" and spec_file.suffix != ".py":
+        if protocol == "cli_args" and (not isinstance(spec_file, Path) or spec_file.suffix != ".py"):
             return
         verifier = getattr(self, method_name, None)
         if callable(verifier):
