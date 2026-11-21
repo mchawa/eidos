@@ -1,0 +1,34 @@
+---
+type: delta/mutation
+id: DLT-2026-110-BATCH-GIT
+title: "Batch Git Blob Retrieval, Git-Free Slug-Hash Delta ID Generation, and Unified Test-Binding Cache Sync"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Replace O(N) per-file git show subprocesses during drift detection with a single git cat-file --batch pipe, eliminate all Git subprocesses from generate_collision_free_delta_id by enforcing a mandatory deterministic <SLUG>-<4HEX> suffix, and populate test_binding_cache during sync_index so index sync and invariant verification share one AST test-parsing pass."
+vcs:
+  branch: main
+  base_commit: ac136c47df6af525c684621a11489110d2ea0699
+mutations:
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+  - operation: modify
+    target: CAP-PROD-002
+  - operation: modify
+    target: CAP-VCS-001
+  - operation: modify
+    target: INV-DRIFT-DETECTION-ACCURACY
+---
+= SpecDelta: Batch Git Blob Retrieval, Git-Free Slug-Hash Delta ID Generation, and Unified Test-Binding Cache Sync

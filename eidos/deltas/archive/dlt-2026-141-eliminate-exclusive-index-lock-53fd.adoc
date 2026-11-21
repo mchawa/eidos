@@ -1,0 +1,30 @@
+---
+type: delta/mutation
+id: DLT-2026-141-ELIMINATE-EXCLUSIVE-INDEX-LOCK-53FD
+title: Eliminate Unnecessary Index Lock Contention While Preserving Strict Freshness and Lock-Wait Diagnostics
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: high
+  motivation: "Running eidos drift, eidos doctor, and eidos validate concurrently causes silent stalls on eidos/.cache/index.db.lock with no user feedback because opportunistic cache writes contend on SQLite/advisory locks, opportunistic cache loads block on DDL locks, and freshness-critical waits in _advisory_db_lock / sync_index emit no holder-PID lock-wait diagnostic."
+vcs:
+  branch: main
+  base_commit: f5fb0f2a5d56e8ea5d4c9c092a82e329bda97372
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+  - operation: modify
+    target: CMP-ARCHITECTURE-BOUNDARY-VALIDATOR
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CAP-AGENT-002
+  - operation: add
+    target: INV-INDEX-FRESHNESS-AND-LOCK-DIAGNOSTICS
+---
+= SpecDelta: Eliminate Unnecessary Index Lock Contention While Preserving Strict Freshness and Lock-Wait Diagnostics

@@ -1,0 +1,36 @@
+---
+type: delta/mutation
+id: DLT-2026-108-SCALABLE-STATIC
+title: "Scalable Static-First Living Web Portal Enhancements, Payload Deduplication, and Interactive C4 & Contract Explorer"
+status: applied
+intent:
+  kind: feature
+  motivation: "Elevate the Eidos Living Web Portal (CNT-EIDOS-PORTAL) with URL hash deep-linking, client-side k-hop blast radius exploration, first-class CTR-* contract inspection, multi-design system switching with recursive W3C token trees, pre-indexed CMD+K search, cross-entity badge navigation, and progressive live-reload/validation diagnostics while cutting window.__EIDOS_DATA__ payload duplication and guaranteeing O(1)/sub-millisecond scalability for air-gapped static builds (INV-PORTAL-AIR-GAPPED-BUNDLE)."
+vcs:
+  branch: main
+  base_commit: 9c2a68a6b6144b0b16792066b8e01ad06e3bdc04
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+  - operation: modify
+    target: CTR-EIDOS-PORTAL
+  - operation: modify
+    target: CAP-EXP-001
+  - operation: add
+    target: INV-PORTAL-STATIC-SCALABILITY
+  - operation: modify
+    target: CAP-EXP-002
+  - operation: modify
+    target: SCR-PORTAL-ARCHITECTURE
+  - operation: modify
+    target: SCR-PORTAL-HOME
+  - operation: modify
+    target: SCR-PORTAL-DESIGN
+  - operation: modify
+    target: SCR-PORTAL-DELTAS
+  - operation: modify
+    target: SCR-PORTAL-CATALOG
+  - operation: modify
+    target: SCR-PORTAL-BUSINESS
+---
+= SpecDelta: Scalable Static-First Living Web Portal Enhancements, Payload Deduplication, and Interactive C4 & Contract Explorer

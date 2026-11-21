@@ -1,0 +1,24 @@
+---
+type: delta/mutation
+id: DLT-2026-116-BOUND-SEMANTIC-893D
+title: "Bound Semantic Embedding Sync Memory via Token Truncation, Length-Sorted Dynamic Batching, and Dead GQA Output Pruning"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: critical
+  motivation: "Prevent multi-gigabyte RAM exhaustion and host swap hangs during 'eidos index semantic sync' while preserving 100% full-text coverage across all sliceable specifications by setting HARRIER_DOC_MAX_LENGTH = 4096 (covering 113/113 sliceable specs and 96.4% of all specs without truncation while capping 17k-token exploration logs), pruning the 56 unconsumed GroupQueryAttention KV-cache outputs (present_k_dummy, present_v_dummy) into a disk-backed .onnx graph header in onnx_path.parent alongside model_quantized.onnx_data, disabling monotonic CPU BFCArena retention (enable_cpu_mem_arena=False, enable_mem_pattern=False), and replacing fixed alphabetical batch_size=8 slicing with length-sorted, token-budgeted dynamic batching (max_batch_tokens=2048, batch_size=1 for >=1024-token specs) while preserving sync_spec_embeddings(..., batch_size: int = 8) signature parity."
+vcs:
+  branch: main
+  base_commit: 4076f0e6bda06bc389c369bce6ecfac918a7217b
+mutations:
+  - operation: modify
+    target: CMP-SEMANTIC-EMBEDDING-ENGINE
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: modify
+    target: INV-AGENT-HYBRID-SEMANTIC-FALLBACK
+---
+= SpecDelta: Bound Semantic Embedding Sync Memory via Token Truncation, Length-Sorted Dynamic Batching, and Dead GQA Output Pruning

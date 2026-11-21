@@ -1,0 +1,26 @@
+---
+type: delta/mutation
+id: DLT-2026-118-PUBLISH-OFFICIAL-B0B3
+title: Publish Official Eidos Dev Container Feature to GHCR
+status: applied
+intent:
+  kind: feature
+  motivation: "Provide a self-contained, OCI-compliant Dev Container Feature (ghcr.io/mchawa/eidos/eidos) so developers and cloud coding environments (GitHub Codespaces, VS Code Dev Containers, DevPod) can declaratively provision the Eidos CLI (eidos-ai) and optional local Harrier ONNX Hybrid RRF semantic search dependencies in any container image with zero manual bootstrap scripts."
+vcs:
+  branch: main
+  base_commit: d40aa52d317e10b65fde0f419171234f751f4b1a
+mutations:
+  - operation: modify
+    target: ARCH-EIDOS-001
+  - operation: modify
+    target: SYS-EIDOS-001
+  - operation: modify
+    target: CMP-DOCS-GETTING-STARTED
+  - operation: modify
+    target: CNT-EIDOS-DOCS
+  - operation: modify
+    target: CAP-PROD-001
+  - operation: add
+    target: INV-DEVCONTAINER-FEATURE-CONFORMANCE
+---
+= SpecDelta: Publish Official Eidos Dev Container Feature to GHCR

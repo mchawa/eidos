@@ -1,0 +1,44 @@
+---
+type: delta/mutation
+id: DLT-2026-115-HYBRID-SEMANTIC-8B5F
+title: Hybrid Semantic Retrieval and Context-Slice Prioritization with Opt-In Harrier ONNX
+status: applied
+intent:
+  kind: feature
+  motivation: "Graduated from EXP-2026-009 to deliver the combined two-tier retrieval architecture: (1) fix direct-vs-1-hop container slot starvation in build_tiered_context_slice (restoring DEV recall to 17/18 = 94.4%), add deterministic architectural vocabulary/synonym expansion to FTS5 BM25 (<4ms, zero dependencies), and add IDF-weighted sub-token test-to-INV-* recommendations in drift detection; and (2) introduce the opt-in local Harrier-OSS-v1-0.6B ONNX semantic engine (CMP-SEMANTIC-EMBEDDING-ENGINE, eidos-ai[semantic]) using right-padded in-graph sentence_embedding, canonical sts_query instruction formatting, content-addressed spec_embeddings SQLite BLOB + NumPy BLAS cosine scanning (0.22ms), and zero-regression Hybrid RRF (k0=20, w_lex=1.0, w_sem=0.50, tau_min=0.50) with 100% deterministic fallback to FTS5 BM25."
+graduated_from: EXP-2026-009
+vcs:
+  branch: main
+  base_commit: abbfedb2b1264eeebe60b6048ed1529514807ffd
+mutations:
+  - operation: add
+    target: CMP-SEMANTIC-EMBEDDING-ENGINE
+    title: SemanticEmbeddingEngine
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CMP-CLI-INDEX-COMMANDS
+  - operation: modify
+    target: CMP-CLI-CONTEXT-COMMAND
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: POL-004-ZERO-AI-CALL-DEPENDENCY
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: modify
+    target: INV-AGENT-TASK-RETRIEVAL-COVERAGE
+  - operation: add
+    target: INV-AGENT-HYBRID-SEMANTIC-FALLBACK
+---
+= SpecDelta: Hybrid Semantic Retrieval and Context-Slice Prioritization with Opt-In Harrier ONNX

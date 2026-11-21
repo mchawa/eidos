@@ -1,0 +1,24 @@
+---
+type: delta/mutation
+id: DLT-2026-104-UNIFY-SPEC
+title: Unify Spec Catalog and Portal Graph Construction on ArchitecturalIndex
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate triplicated specification graph construction across sync.py, catalog.py (_build_spec_catalog_with_invariants), and portal/generator.py (get_portal_data) by routing catalog lookups, invariant ownership maps, and Portal dependency/blast-radius traversals through the canonical ArchitecturalIndex (index.db)."
+vcs:
+  branch: main
+  base_commit: 0823a463a3591688ed251721de4de5501a77734c
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+---
+= SpecDelta: Unify Spec Catalog and Portal Graph Construction on ArchitecturalIndex

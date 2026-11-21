@@ -62,7 +62,7 @@ jobs:
         run: uv run ruff check src/ tests/
 
       - name: Validate Eidos living specifications
-        run: uv run eidos validate eidos
+        run: uv run eidos validate eidos --fail-on-warnings
 
       - name: Validate Agent Plugin conformance
         run: uv run eidos plugin validate
@@ -70,9 +70,9 @@ jobs:
       - name: Verify Spec-to-Code Synchronization & Invariant Traceability
         run: |
           if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_type }}" != "tag" ] && [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ] && git cat-file -e "${{ github.event.before }}^{commit}" 2>/dev/null; then
-            uv run eidos drift --base "${{ github.event.before }}"
+            uv run eidos drift --base "${{ github.event.before }}" --fail-on-warnings
           else
-            uv run eidos drift --base "origin/${{ github.base_ref || 'main' }}"
+            uv run eidos drift --base "origin/${{ github.base_ref || 'main' }}" --fail-on-warnings
           fi
 
   test:

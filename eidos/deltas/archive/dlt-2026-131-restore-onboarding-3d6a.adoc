@@ -1,0 +1,56 @@
+---
+type: delta/mutation
+id: DLT-2026-131-RESTORE-ONBOARDING-3D6A
+title: "Restore Onboarding Governance, Harden Skill Installer, and Scope Stop Hooks to Session Edits"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: high
+  motivation: "Restore the accidentally overwritten root AGENTS.md managed block in Eidos's own repository; eliminate silent stale-skill version lies on non-force upgrades, .aider.conf.yml YAML comment destruction, symlinked .agents/skills batch-install aborts, and dangling uninstall references in CMP-PLUGIN-INSTALLER; fix GitHub Copilot camelCase stopHookActive infinite loops, migrate Cline from non-blocking TaskComplete to cancellable PreToolUse on attempt_completion, and scope Stop hook drift gating to session-modified files in CMP-HOOK-RUNNER; and add editable Git-tag version accuracy and AGENTS.md managed-block health verification to eidos doctor."
+tombstone:
+  search_tokens:
+    - ".clinerules/hooks/TaskComplete"
+  allowed_reasons:
+    - path: CHANGELOG.md
+      reason: Historical release notes referencing pre-DLT-2026-131 hook paths.
+    - path: docs/changelog.md
+      reason: Historical changelog documentation.
+    - path: eidos/deltas/
+      reason: Historical SpecDeltas predating DLT-2026-131.
+    - path: eidos/explorations/
+      reason: Historical exploration documents.
+vcs:
+  branch: main
+  base_commit: e1022b338ebd4a42d4774fa444ef35f6874b8acf
+mutations:
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+  - operation: modify
+    target: CMP-HOOK-RUNNER
+  - operation: modify
+    target: CMP-HOOK-MANAGER
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+  - operation: modify
+    target: CMP-CLI-PLUGIN-COMMANDS
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: modify
+    target: INV-AGENT-DRIFT-HOOK
+  - operation: modify
+    target: INV-DOCTOR-UPDATE-CHECK
+  - operation: add
+    target: INV-PLUGIN-INSTALL-TRUTHFULNESS
+  - operation: add
+    target: INV-DOCTOR-ONBOARDING-INTEGRITY
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+---
+= SpecDelta: Restore Onboarding Governance, Harden Skill Installer, and Scope Stop Hooks to Session Edits

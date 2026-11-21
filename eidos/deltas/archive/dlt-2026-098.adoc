@@ -1,0 +1,22 @@
+---
+type: delta/mutation
+id: DLT-2026-098
+title: Replace PyYAML with Rust-Backed fastyaml-rs (fast_yaml) Across Living Specification Parsing and Serialization
+status: applied
+intent:
+  kind: enabler
+  motivation: "Replace PyYAML with the Rust-backed fastyaml-rs (fast_yaml) engine across all specification frontmatter parsing, schema loading, and YAML serialization, achieving ~4.3x faster frontmatter loading and ~12x faster YAML serialization with prebuilt abi3 binary wheels across Python 3.11-3.15+."
+vcs:
+  branch: main
+  base_commit: 9d33c41
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-SPEC-PARSER
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+  - operation: modify
+    target: INV-SPEC-VALIDATION
+---
+= SpecDelta: Replace PyYAML with Rust-Backed fastyaml-rs (fast_yaml) Across Living Specification Parsing and Serialization

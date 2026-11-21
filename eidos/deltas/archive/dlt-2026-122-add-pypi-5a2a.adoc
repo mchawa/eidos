@@ -1,0 +1,30 @@
+---
+type: delta/mutation
+id: DLT-2026-122-ADD-PYPI-5A2A
+title: Add PyPI CLI Update Check to eidos doctor
+status: applied
+intent:
+  kind: feature
+  motivation: "Enable 'eidos doctor' to query the PyPI JSON API (https://pypi.org/pypi/eidos-ai/json) via Python stdlib urllib.request with a bounded 2-second timeout and SemVer 2.0.0 comparison, informing users when a newer eidos-ai release is available (with upgrade instructions) while remaining non-blocking (advisory WARN/SKIPPED, preserving healthy=True and exit code 0) when an update is available or when running in offline/air-gapped environments."
+vcs:
+  branch: main
+  base_commit: ba167840467b12e059111c3869dade9d83b63583
+mutations:
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+  - operation: modify
+    target: CNT-EIDOS-CLI
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+  - operation: modify
+    target: CNT-EIDOS-DOCS
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: add
+    target: INV-DOCTOR-UPDATE-CHECK
+---
+= SpecDelta: Add PyPI CLI Update Check to eidos doctor

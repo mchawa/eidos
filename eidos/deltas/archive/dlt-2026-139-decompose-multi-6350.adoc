@@ -1,0 +1,74 @@
+---
+type: delta/mutation
+id: DLT-2026-139-DECOMPOSE-MULTI-6350
+title: Decompose Multi-Responsibility Modules into Cohesive C4 Components and Acyclic Submodules
+status: applied
+intent:
+  kind: enabler
+  motivation: "Refactor multi-responsibility monolith modules across CNT-EIDOS-CORE, CNT-EIDOS-INDEX, CNT-EIDOS-VCS, CNT-EIDOS-PLUGIN, and CNT-EIDOS-PORTAL along true single-responsibility boundaries: promote genuinely distinct architectural subsystems to standalone C4 Level 3 components (CMP-*), eliminate all overlapping CMP-* source_path collisions (query.py and plugin/validator.py), decompose multi-stage engines into acyclic sibling submodules, and preserve backward-compatible public facade imports under POL-005 (>90.0% per-file coverage)."
+vcs:
+  branch: main
+  base_commit: c63d764f438cfaa5062a1579f4b60139a6e247a0
+mutations:
+  - operation: add
+    target: CMP-CONTRACT-PARITY-VALIDATOR
+  - operation: add
+    target: CMP-ARCHITECTURE-BOUNDARY-VALIDATOR
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+  - operation: add
+    target: CMP-HTTP-TOPOLOGY-LINKER
+  - operation: add
+    target: CMP-AST-DIFF-CLASSIFIER
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-HOOK-MANAGER
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+  - operation: add
+    target: CMP-GIT-DIFF-INSPECTOR
+  - operation: add
+    target: CMP-INVARIANT-TRACEABILITY-VERIFIER
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+  - operation: modify
+    target: ARCH-EIDOS-001
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CNT-EIDOS-VCS
+  - operation: modify
+    target: CAP-PROD-001
+  - operation: modify
+    target: CAP-AGENT-002
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: modify
+    target: CAP-VCS-001
+  - operation: modify
+    target: INV-DRIFT-DIFF-AWARE-COVERAGE
+  - operation: add
+    target: INV-CORE-MODULAR-COMPONENT-COHESION
+---
+= SpecDelta: Decompose Multi-Responsibility Modules into Cohesive C4 Components and Acyclic Submodules

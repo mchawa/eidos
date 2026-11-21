@@ -1,0 +1,34 @@
+---
+type: delta/mutation
+id: DLT-2026-129-ENFORCE-IMPLEMENTATION-B428
+title: "Enforce Implementation-Plan Blast-Radius Reconciliation, Glob Context Slicing, and 1-Hop Review Rules"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate '[BLOCKER] Unauthorized Blast Radius', glob-slicing blind spots ('eidos context -f \"apps/*/Dockerfile\"'), DEC-*-heavy guardrail eviction in 'eidos context -f', stale few-shot skill templates, and unverified Implementation Plan CLI/workspace steps by: (1) adding deterministic glob expansion and primary DEC-* compaction before 1-hop INV-*/POL-* eviction in CMP-TIERED-CONTEXT-COMPRESSOR and CMP-CLI-CONTEXT-COMMAND, and (2) tightening eidos-plan and eidos skills (plus the canonical DLT-2026-015 template) to require bottom-up 'eidos context -f' reconciliation, 1-hop structural vs. UNMODIFIED annotation rules, INV-* test pairing, CLI/workspace path verification, and autonomous pre-presentation 5-Dimension self-review."
+vcs:
+  branch: main
+  base_commit: 29eb8057df3ef418eb997aa3255c689bbb9e1bc6
+mutations:
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+  - operation: modify
+    target: CMP-CLI-CONTEXT-COMMAND
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: modify
+    target: INV-AGENT-CONTEXT-SLICING
+  - operation: modify
+    target: CAP-AGENT-002
+  - operation: modify
+    target: INV-CONTEXT-TOKEN-COMPRESSION
+  - operation: add
+    target: INV-PLUGIN-SKILL-DELTA-RECONCILIATION
+---
+= SpecDelta: Enforce Implementation-Plan Blast-Radius Reconciliation, Glob Context Slicing, and 1-Hop Review Rules

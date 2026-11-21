@@ -1,0 +1,18 @@
+---
+type: delta/mutation
+id: DLT-2026-101
+title: Remove has_fixture Column and fixture_invs Nesting from test_binding_cache in index.db
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate test-fixture artifacts (the has_fixture column and per-function {'fixture_invs': ..., 'tokens': ...} wrapper) and empty-token function entries from test_binding_cache in eidos/.cache/index.db so functions_json is a flat {func_name: [tokens]} map containing only functions with invariant/policy references."
+vcs:
+  branch: main
+  base_commit: 584f13dde2956e173ccab8220dc6e703cf4173c0
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+---
+= SpecDelta: Remove has_fixture Column and fixture_invs Nesting from test_binding_cache in index.db

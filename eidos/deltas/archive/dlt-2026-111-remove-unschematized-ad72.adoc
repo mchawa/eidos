@@ -1,0 +1,44 @@
+---
+type: delta/mutation
+id: DLT-2026-111-REMOVE-UNSCHEMATIZED-AD72
+title: Remove Unschematized Ghost Frontmatter Key Lookups and Standardize Schema Status & SemVer Version
+status: applied
+intent:
+  kind: enabler
+  motivation: "Remove legacy and unschematized ghost frontmatter key lookups across ProjectResolver, ChangelogGenerator, DeltaEngine, GraphStorage, IncrementalSyncEngine, FTSQueryEngine, GraphTraversalEngine, TieredContextCompressor, DriftDetector, and PortalGenerator, require top-level status across all 16 v1 schemas, and standardize optional version via a strict SemVer 2.0.0 #/$defs/semver definition in common/defs.yaml."
+vcs:
+  branch: main
+  base_commit: 0fc9ca1aa02ac86006dbac47bea11eb0a2621044
+mutations:
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+  - operation: modify
+    target: CMP-DOMAIN-MODELS
+  - operation: modify
+    target: CAP-PROD-001
+  - operation: modify
+    target: CMP-PROJECT-RESOLVER
+  - operation: modify
+    target: CMP-CHANGELOG-GENERATOR
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CAP-VCS-001
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+---
+= SpecDelta: Remove Unschematized Ghost Frontmatter Key Lookups and Standardize Schema Status & SemVer Version

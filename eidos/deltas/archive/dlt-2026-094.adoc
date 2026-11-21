@@ -1,0 +1,62 @@
+---
+type: delta/mutation
+id: DLT-2026-094
+title: Consolidate Agent Lifecycle Hooks into a Single Stateless Stop Hook
+status: applied
+intent:
+  kind: enabler
+  motivation: "Reduce src/eidos/plugin/hooks.py from 820 lines to ~65 lines by merging 'eidos-doc-linter' and 'eidos-drift-gate' into a single stateless Stop hook ('eidos hook'), eliminating PreToolUse/PostToolUse per-edit subprocess interception and in-memory edit simulation, deleting the custom SQLite validation snapshot cache (last_stop_validation), and removing all stateful Block-Once SHA-256 fingerprinting and stop-gate.json persistence in favor of a stateless warning ('decision: allow' + 'systemMessage')."
+tombstone:
+  search_tokens:
+    - INV-AGENT-LINT-HOOK
+    - INV-HOOK-BLOCK-ONCE
+    - INV-HOOK-FAIL-LOUD
+    - eidos-doc-linter
+    - stop-gate.json
+  allowed_reasons:
+    - path: CHANGELOG.md
+      reason: Historical release notes referencing pre-DLT-2026-094 hook architecture.
+    - path: eidos/deltas/
+      reason: Historical SpecDeltas predating DLT-2026-094.
+    - path: eidos/explorations/
+      reason: Historical exploration documents.
+vcs:
+  branch: main
+  base_commit: 3fc3bea15898f8ac3834cf2e5bef096feefa1b95
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CMP-HOOK-RUNNER
+  - operation: modify
+    target: CMP-HOOK-MANAGER
+  - operation: modify
+    target: CNT-EIDOS-CLI
+  - operation: modify
+    target: CMP-CLI-APP
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CNT-EIDOS-VCS
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: modify
+    target: INV-AGENT-DRIFT-HOOK
+  - operation: remove
+    target: INV-AGENT-LINT-HOOK
+  - operation: remove
+    target: INV-HOOK-BLOCK-ONCE
+  - operation: remove
+    target: INV-HOOK-FAIL-LOUD
+  - operation: modify
+    target: CNT-EIDOS-DOCS
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+---
+= SpecDelta: Consolidate Agent Lifecycle Hooks into a Single Stateless Stop Hook

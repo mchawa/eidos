@@ -1,0 +1,46 @@
+---
+type: delta/mutation
+id: DLT-2026-121-SLIM-AGENT-791B
+title: "Canonical AGENTS.md Managed Block, Skill CLI-Parity and Size-Ceiling Guardrails, and In-Place Skill Tightening"
+status: applied
+intent:
+  kind: feature
+  motivation: "Replace 4 divergent per-harness rule bridges with one canonical, marker-delimited Eidos block in the cross-tool AGENTS.md standard that coexists safely with user-authored content. Keep the 4 bundled skills self-contained (no references/ split) but tighten them in place: trigger-focused descriptions of at most 400 characters (the only skill text loaded in every session), removal of intra-skill restatements, and compression of low-information tables, without dropping or relocating any instruction, template, or example. Guard against regressions with skill-to-CLI parity and no-growth size-ceiling tests."
+tombstone:
+  search_tokens:
+    - EIDOS_COPILOT_START
+    - EIDOS_COPILOT_END
+    - _write_copilot_instructions
+    - _write_cursor_rules
+    - _write_codex_rules
+    - _write_aider_conventions
+    - ".aider.conventions.md"
+    - ".cursor/rules/eidos.mdc"
+    - ".codex/rules.md"
+    - copilot-instructions.md
+  allowed_reasons:
+    - path: tests/test_plugin.py
+      reason: Regression tests asserting the retired bridge files are never created by a fresh install.
+    - path: CHANGELOG.md
+      reason: Historical release notes describing pre-DLT-2026-121 per-harness bridges.
+    - path: eidos/deltas/
+      reason: Historical SpecDeltas predating DLT-2026-121.
+    - path: eidos/explorations/
+      reason: Historical exploration documents.
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: add
+    target: INV-PLUGIN-SKILL-SIZE-CEILING
+  - operation: add
+    target: INV-PLUGIN-SKILL-CLI-PARITY
+  - operation: add
+    target: INV-PLUGIN-MANAGED-BLOCK-SAFETY
+---
+= SpecDelta: Canonical AGENTS.md Managed Block, Skill CLI-Parity and Size-Ceiling Guardrails, and In-Place Skill Tightening

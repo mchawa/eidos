@@ -1,0 +1,62 @@
+---
+type: delta/mutation
+id: DLT-2026-100
+title: "Normalize index.db Schema, Eliminate Cross-Table AST/Edge Duplication, and Standardize JSON Serialization on orjson"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate dead and duplicate columns across spec_validation_cache (schema_errors_json), edges (metadata_json), indexed_files (last_indexed), and entities (source_path, runtime, container_type), remove AST symbol duplication between code_symbols and symbol_mappings, drop synthetic reverse edge rows (bound_to, domain_member, governs, implements_client, styles_client, extended_by) in eidos/.cache/index.db, and replace all remaining stdlib json usage across core, vcs, cli, portal, plugin, and tests with orjson."
+vcs:
+  branch: main
+  base_commit: f914ae3bce70939463c9d9c5c65f4753cf14ea0f
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+  - operation: modify
+    target: CMP-DESIGN-ENGINE
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+  - operation: modify
+    target: CMP-DELTA-AUDITOR
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+  - operation: modify
+    target: CMP-CLI-DELTA-COMMANDS
+  - operation: modify
+    target: CMP-CLI-PLUGIN-COMMANDS
+  - operation: modify
+    target: CMP-CLI-CONTEXT-COMMAND
+  - operation: modify
+    target: CMP-CLI-INDEX-COMMANDS
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+  - operation: modify
+    target: CMP-PORTAL-SERVER
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+  - operation: modify
+    target: CMP-PORTAL-BUILDER
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+  - operation: modify
+    target: CMP-PLUGIN-VALIDATOR
+  - operation: modify
+    target: CMP-HOOK-MANAGER
+  - operation: modify
+    target: CMP-HOOK-RUNNER
+---
+= SpecDelta: Normalize index.db Schema, Eliminate Cross-Table AST/Edge Duplication, and Standardize JSON Serialization on orjson

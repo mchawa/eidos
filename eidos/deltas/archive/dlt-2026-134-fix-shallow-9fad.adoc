@@ -1,0 +1,38 @@
+---
+type: delta/mutation
+id: DLT-2026-134-FIX-SHALLOW-9FAD
+title: "Fix Shallow-Clone and Commit-Range VCS Drift, Enforce Planned-Mode Mutations, and Verify Design UI Component Invariants"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Eliminate silent zero-diff false passes in fetch-depth: 1 shallow CI clones and linked Git worktrees, porcelain path-quoting bypasses on filenames with spaces, executable code exemptions under docs/, planned-mode SpecDelta coverage/verification bypasses, working-tree vs --head commit-range mismatches, omitted UIC-* (design/ui-component) invariant verification, contradictory test_binding: N/A/TBD rules, and greedy INV-* regex / skipped-test false passes across CNT-EIDOS-VCS, CNT-EIDOS-CORE, and CNT-EIDOS-INDEX."
+vcs:
+  branch: main
+  base_commit: e1022b338ebd4a42d4774fa444ef35f6874b8acf
+mutations:
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+  - operation: modify
+    target: CNT-EIDOS-VCS
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CAP-VCS-001
+  - operation: modify
+    target: POL-002-INVARIANT-TEST-ENFORCEMENT
+  - operation: modify
+    target: INV-POL-002-INVARIANT-TEST-ENFORCEMENT
+  - operation: modify
+    target: INV-DRIFT-DETECTION-ACCURACY
+  - operation: add
+    target: INV-DRIFT-SHALLOW-AND-COMMIT-TREE-FIDELITY
+  - operation: add
+    target: INV-DRIFT-UIC-AND-SKIPPED-TEST-GUARD
+---
+= SpecDelta: Fix Shallow-Clone and Commit-Range VCS Drift, Enforce Planned-Mode Mutations, and Verify Design UI Component Invariants

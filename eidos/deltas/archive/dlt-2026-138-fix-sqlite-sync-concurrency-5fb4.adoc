@@ -1,0 +1,58 @@
+---
+type: delta/mutation
+id: DLT-2026-138-FIX-SQLITE-SYNC-CONCURRENCY-5FB4
+title: "Fix SQLite Sync Concurrency, Polyglot .NET Indexing, Public Surface Visibility and LRU Caching, and Semantic Sync CLI Controls"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: high
+  motivation: "Eliminate multi-process SQLite IntegrityError races in sync_index, detect .NET test projects and parameterized xUnit/NUnit/MSTest bindings, derive C#/JVM namespace and .csproj ProjectReference dependency edges, support C# properties, ':' inheritance, attribute-aware visibility, prose/artifact skip-lists, and mtime-keyed LRU caching in SpecValidator, and add --no-semantic and --json to eidos index sync without duplicate ONNX worker execution."
+vcs:
+  branch: main
+  base_commit: 45245ec041c732ee4afe5d9343f843aaa163fbec
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+  - operation: modify
+    target: CMP-SEMANTIC-EMBEDDING-ENGINE
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+  - operation: modify
+    target: CMP-PROJECT-RESOLVER
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CMP-CLI-INDEX-COMMANDS
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+  - operation: modify
+    target: CMP-HOOK-MANAGER
+  - operation: modify
+    target: CMP-PORTAL-BUILDER
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CAP-AGENT-002
+  - operation: add
+    target: INV-DOTNET-POLYGLOT-PARITY
+  - operation: add
+    target: INV-INDEX-SYNC-CLI-CONTROLS
+  - operation: modify
+    target: CAP-PROD-001
+  - operation: modify
+    target: INV-SPEC-GRAPH-INTEGRITY
+---
+= SpecDelta: Fix SQLite Sync Concurrency, Polyglot .NET Indexing, Public Surface Visibility and LRU Caching, and Semantic Sync CLI Controls

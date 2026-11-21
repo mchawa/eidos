@@ -1,0 +1,54 @@
+---
+type: delta/mutation
+id: DLT-2026-113-HARDEN-SPEC-B4EE
+title: "Harden Spec-to-Code Drift Detection, Component Attribution, and Stale Spec Parity"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: high
+  motivation: "Resolve touched_components across all modified code files (including body-only edits), surface body_only_code_files and structural_code_files on DriftCheckResult and in eidos drift --json / CLI reports, enforce spec anchor cleanup on public symbol removals/signature changes, verify static CMP-*/CNT-* Public Surface symbols in SpecValidator._validate_source_and_contract_paths while reconciling stale Public Surface entries across existing component specs, and add --strict drift mode for behavioral/body-only code changes."
+vcs:
+  branch: main
+  base_commit: abbfedb2b1264eeebe60b6048ed1529514807ffd
+mutations:
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CMP-CLI-DRIFT-COMMANDS
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CMP-CLI-APP
+  - operation: modify
+    target: CMP-CLI-CONTEXT-COMMAND
+  - operation: modify
+    target: CMP-CLI-DELTA-COMMANDS
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+  - operation: modify
+    target: CMP-CLI-INDEX-COMMANDS
+  - operation: modify
+    target: CMP-DELTA-AUDITOR
+  - operation: modify
+    target: CMP-CLI-PORTAL-COMMANDS
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+  - operation: modify
+    target: CMP-HOOK-MANAGER
+  - operation: modify
+    target: CMP-PLUGIN-VALIDATOR
+  - operation: modify
+    target: CMP-PORTAL-SERVER
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CAP-VCS-001
+  - operation: modify
+    target: INV-DRIFT-DETECTION-ACCURACY
+  - operation: modify
+    target: INV-DRIFT-DIFF-AWARE-COVERAGE
+  - operation: modify
+    target: INV-SPEC-GRAPH-INTEGRITY
+---
+= SpecDelta: Harden Spec-to-Code Drift Detection, Component Attribution, and Stale Spec Parity

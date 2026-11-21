@@ -1,0 +1,30 @@
+---
+type: delta/mutation
+id: DLT-2026-142-ADD-MODERN-REST-HTTP-7095
+title: Add Modern REST HTTP Contract Parity and Authorization Attribute Verification
+status: applied
+intent:
+  kind: feature
+  motivation: "Bidirectional contract parity currently verifies openapi, protobuf/grpc_proto, graphql, json_schema, python_protocol, and cli_args, causing modern REST HTTP contracts (protocol: rest_http / http_json) backed by ASP.NET Core controllers/Minimal APIs or polyglot REST frameworks to pass eidos validate silently even when endpoints are omitted or [Authorize]/[AllowAnonymous] annotations drift from the contract."
+vcs:
+  branch: main
+  base_commit: f5fb0f2a5d56e8ea5d4c9c092a82e329bda97372
+mutations:
+  - operation: modify
+    target: CMP-HTTP-TOPOLOGY-LINKER
+  - operation: modify
+    target: CMP-CONTRACT-PARITY-VALIDATOR
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+  - operation: modify
+    target: CAP-PROD-001
+  - operation: add
+    target: INV-CONTRACT-REST-HTTP-PARITY
+---
+= SpecDelta: Add Modern REST HTTP Contract Parity and Authorization Attribute Verification

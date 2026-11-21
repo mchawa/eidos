@@ -1,0 +1,34 @@
+---
+type: delta/mutation
+id: DLT-2026-097
+title: "Align FTS Query Engine, Graph Traversal, and ArchitecturalIndex Facade with v1 Schemas and AsciiDoc Templates"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Align the SQLite FTS5 query engine (query.py), incremental sync pipeline (sync.py), and ArchitecturalIndex facade (graph_index.py) with the streamlined v1 specification schemas (DLT-2026-091, DLT-2026-093), AsciiDoc prose templates, and unified 17-language AstGrepIndexer (DLT-2026-096) by expanding entity ID prefix recognition and inline CMP-*/DEC-* exact-ID boosting, indexing component responsibility and delta motivation into specs_fts.jtbd_or_rule while stripping AsciiDoc attribute headers (:toc: left), removing retired symbol_mappings kinds (component_ref, interface_method, interface_signature, interface_command), deriving _FILE_QUERY_EXTS from AstGrepIndexer.LANGUAGE_MAP, resolving inline component titles and domain overrides in graph traversals, and eliminating duplicated path resolution and redundant SQL round-trips in ArchitecturalIndex."
+tombstone:
+  search_tokens:
+    - _symbol_locations
+    - interface_method
+    - interface_signature
+    - interface_command
+vcs:
+  branch: main
+  base_commit: 1b824873296d34fa5f156546ad9d5d3e348e9d0e
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+  - operation: modify
+    target: CMP-DOMAIN-MODELS
+  - operation: modify
+    target: INV-AGENT-TASK-RETRIEVAL-COVERAGE
+  - operation: modify
+    target: CAP-AGENT-001
+---
+= SpecDelta: Align FTS Query Engine, Graph Traversal, and ArchitecturalIndex Facade with v1 Schemas and AsciiDoc Templates

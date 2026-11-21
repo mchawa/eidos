@@ -1,0 +1,46 @@
+---
+type: delta/mutation
+id: DLT-2026-140-REMOVE-SLUGS-E1D7
+title: "Remove Slugs, Raw IDs, and Technical Jargon Across the Living Web Portal UI"
+status: applied
+intent:
+  kind: feature
+  motivation: "Make the Living Web Portal clean, human-readable, and immediately accessible to non-technical and technical readers alike by eliminating all visible raw entity ID slugs (SYS-*, DOM-*, CAP-*, POL-*, PER-*, INV-*, DEC-*, CNT-*, CMP-*, CTR-*, DS-*, CLT-*, SCR-*, UIC-*, FLOW-*, DLT-*, EXP-*), raw schema type slugs (e.g. tech/container, design/ui-component), raw snake_case/kebab-case enum and state tokens (e.g. in_review, web_app, :mobile_drawer_open), literal backticked prefix noise in JSX headings, raw repository file paths and pytest test-binding paths, leaking native browser title tooltips/placeholders/error strings, and unnecessary internal/framework jargon (DDD, Arc42, C4 Level 1/2/3, Whitebox, 1-2 Hop Graph BFS, W3C DTCG, JTBD, SSE Live Stream, POL-002 Traceability, Schema Conformance, Zero ADR Policy) across every portal view, navigation chrome, command palette, specification reader, and generated Mermaid diagram—while retaining canonical IDs strictly internally for hash deep-linking (#/<tab>/<id>), stable DOM/Mermaid click delegation, and invisible search indexing."
+vcs:
+  branch: main
+  base_commit: 619d49498949e56cea6ab0b25156ff5b0fe99425
+mutations:
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+  - operation: modify
+    target: CAP-EXP-001
+  - operation: add
+    target: INV-PORTAL-HUMAN-READABLE-UI
+  - operation: modify
+    target: UIC-PORTAL-SHELL
+  - operation: modify
+    target: UIC-PORTAL-SIDEBAR
+  - operation: modify
+    target: UIC-PORTAL-METRIC-CARD
+  - operation: modify
+    target: UIC-PORTAL-READER
+  - operation: modify
+    target: SCR-PORTAL-HOME
+  - operation: modify
+    target: SCR-PORTAL-BUSINESS
+  - operation: modify
+    target: SCR-PORTAL-ARCHITECTURE
+  - operation: modify
+    target: SCR-PORTAL-DESIGN
+  - operation: modify
+    target: SCR-PORTAL-DELTAS
+  - operation: modify
+    target: SCR-PORTAL-EXPLORATIONS
+  - operation: modify
+    target: SCR-PORTAL-CATALOG
+---
+= SpecDelta: Remove Slugs, Raw IDs, and Technical Jargon Across the Living Web Portal UI

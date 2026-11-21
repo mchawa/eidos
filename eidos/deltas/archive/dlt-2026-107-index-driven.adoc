@@ -1,0 +1,26 @@
+---
+type: delta/mutation
+id: DLT-2026-107-INDEX-DRIVEN
+title: Index-Driven Spec-Scoped SpecDelta Deletion Auditing
+status: applied
+intent:
+  kind: enabler
+  motivation: "Replace Git ls-files shell-outs (get_tracked_files), full-repository os.walk scans, and hardcoded src/ / docs/ / README.md path heuristics in AuditEngine with index.db-driven candidate file discovery, FTS5 file-token indexing, and doc_type-based leak classification."
+vcs:
+  branch: main
+  base_commit: ad82808f2b84c9f0711d5b3c9faffc3ed88d54b0
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+  - operation: modify
+    target: CMP-DELTA-AUDITOR
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CAP-PROD-002
+  - operation: modify
+    target: INV-DELTA-DELETION-AUDIT
+---
+= SpecDelta: Index-Driven Spec-Scoped SpecDelta Deletion Auditing

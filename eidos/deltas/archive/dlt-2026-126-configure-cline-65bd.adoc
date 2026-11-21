@@ -1,0 +1,41 @@
+---
+type: delta/mutation
+id: DLT-2026-126-CONFIGURE-CLINE-65BD
+title: Configure Cline Installation to Use Shared .agents/skills Without Unused Plugin Bundle or Hooks
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: medium
+  motivation: "Replace the broken Cline installation (.cline/plugins/eidos/ containing an unloaded agent-plugins.org plugin.json and Antigravity Stop hooks.json, plus harness-specific .cline/skills/) with the cross-agent .agents/skills/<skill>/SKILL.md layout (natively discovered by both Cline and Kilo Code) and the canonical root AGENTS.md block, without writing dead plugin manifests or incompatible hook scripts."
+tombstone:
+  search_tokens:
+    - ".cline/plugins"
+    - ".cline/skills"
+  allowed_reasons:
+    - path: CHANGELOG.md
+      reason: Historical release notes referencing pre-DLT-2026-126 Cline paths.
+    - path: docs/changelog.md
+      reason: Historical changelog documentation referencing pre-DLT-2026-126 Cline paths.
+    - path: eidos/deltas/
+      reason: Historical SpecDeltas predating DLT-2026-126.
+    - path: eidos/explorations/
+      reason: Historical exploration documents.
+vcs:
+  branch: main
+  base_commit: 60be19b0230c6c8ea06dd2f192a51c8c01e7f4e7
+mutations:
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+---
+= SpecDelta: Configure Cline Installation to Use Shared .agents/skills Without Unused Plugin Bundle or Hooks

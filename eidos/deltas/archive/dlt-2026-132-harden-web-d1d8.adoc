@@ -1,0 +1,58 @@
+---
+type: delta/mutation
+id: DLT-2026-132-HARDEN-WEB-D1D8
+title: "Harden Web Portal XSS and Token Path Containment, Repair C4 and UI Views, and Add SSE Live Drift with Chunked Export"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Eliminate stored/reflected DOM XSS, DOM clobbering, tokens.manifest path traversal, and cross-origin/DNS-rebinding exposure across the Living Web Portal; repair broken C4 Level 1 external_systems object rendering, missing Screen Spec bodies in DesignView, hardcoded empty exploration exit_criteria/recommendations, absolute schema_errors navigation paths, and C4 pan-drag click misfires; wire real-time Server-Sent Events (SSE) live drift monitoring (/api/events + /api/drift) and interactive C4 node blast-radius highlighting; and externalize static portal spec bodies and code-split heavy assets so large catalogs load fast without breaking air-gapped offline operation."
+vcs:
+  branch: main
+  base_commit: e1022b338ebd4a42d4774fa444ef35f6874b8acf
+mutations:
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+  - operation: modify
+    target: CMP-PORTAL-SERVER
+  - operation: modify
+    target: CMP-PORTAL-BUILDER
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+  - operation: modify
+    target: CTR-EIDOS-PORTAL
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CMP-CLI-PORTAL-COMMANDS
+  - operation: modify
+    target: DS-CORE
+  - operation: modify
+    target: SCR-PORTAL-HOME
+  - operation: modify
+    target: SCR-PORTAL-ARCHITECTURE
+  - operation: modify
+    target: SCR-PORTAL-DESIGN
+  - operation: modify
+    target: SCR-PORTAL-EXPLORATIONS
+  - operation: modify
+    target: CAP-EXP-001
+  - operation: modify
+    target: CAP-EXP-002
+  - operation: modify
+    target: INV-W3C-DTCG-COMPLIANCE
+  - operation: modify
+    target: INV-PORTAL-STATIC-SCALABILITY
+  - operation: add
+    target: INV-PORTAL-XSS-AND-SERVER-ISOLATION
+  - operation: add
+    target: INV-PORTAL-LIVE-DRIFT-SSE
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+---
+= SpecDelta: Harden Web Portal XSS and Token Path Containment, Repair C4 and UI Views, and Add SSE Live Drift with Chunked Export

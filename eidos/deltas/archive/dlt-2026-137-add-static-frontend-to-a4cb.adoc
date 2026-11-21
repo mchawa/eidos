@@ -1,0 +1,70 @@
+---
+type: delta/mutation
+id: DLT-2026-137-ADD-STATIC-FRONTEND-TO-A4CB
+title: "Add Static Frontend-to-Backend HTTP Auto-Linking, Executable Architectural Import Boundaries, and Explicit Epistemic Provenance Tags"
+status: applied
+intent:
+  kind: feature
+  motivation: "Close three architectural governance gaps while upholding POL-004 (zero runtime LLM calls): (1) deterministically link frontend HTTP client calls (fetch, EventSource, axios, ky, Angular HttpClient, Python requests/httpx) to backend framework endpoints and OpenAPI CTR-* contracts across polyglot containers without manual edge wiring; (2) turn passive C4 container tiers and dependency declarations into executable static import/HTTP boundary constraints with monotonically shrinking brownfield ratchet baselines in eidos validate and eidos drift; and (3) attach explicit epistemic provenance tags (declared_spec, ast_import, ast_http, ast_symbol, inferred_ownership, fts_bm25, semantic_rrf, hybrid_rrf) and 3-tier certainty levels (observed, derived, inferred) with file:line evidence across index.db edges, k-hop blast-radius filtering (--min-confidence), FTS/symbol lookups, and tiered context slices."
+vcs:
+  branch: main
+  base_commit: c638ea7b4a5af382235fc9a827b92491ab5feef7
+mutations:
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-DOMAIN-MODELS
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: ARCH-EIDOS-001
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CNT-EIDOS-VCS
+  - operation: modify
+    target: CMP-CLI-INDEX-COMMANDS
+  - operation: modify
+    target: CMP-CLI-DRIFT-COMMANDS
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+  - operation: modify
+    target: CAP-AGENT-002
+  - operation: add
+    target: INV-INDEX-STATIC-HTTP-AUTOLINK
+  - operation: add
+    target: INV-INDEX-EPISTEMIC-PROVENANCE
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: modify
+    target: INV-AGENT-CONTEXT-SLICING
+  - operation: modify
+    target: CAP-PROD-001
+  - operation: modify
+    target: INV-SPEC-VALIDATION
+  - operation: modify
+    target: CAP-VCS-001
+  - operation: add
+    target: INV-DRIFT-IMPORT-BOUNDARY-RATCHET
+---
+= SpecDelta: Add Static Frontend-to-Backend HTTP Auto-Linking, Executable Architectural Import Boundaries, and Explicit Epistemic Provenance Tags

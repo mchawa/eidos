@@ -1,0 +1,45 @@
+---
+type: delta/mutation
+id: DLT-2026-117-CONFIGURE-PROJECT-4B01
+title: Configure Project-Native Claude Code Skills and Stop Hook Integration
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Replace the broken hybrid Claude Code plugin + flat skills installation (.claude/plugins/eidos/, duplicate plugin.json manifests, unreachable commands/*.md, and non-existent 'plugins: [{\"path\": ...}]' / 'enabledPlugins: {\"eidos@plugins-dir\": true}' keys in .claude/settings.json) with Claude Code's official project-native configuration (.claude/skills/<skill>/SKILL.md + Stop hook registration in .claude/settings.json under hooks.Stop + .claude/.eidos-manifest.json tracking), while safely migrating legacy .claude/plugins/eidos installations and preserving shared .claude/settings.json user configurations on uninstall."
+tombstone:
+  search_tokens:
+    - _ensure_claude_plugin_manifest
+    - _write_claude_commands
+    - _claude_pre_manifest_hook
+    - eidos@plugins-dir
+  allowed_reasons:
+    - path: src/eidos/plugin/installer.py
+      reason: Legacy settings.json key migration cleanup in _cleanup_legacy_claude_plugin_keys.
+    - path: tests/test_plugin.py
+      reason: Regression test verifying legacy eidos@plugins-dir key is stripped during Claude Code installation.
+    - path: CHANGELOG.md
+      reason: Historical release notes referencing pre-DLT-2026-117 Claude plugin manifest and command helpers.
+    - path: eidos/deltas/
+      reason: Historical SpecDeltas predating DLT-2026-117.
+    - path: eidos/explorations/
+      reason: Historical exploration documents.
+vcs:
+  branch: main
+  base_commit: 7abba9be23aae5b5976decd520155a82c4dbbcc2
+mutations:
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+  - operation: modify
+    target: CNT-EIDOS-DOCS
+---
+= SpecDelta: Configure Project-Native Claude Code Skills and Stop Hook Integration

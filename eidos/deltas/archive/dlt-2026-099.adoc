@@ -1,0 +1,20 @@
+---
+type: delta/mutation
+id: DLT-2026-099
+title: Deduplicate test_binding_cache Schema and Unify AST Test Function Extraction
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate the redundant bindings_json column from test_binding_cache (SCHEMA_VERSION 2.9.0) and the duplicate AST parse pass in _build_cached_test_file_entry and detect_orphan_invariants by deriving invariant/policy test bindings directly from functions_json, and unify AstGrepIndexer.list_test_functions and extract_test_bindings around a shared _iter_test_function_spans helper."
+vcs:
+  branch: main
+  base_commit: 8a7c02c
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+---
+= SpecDelta: Deduplicate test_binding_cache Schema and Unify AST Test Function Extraction

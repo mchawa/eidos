@@ -1,0 +1,38 @@
+---
+type: delta/mutation
+id: DLT-2026-133-HARDEN-SQLITE-187E
+title: "Harden SQLite WAL Concurrency, Verify Harrier Semantic Downloads, and Deepen Polyglot AST Symbol Indexing"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: high
+  motivation: "Eliminate multi-agent SQLite WAL unlink split-brain corruption, mmap SIGBUS hazards, cross-thread connection sharing, global FTS dict races, and SQLITE_MAX_EXPR_DEPTH edge-eviction bottlenecks in CNT-EIDOS-INDEX; enforce pinned HuggingFace commit revisions, SHA-256 + Content-Length verification, complete fp32 file checks, and atomic background worker locking in CMP-SEMANTIC-EMBEDDING-ENGINE; and index polyglot interface/trait member signatures, overloaded method arity, Rust/C# trait/interface visibility, FTS method symbols, and automated test symbols in CMP-AST-SYMBOL-INDEXER and CMP-FTS-QUERY-ENGINE."
+vcs:
+  branch: main
+  base_commit: e1022b338ebd4a42d4774fa444ef35f6874b8acf
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+  - operation: modify
+    target: CMP-SEMANTIC-EMBEDDING-ENGINE
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CAP-AGENT-002
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: modify
+    target: INV-INDEX-POLYGLOT-SYMBOL-PRECISION
+  - operation: modify
+    target: INV-AGENT-HYBRID-SEMANTIC-FALLBACK
+  - operation: add
+    target: INV-INDEX-CONCURRENT-WAL-SAFETY
+---
+= SpecDelta: Harden SQLite WAL Concurrency, Verify Harrier Semantic Downloads, and Deepen Polyglot AST Symbol Indexing

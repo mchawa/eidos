@@ -1,0 +1,32 @@
+---
+type: delta/mutation
+id: DLT-2026-128-OPTIMIZE-AGENT-21CC
+title: "Add Opt-In Native Stop Lifecycle Hooks (--hooks), Doctor Hook Health Diagnostics, and Stateless 1-Turn Continuation Across Hook-Capable Agent Targets"
+status: applied
+intent:
+  kind: feature
+  motivation: "Keep all 9 agent plugin targets (antigravity, claude, cursor, aider, cline, kilocode, open-code, codex, copilot, plus all) while adding opt-in native Stop / TaskComplete hook installation via '--hooks' on 'eidos plugin install' (disabled by default, and preserved automatically on 'eidos plugin update' without taking '--hooks') for the 6 hook-capable clients (.agents/plugins/eidos/hooks.json for Antigravity, .claude/settings.json for Claude Code, .cursor/hooks.json with loop_limit: 1 for Cursor, .clinerules/hooks/TaskComplete for Cline, .github/hooks/hooks.json for GitHub Copilot, and .codex/hooks.json for OpenAI Codex), reporting hook health in 'eidos doctor' (distinguishing active hooks, broken/missing hooks when originally installed with '--hooks', and intentionally omitted hooks when installed without '--hooks'), and updating handle_stop_hook() in src/eidos/plugin/hooks.py to emit client-aware 1-turn capped continuation feedback using each client's native in-memory stdin retry counter (stop_hook_active, executionNum/terminationReason, hookName, and loop_count)."
+vcs:
+  branch: main
+  base_commit: 20d97a37ce692b97f153294d32c5ffea8ea4b6b2
+mutations:
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+  - operation: modify
+    target: CMP-HOOK-RUNNER
+  - operation: modify
+    target: CMP-CLI-PLUGIN-COMMANDS
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+---
+= SpecDelta: Add Opt-In Native Stop Lifecycle Hooks (--hooks), Doctor Hook Health Diagnostics, and Stateless 1-Turn Continuation Across Hook-Capable Agent Targets

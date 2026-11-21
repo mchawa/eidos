@@ -1,0 +1,24 @@
+---
+type: delta/mutation
+id: DLT-2026-105-INDEX-C4
+title: "Index C4 Level 1 Architecture, System, and Exploration Graph Edges"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: medium
+  motivation: "Connect C4 Level 1 specifications (ARCH-*, SYS-*) and technical explorations (EXP-*) in the SQLite knowledge graph so 'eidos index blast-radius ARCH-EIDOS-001' (and SYS-*/EXP-* queries) traverses connected personas, containers, system roots, and graduated explorations instead of returning an isolated 0-hop node."
+vcs:
+  branch: main
+  base_commit: 16c358f986dc07f2cbdc68b1fdba63a2a1ed9293
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+  - operation: modify
+    target: INV-KNOWLEDGE-GRAPH-CATALOG
+---
+= SpecDelta: Index C4 Level 1 Architecture, System, and Exploration Graph Edges

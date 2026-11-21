@@ -1,0 +1,59 @@
+---
+type: delta/mutation
+id: DLT-2026-130-USE-AGENT-DA30
+title: Use Agent Skills Across All Clients and Remove agent-plugins.org Bundles
+status: applied
+intent:
+  kind: feature
+  motivation: "Standardize all 9 supported AI coding harnesses on Agent Skills (agentskills.io) and native Stop/TaskComplete hook projections without installing agent-plugins.org (.agents/plugins/eidos/) bundles for any client: project .agents/skills/<skill>/SKILL.md for Antigravity, Cursor, GitHub Copilot, OpenAI Codex, Cline, Kilo Code, and OpenCode (plus .agents/hooks.json for Antigravity when --hooks is opted in), retain .claude/skills/ for Claude Code and .aider/skills/ for Aider, remove assets/plugin_reference/plugin.json and assets/schemas/agent_plugins/ (plugin.schema.json, mcp.schema.json, and get_agent_plugins_schemas_dir()), and update eidos plugin validate / info / version to operate directly on bundled SKILL.md frontmatter, hooks.json, and SemVer-normalized eidos.__version__."
+tombstone:
+  search_tokens:
+    - ".agents/plugins/eidos"
+    - agent-plugins.org
+    - plugin.schema.json
+    - mcp.schema.json
+    - get_agent_plugins_schemas_dir
+    - _make_project_adapter
+    - _copy_plugin_tree
+    - _remove_skills_flat
+    - _cleanup_legacy_claude_plugin_keys
+    - plugin.json
+  allowed_reasons:
+    - path: CHANGELOG.md
+      reason: Historical release notes referencing pre-DLT-2026-130 agent-plugins.org bundles and schemas.
+    - path: docs/changelog.md
+      reason: Historical changelog documentation referencing pre-DLT-2026-130 agent-plugins.org bundles and schemas.
+    - path: eidos/deltas/
+      reason: Historical SpecDeltas predating DLT-2026-130.
+    - path: eidos/explorations/
+      reason: Historical exploration documents.
+vcs:
+  branch: main
+  base_commit: 29eb8057df3ef418eb997aa3255c689bbb9e1bc6
+mutations:
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+  - operation: modify
+    target: CMP-PLUGIN-VALIDATOR
+  - operation: modify
+    target: CMP-HOOK-MANAGER
+  - operation: modify
+    target: CMP-CLI-PLUGIN-COMMANDS
+  - operation: modify
+    target: CMP-CLI-APP
+  - operation: modify
+    target: CMP-ASSET-LOCATOR
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+---
+= SpecDelta: Use Agent Skills Across All Clients and Remove agent-plugins.org Bundles

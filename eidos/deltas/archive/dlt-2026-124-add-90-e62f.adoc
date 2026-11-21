@@ -1,0 +1,22 @@
+---
+type: delta/mutation
+id: DLT-2026-124-ADD-90-E62F
+title: Add 90% Per-File Statement Test Coverage Policy (POL-005)
+status: applied
+intent:
+  kind: feature
+  motivation: "Establish a blocking testing governance policy (POL-005-STATEMENT-TEST-COVERAGE) requiring >90% statement coverage across all source files in src/eidos/, normalize explicit eidos/ target paths in eidos init, and expand unit tests so every module in src/eidos/ exceeds 90% statement coverage."
+vcs:
+  branch: main
+  base_commit: 321e364ef0e5074c8d13f93dcd7a24fdc794b01d
+mutations:
+  - operation: add
+    target: POL-005-STATEMENT-TEST-COVERAGE
+  - operation: add
+    target: INV-POL-005-STATEMENT-TEST-COVERAGE
+  - operation: modify
+    target: CMP-CLI-INIT-COMMAND
+  - operation: modify
+    target: CMP-REPO-INITIALIZER
+---
+= SpecDelta: Add 90% Per-File Statement Test Coverage Policy (POL-005)

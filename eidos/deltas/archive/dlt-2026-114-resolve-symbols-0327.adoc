@@ -1,0 +1,30 @@
+---
+type: delta/mutation
+id: DLT-2026-114-RESOLVE-SYMBOLS-0327
+title: "Resolve Symbols, Source File Paths, and Spec Paths in Blast Radius Queries"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Wire symbol, source file path, and specification path resolution into eidos index blast-radius and ArchitecturalIndex.get_k_hop_neighborhood so passing a source file path, AST symbol, or spec path resolves to its owning architectural entity ID(s) before executing the k-hop recursive CTE traversal, matching CTR-EIDOS-CLI and docs/guides/cli.md."
+vcs:
+  branch: main
+  base_commit: abbfedb2b1264eeebe60b6048ed1529514807ffd
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-CLI-INDEX-COMMANDS
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CAP-PROD-001
+  - operation: modify
+    target: INV-KNOWLEDGE-GRAPH-CATALOG
+---
+= SpecDelta: Resolve Symbols, Source File Paths, and Spec Paths in Blast Radius Queries

@@ -1,0 +1,28 @@
+---
+type: delta/mutation
+id: DLT-2026-119-SUPPORT-EXPORT-52BD
+title: Support C++ Export Macros and Static Class Method Visibility in AstGrepIndexer
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: high
+  motivation: "Prevent C/C++ preprocessor export/visibility macros (e.g. class RENDERER_API RenderGraph, struct ENGINE_EXPORT MeshData, enum CORE_API PassType, and RENDERER_API-prefixed functions/methods) from causing Tree-sitter (SgRoot) to misparse exported C++ classes/structs as function definitions and drop their member methods by blanking declaration-site export macros with equal-length spaces prior to AST parsing (preserving exact 1-based line numbers and column offsets), and fix _evaluate_symbol_visibility so C++ static class/struct methods are treated as public class-scoped methods (governed by C++ access specifiers and parent class visibility) rather than translation-unit-local static free functions."
+vcs:
+  branch: main
+  base_commit: 0bc0f43c83c19d5afb79a347a98f24309e78d4b2
+mutations:
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CAP-AGENT-002
+  - operation: modify
+    target: INV-INDEX-POLYGLOT-SYMBOL-PRECISION
+  - operation: modify
+    target: CAP-VCS-001
+  - operation: modify
+    target: INV-DRIFT-DIFF-AWARE-COVERAGE
+---
+= SpecDelta: Support C++ Export Macros and Static Class Method Visibility in AstGrepIndexer

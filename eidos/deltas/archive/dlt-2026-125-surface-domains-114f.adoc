@@ -1,0 +1,28 @@
+---
+type: delta/mutation
+id: DLT-2026-125-SURFACE-DOMAINS-114F
+title: "Surface Domains, Personas, Policies, and Design Subgraphs in Context Slices, Drift Gates, and Agent Skills"
+status: applied
+intent:
+  kind: feature
+  motivation: "Eliminate the blind spot where coding agents update CNT-*/CMP-* specifications to appease eidos drift while forgetting to co-evolve DOM-* domains, PER-* personas, POL-* policies, and design/* (DS-*, UIC-*, CLT-*, SCR-*, FLOW-*) specifications across context slicing, design drift enforcement, remediation reporting, and bundled agent skills."
+vcs:
+  branch: main
+  base_commit: ae8ff6624ed62c3220f569955d39d16dc59e9c52
+mutations:
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+  - operation: modify
+    target: CNT-EIDOS-VCS
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: modify
+    target: CAP-VCS-001
+---
+= SpecDelta: Surface Domains, Personas, Policies, and Design Subgraphs in Context Slices, Drift Gates, and Agent Skills

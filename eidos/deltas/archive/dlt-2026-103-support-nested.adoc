@@ -1,0 +1,20 @@
+---
+type: delta/mutation
+id: DLT-2026-103-SUPPORT-NESTED
+title: Support Nested Dot-Path Key Resolution in SpecDelta expect.frontmatter
+status: applied
+intent:
+  kind: enabler
+  motivation: "Enable SpecDelta mutations[].expect.frontmatter to assert nested frontmatter fields (such as contracts.provides, technical.containers, intent.motivation, or list-projected fields like decisions.id and components.id) via dot-path key resolution in _evaluate_declarative_postcondition, eliminating the need to copy-paste entire nested YAML structures verbatim."
+vcs:
+  branch: main
+  base_commit: bfe58db9601ff1d77389be21f99a319c7316760b
+mutations:
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+  - operation: modify
+    target: CAP-PROD-002
+  - operation: modify
+    target: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+---
+= SpecDelta: Support Nested Dot-Path Key Resolution in SpecDelta expect.frontmatter

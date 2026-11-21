@@ -1,0 +1,165 @@
+---
+type: delta/mutation
+id: DLT-2026-093
+title: "Streamline v1 Specification Schemas, Move Prose to AsciiDoc Body, and Derive Component Dependencies via AST"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate over-engineered prose-in-YAML frontmatter blocks across Eidos v1 schemas, make redundant schema/contract fields optional, replace manual component interface blocks with automatic AST import dependency extraction, unify UI component verification on standard invariants, and remove artificial restrictions on SpecDelta mutations and expect.frontmatter assertions."
+tombstone:
+  search_tokens:
+    - quality_attributes
+    - in_process_interfaces
+    - business_identity
+    - technical_profile
+    - ubiquitous_language
+    - pricing_tiers
+    - questions_to_answer
+    - spikes_to_run
+    - resulting_delta_id
+    - topology_style
+    - c4_containers
+    - solution_strategy
+    - cross_cutting_concepts
+    - deployment_view
+    - test_bindings
+    - applied_at_commit
+    - figma_url
+    - storybook_url
+  allowed_reasons:
+    - path: CHANGELOG.md
+      reason: Historical release notes referencing pre-DLT-2026-093 schema fields.
+    - path: eidos/deltas/
+      reason: Historical SpecDeltas predating DLT-2026-093.
+    - path: eidos/explorations/
+      reason: Historical exploration documents.
+    - path: src/eidos/portal/generator.py
+      reason: "Portal Mermaid diagram payload key 'diagrams.c4_containers'."
+    - path: src/eidos/portal/frontend/src/types.ts
+      reason: "Portal Mermaid diagram TypeScript interface key 'diagrams.c4_containers'."
+    - path: src/eidos/portal/frontend/src/components/views/ArchitectureView.tsx
+      reason: "Portal Mermaid diagram accessor 'data.diagrams.c4_containers'."
+    - path: src/eidos/portal/frontend/tests/asciidoc.test.ts
+      reason: "Portal Mermaid diagram test assertion on 'diagrams.c4_containers'."
+    - path: src/eidos/core/index/graph_index.py
+      reason: "AST symbol telemetry counter key 'ast.test_bindings'."
+    - path: src/eidos/cli/index_commands.py
+      reason: "AST symbol telemetry CLI display for 'ast.test_bindings'."
+    - path: tests/test_portal.py
+      reason: "Portal Mermaid diagram payload assertions on 'diagrams.c4_containers'."
+    - path: tests/test_ast_indexer.py
+      reason: "AST indexer unit tests for 'extract_test_bindings'."
+    - path: tests/test_cli_json.py
+      reason: "CLI JSON telemetry assertion on 'ast.test_bindings' counter."
+    - path: tests/test_graph_index.py
+      reason: "Graph index telemetry assertion on 'ast.test_bindings' counter."
+decisions:
+  - id: DEC-SCHEMA-PROSE-IN-BODY-AND-AST-EDGES
+    title: Keep YAML Frontmatter Strictly for Machine-Indexed Metadata and Graph Edges while Moving Prose to AsciiDoc and Deriving Schema and Component Dependencies Automatically
+    decision: "Remove top-level schema (always deriving schema deterministically from type via TYPE_TO_SCHEMA_NAME) and narrative prose blocks (business_identity, technical_profile, boundaries, ubiquitous_language, business.jtbd, business.pricing_tiers, goals, pain_points, interaction_modes, exploration hypothesis/questions_to_answer/spikes_to_run/exit_criteria/decision.learnings, architecture topology_style/solution_strategy/cross_cutting_concepts/deployment_view/c4_containers, and quality_attributes) from YAML frontmatter into the AsciiDoc body, make contract specification_file optional, generalize external_references to an open string map, unify UI component verification on standard invariants, remove manual component interfaces in favor of AstGrepIndexer.extract_imports, and relax SpecDelta target/operation/expect.frontmatter restrictions."
+    rationale: "YAML frontmatter should only encode machine-validated identifiers, lifecycle statuses, file/test bindings, and semantic cross-references (x-eidos-ref). Because every specification declares a 1:1 'type' mapped in TYPE_TO_SCHEMA_NAME, declaring 'schema' in frontmatter is 100% redundant. Similarly, long-form prose in YAML duplicates the AsciiDoc body and forces placeholder boilerplate during scaffolding, while manual component interface lists duplicate relationships that the polyglot AST indexer can derive deterministically from source code imports."
+    rejected_alternatives:
+      - option: Retain explicit or optional schema field in YAML frontmatter
+        reason_rejected: "Every Eidos specification has a canonical 1:1 mapping from type to schema in TYPE_TO_SCHEMA_NAME; keeping schema in frontmatter is pure boilerplate and risks type/schema mismatch."
+      - option: Retain required narrative fields in YAML frontmatter with placeholder strings
+        reason_rejected: Forces authors and scaffolders to duplicate prose across both YAML frontmatter and AsciiDoc sections.
+      - option: Retain manual interfaces.provides and interfaces.consumes in component YAML frontmatter
+        reason_rejected: Duplicates symbol and import graphs that AstGrepIndexer and _CodeOwnershipResolver can extract directly from source_path.
+vcs:
+  branch: main
+  base_commit: a7a66247037c143aa2ba237b759b3acc1970b646
+mutations:
+  - operation: modify
+    target: SYS-EIDOS-001
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-SPEC-PARSER
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CMP-DOMAIN-MODELS
+  - operation: modify
+    target: CMP-ASSET-LOCATOR
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+  - operation: modify
+    target: CMP-DESIGN-ENGINE
+  - operation: modify
+    target: CMP-REPO-INITIALIZER
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+  - operation: modify
+    target: CNT-EIDOS-VCS
+  - operation: modify
+    target: CNT-EIDOS-CLI
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+  - operation: modify
+    target: CNT-EIDOS-DOCS
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+  - operation: modify
+    target: ARCH-EIDOS-001
+  - operation: modify
+    target: DOM-SPEC-ENGINE
+  - operation: modify
+    target: DOM-VCS-LIFECYCLE
+  - operation: modify
+    target: DOM-AGENT-INTELLIGENCE
+  - operation: modify
+    target: DOM-EXPERIENCE-PORTAL
+  - operation: modify
+    target: CAP-PROD-001
+  - operation: modify
+    target: CAP-PROD-002
+  - operation: modify
+    target: CAP-PROD-003
+  - operation: modify
+    target: CAP-VCS-001
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: modify
+    target: CAP-AGENT-002
+  - operation: modify
+    target: CAP-EXP-001
+  - operation: modify
+    target: CAP-EXP-002
+  - operation: modify
+    target: PER-AUTONOMOUS-AGENT
+  - operation: modify
+    target: PER-DESIGN-ENGINEER
+  - operation: modify
+    target: PER-PRODUCT-LEAD
+  - operation: modify
+    target: PER-SOFTWARE-ARCHITECT
+  - operation: modify
+    target: PER-SOFTWARE-ENGINEER
+  - operation: modify
+    target: UIC-PORTAL-SHELL
+  - operation: modify
+    target: UIC-PORTAL-SIDEBAR
+  - operation: modify
+    target: UIC-PORTAL-READER
+  - operation: modify
+    target: UIC-PORTAL-METRIC-CARD
+---
+= SpecDelta: Streamline v1 Specification Schemas, Move Prose to AsciiDoc Body, and Derive Component Dependencies via AST

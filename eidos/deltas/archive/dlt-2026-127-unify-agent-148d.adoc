@@ -1,0 +1,56 @@
+---
+type: delta/mutation
+id: DLT-2026-127-UNIFY-AGENT-148D
+title: "Unify Agent Plugin Targets Around .agents/plugins/eidos and .agents/skills, Add Kilo Code Target, and Require Explicit Target Without --dest"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: medium
+  motivation: "Point agent-plugins.org v1.0.0 compatible clients (antigravity, cursor, copilot, codex) to the canonical .agents/plugins/eidos/ bundle, point Agent Skills clients (cline, kilocode, open-code) to the shared .agents/skills/ directory, add a dedicated kilocode install target (PluginInstallTarget.KILOCODE), remove the redundant generic 'project' target (PluginInstallTarget.PROJECT) and custom '--dest' ('dest_path') override so 'eidos plugin install/uninstall/update <target>' always requires an explicit target, and retire broken per-client plugin/skill directories (.cursor/skills/, .opencode/plugins/eidos/, .opencode/skills/, .codex/, .github/plugin/, .github/skills/, .github/copilot/settings.json) and their bespoke manifest/settings helpers."
+tombstone:
+  search_tokens:
+    - ".cursor/skills"
+    - ".opencode/plugins"
+    - ".opencode/skills"
+    - ".codex/plugin.json"
+    - ".codex/skills"
+    - ".github/plugin"
+    - ".github/skills"
+    - ".github/copilot"
+    - _ensure_copilot_plugin_manifest
+    - _update_project_copilot_settings
+    - _remove_project_copilot_settings
+    - _ensure_codex_plugin_manifest
+    - PluginInstallTarget.PROJECT
+    - dest_path
+    - _relative_skills_dir
+  allowed_reasons:
+    - path: CHANGELOG.md
+      reason: Historical release notes referencing pre-DLT-2026-127 harness paths.
+    - path: docs/changelog.md
+      reason: Historical changelog documentation referencing pre-DLT-2026-127 harness paths.
+    - path: eidos/deltas/
+      reason: Historical SpecDeltas predating DLT-2026-127.
+    - path: eidos/explorations/
+      reason: Historical exploration documents.
+vcs:
+  branch: main
+  base_commit: 60be19b0230c6c8ea06dd2f192a51c8c01e7f4e7
+mutations:
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+  - operation: modify
+    target: CMP-CLI-PLUGIN-COMMANDS
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+---
+= SpecDelta: Unify Agent Plugin Targets Around .agents/plugins/eidos and .agents/skills, Add Kilo Code Target, and Require Explicit Target Without --dest

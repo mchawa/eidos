@@ -1,0 +1,22 @@
+---
+type: delta/mutation
+id: DLT-2026-095
+title: Remove Stateful delta_baselines Table and Memoize Git Baseline Resolution
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate the last stateful, non-derived SQLite table (delta_baselines) from eidos/.cache/index.db so the architectural knowledge graph cache is 100% stateless and rebuildable from Git, remove the full-catalog SHA-256 snapshot overhead from create_delta, and memoize Git revision/blob lookups in _resolve_git_baseline_sha during SpecDelta verification."
+vcs:
+  branch: main
+  base_commit: 5abae4dd60d56cd5c94552f8f6da96c126e1f086
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+  - operation: modify
+    target: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+  - operation: modify
+    target: CAP-PROD-002
+---
+= SpecDelta: Remove Stateful delta_baselines Table and Memoize Git Baseline Resolution
