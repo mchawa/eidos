@@ -424,10 +424,11 @@ export function App() {
   React.useEffect(() => {
     if (!data) return;
     const onNavigate = (event: Event) => {
-      const { target } = (event as CustomEvent<SpecNavDetail>).detail;
+      const { target, mode } = (event as CustomEvent<SpecNavDetail>).detail;
+      const preferredTab: TabKey | undefined = mode === "reader" ? "catalog" : undefined;
       const spec = resolveSpecTarget(data.specs, target);
       if (spec) {
-        routeToEntity(spec.id);
+        routeToEntity(spec.id, preferredTab);
         return;
       }
       // Also support direct entity IDs (INV-*, CMP-*, DEC-*) that may be embedded inside a parent spec
@@ -438,7 +439,7 @@ export function App() {
         trimmed.startsWith("CTR-") ||
         trimmed.startsWith("CNT-")
       ) {
-        routeToEntity(trimmed);
+        routeToEntity(trimmed, preferredTab);
         return;
       }
       console.warn(`Eidos portal: cross-reference '${target}' does not match any loaded specification.`);

@@ -18,6 +18,8 @@ import {
   Sparkles,
   BookOpen,
   Crosshair,
+  ExternalLink,
+  ChevronDown,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -83,6 +85,7 @@ export function ArchitectureView({
   const [inspectorOpen, setInspectorOpen] = React.useState<boolean>(false);
   const [inspectedComponent, setInspectedComponent] = React.useState<SpecComponent | null>(null);
   const [focusedSubComponentId, setFocusedSubComponentId] = React.useState<string | null>(null);
+  const [expandedSubSpecIds, setExpandedSubSpecIds] = React.useState<Record<string, boolean>>({});
   const [inspectedContract, setInspectedContract] = React.useState<SpecContract | null>(null);
   const [blastTargetId, setBlastTargetId] = React.useState<string>("");
   const [diagramError, setDiagramError] = React.useState<string | null>(null);
@@ -410,12 +413,14 @@ export function ArchitectureView({
 
   const openC4Inspector = (comp: SpecComponent, subCompId?: string | null) => {
     setFocusedSubComponentId(subCompId || null);
+    setExpandedSubSpecIds({});
     setInspectedComponent(comp);
     setInspectorOpen(true);
   };
 
   const closeC4Inspector = () => {
     setInspectorOpen(false);
+    setExpandedSubSpecIds({});
   };
 
   const decorateC4Nodes = React.useCallback(() => {
@@ -1212,6 +1217,65 @@ export function ArchitectureView({
                 </div>
               )}
 
+              {/* Focused Internal Component Full Specification */}
+              {(() => {
+                if (!focusedSubComponentId) return null;
+                const focusedSub = (inspectedComponent.internal_components || []).find(
+                  (sub) => sub.id === focusedSubComponentId
+                );
+                if (!focusedSub) return null;
+                const focusedTitle = formatDisplayTitle(focusedSub.title, focusedSub.id);
+                const hasFocusedBody = hasSpecBodyOrChunk(focusedSub.id, focusedSub.description);
+                return (
+                  <div
+                    data-focused-component-section="true"
+                    className="space-y-3 pt-1 pb-3 border-b border-border/60"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] font-bold text-primary uppercase tracking-wider block">
+                          Selected Component
+                        </span>
+                        <h3 className="text-sm font-bold text-foreground">{focusedTitle}</h3>
+                      </div>
+                      {focusedSub.id && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            closeC4Inspector();
+                            requestSpecNavigation(focusedSub.id!, { mode: "reader" });
+                          }}
+                          className="h-7 text-[11px] gap-1.5"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          <span>Open in Full Reader</span>
+                        </Button>
+                      )}
+                    </div>
+                    {focusedSub.responsibility && (
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        {focusedSub.responsibility}
+                      </p>
+                    )}
+                    {hasFocusedBody && (
+                      <div className="space-y-2">
+                        <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                          <BookOpen className="h-3.5 w-3.5 text-purple-400" />
+                          <span>Full Specification</span>
+                        </h4>
+                        <AsciiDocRenderer
+                          measure="full"
+                          specId={focusedSub.id}
+                          content={focusedSub.description || ""}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* Internal Components */}
               <div className="space-y-2">
                 <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
@@ -1219,9 +1283,13 @@ export function ArchitectureView({
                   Internal Components ({inspectedComponent.internal_components?.length || 0})
                 </h4>
                 <div className="space-y-2">
-                  {(inspectedComponent.internal_components || []).map((sub, i) => (
+                  {(inspectedComponent.internal_components || []).map((sub, i) => {
+                    const subKey = sub.id || String(i);
+                    const subHasBody = hasSpecBodyOrChunk(sub.id, sub.description);
+                    const isSubExpanded = Boolean(expandedSubSpecIds[subKey]);
+                    return (
                     <div
-                      key={sub.id || i}
+                      key={subKey}
                       className={cn(
                         "p-3 rounded-xl border bg-muted/20 space-y-2 text-xs transition-all",
                         focusedSubComponentId && sub.id === focusedSubComponentId
@@ -1229,12 +1297,56 @@ export function ArchitectureView({
                           : "border-border/70"
                       )}
                     >
-                      <div className="flex items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="font-bold text-foreground">
                           {formatDisplayTitle(sub.title, sub.id)}
                         </span>
+                        <div className="flex items-center gap-1.5">
+                          {subHasBody && sub.id !== focusedSubComponentId && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedSubSpecIds((prev) => ({
+                                  ...prev,
+                                  [subKey]: !prev[subKey],
+                                }))
+                              }
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-muted hover:bg-muted/80 text-foreground border border-border/60 cursor-pointer transition-colors"
+                            >
+                              <ChevronDown
+                                className={cn(
+                                  "h-3 w-3 transition-transform",
+                                  isSubExpanded && "rotate-180"
+                                )}
+                              />
+                              <span>{isSubExpanded ? "Hide Specification" : "Full Specification"}</span>
+                            </button>
+                          )}
+                          {sub.id && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                closeC4Inspector();
+                                requestSpecNavigation(sub.id!, { mode: "reader" });
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 cursor-pointer transition-colors"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              <span>Open in Full Reader</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <p className="text-muted-foreground">{sub.responsibility}</p>
+                      {subHasBody && isSubExpanded && sub.id !== focusedSubComponentId && (
+                        <div className="pt-2">
+                          <AsciiDocRenderer
+                            measure="full"
+                            specId={sub.id}
+                            content={sub.description || ""}
+                          />
+                        </div>
+                      )}
                       {sub.invariants && sub.invariants.length > 0 && (
                         <div className="pt-1.5 border-t border-border/50 space-y-1">
                           <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
@@ -1281,7 +1393,8 @@ export function ArchitectureView({
                         </div>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1545,17 +1658,31 @@ export function ArchitectureView({
 
               {/* Full Documentation */}
               {hasSpecBodyOrChunk(inspectedComponent.id, inspectedComponent.description) && (
-                <div className="space-y-2 pt-2 border-t border-border/60">
-                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                    <BookOpen className="h-3.5 w-3.5 text-purple-400" />
-                    Full Specification
-                  </h4>
-                  <div className="max-h-[360px] overflow-y-auto rounded-xl p-3 bg-card border border-border/60">
-                    <AsciiDocRenderer
-                      specId={inspectedComponent.id}
-                      content={inspectedComponent.description || ""}
-                    />
+                <div className="space-y-2.5 pt-3 border-t border-border/60">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      <BookOpen className="h-3.5 w-3.5 text-purple-400" />
+                      <span>Full Specification</span>
+                    </h4>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        closeC4Inspector();
+                        requestSpecNavigation(inspectedComponent.id, { mode: "reader" });
+                      }}
+                      className="h-7 text-[11px] gap-1.5"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      <span>Open in Full Reader</span>
+                    </Button>
                   </div>
+                  <AsciiDocRenderer
+                    measure="full"
+                    specId={inspectedComponent.id}
+                    content={inspectedComponent.description || ""}
+                  />
                 </div>
               )}
 
@@ -1619,13 +1746,12 @@ export function ArchitectureView({
               )}
             </div>
             {hasSpecBodyOrChunk(inspectedContract.id, inspectedContract.description) && (
-              <div className="p-4 rounded-2xl bg-card border border-border/80">
-                <AsciiDocRenderer
-                  specId={inspectedContract.id}
-                  content={inspectedContract.description || ""}
-                  title={formatDisplayTitle(inspectedContract.title, inspectedContract.id)}
-                />
-              </div>
+              <AsciiDocRenderer
+                measure="full"
+                specId={inspectedContract.id}
+                content={inspectedContract.description || ""}
+                title={formatDisplayTitle(inspectedContract.title, inspectedContract.id)}
+              />
             )}
           </div>
         )}

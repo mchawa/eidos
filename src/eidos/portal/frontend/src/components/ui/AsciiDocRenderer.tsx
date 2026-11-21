@@ -87,6 +87,7 @@ export function AsciiDocRenderer({
   specId,
   bodyChunk,
   className,
+  measure = "prose",
   onNavigateSpec,
 }: AsciiDocRendererProps) {
   const { body: resolvedContent, loading: chunkLoading } = useResolvedSpecBody(
@@ -171,8 +172,8 @@ export function AsciiDocRenderer({
     }
   };
 
-  // Fixed optimal reading typography & expansive container sizing (INV-PORTAL-READING-ERGONOMICS)
-  const measureClass = "w-full max-w-4xl xl:max-w-5xl mx-auto";
+  // Optimal reading typography & responsive measure (INV-PORTAL-READING-ERGONOMICS, DEC-PORTAL-UNCRAMPED-INSPECTOR-PROSE)
+  const measureClass = measure === "full" ? "w-full" : "w-full max-w-4xl xl:max-w-5xl mx-auto";
 
   const isEmpty = state.status === "ready" && !state.result.html;
 

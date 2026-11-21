@@ -2870,3 +2870,42 @@ def test_validation_warnings_in_portal_and_cli_fail_on_warnings(tmp_path: Path):
         app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--fail-on-warnings", "--warn-only"]
     )
     assert res_drift_warn_only.exit_code == 0
+
+
+def test_portal_inspector_full_specification_ergonomics() -> None:
+    """Verify INV-PORTAL-INSPECTOR-FULL-SPEC-READING: #c4InspectorDrawer renders uncramped Full Specification prose
+    for both containers (CNT-*) and focused internal components (CMP-*) without nested max-h-[360px] scroll traps,
+    honors AsciiDocRenderer measure='full', exposes 'Open in Full Reader' with mode='reader' into CatalogView/SpecReader,
+    and preserves INV-PORTAL-READING-ERGONOMICS and #c4InspectorDrawer hooks."""
+    from eidos.portal.assets import get_portal_html_template
+
+    frontend_src = Path(__file__).resolve().parent.parent / "src" / "eidos" / "portal" / "frontend" / "src"
+    arch_src = (frontend_src / "components" / "views" / "ArchitectureView.tsx").read_text(encoding="utf-8")
+    adoc_src = (frontend_src / "components" / "ui" / "AsciiDocRenderer.tsx").read_text(encoding="utf-8")
+    nav_src = (frontend_src / "lib" / "specNav.ts").read_text(encoding="utf-8")
+    app_src = (frontend_src / "App.tsx").read_text(encoding="utf-8")
+
+    # 1. No nested max-h-[360px] scroll trap around Full Specification in ArchitectureView
+    assert "max-h-[360px]" not in arch_src
+    assert 'id="c4InspectorDrawer"' in arch_src
+    assert 'measure="full"' in arch_src
+    assert "Open in Full Reader" in arch_src
+    assert 'mode: "reader"' in arch_src
+    assert 'data-focused-component-section="true"' in arch_src
+
+    # 2. AsciiDocRenderer honors measure prop while preserving default prose measure
+    assert 'measure = "prose"' in adoc_src
+    assert 'measure === "full"' in adoc_src
+    assert "max-w-4xl xl:max-w-5xl" in adoc_src
+
+    # 3. specNav and App route mode === "reader" to CatalogView / SpecReader
+    assert 'mode?: "entity" | "reader"' in nav_src
+    assert 'mode === "reader" ? "catalog"' in app_src
+
+    # 4. Compiled air-gapped portal bundle reflects uncramped inspector and preserves ergonomics hooks
+    bundle_html = get_portal_html_template()
+    assert "c4InspectorDrawer" in bundle_html
+    assert "Open in Full Reader" in bundle_html
+    assert "Full Specification" in bundle_html
+    assert "max-h-[360px]" not in bundle_html
+    assert "prose-reading" in bundle_html

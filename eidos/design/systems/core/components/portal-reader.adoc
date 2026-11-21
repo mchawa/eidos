@@ -15,6 +15,17 @@ variants:
 states:
   - default
   - section_active
+decisions:
+  - id: DEC-PORTAL-UNCRAMPED-INSPECTOR-PROSE
+    title: "Eliminate Nested Scroll Traps and Double-Boxed Framing in Container/Component Inspector Full Specification"
+    decision: "Render AsciiDocRenderer directly inside the scrollable Sheet flow in ArchitectureView (#c4InspectorDrawer) with no fixed max-h cap, no redundant outer card wrapper, full drawer width (measure='full'), inline Full Specification support for focused internal CMP-* components, and an 'Open in Full Reader' button using requestSpecNavigation(id, { mode: 'reader' }) to launch SpecReader directly in CatalogView."
+    rationale: "Sheet already provides a 95vh scrollable modal viewport (max-w-[94vw] 2xl:max-w-[1550px]). Nesting a max-h-[360px] overflow-y-auto card around AsciiDocRenderer (which already renders its own padded card) creates double scrollbars and leaves barely ~260px of readable text; an explicit mode='reader' navigation option is required to reach the full-stage SpecReader with sticky TOC instead of looping back to ArchitectureView."
+    rejected_alternatives:
+      - option: "Increase the inner container cap from max-h-[360px] to max-h-[560px]"
+        reason_rejected: "Retains the nested scroll-within-scroll trap and double card padding that degrade wheel scrolling and readability."
+      - option: "Call bare requestSpecNavigation(inspectedComponent.id) for 'Open in Full Reader'"
+        reason_rejected: "App.tsx routeToEntity maps CNT-* and CMP-* IDs back to the Architecture tab and re-opens #c4InspectorDrawer in a no-op loop instead of opening SpecReader."
+    graduated_from: DLT-2026-159-FIX-CRAMPED-FULL-SPECIFICATION-F29C
 ---
 = UI Component: Portal Living Specification Reader
 :toc: left
@@ -42,6 +53,7 @@ To maximize cognitive focus and remove interface clutter, the reader eliminates 
 * **Always-Rendered Clean Prose**: Always presents the rendered specification document directly.
 * **Locked Optimal Typography**: Standardizes on the ideal reading line-height and font size.
 * **Section Permalinks**: Hovering over any section heading reveals an anchor link button for instant permalink copying.
+* **Uncramped Embedded Inspector Reading (`DEC-PORTAL-UNCRAMPED-INSPECTOR-PROSE`)**: Inspector drawers hosting `AsciiDocRenderer` (such as `#c4InspectorDrawer` in `SCR-PORTAL-ARCHITECTURE`) must never trap specification prose inside fixed-height nested scroll containers (e.g., `max-h-[360px] overflow-y-auto`) or double-nested card frames; prose expands naturally across the scrollable `Sheet` height and drawer width (`measure="full"`) and exposes an **"Open in Full Reader"** action (`requestSpecNavigation(id, { mode: "reader" })`) to launch the full-stage `SpecReader` with sticky Table of Contents.
 
 == 4. AsciiDoc Rendering (Asciidoctor.js)
 Specification bodies are rendered through Asciidoctor.js (`@asciidoctor/core`, `safe: 'secure'`) instead of a hand-written parser, so the reader supports standard AsciiDoc blocks used by living specs:

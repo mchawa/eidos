@@ -4,7 +4,7 @@ id: CAP-EXP-001
 title: "Interactive Living Web Portal & Visual Documentation Engine"
 domain: DOM-EXPERIENCE-PORTAL
 status: active
-version: "1.3.0"
+version: "1.4.0"
 
 business:
   personas:
@@ -74,6 +74,9 @@ technical:
     - id: INV-PORTAL-HUMAN-READABLE-UI
       rule: "The Living Web Portal UI and generated Mermaid diagrams must present resolved human-readable titles, humanized enum/state/type labels, and plain-language copy across all views, tooltips, and placeholders—never rendering raw Eidos ID slugs, raw schema type slugs, literal backticks, raw filesystem/test paths, or unnecessary technical jargon—while keeping canonical IDs internal for hash deep linking, DOM/Mermaid click delegation, and hidden search indexing."
       test_binding: "tests/test_portal.py::test_portal_human_readable_ui_and_slug_free_diagrams"
+    - id: INV-PORTAL-INSPECTOR-FULL-SPEC-READING
+      rule: "Container and Component inspector drawers (#c4InspectorDrawer) must render Full Specification prose for both containers (CNT-*) and focused internal components (CMP-*) without fixed-height nested scroll traps (max-h-[360px]) or redundant double-nested card frames, honor AsciiDocRenderer measure='full', and expose 'Open in Full Reader' navigation with mode='reader' to launch SpecReader directly."
+      test_binding: "tests/test_portal.py::test_portal_inspector_full_specification_ergonomics"
 ---
 = Capability: Interactive Living Web Portal & Visual Documentation Engine
 :toc: left
@@ -86,7 +89,7 @@ Technical specifications and architecture models are often trapped in raw text f
 
 == Key Responsibilities
 * Real-time inspection and clickable hierarchical exploration of C4 Level 1 (Context), Level 2 (Containers), and Level 3 (Component Whitebox) models using client-side Mermaid rendering (`securityLevel: "strict"`), direct C4 SVG node Blast Radius simulation, and boundary interface contract (`CTR-*`) inspection.
-* Slide-over component inspection drawer, lazy local `specs/<id>.json` body loading (with `--single-file` offline archive support), DOMPurify `SANITIZE_DOM` AsciiDoc rendering, and shareable `window.location.hash` (`#/...`) deep linking revealing module responsibilities, source paths, bound contracts, and catalog specifications.
+* Slide-over component inspection drawer with uncramped full-height **Full Specification** prose for both containers and focused internal components plus **"Open in Full Reader"** escalation into `SpecReader`, lazy local `specs/<id>.json` body loading (with `--single-file` offline archive support), DOMPurify `SANITIZE_DOM` AsciiDoc rendering, and shareable `window.location.hash` (`#/...`) deep linking revealing module responsibilities, source paths, bound contracts, and catalog specifications.
 * Same-origin loopback `Host` header isolation and real-time Server-Sent Events (`GET /api/events`) streaming live workspace and uncommitted drift (`/api/drift`) updates across `eidos/`, `src/`, and `tests/`.
 * Interactive SpecDelta Kanban dashboard and Chronological Timeline tracking proposed, in-review, and applied mutations.
 * Full-text fuzzy search (`⌘K`), real-time category filtering, and inline validation diagnostics (including non-blocking amber advisory validation `warnings` badges and collapsible diagnostics lists) across all catalog entities.

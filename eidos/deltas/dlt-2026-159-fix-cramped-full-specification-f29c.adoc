@@ -1,0 +1,119 @@
+---
+type: delta/mutation
+id: DLT-2026-159-FIX-CRAMPED-FULL-SPECIFICATION-F29C
+title: "Fix Cramped Full Specification Reading Space in Container and Component Inspector"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: medium
+  motivation: "Inside the Architecture view's Container/Component Inspector drawer (#c4InspectorDrawer in ArchitectureView.tsx), the Full Specification section is trapped inside a max-h-[360px] overflow-y-auto inner scroll container wrapped in a redundant bordered card around AsciiDocRenderer, leaving less than ~260px of vertical text space inside an already-scrollable 95vh Sheet—violating UIC-PORTAL-READER and INV-PORTAL-READING-ERGONOMICS—and focused internal components (CMP-*) do not surface their own uncramped Full Specification prose."
+mutations:
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+    details: "Remove the nested max-h-[360px] overflow-y-auto scroll trap and double-nested card wrapper around AsciiDocRenderer under Full Specification in src/eidos/portal/frontend/src/components/views/ArchitectureView.tsx, render uncramped full-height Full Specification prose for both inspected containers (CNT-*) and focused internal components (CMP-*) (auto-surfacing/scrolling focused CMP-* specs to view), extend requestSpecNavigation in src/eidos/portal/frontend/src/lib/specNav.ts and src/eidos/portal/frontend/src/App.tsx with optional mode='reader' so 'Open in Full Reader' launches CatalogView/SpecReader instead of looping back to #c4InspectorDrawer, honor the measure prop in src/eidos/portal/frontend/src/components/ui/AsciiDocRenderer.tsx, and rebuild assets/portal/bundle.html.gz within the 5 MiB air-gapped budget. Update eidos/architecture/components/portal-assets.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/portal/assets.py"
+          - "src/eidos/portal/frontend/scripts/build_assets.py"
+          - "src/eidos/portal/frontend/scripts/hatch_build.py"
+          - "src/eidos/portal/frontend/src"
+      body:
+        contains:
+          - "Full Specification"
+          - "Open in Full Reader"
+  - operation: modify
+    target: UIC-PORTAL-READER
+    details: "Record DEC-PORTAL-UNCRAMPED-INSPECTOR-PROSE and specify embedded specification reading ergonomics in eidos/design/systems/core/components/portal-reader.adoc: inspector drawers hosting AsciiDocRenderer must never constrain prose inside fixed-height nested scroll traps (such as max-h-[360px]) or double-nested card borders, must let prose expand naturally across the full scrollable Sheet height and reading width, and must provide an 'Open in Full Reader' action to launch the full-stage SpecReader with sticky Table of Contents."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-PORTAL-UNCRAMPED-INSPECTOR-PROSE"
+      body:
+        contains:
+          - "Open in Full Reader"
+          - "nested scroll"
+  - operation: modify
+    target: SCR-PORTAL-ARCHITECTURE
+    details: "Update the Component Inspector Drawer documentation in eidos/design/clients/web-portal/screens/portal-architecture.adoc to require uncramped, full-height Full Specification rendering for both containers (CNT-*) and focused internal components (CMP-*) without inner scroll boxes, plus a one-click 'Open in Full Reader' jump action into SpecReader."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "Full Specification"
+          - "Open in Full Reader"
+  - operation: modify
+    target: CAP-EXP-001
+    details: "Extend CAP-EXP-001 in eidos/domains/experience-portal/capabilities/living-web-portal.adoc with INV-PORTAL-INSPECTOR-FULL-SPEC-READING (bumping version per SemVer on apply) and document uncramped Full Specification prose reading for container and component inspectors."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-PORTAL-INSPECTOR-FULL-SPEC-READING"
+      body:
+        contains:
+          - "Full Specification"
+  - operation: add
+    target: INV-PORTAL-INSPECTOR-FULL-SPEC-READING
+    details: "Bind INV-PORTAL-INSPECTOR-FULL-SPEC-READING under CAP-EXP-001 (technical.invariants) to tests/test_portal.py::test_portal_inspector_full_specification_ergonomics."
+    expect:
+      frontmatter:
+        rule: "Full Specification"
+        test_binding: "tests/test_portal.py::test_portal_inspector_full_specification_ergonomics"
+vcs:
+  branch: main
+  base_commit: 6ebe7cc422274d691049077f0c92d04c9316a366
+---
+= SpecDelta: Fix Cramped Full Specification Reading Space in Container and Component Inspector
+:toc: left
+
+== Problem Statement
+In the Living Web Portal's Architecture view (`SCR-PORTAL-ARCHITECTURE`, `src/eidos/portal/frontend/src/components/views/ArchitectureView.tsx`), inspecting a C4 Level 2 Container (`CNT-*`) or a C4 Level 3 Component (`CMP-*`) opens `#c4InspectorDrawer` inside a `95vh` `Sheet` modal (`max-w-[94vw] 2xl:max-w-[1550px]`). However, the **Full Specification** text area is severely cramped for three concrete reasons:
+
+1. **Nested Fixed-Height Scroll Trap (`ArchitectureView.tsx:1553`)**: `<AsciiDocRenderer>` is wrapped in `<div className="max-h-[360px] overflow-y-auto rounded-xl p-3 bg-card border border-border/60">`. Because `Sheet` (`sheet.tsx:107`) already owns vertical scrolling (`flex-1 overflow-y-auto`), users get a tiny 360px inner scroll box inside a 95vh scrollable modal.
+2. **Double-Nested Card Borders & Wasted Space (`ArchitectureView.tsx:1553` + `AsciiDocRenderer.tsx:175,181`)**: `<AsciiDocRenderer>` already renders its own outer card (`p-5 sm:p-7 rounded-2xl bg-card border`) and ignores its declared `measure?: "prose" | "full"` prop (hardcoding `max-w-4xl xl:max-w-5xl mx-auto`). Wrapping it inside another bordered `p-3` box wastes both vertical height (leaving ~260px of visible prose) and horizontal width. By contrast, `BusinessView.tsx`, `DeltasView.tsx`, `DesignView.tsx`, and `ExplorationsView.tsx` all render `<AsciiDocRenderer>` directly without any `max-h-[...]` cap or double card.
+3. **Missing Focused Component (`CMP-*`) Full Specification & Full-Reader Escalation**: When a user clicks an internal C4 Level 3 Component (`CMP-*`) node—opening `#c4InspectorDrawer` with `focusedSubComponentId`—the drawer only displays the component's short `responsibility` blurb even though `App.tsx` and `generator.py` already hydrate `sub.description` and chunk metadata (`hasSpecBodyOrChunk(sub.id, sub.description)`). On containers with 10+ components, the focused component is also buried down the list, and there is no one-click `"Open in Full Reader"` action to jump into the dedicated full-stage `SpecReader` (with sticky On-This-Page TOC). Note that calling bare `requestSpecNavigation("CNT-..." / "CMP-...")` routes back to `ArchitectureView` in `App.tsx:203-205`, so `specNav.ts` and `App.tsx` must support an explicit `mode: "reader"` target.
+
+== Proposed Specification Changes
+* **`CMP-PORTAL-ASSETS` (`src/eidos/portal/frontend/src/components/views/ArchitectureView.tsx`, `src/eidos/portal/frontend/src/components/ui/AsciiDocRenderer.tsx`, `src/eidos/portal/frontend/src/lib/specNav.ts`, `src/eidos/portal/frontend/src/App.tsx`)**:
+  * Remove the `max-h-[360px] overflow-y-auto rounded-xl p-3 bg-card border border-border/60` wrapper around `<AsciiDocRenderer>` under **Full Specification** in `#c4InspectorDrawer` (and remove the redundant outer card wrapper around `<AsciiDocRenderer>` in the contract inspector sheet at `ArchitectureView.tsx:1622`) so prose flows naturally inside the scrollable `Sheet` viewport with zero nested scrollbars and generous reading space.
+  * Honor the existing `measure?: "prose" | "full"` prop in `AsciiDocRenderer.tsx` (defaulting to `"prose"` `w-full max-w-4xl xl:max-w-5xl mx-auto` to preserve `INV-PORTAL-READING-ERGONOMICS`, and supporting `measure="full"` `w-full` when full drawer width is desired) while preserving `.prose-reading`, `.prose-measure`, and `.spec-heading` typography rules.
+  * Extend `SpecNavDetail` and `requestSpecNavigation(target, options?: { mode?: "entity" | "reader" })` in `specNav.ts` and handle `detail.mode === "reader"` in `App.tsx` (`setFocusSpec({ id, nonce }); setActiveTab("catalog", id);`) so `"Open in Full Reader"` reliably opens the full-stage `SpecReader` with sticky Table of Contents for any `CNT-*` or `CMP-*` specification instead of looping back into `#c4InspectorDrawer`.
+  * Surface uncramped **Full Specification** prose for **both** Containers (`CNT-*`) and Components (`CMP-*`):
+    * When an internal component (`CMP-*`) is focused (`focusedSubComponentId`), surface a dedicated focused-component **Full Specification** section near the top of `#c4InspectorDrawer` (or auto-scroll directly to it and expand its full AsciiDoc body) using an uncapped `<AsciiDocRenderer measure="full" specId={sub.id} content={sub.description || ""} />` with human-readable title (`INV-PORTAL-HUMAN-READABLE-UI`) and an **"Open in Full Reader"** button (`requestSpecNavigation(sub.id, { mode: "reader" })`).
+    * Allow any internal component card in `#c4InspectorDrawer` with `hasSpecBodyOrChunk(sub.id, sub.description)` to expand its uncapped **Full Specification** inline or launch **"Open in Full Reader"**.
+    * Add an **"Open in Full Reader"** button in the Container **Full Specification** header (`requestSpecNavigation(inspectedComponent.id, { mode: "reader" })`).
+  * Preserve `#c4InspectorDrawer` DOM hook (exercised by `tests/test_portal_spike.py`), `INV-PORTAL-HUMAN-READABLE-UI` (zero raw Eidos ID slugs in visible chrome), and `INV-PORTAL-AIR-GAPPED-BUNDLE` (`<= 5 MiB` uncompressed bundle, zero remote subresources).
+* **`UIC-PORTAL-READER` (`eidos/design/systems/core/components/portal-reader.adoc`)**:
+  * Graduate `DEC-PORTAL-UNCRAMPED-INSPECTOR-PROSE` into `UIC-PORTAL-READER`'s `decisions:` block and document embedded reading-stage guardrails: inspector drawers embedding `AsciiDocRenderer` must never wrap specification prose in fixed-height nested scroll boxes (`max-h-[360px]`) or double-nested card frames, and must expose an `"Open in Full Reader"` escalation action into `SpecReader`.
+* **`SCR-PORTAL-ARCHITECTURE` (`eidos/design/clients/web-portal/screens/portal-architecture.adoc`)**:
+  * Update the Component Inspector Drawer section to document full-height, uncramped **Full Specification** prose rendering for both Containers (`CNT-*`) and focused internal Components (`CMP-*`), plus `"Open in Full Reader"` navigation into `SpecReader`.
+* **`CAP-EXP-001` (`eidos/domains/experience-portal/capabilities/living-web-portal.adoc`) & `INV-PORTAL-INSPECTOR-FULL-SPEC-READING`**:
+  * Add `INV-PORTAL-INSPECTOR-FULL-SPEC-READING` under `CAP-EXP-001` (`technical.invariants`, bumping `CAP-EXP-001` `version` per SemVer on apply) bound to `tests/test_portal.py::test_portal_inspector_full_specification_ergonomics`.
+
+== Implementation Plan
+1. **Fix `AsciiDocRenderer` Measure & `specNav` Reader-Mode Routing (`CMP-PORTAL-ASSETS`)**:
+   * Update `src/eidos/portal/frontend/src/components/ui/AsciiDocRenderer.tsx` so `measure?: "prose" | "full"` selects `"w-full"` when `measure === "full"` and retains `"w-full max-w-4xl xl:max-w-5xl mx-auto"` when `measure === "prose"` (default), keeping `.adoc-body prose-reading` and `INV-PORTAL-READING-ERGONOMICS` intact.
+   * Update `src/eidos/portal/frontend/src/lib/specNav.ts` to add optional `mode?: "entity" | "reader"` on `SpecNavDetail` and `requestSpecNavigation(target, options?)` (preserving backwards compatibility for single-argument callers).
+   * Update `src/eidos/portal/frontend/src/App.tsx` in the `SPEC_NAV_EVENT` listener (`onNavigate`) so `mode === "reader"` routes directly to `CatalogView` (`setFocusSpec({ id, nonce }); setActiveTab("catalog", id)`) opening the full-stage `SpecReader`.
+2. **Uncramp Container & Component Full Specification in `#c4InspectorDrawer` (`CMP-PORTAL-ASSETS`)**:
+   * Update `src/eidos/portal/frontend/src/components/views/ArchitectureView.tsx`:
+     * Remove the `max-h-[360px] overflow-y-auto rounded-xl p-3 bg-card border border-border/60` wrapper around `<AsciiDocRenderer>` in `#c4InspectorDrawer` and pass `measure="full"` so container specification prose uses the full drawer width and scrolls naturally with the `Sheet`.
+     * Add an **"Open in Full Reader"** button (`onClick={() => { closeC4Inspector(); requestSpecNavigation(inspectedComponent.id, { mode: "reader" }); }}`) in the Container **Full Specification** header.
+     * When `focusedSubComponentId` is set (e.g., clicking a Level 3 `CMP-*` node), surface that focused component's uncapped **Full Specification** (`<AsciiDocRenderer measure="full" specId={sub.id} content={sub.description || ""} />`) prominently near the top of the drawer (with an **"Open in Full Reader"** button calling `requestSpecNavigation(sub.id, { mode: "reader" })`) and allow toggling inline Full Specification on any internal component card when `hasSpecBodyOrChunk(sub.id, sub.description)` is true.
+     * Remove the redundant outer card wrapper around `<AsciiDocRenderer>` in the Contract inspector `Sheet` (`ArchitectureView.tsx:1622`) for visual consistency.
+3. **Rebuild & Verify Air-Gapped Portal Bundle (`CMP-PORTAL-ASSETS`, `CNT-EIDOS-PORTAL`)**:
+   * Rebuild `assets/portal/bundle.html.gz` `(covered via CMP-PORTAL-ASSETS / parent CNT-EIDOS-PORTAL)` via `cd src/eidos/portal/frontend && pnpm build:assets` and verify bundle size (`<= 5 MiB`) and zero remote URLs via `python3 src/eidos/portal/frontend/scripts/build_assets.py --check` (`INV-PORTAL-AIR-GAPPED-BUNDLE`).
+4. **Update Living Specifications**:
+   * Update `eidos/architecture/components/portal-assets.adoc` (`CMP-PORTAL-ASSETS`).
+   * Update `eidos/design/systems/core/components/portal-reader.adoc` (`UIC-PORTAL-READER`, including `DEC-PORTAL-UNCRAMPED-INSPECTOR-PROSE`).
+   * Update `eidos/design/clients/web-portal/screens/portal-architecture.adoc` (`SCR-PORTAL-ARCHITECTURE`).
+   * Update `eidos/domains/experience-portal/capabilities/living-web-portal.adoc` (`CAP-EXP-001`) adding `INV-PORTAL-INSPECTOR-FULL-SPEC-READING` and bumping `version` per SemVer.
+5. **Automated Tests & Governance Verification (`INV-PORTAL-INSPECTOR-FULL-SPEC-READING`, `POL-005-STATEMENT-TEST-COVERAGE`)**:
+   * Add Vitest DOM tests in `src/eidos/portal/frontend/tests/architecture-view.test.ts` `(covered via parent CNT-EIDOS-PORTAL)` verifying that `#c4InspectorDrawer` renders Full Specification prose for both containers and focused internal components without `max-h-[360px]`, honors `measure="full"`, dispatches `mode: "reader"` from `"Open in Full Reader"` buttons, and omits raw entity ID slugs.
+   * Add `tests/test_portal.py::test_portal_inspector_full_specification_ergonomics` referencing `INV-PORTAL-INSPECTOR-FULL-SPEC-READING` asserting the source and compiled `PORTAL_HTML_TEMPLATE` omit the `max-h-[360px]` nested scroll cap on `Full Specification`, expose `"Open in Full Reader"` with `mode: "reader"`, and preserve `INV-PORTAL-READING-ERGONOMICS` and `#c4InspectorDrawer`.
+   * Run `cd src/eidos/portal/frontend && pnpm test`, `pytest tests/test_portal.py tests/test_portal_spike.py`, `eidos delta verify DLT-2026-159 --json`, `eidos delta apply DLT-2026-159`, and `eidos drift --uncommitted --json`.

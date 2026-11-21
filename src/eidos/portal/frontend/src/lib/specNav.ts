@@ -12,6 +12,8 @@ export const SPEC_NAV_EVENT = "eidos:navigate-spec";
 export interface SpecNavDetail {
   /** Raw target as written in the document: a spec ID (`CAP-EXP-001`) or a relative `.adoc`/`.html` path. */
   target: string;
+  /** Navigation mode: `"entity"` routes to the domain/architecture view; `"reader"` opens SpecReader in CatalogView. */
+  mode?: "entity" | "reader";
 }
 
 export interface SpecLike {
@@ -32,8 +34,12 @@ export function isSpecDocumentPath(href: string): boolean {
   return /\.(adoc|html)$/i.test(path);
 }
 
-export function requestSpecNavigation(target: string): void {
-  window.dispatchEvent(new CustomEvent<SpecNavDetail>(SPEC_NAV_EVENT, { detail: { target } }));
+export function requestSpecNavigation(
+  target: string,
+  options?: { mode?: "entity" | "reader" }
+): void {
+  const detail: SpecNavDetail = options?.mode ? { target, mode: options.mode } : { target };
+  window.dispatchEvent(new CustomEvent<SpecNavDetail>(SPEC_NAV_EVENT, { detail }));
 }
 
 function pathSegments(path: string): string[] {
