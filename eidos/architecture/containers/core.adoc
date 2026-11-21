@@ -4,10 +4,11 @@ id: CNT-EIDOS-CORE
 title: "Eidos Living Specification & Design Core Engine"
 status: active
 container_type: "library"
-runtime: "Python 3.12 / Hatchling / fastyaml-rs / orjson / jsonschema"
+runtime: "Python 3.12 / Hatchling / fastyaml-rs / orjson / jsonschema / quickjs-ng"
 source_path:
   - "src/eidos/core"
   - "assets/schemas"
+  - "assets/mermaid"
 
 domain: DOM-SPEC-ENGINE
 tier: core
@@ -125,6 +126,18 @@ decisions:
       - option: "Encode custom protocols as inline 'other:<name>' compound strings"
         reason_rejected: "Requires ad-hoc string splitting in every consumer and weakens static JSON Schema validation."
     graduated_from: DLT-2026-151-ENFORCE-CANONICAL-CONTRACT-PROTOCOL-9342
+  - id: DEC-CORE-IN-PROCESS-QUICKJS-MERMAID-VALIDATION
+    title: "Validate Embedded AsciiDoc Mermaid Blocks In-Process via QuickJS-ng mermaid.parse() and SHA-256 SQLite Caching"
+    decision: "Validate [mermaid] and [source,mermaid] AsciiDoc blocks inside SpecValidator via standalone CMP-MERMAID-VALIDATOR running mermaid.parse() (securityLevel: 'strict') in a dedicated lock-serialized quickjs-ng worker thread against pinned assets/mermaid/mermaid.min.js.gz with QuickJS bytecode caching and stateless mermaid_validation_cache (SCHEMA_VERSION 2.22.0), falling back to structural-v1 when quickjs-ng is unavailable."
+    rationale: "Delivers exact Mermaid Jison grammar diagnostics across C4Context, flowchart, sequenceDiagram, stateDiagram-v2, classDiagram, and erDiagram in ~5-12ms per changed diagram and 0ms on warm cache hits with zero Node.js, headless browser, or external network dependencies (POL-004), while keeping CMP-MERMAID-VALIDATOR fully decoupled from CNT-EIDOS-PORTAL."
+    rejected_alternatives:
+      - option: "Invoke mermaid-cli (mmdc) or Headless Chromium via subprocess"
+        reason_rejected: "Requires Node.js and Chromium with 1-3s startup overhead and hundreds of MB RAM."
+      - option: "Use mermaidx SVG rasterizer (novasvg)"
+        reason_rejected: "Executes full SVG layout and rasterization (~100-180ms/diagram) rather than parse-only syntax validation."
+      - option: "Use a pure-Python regex or Tree-sitter Mermaid parser exclusively"
+        reason_rejected: "Diverges from Mermaid's actual Jison grammars on C4Context and flowchart syntax, risking false positives."
+    graduated_from: DLT-2026-158-ADD-FAST-0169
 
 contracts:
   provides: []
@@ -134,7 +147,7 @@ contracts:
 :toc: left
 
 == Architectural Boundary
-This container represents the foundational library under `src/eidos/core/` (`spec/`, `lifecycle/`, and `workspace/` subpackages) and bundled schemas and AsciiDoc prose templates under `assets/schemas/`. It owns all specification parsing, JSON Schema validation, zero-config project and monorepo sub-project path resolution, minimal blueprint scaffolding across all 15 living specification types, W3C token management, SpecDelta lifecycle state machines, and reference checking. It explicitly excludes SQLite persistence and lexical/AST indexing (delegated to `CNT-EIDOS-INDEX`), Git diff and drift evaluation (delegated to `CNT-EIDOS-VCS`), CLI presentation (`CNT-EIDOS-CLI`), and web portal rendering (`CNT-EIDOS-PORTAL`).
+This container represents the foundational library under `src/eidos/core/` (`spec/`, `lifecycle/`, and `workspace/` subpackages), bundled schemas and AsciiDoc prose templates under `assets/schemas/`, and the standalone compressed Mermaid parser bundle under `assets/mermaid/`. It owns all specification parsing, JSON Schema validation, in-process QuickJS Mermaid syntax validation (`CMP-MERMAID-VALIDATOR`, `DEC-CORE-IN-PROCESS-QUICKJS-MERMAID-VALIDATION`), zero-config project and monorepo sub-project path resolution, minimal blueprint scaffolding across all 15 living specification types, W3C token management, SpecDelta lifecycle state machines, and reference checking. It explicitly excludes SQLite persistence and lexical/AST indexing (delegated to `CNT-EIDOS-INDEX`), Git diff and drift evaluation (delegated to `CNT-EIDOS-VCS`), CLI presentation (`CNT-EIDOS-CLI`), and web portal rendering (`CNT-EIDOS-PORTAL`).
 
 == Internal Structure & Key Mechanisms
 `CNT-EIDOS-CORE` is structured into three internal subpackages plus the packaged `assets/schemas/v1/` schema bundle:

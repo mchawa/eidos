@@ -36,6 +36,7 @@ def get_assets_root() -> Path:
             (candidate / "schemas").is_dir()
             or (candidate / "plugin_reference").is_dir()
             or (candidate / "portal").is_dir()
+            or (candidate / "mermaid").is_dir()
         ):
             return candidate
     if candidates:
@@ -69,6 +70,11 @@ def get_v1_schemas_dir() -> Path:
 def get_plugin_reference_dir() -> Path:
     """Return the directory containing the canonical Eidos Agent Skills reference."""
     return get_assets_path("plugin_reference")
+
+
+def get_mermaid_bundle_path() -> Path:
+    """Return the path to the standalone gzipped Mermaid parser bundle (assets/mermaid/mermaid.min.js.gz)."""
+    return get_assets_path("mermaid/mermaid.min.js.gz")
 
 
 _TEMPLATE_PATHS_BY_TYPE: dict[str, str] = {

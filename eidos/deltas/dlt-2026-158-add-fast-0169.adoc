@@ -1,0 +1,209 @@
+---
+type: delta/mutation
+id: DLT-2026-158-ADD-FAST-0169
+title: "Add Fast In-Process QuickJS Mermaid Diagram Syntax Validation to SpecValidator"
+status: applied
+intent:
+  kind: feature
+  motivation: "Invalid [mermaid] and [source,mermaid] blocks embedded in living .adoc specifications currently pass eidos validate and eidos drift undetected, silently breaking diagram rendering until manually opened. Validating Mermaid syntax directly inside SpecValidator using an in-process QuickJS (quickjs-ng) mermaid.parse() evaluator backed by a stateless SHA-256 SQLite cache delivers exact Mermaid grammar diagnostics with 0 ms warm-cache overhead, ~10-17 ms per changed diagram, and zero Node.js, Chromium, or portal runtime dependencies."
+mutations:
+  - operation: add
+    target: CMP-MERMAID-VALIDATOR
+    title: "MermaidValidator"
+    details: "Introduce standalone C4 Level 3 component CMP-MERMAID-VALIDATOR (eidos/architecture/components/mermaid-validator.adoc, container: CNT-EIDOS-CORE, source_path: src/eidos/core/spec/mermaid_validator.py) owning AsciiDoc [mermaid]/[source,mermaid] block extraction (handling block attributes, variable-length matched ----/.... fences, comment-block skipping, empty-block rejection, and lazy on-error .adoc line-offset resolution), thread-safe serialized in-process quickjs-ng mermaid.parse() execution with stack/memory/time limits and QuickJS bytecode caching against pinned assets/mermaid/mermaid.min.js.gz, SHA-256 cache integration via CMP-GRAPH-STORAGE, and a zero-dependency structural fallback when quickjs-ng is unavailable."
+    expect:
+      frontmatter:
+        status: "active"
+        container: "CNT-EIDOS-CORE"
+        source_path: "src/eidos/core/spec/mermaid_validator.py"
+      body:
+        contains:
+          - "mermaid.parse"
+          - "quickjs-ng"
+          - "extract_mermaid_blocks"
+          - "validate_mermaid_blocks"
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: "Add check_mermaid: bool = True keyword argument to SpecValidator.validate_document(doc, root_dir=None, *, check_mermaid=True) in src/eidos/core/spec/validator.py; pass check_mermaid=False inside validate_directory() to keep spec_validation_cache purely schema-scoped, then run a single post-load batch CMP-MERMAID-VALIDATOR pass (skipping historical applied/rejected SpecDeltas) hydrating/flushing mermaid_validation_cache non-blockingly and surfacing syntax failures as blocking repo-relative schema_errors with lazily resolved 1-based .adoc line offsets. Update eidos/architecture/components/spec-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/validator.py"
+          - "src/eidos/core/spec/design_validation.py"
+      body:
+        contains:
+          - "CMP-MERMAID-VALIDATOR"
+          - "mermaid_validation_cache"
+          - "check_mermaid"
+  - operation: modify
+    target: CMP-ASSET-LOCATOR
+    details: "Add get_mermaid_bundle_path() -> Path (and recognize assets/mermaid in get_assets_root()) in src/eidos/core/workspace/assets.py to resolve the standalone compressed Mermaid parser bundle across repo checkouts and installed wheels. Update eidos/architecture/components/asset-locator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/core/workspace/assets.py"
+      body:
+        contains:
+          - "get_mermaid_bundle_path"
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: "Update runtime (adding quickjs-ng) and source_path (adding assets/mermaid), document CMP-MERMAID-VALIDATOR, and record DEC-CORE-IN-PROCESS-QUICKJS-MERMAID-VALIDATION with rejected alternatives in eidos/architecture/containers/core.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core"
+          - "assets/schemas"
+          - "assets/mermaid"
+        decisions.id:
+          - "DEC-CORE-IN-PROCESS-QUICKJS-MERMAID-VALIDATION"
+      body:
+        contains:
+          - "CMP-MERMAID-VALIDATOR"
+          - "DEC-CORE-IN-PROCESS-QUICKJS-MERMAID-VALIDATION"
+  - operation: modify
+    target: ARCH-EIDOS-001
+    details: "Update the CNT-EIDOS-CORE Source Path row in eidos/architecture/system-architecture.adoc to include assets/mermaid alongside src/eidos/core and assets/schemas."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "assets/mermaid"
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    details: "Bump SCHEMA_VERSION to 2.22.0, add stateless 14th table mermaid_validation_cache to _MANAGED_TABLES and _CACHE_SCHEMA_DDL, and export non-blocking load_mermaid_validation_cache / save_mermaid_validation_cache helpers in src/eidos/core/index/storage.py. Update eidos/architecture/components/graph-storage.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/index/storage.py"
+          - "src/eidos/core/index/graph_index.py"
+      body:
+        contains:
+          - "2.22.0"
+          - "mermaid_validation_cache"
+          - "load_mermaid_validation_cache"
+          - "save_mermaid_validation_cache"
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+    details: "Update eidos/architecture/containers/index.adoc to reflect the 14-table SQLite WAL schema (SCHEMA_VERSION 2.22.0) including mermaid_validation_cache."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "2.22.0"
+          - "mermaid_validation_cache"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Bump version to 1.8.0 and document embedded Mermaid diagram syntax validation under eidos validate and SCHEMA_VERSION 2.22.0 under eidos index status in eidos/architecture/contracts/cli.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        version: "1.8.0"
+      body:
+        contains:
+          - "2.22.0"
+          - "Mermaid"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Document embedded [mermaid] / [source,mermaid] validation under eidos validate and update SCHEMA_VERSION 2.22.0 in docs/guides/cli.md (INV-DOCS-SYNCHRONIZATION) and eidos/architecture/components/docs-user-guides.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/guides"
+      body:
+        contains:
+          - "2.22.0"
+          - "Mermaid"
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: "Update docs/concepts/architectural-index.md and eidos/architecture/components/docs-core-concepts.adoc for the 14-table SCHEMA_VERSION 2.22.0 SQLite Knowledge Graph including mermaid_validation_cache (INV-DOCS-SYNCHRONIZATION)."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/concepts"
+      body:
+        contains:
+          - "2.22.0"
+          - "mermaid_validation_cache"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Bump CAP-PROD-001 version to 1.18.0, register CMP-MERMAID-VALIDATOR in technical.components, update SCHEMA_VERSION prose reference to 2.22.0, and bind INV-MERMAID-SPEC-VALIDATION in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        version: "1.18.0"
+        technical.components:
+          - "CMP-MERMAID-VALIDATOR"
+        technical.invariants.id:
+          - "INV-MERMAID-SPEC-VALIDATION"
+      body:
+        contains:
+          - "INV-MERMAID-SPEC-VALIDATION"
+          - "CMP-MERMAID-VALIDATOR"
+          - "2.22.0"
+  - operation: add
+    target: INV-MERMAID-SPEC-VALIDATION
+    details: "Bind INV-MERMAID-SPEC-VALIDATION in CAP-PROD-001 to tests/test_mermaid_validator.py::test_mermaid_spec_validation_and_cache_lifecycle."
+    expect:
+      frontmatter:
+        rule: "mermaid.parse()"
+        test_binding: "tests/test_mermaid_validator.py::test_mermaid_spec_validation_and_cache_lifecycle"
+vcs:
+  branch: main
+  base_commit: 3620afcb3688aa234bb3833371dc6368c47c6be3
+---
+= SpecDelta: Add Fast In-Process QuickJS Mermaid Diagram Syntax Validation to SpecValidator
+:toc: left
+
+== Problem Statement
+Living specifications in `eidos/` routinely embed `[mermaid]` and `[source,mermaid]` AsciiDoc diagram blocks (`C4Context`, `sequenceDiagram`, `flowchart`, `stateDiagram-v2`, `classDiagram`, `erDiagram`), yet `SpecValidator` (`eidos validate` and `eidos drift`) currently ignores diagram bodies completely. Broken Mermaid syntax therefore slips past local validation and CI gates undetected.
+
+Existing off-the-shelf validation approaches conflict with Eidos's zero-Node, zero-browser, offline (`POL-004`), and sub-second execution constraints:
+* **`mermaid-cli` (`mmdc`) / Puppeteer / Playwright** launches Headless Chromium (~1–3s startup + hundreds of MB RAM).
+* **`mermaid-py`** delegates to the external `mermaid.ink` HTTP API (violating offline/private-repo operation).
+* **`mermaid-parser-py`** requires host Node.js + `pythonmonkey` and hooks deprecated `mermaidAPI` internals.
+* **`mermaidx`** pulls in a C++ SVG rasterizer (`novasvg`) and runs full layout + SVG generation (~100–180 ms/diagram) instead of parse-only syntax validation.
+* **Pure-Python regex / third-party Tree-sitter or Rust grammars** diverge from Mermaid's Jison grammars—especially for `C4Context` and flowchart label syntax—creating false positives on valid specs.
+
+Empirical benchmarking on Eidos's real specs proved that calling `mermaid.parse()` directly inside **`quickjs-ng`** (2.4 MiB wheel, zero Node.js, zero Chromium, zero `novasvg`) validates each diagram in **~7–18 ms** (~8–10× faster than full SVG rendering) after a **~106 ms** bytecode-cached VM boot, and drops to **0 ms** on warm runs when backed by a SHA-256 cache in `eidos/.cache/index.db`.
+
+== Proposed Specification Changes
+* **`CMP-MERMAID-VALIDATOR` (new standalone component under `CNT-EIDOS-CORE`, `src/eidos/core/spec/mermaid_validator.py`)**:
+  * **AsciiDoc Extraction (`extract_mermaid_blocks(body: str)`)**: Extract `[mermaid]` / `[mermaid, ...]` and `[source,mermaid]` / `[source, mermaid, ...]` AsciiDoc blocks delimited by matched `----` or `....` fences (`>=4` identical characters), ignoring AsciiDoc comment blocks (`//// ... ////`) and single-line comments (`// [mermaid]`), rejecting empty/whitespace-only diagram blocks with an explicit error, and recording 1-based body line numbers. Resolve exact 1-based `.adoc` file line offsets **lazily only on validation failure** by inspecting `doc.file_path` (falling back to body-relative line numbers when `doc.file_path` is unreadable or in-memory), avoiding both happy-path disk reads and any changes to `SpecDocument` (`CMP-DOMAIN-MODELS`) or `CMP-SPEC-PARSER`.
+  * **Thread-Safe, Bounded QuickJS Execution (`validate_mermaid_blocks(...)`)**: Execute `mermaid.parse(code)` in `securityLevel: 'strict'` inside a lazily initialized, **thread-safe** dedicated single-worker thread (protecting concurrent callers such as `eidos portal serve` from non-thread-safe `quickjs.Context` access) with explicit worker thread stack sizing, QuickJS memory/stack limits (`set_memory_limit`, `set_max_stack_size`), and a bounded per-diagram execution timeout (`set_time_limit`) against the pinned standalone asset `assets/mermaid/mermaid.min.js.gz` (MIT-licensed `mermaid@12.x` `dist/mermaid.min.js`, ~1.50 MiB gzipped, completely independent of `CNT-EIDOS-PORTAL` and `assets/portal/`, preserving `ARCH-EIDOS-001` `core` denies `presentation` and `INV-CORE-MODULAR-COMPONENT-COHESION` acyclicity `CMP-SPEC-VALIDATOR -> CMP-MERMAID-VALIDATOR -> CMP-ASSET-LOCATOR`).
+  * **Version-Pinned Caching & Bytecode Acceleration**: Derive canonical `engine_version` from the pinned Mermaid version + SHA-256 digest of `assets/mermaid/mermaid.min.js.gz` (and QuickJS version) for `mermaid_validation_cache` keys and atomic QuickJS bytecode caching (`eidos/.cache/mermaid_parser.<digest12>.qjsbc`, best-effort and gitignored under `eidos/.cache/`).
+  * **Zero-Dependency Fallback**: When `quickjs` is unavailable (e.g., pre-release Python 3.15 without `quickjs-ng` wheels), degrade cleanly under a distinct `engine_version` (`"structural-v1"`) to a conservative pure-Python structural validator (non-empty block, recognized Mermaid header after comments/directives, valid `%%{...}%%` JSON directive, balanced `subgraph`/`end`, sequence `alt`/`opt`/`loop`/`par`/`critical`/`rect`/`end`, and quote/brace checks).
+* **`CMP-ASSET-LOCATOR` (`src/eidos/core/workspace/assets.py`), `CNT-EIDOS-CORE` & `ARCH-EIDOS-001`**:
+  * Ship the standalone `assets/mermaid/mermaid.min.js.gz` asset owned by `CNT-EIDOS-CORE` (automatically packaged by existing `pyproject.toml` `assets` force-include), add `get_mermaid_bundle_path() -> Path`, update `CNT-EIDOS-CORE` `runtime` + `source_path` and `ARCH-EIDOS-001` Source Path table, and record `DEC-CORE-IN-PROCESS-QUICKJS-MERMAID-VALIDATION`.
+* **`CMP-GRAPH-STORAGE` (`src/eidos/core/index/storage.py`) & `CNT-EIDOS-INDEX`**:
+  * Bump `SCHEMA_VERSION` from `"2.21.0"` to `"2.22.0"` (14 tables) adding stateless `mermaid_validation_cache (diagram_sha256 TEXT PRIMARY KEY, engine_version TEXT NOT NULL, is_valid INTEGER NOT NULL, error_message TEXT NOT NULL)`.
+  * Export opportunistic non-blocking `load_mermaid_validation_cache(db_path, engine_version)` (`allow_ddl=False`) and `save_mermaid_validation_cache(db_path, rows)` (`_advisory_db_lock(..., non_blocking=True)`), matching `public_surface_cache` WAL safety (`DEC-INDEX-STRICT-FRESHNESS-LOCK-DIAGNOSTICS`).
+* **`CMP-SPEC-VALIDATOR` (`src/eidos/core/spec/validator.py`)**:
+  * Add `check_mermaid: bool = True` to `SpecValidator.validate_document(self, doc: SpecDocument, root_dir: Path | None = None, *, check_mermaid: bool = True) -> list[str]`.
+  * Pass `check_mermaid=False` from `SpecValidator.validate_directory()` so `spec_validation_cache` stores strictly YAML/JSON schema verdicts, then run a single post-load batch `CMP-MERMAID-VALIDATOR` pass over loaded documents (skipping historical `status: applied` and `status: rejected` SpecDeltas, matching `fast_pathed_applied_deltas`), hydrating/flushing `mermaid_validation_cache` once per pass so unchanged diagrams never import `quickjs` or boot the VM (0 ms warm overhead), and emitting failures as blocking repo-relative `ValidationReport.schema_errors` entries (e.g., `Mermaid syntax error in [mermaid] block at line <N>: <parser message>`).
+* **`CTR-EIDOS-CLI` (`1.8.0`), `CMP-DOCS-USER-GUIDES`, `CMP-DOCS-CORE-CONCEPTS` & `CAP-PROD-001` (`1.18.0`)**:
+  * Synchronize `eidos validate` and `eidos index status` (`SCHEMA_VERSION` `2.22.0`) documentation in `eidos/architecture/contracts/cli.adoc`, `docs/guides/cli.md`, `docs/concepts/architectural-index.md`, and `CAP-PROD-001` (`INV-DOCS-SYNCHRONIZATION`), register `CMP-MERMAID-VALIDATOR`, and bind `INV-MERMAID-SPEC-VALIDATION` to `tests/test_mermaid_validator.py::test_mermaid_spec_validation_and_cache_lifecycle`.
+
+== Implementation Plan
+1. **Packaging & Standalone Mermaid Parser Asset (`CMP-ASSET-LOCATOR`, `CNT-EIDOS-CORE`, `ARCH-EIDOS-001`)**:
+   * Add `"quickjs-ng>=0.15.1; python_version < '3.15'"` to `[project.dependencies]` in `pyproject.toml` (unmapped root packaging manifest; runtime dependency documented in `CNT-EIDOS-CORE`; existing `assets` force-include covers `assets/mermaid/`).
+   * Package reproducible standalone compressed `assets/mermaid/mermaid.min.js.gz` (MIT `mermaid@12.1.0` `dist/mermaid.min.js`, ~1.50 MiB gzipped, decoupled from `assets/portal/`) with pinned version + SHA-256 constant verified by tests.
+   * Add `get_mermaid_bundle_path() -> Path` and `(candidate / "mermaid").is_dir()` detection in `src/eidos/core/workspace/assets.py`.
+2. **Stateless SQLite Diagram Cache (`CMP-GRAPH-STORAGE`, `CNT-EIDOS-INDEX`)**:
+   * Bump `SCHEMA_VERSION` from `"2.21.0"` to `"2.22.0"` in `src/eidos/core/index/storage.py`, add `mermaid_validation_cache` to `_MANAGED_TABLES` and `_CACHE_SCHEMA_DDL`, and implement non-blocking `load_mermaid_validation_cache` and `save_mermaid_validation_cache`.
+   * Update `SCHEMA_VERSION` assertions in `tests/test_graph_index.py` (test updates covered via `CMP-GRAPH-STORAGE` and `INV-KNOWLEDGE-GRAPH-CATALOG`).
+3. **In-Process QuickJS Mermaid Validator (`CMP-MERMAID-VALIDATOR`)**:
+   * Implement `src/eidos/core/spec/mermaid_validator.py` with `MermaidBlock`, `MermaidValidationResult`, `extract_mermaid_blocks`, `validate_mermaid_blocks`, lazy on-error `.adoc` line-offset resolution, dedicated-thread lock-serialized `quickjs-ng` VM with explicit stack/memory/time limits + minimal DOM/DOMPurify stub + QuickJS bytecode cache (`eidos/.cache/mermaid_parser.<digest12>.qjsbc`), `mermaid.parse()` execution with `securityLevel: 'strict'`, empty-block rejection, and conservative pure-Python structural fallback (`engine_version="structural-v1"`) when `quickjs` is unavailable.
+   * Keep zero imports from `src/eidos/portal/` to preserve `ARCH-EIDOS-001` `core` denies `presentation` import boundaries and `INV-CORE-MODULAR-COMPONENT-COHESION` acyclicity (`CMP-SPEC-VALIDATOR -> CMP-MERMAID-VALIDATOR -> CMP-ASSET-LOCATOR`).
+4. **SpecValidator Orchestration (`CMP-SPEC-VALIDATOR`)**:
+   * Add `check_mermaid: bool = True` to `SpecValidator.validate_document(self, doc, root_dir=None, *, check_mermaid=True)` in `src/eidos/core/spec/validator.py`; call with `check_mermaid=False` inside `validate_directory()` to keep `spec_validation_cache` strictly schema-only, then run a single post-load batch `validate_mermaid_blocks` pass (skipping `applied`/`rejected` SpecDeltas), batch-hydrating/flushing `mermaid_validation_cache` once per pass (never booting QuickJS when all blocks hit cache or zero Mermaid blocks exist), and appending blocking diagnostics with lazily resolved 1-based `.adoc` line offsets to `doc.errors` / `ValidationReport.schema_errors`.
+   * Note: `src/eidos/cli/spec_commands.py` requires no CLI flag or code changes (`CNT-EIDOS-CLI` unchanged; behavioral contract update documented in `CTR-EIDOS-CLI`).
+5. **Living Specifications & Documentation (`CMP-MERMAID-VALIDATOR`, `CMP-SPEC-VALIDATOR`, `CMP-ASSET-LOCATOR`, `CNT-EIDOS-CORE`, `ARCH-EIDOS-001`, `CMP-GRAPH-STORAGE`, `CNT-EIDOS-INDEX`, `CTR-EIDOS-CLI`, `CMP-DOCS-USER-GUIDES`, `CMP-DOCS-CORE-CONCEPTS`, `CAP-PROD-001`, `INV-MERMAID-SPEC-VALIDATION`)**:
+   * Scaffold `eidos/architecture/components/mermaid-validator.adoc` via `eidos spec create component CMP-MERMAID-VALIDATOR --title "MermaidValidator"` and update all mutated living specs, `docs/guides/cli.md`, and `docs/concepts/architectural-index.md` (`CNT-EIDOS-DOCS` covered via `CMP-DOCS-USER-GUIDES` and `CMP-DOCS-CORE-CONCEPTS`).
+6. **Tests, Coverage & Verification Gate (`POL-005-STATEMENT-TEST-COVERAGE`, `INV-MERMAID-SPEC-VALIDATION`, `INV-DOCS-SYNCHRONIZATION`)**:
+   * Add `tests/test_mermaid_validator.py::test_mermaid_spec_validation_and_cache_lifecycle` (plus focused unit tests covering asset presence/decompression, `C4Context`, `sequenceDiagram`, `flowchart`, `stateDiagram-v2`, `classDiagram`, `erDiagram`, AsciiDoc attributes/comment-skipping/matched-fence/empty-block edge cases, invalid syntax reporting with exact `.adoc` file line offsets, warm SHA-256 cache hit asserting zero QuickJS VM initialization, cache invalidation on diagram or `engine_version` change, concurrent thread safety, non-blocking contended lock fallback, `applied`/`rejected` delta skipping, and structural fallback when `quickjs` is mocked unavailable) maintaining strictly `>90.0%` per-file statement coverage across every modified and new `src/eidos/**/*.py` module (`POL-005-STATEMENT-TEST-COVERAGE`).
+   * Run `pytest --cov=src/eidos --cov-report=json:coverage.json`, `eidos delta verify DLT-2026-158 --json`, `eidos delta apply DLT-2026-158`, and `eidos drift --uncommitted --json`.

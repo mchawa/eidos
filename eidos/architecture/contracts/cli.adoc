@@ -3,7 +3,7 @@ type: tech/contract
 id: CTR-EIDOS-CLI
 title: "Eidos Command-Line Interface Contract"
 status: active
-version: "1.7.0"
+version: "1.8.0"
 protocol: "cli_args"
 container: "CNT-EIDOS-CLI"
 specification_file: "src/eidos/cli/main.py"
@@ -23,7 +23,7 @@ Displays current engine version, loaded v1 schemas, and available agent plugin t
 * **Exit Code**: 0
 
 === `eidos validate [PATH] [--fail-on-warnings] [--json]`
-Validates all specification documents under `PATH` (defaults to `./eidos`) against the bundled JSON/YAML schemas and verifies cross-references, `== Public Surface` AST symbols, active `test_binding` coverage, and contract parity.
+Validates all specification documents under `PATH` (defaults to `./eidos`) against the bundled JSON/YAML schemas and verifies cross-references, embedded Mermaid (`[mermaid]` / `[source,mermaid]`) diagram syntax (in-process QuickJS `mermaid.parse()` backed by `mermaid_validation_cache`), `== Public Surface` AST symbols, active `test_binding` coverage, and contract parity.
 * **Arguments**: `PATH` (Optional directory path)
 * **Options**:
   - `--fail-on-warnings`: Escalate non-empty advisory `warnings` to exit code `1` (default `False`).
@@ -52,7 +52,7 @@ Extracts a compact, token-efficient architectural subgraph context slice (C4 com
 === `eidos index`
 Manages the embedded SQLite architectural knowledge graph and FTS5 hybrid search index (`eidos/.cache/index.db`).
 * **Sub-commands**:
-  - `status [--path <path>] [--json]`: Displays index health, `SCHEMA_VERSION` (`2.21.0`), `edge_counts_by_provenance`, AST parser engine telemetry (`ast-grep` vs `python-ast`), symbol breakdown by syntax kind, test invariant assertion metrics, cache file size, and continuous code-aware dirty status. Supports `--json` for programmatic agent consumption.
+  - `status [--path <path>] [--json]`: Displays index health, `SCHEMA_VERSION` (`2.22.0`), `edge_counts_by_provenance`, AST parser engine telemetry (`ast-grep` vs `python-ast`), symbol breakdown by syntax kind, test invariant assertion metrics, cache file size, and continuous code-aware dirty status. Supports `--json` for programmatic agent consumption.
   - `sync [--path <path>] [--force] [--no-semantic] [--json]`: Synchronizes or rebuilds the knowledge graph index, optionally skipping Harrier ONNX embedding generation (`--no-semantic`) or emitting machine-readable JSON telemetry (`--json`).
   - `search <query> [--limit <n>] [--semantic/--no-semantic] [--path <path>] [--json]`: Performs BM25 full-text search with optional Harrier Hybrid RRF fusion across titles, requirements, and invariants, tagging each match with epistemic `provenance` (`fts_bm25`, `semantic_rrf`, `hybrid_rrf`) and `confidence` (`observed` for `fts_bm25`, `inferred` for `semantic_rrf` / `hybrid_rrf`).
   - `blast-radius <symbol_or_path> [--depth <n>] [--min-confidence <level>] [--path <path>] [--json]`: Computes the transitive dependency and governance blast radius for a canonical entity ID, AST code symbol, specification file path, or source file path, filtering traversal edges by `--min-confidence` (`inferred` default, `derived`, or `observed`) and reporting `query`, `resolved_entities`, `entity_id`, `min_confidence`, and `neighbors` (with `provenance`, `confidence`, `via_rel_type`, and `evidence`) in `--json` output.

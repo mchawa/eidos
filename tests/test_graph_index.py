@@ -1380,7 +1380,7 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
     db_path = eidos_dir / ".cache" / "index.db"
     with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
-        assert ver == SCHEMA_VERSION == "2.21.0"
+        assert ver == SCHEMA_VERSION == "2.22.0"
         val_rows_before = conn.execute("SELECT COUNT(*) FROM spec_validation_cache;").fetchone()[0]
         assert val_rows_before == 1
 
@@ -2430,7 +2430,7 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
     from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 
-    assert SCHEMA_VERSION == "2.21.0"
+    assert SCHEMA_VERSION == "2.22.0"
     assert set(AstGrepIndexer.LANGUAGE_MAP.keys()) | {".proto", ".adoc"} <= _FILE_QUERY_EXTS
 
     # 1. Verify _ENTITY_ID_TOKEN_RE recognizes SYS-*, ARCH-*, PER-*, and underscore IDs
@@ -2605,7 +2605,7 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
     from eidos.portal.generator import get_portal_data
 
-    assert SCHEMA_VERSION == "2.21.0"
+    assert SCHEMA_VERSION == "2.22.0"
     assert _build_spec_catalog_with_invariants(tmp_path / "nonexistent_eidos") == ({}, {})
 
     init_repository(tmp_path, title="dlt-104-repo")
@@ -2741,7 +2741,7 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
         conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '2.11.0');")
         conn.commit()
         ensure_cache_schema(conn)
-        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.21.0"
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.22.0"
 
         idx.sync(force=True)
 
@@ -4214,7 +4214,7 @@ def test_epistemic_provenance_tags_and_confidence_filtering(tmp_path: Path) -> N
     from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 
-    assert SCHEMA_VERSION == "2.21.0"
+    assert SCHEMA_VERSION == "2.22.0"
     assert provenance_to_confidence("declared_spec") == "observed"
     assert provenance_to_confidence("ast_symbol") == "observed"
     assert provenance_to_confidence("ast_import") == "derived"
@@ -4395,7 +4395,7 @@ def test_epistemic_provenance_tags_and_confidence_filtering(tmp_path: Path) -> N
         st_res = cli.invoke(app, ["index", "status", "--path", str(eidos_dir), "--json"])
         assert st_res.exit_code == 0
         st_data = orjson.loads(st_res.stdout)
-        assert st_data["schema_version"] == "2.21.0"
+        assert st_data["schema_version"] == "2.22.0"
         assert st_data["edge_counts_by_provenance"]["declared_spec"] >= 1
         assert st_data["edge_counts_by_provenance"]["ast_http"] >= 1
         st_rich = cli.invoke(app, ["index", "status", "--path", str(eidos_dir)])

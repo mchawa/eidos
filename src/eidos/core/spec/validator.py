@@ -154,8 +154,14 @@ class SpecValidator:
             return self._schema_cache.get(schema_name)
         return None
 
-    def validate_document(self, doc: SpecDocument, root_dir: Path | None = None) -> list[str]:
-        """Validate a single parsed document against its schema and document-local architectural invariants."""
+    def validate_document(
+        self,
+        doc: SpecDocument,
+        root_dir: Path | None = None,
+        *,
+        check_mermaid: bool = True,
+    ) -> list[str]:
+        """Validate a single parsed document against its schema, document-local invariants, and optional Mermaid blocks."""
         if not doc.frontmatter:
             return doc.errors
 
@@ -177,6 +183,23 @@ class SpecValidator:
             if err_msg not in doc.errors:
                 doc.errors.append(err_msg)
         self._validate_architectural_invariants(doc, doc.frontmatter, report=None, root_dir=root_dir)
+        if check_mermaid and doc.body and "mermaid" in doc.body.lower():
+            from eidos.core.spec.mermaid_validator import (
+                extract_mermaid_blocks,
+                resolve_adoc_line_offset,
+                validate_mermaid_blocks,
+            )
+
+            blocks = extract_mermaid_blocks(doc.body)
+            if blocks:
+                cache_dir = (root_dir.resolve() / ".cache") if root_dir is not None and root_dir.is_dir() else None
+                results, _ = validate_mermaid_blocks(blocks, cache_dir=cache_dir)
+                for res in results:
+                    if not res.is_valid:
+                        line_no = resolve_adoc_line_offset(doc.file_path, res.block.body_line)
+                        msg = f"Mermaid syntax error in [{res.block.header_kind}] block at line {line_no}: {res.error_message}"
+                        if msg not in doc.errors:
+                            doc.errors.append(msg)
         return doc.errors
 
     def validate_directory(self, root_dir: Path, *, check_import_boundaries: bool = True) -> ValidationReport:
@@ -307,7 +330,7 @@ class SpecValidator:
                         fast_pathed_applied_deltas.add(str(fp.resolve()))
                     return doc
             parse_errs = list(doc.errors)
-            self.validate_document(doc, root_dir=root_dir)
+            self.validate_document(doc, root_dir=root_dir, check_mermaid=False)
             schema_errs = list(doc.errors)
             doc_payload = {
                 "doc_id": doc.doc_id,
@@ -344,6 +367,51 @@ class SpecValidator:
         deleted_keys = [k for k in cached_rows if k not in seen_rel_keys] if resolved_root == eidos_cache_root else []
         if eidos_cache_root.exists() and (to_upsert or deleted_keys):
             save_spec_validation_cache(db_path, to_upsert, deleted_keys)
+
+        # Batch embedded Mermaid diagram syntax validation (CMP-MERMAID-VALIDATOR), skipping historical applied/rejected SpecDeltas
+        mermaid_pairs: list[tuple[SpecDocument, Any]] = []
+        for doc in report.documents:
+            if doc.doc_type == "delta/mutation" and (doc.model.status or "").lower() in ("applied", "rejected"):
+                continue
+            if doc.body and "mermaid" in doc.body.lower():
+                from eidos.core.spec.mermaid_validator import extract_mermaid_blocks
+
+                for blk in extract_mermaid_blocks(doc.body):
+                    mermaid_pairs.append((doc, blk))
+        if mermaid_pairs:
+            from eidos.core.index.storage import (
+                load_mermaid_validation_cache,
+                save_mermaid_validation_cache,
+            )
+            from eidos.core.spec.mermaid_validator import (
+                get_mermaid_engine_version,
+                resolve_adoc_line_offset,
+                validate_mermaid_blocks,
+            )
+
+            mermaid_engine_ver = get_mermaid_engine_version()
+            preloaded_mermaid = (
+                load_mermaid_validation_cache(db_path, mermaid_engine_ver) if eidos_cache_root.exists() else {}
+            )
+            mermaid_results, new_mermaid_rows = validate_mermaid_blocks(
+                [blk for _, blk in mermaid_pairs],
+                cache_dir=eidos_cache_root / ".cache" if eidos_cache_root.exists() else None,
+                preloaded_cache=preloaded_mermaid,
+            )
+            if eidos_cache_root.exists() and new_mermaid_rows:
+                save_mermaid_validation_cache(db_path, new_mermaid_rows)
+            for (doc, _blk), m_res in zip(mermaid_pairs, mermaid_results, strict=True):
+                if not m_res.is_valid:
+                    line_no = resolve_adoc_line_offset(doc.file_path, m_res.block.body_line)
+                    msg = f"Mermaid syntax error in [{m_res.block.header_kind}] block at line {line_no}: {m_res.error_message}"
+                    if msg not in doc.errors:
+                        doc.errors.append(msg)
+                    err_key = self._schema_error_key(
+                        doc.file_path, root_dir=root_dir, repo_root=resolved_repo_root
+                    )
+                    bucket = report.schema_errors.setdefault(err_key, [])
+                    if msg not in bucket:
+                        bucket.append(msg)
 
         # Cross-reference validation
         self._validate_cross_references(report, root_dir, fast_pathed_applied_deltas=fast_pathed_applied_deltas)

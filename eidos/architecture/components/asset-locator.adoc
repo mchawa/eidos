@@ -10,16 +10,16 @@ source_path: src/eidos/core/workspace/assets.py
 :toc: left
 
 == Responsibility
-Resolves packaged JSON/YAML specification schemas, AsciiDoc prose templates (`*.template.adoc`), and canonical `agentskills.io` reference skill bundles across installed Python wheels, editable repository checkouts, and working directories.
+Resolves packaged JSON/YAML specification schemas, AsciiDoc prose templates (`*.template.adoc`), standalone compressed Mermaid parser assets (`assets/mermaid/mermaid.min.js.gz`), and canonical `agentskills.io` reference skill bundles across installed Python wheels, editable repository checkouts, and working directories.
 
 == Key Responsibilities & Collaborators
-* **Multi-Root Asset Discovery**: Probes ordered candidate asset directories (`_iter_assets_roots`) spanning wheel package data, repository ancestors, and `Path.cwd()` to locate verified Eidos asset trees.
-* **Template & Schema Resolution**: Maps canonical and short specification types to their corresponding `.template.adoc` blueprints and v1 schema directories for `CMP-LIFECYCLE-SCAFFOLDER` and `CMP-SPEC-VALIDATOR`.
+* **Multi-Root Asset Discovery**: Probes ordered candidate asset directories (`_iter_assets_roots`) spanning wheel package data, repository ancestors, and `Path.cwd()` to locate verified Eidos asset trees (`schemas/`, `plugin_reference/`, `portal/`, `mermaid/`).
+* **Template, Schema & Mermaid Bundle Resolution**: Maps canonical and short specification types to their corresponding `.template.adoc` blueprints and v1 schema directories for `CMP-LIFECYCLE-SCAFFOLDER` and `CMP-SPEC-VALIDATOR`, and resolves `assets/mermaid/mermaid.min.js.gz` via `get_mermaid_bundle_path()` for `CMP-MERMAID-VALIDATOR`.
 
 == Public Surface
 * `get_assets_root() -> Path`, `get_assets_path(subpath: str) -> Path`
 * `get_schemas_dir() -> Path`, `get_v1_schemas_dir() -> Path`
-* `get_plugin_reference_dir() -> Path`
+* `get_plugin_reference_dir() -> Path`, `get_mermaid_bundle_path() -> Path`
 * `get_spec_template_path(doc_type: str) -> Path`, `render_spec_template(doc_type: str, **context: object) -> str`
 
 == Design Constraints & Operational Notes

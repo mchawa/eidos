@@ -80,7 +80,7 @@ Options:
 ## 2. Governance & Verification
 
 ### `eidos validate`
-Validate all AsciiDoc specification documents against their bundled v1 JSON/YAML schemas (including shared `$defs` for `DEC-*` and `INV-*`, canonical `tech/contract` `protocol` enum + conditional `custom_protocol`, and closed `mutations[].expect` schemas), check `x-eidos-ref` cross-document graph integrity, verify on-disk existence of declared container package paths and contract specification files, and enforce bidirectional multi-protocol contract parity (`cli_args`, `openapi`, `rest_http`, `protobuf`, `graphql`, `json_schema`, `python_protocol`, `asyncapi`, `json_rpc_stdio`).
+Validate all AsciiDoc specification documents against their bundled v1 JSON/YAML schemas (including shared `$defs` for `DEC-*` and `INV-*`, canonical `tech/contract` `protocol` enum + conditional `custom_protocol`, and closed `mutations[].expect` schemas), check `x-eidos-ref` cross-document graph integrity, validate embedded `[mermaid]` and `[source,mermaid]` diagram syntax in-process via `quickjs-ng` `mermaid.parse()` (cached in `mermaid_validation_cache`), verify on-disk existence of declared container package paths and contract specification files, and enforce bidirectional multi-protocol contract parity (`cli_args`, `openapi`, `rest_http`, `protobuf`, `graphql`, `json_schema`, `python_protocol`, `asyncapi`, `json_rpc_stdio`).
 
 ```bash
 eidos validate eidos
@@ -193,7 +193,7 @@ Manage and query the embedded SQLite architectural knowledge graph and FTS5 lexi
 The index initializes automatically on first use and lazily resynchronizes before every query via sub-5ms `mtime_ns` and `SHA-256` dirty checking, guaranteeing zero drift.
 
 #### `eidos index status`
-Display database cache size, schema version (`2.21.0`), clean/drift synchronization state across specs and code, check latency, entity/edge counts, `edge_counts_by_provenance` (`declared_spec`, `ast_import`, `ast_http`, `ast_symbol`, `inferred_ownership`), active AST parser engine (`ast-grep`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
+Display database cache size, schema version (`2.22.0`), clean/drift synchronization state across specs and code, check latency, entity/edge counts, `edge_counts_by_provenance` (`declared_spec`, `ast_import`, `ast_http`, `ast_symbol`, `inferred_ownership`), active AST parser engine (`ast-grep`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
 
 ```bash
 # Display rich visual status and AST telemetry:

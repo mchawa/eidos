@@ -23,8 +23,8 @@ import orjson
 if TYPE_CHECKING:
     from eidos.core.spec.models import SpecDocument
 
-# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-145).
-SCHEMA_VERSION = "2.21.0"
+# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-158).
+SCHEMA_VERSION = "2.22.0"
 
 # In-process parsed SpecDocument cache keyed by resolved Path -> (mtime_ns, st_size, sha256, SpecDocument)
 _PARSED_SPEC_MEM_CACHE: dict[Path, tuple[int, int, str, SpecDocument]] = {}
@@ -40,6 +40,7 @@ _MANAGED_TABLES = (
     "spec_validation_cache",
     "test_binding_cache",
     "public_surface_cache",
+    "mermaid_validation_cache",
     "spec_embeddings",
     "specs_fts",
     "file_tokens_fts",
@@ -82,6 +83,13 @@ CREATE TABLE IF NOT EXISTS public_surface_cache (
     st_size INTEGER NOT NULL,
     extractor_version TEXT NOT NULL,
     payload_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS mermaid_validation_cache (
+    diagram_sha256 TEXT PRIMARY KEY,
+    engine_version TEXT NOT NULL,
+    is_valid INTEGER NOT NULL,
+    error_message TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS spec_embeddings (
@@ -833,6 +841,48 @@ def save_public_surface_cache(
                     """,
                     to_upsert,
                 )
+
+
+def load_mermaid_validation_cache(
+    db_path: Path,
+    engine_version: str,
+) -> dict[str, tuple[bool, str]]:
+    """Load cached Mermaid syntax validation verdicts from ``db_path`` without blocking on DDL locks."""
+    cached_rows: dict[str, tuple[bool, str]] = {}
+    with (
+        contextlib.suppress(OSError, sqlite3.Error),
+        contextlib.closing(open_cache_connection(db_path, allow_ddl=False, sqlite_timeout=0.5)) as conn,
+    ):
+        for row in conn.execute(
+            "SELECT diagram_sha256, is_valid, error_message FROM mermaid_validation_cache WHERE engine_version = ?;",
+            (engine_version,),
+        ):
+            cached_rows[str(row["diagram_sha256"])] = (bool(row["is_valid"]), str(row["error_message"] or ""))
+    return cached_rows
+
+
+def save_mermaid_validation_cache(
+    db_path: Path,
+    rows: list[tuple[str, str, int, str]],
+) -> None:
+    """Opportunistically persist ``mermaid_validation_cache`` verdicts without blocking on contended locks."""
+    if not rows:
+        return
+    with contextlib.suppress(OSError, sqlite3.Error), _advisory_db_lock(db_path, non_blocking=True) as acquired:
+        if not acquired:
+            return
+        with (
+            contextlib.closing(open_cache_connection(db_path, sqlite_timeout=0.5)) as conn,
+            _immediate_write_transaction(conn),
+        ):
+            conn.executemany(
+                """
+                INSERT OR REPLACE INTO mermaid_validation_cache
+                (diagram_sha256, engine_version, is_valid, error_message)
+                VALUES (?, ?, ?, ?);
+                """,
+                rows,
+            )
 
 
 EDGE_PROVENANCE_PRECEDENCE: dict[str, int] = {

@@ -1,0 +1,30 @@
+---
+type: tech/component
+id: CMP-MERMAID-VALIDATOR
+title: MermaidValidator
+container: CNT-EIDOS-CORE
+status: active
+source_path: src/eidos/core/spec/mermaid_validator.py
+---
+= Component: MermaidValidator
+:toc: left
+
+== Responsibility
+Extracts `[mermaid]` and `[source,mermaid]` blocks from AsciiDoc specification bodies and validates Mermaid diagram syntax via in-process `quickjs-ng` `mermaid.parse()` execution against the standalone pinned `assets/mermaid/mermaid.min.js.gz` asset, backed by stateless SHA-256 SQLite caching (`mermaid_validation_cache`) and a conservative pure-Python structural fallback (`structural-v1`).
+
+== Key Responsibilities & Collaborators
+* **AsciiDoc Mermaid Block Extraction & Lazy Line Offsets**: Extracts `[mermaid]` and `[source,mermaid]` blocks with optional block attributes and variable-length matched `----` / `....` fences (`extract_mermaid_blocks`), ignoring `////` comment blocks, single-line `//` comments, and non-mermaid listing/passthrough blocks, rejecting empty or unclosed blocks explicitly, and resolving exact 1-based `.adoc` file line offsets lazily only on validation failure (`resolve_adoc_line_offset`).
+* **Thread-Safe Bounded QuickJS Execution & Bytecode Caching**: Executes `mermaid.parse()` (`securityLevel: "strict"`) via a dedicated lock-serialized single worker thread in `quickjs-ng` with bounded memory/stack/time limits (`set_memory_limit`, `set_max_stack_size`, `set_time_limit`) against `get_mermaid_bundle_path()` (`CMP-ASSET-LOCATOR`), accelerating subsequent VM boots with atomic QuickJS bytecode caching (`eidos/.cache/mermaid_parser.<digest12>.qjsbc`).
+* **Stateless SHA-256 Caching & Structural Fallback (`INV-MERMAID-SPEC-VALIDATION`)**: Batch-validates unique diagram SHA-256 hashes (`validate_mermaid_blocks`) hydrated from `CMP-GRAPH-STORAGE` (`mermaid_validation_cache`, keyed by `engine_version` from `get_mermaid_engine_version()`) so unchanged diagrams incur 0 ms warm overhead and never import `quickjs`; degrades cleanly to a pure-Python structural validator (`structural-v1`) when `quickjs-ng` is unavailable.
+
+== Public Surface
+* `MERMAID_BUNDLE_VERSION`, `MERMAID_BUNDLE_SHA256`, `STRUCTURAL_FALLBACK_ENGINE_VERSION`
+* `MermaidBlock`, `MermaidValidationResult`
+* `extract_mermaid_blocks(body: str) -> list[MermaidBlock]`
+* `resolve_adoc_line_offset(file_path: Path | None, body_line: int) -> int`
+* `get_mermaid_engine_version() -> str`
+* `validate_mermaid_diagram(code: str, *, cache_dir: Path | None = None) -> tuple[bool, str]`
+* `validate_mermaid_blocks(blocks: Sequence[MermaidBlock], *, db_path: Path | None = None, cache_dir: Path | None = None, preloaded_cache: dict[str, tuple[bool, str]] | None = None) -> tuple[list[MermaidValidationResult], list[tuple[str, str, int, str]]]`
+
+== Design Constraints & Operational Notes
+* **Core-Tier Isolation (`ARCH-EIDOS-001`, `INV-CORE-MODULAR-COMPONENT-COHESION`)**: Depends solely on `CMP-ASSET-LOCATOR` and `CMP-GRAPH-STORAGE` with zero imports from `src/eidos/portal/`, zero Node.js, and zero headless browser dependencies (`POL-004`).

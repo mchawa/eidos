@@ -137,7 +137,7 @@ The index engine is decomposed into 6 focused modules under `src/eidos/core/inde
 | `ast_indexer.py` | `CMP-AST-SYMBOL-INDEXER` | Unified polyglot AST symbol, import, and test-binding extraction via `AstGrepIndexer` (`ast-grep-py` `SgRoot`) across all 17 supported languages (Python, TS, TSX, JS, JSX, Go, Rust, Java, Kotlin, C, C++, C#, Ruby, PHP, Swift, Vue, and Svelte). |
 
 #### Relational, Lexical & Semantic Schema (`eidos/.cache/index.db`)
-The SQLite database is a **100% stateless, derived cache (`DEC-INDEX-STATELESS-DERIVED-CACHE`)** managing 13 coordinated tables (12 domain/FTS/semantic/cache tables plus schema `metadata`):
+The SQLite database is a **100% stateless, derived cache (`DEC-INDEX-STATELESS-DERIVED-CACHE`)** managing 14 coordinated tables (13 domain/FTS/semantic/cache tables plus schema `metadata`):
 
 1. **`entities`**: All parsed specification nodes (`SYS-*`, `DOM-*`, `CAP-*`, `POL-*`, `PER-*`, `EXP-*`, `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DS-*`, `UIC-*`, `SCR-*`, `CLT-*`, `FLOW-*`, `DLT-*`, plus child `INV-*` nodes across capabilities, policies, containers, and components) with `orjson`-serialized metadata and body prose.
 2. **`edges`**: Canonical unidirectional architectural relationships (`realizes`, `provides`, `consumes`, `owned_by`, `implemented_by`, `styled_by`, `extends`, `governed_by`, `serves_persona`, `describes_system`, `contains_container`, `graduated_from`, `graduated_to`, `delivered_by`, `has_screen`, `has_flow`, `uses_screen`, `implements`, `contains_component`, `part_of`, `asserts`, `affects`, plus AST-derived `consumes_api` and `depends_on`) with epistemic `provenance` and `file:line` `evidence`.
@@ -150,8 +150,9 @@ The SQLite database is a **100% stateless, derived cache (`DEC-INDEX-STATELESS-D
 9. **`spec_validation_cache`**: Content-addressed cache of parsed `SpecDocument` payloads and JSON Schema validation verdicts keyed by `mtime_ns`, file SHA-256, and schema SHA-256.
 10. **`test_binding_cache`**: Content-addressed cache of AST-extracted test functions (`func` and `Class::method`) and referenced `INV-*` / `POL-*` tokens per test file.
 11. **`public_surface_cache`**: Non-blocking, stat-and-version-keyed (`file_path`, `mtime_ns`, `st_size`, `extractor_version`) cache of `PublicSurfaceValidator` AST public and component-scoped symbol summaries (`DLT-2026-145`).
-12. **`spec_embeddings`**: Content-addressed cache of 1024-dim L2-normalized Float32 Harrier ONNX embeddings keyed by `entity_id`, `content_sha256` (computed strictly over specification text), and `model_id`.
-13. **`metadata`**: Canonical `SCHEMA_VERSION` (`2.21.0`) and cache lifecycle state.
+12. **`mermaid_validation_cache`**: Non-blocking, content-addressed (`diagram_sha256`, `engine_version`) cache of `CMP-MERMAID-VALIDATOR` QuickJS `mermaid.parse()` syntax verdicts (`DLT-2026-158`).
+13. **`spec_embeddings`**: Content-addressed cache of 1024-dim L2-normalized Float32 Harrier ONNX embeddings keyed by `entity_id`, `content_sha256` (computed strictly over specification text), and `model_id`.
+14. **`metadata`**: Canonical `SCHEMA_VERSION` (`2.22.0`) and cache lifecycle state.
 
 #### How Lazy Incremental Sync Works (`<5ms`)
 Before every CLI query (`eidos context`, `eidos index`, `eidos spec list`), `_ensure_synced()` runs `check_index_dirty()`:
