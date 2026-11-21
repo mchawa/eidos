@@ -154,9 +154,19 @@ def evaluate_import_boundaries(
 
     idx = get_architectural_index(repo_root=eff_repo, eidos_dir=eff_spec)
     conn = idx._get_connection()
+    pre_dv_row = conn.execute("PRAGMA data_version;").fetchone()
+    pre_dv = int(pre_dv_row[0]) if pre_dv_row else 0
     has_entities = conn.execute("SELECT 1 FROM entities LIMIT 1;").fetchone() is not None
-    if not has_entities or idx.is_dirty()[0]:
-        sync_index(idx, auto_semantic=False)
+    dirty_state = idx.is_dirty()
+    if not has_entities or dirty_state[0]:
+        # Preserve strict freshness: wait via sync_index (with stderr lock-wait notice)
+        # instead of evaluating code_couplings against a stale WAL snapshot.
+        sync_index(
+            idx,
+            dirty_state=dirty_state if has_entities else None,
+            auto_semantic=False,
+            _pre_data_version=pre_dv,
+        )
         conn = idx._get_connection()
 
     declared_ctr_pairs: set[tuple[str, str]] = {

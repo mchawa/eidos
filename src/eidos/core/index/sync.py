@@ -529,7 +529,7 @@ def sync_index(
     spec_updates: list[Path] = []
     with _advisory_db_lock(lock_db, non_blocking=True) as got_immediate_lock:
         contended = not got_immediate_lock
-        with _advisory_db_lock(lock_db, non_blocking=False):
+        with _advisory_db_lock(lock_db, non_blocking=False, notify_wait=contended):
             spec_updates = _sync_index_locked(
                 index,
                 conn,

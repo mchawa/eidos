@@ -11,7 +11,9 @@ import copy
 import hashlib
 import os
 import sqlite3
+import sys
 import threading
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -191,9 +193,75 @@ def _db_lock_path(db_path: Path) -> Path:
     return Path(f"{resolved}.lock")
 
 
+def _read_lock_holder(lock_path: Path) -> str:
+    """Read best-effort holder metadata (PID/timestamp) stored in ``index.db.lock``."""
+    with contextlib.suppress(OSError):
+        raw = lock_path.read_text(encoding="utf-8", errors="replace").strip()
+        if raw:
+            first_line = raw.splitlines()[0].strip()
+            if first_line and first_line != "0":
+                return first_line
+    return ""
+
+
+def _write_lock_holder(fd: int) -> None:
+    """Record current process PID and timestamp inside the held advisory lockfile."""
+    with contextlib.suppress(OSError):
+        payload = f"pid={os.getpid()} started={time.time():.3f}\n".encode("ascii")
+        os.lseek(fd, 0, os.SEEK_SET)
+        if os.name != "nt":
+            os.ftruncate(fd, 0)
+        os.write(fd, payload)
+
+
+def _format_lock_wait_message(lock_path: Path) -> str:
+    """Build a human-readable stderr diagnostic when waiting on a contended ``index.db.lock``."""
+    holder = _read_lock_holder(lock_path)
+    if holder:
+        return f"Waiting for Eidos index lock ({lock_path}, held by {holder})..."
+    return f"Waiting for Eidos index lock ({lock_path})..."
+
+
+def _try_os_lock(fd: int, *, blocking: bool) -> bool:
+    """Acquire an OS advisory lock on ``fd``; return False if non-blocking and contended."""
+    if os.name == "nt":  # pragma: no cover
+        import msvcrt
+
+        os.lseek(fd, 0, os.SEEK_SET)
+        if os.fstat(fd).st_size == 0:
+            os.write(fd, b"0")
+            os.lseek(fd, 0, os.SEEK_SET)
+        mode = msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK
+        try:
+            msvcrt.locking(fd, mode, 1)
+            return True
+        except OSError:
+            if not blocking:
+                return False
+            raise
+    import fcntl
+
+    flags = fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB)
+    try:
+        fcntl.flock(fd, flags)
+        return True
+    except (BlockingIOError, OSError):
+        if not blocking:
+            return False
+        raise
+
+
 @contextlib.contextmanager
-def _advisory_db_lock(db_path: Path | None, *, non_blocking: bool = False) -> Iterator[bool]:
-    """Acquire an OS advisory file lock on ``<db_path>.lock`` (re-entrant per thread; ``fcntl.flock`` on POSIX, ``msvcrt`` on Windows)."""
+def _advisory_db_lock(
+    db_path: Path | None,
+    *,
+    non_blocking: bool = False,
+    notify_wait: bool = False,
+) -> Iterator[bool]:
+    """Acquire an OS advisory file lock on ``<db_path>.lock`` (re-entrant per thread; ``fcntl.flock`` on POSIX, ``msvcrt`` on Windows).
+
+    Records holder PID metadata in ``index.db.lock`` and emits optional ``sys.stderr`` lock-wait diagnostics before blocking.
+    """
     if db_path is None or str(db_path) == ":memory:" or Path(db_path).name == ":memory:":
         yield True
         return
@@ -215,55 +283,40 @@ def _advisory_db_lock(db_path: Path | None, *, non_blocking: bool = False) -> It
                 held[lock_path] = remaining
         return
 
+    notified = False
     proc_lock = _get_process_db_lock(lock_path)
-    if not proc_lock.acquire(blocking=not non_blocking):
-        yield False
-        return
+    proc_held = proc_lock.acquire(blocking=False)
+    if not proc_held:
+        if non_blocking:
+            yield False
+            return
+        if notify_wait:
+            sys.stderr.write(f"{_format_lock_wait_message(lock_path)}\n")
+            sys.stderr.flush()
+            notified = True
+        proc_held = proc_lock.acquire(blocking=True)
 
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     fd = -1
     os_locked = False
-    proc_held = True
     try:
         fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o666)
-        if os.name == "nt":  # pragma: no cover
-            import msvcrt
-
-            os.lseek(fd, 0, os.SEEK_SET)
-            if os.fstat(fd).st_size == 0:
-                os.write(fd, b"0")
-                os.lseek(fd, 0, os.SEEK_SET)
-            mode = msvcrt.LK_NBLCK if non_blocking else msvcrt.LK_LOCK
-            try:
-                msvcrt.locking(fd, mode, 1)
-                os_locked = True
-            except OSError:
-                if non_blocking:
-                    with contextlib.suppress(OSError):
-                        os.close(fd)
-                    fd = -1
-                    proc_lock.release()
-                    proc_held = False
-                    yield False
-                    return
-                raise
-        else:
-            import fcntl
-
-            flags = fcntl.LOCK_EX | (fcntl.LOCK_NB if non_blocking else 0)
-            try:
-                fcntl.flock(fd, flags)
-                os_locked = True
-            except (BlockingIOError, OSError):
-                if non_blocking:
-                    with contextlib.suppress(OSError):
-                        os.close(fd)
-                    fd = -1
-                    proc_lock.release()
-                    proc_held = False
-                    yield False
-                    return
-                raise
+        os_locked = _try_os_lock(fd, blocking=False)
+        if not os_locked:
+            if non_blocking:
+                with contextlib.suppress(OSError):
+                    os.close(fd)
+                fd = -1
+                proc_lock.release()
+                proc_held = False
+                yield False
+                return
+            if notify_wait and not notified:
+                sys.stderr.write(f"{_format_lock_wait_message(lock_path)}\n")
+                sys.stderr.flush()
+                notified = True
+            os_locked = _try_os_lock(fd, blocking=True)
+        _write_lock_holder(fd)
         held[lock_path] = 1
         yield True
     finally:
@@ -431,24 +484,43 @@ def ensure_cache_schema(conn: sqlite3.Connection, db_path: Path | None = None) -
         if main_file and main_file != ":memory:":
             resolved_db = Path(main_file).resolve()
     if resolved_db is not None:
-        with _advisory_db_lock(resolved_db, non_blocking=False):
+        with _advisory_db_lock(resolved_db, non_blocking=False, notify_wait=True):
             _apply_cache_schema_ddl(conn)
     else:
         _apply_cache_schema_ddl(conn)
 
 
-def open_cache_connection(db_path: Path) -> sqlite3.Connection:
-    """Open a WAL-configured SQLite cache connection with file-locked DDL and safe corruption recovery."""
+def open_cache_connection(
+    db_path: Path,
+    *,
+    allow_ddl: bool = True,
+    sqlite_timeout: float = 10.0,
+) -> sqlite3.Connection:
+    """Open a WAL-configured SQLite cache connection with file-locked DDL and safe corruption recovery.
+
+    When ``allow_ddl=False``, never acquires ``index.db.lock`` for WAL setup or schema migrations and raises
+    ``sqlite3.OperationalError`` if the database file is missing or mid-migration so opportunistic cache
+    readers can fall back immediately to live disk parsing without blocking.
+    """
     db_path = Path(db_path).resolve()
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+    if not allow_ddl and not db_path.is_file():
+        raise sqlite3.OperationalError(f"SQLite cache does not exist yet at {db_path}")
+    if allow_ddl:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
     for attempt in range(3):
         conn: sqlite3.Connection | None = None
         try:
-            conn = sqlite3.connect(str(db_path), timeout=10.0, check_same_thread=False)
+            conn = sqlite3.connect(str(db_path), timeout=sqlite_timeout, check_same_thread=False)
             conn.row_factory = sqlite3.Row
+            if not allow_ddl:
+                conn.execute("PRAGMA query_only = ON;")
+                if not _is_schema_current(conn):
+                    conn.close()
+                    raise sqlite3.OperationalError(f"SQLite cache schema is not initialized at {db_path}")
+                return conn
             jm_row = conn.execute("PRAGMA journal_mode;").fetchone()
             if not jm_row or str(jm_row[0]).lower() != "wal":
-                with _advisory_db_lock(db_path, non_blocking=False):
+                with _advisory_db_lock(db_path, non_blocking=False, notify_wait=True):
                     jm_recheck = conn.execute("PRAGMA journal_mode;").fetchone()
                     if not jm_recheck or str(jm_recheck[0]).lower() != "wal":
                         conn.execute("PRAGMA journal_mode = WAL;")
@@ -460,6 +532,8 @@ def open_cache_connection(db_path: Path) -> sqlite3.Connection:
             if conn is not None:
                 with contextlib.suppress(sqlite3.Error):
                     conn.close()
+            if not allow_ddl:
+                raise
             err_msg = str(exc).lower()
             if _is_corrupt_database_error(exc) and attempt == 0:
                 with _advisory_db_lock(db_path, non_blocking=True) as acquired:
@@ -467,7 +541,7 @@ def open_cache_connection(db_path: Path) -> sqlite3.Connection:
                         _unlink_cache_files(db_path)
                         continue
             if "schema" in err_msg and attempt < 2:
-                with _advisory_db_lock(db_path, non_blocking=False):
+                with _advisory_db_lock(db_path, non_blocking=False, notify_wait=True):
                     pass
                 continue
             raise
@@ -597,9 +671,12 @@ def get_cached_spec_document(
 
 
 def load_spec_validation_cache(db_path: Path) -> dict[str, sqlite3.Row]:
-    """Load all cached spec validation rows from ``db_path`` via canonical ``open_cache_connection``."""
+    """Load cached spec validation rows from ``db_path`` without blocking on DDL locks (falls back to live disk parsing)."""
     cached_rows: dict[str, sqlite3.Row] = {}
-    with contextlib.suppress(OSError, sqlite3.Error), contextlib.closing(open_cache_connection(db_path)) as conn:
+    with (
+        contextlib.suppress(OSError, sqlite3.Error),
+        contextlib.closing(open_cache_connection(db_path, allow_ddl=False, sqlite_timeout=0.5)) as conn,
+    ):
         for row in conn.execute(
             "SELECT file_path, mtime_ns, sha256, schema_hash, doc_json FROM spec_validation_cache;"
         ):
@@ -612,30 +689,39 @@ def save_spec_validation_cache(
     to_upsert: list[tuple[str, int, str, str, str]],
     deleted_keys: list[str] | None = None,
 ) -> None:
-    """Upsert and prune ``spec_validation_cache`` entries via canonical ``open_cache_connection``."""
+    """Opportunistically upsert and prune ``spec_validation_cache`` entries without blocking on contended locks."""
     if not to_upsert and not deleted_keys:
         return
-    with contextlib.suppress(OSError, sqlite3.Error), contextlib.closing(open_cache_connection(db_path)) as conn, conn:
-        if deleted_keys:
-            conn.executemany(
-                "DELETE FROM spec_validation_cache WHERE file_path = ?;",
-                [(k,) for k in deleted_keys],
-            )
-        if to_upsert:
-            conn.executemany(
-                """
-                INSERT OR REPLACE INTO spec_validation_cache
-                (file_path, mtime_ns, sha256, schema_hash, doc_json)
-                VALUES (?, ?, ?, ?, ?);
-                """,
-                to_upsert,
-            )
+    with contextlib.suppress(OSError, sqlite3.Error), _advisory_db_lock(db_path, non_blocking=True) as acquired:
+        if not acquired:
+            return
+        with (
+            contextlib.closing(open_cache_connection(db_path, sqlite_timeout=0.5)) as conn,
+            _immediate_write_transaction(conn),
+        ):
+            if deleted_keys:
+                conn.executemany(
+                    "DELETE FROM spec_validation_cache WHERE file_path = ?;",
+                    [(k,) for k in deleted_keys],
+                )
+            if to_upsert:
+                conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO spec_validation_cache
+                    (file_path, mtime_ns, sha256, schema_hash, doc_json)
+                    VALUES (?, ?, ?, ?, ?);
+                    """,
+                    to_upsert,
+                )
 
 
 def load_test_binding_cache(db_path: Path) -> dict[str, sqlite3.Row]:
-    """Load all cached test binding rows from ``db_path`` via canonical ``open_cache_connection``."""
+    """Load cached test binding rows from ``db_path`` without blocking on DDL locks (falls back to live disk parsing)."""
     cached_rows: dict[str, sqlite3.Row] = {}
-    with contextlib.suppress(OSError, sqlite3.Error), contextlib.closing(open_cache_connection(db_path)) as conn:
+    with (
+        contextlib.suppress(OSError, sqlite3.Error),
+        contextlib.closing(open_cache_connection(db_path, allow_ddl=False, sqlite_timeout=0.5)) as conn,
+    ):
         for row in conn.execute(
             "SELECT file_path, mtime_ns, sha256, functions_json, file_tokens_json FROM test_binding_cache;"
         ):
@@ -648,33 +734,34 @@ def save_test_binding_cache(
     to_upsert: list[tuple[str, int, str, str, str]],
     deleted_keys: list[str] | None = None,
 ) -> None:
-    """Upsert and prune ``test_binding_cache`` entries via canonical ``open_cache_connection``."""
+    """Opportunistically upsert and prune ``test_binding_cache`` entries without blocking on contended locks."""
     if not to_upsert and not deleted_keys:
         return
-    with (
-        contextlib.suppress(OSError, sqlite3.Error),
-        _advisory_db_lock(db_path),
-        contextlib.closing(open_cache_connection(db_path)) as conn,
-        _immediate_write_transaction(conn),
-    ):
-        if deleted_keys:
-            conn.executemany(
-                "DELETE FROM test_binding_cache WHERE file_path = ?;",
-                [(k,) for k in deleted_keys],
+    with contextlib.suppress(OSError, sqlite3.Error), _advisory_db_lock(db_path, non_blocking=True) as acquired:
+        if not acquired:
+            return
+        with (
+            contextlib.closing(open_cache_connection(db_path, sqlite_timeout=0.5)) as conn,
+            _immediate_write_transaction(conn),
+        ):
+            if deleted_keys:
+                conn.executemany(
+                    "DELETE FROM test_binding_cache WHERE file_path = ?;",
+                    [(k,) for k in deleted_keys],
+                )
+            if to_upsert:
+                conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO test_binding_cache
+                    (file_path, mtime_ns, sha256, functions_json, file_tokens_json)
+                    VALUES (?, ?, ?, ?, ?);
+                    """,
+                    to_upsert,
+                )
+            conn.execute(
+                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('test_binding_cache_ver', ?);",
+                (_TEST_BINDING_CACHE_VERSION,),
             )
-        if to_upsert:
-            conn.executemany(
-                """
-                INSERT OR REPLACE INTO test_binding_cache
-                (file_path, mtime_ns, sha256, functions_json, file_tokens_json)
-                VALUES (?, ?, ?, ?, ?);
-                """,
-                to_upsert,
-            )
-        conn.execute(
-            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('test_binding_cache_ver', ?);",
-            (_TEST_BINDING_CACHE_VERSION,),
-        )
 
 
 EDGE_PROVENANCE_PRECEDENCE: dict[str, int] = {

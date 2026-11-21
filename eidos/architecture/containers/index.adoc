@@ -101,6 +101,18 @@ decisions:
       - option: "Count cross-container couplings only on the collapsed edges table without a separate code_couplings table"
         reason_rejected: "Precedence upserts on edges collapse declared_spec CTR-* links over ast_import/ast_http and deduplicate multiple call sites into one row, breaking max_imports ratchet counting."
     graduated_from: DLT-2026-137-ADD-STATIC-FRONTEND-TO-A4CB
+  - id: DEC-INDEX-STRICT-FRESHNESS-LOCK-DIAGNOSTICS
+    title: "Non-Blocking Opportunistic Cache Persistence with Strict-Freshness Wait and Holder-PID Diagnostics"
+    decision: "Make opportunistic cache writes (save_spec_validation_cache, save_test_binding_cache) non-blocking via _advisory_db_lock(..., non_blocking=True) with short SQLite busy timeouts and allow cache loads to fall back directly to live disk parsing when index.db is missing or mid-DDL (allow_ddl=False), while requiring freshness-critical operations (sync_index, dirty evaluate_import_boundaries, DDL) to wait via OS kernel flock on index.db.lock with holder PID metadata and sys.stderr wait notices (and no arbitrary short timeout)."
+    rationale: "Skipping contended opportunistic cache persistence has zero staleness impact because callers already hold live disk-parsed results and future runs verify (mtime_ns, sha256), whereas evaluating import_boundaries against an outdated WAL snapshot during an active sync could silently return stale verdicts. Because OS advisory locks (fcntl.flock / msvcrt) are released automatically by the kernel on process exit or crash, waiting cleanly with stderr holder-PID visibility prevents both silent perceived hangs and false timeouts during legitimate large-repo cold syncs."
+    rejected_alternatives:
+      - option: "Evaluate import_boundaries against a potentially stale committed WAL snapshot when index.db.lock is held"
+        reason_rejected: "Allows stale boundary verdicts during concurrent edits and violates strict freshness guarantees."
+      - option: "Enforce a short hard lock timeout (e.g. 30s) that fails waiting readers with TimeoutError"
+        reason_rejected: "Causes false failures during legitimate >30s cold AST syncs on large brownfield repositories while OS flock already auto-releases on crashed processes."
+      - option: "Remove index.db.lock and rely only on SQLite busy_timeout"
+        reason_rejected: "Reintroduces multi-process IntegrityError and DDL races in sync_index."
+    graduated_from: DLT-2026-141-ELIMINATE-EXCLUSIVE-INDEX-LOCK-53FD
 ---
 = Container: Architectural Knowledge Graph & Retrieval Index (C4 Level 2 Container)
 :toc: left
@@ -114,7 +126,7 @@ This container represents the embedded relational, lexical, and optional semanti
 * **Two-Tier Retrieval, Pinned ONNX Verification & Tiered Context Slicing (`DEC-INDEX-FTS-RETRIEVAL-HYGIENE`, `DEC-INDEX-HYBRID-SEMANTIC-RRF`, `DEC-INDEX-FLOCK-WAL-AND-PINNED-ONNX`)**: Combines column-weighted FTS5 BM25 ranking, `{a,b}` brace-glob file resolution, and optional gated Harrier-OSS-v1-0.6B ONNX Hybrid RRF (pinned to an immutable HuggingFace commit SHA with `Content-Length` + SHA-256 artifact verification, 3-file `fp32` validation, and atomic `semantic_sync.lock` background worker locking) with calibrated token-budget compression (`anchor` <=300, `guardrails` <=1000, `deep` <=2500 tokens).
 
 == Quality Attributes & Operational Policies
-* **Sub-10ms Query & Sync Latency (`INV-AGENT-GRAPH-INDEX-FRESHNESS`)**: Warm dirty checks and incremental single-file syncs complete in <5ms; recursive CTE blast-radius, FTS5 queries, and `spec_embeddings` BLAS cosine scans (`0.22ms`) execute in sub-millisecond to <4ms latency.
+* **Sub-10ms Query & Sync Latency & Strict-Freshness Lock Diagnostics (`INV-AGENT-GRAPH-INDEX-FRESHNESS`, `INV-INDEX-FRESHNESS-AND-LOCK-DIAGNOSTICS`)**: Warm dirty checks and incremental single-file syncs complete in <5ms; recursive CTE blast-radius, FTS5 queries, and `spec_embeddings` BLAS cosine scans (`0.22ms`) execute in sub-millisecond to <4ms latency. Opportunistic cache reads/writes never stall on `index.db.lock`, while freshness-critical waits emit `sys.stderr` holder-PID notices before waiting cleanly for the active writer to commit.
 * **Stateless Derived Cache (`DEC-INDEX-STATELESS-DERIVED-CACHE`, `POL-001`)**: `eidos/.cache/index.db` contains zero unrecoverable state and automatically drops and rebuilds whenever `SCHEMA_VERSION` changes.
 * **Offline Determinism & Opt-In Local Semantic Indexing (`POL-004`, `INV-AGENT-HYBRID-SEMANTIC-FALLBACK`)**: Core CLI workflows use stdlib `sqlite3` and deterministic AST/BM25 algorithms with zero required model weights, while optional `eidos-ai[semantic]` runs 100% locally on CPU with zero remote API calls and 100% deterministic fallback to FTS5 BM25.
 

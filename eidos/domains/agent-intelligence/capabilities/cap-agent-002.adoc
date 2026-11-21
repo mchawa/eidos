@@ -4,7 +4,7 @@ id: CAP-AGENT-002
 title: "Polyglot AST Code Graph & Structural Repo Map Intelligence"
 domain: DOM-AGENT-INTELLIGENCE
 status: active
-version: "1.7.0"
+version: "1.8.0"
 
 business:
   personas:
@@ -71,6 +71,9 @@ technical:
     - id: INV-INDEX-EPISTEMIC-PROVENANCE
       rule: "SCHEMA_VERSION '2.20.0' must persist explicit epistemic provenance and file:line evidence on edges using strict precedence upserts (declared_spec > ast_import > ast_http > ast_symbol > inferred_ownership) alongside per-call-site code_couplings, expose edge_counts_by_provenance in 'eidos index status', stamp normalized provenance and 3-tier confidence (observed, derived, inferred) on 'eidos index search' and 'eidos index find-symbol', and filter recursive k-hop blast-radius traversals by --min-confidence (observed > derived > inferred)."
       test_binding: "tests/test_graph_index.py::test_epistemic_provenance_tags_and_confidence_filtering"
+    - id: INV-INDEX-FRESHNESS-AND-LOCK-DIAGNOSTICS
+      rule: "Opportunistic cache persistence (save_spec_validation_cache, save_test_binding_cache) must never block on contended index.db.lock and opportunistic cache loads must fall back directly to live disk parsing when index.db is missing or mid-DDL, while freshness-critical index waits (sync_index, dirty evaluate_import_boundaries) must wait cleanly via kernel flock for fresh committed state (never reading stale WAL snapshots), record holder PID metadata in index.db.lock, and emit a clear sys.stderr lock-wait diagnostic without corrupting --json stdout."
+      test_binding: "tests/test_index_lock_contention.py::test_nonblocking_caches_strict_freshness_and_lock_wait_diagnostics"
 ---
 = Capability: Polyglot AST Code Graph & Structural Repo Map Intelligence
 :toc: left
@@ -95,8 +98,8 @@ In strict compliance with *POL-004-ZERO-AI-CALL-DEPENDENCY*, all AST extraction,
    Links code symbols directly to C4 containers (`CNT-*`), components (`CMP-*`), capability requirements (`CAP-*`), and invariant tests (`INV-*`) in a unified relational knowledge graph.
 4. **Syntax-Aware Invariant Traceability**:
    Resolves exact test functions (`def test_*`, `Class::test_*`, `it(...)`, `func Test*`, `#[test] fn`, `@Test fun`) enforcing capability invariants, preserving qualified `Class::method` keys so identical method names across test classes never overwrite each other.
-5. **Concurrent WAL-Safe AST Indexing & Path-Keyed Sync Parity (`INV-INDEX-CONCURRENT-WAL-SAFETY`, `INV-INDEX-SYNC-CLI-CONTROLS`, `INV-DOTNET-POLYGLOT-PARITY`)**:
-   Coordinates SQLite DDL, corruption recovery, and full `sync_index` write transactions via a re-entrant advisory lockfile (`index.db.lock`) and `BEGIN IMMEDIATE` transactions without `PRAGMA mmap_size`, isolates SQLite connections per thread via `threading.local()`, debounces in-process `_ensure_synced` checks via `_last_synced_check` with `PRAGMA data_version` handoff, batches `>1,000` spec-edge rebuilds without hitting `SQLITE_MAX_EXPR_DEPTH`, indexes `.NET` test suites (`*.Tests`, `*Tests.cs`) and C# namespace/`.csproj` dependency edges, and exposes `eidos index sync --no-semantic --json` without competing background ONNX subprocess races.
+5. **Concurrent WAL-Safe AST Indexing, Strict Freshness & Lock-Wait Diagnostics (`INV-INDEX-CONCURRENT-WAL-SAFETY`, `INV-INDEX-SYNC-CLI-CONTROLS`, `INV-INDEX-FRESHNESS-AND-LOCK-DIAGNOSTICS`, `INV-DOTNET-POLYGLOT-PARITY`)**:
+   Coordinates SQLite DDL, corruption recovery, and full `sync_index` write transactions via a re-entrant advisory lockfile (`index.db.lock`, storing holder PID metadata and emitting `sys.stderr` lock-wait notices on contention before kernel-blocking wait) and `BEGIN IMMEDIATE` transactions without `PRAGMA mmap_size`, keeps opportunistic cache reads/writes strictly non-blocking (falling back to live disk parsing on mid-DDL reads and skipping contended cache persistence without freshness loss), isolates SQLite connections per thread via `threading.local()`, debounces in-process `_ensure_synced` checks via `_last_synced_check` with `PRAGMA data_version` handoff, batches `>1,000` spec-edge rebuilds without hitting `SQLITE_MAX_EXPR_DEPTH`, indexes `.NET` test suites (`*.Tests`, `*Tests.cs`) and C# namespace/`.csproj` dependency edges, and exposes `eidos index sync --no-semantic --json` without competing background ONNX subprocess races.
 6. **AST Engine, Epistemic Provenance & Invariant Telemetry (`eidos index status`, `INV-INDEX-EPISTEMIC-PROVENANCE`)**:
    Exposes deterministic telemetry regarding the active AST parsing engine (`AstGrepIndexer`), `edge_counts_by_provenance` across `SCHEMA_VERSION` `2.20.0` `edges.provenance` tags (`declared_spec`, `ast_import`, `ast_http`, `ast_symbol`, `inferred_ownership`), `--min-confidence` (`observed`, `derived`, `inferred`) blast-radius traversal filtering, symbol counts by syntax kind, and exact test-to-invariant assertion metrics with full `--json` support.
 7. **Polyglot Static Frontend-to-Backend HTTP Auto-Linking & Structural Diff Classification (`CMP-HTTP-TOPOLOGY-LINKER`, `CMP-AST-DIFF-CLASSIFIER`, `INV-INDEX-STATIC-HTTP-AUTOLINK`)**:
