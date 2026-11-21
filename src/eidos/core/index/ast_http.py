@@ -922,32 +922,204 @@ def _parse_cs_fluent_chain_auth(cleaned: str, start_idx: int) -> tuple[str | Non
     return None, []
 
 
-def _extract_aspnet_core_endpoints(cleaned: str, struct_syms: list[CodeSymbol]) -> list[HttpEndpointMeta]:
-    """Deterministically extract modern ASP.NET Core controller and Minimal API routes plus effective auth metadata."""
+_CS_CLASS_DECL_RE = re.compile(
+    r"\b(?:(?:public|internal|private|protected|sealed|abstract|partial|static)\s+)*"
+    r"class\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*<[^>]+>)?(?:\s*:\s*([^{;]+))?"
+)
+
+
+def _extract_cs_base_names(base_clause: str) -> tuple[str, ...]:
+    """Extract normalized immediate base class/interface names from a C# ': Base, IFoo' clause."""
+    if not base_clause:
+        return ()
+    # Strip balanced generic arguments <...>
+    cleaned_chars: list[str] = []
+    depth = 0
+    for ch in base_clause:
+        if ch == "<":
+            depth += 1
+        elif ch == ">" and depth > 0:
+            depth -= 1
+        elif depth == 0:
+            cleaned_chars.append(ch)
+    cleaned_clause = "".join(cleaned_chars)
+    bases: list[str] = []
+    for raw_part in cleaned_clause.split(","):
+        part = raw_part.split("where", 1)[0].strip()
+        if not part:
+            continue
+        short = part.rsplit(".", 1)[-1].strip()
+        m_id = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)", short)
+        if m_id:
+            bases.append(m_id.group(1))
+    return tuple(dict.fromkeys(bases))
+
+
+def _collect_cs_class_metadata(cleaned: str) -> dict[str, dict[str, Any]]:
+    """Collect C# controller class base-type chains and class-level [Route]/[Authorize]/[AllowAnonymous] metadata."""
+    meta_by_cls: dict[str, dict[str, Any]] = {}
+    for m_cls in _CS_CLASS_DECL_RE.finditer(cleaned):
+        cname = m_cls.group(1)
+        bases = _extract_cs_base_names(m_cls.group(2) or "")
+        entry = meta_by_cls.setdefault(
+            cname,
+            {
+                "bases": (),
+                "route_template": "",
+                "auth_mode": None,
+                "auth_policies": (),
+                "auth_roles": (),
+            },
+        )
+        if bases:
+            entry["bases"] = tuple(dict.fromkeys([*entry["bases"], *bases]))
+
     blocks = _collect_cs_attr_blocks(cleaned)
-    # 1. Map controller class attributes ([Route], [Authorize], [AllowAnonymous]) by class name.
-    cls_prefixes: dict[str, str] = {}
-    cls_auth: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {}
-    cls_names = {s.name for s in struct_syms if s.kind == "class"}
     for group in blocks:
-        tail = cleaned[group[-1][1] + 1 : group[-1][1] + 240]
+        tail = cleaned[group[-1][1] + 1 : group[-1][1] + 320]
         m_cls = re.match(
-            r"^\s*(?:(?:public|internal|private|protected|sealed|abstract|partial|static)\s+)*class\s+([A-Za-z_][A-Za-z0-9_]*)\b",
+            r"^\s*(?:(?:public|internal|private|protected|sealed|abstract|partial|static)\s+)*"
+            r"class\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*<[^>]+>)?(?:\s*:\s*([^{;]+))?",
             tail,
         )
         if not m_cls:
             continue
         cname = m_cls.group(1)
-        if cls_names and cname not in cls_names:
-            continue
+        bases = _extract_cs_base_names(m_cls.group(2) or "")
         _http_a, routes, has_anon, has_auth, pols, roles = _parse_cs_attr_block(cleaned, group)
-        ctrl_slug = re.sub(r"Controller$", "", cname, flags=re.IGNORECASE).lower()
-        if routes:
-            cls_prefixes[cname] = re.sub(r"\[\s*controller\s*\]", ctrl_slug, routes[0], flags=re.IGNORECASE)
+        entry = meta_by_cls.setdefault(
+            cname,
+            {
+                "bases": (),
+                "route_template": "",
+                "auth_mode": None,
+                "auth_policies": (),
+                "auth_roles": (),
+            },
+        )
+        if bases:
+            entry["bases"] = tuple(dict.fromkeys([*entry["bases"], *bases]))
+        if routes and not entry["route_template"]:
+            entry["route_template"] = routes[0]
         if has_anon:
-            cls_auth[cname] = ("allow_anonymous", (), ())
-        elif has_auth:
-            cls_auth[cname] = ("authorize", tuple(pols), tuple(roles))
+            entry["auth_mode"] = "allow_anonymous"
+            entry["auth_policies"] = ()
+            entry["auth_roles"] = ()
+        elif has_auth and entry["auth_mode"] != "allow_anonymous":
+            entry["auth_mode"] = "authorize"
+            entry["auth_policies"] = tuple(dict.fromkeys([*entry["auth_policies"], *pols]))
+            entry["auth_roles"] = tuple(dict.fromkeys([*entry["auth_roles"], *roles]))
+    return meta_by_cls
+
+
+def collect_aspnet_core_controller_bases(
+    cs_files_content: list[tuple[Path, str]],
+) -> dict[str, dict[str, Any]]:
+    """Build a cross-file ASP.NET Core controller class metadata table for base-controller inheritance (DLT-2026-146)."""
+    merged: dict[str, dict[str, Any]] = {}
+    for _fp, content in cs_files_content:
+        if not content or "class " not in content:
+            continue
+        cleaned = _blank_comments_outside_strings(content, hash_comments=False)
+        for cname, info in _collect_cs_class_metadata(cleaned).items():
+            existing = merged.get(cname)
+            if existing is None:
+                merged[cname] = dict(info)
+            else:
+                existing["bases"] = tuple(dict.fromkeys([*existing["bases"], *info["bases"]]))
+                if info["route_template"] and not existing["route_template"]:
+                    existing["route_template"] = info["route_template"]
+                if info["auth_mode"] == "allow_anonymous":
+                    existing["auth_mode"] = "allow_anonymous"
+                    existing["auth_policies"] = ()
+                    existing["auth_roles"] = ()
+                elif info["auth_mode"] == "authorize" and existing["auth_mode"] != "allow_anonymous":
+                    existing["auth_mode"] = "authorize"
+                    existing["auth_policies"] = tuple(
+                        dict.fromkeys([*existing["auth_policies"], *info["auth_policies"]])
+                    )
+                    existing["auth_roles"] = tuple(dict.fromkeys([*existing["auth_roles"], *info["auth_roles"]]))
+    return merged
+
+
+def _resolve_cs_inherited_class_meta(
+    cname: str,
+    class_table: dict[str, dict[str, Any]],
+) -> tuple[str, tuple[str, tuple[str, ...], tuple[str, ...]]]:
+    """Resolve effective (raw_route_template, (auth_mode, policies, roles)) walking derived -> base controller chain."""
+    route_tmpl = ""
+    auth_mode: str | None = None
+    policies: list[str] = []
+    roles: list[str] = []
+    visited: set[str] = set()
+    queue: list[str] = [cname]
+    while queue:
+        cur = queue.pop(0)
+        if not cur or cur in visited:
+            continue
+        visited.add(cur)
+        info = class_table.get(cur)
+        if not info:
+            continue
+        if not route_tmpl and info.get("route_template"):
+            route_tmpl = str(info["route_template"])
+        c_mode = info.get("auth_mode")
+        if c_mode == "allow_anonymous":
+            if auth_mode is None:
+                auth_mode = "allow_anonymous"
+        elif c_mode == "authorize" and auth_mode != "allow_anonymous":
+            auth_mode = "authorize"
+            policies.extend(info.get("auth_policies") or ())
+            roles.extend(info.get("auth_roles") or ())
+        for b in info.get("bases") or ():
+            if b not in visited and b in class_table:
+                queue.append(b)
+    eff_auth = (
+        auth_mode or "unannotated",
+        tuple(dict.fromkeys(policies)) if auth_mode == "authorize" else (),
+        tuple(dict.fromkeys(roles)) if auth_mode == "authorize" else (),
+    )
+    return route_tmpl, eff_auth
+
+
+def _extract_aspnet_core_endpoints(
+    cleaned: str,
+    struct_syms: list[CodeSymbol],
+    *,
+    base_controllers: dict[str, dict[str, Any]] | None = None,
+) -> list[HttpEndpointMeta]:
+    """Deterministically extract modern ASP.NET Core controller and Minimal API routes plus effective auth metadata."""
+    blocks = _collect_cs_attr_blocks(cleaned)
+    local_meta = _collect_cs_class_metadata(cleaned)
+    class_table: dict[str, dict[str, Any]] = {k: dict(v) for k, v in (base_controllers or {}).items()}
+    for cname, info in local_meta.items():
+        if cname not in class_table:
+            class_table[cname] = dict(info)
+        else:
+            existing = class_table[cname]
+            existing["bases"] = tuple(dict.fromkeys([*existing["bases"], *info["bases"]]))
+            if info["route_template"] and not existing["route_template"]:
+                existing["route_template"] = info["route_template"]
+            if info["auth_mode"] == "allow_anonymous":
+                existing["auth_mode"] = "allow_anonymous"
+                existing["auth_policies"] = ()
+                existing["auth_roles"] = ()
+            elif info["auth_mode"] == "authorize" and existing["auth_mode"] != "allow_anonymous":
+                existing["auth_mode"] = "authorize"
+                existing["auth_policies"] = tuple(dict.fromkeys([*existing["auth_policies"], *info["auth_policies"]]))
+                existing["auth_roles"] = tuple(dict.fromkeys([*existing["auth_roles"], *info["auth_roles"]]))
+
+    # 1. Resolve effective controller class attributes ([Route], [Authorize], [AllowAnonymous]) including inherited bases.
+    cls_prefixes: dict[str, str] = {}
+    cls_auth: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {}
+    cls_names = {s.name for s in struct_syms if s.kind == "class"} | set(local_meta.keys())
+    for cname in cls_names:
+        raw_route, eff_auth = _resolve_cs_inherited_class_meta(cname, class_table)
+        ctrl_slug = re.sub(r"Controller$", "", cname, flags=re.IGNORECASE).lower()
+        if raw_route:
+            cls_prefixes[cname] = re.sub(r"\[\s*controller\s*\]", ctrl_slug, raw_route, flags=re.IGNORECASE)
+        if eff_auth[0] != "unannotated":
+            cls_auth[cname] = eff_auth
 
     endpoints: list[HttpEndpointMeta] = []
     seen_ep: set[tuple[str, str, int]] = set()
@@ -1095,8 +1267,9 @@ def extract_http_endpoints_with_metadata(
     content: str,
     *,
     _symbols: list[CodeSymbol] | None = None,
+    base_controllers: dict[str, dict[str, Any]] | None = None,
 ) -> list[HttpEndpointMeta]:
-    """Extract normalized modern HTTP endpoints plus ASP.NET Core authorization metadata for contract parity."""
+    """Extract normalized modern HTTP endpoints plus authorization metadata for contract parity."""
     if not content:
         return []
     suffix = p.suffix.lower()
@@ -1105,7 +1278,7 @@ def extract_http_endpoints_with_metadata(
             return []
         cleaned = _blank_comments_outside_strings(content, hash_comments=False)
         struct_syms = _symbols if _symbols is not None else indexer.extract_symbols(p, content)
-        return _extract_aspnet_core_endpoints(cleaned, struct_syms)
+        return _extract_aspnet_core_endpoints(cleaned, struct_syms, base_controllers=base_controllers)
 
     syms = _extract_polyglot_http_endpoints(indexer, p, content, _symbols=_symbols)
     out: list[HttpEndpointMeta] = []

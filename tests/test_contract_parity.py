@@ -461,3 +461,159 @@ public static class Program {
     assert extract_http_endpoints_with_metadata(indexer, Path("Empty.cs"), "") == []
     assert extract_http_endpoints_with_metadata(indexer, Path("NoRoutes.cs"), "public class Foo {}") == []
     assert extract_http_endpoints_with_metadata(indexer, Path("Unclosed.cs"), '[HttpGet("a"') == []
+
+
+def test_overlapping_component_source_paths_and_base_controller_inheritance(tmp_path: Path) -> None:
+    """Verify INV-OVERLAPPING-SOURCE-PATH-AND-BASE-CONTROLLER-PARITY: overlapping CMP-*.source_path warnings and cross-file ASP.NET Core base controller inheritance."""
+    from eidos.core.index.ast_http import collect_aspnet_core_controller_bases
+
+    ws = tmp_path / "overlap_and_base_ws"
+    eidos_dir = ws / "eidos"
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True)
+    (eidos_dir / "architecture" / "components").mkdir(parents=True)
+    (eidos_dir / "architecture" / "contracts").mkdir(parents=True)
+
+    # 1. Shared directory with 4 code files claimed by two active components -> single deduplicated warning with (+1 more)
+    for fname in ("a.py", "b.py", "c.py", "d.py"):
+        _write(ws / "src" / "shared" / fname, f"def fn_{fname[0]}() -> None:\n    pass\n")
+    _write(ws / "src" / "other" / "x.py", "def fn_x() -> None:\n    pass\n")
+
+    # 2. Cross-file ASP.NET Core base controller hierarchy (BaseApiController -> TenantApiController -> OrdersController)
+    base_cs = """
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+[ApiController]
+[Route("api/v1/[controller]")]
+[Authorize(Policy = "ApiUser")]
+public abstract class BaseApiController<T> : ControllerBase where T : class {}
+"""
+    mid_cs = """
+public abstract class TenantApiController : BaseApiController<string> {}
+"""
+    orders_cs = """
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+public class OrdersController : TenantApiController
+{
+    [HttpGet("{id}")]
+    public IActionResult GetById(int id) => Ok();
+
+    [HttpGet("health")]
+    [AllowAnonymous]
+    public IActionResult Health() => Ok();
+
+    [HttpPost]
+    [Authorize(Roles = "Admin")]
+    public IActionResult Create() => Ok();
+}
+"""
+    public_derived_cs = """
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+[AllowAnonymous]
+public class StatusController : BaseApiController<object>
+{
+    [HttpGet("ping")]
+    public IActionResult Ping() => Ok();
+}
+"""
+    _write(ws / "src" / "Api" / "BaseApiController.cs", base_cs)
+    _write(ws / "src" / "Api" / "TenantApiController.cs", mid_cs)
+    _write(ws / "src" / "Api" / "OrdersController.cs", orders_cs)
+    _write(ws / "src" / "Api" / "StatusController.cs", public_derived_cs)
+
+    # Unit check partial class merging in collect_aspnet_core_controller_bases
+    merged_bases = collect_aspnet_core_controller_bases(
+        [
+            (Path("A.cs"), '[Route("api/[controller]")] public partial class PartialCtrl : BaseA {}'),
+            (Path("B.cs"), '[Authorize(Policy = "P1")] public partial class PartialCtrl : IMarker {}'),
+            (Path("C.cs"), "[AllowAnonymous] public partial class AnonCtrl : PartialCtrl {}"),
+            (Path("D.cs"), "[Authorize] public partial class AnonCtrl {}"),
+        ]
+    )
+    assert merged_bases["PartialCtrl"]["route_template"] == "api/[controller]"
+    assert merged_bases["PartialCtrl"]["auth_policies"] == ("P1",)
+    assert merged_bases["AnonCtrl"]["auth_mode"] == "allow_anonymous"
+
+    _write(
+        eidos_dir / "architecture" / "containers" / "api.adoc",
+        "---\ntype: tech/container\nid: CNT-API\ntitle: API\nstatus: active\n"
+        "container_type: service\nruntime: .NET 9\nsource_path:\n  - src/shared\n  - src/other\n  - src/Api\n---\n= API\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "components" / "comp-a.adoc",
+        "---\ntype: tech/component\nid: CMP-ALPHA\ntitle: Alpha\nstatus: active\n"
+        "container: CNT-API\nsource_path: src/shared\n---\n= Alpha\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "components" / "comp-b.adoc",
+        "---\ntype: tech/component\nid: CMP-BETA\ntitle: Beta\nstatus: active\n"
+        "container: CNT-API\nsource_path:\n  - src/shared\n  - src/other\n---\n= Beta\n",
+    )
+    contract_path = eidos_dir / "architecture" / "contracts" / "api-http.adoc"
+    _write(
+        contract_path,
+        """---
+type: tech/contract
+id: CTR-API-BASE
+title: "Inherited Orders REST Contract"
+status: active
+protocol: rest_http
+container: CNT-API
+specification_file: "src/Api"
+---
+= Inherited Orders REST Contract
+
+== Endpoints
+
+|===
+| Method | Path | Auth
+| `GET` | `/api/v1/orders/{id}` | `[Authorize(Policy = "ApiUser")]`
+| `GET` | `/api/v1/orders/health` | `[AllowAnonymous]`
+| `POST` | `/api/v1/orders` | `[Authorize(Policy = "ApiUser", Roles = "Admin")]`
+| `GET` | `/api/v1/status/ping` | `[AllowAnonymous]`
+|===
+""",
+    )
+
+    validator = SpecValidator()
+    rep = validator.validate_directory(eidos_dir, check_import_boundaries=False)
+    assert rep.is_clean, f"Expected clean inherited contract: {rep.schema_errors} / {rep.broken_references}"
+    overlap_warns = [w for w in rep.warnings if "Overlapping source_path" in w]
+    assert len(overlap_warns) == 1
+    assert "CMP-ALPHA" in overlap_warns[0] and "CMP-BETA" in overlap_warns[0]
+    assert "(+1 more)" in overlap_warns[0]
+
+    # Contradiction on inherited base auth must be caught
+    _write(
+        contract_path,
+        """---
+type: tech/contract
+id: CTR-API-BASE
+title: "Inherited Orders REST Contract"
+status: active
+protocol: rest_http
+container: CNT-API
+specification_file: "src/Api"
+---
+= Inherited Orders REST Contract
+
+== Endpoints
+
+|===
+| Method | Path | Auth
+| `GET` | `/api/v1/orders/{id}` | `[AllowAnonymous]`
+| `GET` | `/api/v1/orders/health` | `[AllowAnonymous]`
+| `POST` | `/api/v1/orders` | `[Authorize(Policy = "WrongPolicy")]`
+| `GET` | `/api/v1/status/ping` | `[AllowAnonymous]`
+|===
+""",
+    )
+    bad_rep = validator.validate_directory(eidos_dir, check_import_boundaries=False)
+    assert not bad_rep.is_clean
+    joined_err = "\n".join(bad_rep.broken_references)
+    assert "/api/v1/orders/{*}" in joined_err
+    assert "WrongPolicy" in joined_err

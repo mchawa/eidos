@@ -9,6 +9,7 @@ from typing import ClassVar
 from eidos.core.index.ast_http import (
     HttpEndpointMeta,
     _parse_cs_authorize_args,
+    collect_aspnet_core_controller_bases,
     extract_http_endpoints_with_metadata,
     normalize_http_route_path,
 )
@@ -495,13 +496,20 @@ class ContractParityValidator:
             else str(doc.model.specification_file or source_files[0].name)
         )
         indexer = get_ast_indexer()
-        code_endpoints: dict[tuple[str, str], list[HttpEndpointMeta]] = {}
+        file_contents: list[tuple[Path, str]] = []
         for sf in source_files:
             try:
                 content = sf.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
-            for ep in extract_http_endpoints_with_metadata(indexer, sf, content):
+            file_contents.append((sf, content))
+
+        cs_files = [(sf, content) for sf, content in file_contents if sf.suffix.lower() == ".cs"]
+        cs_bases = collect_aspnet_core_controller_bases(cs_files) if cs_files else None
+
+        code_endpoints: dict[tuple[str, str], list[HttpEndpointMeta]] = {}
+        for sf, content in file_contents:
+            for ep in extract_http_endpoints_with_metadata(indexer, sf, content, base_controllers=cs_bases):
                 code_endpoints.setdefault((ep.method, ep.path), []).append(ep)
 
         # Zero-route fallback: skip reverse scans when 0 framework endpoints are extracted (e.g. custom/stdlib servers).

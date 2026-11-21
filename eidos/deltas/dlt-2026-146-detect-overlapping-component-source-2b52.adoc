@@ -1,0 +1,108 @@
+---
+type: delta/mutation
+id: DLT-2026-146-DETECT-OVERLAPPING-COMPONENT-SOURCE-2B52
+title: "Detect Overlapping Component Source Paths and ASP.NET Core Base Controller Inheritance"
+status: applied
+intent:
+  kind: feature
+  motivation: "Brownfield polyglot repositories frequently exhibit two structural blind spots: (1) sibling CMP-* components declaring overlapping source_path directories or files that skew AST ownership and consumes_api edges without any validation warning, and (2) enterprise ASP.NET Core controllers inheriting [Route] and [Authorize] attributes from a shared BaseApiController defined in another file."
+mutations:
+  - operation: modify
+    target: CMP-ARCHITECTURE-BOUNDARY-VALIDATOR
+    details: "Add an advisory overlapping CMP-*.source_path check in src/eidos/core/spec/surface_validator.py emitting ValidationReport.warnings whenever two active CMP-* specs claim overlapping code files or directories (without failing ValidationReport.is_clean). Update eidos/architecture/components/architecture-boundary-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/surface_validator.py"
+          - "src/eidos/core/spec/boundary_validator.py"
+      body:
+        contains:
+          - "overlapping"
+          - "source_path"
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: "Invoke the overlapping CMP-*.source_path advisory check across active tech/component specs during _validate_source_and_contract_paths in src/eidos/core/spec/validator.py. Update eidos/architecture/components/spec-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/validator.py"
+          - "src/eidos/core/spec/design_validation.py"
+      body:
+        contains:
+          - "overlapping"
+  - operation: modify
+    target: CMP-HTTP-TOPOLOGY-LINKER
+    details: "Add cross-file ASP.NET Core base controller metadata resolution in src/eidos/core/index/ast_http.py so derived controllers inheriting from an abstract/base controller (e.g. OrdersController : BaseApiController) inherit [Route(...)] templates and [Authorize(...)]/[AllowAnonymous] attributes across files in the target source set. Update eidos/architecture/components/http-topology-linker.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/index/ast_http.py"
+          - "src/eidos/core/index/http_linker.py"
+      body:
+        contains:
+          - "BaseApiController"
+          - "inheritance"
+  - operation: modify
+    target: CMP-CONTRACT-PARITY-VALIDATOR
+    details: "Pass multi-file ASP.NET Core base-controller class metadata across all resolved specification_file C# targets in _verify_rest_http_contract (src/eidos/core/spec/contract_parity.py) so derived controllers resolve inherited [Route] and [Authorize] attributes cleanly. Update eidos/architecture/components/contract-parity-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/contract_parity.py"
+          - "src/eidos/core/spec/cli_contract_parity.py"
+      body:
+        contains:
+          - "inheritance"
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: "Document overlapping CMP-*.source_path advisory warnings and cross-file ASP.NET Core base-controller inheritance resolution in eidos/architecture/containers/core.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "overlapping"
+          - "inheritance"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Extend CAP-PROD-001 in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc with INV-OVERLAPPING-SOURCE-PATH-AND-BASE-CONTROLLER-PARITY."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-OVERLAPPING-SOURCE-PATH-AND-BASE-CONTROLLER-PARITY"
+      body:
+        contains:
+          - "INV-OVERLAPPING-SOURCE-PATH-AND-BASE-CONTROLLER-PARITY"
+  - operation: add
+    target: INV-OVERLAPPING-SOURCE-PATH-AND-BASE-CONTROLLER-PARITY
+    details: "Bind INV-OVERLAPPING-SOURCE-PATH-AND-BASE-CONTROLLER-PARITY in CAP-PROD-001 to tests/test_contract_parity.py::test_overlapping_component_source_paths_and_base_controller_inheritance."
+    expect:
+      frontmatter:
+        rule: "overlapping"
+        test_binding: "tests/test_contract_parity.py::test_overlapping_component_source_paths_and_base_controller_inheritance"
+vcs:
+  branch: main
+  base_commit: 7106d5477b53ace59adfe4ed4b141a9bfc0ee951
+---
+= SpecDelta: Detect Overlapping Component Source Paths and ASP.NET Core Base Controller Inheritance
+:toc: left
+
+== Problem Statement
+1. **Overlapping `CMP-*.source_path` declarations**: While Eidos tests its own components for disjointness (`INV-CORE-MODULAR-COMPONENT-COHESION`), `eidos validate` does not warn external/brownfield repos when two active `CMP-*` specs declare overlapping directories or files, silently distorting AST ownership and `consumes_api` edges.
+2. **Cross-file ASP.NET Core base controller inheritance**: Many modern `.NET` APIs define a shared base class (e.g., `abstract class BaseApiController : ControllerBase` with `[Route("api/v1/[controller]")]` and `[Authorize]`) in one file and derive controllers (`OrdersController : BaseApiController`) in other files. Single-file extraction misses the inherited route prefix and authorization state.
+
+== Proposed Specification Changes
+* **`CMP-ARCHITECTURE-BOUNDARY-VALIDATOR` (`src/eidos/core/spec/surface_validator.py`) & `CMP-SPEC-VALIDATOR` (`src/eidos/core/spec/validator.py`)**: Map resolved AST code files per active `CMP-*` during validation and emit a non-blocking `ValidationReport.warnings` entry whenever two active components claim overlapping `source_path` targets (zero warnings on disjoint repos like Eidos itself).
+* **`CMP-HTTP-TOPOLOGY-LINKER` (`src/eidos/core/index/ast_http.py`) & `CMP-CONTRACT-PARITY-VALIDATOR` (`src/eidos/core/spec/contract_parity.py`)**: Extract C# controller class base-type chains and pre-collect controller class `[Route]`/`[Authorize]`/`[AllowAnonymous]` metadata across all C# files in the `specification_file` target set before extracting endpoints, resolving inherited `[Route("api/v1/[controller]")]` (substituting the concrete derived controller's slug!) and inherited `[Authorize]`/`[AllowAnonymous]` cleanly.
+* **`CNT-EIDOS-CORE` & `CAP-PROD-001`**: Update living specs and bind `INV-OVERLAPPING-SOURCE-PATH-AND-BASE-CONTROLLER-PARITY`.
+
+== Implementation Plan
+1. **Overlapping `CMP-*.source_path` Warning (`CMP-ARCHITECTURE-BOUNDARY-VALIDATOR`, `CMP-SPEC-VALIDATOR`)**: Implement deterministic file/directory overlap detection in `src/eidos/core/spec/surface_validator.py` and invoke from `src/eidos/core/spec/validator.py`.
+2. **Cross-File ASP.NET Core Base Controller Inheritance (`CMP-HTTP-TOPOLOGY-LINKER`, `CMP-CONTRACT-PARITY-VALIDATOR`)**: Add a two-pass base-class table builder in `src/eidos/core/index/ast_http.py` (`CNT-EIDOS-INDEX` covered via `CMP-HTTP-TOPOLOGY-LINKER`) and wire multi-file C# target sets in `src/eidos/core/spec/contract_parity.py`.
+3. **Living Specs, Tests & Coverage (`POL-005-STATEMENT-TEST-COVERAGE`)**: Update all declared specs and add `tests/test_contract_parity.py::test_overlapping_component_source_paths_and_base_controller_inheritance` covering overlapping directory/file warnings, multi-level base controller `[Route]` + `[Authorize]` inheritance with action `[AllowAnonymous]` override, and `>90.0%` per-file statement coverage.
+4. **Verification**: Run `pytest`, `eidos delta verify DLT-2026-146 --json`, `eidos delta apply DLT-2026-146`, and `eidos drift --uncommitted --json`.

@@ -1254,6 +1254,8 @@ class SpecValidator:
                             self._verify_contract_protocol(protocol, doc, resolved_sf, report)
 
         if active_arch_docs:
+            active_cmp_docs = [d for d in active_arch_docs if d.doc_type == "tech/component"]
+            surface_validator.check_overlapping_component_source_paths(active_cmp_docs, repo_root, root_dir, report)
             surface_validator._verify_prose_symbol_drift(active_arch_docs, repo_root, root_dir, report, repo_symbol_acc)
         if ps_spec_root.is_dir():
             surface_validator.flush_persistent_cache(ps_db_path)

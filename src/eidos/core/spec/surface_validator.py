@@ -1252,6 +1252,54 @@ class PublicSurfaceValidator:
                     f"Over-scoped source_path in {doc.file_path.name}: Component '{doc.doc_id}' includes '{raw_sp}' which contributes 0 symbols to '== Public Surface' and has no intra-component import linkage to its other source_path entries"
                 )
 
+    def check_overlapping_component_source_paths(
+        self,
+        component_docs: list[SpecDocument],
+        repo_root: Path,
+        root_dir: Path,
+        report: ValidationReport,
+    ) -> None:
+        """Emit non-blocking advisory warnings whenever two active CMP-* specs claim overlapping code files (DLT-2026-146)."""
+        if len(component_docs) < 2:
+            return
+        file_owners: dict[Path, list[SpecDocument]] = {}
+        for doc in component_docs:
+            seen_doc_files: set[Path] = set()
+            for raw_sp in doc.model.source_paths():
+                for cf in self._resolve_entry_code_files(raw_sp, repo_root, root_dir):
+                    res = cf.resolve()
+                    if res not in seen_doc_files:
+                        seen_doc_files.add(res)
+                        file_owners.setdefault(res, []).append(doc)
+
+        pair_overlaps: dict[tuple[str, str], tuple[SpecDocument, SpecDocument, list[str]]] = {}
+        resolved_repo = repo_root.resolve()
+        for cf, owners in sorted(file_owners.items()):
+            if len(owners) < 2:
+                continue
+            try:
+                rel_p = cf.relative_to(resolved_repo).as_posix()
+            except ValueError:
+                rel_p = cf.as_posix()
+            sorted_owners = sorted(owners, key=lambda d: (d.doc_id, d.file_path.name))
+            for idx_a in range(len(sorted_owners)):
+                for idx_b in range(idx_a + 1, len(sorted_owners)):
+                    doc_a, doc_b = sorted_owners[idx_a], sorted_owners[idx_b]
+                    pair_key = (doc_a.doc_id, doc_b.doc_id)
+                    entry = pair_overlaps.setdefault(pair_key, (doc_a, doc_b, []))
+                    if rel_p not in entry[2]:
+                        entry[2].append(rel_p)
+
+        for _pair_key, (doc_a, doc_b, paths) in sorted(pair_overlaps.items()):
+            sample = ", ".join(paths[:3])
+            suffix = f" (+{len(paths) - 3} more)" if len(paths) > 3 else ""
+            warn = (
+                f"Overlapping source_path in {doc_a.file_path.name}: Component '{doc_a.doc_id}' "
+                f"overlaps with '{doc_b.doc_id}' on {sample}{suffix}"
+            )
+            if warn not in report.warnings:
+                report.warnings.append(warn)
+
     @classmethod
     def _extract_prose_symbol_candidates(cls, doc: SpecDocument) -> list[tuple[str, str, str, str, bool]]:
         """Extract high-precision explicit code references (Type.member, Type::member, func(...)) outside '== Public Surface'."""
