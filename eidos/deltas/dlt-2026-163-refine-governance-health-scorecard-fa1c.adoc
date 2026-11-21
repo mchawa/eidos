@@ -1,0 +1,89 @@
+---
+type: delta/mutation
+id: DLT-2026-163-REFINE-GOVERNANCE-HEALTH-SCORECARD-FA1C
+title: "Refine Governance Health Scorecard Ownership Filtering and Public Surface Breakdown"
+status: applied
+intent:
+  kind: enabler
+  motivation: "eidos index health currently counts auto-generated/gitignored build artifacts (such as hatch-vcs _version.py) as unowned source files and mixes C4 Level 2 containers (which use == Architectural Boundary) with Level 3 components (which use == Public Surface), artificially capping Public Surface coverage at 87% on Eidos's own repository."
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+    details: "Refine compute_governance_health in src/eidos/core/index/traversal.py to exclude gitignored and linguist-generated/linguist-vendored files from source_ownership and split public_surface into component-scoped primary coverage (total_components, documented_components, coverage_pct) plus container counts (total_containers, documented_containers) while retaining backward-compatible total_entities and documented_entities keys. Update eidos/architecture/components/graph-traversal-engine.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/core/index/traversal.py"
+      body:
+        contains:
+          - "documented_components"
+  - operation: modify
+    target: CMP-CLI-INDEX-COMMANDS
+    details: "Update eidos index health Rich scorecard output in src/eidos/cli/index_commands.py to display component-scoped Public Surface coverage alongside container counts. Update eidos/architecture/components/cli-index-commands.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/cli/index_commands.py"
+      body:
+        contains:
+          - "component"
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+    details: "Update GovernanceHealth in src/eidos/portal/frontend/src/types.ts and the Governance Health Scorecard card in src/eidos/portal/frontend/src/components/views/HomeView.tsx to display component-scoped Public Surface coverage, and rebuild assets/portal/bundle.html.gz within the 5 MiB air-gapped budget. Update eidos/architecture/components/portal-assets.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/portal/assets.py"
+          - "src/eidos/portal/frontend/scripts/build_assets.py"
+          - "src/eidos/portal/frontend/scripts/hatch_build.py"
+          - "src/eidos/portal/frontend/src"
+      body:
+        contains:
+          - "Public Surface"
+  - operation: modify
+    target: CAP-AGENT-002
+    details: "Extend CAP-AGENT-002 in eidos/domains/agent-intelligence/capabilities/cap-agent-002.adoc with INV-INDEX-HEALTH-GENERATED-AND-COMPONENT-SCOPE."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-INDEX-HEALTH-GENERATED-AND-COMPONENT-SCOPE"
+      body:
+        contains:
+          - "INV-INDEX-HEALTH-GENERATED-AND-COMPONENT-SCOPE"
+  - operation: add
+    target: INV-INDEX-HEALTH-GENERATED-AND-COMPONENT-SCOPE
+    details: "Bind INV-INDEX-HEALTH-GENERATED-AND-COMPONENT-SCOPE in CAP-AGENT-002 to tests/test_graph_index.py::test_index_governance_health_excludes_generated_files_and_splits_surface."
+    expect:
+      frontmatter:
+        rule: "source_ownership"
+        test_binding: "tests/test_graph_index.py::test_index_governance_health_excludes_generated_files_and_splits_surface"
+vcs:
+  branch: main
+  base_commit: 3f5c04d3194d7d23da4c0809e44c3e3f12098817
+---
+= SpecDelta: Refine Governance Health Scorecard Ownership Filtering and Public Surface Breakdown
+:toc: left
+
+== Problem Statement
+Running `eidos index health --json` on Eidos's own repository surfaced two metric precision issues:
+
+1. `src/eidos/_version.py` (an auto-generated, gitignored `hatch-vcs` build file) is reported as the sole entry in `source_ownership.unowned_files` (`107/108 = 99.1%`), creating false unowned-file noise in any `hatch-vcs`, `setuptools-scm`, or codegen repository.
+2. `public_surface` combines active C4 Level 3 components (`CMP-*`, where `== Public Surface` is the standard AST-checked section: `47/47`) with C4 Level 2 containers (`CNT-*`, which typically use `== Architectural Boundary` and `== Internal Structure`: `0/7`), artificially capping `public_surface.coverage_pct` at `87.0%`.
+
+== Proposed Specification Changes
+* **`CMP-GRAPH-TRAVERSAL-ENGINE` (`src/eidos/core/index/traversal.py`)**:
+  * Filter `source_ownership` candidates using Git-tracked / non-ignored and `is_generated_or_vendored` exclusions (falling back cleanly in non-Git test directories) so gitignored build outputs and `linguist-generated` files never appear in `unowned_files`.
+  * Compute `public_surface` with explicit component and container fields (`total_components`, `documented_components`, `total_containers`, `documented_containers`, plus backward-compatible `total_entities` and `documented_entities`), basing `public_surface.coverage_pct` on active `CMP-*` components (falling back to `total_entities` only when zero active `CMP-*` components exist).
+* **`CMP-CLI-INDEX-COMMANDS` (`src/eidos/cli/index_commands.py`) & `CMP-PORTAL-ASSETS` (`types.ts`, `HomeView.tsx`, `assets/portal/bundle.html.gz`)**:
+  * Render `documented_components / total_components` as the primary Public Surface coverage score in `eidos index health` and the Portal Governance Health Scorecard card.
+* **`CAP-AGENT-002` (`eidos/domains/agent-intelligence/capabilities/cap-agent-002.adoc`)**:
+  * Add and bind `INV-INDEX-HEALTH-GENERATED-AND-COMPONENT-SCOPE` to `tests/test_graph_index.py::test_index_governance_health_excludes_generated_files_and_splits_surface`.
+
+== Implementation Plan
+1. **Health Query Refinement (`CMP-GRAPH-TRAVERSAL-ENGINE`)**: Update `compute_governance_health` in `src/eidos/core/index/traversal.py` (`CNT-EIDOS-INDEX` covered via `CMP-GRAPH-TRAVERSAL-ENGINE`).
+2. **CLI & Portal UI (`CMP-CLI-INDEX-COMMANDS`, `CMP-PORTAL-ASSETS`)**: Update `index_health_cmd` in `src/eidos/cli/index_commands.py` (`CNT-EIDOS-CLI` covered via `CMP-CLI-INDEX-COMMANDS`), update `src/eidos/portal/frontend/src/types.ts` and `src/eidos/portal/frontend/src/components/views/HomeView.tsx` (`CNT-EIDOS-PORTAL` covered via `CMP-PORTAL-ASSETS`), and rebuild `assets/portal/bundle.html.gz` via `pnpm build:assets`.
+3. **Living Specs (`CMP-GRAPH-TRAVERSAL-ENGINE`, `CMP-CLI-INDEX-COMMANDS`, `CMP-PORTAL-ASSETS`, `CAP-AGENT-002`, `INV-INDEX-HEALTH-GENERATED-AND-COMPONENT-SCOPE`)**: Update all declared living specs.
+4. **Tests & Coverage (`POL-005-STATEMENT-TEST-COVERAGE`)**: Add `tests/test_graph_index.py::test_index_governance_health_excludes_generated_files_and_splits_surface` verifying gitignored/`linguist-generated` exclusion and component-vs-container `public_surface` breakdown (plus `>90.0%` coverage on `traversal.py` and `index_commands.py`).
+5. **Verification**: Run `pnpm test -- --run`, `pytest tests/test_graph_index.py tests/test_portal.py`, `eidos delta verify DLT-2026-163 --json`, `eidos delta apply DLT-2026-163`, and `eidos drift --uncommitted --fail-on-warnings --json`.

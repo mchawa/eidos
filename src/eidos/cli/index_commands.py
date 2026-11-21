@@ -594,10 +594,19 @@ def index_health_cmd(
         f"{src['coverage_pct']:.1f}%",
         f"{src['owned_code_files']}/{src['total_code_files']} code files owned ({len(src['unowned_files'])} unowned)",
     )
+    comp_total = int(surf.get("total_components") or 0)
+    comp_doc = int(surf.get("documented_components") or 0)
+    cnt_total = int(surf.get("total_containers") or 0)
+    cnt_doc = int(surf.get("documented_containers") or 0)
+    surface_details = (
+        f"{comp_doc}/{comp_total} active components with == Public Surface ({cnt_doc}/{cnt_total} containers)"
+        if comp_total > 0
+        else f"{surf['documented_entities']}/{surf['total_entities']} active containers/components with == Public Surface"
+    )
     table.add_row(
         "Public Surface Coverage",
         f"{surf['coverage_pct']:.1f}%",
-        f"{surf['documented_entities']}/{surf['total_entities']} active containers/components with == Public Surface",
+        surface_details,
     )
     table.add_row(
         "Contract Verification",

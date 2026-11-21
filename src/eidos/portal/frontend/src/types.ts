@@ -413,6 +413,10 @@ export interface GovernanceHealth {
     unowned_files: string[];
   };
   public_surface: {
+    total_components?: number;
+    documented_components?: number;
+    total_containers?: number;
+    documented_containers?: number;
     total_entities: number;
     documented_entities: number;
     coverage_pct: number;

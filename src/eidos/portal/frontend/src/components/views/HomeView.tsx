@@ -311,8 +311,9 @@ export function HomeView({
                   {data.governance_health.public_surface.coverage_pct.toFixed(1)}%
                 </p>
                 <p className="text-[11px] text-muted-foreground">
-                  {data.governance_health.public_surface.documented_entities} /{" "}
-                  {data.governance_health.public_surface.total_entities} documented
+                  {(data.governance_health.public_surface.total_components ?? 0) > 0
+                    ? `${data.governance_health.public_surface.documented_components ?? 0} / ${data.governance_health.public_surface.total_components} components`
+                    : `${data.governance_health.public_surface.documented_entities} / ${data.governance_health.public_surface.total_entities} documented`}
                 </p>
               </div>
               <div className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-1">

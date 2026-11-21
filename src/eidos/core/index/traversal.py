@@ -776,6 +776,33 @@ def _pct(numerator: int, denominator: int) -> float:
     return round(100.0 * numerator / denominator, 1) if denominator > 0 else 100.0
 
 
+def _gitignored_paths(repo_root: Path, rel_paths: list[str]) -> set[str]:
+    """Return subset of ``rel_paths`` ignored by Git (``.gitignore`` / exclude rules)."""
+    from eidos.core.workspace.project import find_git_root
+
+    if not rel_paths or find_git_root(repo_root) is None:
+        return set()
+    import subprocess
+
+    ignored: set[str] = set()
+    try:
+        res = subprocess.run(
+            ["git", "check-ignore", "--stdin", "-z"],
+            cwd=repo_root,
+            input="\0".join(p.replace("\\", "/") for p in rel_paths),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res.returncode in (0, 1) and res.stdout:
+            for item in res.stdout.split("\0"):
+                if item:
+                    ignored.add(item.replace("\\", "/"))
+    except OSError:
+        pass
+    return ignored
+
+
 def compute_governance_health(
     conn: sqlite3.Connection,
     repo_root: Path,
@@ -784,6 +811,8 @@ def compute_governance_health(
     validation_report: Any = None,
 ) -> dict[str, Any]:
     """Compute a deterministic architecture governance health scorecard from the synced knowledge graph."""
+    from eidos.core.workspace.project import is_generated_or_vendored
+
     root_res = repo_root.resolve()
     eidos_res = eidos_dir.resolve()
 
@@ -798,8 +827,10 @@ def compute_governance_health(
     ).fetchall()
 
     owned_patterns: list[str] = []
-    surface_total = 0
-    surface_documented = 0
+    comp_total = 0
+    comp_documented = 0
+    cnt_total = 0
+    cnt_documented = 0
     contracts_total = 0
     contracts_verified = 0
     caps_total = 0
@@ -820,7 +851,11 @@ def compute_governance_health(
 
         if etype in ("tech/container", "tech/component"):
             owned_patterns.extend(extract_entity_paths(data))
-            surface_total += 1
+            is_component = etype == "tech/component"
+            if is_component:
+                comp_total += 1
+            else:
+                cnt_total += 1
             raw_fp = str(r["file_path"] or "").strip()
             spec_p = Path(raw_fp)
             if not spec_p.is_absolute():
@@ -830,7 +865,10 @@ def compute_governance_health(
                 doc, _, _ = get_cached_spec_document(spec_p)
                 body_txt = (doc.body if doc is not None else "") or ""
                 if _PUBLIC_SURFACE_HEADING_RE.search(body_txt):
-                    surface_documented += 1
+                    if is_component:
+                        comp_documented += 1
+                    else:
+                        cnt_documented += 1
 
         elif etype == "tech/contract":
             contracts_total += 1
@@ -861,22 +899,34 @@ def compute_governance_health(
                     ratchet_entries += 1
                     ratchet_max_imports += int(entry.get("max_imports") or 0)
 
-    # 2. Source file ownership across indexed production code files
+    # 2. Source file ownership across indexed production code files (excluding gitignored & linguist-generated/vendored)
     code_rows = conn.execute(
         "SELECT rel_path FROM indexed_files WHERE doc_type = 'code/source' ORDER BY rel_path ASC;"
     ).fetchall()
+    candidate_code_paths = [
+        str(cr["rel_path"] or "").strip().replace("\\", "/")
+        for cr in code_rows
+        if str(cr["rel_path"] or "").strip()
+        and Path(str(cr["rel_path"]).strip()).suffix.lower() in _POLYGLOT_TEST_CODE_EXTS
+    ]
+    excluded_code_paths = _gitignored_paths(root_res, candidate_code_paths) | is_generated_or_vendored(
+        root_res, candidate_code_paths
+    )
     total_code_files = 0
     owned_code_files = 0
     unowned_files: list[str] = []
-    for cr in code_rows:
-        rel_p = str(cr["rel_path"] or "").strip().replace("\\", "/")
-        if not rel_p or Path(rel_p).suffix.lower() not in _POLYGLOT_TEST_CODE_EXTS:
+    for rel_p in candidate_code_paths:
+        if rel_p in excluded_code_paths:
             continue
         total_code_files += 1
         if any(match_path_pattern(rel_p, pat) > 0 for pat in owned_patterns):
             owned_code_files += 1
         else:
             unowned_files.append(rel_p)
+
+    surface_total = comp_total + cnt_total
+    surface_documented = comp_documented + cnt_documented
+    surface_pct = _pct(comp_documented, comp_total) if comp_total > 0 else _pct(surface_documented, surface_total)
 
     schema_errs = getattr(validation_report, "schema_errors", None) or {}
     broken_refs = getattr(validation_report, "broken_references", None) or []
@@ -891,9 +941,13 @@ def compute_governance_health(
             "unowned_files": unowned_files,
         },
         "public_surface": {
+            "total_components": comp_total,
+            "documented_components": comp_documented,
+            "total_containers": cnt_total,
+            "documented_containers": cnt_documented,
             "total_entities": surface_total,
             "documented_entities": surface_documented,
-            "coverage_pct": _pct(surface_documented, surface_total),
+            "coverage_pct": surface_pct,
         },
         "contracts": {
             "total_active": contracts_total,

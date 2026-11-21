@@ -4613,9 +4613,13 @@ def test_index_governance_health_scorecard_cli_and_portal(tmp_path):
         assert health["source_ownership"]["coverage_pct"] == 50.0
         assert health["source_ownership"]["unowned_files"] == ["src/unowned/orphan.py"]
 
+        assert health["public_surface"]["total_components"] == 1
+        assert health["public_surface"]["documented_components"] == 1
+        assert health["public_surface"]["total_containers"] == 2
+        assert health["public_surface"]["documented_containers"] == 0
         assert health["public_surface"]["total_entities"] == 3
         assert health["public_surface"]["documented_entities"] == 1
-        assert health["public_surface"]["coverage_pct"] == 33.3
+        assert health["public_surface"]["coverage_pct"] == 100.0
 
         assert health["contracts"]["total_active"] == 2
         assert health["contracts"]["verified_with_spec_file"] == 1
@@ -4763,3 +4767,95 @@ def test_partial_semantic_embeddings_fall_back_to_bm25(tmp_path: Path) -> None:
 
         gi._INDEX_INSTANCES.pop(eidos_dir.resolve(), None)
         sem_mod._CUSTOM_ENCODE_FNS.pop(str(eidos_dir.resolve()), None)
+
+
+def test_index_governance_health_excludes_generated_files_and_splits_surface(tmp_path: Path) -> None:
+    """Verify INV-INDEX-HEALTH-GENERATED-AND-COMPONENT-SCOPE: gitignored and linguist-generated files are excluded
+    from source_ownership, public_surface splits component-scoped primary coverage from container counts, and
+    CLI/Portal surfaces render component-scoped Public Surface metrics cleanly."""
+    import subprocess
+
+    import orjson
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.core.lifecycle.initializer import init_repository
+
+    repo = tmp_path / "health_refined_repo"
+    init_repository(repo, title="Refined Health Repo")
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    (repo / ".gitignore").write_text("src/app/_version.py\n", encoding="utf-8")
+    (repo / ".gitattributes").write_text("src/app/generated_pb2.py linguist-generated=true\n", encoding="utf-8")
+
+    (repo / "src" / "app").mkdir(parents=True)
+    (repo / "src" / "app" / "core.py").write_text("def run() -> int:\n    return 1\n", encoding="utf-8")
+    (repo / "src" / "app" / "_version.py").write_text('version = "0.1.0"\n', encoding="utf-8")
+    (repo / "src" / "app" / "generated_pb2.py").write_text("DESCRIPTOR = None\n", encoding="utf-8")
+
+    eidos_dir = repo / "eidos"
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True, exist_ok=True)
+    (eidos_dir / "architecture" / "components").mkdir(parents=True, exist_ok=True)
+    (eidos_dir / "architecture" / "containers" / "app.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-APP\n"
+        "title: App Container\n"
+        "status: active\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "source_path: src/app/core.py\n"
+        "---\n"
+        "= App Container\n\n"
+        "== Architectural Boundary\nBoundary only.\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "core.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-CORE\n"
+        "title: Core Component\n"
+        "container: CNT-APP\n"
+        "status: active\n"
+        "source_path: src/app/core.py\n"
+        "---\n"
+        "= Core Component\n\n"
+        "== Public Surface\n* `run`\n",
+        encoding="utf-8",
+    )
+
+    idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=repo, eidos_dir=eidos_dir)
+    try:
+        health = idx.get_governance_health()
+        # _version.py (gitignored) and generated_pb2.py (linguist-generated) must be excluded from ownership
+        assert health["source_ownership"]["total_code_files"] == 1
+        assert health["source_ownership"]["owned_code_files"] == 1
+        assert health["source_ownership"]["coverage_pct"] == 100.0
+        assert health["source_ownership"]["unowned_files"] == []
+
+        # Component-scoped Public Surface coverage is 100.0% (1/1 CMP-*), with 0/1 CNT-* reported separately
+        surf = health["public_surface"]
+        assert surf["total_components"] == 1
+        assert surf["documented_components"] == 1
+        assert surf["total_containers"] == 1
+        assert surf["documented_containers"] == 0
+        assert surf["total_entities"] == 2
+        assert surf["documented_entities"] == 1
+        assert surf["coverage_pct"] == 100.0
+
+        cli = CliRunner()
+        res_rich = cli.invoke(app, ["index", "health", "--path", str(eidos_dir)], env={"COLUMNS": "160"})
+        assert res_rich.exit_code == 0, res_rich.stdout
+        flat_rich = " ".join(res_rich.stdout.replace("│", " ").split())
+        assert "1/1 active components" in flat_rich
+        assert "0/1 containers" in flat_rich
+
+        res_json = cli.invoke(app, ["index", "health", "--path", str(eidos_dir), "--json"])
+        assert res_json.exit_code == 0
+        parsed = orjson.loads(res_json.stdout)
+        assert parsed["public_surface"]["documented_components"] == 1
+        assert parsed["source_ownership"]["coverage_pct"] == 100.0
+    finally:
+        idx.close()
+        import eidos.core.index.graph_index as gi
+
+        gi._INDEX_INSTANCES.pop(eidos_dir.resolve(), None)
