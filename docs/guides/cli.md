@@ -389,6 +389,10 @@ eidos delta verify DLT-2026-055
 # Output machine-readable verification results (with failure_reason diagnostics):
 eidos delta verify DLT-2026-055 --json
 
+# Detect parallel target collisions and 1-hop blast-radius overlaps across open SpecDeltas:
+eidos delta conflicts
+eidos delta conflicts --no-blast-radius --strict --json
+
 # Apply a SpecDelta in-place (verifies all mutations by default and updates status to 'applied'):
 eidos delta apply DLT-2026-055
 

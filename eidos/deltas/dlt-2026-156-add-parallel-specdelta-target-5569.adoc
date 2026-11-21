@@ -1,0 +1,89 @@
+---
+type: delta/mutation
+id: DLT-2026-156-ADD-PARALLEL-SPECDELTA-TARGET-5569
+title: "Add Parallel SpecDelta Target and Blast-Radius Conflict Detection"
+status: applied
+intent:
+  kind: feature
+  motivation: "When multiple engineers or autonomous agents author parallel SpecDeltas concurrently, eidos delta create prevents ID collisions but provides no deterministic check for overlapping mutation targets or 1-hop blast-radius conflicts across active and proposed SpecDeltas."
+mutations:
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+    details: "Add detect_delta_conflicts(eidos_dir, include_blast_radius=True) in src/eidos/core/lifecycle/delta_verifier.py (or delta_engine.py) comparing all non-terminal SpecDeltas (proposed, in_review, approved) for direct mutations[].target collisions (including incompatible remove/deprecate vs modify pairs) and optional 1-hop graph blast-radius overlaps via CMP-GRAPH-TRAVERSAL-ENGINE. Update eidos/architecture/components/delta-engine.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/lifecycle/delta_engine.py"
+          - "src/eidos/core/lifecycle/delta_verifier.py"
+          - "src/eidos/core/lifecycle/archiver.py"
+      body:
+        contains:
+          - "detect_delta_conflicts"
+  - operation: modify
+    target: CMP-CLI-DELTA-COMMANDS
+    details: "Expose `eidos delta conflicts [--path PATH] [--blast-radius/--no-blast-radius] [--strict] [--json]` in src/eidos/cli/delta_commands.py rendering a Rich conflict matrix or machine-readable JSON report (exiting with code 1 under --strict when direct target conflicts exist). Update eidos/architecture/components/cli-delta-commands.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/cli/delta_commands.py"
+      body:
+        contains:
+          - "conflicts"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Document `eidos delta conflicts [--path <path>] [--blast-radius/--no-blast-radius] [--strict] [--json]` in eidos/architecture/contracts/cli.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "conflicts"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Document `eidos delta conflicts` in docs/guides/cli.md (`INV-DOCS-SYNCHRONIZATION`), and update eidos/architecture/components/docs-user-guides.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/guides"
+      body:
+        contains:
+          - "delta conflicts"
+  - operation: modify
+    target: CAP-PROD-002
+    details: "Extend CAP-PROD-002 in eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc with INV-DELTA-PARALLEL-CONFLICT-DETECTION."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-DELTA-PARALLEL-CONFLICT-DETECTION"
+      body:
+        contains:
+          - "INV-DELTA-PARALLEL-CONFLICT-DETECTION"
+  - operation: add
+    target: INV-DELTA-PARALLEL-CONFLICT-DETECTION
+    details: "Bind INV-DELTA-PARALLEL-CONFLICT-DETECTION in CAP-PROD-002 to tests/test_delta_engine.py::test_delta_parallel_target_and_blast_radius_conflicts."
+    expect:
+      frontmatter:
+        rule: "conflicts"
+        test_binding: "tests/test_delta_engine.py::test_delta_parallel_target_and_blast_radius_conflicts"
+vcs:
+  branch: main
+  base_commit: 7106d5477b53ace59adfe4ed4b141a9bfc0ee951
+---
+= SpecDelta: Add Parallel SpecDelta Target and Blast-Radius Conflict Detection
+:toc: left
+
+== Problem Statement
+In multi-agent and team workflows, several `proposed`, `in_review`, or `approved` SpecDeltas frequently exist at the same time. Today there is no command to detect when two open SpecDeltas mutate the same `CNT-*`/`CMP-*`/`CTR-*` target, attempt incompatible operations (`remove`/`deprecate` vs. `modify`), or share overlapping 1-hop architectural blast radii.
+
+== Proposed Specification Changes
+* **`CMP-DELTA-ENGINE` (`src/eidos/core/lifecycle/delta_verifier.py`)**: Implement deterministic `detect_delta_conflicts` classifying pairwise overlaps across non-terminal SpecDeltas into `direct_target_conflicts` (severity `high` when one removes/deprecates while the other modifies, `medium` for concurrent modifies) and `blast_radius_overlaps` (severity `info`, derived from `ArchitecturalIndex.compute_delta_impact`).
+* **`CMP-CLI-DELTA-COMMANDS` (`src/eidos/cli/delta_commands.py`), `CTR-EIDOS-CLI` & `CMP-DOCS-USER-GUIDES`**: Expose `eidos delta conflicts [--path PATH] [--blast-radius/--no-blast-radius] [--strict] [--json]`, update `tests/fixtures/cli_command_tree.json` and `docs/guides/cli.md`.
+* **`CAP-PROD-002`**: Add and bind `INV-DELTA-PARALLEL-CONFLICT-DETECTION`.
+
+== Implementation Plan
+1. **Conflict Analyzer (`CMP-DELTA-ENGINE`)**: Implement `detect_delta_conflicts` in `src/eidos/core/lifecycle/delta_verifier.py` (`CNT-EIDOS-CORE` covered via `CMP-DELTA-ENGINE`), excluding terminal (`applied`, `rejected`) and archived deltas.
+2. **CLI Command & Contract (`CMP-CLI-DELTA-COMMANDS`, `CTR-EIDOS-CLI`, `CMP-DOCS-USER-GUIDES`)**: Add `conflicts` subcommand to `delta_app` in `src/eidos/cli/delta_commands.py` (`CNT-EIDOS-CLI` covered via `CMP-CLI-DELTA-COMMANDS` and `CTR-EIDOS-CLI`), update `tests/fixtures/cli_command_tree.json` and `docs/guides/cli.md`.
+3. **Living Specs, Tests & Coverage (`POL-005-STATEMENT-TEST-COVERAGE`)**: Update all declared specs and add `tests/test_delta_engine.py::test_delta_parallel_target_and_blast_radius_conflicts` verifying direct conflicts, incompatible remove/modify severity, 1-hop blast-radius overlaps, `--strict` exit codes, and `>90.0%` coverage.
+4. **Verification**: Run `pytest`, `eidos delta verify DLT-2026-156 --json`, `eidos delta apply DLT-2026-156`, and `eidos drift --uncommitted --json`.

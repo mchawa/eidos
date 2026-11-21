@@ -16,6 +16,7 @@ from eidos.core.lifecycle.delta_engine import (
     archive_deltas,
     create_delta,
     delete_delta,
+    detect_delta_conflicts,
     get_delta_status_summary,
     list_deltas,
     set_delta_status,
@@ -25,7 +26,7 @@ from eidos.core.spec.parser import parse_spec_file
 
 delta_app = typer.Typer(
     name="delta",
-    help="Manage SpecDeltas through their mutation lifecycle (list, show, create, status, verify, audit, apply, archive, delete, changelog).",
+    help="Manage SpecDeltas through their mutation lifecycle (list, show, create, status, verify, conflicts, audit, apply, archive, delete, changelog).",
     add_completion=False,
 )
 
@@ -689,6 +690,75 @@ def delta_status_cmd(
         console.print(active_table)
     else:
         console.print("\n[dim]No in-flight SpecDeltas. Living specifications are up to date.[/dim]")
+
+
+@delta_app.command("conflicts")
+def delta_conflicts_cmd(
+    path: Path = typer.Option(
+        Path("eidos"),
+        "--path",
+        "-p",
+        help="Path to eidos directory.",
+    ),
+    blast_radius: bool = typer.Option(
+        True,
+        "--blast-radius/--no-blast-radius",
+        help="Include 1-hop architectural blast-radius overlaps across open SpecDeltas.",
+    ),
+    strict: bool = typer.Option(
+        False,
+        "--strict",
+        help="Exit with code 1 if any direct mutation target conflicts exist.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output machine-readable JSON conflict matrix.",
+    ),
+):
+    """Detect direct mutation target collisions and 1-hop blast-radius overlaps across open SpecDeltas."""
+    eidos_dir = resolve_cli_eidos_dir(path)
+    result = detect_delta_conflicts(eidos_dir, include_blast_radius=blast_radius)
+
+    if json_output:
+        typer.echo(orjson.dumps(result, option=orjson.OPT_INDENT_2).decode("utf-8"))
+        if strict and result["has_direct_conflicts"]:
+            raise typer.Exit(code=1)
+        return
+
+    direct = result["direct_target_conflicts"]
+    overlaps = result["blast_radius_overlaps"]
+    scanned = result["active_deltas_scanned"]
+
+    if not direct and not overlaps:
+        console.print(
+            f"[bold green]✓[/bold green] No parallel SpecDelta conflicts detected across {scanned} open delta(s)."
+        )
+        return
+
+    if direct:
+        table = Table(title=f"Direct SpecDelta Target Conflicts ({len(direct)})", show_header=True)
+        table.add_column("Severity", justify="center")
+        table.add_column("Target", style="bold cyan")
+        table.add_column("Delta A", style="white")
+        table.add_column("Delta B", style="white")
+        table.add_column("Reason", style="dim")
+        for c in direct:
+            sev_badge = "[bold red]HIGH[/bold red]" if c["severity"] == "high" else "[bold yellow]MEDIUM[/bold yellow]"
+            table.add_row(sev_badge, c["target"], c["delta_a"], c["delta_b"], c["reason"])
+        console.print(table)
+
+    if overlaps:
+        otable = Table(title=f"1-Hop Blast-Radius Overlaps ({len(overlaps)})", show_header=True)
+        otable.add_column("Delta A", style="cyan")
+        otable.add_column("Delta B", style="cyan")
+        otable.add_column("Shared Neighbors", style="dim")
+        for ov in overlaps:
+            otable.add_row(ov["delta_a"], ov["delta_b"], ", ".join(ov["shared_entities"]))
+        console.print(otable)
+
+    if strict and result["has_direct_conflicts"]:
+        raise typer.Exit(code=1)
 
 
 @delta_app.command("delete")

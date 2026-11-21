@@ -77,6 +77,9 @@ from eidos.core.lifecycle.delta_verifier import (
     _strip_spec_comments as _strip_spec_comments,
 )
 from eidos.core.lifecycle.delta_verifier import (
+    detect_delta_conflicts as detect_delta_conflicts,
+)
+from eidos.core.lifecycle.delta_verifier import (
     normalize_delta_mutation as normalize_delta_mutation,
 )
 from eidos.core.lifecycle.delta_verifier import (

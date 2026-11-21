@@ -817,7 +817,7 @@
     ]
   },
   {
-    "help": "Manage SpecDeltas through their mutation lifecycle (list, show, create, status, verify, audit, apply, archive, delete, changelog).",
+    "help": "Manage SpecDeltas through their mutation lifecycle (list, show, create, status, verify, conflicts, audit, apply, archive, delete, changelog).",
     "hidden": false,
     "order": [
       "list",
@@ -827,6 +827,7 @@
       "audit",
       "apply",
       "status",
+      "conflicts",
       "delete",
       "changelog",
       "archive"
@@ -1312,6 +1313,77 @@
     "path": [
       "delta",
       "status"
+    ]
+  },
+  {
+    "help": "Detect direct mutation target collisions and 1-hop blast-radius overlaps across open SpecDeltas.",
+    "hidden": false,
+    "order": [],
+    "panel": null,
+    "params": [
+      {
+        "default": "eidos",
+        "envvar": "None",
+        "help": "Path to eidos directory.",
+        "kind": "TyperOption",
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "default": "True",
+        "envvar": "None",
+        "help": "Include 1-hop architectural blast-radius overlaps across open SpecDeltas.",
+        "kind": "TyperOption",
+        "name": "blast_radius",
+        "opts": [
+          "--blast-radius"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [
+          "--no-blast-radius"
+        ],
+        "type": "BOOL"
+      },
+      {
+        "default": "False",
+        "envvar": "None",
+        "help": "Exit with code 1 if any direct mutation target conflicts exist.",
+        "kind": "TyperOption",
+        "name": "strict",
+        "opts": [
+          "--strict"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "BOOL"
+      },
+      {
+        "default": "False",
+        "envvar": "None",
+        "help": "Output machine-readable JSON conflict matrix.",
+        "kind": "TyperOption",
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "BOOL"
+      }
+    ],
+    "path": [
+      "delta",
+      "conflicts"
     ]
   },
   {

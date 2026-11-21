@@ -2260,3 +2260,109 @@ def test_delta_authoring_guardrails_changelog_hygiene_and_duplicate_dec_hint(tmp
     assert dec_errs
     assert any("Hint: record planned DEC-* decisions solely on the owning CNT-*/CMP-*" in e for e in dec_errs)
 
+
+def test_delta_parallel_target_and_blast_radius_conflicts(tmp_path: Path) -> None:
+    """Verify INV-DELTA-PARALLEL-CONFLICT-DETECTION: direct target conflicts, remove/modify severity, 1-hop overlaps, and --strict CLI exit codes."""
+    import orjson
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.core.index.graph_index import _INDEX_INSTANCES
+    from eidos.core.lifecycle.delta_engine import detect_delta_conflicts
+
+    ws = tmp_path / "conflicts_ws"
+    eidos_dir = ws / "eidos"
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True)
+    (eidos_dir / "architecture" / "components").mkdir(parents=True)
+    (eidos_dir / "deltas" / "archive").mkdir(parents=True)
+    (ws / "src" / "app").mkdir(parents=True)
+    (ws / "src" / "app" / "a.py").write_text("def a():\n    pass\n", encoding="utf-8")
+    (ws / "src" / "app" / "b.py").write_text("def b():\n    pass\n", encoding="utf-8")
+
+    (eidos_dir / "architecture" / "containers" / "app.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-APP\ntitle: App\nstatus: active\n"
+        "container_type: service\nruntime: Python\nsource_path: src/app\n---\n= App\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "comp-a.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-A\ntitle: Comp A\nstatus: active\n"
+        "container: CNT-APP\nsource_path: src/app/a.py\n---\n= Comp A\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "comp-b.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-B\ntitle: Comp B\nstatus: active\n"
+        "container: CNT-APP\nsource_path: src/app/b.py\n---\n= Comp B\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    # 0 open deltas -> clean
+    res_empty = runner.invoke(app, ["delta", "conflicts", "--path", str(eidos_dir)])
+    assert res_empty.exit_code == 0
+    assert "No parallel SpecDelta conflicts" in res_empty.stdout
+
+    # Open Delta 1: modifies CMP-A
+    (eidos_dir / "deltas" / "dlt-2026-201-mod-a.adoc").write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-201-MOD-A\ntitle: Mod A\nstatus: proposed\n"
+        "intent:\n  kind: feature\n  motivation: Update A.\n"
+        "mutations:\n  - operation: modify\n    target: CMP-A\n---\n= Mod A\n",
+        encoding="utf-8",
+    )
+    # Open Delta 2: removes CMP-A (HIGH conflict with 201) + modifies CMP-B
+    (eidos_dir / "deltas" / "dlt-2026-202-rem-a.adoc").write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-202-REM-A\ntitle: Rem A\nstatus: in_review\n"
+        "intent:\n  kind: enabler\n  motivation: Remove A.\n"
+        "mutations:\n  - operation: remove\n    target: CMP-A\n  - operation: modify\n    target: CMP-B\n---\n= Rem A\n",
+        encoding="utf-8",
+    )
+    # Open Delta 3: modifies CMP-B (MEDIUM conflict with 202, 1-hop blast-radius overlap with 201 via CNT-APP)
+    (eidos_dir / "deltas" / "dlt-2026-203-mod-b.adoc").write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-203-MOD-B\ntitle: Mod B\nstatus: approved\n"
+        "intent:\n  kind: feature\n  motivation: Update B.\n"
+        "mutations:\n  - operation: modify\n    target: CMP-B\n---\n= Mod B\n",
+        encoding="utf-8",
+    )
+    # Applied Delta 4 (terminal -> MUST be excluded!)
+    (eidos_dir / "deltas" / "dlt-2026-204-applied.adoc").write_text(
+        "---\ntype: delta/mutation\nid: DLT-2026-204-APPLIED\ntitle: Applied\nstatus: applied\n"
+        "intent:\n  kind: feature\n  motivation: Already applied.\n"
+        "mutations:\n  - operation: modify\n    target: CMP-A\n---\n= Applied\n",
+        encoding="utf-8",
+    )
+
+    try:
+        report = detect_delta_conflicts(eidos_dir, include_blast_radius=True)
+        assert report["active_deltas_scanned"] == 3
+        assert report["has_direct_conflicts"] is True
+        assert report["summary"]["high"] == 1
+        assert report["summary"]["medium"] == 1
+        assert any(c["target"] == "CMP-A" and c["severity"] == "high" for c in report["direct_target_conflicts"])
+        assert any(c["target"] == "CMP-B" and c["severity"] == "medium" for c in report["direct_target_conflicts"])
+        # 201 (CMP-A) and 203 (CMP-B) share 1-hop parent CNT-APP
+        assert any(
+            ov["delta_a"] == "DLT-2026-201-MOD-A"
+            and ov["delta_b"] == "DLT-2026-203-MOD-B"
+            and "CNT-APP" in ov["shared_entities"]
+            for ov in report["blast_radius_overlaps"]
+        )
+
+        # CLI checks: default exits 0 (Rich & JSON), --strict exits 1 (Rich & JSON), --no-blast-radius skips overlaps
+        res_rich = runner.invoke(app, ["delta", "conflicts", "--path", str(eidos_dir)])
+        assert res_rich.exit_code == 0
+        assert "Direct SpecDelta Target Conflicts" in res_rich.stdout
+
+        res_strict = runner.invoke(app, ["delta", "conflicts", "--path", str(eidos_dir), "--strict"])
+        assert res_strict.exit_code == 1
+
+        res_json = runner.invoke(
+            app, ["delta", "conflicts", "--path", str(eidos_dir), "--no-blast-radius", "--strict", "--json"]
+        )
+        assert res_json.exit_code == 1
+        payload = orjson.loads(res_json.stdout)
+        assert payload["include_blast_radius"] is False
+        assert payload["blast_radius_overlaps"] == []
+        assert payload["has_direct_conflicts"] is True
+    finally:
+        for inst in list(_INDEX_INSTANCES.values()):
+            inst.close()
+        _INDEX_INSTANCES.clear()

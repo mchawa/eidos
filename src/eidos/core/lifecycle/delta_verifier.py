@@ -1063,3 +1063,133 @@ def verify_delta_mutations(
         else f"{verified_count}/{total_mutations} mutation(s) verified for SpecDelta '{doc.doc_id}' ({total_mutations - verified_count} unfulfilled)."
     )
     return is_verified, msg, report
+
+
+def detect_delta_conflicts(
+    eidos_dir: Path,
+    *,
+    include_blast_radius: bool = True,
+) -> dict[str, Any]:
+    """Detect direct target collisions and 1-hop blast-radius overlaps across open SpecDeltas (DLT-2026-156)."""
+    from eidos.core.lifecycle.delta_engine import normalize_delta_mutation
+
+    deltas_dir = eidos_dir / "deltas"
+    active_statuses = {"proposed", "in_review", "approved"}
+    specs_by_id, _ = _build_spec_catalog_with_invariants(eidos_dir)
+
+    active_records: list[dict[str, Any]] = []
+    if deltas_dir.is_dir():
+        for fp in sorted(deltas_dir.glob("*.adoc")):
+            if not fp.is_file() or fp.is_symlink() or fp.name.lower() == "readme.adoc":
+                continue
+            doc = parse_spec_file(fp)
+            if doc.doc_type != "delta/mutation":
+                continue
+            status = str(doc.frontmatter.get("status", "proposed")).strip().lower()
+            if status not in active_statuses:
+                continue
+            raw_muts = doc.frontmatter.get("mutations") or []
+            if not isinstance(raw_muts, list):
+                raw_muts = []
+            targets_ops: dict[str, set[str]] = {}
+            for raw_m in raw_muts:
+                if not isinstance(raw_m, dict):
+                    continue
+                m = normalize_delta_mutation(raw_m)
+                op = str(m.get("operation", "")).strip().lower()
+                raw_t = _extract_mutation_target(m)
+                if not raw_t:
+                    continue
+                canon_t, _, _ = _resolve_target_path_and_id(raw_t, eidos_dir, specs_by_id)
+                targets_ops.setdefault(canon_t, set()).add(op or "modify")
+            active_records.append(
+                {
+                    "id": doc.doc_id,
+                    "title": doc.title,
+                    "status": status,
+                    "file": fp.name,
+                    "targets": targets_ops,
+                    "neighbors": set(),
+                }
+            )
+
+    active_records.sort(key=lambda r: r["id"])
+
+    if include_blast_radius and len(active_records) >= 2:
+        from eidos.core.index.graph_index import get_architectural_index
+        from eidos.core.workspace.project import resolve_spec_and_repo_roots
+
+        spec_root, repo_root = resolve_spec_and_repo_roots(eidos_dir)
+        idx = get_architectural_index(repo_root=repo_root, eidos_dir=spec_root)
+        excluded_neighbor_types = {"delta/mutation", "product/exploration", "product/policy", "product/persona"}
+        for rec in active_records:
+            t_ids = sorted(rec["targets"].keys())
+            if not t_ids:
+                continue
+            with contextlib.suppress(Exception):
+                neighbors = idx.get_k_hop_neighborhood(t_ids, max_depth=1)
+                rec["neighbors"] = {
+                    str(n["id"])
+                    for n in neighbors
+                    if n.get("id")
+                    and str(n["id"]) not in rec["targets"]
+                    and str(n.get("type") or "") not in excluded_neighbor_types
+                }
+
+    destructive_ops = {"remove", "deprecate"}
+    direct_conflicts: list[dict[str, Any]] = []
+    blast_overlaps: list[dict[str, Any]] = []
+
+    for i in range(len(active_records)):
+        rec_a = active_records[i]
+        targets_a = set(rec_a["targets"].keys())
+        for j in range(i + 1, len(active_records)):
+            rec_b = active_records[j]
+            targets_b = set(rec_b["targets"].keys())
+            shared_targets = sorted(targets_a & targets_b)
+            for tgt in shared_targets:
+                ops_a = sorted(rec_a["targets"][tgt])
+                ops_b = sorted(rec_b["targets"][tgt])
+                is_high = bool((set(ops_a) & destructive_ops) or (set(ops_b) & destructive_ops))
+                severity = "high" if is_high else "medium"
+                reason = (
+                    f"Incompatible operations ({'/'.join(ops_a)} vs {'/'.join(ops_b)}) on '{tgt}'"
+                    if is_high
+                    else f"Concurrent {'/'.join(ops_a)} and {'/'.join(ops_b)} on '{tgt}'"
+                )
+                direct_conflicts.append(
+                    {
+                        "delta_a": rec_a["id"],
+                        "delta_b": rec_b["id"],
+                        "target": tgt,
+                        "operations_a": ops_a,
+                        "operations_b": ops_b,
+                        "severity": severity,
+                        "reason": reason,
+                    }
+                )
+
+            if include_blast_radius:
+                shared_neighbors = sorted((rec_a["neighbors"] & rec_b["neighbors"]) - set(shared_targets))
+                if shared_neighbors:
+                    blast_overlaps.append(
+                        {
+                            "delta_a": rec_a["id"],
+                            "delta_b": rec_b["id"],
+                            "shared_entities": shared_neighbors,
+                            "severity": "info",
+                        }
+                    )
+
+    return {
+        "active_deltas_scanned": len(active_records),
+        "include_blast_radius": include_blast_radius,
+        "has_direct_conflicts": bool(direct_conflicts),
+        "direct_target_conflicts": direct_conflicts,
+        "blast_radius_overlaps": blast_overlaps,
+        "summary": {
+            "high": sum(1 for c in direct_conflicts if c["severity"] == "high"),
+            "medium": sum(1 for c in direct_conflicts if c["severity"] == "medium"),
+            "blast_radius_overlaps": len(blast_overlaps),
+        },
+    }
