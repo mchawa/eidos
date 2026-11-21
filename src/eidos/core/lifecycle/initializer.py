@@ -11,6 +11,55 @@ from eidos.core.workspace.assets import render_spec_template
 
 _PROJECT_ROOT_MARKERS = (".git", "pyproject.toml", "package.json", "Cargo.toml", "go.mod", "src")
 
+_GITHUB_CI_WORKFLOW_TEMPLATE = """name: Eidos Living Spec Drift Gate
+
+on:
+  pull_request:
+
+jobs:
+  eidos-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (full history for merge-base diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Validate living specifications
+        run: uvx --from eidos-ai eidos validate
+
+      - name: Check spec-to-code drift
+        run: >-
+          uvx --from eidos-ai eidos drift
+          --base "origin/${{ github.base_ref }}"
+          --markdown "$GITHUB_STEP_SUMMARY"
+"""
+
+_GITLAB_CI_WORKFLOW_TEMPLATE = """# Include this template from your root .gitlab-ci.yml:
+#   include:
+#     - local: '.gitlab-ci.eidos.yml'
+
+eidos-governance:
+  stage: test
+  image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+  variables:
+    GIT_DEPTH: "0"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  script:
+    - git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+    - uvx --from eidos-ai eidos validate
+    - uvx --from eidos-ai eidos drift --base "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+"""
+
+_CI_WORKFLOW_TEMPLATES: dict[str, tuple[str, str]] = {
+    "github": (".github/workflows/eidos-drift.yml", _GITHUB_CI_WORKFLOW_TEMPLATE),
+    "gitlab": (".gitlab-ci.eidos.yml", _GITLAB_CI_WORKFLOW_TEMPLATE),
+}
+
 
 def _is_explicit_eidos_spec_dir(path: Path, eidos_dir_name: str = "eidos") -> bool:
     """Return True when ``path`` targets an ``eidos/`` specification directory rather than a project root."""
@@ -41,13 +90,17 @@ def init_repository(
     title: str | None = None,
     eidos_dir_name: str = "eidos",
     force: bool = False,
+    ci: str | None = None,
 ) -> tuple[bool, str, list[Path]]:
-    """Initialize a repository with an Eidos living specification skeleton and governance."""
-    eidos_dir = (
-        project_dir
-        if _is_explicit_eidos_spec_dir(project_dir, eidos_dir_name)
-        else project_dir / eidos_dir_name
-    )
+    """Initialize a repository with an Eidos living specification skeleton, governance, and optional CI workflow."""
+    ci_provider = ci.strip().lower() if ci is not None else None
+    if ci_provider is not None and ci_provider not in _CI_WORKFLOW_TEMPLATES:
+        supported = ", ".join(sorted(_CI_WORKFLOW_TEMPLATES))
+        raise ValueError(f"Unsupported --ci provider '{ci}'. Supported providers: {supported}.")
+
+    is_explicit_eidos = _is_explicit_eidos_spec_dir(project_dir, eidos_dir_name)
+    eidos_dir = project_dir if is_explicit_eidos else project_dir / eidos_dir_name
+    repo_root = eidos_dir.parent if is_explicit_eidos else project_dir
     created_files: list[Path] = []
 
     non_cache_entries = (
@@ -134,5 +187,14 @@ def init_repository(
         for b in report.broken_references:
             errs.append(f"Broken ref: {b}")
         return False, f"Scaffolded specifications failed validation: {'; '.join(errs)}", created_files
+
+    # Optional turnkey CI workflow template (non-destructive unless force=True)
+    if ci_provider is not None:
+        rel_ci_path, template_text = _CI_WORKFLOW_TEMPLATES[ci_provider]
+        ci_file = repo_root / rel_ci_path
+        if not ci_file.exists() or force:
+            ci_file.parent.mkdir(parents=True, exist_ok=True)
+            ci_file.write_text(template_text, encoding="utf-8")
+            created_files.append(ci_file)
 
     return True, f"Successfully initialized empty Eidos living specification skeleton at '{eidos_dir}'.", created_files

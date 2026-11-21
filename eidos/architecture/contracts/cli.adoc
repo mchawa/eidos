@@ -124,6 +124,7 @@ Bootstraps a repository with an Eidos living specification directory skeleton, a
 * **Options**:
   - `--title <title>`: Human-readable display title.
   - `--force`: Overwrite existing files if present (preserving an existing authored `system.adoc` when `--title` is omitted).
+  - `--ci <provider>`: Optional turnkey CI workflow template to scaffold (`github` -> `.github/workflows/eidos-drift.yml`, or `gitlab` -> `.gitlab-ci.eidos.yml`), non-destructively preserving an existing workflow file unless `--force` is passed.
 * **Exit Codes**:
   - `0`: Initialization and immediate validation successful.
   - `1`: Directory already initialized without `--force`, or validation failed.

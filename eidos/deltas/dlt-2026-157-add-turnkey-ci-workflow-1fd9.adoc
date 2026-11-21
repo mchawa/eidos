@@ -1,0 +1,88 @@
+---
+type: delta/mutation
+id: DLT-2026-157-ADD-TURNKEY-CI-WORKFLOW-1FD9
+title: "Add Turnkey CI Workflow Templates to eidos init"
+status: applied
+intent:
+  kind: feature
+  motivation: "Teams initializing Eidos with eidos init currently receive the living specification skeleton but must hand-author CI/CD pipelines to enforce eidos validate and eidos drift on pull requests; adding an opt-in --ci github|gitlab flag to eidos init scaffolds non-destructive, deterministic CI workflow templates out of the box."
+mutations:
+  - operation: modify
+    target: CMP-REPO-INITIALIZER
+    details: "Extend init_repository(..., ci: str | None = None) in src/eidos/core/lifecycle/initializer.py to scaffold opt-in turnkey CI workflows (.github/workflows/eidos-drift.yml for ci='github', .gitlab-ci.eidos.yml for ci='gitlab') running eidos validate and eidos drift --base ... --markdown without overwriting existing user workflows unless force=True. Update eidos/architecture/components/repo-initializer.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/core/lifecycle/initializer.py"
+      body:
+        contains:
+          - "--ci"
+          - "github"
+          - "gitlab"
+  - operation: modify
+    target: CMP-CLI-INIT-COMMAND
+    details: "Add optional --ci TEXT option (accepting 'github' or 'gitlab', default None) to eidos init in src/eidos/cli/init_command.py and forward it to init_repository. Update eidos/architecture/components/cli-init-command.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/cli/init_command.py"
+      body:
+        contains:
+          - "--ci"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Document `--ci <provider>` (`github` | `gitlab`) option on `eidos init` in eidos/architecture/contracts/cli.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "--ci"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Document `eidos init --ci github|gitlab` in docs/guides/cli.md (`INV-DOCS-SYNCHRONIZATION`), and update eidos/architecture/components/docs-user-guides.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/guides"
+      body:
+        contains:
+          - "--ci"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Extend CAP-PROD-001 in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc with INV-INIT-CI-WORKFLOW-TEMPLATES."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-INIT-CI-WORKFLOW-TEMPLATES"
+      body:
+        contains:
+          - "INV-INIT-CI-WORKFLOW-TEMPLATES"
+  - operation: add
+    target: INV-INIT-CI-WORKFLOW-TEMPLATES
+    details: "Bind INV-INIT-CI-WORKFLOW-TEMPLATES in CAP-PROD-001 to tests/test_scaffolder.py::test_init_repository_ci_workflow_templates."
+    expect:
+      frontmatter:
+        rule: "--ci"
+        test_binding: "tests/test_scaffolder.py::test_init_repository_ci_workflow_templates"
+vcs:
+  branch: main
+  base_commit: 7106d5477b53ace59adfe4ed4b141a9bfc0ee951
+---
+= SpecDelta: Add Turnkey CI Workflow Templates to eidos init
+:toc: left
+
+== Problem Statement
+While `eidos init` bootstraps the 12-directory `eidos/` skeleton and `eidos plugin install --hooks` wires local AI agent stop hooks, teams adopting Eidos still have to write GitHub Actions or GitLab CI YAML by hand (including `fetch-depth: 0` for 3-dot merge-base diffs, `uvx --from eidos-ai eidos drift`, and `$GITHUB_STEP_SUMMARY` Markdown output).
+
+== Proposed Specification Changes
+* **`CMP-REPO-INITIALIZER` (`src/eidos/core/lifecycle/initializer.py`)**: Add optional `ci: str | None = None` (`"github"` or `"gitlab"`, raising `ValueError` on unsupported providers) to `init_repository`, scaffolding `.github/workflows/eidos-drift.yml` (full-history checkout, `uvx --from eidos-ai eidos validate` + `eidos drift --base origin/${{ github.base_ref }} --markdown "$GITHUB_STEP_SUMMARY"`) or `.gitlab-ci.eidos.yml` (includeable merge-request gate template) non-destructively (preserving existing files unless `force=True`) and keeping templates 100% project-agnostic (`INV-ENGINE-GENERICITY`).
+* **`CMP-CLI-INIT-COMMAND` (`src/eidos/cli/init_command.py`), `CTR-EIDOS-CLI` & `CMP-DOCS-USER-GUIDES`**: Expose `--ci` on `eidos init`, update `tests/fixtures/cli_command_tree.json` and `docs/guides/cli.md`.
+* **`CAP-PROD-001`**: Add and bind `INV-INIT-CI-WORKFLOW-TEMPLATES`.
+
+== Implementation Plan
+1. **CI Template Generation (`CMP-REPO-INITIALIZER`)**: Add validated YAML templates and non-destructive write logic in `src/eidos/core/lifecycle/initializer.py` (`CNT-EIDOS-CORE` covered via `CMP-REPO-INITIALIZER`).
+2. **CLI Option & Contract (`CMP-CLI-INIT-COMMAND`, `CTR-EIDOS-CLI`, `CMP-DOCS-USER-GUIDES`)**: Wire `--ci` in `src/eidos/cli/init_command.py` (`CNT-EIDOS-CLI` covered via `CMP-CLI-INIT-COMMAND` and `CTR-EIDOS-CLI`), update `tests/fixtures/cli_command_tree.json` and `docs/guides/cli.md`.
+3. **Living Specs, Tests & Coverage (`POL-005-STATEMENT-TEST-COVERAGE`)**: Update all declared specs and add `tests/test_scaffolder.py::test_init_repository_ci_workflow_templates` verifying valid YAML parsing for both GitHub and GitLab templates, non-destructive preservation without `--force`, rejection of invalid `--ci` values, and `>90.0%` coverage.
+4. **Verification**: Run `pytest`, `eidos delta verify DLT-2026-157 --json`, `eidos delta apply DLT-2026-157`, and `eidos drift --uncommitted --json`.

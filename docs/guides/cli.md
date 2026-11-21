@@ -63,12 +63,17 @@ eidos init
 # Initialize at a custom repository or monorepo sub-project path:
 eidos init /path/to/repo --title "My System"
 eidos init packages/api --title "API Service"
+
+# Initialize with a turnkey GitHub Actions or GitLab CI drift gate workflow:
+eidos init --title "My System" --ci github
+eidos init --title "My System" --ci gitlab
 ```
 
 Options:
 * `PATH`: Target project or `eidos/` directory to initialize (default: current working directory `.`).
 * `--title, -t TEXT`: Human-readable display title.
 * `--force, -f`: Overwrite existing files if present (preserving an existing authored `system.adoc` when `--title` is omitted).
+* `--ci TEXT`: Optional turnkey CI workflow template to scaffold (`github` for `.github/workflows/eidos-drift.yml` or `gitlab` for `.gitlab-ci.eidos.yml`; preserves existing workflow files unless `--force` is set).
 
 ---
 

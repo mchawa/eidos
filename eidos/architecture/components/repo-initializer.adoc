@@ -15,9 +15,10 @@ Bootstraps greenfield and brownfield repositories with an Eidos living specifica
 == Key Responsibilities & Collaborators
 * **Skeleton Provisioning**: Creates the complete 12-directory Eidos hierarchy with `.gitkeep` markers.
 * **System Context & Cache Isolation**: Renders `eidos/system.adoc` (`product/system`) when `--title` is provided (or a 0-byte placeholder otherwise), writes `eidos/.gitignore` via `_ensure_eidos_gitignore` to exclude `.cache/`, and validates the initialized tree via `CMP-SPEC-VALIDATOR`.
+* **Turnkey CI Workflow Scaffolding (`--ci`, `INV-INIT-CI-WORKFLOW-TEMPLATES`)**: Optionally scaffolds project-agnostic CI workflows when `ci` is `"github"` (`.github/workflows/eidos-drift.yml` with `fetch-depth: 0` and `$GITHUB_STEP_SUMMARY`) or `"gitlab"` (`.gitlab-ci.eidos.yml` includeable merge-request gate), preserving existing workflow files unless `force=True` and raising `ValueError` for unsupported providers.
 
 == Public Surface
-* `init_repository(project_dir: Path, title: str | None = None, eidos_dir_name: str = "eidos", force: bool = False) -> tuple[bool, str, list[Path]]`
+* `init_repository(project_dir: Path, title: str | None = None, eidos_dir_name: str = "eidos", force: bool = False, ci: str | None = None) -> tuple[bool, str, list[Path]]`
 
 == Design Constraints & Operational Notes
 * **Non-Destructive Re-Initialization**: Refuses to overwrite a non-empty `eidos/` directory unless `force=True` is passed, treats an `eidos/` directory containing only `.cache/` and `.gitignore` (such as a shared Git-root semantic model cache provisioned before root initialization) as uninitialized without requiring `--force`, preserves an already authored `system.adoc` when `--force` is invoked without `--title`, and normalizes `project_dir` when it already ends with `eidos_dir_name` to prevent nested `eidos/eidos/` directories.

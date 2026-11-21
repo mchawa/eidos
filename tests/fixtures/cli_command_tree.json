@@ -135,6 +135,20 @@
         "required": false,
         "secondary": [],
         "type": "BOOL"
+      },
+      {
+        "default": "None",
+        "envvar": "None",
+        "help": "Optional turnkey CI workflow template to scaffold ('github' or 'gitlab').",
+        "kind": "TyperOption",
+        "name": "ci",
+        "opts": [
+          "--ci"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "STRING"
       }
     ],
     "path": [

@@ -2132,3 +2132,59 @@ def test_spec_discover_polyglot_brownfield_blueprint(tmp_path):
     res_default = runner.invoke(app, ["spec", "discover", "--json"])
     assert res_default.exit_code == 0
     assert orjson.loads(res_default.stdout)["summary"]["containers_found"] >= 1
+
+
+def test_init_repository_ci_workflow_templates(tmp_path):
+    """Verify INV-INIT-CI-WORKFLOW-TEMPLATES: valid YAML GitHub/GitLab templates, non-destructive preservation, and provider validation."""
+    from eidos.core.spec.parser import safe_load_yaml
+
+    # 1. GitHub Actions via CLI
+    gh_repo = tmp_path / "gh-repo"
+    res_gh = runner.invoke(app, ["init", str(gh_repo), "--title", "Acme GH", "--ci", "github"])
+    assert res_gh.exit_code == 0, res_gh.stdout
+    gh_wf = gh_repo / ".github" / "workflows" / "eidos-drift.yml"
+    assert gh_wf.is_file()
+    gh_parsed = safe_load_yaml(gh_wf.read_text(encoding="utf-8"))
+    assert isinstance(gh_parsed, dict)
+    assert "jobs" in gh_parsed and "eidos-drift" in gh_parsed["jobs"]
+    steps = gh_parsed["jobs"]["eidos-drift"]["steps"]
+    assert any((s.get("with") or {}).get("fetch-depth") == 0 for s in steps)
+    assert any("eidos drift" in str(s.get("run", "")) and "GITHUB_STEP_SUMMARY" in str(s.get("run", "")) for s in steps)
+
+    # 2. Non-destructive preservation when workflow already exists without --force, overwrite with --force
+    existing_repo = tmp_path / "existing-wf-repo"
+    (existing_repo / "eidos").mkdir(parents=True)
+    (existing_repo / "eidos" / ".gitignore").write_text("*.tmp\n", encoding="utf-8")
+    custom_wf = existing_repo / ".github" / "workflows" / "eidos-drift.yml"
+    custom_wf.parent.mkdir(parents=True)
+    custom_wf.write_text("# custom user workflow\nname: Custom\n", encoding="utf-8")
+    ok, _, created = init_repository(existing_repo, title="Preserve Test", ci="github", force=False)
+    assert ok
+    assert custom_wf not in created
+    assert "# custom user workflow" in custom_wf.read_text(encoding="utf-8")
+    assert ".cache/" in (existing_repo / "eidos" / ".gitignore").read_text(encoding="utf-8")
+
+    (existing_repo / "eidos" / "custom_empty_leaf").mkdir(parents=True)
+    ok_force, _, created_force = init_repository(existing_repo, title="Preserve Test", ci="github", force=True)
+    assert ok_force
+    assert custom_wf in created_force
+    assert (existing_repo / "eidos" / "custom_empty_leaf" / ".gitkeep").exists()
+    assert "Eidos Living Spec Drift Gate" in custom_wf.read_text(encoding="utf-8")
+
+    # 3. GitLab CI via CLI
+    gl_repo = tmp_path / "gl-repo"
+    res_gl = runner.invoke(app, ["init", str(gl_repo), "--title", "Acme GL", "--ci", "gitlab"])
+    assert res_gl.exit_code == 0, res_gl.stdout
+    gl_wf = gl_repo / ".gitlab-ci.eidos.yml"
+    assert gl_wf.is_file()
+    gl_parsed = safe_load_yaml(gl_wf.read_text(encoding="utf-8"))
+    assert isinstance(gl_parsed, dict)
+    assert "eidos-governance" in gl_parsed
+    assert gl_parsed["eidos-governance"]["variables"]["GIT_DEPTH"] == "0"
+
+    # 4. Unsupported --ci provider raises ValueError in Python API and exits 1 in CLI
+    with pytest.raises(ValueError, match="Unsupported --ci provider"):
+        init_repository(tmp_path / "bad-ci", title="Bad CI", ci="jenkins")
+    res_bad = runner.invoke(app, ["init", str(tmp_path / "bad-ci-cli"), "--ci", "circleci"])
+    assert res_bad.exit_code == 1
+    assert "Unsupported --ci provider" in res_bad.stdout

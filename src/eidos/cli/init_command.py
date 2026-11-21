@@ -26,6 +26,11 @@ def init_cmd(
         "-f",
         help="Force initialization even if eidos/ directory already exists.",
     ),
+    ci: str | None = typer.Option(
+        None,
+        "--ci",
+        help="Optional turnkey CI workflow template to scaffold ('github' or 'gitlab').",
+    ),
 ):
     """Initialize a repository with an empty Eidos living specification skeleton."""
     project_dir = target_path if target_path is not None else Path(".")
@@ -33,11 +38,16 @@ def init_cmd(
         project_dir = project_dir.parent if str(project_dir.parent) != "" else Path(".")
     console.print(f"[bold cyan]Initializing empty Eidos skeleton in:[/bold cyan] {project_dir.resolve()}\n")
 
-    success, msg, created_files = init_repository(
-        project_dir=project_dir,
-        title=title,
-        force=force,
-    )
+    try:
+        success, msg, created_files = init_repository(
+            project_dir=project_dir,
+            title=title,
+            force=force,
+            ci=ci,
+        )
+    except ValueError as exc:
+        console.print(f"[bold red]✗ Initialization Failed:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
 
     if not success:
         console.print(f"[bold red]✗ Initialization Failed:[/bold red] {msg}")
