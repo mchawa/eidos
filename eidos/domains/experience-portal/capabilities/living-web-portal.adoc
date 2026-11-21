@@ -89,6 +89,6 @@ Technical specifications and architecture models are often trapped in raw text f
 * Slide-over component inspection drawer, lazy local `specs/<id>.json` body loading (with `--single-file` offline archive support), DOMPurify `SANITIZE_DOM` AsciiDoc rendering, and shareable `window.location.hash` (`#/...`) deep linking revealing module responsibilities, source paths, bound contracts, and catalog specifications.
 * Same-origin loopback `Host` header isolation and real-time Server-Sent Events (`GET /api/events`) streaming live workspace and uncommitted drift (`/api/drift`) updates across `eidos/`, `src/`, and `tests/`.
 * Interactive SpecDelta Kanban dashboard and Chronological Timeline tracking proposed, in-review, and applied mutations.
-* Full-text fuzzy search (`⌘K`), real-time category filtering, and inline validation diagnostics across all catalog entities.
+* Full-text fuzzy search (`⌘K`), real-time category filtering, and inline validation diagnostics (including non-blocking amber advisory validation `warnings` badges and collapsible diagnostics lists) across all catalog entities.
 * **Human-First, Slug-Free Presentation (`INV-PORTAL-HUMAN-READABLE-UI`)**: Renders human-readable titles, humanized statuses/types/states, plain-language copy, and clean Mermaid diagram labels across every view, navigation chrome, command palette, specification reader, and diagram while keeping canonical IDs strictly internal for routing, DOM/Mermaid click binding, and search indexing.
 

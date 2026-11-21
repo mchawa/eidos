@@ -379,6 +379,8 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
                 "is_clean": report.is_clean,
                 "schema_errors": normalized_errors,
                 "broken_references": report.broken_references,
+                "warnings": list(report.warnings),
+                "warning_count": len(report.warnings),
             }
             EidosPortalHandler._cached_validation_key = snap
             EidosPortalHandler._cached_validation_res = res
@@ -418,6 +420,7 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
                     "unmapped_files": list(res_obj.unmapped_code_files),
                     "validation_passed": res_obj.validation_passed,
                     "validation_errors": res_obj.validation_errors,
+                    "validation_warnings": list(res_obj.validation_warnings),
                     "uncovered_invariants": [inv.invariant_id for inv in res_obj.uncovered_invariants],
                     "orphan_invariants": [
                         {"test_id": loc, "invariant_id": inv_id}
@@ -436,6 +439,7 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
                     "unmapped_files": [],
                     "validation_passed": False,
                     "validation_errors": [str(exc)],
+                    "validation_warnings": [],
                     "uncovered_invariants": [],
                     "orphan_invariants": [],
                     "remediation_suggestions": [

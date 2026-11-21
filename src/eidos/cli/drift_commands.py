@@ -39,6 +39,11 @@ def drift_cmd(
         "--warn-only",
         help="Do not exit with code 1 on drift or validation failures.",
     ),
+    fail_on_warnings: bool = typer.Option(
+        False,
+        "--fail-on-warnings",
+        help="Exit with code 1 when advisory validation warnings are present (unless --warn-only is set).",
+    ),
     strict: bool = typer.Option(
         False,
         "--strict",
@@ -207,7 +212,12 @@ def drift_cmd(
             for warn in result.validation_warnings:
                 console.print(f"  [yellow]•[/yellow] {warn}")
 
-        if result.is_clean:
+        if result.is_clean and fail_on_warnings and result.validation_warnings:
+            console.print(
+                f"\n[bold red]✗ Verification Failed (--fail-on-warnings):[/bold red] "
+                f"{len(result.validation_warnings)} advisory validation warning(s) detected."
+            )
+        elif result.is_clean:
             console.print(
                 "\n[bold green]✓ Verification Passed![/bold green] Living specifications and code are synchronized."
             )
@@ -217,7 +227,7 @@ def drift_cmd(
         if not json_output:
             console.print(f"\n[dim]Saved markdown summary to: {markdown_out}[/dim]")
 
-    if not result.is_clean and not warn_only:
+    if (not result.is_clean or (fail_on_warnings and result.validation_warnings)) and not warn_only:
         raise typer.Exit(code=1)
 
 

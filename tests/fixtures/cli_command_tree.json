@@ -178,6 +178,20 @@
       {
         "default": "False",
         "envvar": "None",
+        "help": "Exit with code 1 when advisory validation warnings are present.",
+        "kind": "TyperOption",
+        "name": "fail_on_warnings",
+        "opts": [
+          "--fail-on-warnings"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "BOOL"
+      },
+      {
+        "default": "False",
+        "envvar": "None",
         "help": "Output raw JSON validation report.",
         "kind": "TyperOption",
         "name": "json_output",
@@ -267,6 +281,20 @@
         "name": "warn_only",
         "opts": [
           "--warn-only"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "BOOL"
+      },
+      {
+        "default": "False",
+        "envvar": "None",
+        "help": "Exit with code 1 when advisory validation warnings are present (unless --warn-only is set).",
+        "kind": "TyperOption",
+        "name": "fail_on_warnings",
+        "opts": [
+          "--fail-on-warnings"
         ],
         "panel": null,
         "required": false,

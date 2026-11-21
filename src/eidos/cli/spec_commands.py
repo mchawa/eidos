@@ -32,6 +32,11 @@ def validate(
         None,
         help="Path to the directory containing .adoc specifications (defaults to ./eidos).",
     ),
+    fail_on_warnings: bool = typer.Option(
+        False,
+        "--fail-on-warnings",
+        help="Exit with code 1 when advisory validation warnings are present.",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -63,6 +68,7 @@ def validate(
             "valid_docs": report.valid_docs,
             "broken_references": report.broken_references,
             "warnings": report.warnings,
+            "warning_count": len(report.warnings),
             "schema_errors": {str(k): v for k, v in report.schema_errors.items()},
             "documents": [
                 {
@@ -80,7 +86,7 @@ def validate(
             ],
         }
         typer.echo(orjson.dumps(payload, option=orjson.OPT_INDENT_2).decode("utf-8"))
-        if not report.is_clean:
+        if not report.is_clean or (fail_on_warnings and report.warnings):
             raise typer.Exit(code=1)
         return
 
@@ -119,6 +125,12 @@ def validate(
                 console.print(f"  [red]✗[/red] {ref}")
 
         console.print(f"\n[bold red]Summary:[/bold red] {report.valid_docs}/{report.total_docs} valid documents.")
+        raise typer.Exit(code=1)
+
+    if fail_on_warnings and report.warnings:
+        console.print(
+            f"\n[bold red]Failure (--fail-on-warnings):[/bold red] {len(report.warnings)} advisory validation warning(s) detected."
+        )
         raise typer.Exit(code=1)
 
     console.print(f"\n[bold green]Success![/bold green] All {report.total_docs} specification documents are valid.")

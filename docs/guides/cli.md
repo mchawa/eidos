@@ -85,15 +85,17 @@ Validate all AsciiDoc specification documents against their bundled v1 JSON/YAML
 ```bash
 eidos validate eidos
 eidos validate --json
+eidos validate --fail-on-warnings --json
 ```
 
 Options:
 * `PATH`: Positional path to the specification directory or file (default: `eidos`).
-* `--json`: Output structured JSON validation report (including non-blocking advisory `warnings` for over-scoped `CMP-*.source_path` entries and stale explicit prose symbol references).
+* `--fail-on-warnings`: Exit with code `1` when advisory validation warnings are present (default `False`).
+* `--json`: Output structured JSON validation report (including non-blocking advisory `warnings` and `warning_count`).
 
 Exit Codes:
-* `0`: All specifications conform to schema with zero broken cross-references or missing file bindings (advisory `warnings` do not fail exit code `0`).
-* `1`: Schema validation errors, broken cross-references, missing declared files, or undocumented/stale contract operations detected.
+* `0`: All specifications conform to schema with zero broken cross-references or missing file bindings (advisory `warnings` do not fail exit code `0` unless `--fail-on-warnings` is passed).
+* `1`: Schema validation errors, broken cross-references, missing declared files, undocumented/stale contract operations, or advisory warnings under `--fail-on-warnings` detected.
 
 > [!NOTE]
 > `eidos validate` is a static catalog linter (with schema-digest-keyed fast-path caching for historical `status: applied` SpecDeltas). It does not inspect Git diffs or scan the test suite for polyglot invariant coverage, making it sub-second fast for local specification authoring and TDD.
@@ -128,6 +130,7 @@ Options:
 * `--markdown, -m FILE`: Path to write the markdown summary comment.
 * `--json`: Output raw JSON verification result (including `structural_code_files`, `body_only_code_files`, `trivially_covered_files`, `boundary_violations`, `ratchet_shrink_candidates`, and non-blocking `validation_warnings`).
 * `--strict`: Treat body-only code changes as drift unless accompanied by a 1-hop spec, active SpecDelta, or test update.
+* `--fail-on-warnings`: Exit with code `1` when advisory `validation_warnings` are non-empty (unless `--warn-only` is set).
 * `--warn-only`: Do not exit with code 1 when drift is detected.
 
 Exit Codes:

@@ -401,6 +401,8 @@ export interface SpecValidationSummary {
   valid_docs: number;
   schema_errors: Record<string, string[]>;
   broken_references: string[];
+  warnings?: string[];
+  warning_count?: number;
 }
 
 export interface SpecDriftStatus {
@@ -412,6 +414,7 @@ export interface SpecDriftStatus {
   unmapped_files?: string[];
   validation_passed?: boolean;
   validation_errors?: string[];
+  validation_warnings?: string[];
   uncovered_invariants?: string[];
   orphan_invariants?: Array<{ test_id: string; invariant_id: string }>;
   remediation_suggestions?: string[];

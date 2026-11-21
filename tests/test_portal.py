@@ -2734,3 +2734,139 @@ def test_portal_human_readable_ui_and_slug_free_diagrams():
         "Synthesizing Living Specifications...",
     ):
         assert banned not in PORTAL_HTML_TEMPLATE, f"Removed UI copy still present in portal bundle: {banned}"
+
+
+def test_validation_warnings_in_portal_and_cli_fail_on_warnings(tmp_path: Path):
+    """Verify INV-VALIDATION-WARNINGS-PORTAL-AND-CI-ESCALATION: portal warnings exposure and --fail-on-warnings escalation."""
+    import subprocess
+    import threading
+    import urllib.request
+    from http.server import HTTPServer
+
+    import orjson
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.portal.assets import get_portal_html_template
+    from eidos.portal.generator import get_portal_data
+    from eidos.portal.server import EidosPortalHandler
+
+    repo = tmp_path / "warn-portal-repo"
+    init_repository(repo, title="Warn Portal Repo")
+    eidos_dir = repo / "eidos"
+
+    (repo / "src").mkdir(parents=True)
+    (repo / "src" / "real.py").write_text("def real_fn():\n    return 1\n", encoding="utf-8")
+    (eidos_dir / "architecture" / "containers" / "api.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-API\n"
+        "title: API Container\n"
+        "status: active\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "source_path: src\n"
+        "---\n"
+        "= API Container\n",
+        encoding="utf-8",
+    )
+    # Trigger a non-blocking advisory warning via stale prose symbol outside == Public Surface
+    (eidos_dir / "architecture" / "components" / "real.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-REAL\n"
+        "title: Real Component\n"
+        "container: CNT-API\n"
+        "status: active\n"
+        "source_path: src/real.py\n"
+        "---\n"
+        "= Real Component\n\n"
+        "== Responsibility\n"
+        "Delegates to `stale_phantom_helper()` when needed.\n\n"
+        "== Public Surface\n"
+        "* `real_fn()`\n",
+        encoding="utf-8",
+    )
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "dev@example.com"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Dev"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+
+    # 1. Portal generator exports warnings and warning_count without breaking is_clean
+    pdata = get_portal_data(eidos_dir)
+    val = pdata["validation"]
+    assert val["is_clean"] is True
+    assert val["warning_count"] >= 1
+    assert any("stale_phantom_helper" in w for w in val["warnings"])
+
+    # 2. Portal server GET and POST /api/validate expose warnings and warning_count
+    EidosPortalHandler.eidos_dir = eidos_dir
+    EidosPortalHandler._cache_key = None
+    EidosPortalHandler._cached_portal_data = None
+    EidosPortalHandler._cached_validation_key = None
+    EidosPortalHandler._cached_validation_res = None
+    httpd = HTTPServer(("127.0.0.1", 0), EidosPortalHandler)
+    port = httpd.server_address[1]
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/validate", timeout=5) as resp:
+            get_val = orjson.loads(resp.read())
+        assert get_val["is_clean"] is True
+        assert get_val["warning_count"] >= 1
+        assert any("stale_phantom_helper" in w for w in get_val["warnings"])
+
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/validate",
+            data=b'{"dir": "eidos"}',
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            post_val = orjson.loads(resp.read())
+        assert post_val["warning_count"] >= 1
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+    # 3. Compiled air-gapped portal bundle contains advisory warnings UI
+    bundle_html = get_portal_html_template()
+    assert "Advisory Warnings" in bundle_html
+
+    # 4. CLI eidos validate default (exit 0) vs --fail-on-warnings (exit 1) in Rich and JSON
+    cli = CliRunner()
+    res_val_ok = cli.invoke(app, ["validate", str(eidos_dir), "--json"])
+    assert res_val_ok.exit_code == 0
+    val_json = orjson.loads(res_val_ok.stdout)
+    assert val_json["is_clean"] is True
+    assert val_json["warning_count"] >= 1
+
+    res_val_fail_json = cli.invoke(app, ["validate", str(eidos_dir), "--fail-on-warnings", "--json"])
+    assert res_val_fail_json.exit_code == 1
+
+    res_val_fail_rich = cli.invoke(app, ["validate", str(eidos_dir), "--fail-on-warnings"])
+    assert res_val_fail_rich.exit_code == 1
+    assert "--fail-on-warnings" in res_val_fail_rich.stdout
+
+    # 5. CLI eidos drift default (exit 0) vs --fail-on-warnings (exit 1) vs --fail-on-warnings --warn-only (exit 0)
+    res_drift_ok = cli.invoke(app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--json"])
+    assert res_drift_ok.exit_code == 0
+
+    res_drift_fail_json = cli.invoke(
+        app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--fail-on-warnings", "--json"]
+    )
+    assert res_drift_fail_json.exit_code == 1
+
+    res_drift_fail_rich = cli.invoke(
+        app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--fail-on-warnings"]
+    )
+    assert res_drift_fail_rich.exit_code == 1
+    assert "--fail-on-warnings" in res_drift_fail_rich.stdout
+
+    res_drift_warn_only = cli.invoke(
+        app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--fail-on-warnings", "--warn-only"]
+    )
+    assert res_drift_warn_only.exit_code == 0

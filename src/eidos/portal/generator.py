@@ -697,6 +697,8 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         "valid_docs": report.valid_docs,
         "schema_errors": normalized_schema_errors,
         "broken_references": report.broken_references,
+        "warnings": list(report.warnings),
+        "warning_count": len(report.warnings),
     }
 
     return {

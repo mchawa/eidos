@@ -57,6 +57,7 @@ export function HomeView({
   const appliedDeltasCount = data.deltas?.applied?.length || 0;
   const schemaErrorEntries = Object.entries(validation?.schema_errors || {});
   const brokenRefs = validation?.broken_references || [];
+  const advisoryWarnings = validation?.warnings || [];
   const invalidSpecs = (data.specs || []).filter((s) => s.is_valid === false);
 
   const driftClean = driftStatus
@@ -132,6 +133,19 @@ export function HomeView({
                 {overview.is_clean ? "All Checks Passing" : "Needs Attention"}
               </Badge>
             </button>
+            {advisoryWarnings.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setDiagnosticsOpen(true)}
+                className="cursor-pointer transition-transform hover:scale-105"
+                title="Inspect Advisory Validation Warnings"
+              >
+                <Badge variant="warning">
+                  {advisoryWarnings.length}{" "}
+                  {advisoryWarnings.length === 1 ? "Advisory Warning" : "Advisory Warnings"}
+                </Badge>
+              </button>
+            )}
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight">
             {formatDisplayTitle(overview.system_title, overview.system_id)}
@@ -366,6 +380,9 @@ export function HomeView({
                 <p className="text-muted-foreground">
                   {overview.valid_specs} of {overview.total_specs} documents verified •{" "}
                   {brokenRefs.length} broken {brokenRefs.length === 1 ? "link" : "links"}
+                  {advisoryWarnings.length > 0
+                    ? ` • ${advisoryWarnings.length} advisory ${advisoryWarnings.length === 1 ? "warning" : "warnings"}`
+                    : ""}
                 </p>
               </div>
             </div>
@@ -455,6 +472,28 @@ export function HomeView({
                 </div>
               ))}
             </div>
+          )}
+
+          {advisoryWarnings.length > 0 && (
+            <details
+              open
+              className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 space-y-2"
+            >
+              <summary className="font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5 cursor-pointer select-none">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                Advisory Warnings ({advisoryWarnings.length})
+              </summary>
+              <div className="space-y-1.5 pt-1">
+                {advisoryWarnings.map((warn, idx) => (
+                  <div
+                    key={idx}
+                    className="p-2.5 rounded-lg border border-amber-500/20 bg-background/60 text-xs text-foreground break-words"
+                  >
+                    {warn}
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
 
           {overview.is_clean && schemaErrorEntries.length === 0 && brokenRefs.length === 0 && (

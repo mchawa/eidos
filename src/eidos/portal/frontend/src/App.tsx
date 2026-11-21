@@ -745,31 +745,44 @@ export function App() {
               {formatTabLabel(activeTab)}
             </span>
           </div>
-          {!isStaticBundle && (
-            <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-              {driftStatus && (
-                <span
-                  className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold ${
-                    driftStatus.is_clean && !driftStatus.drift_detected
-                      ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/25"
-                      : "bg-amber-500/10 text-amber-500 border-amber-500/25"
-                  }`}
-                >
-                  {driftStatus.is_clean && !driftStatus.drift_detected
-                    ? "Up to Date"
-                    : "Sync Needed"}
-                </span>
-              )}
-              <div className="flex items-center gap-1.5">
-                <span
-                  className={`h-2 w-2 rounded-full ${
-                    liveSyncActive ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
-                  }`}
-                />
-                <span>{liveSyncActive ? "Live" : "Offline"}</span>
-              </div>
-            </div>
-          )}
+          <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+            {(data.validation?.warnings?.length || 0) > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveTab("home")}
+                className="px-2 py-0.5 rounded-full border text-[10px] font-semibold bg-amber-500/10 text-amber-500 border-amber-500/25 hover:bg-amber-500/20 cursor-pointer"
+                title="View advisory validation warnings on the Home dashboard"
+              >
+                {data.validation?.warnings?.length}{" "}
+                {data.validation?.warnings?.length === 1 ? "Advisory Warning" : "Advisory Warnings"}
+              </button>
+            )}
+            {!isStaticBundle && (
+              <>
+                {driftStatus && (
+                  <span
+                    className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold ${
+                      driftStatus.is_clean && !driftStatus.drift_detected
+                        ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/25"
+                        : "bg-amber-500/10 text-amber-500 border-amber-500/25"
+                    }`}
+                  >
+                    {driftStatus.is_clean && !driftStatus.drift_detected
+                      ? "Up to Date"
+                      : "Sync Needed"}
+                  </span>
+                )}
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={`h-2 w-2 rounded-full ${
+                      liveSyncActive ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
+                    }`}
+                  />
+                  <span>{liveSyncActive ? "Live" : "Offline"}</span>
+                </div>
+              </>
+            )}
+          </div>
         </header>
 
         {/* Viewport Content */}
