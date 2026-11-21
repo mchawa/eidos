@@ -39,6 +39,7 @@ eidos spec create container CNT-BILLING-WORKER --title "Billing Aggregation Work
 eidos spec create component CMP-USAGE-LEDGER --title "Double-Entry Usage Ledger"
 eidos spec create contract CTR-BILLING-API --title "Billing REST API"
 eidos spec create policy POL-WEBHOOK-IDEMPOTENCY --title "Idempotent Webhook Processing"
+eidos spec create screen SCR-DASHBOARD --title "Main Dashboard" --client CLT-WEB-APP # --client required for screens
 
 # Safely delete a specification after checking incoming cross-references (run blast-radius first)
 eidos spec delete <ID_OR_PATH>
@@ -258,7 +259,7 @@ status: active
 version: "1.1.0" # Strictly SemVer 2.0.0
 container: CNT-BILLING-WORKER
 specification_file: "src/billing/openapi.yaml"
-protocol: openapi # openapi | protobuf | graphql | asyncapi | json_schema | json_rpc_stdio | cli_args | python_protocol
+protocol: openapi # openapi/rest_openapi | rest_http/http_json | protobuf/grpc_proto | graphql | asyncapi | json_schema | json_rpc_stdio | cli_args | python_protocol
 ---
 = Contract: Billing Usage Ingestion REST Contract
 ```

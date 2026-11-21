@@ -16,7 +16,7 @@ Verifies bidirectional parity between `CTR-*` living interface contract specific
 
 == Key Responsibilities & Collaborators
 * **CLI Interface AST Parity (`cli_contract_parity.py`)**: Parses Python Typer (including imported `add_typer` sub-apps and decorator helpers), Click, and `argparse` command/option/positional trees via `_parse_python_ast` and verifies bidirectional parity (`verify_cli_contract_commands`) against AsciiDoc CLI contract command tables after stripping AsciiDoc comments (`strip_asciidoc_comments`).
-* **Multi-Protocol Bidirectional Parity (`contract_parity.py`)**: Dispatches `CTR-*` protocol verification via `ContractParityValidator` across Python `Protocol`/ABC signatures, left-bounded `openapi` HTTP routes (scoping reverse checks away from boundary/out-of-scope sections and contrastive prose clauses), backtick-scoped `protobuf` (`rpc`, `service`, `message`, `enum`), `graphql` SDL queries/mutations/subscriptions, and `json_schema` definitions.
+* **Multi-Protocol Bidirectional Parity (`contract_parity.py`)**: Dispatches `CTR-*` protocol verification via `ContractParityValidator` across Python `Protocol`/ABC signatures, left-bounded `openapi` / `rest_openapi` HTTP routes (scoping reverse checks away from boundary/out-of-scope sections and contrastive prose clauses), identical backtick-scoped `protobuf` / `grpc_proto` verification (`rpc`, `service`, and top-level `message`/`enum`), `graphql` SDL queries/mutations/subscriptions, and `json_schema` definitions.
 
 == Public Surface
 * `ContractParityValidator`

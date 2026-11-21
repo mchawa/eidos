@@ -26,7 +26,7 @@ properties:
     $ref: "#/$defs/lifecycle_status"
   protocol:
     $ref: "#/$defs/non_empty_string"
-    description: "Protocol format: openapi, protobuf, graphql, asyncapi, json_schema, json_rpc_stdio, python_protocol, or cli_args."
+    description: "Protocol format: openapi (alias: rest_openapi), rest_http (alias: http_json), protobuf (alias: grpc_proto), graphql, asyncapi, json_schema, json_rpc_stdio, python_protocol, or cli_args."
   container:
     $ref: "#/$defs/container_ref"
   specification_file:

@@ -218,7 +218,6 @@ class ContractParityValidator:
             return
         stripped_text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
         stripped_text = re.sub(r"//[^\r\n]*", "", stripped_text)
-        protocol = str(doc.model.protocol or "").strip().lower()
         services = re.findall(r"\bservice\s+([A-Za-z_][A-Za-z0-9_]*)\b", stripped_text)
         rpcs = re.findall(r"\brpc\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", stripped_text)
         ordered_syms = list(dict.fromkeys([*services, *rpcs]))
@@ -239,21 +238,20 @@ class ContractParityValidator:
                     f"Contract drift in {doc.file_path.name}: documented gRPC symbol '{doc_sym}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
                 )
 
-        if protocol == "protobuf":
-            top_proto_types, all_proto_types = self._extract_proto_messages_and_enums(stripped_text)
-            for p_sym in top_proto_types:
-                if not re.search(rf"(?:`|\b){re.escape(p_sym)}\b", body):
-                    report.broken_references.append(
-                        f"Contract drift in {doc.file_path.name}: Protobuf symbol '{p_sym}' defined in '{spec_file.name}' is not documented in contract '{doc.doc_id}'"
-                    )
-            seen_proto_doc: set[str] = set()
-            for pm in re.finditer(r"`\s*(?:message|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b", body):
-                doc_p_sym = pm.group(1)
-                if doc_p_sym not in all_proto_types and doc_p_sym not in seen_proto_doc:
-                    seen_proto_doc.add(doc_p_sym)
-                    report.broken_references.append(
-                        f"Contract drift in {doc.file_path.name}: documented Protobuf symbol '{doc_p_sym}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
-                    )
+        top_proto_types, all_proto_types = self._extract_proto_messages_and_enums(stripped_text)
+        for p_sym in top_proto_types:
+            if not re.search(rf"(?:`|\b){re.escape(p_sym)}\b", body):
+                report.broken_references.append(
+                    f"Contract drift in {doc.file_path.name}: Protobuf symbol '{p_sym}' defined in '{spec_file.name}' is not documented in contract '{doc.doc_id}'"
+                )
+        seen_proto_doc: set[str] = set()
+        for pm in re.finditer(r"`\s*(?:message|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b", body):
+            doc_p_sym = pm.group(1)
+            if doc_p_sym not in all_proto_types and doc_p_sym not in seen_proto_doc:
+                seen_proto_doc.add(doc_p_sym)
+                report.broken_references.append(
+                    f"Contract drift in {doc.file_path.name}: documented Protobuf symbol '{doc_p_sym}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
+                )
 
     def _verify_graphql_contract(self, doc: SpecDocument, spec_file: Path, report: ValidationReport) -> None:
         """Verify bidirectional parity between root Query/Mutation/Subscription fields in GraphQL specification_file and the contract (DLT-2026-082)."""

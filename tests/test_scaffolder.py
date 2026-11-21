@@ -175,6 +175,7 @@ def test_scaffold_all_spec_types(tmp_path):
         doc_type_key="screen",
         raw_id="SCR-LOGIN",
         title="Login Screen",
+        client="CLT-AUTH-WEB",
     )
     assert_valid_spec(validator, scr_file)
 
@@ -733,14 +734,16 @@ def test_scaffold_screen_and_capability_experience(tmp_path):
     """Verify screen specification and capability experience linkage (CAP-AGENT-001)."""
     validator = SpecValidator()
 
-    # Create screen
+    # Create screen (requires explicit --client)
     screen_file = create_spec(
         eidos_dir=tmp_path,
         doc_type_key="screen",
         raw_id="SCR-CHECKOUT",
         title="Checkout View",
+        client="CLT-STOREFRONT",
     )
     assert screen_file.exists()
+    assert screen_file == tmp_path / "design" / "clients" / "storefront" / "screens" / "checkout.adoc"
     assert_valid_spec(validator, screen_file)
 
     # Create capability linking to screen
@@ -770,8 +773,8 @@ def test_scaffold_screen_and_capability_experience(tmp_path):
 
 def test_cli_design_spec_scaffolding(tmp_path):
     """Verify CLI tools for design specifications."""
-    # CLI screen creation
-    res = runner.invoke(
+    # CLI screen creation without --client is rejected (no silent default)
+    missing_clt_res = runner.invoke(
         app,
         [
             "spec",
@@ -784,9 +787,28 @@ def test_cli_design_spec_scaffolding(tmp_path):
             str(tmp_path),
         ],
     )
+    assert missing_clt_res.exit_code == 1
+    assert "--client" in missing_clt_res.stdout
+
+    # CLI screen creation with explicit --client places screen under design/clients/<slug>/screens/
+    res = runner.invoke(
+        app,
+        [
+            "spec",
+            "create",
+            "screen",
+            "SCR-SETTINGS",
+            "--title",
+            "Settings Screen",
+            "--client",
+            "CLT-ADMIN-APP",
+            "--path",
+            str(tmp_path),
+        ],
+    )
     assert res.exit_code == 0
     assert "Created and validated" in res.stdout
-    assert (tmp_path / "design" / "screens" / "settings.adoc").exists()
+    assert (tmp_path / "design" / "clients" / "admin-app" / "screens" / "settings.adoc").exists()
 
     # CLI design system creation
     cli_res = runner.invoke(
@@ -1735,8 +1757,9 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
         "screen",
         "SCR-HOME",
         "Home Screen",
+        client="CLT-WEB-SPA",
     )
-    assert scr_path.parent == eidos_dir / "design" / "screens"
+    assert scr_path.parent == eidos_dir / "design" / "clients" / "web-spa" / "screens"
 
     flow_path = create_spec(
         eidos_dir,
@@ -1844,16 +1867,17 @@ def test_spec_schema_introspection_loads_from_assets_and_synthesizes_valid_examp
         assert schema_info["id_prefix"].endswith("-")
 
         # Synthesized example_frontmatter must parse and validate cleanly against the v1 JSON Schema
-        synthetic_path = (
-            tmp_path / "eidos" / "architecture" / "components" / "example.adoc"
-            if ctype == "tech/component"
-            else tmp_path / "example.adoc"
-        )
+        if ctype == "tech/component":
+            synthetic_path = tmp_path / "eidos" / "architecture" / "components" / "example.adoc"
+        elif ctype == "design/screen":
+            synthetic_path = tmp_path / "eidos" / "design" / "clients" / "web" / "screens" / "example.adoc"
+        else:
+            synthetic_path = tmp_path / "example.adoc"
         synthetic_path.parent.mkdir(parents=True, exist_ok=True)
         synthetic_path.write_text(f"{schema_info['example_frontmatter']}\n= Example\n", encoding="utf-8")
         doc = parse_spec_file(synthetic_path)
         validator.validate_document(doc)
-        assert doc.is_valid, f"Synthesized example for {ctype} failed schema validation: {doc.validation_errors}"
+        assert doc.is_valid, f"Synthesized example for {ctype} failed schema validation: {doc.errors}"
 
         # Lookup by short_type and canonical type must resolve to the same schema
         by_short = get_spec_schema_info(schema_info["short_type"])

@@ -342,7 +342,7 @@ Sub-commands:
 * `list`: Lists all living specifications across the 15 blueprint types in tabular or JSON format, with optional `--type, -t`, `--status, -s`, `--include-archived`, `--path, -p`, and `--json` flags.
 * `show <id_or_path>`: Displays detailed frontmatter metadata and preview of a specification document.
 * `schema [type] [--json]`: Dynamically loads and inspects bundled v1 YAML frontmatter schemas from `assets/schemas/v1/` across all 16 specification types (omit `[type]` to list all 16 schemas, or pass a short alias like `capability` or canonical type like `product/capability`), displaying required/optional keys, nested object/array item constraints, and schema-synthesized YAML frontmatter templates.
-* `create <type> <id> --title <title> [--path <path>]`: Scaffolds a minimal, schema-valid draft specification blueprint (`status: draft`) across all 15 living specification types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`).
+* `create <type> <id> --title <title> [--client <client>] [--path <path>]`: Scaffolds a minimal, schema-valid draft blueprint (`status: draft`) across all 15 living specification types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`). Pass `--client, -c <CLT-ID|path|slug>` when creating a `screen` (`design/screen`), placing it under `eidos/design/clients/<client>/screens/<screen>.adoc`.
 * `delete <id_or_path>`: Safely deletes a living specification document with cross-reference safety checks (`--force, -f` to override).
 
 ---

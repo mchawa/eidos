@@ -1,5 +1,6 @@
 """Design engine: scaffolds Multi-Design Systems, W3C DTCG tokens, UI components, screens, clients, and flows."""
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +63,7 @@ def build_design_spec(
     title: str,
     heading: str,
     design_system: str = "DS-CORE",
+    client: str | None = None,
 ) -> tuple[Path, Path, dict[str, Any], str]:
     """Build (dest_dir, dest_file, frontmatter, body) for a minimal design-layer specification blueprint."""
     dest_dir: Path
@@ -120,8 +122,18 @@ def build_design_spec(
         body = render_spec_template("design/ui-component", heading=heading)
 
     elif canonical_key == "screen":
+        raw_client = (client or "").strip()
+        if not raw_client:
+            raise ValueError(
+                "Creating a 'design/screen' specification requires --client <CLT-ID|path|slug> "
+                "so the screen is placed under eidos/design/clients/<client>/screens/<screen>.adoc."
+            )
+        _, raw_client_slug = _resolve_design_entity_ref(raw_client, "CLT-", "client.adoc", eidos_dir)
+        client_slug = re.sub(r"[^a-z0-9_-]+", "-", raw_client_slug.lower()).strip("-_")
+        if not client_slug:
+            raise ValueError(f"Invalid --client value '{raw_client}': could not resolve a valid client slug.")
         clean_screen = slug.removeprefix("scr-")
-        dest_dir = eidos_dir / "design" / "screens"
+        dest_dir = eidos_dir / "design" / "clients" / client_slug / "screens"
         dest_file = dest_dir / f"{clean_screen}.adoc"
         fm = {
             "type": "design/screen",

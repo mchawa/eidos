@@ -286,6 +286,12 @@ def spec_create_cmd(
         "-t",
         help="Human-readable title for the specification blueprint.",
     ),
+    client: str | None = typer.Option(
+        None,
+        "--client",
+        "-c",
+        help="Owning client ID (CLT-*), path, or slug (required when creating a 'screen' specification).",
+    ),
     path: Path = typer.Option(
         Path("eidos"),
         "--path",
@@ -301,6 +307,7 @@ def spec_create_cmd(
             doc_type_key=doc_type,
             raw_id=doc_id,
             title=title,
+            client=client,
         )
         rel = dest_file.relative_to(eidos_dir) if dest_file.is_relative_to(eidos_dir) else dest_file
         parsed_doc = parse_spec_file(dest_file)

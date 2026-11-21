@@ -45,6 +45,8 @@ def create_spec(
     doc_type_key: str,
     raw_id: str,
     title: str,
+    *,
+    client: str | None = None,
 ) -> Path:
     """Scaffold a minimal, schema-valid living specification blueprint across the 15 living specification types.
 
@@ -302,6 +304,7 @@ def create_spec(
             title=title,
             heading=heading,
             design_system=resolved_design_system,
+            client=client,
         )
 
     else:
@@ -318,7 +321,7 @@ def create_spec(
     # Validate immediately to ensure document is syntactically conforming
     doc = parse_spec_file(dest_file)
     validator = SpecValidator()
-    errors = validator.validate_document(doc)
+    errors = validator.validate_document(doc, root_dir=eidos_dir)
     if errors:
         # Roll back newly created file
         dest_file.unlink()

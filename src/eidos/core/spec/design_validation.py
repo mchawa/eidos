@@ -1,5 +1,6 @@
 """W3C DTCG design system tokens.manifest and acyclic extends-chain validation (CMP-SPEC-VALIDATOR)."""
 
+import contextlib
 from pathlib import Path
 from typing import Any
 
@@ -198,3 +199,58 @@ def validate_design_systems(report: ValidationReport, root_dir: Path) -> None:
             chain.append(curr)
             nxt = extends_map.get(curr)
             curr = nxt[0] if nxt else None
+
+    # Enforce INV-DESIGN-SCREEN-CLIENT-OWNERSHIP: every active design/screen (SCR-*) must be claimed by at least one design/client (CLT-*.screens)
+    claimed_screen_ids: set[str] = set()
+    claimed_screen_paths: set[Path] = set()
+
+    def _collect_client_screens(clt_doc: SpecDocument) -> None:
+        clt_fm = clt_doc.frontmatter or {}
+        raw_screens = clt_fm.get("screens")
+        if not isinstance(raw_screens, list):
+            return
+        for raw_ref in raw_screens:
+            ref = str(raw_ref or "").strip()
+            if not ref:
+                continue
+            if ref.endswith(".adoc"):
+                for base in (clt_doc.file_path.parent, spec_root, root_dir, repo_root):
+                    cand = base / ref
+                    if cand.is_file():
+                        claimed_screen_paths.add(cand.resolve())
+                        break
+            else:
+                claimed_screen_ids.add(ref)
+
+    client_paths_seen: set[Path] = set()
+    for doc in report.documents:
+        if doc.doc_type == "design/client":
+            client_paths_seen.add(doc.file_path.resolve())
+            _collect_client_screens(doc)
+
+    resolved_root = root_dir.resolve()
+    if resolved_root != spec_root.resolve() and resolved_root.is_relative_to(spec_root.resolve()):
+        clients_dir = spec_root / "design" / "clients"
+        if clients_dir.is_dir():
+            from eidos.core.index.storage import get_cached_spec_document
+
+            for clt_fp in sorted(clients_dir.rglob("*.adoc")):
+                if clt_fp.resolve() in client_paths_seen or clt_fp.is_symlink():
+                    continue
+                with contextlib.suppress(OSError):
+                    ext_clt, _, _ = get_cached_spec_document(clt_fp)
+                    if ext_clt is not None and ext_clt.doc_type == "design/client":
+                        _collect_client_screens(ext_clt)
+
+    for doc in report.documents:
+        if doc.doc_type != "design/screen":
+            continue
+        fm = doc.frontmatter or {}
+        status = str(fm.get("status", "active")).strip().lower()
+        if status in inactive_statuses:
+            continue
+        if doc.doc_id not in claimed_screen_ids and doc.file_path.resolve() not in claimed_screen_paths:
+            report.broken_references.append(
+                f"INV-DESIGN-SCREEN-CLIENT-OWNERSHIP violation in {doc.file_path.name}: "
+                f"Active screen '{doc.doc_id}' is not referenced in 'screens:' of any design/client (CLT-*) specification"
+            )

@@ -1,0 +1,191 @@
+---
+type: delta/mutation
+id: DLT-2026-144-ALIGN-DESIGN-SCREEN-PATHS-D4AB
+title: "Enforce Client-Scoped design/screen Paths and Ownership, Add --client to spec create, and Align Modern Contract Protocols"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: medium
+  motivation: "Three schema, scaffolder, and validation discrepancies currently undermine design and contract integrity: (1) eidos spec create screen scaffolds into flat eidos/design/screens/ even though docs and eidos-spec declare client-scoped eidos/design/clients/<app>/screens/<screen> specs as canonical, and eidos validate fails to enforce client-scoped screen placement; (2) active design/screen (SCR-*) specs with no owning design/client (CLT-*.screens) pass validation silently and render with client: N/A in the portal; and (3) contract.schema.yaml omits modern runtime-handled protocol aliases (grpc_proto, rest_openapi, http_json, rest_http) while ContractParityValidator treats protobuf and grpc_proto inconsistently."
+mutations:
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+    details: "Add optional --client / -c option to `eidos spec create` in src/eidos/cli/spec_commands.py (required when doc_type is `screen` / `design/screen`, passing client through to create_spec with no silent default). Update eidos/architecture/components/cli-spec-commands.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/cli/spec_commands.py"
+      body:
+        contains:
+          - "--client"
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+    details: "Extend create_spec(..., client: str | None = None) in src/eidos/core/lifecycle/scaffolder.py so scaffolding `screen` (`design/screen`) requires an explicit `client` argument (CLT-* ID, client .adoc path, or client slug; raising ValueError if omitted with no silent default) and forwards it to build_design_spec. Update eidos/architecture/components/lifecycle-scaffolder.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/lifecycle/scaffolder.py"
+          - "src/eidos/core/lifecycle/catalog.py"
+      body:
+        contains:
+          - "client"
+          - "design/clients/"
+  - operation: modify
+    target: CMP-DESIGN-ENGINE
+    details: "Update build_design_spec(..., client: str | None = None) in src/eidos/core/lifecycle/design_engine.py so `screen` (`design/screen`) requires an explicit `client` (resolved via _resolve_design_entity_ref to its client slug) and scaffolds strictly into eidos/design/clients/<client-slug>/screens/<screen>.adoc. Update eidos/architecture/components/design-engine.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/core/lifecycle/design_engine.py"
+      body:
+        contains:
+          - "design/clients/"
+          - "screens/"
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: "Enforce two blocking design/screen invariants in src/eidos/core/spec/validator.py and src/eidos/core/spec/design_validation.py: (1) every design/screen (SCR-*) file MUST reside under eidos/design/clients/<app>/screens/<screen>.adoc (rejecting flat eidos/design/screens/ or misplaced paths); and (2) every status: active design/screen (SCR-*) MUST be referenced by at least one design/client (CLT-*.screens, resolving both SCR-* IDs and relative .adoc paths), reporting orphaned active screens as blocking broken_references (draft/planned/deprecated/retired exempt). Update eidos/architecture/components/spec-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/validator.py"
+          - "src/eidos/core/spec/design_validation.py"
+      body:
+        contains:
+          - "design/clients/"
+          - "design/screen"
+          - "design/client"
+  - operation: modify
+    target: CMP-CONTRACT-PARITY-VALIDATOR
+    details: "Make `protobuf` and `grpc_proto` 100% identical aliases in ContractParityValidator._verify_grpc_proto_contract (src/eidos/core/spec/contract_parity.py), checking service, rpc, and top-level message/enum declarations identically for both protocol values. Update eidos/architecture/components/contract-parity-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/contract_parity.py"
+          - "src/eidos/core/spec/cli_contract_parity.py"
+      body:
+        contains:
+          - "grpc_proto"
+          - "protobuf"
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: "Update assets/schemas/v1/tech/contract.schema.yaml protocol description to list all canonical modern protocols and supported runtime aliases (openapi / rest_openapi, rest_http / http_json, protobuf / grpc_proto, graphql, asyncapi, json_schema, json_rpc_stdio, python_protocol, cli_args) while retaining pattern: '\\S' extensibility and intentionally excluding legacy protocols (such as soap_wcf). Update eidos/architecture/containers/core.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core"
+          - "assets/schemas"
+      body:
+        contains:
+          - "grpc_proto"
+          - "rest_http"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Document the `--client` (`-c`) option on `eidos spec create` (required for `screen` specifications) in eidos/architecture/contracts/cli.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "--client"
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Synchronize assets/plugin_reference/skills/eidos-spec/SKILL.md with the aligned modern tech/contract protocol list (matching contract.schema.yaml without legacy soap_wcf) and the `--client` requirement for `eidos spec create screen`, strictly respecting INV-PLUGIN-SKILL-SIZE-CEILING (eidos-spec <= 2250 words, description <= 400 chars) and INV-ENGINE-GENERICITY, then refresh installed .agents/skills/ via eidos plugin update. Update eidos/architecture/containers/plugin.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/__init__.py"
+          - "src/eidos/plugin"
+          - "assets/plugin_reference"
+      body:
+        contains:
+          - "eidos-spec"
+          - "--client"
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: "Synchronize docs/concepts/schema-glossary.md with the aligned modern tech/contract protocol list (`INV-DOCS-SYNCHRONIZATION`), and update eidos/architecture/components/docs-core-concepts.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/concepts"
+      body:
+        contains:
+          - "schema-glossary.md"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Document `--client` (`-c`) on `eidos spec create` in docs/guides/cli.md (`INV-DOCS-SYNCHRONIZATION`), and update eidos/architecture/components/docs-user-guides.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/guides"
+      body:
+        contains:
+          - "--client"
+  - operation: modify
+    target: CAP-EXP-002
+    details: "Extend CAP-EXP-002 in eidos/domains/experience-portal/capabilities/multi-design-systems.adoc with INV-DESIGN-SCREEN-CLIENT-OWNERSHIP."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-DESIGN-SCREEN-CLIENT-OWNERSHIP"
+      body:
+        contains:
+          - "INV-DESIGN-SCREEN-CLIENT-OWNERSHIP"
+  - operation: add
+    target: INV-DESIGN-SCREEN-CLIENT-OWNERSHIP
+    details: "Bind INV-DESIGN-SCREEN-CLIENT-OWNERSHIP in CAP-EXP-002 to tests/test_validator.py::test_design_screen_client_path_and_ownership_enforcement."
+    expect:
+      frontmatter:
+        rule: "design/screen"
+        test_binding: "tests/test_validator.py::test_design_screen_client_path_and_ownership_enforcement"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Extend CAP-PROD-001 in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc with INV-CONTRACT-PROTOCOL-SCHEMA-SYNC."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-CONTRACT-PROTOCOL-SCHEMA-SYNC"
+      body:
+        contains:
+          - "INV-CONTRACT-PROTOCOL-SCHEMA-SYNC"
+  - operation: add
+    target: INV-CONTRACT-PROTOCOL-SCHEMA-SYNC
+    details: "Bind INV-CONTRACT-PROTOCOL-SCHEMA-SYNC in CAP-PROD-001 to tests/test_validator.py::test_contract_protocol_schema_and_grpc_proto_parity."
+    expect:
+      frontmatter:
+        rule: "protocol"
+        test_binding: "tests/test_validator.py::test_contract_protocol_schema_and_grpc_proto_parity"
+vcs:
+  branch: main
+  base_commit: f5fb0f2a5d56e8ea5d4c9c092a82e329bda97372
+---
+= SpecDelta: Enforce Client-Scoped design/screen Paths and Ownership, Add --client to spec create, and Align Modern Contract Protocols
+:toc: left
+
+== Problem Statement
+Three schema, scaffolder, skill-documentation, and design-validation discrepancies currently exist across Eidos:
+
+1. **`design/screen` path contradiction**: `eidos-spec/SKILL.md`, `docs/concepts/design.md`, and Eidos's own portal specs place screens under `eidos/design/clients/<app>/screens/<screen>.adoc`, yet `eidos spec create screen` (`design_engine.py`) scaffolds into flat `eidos/design/screens/<screen>.adoc` and `eidos validate` does not enforce client-scoped screen placement.
+2. **Orphaned active screens pass silently**: `validate_design_systems()` validates only `design/system` token manifests and `extends` cycles; active `SCR-*` specs not claimed by any `design/client` (`CLT-*.screens`) pass `eidos validate` silently and render with `client: "N/A"` in the Living Web Portal.
+3. **`tech/contract` `protocol` drift and `protobuf`/`grpc_proto` divergence**: `assets/schemas/v1/tech/contract.schema.yaml` omits modern aliases already handled by the runtime (`grpc_proto`, `rest_openapi`, `http_json`, plus `rest_http`), and `ContractParityValidator._verify_grpc_proto_contract` verifies `.proto` top-level `message`/`enum` symbols only for `protobuf` while skipping them for `grpc_proto`. (Legacy protocols such as `soap_wcf` are intentionally excluded.)
+
+== Proposed Specification Changes
+* **`CMP-CLI-SPEC-COMMANDS` (`src/eidos/cli/spec_commands.py`), `CMP-LIFECYCLE-SCAFFOLDER` (`src/eidos/core/lifecycle/scaffolder.py`), `CMP-DESIGN-ENGINE` (`src/eidos/core/lifecycle/design_engine.py`), `CTR-EIDOS-CLI`, `CMP-DOCS-USER-GUIDES`**: Add `--client` (`-c`) to `eidos spec create` (required with no silent default when creating a `screen` / `design/screen`), resolving a `CLT-*` ID, client `.adoc` path, or client slug to scaffold strictly into `eidos/design/clients/<client-slug>/screens/<screen>.adoc`.
+* **`CMP-SPEC-VALIDATOR` (`src/eidos/core/spec/validator.py`, `src/eidos/core/spec/design_validation.py`)**: Enforce blocking validation errors when (a) a `design/screen` (`SCR-*`) spec resides outside `eidos/design/clients/<app>/screens/<screen>.adoc`, or (b) a `status: active` `design/screen` (`SCR-*`) is not referenced in `screens:` of at least one `design/client` (`CLT-*`, resolving both `SCR-*` IDs and relative `.adoc` paths; `draft`/`planned`/`deprecated`/`retired` exempt).
+* **`CMP-CONTRACT-PARITY-VALIDATOR` (`src/eidos/core/spec/contract_parity.py`), `CNT-EIDOS-CORE` (`assets/schemas/v1/tech/contract.schema.yaml`), `CNT-EIDOS-PLUGIN` (`assets/plugin_reference/skills/eidos-spec/SKILL.md`), `CMP-DOCS-CORE-CONCEPTS` (`docs/concepts/schema-glossary.md`)**: Make `protobuf` and `grpc_proto` identical aliases in `_verify_grpc_proto_contract` and align modern protocol documentation across schema, skill, and docs (retaining `pattern: \S`, strictly within `INV-PLUGIN-SKILL-SIZE-CEILING` `eidos-spec <= 2250` words and `INV-DOCS-SYNCHRONIZATION`, with zero legacy `soap_wcf` support).
+* **`CAP-EXP-002` & `CAP-PROD-001`**: Add `INV-DESIGN-SCREEN-CLIENT-OWNERSHIP` and `INV-CONTRACT-PROTOCOL-SCHEMA-SYNC`.
+
+== Implementation Plan
+1. **Explicit `--client` Scaffolding (`CMP-CLI-SPEC-COMMANDS`, `CMP-LIFECYCLE-SCAFFOLDER`, `CMP-DESIGN-ENGINE`)**: Add `--client` / `-c` to `spec_create_cmd` (`src/eidos/cli/spec_commands.py`), forward `client` through `create_spec` (`src/eidos/core/lifecycle/scaffolder.py`) to `build_design_spec` (`src/eidos/core/lifecycle/design_engine.py`), require non-empty `client` for `screen` with no silent default, and scaffold into `eidos/design/clients/<client-slug>/screens/<screen>.adoc` (`CNT-EIDOS-CLI` covered via `CMP-CLI-SPEC-COMMANDS` and `CTR-EIDOS-CLI`).
+2. **Blocking Screen Path & Ownership Validation (`CMP-SPEC-VALIDATOR`)**: Enforce `eidos/design/clients/<app>/screens/` placement in `SpecValidator._validate_architectural_invariants` (`src/eidos/core/spec/validator.py`) and blocking client-ownership enforcement on `status: active` `SCR-*` specs in `src/eidos/core/spec/design_validation.py`.
+3. **Protocol Schema & `protobuf`/`grpc_proto` Parity Alignment (`CNT-EIDOS-CORE`, `CMP-CONTRACT-PARITY-VALIDATOR`)**: Remove the `if protocol == "protobuf":` split in `src/eidos/core/spec/contract_parity.py` so `protobuf` and `grpc_proto` behave identically, and update `assets/schemas/v1/tech/contract.schema.yaml` `protocol` description with the aligned modern protocol list (no legacy `soap_wcf`).
+4. **CLI Contract, Skill Docs & User Docs Sync (`CTR-EIDOS-CLI`, `CNT-EIDOS-PLUGIN`, `CMP-DOCS-CORE-CONCEPTS`, `CMP-DOCS-USER-GUIDES`)**: Update `eidos/architecture/contracts/cli.adoc`, `assets/plugin_reference/skills/eidos-spec/SKILL.md` (preserving `INV-PLUGIN-SKILL-SIZE-CEILING` `<= 2250` words and `INV-ENGINE-GENERICITY`), `docs/concepts/schema-glossary.md`, and `docs/guides/cli.md` (`INV-DOCS-SYNCHRONIZATION`), and sync `.agents/skills/` via `eidos plugin update`.
+5. **Living Specs, Tests & Coverage (`POL-005-STATEMENT-TEST-COVERAGE`)**: Update all declared `CMP-*`, `CNT-*`, `CTR-*`, `CAP-EXP-002` (`INV-DESIGN-SCREEN-CLIENT-OWNERSHIP`), and `CAP-PROD-001` (`INV-CONTRACT-PROTOCOL-SCHEMA-SYNC`) specs; update existing `create_spec(..., "screen", ...)` calls in `tests/test_scaffolder.py` and `tests/test_graph_index.py` to pass `client=...`; and add `tests/test_validator.py::test_design_screen_client_path_and_ownership_enforcement` and `tests/test_validator.py::test_contract_protocol_schema_and_grpc_proto_parity` (maintaining `>90.0%` per-file statement coverage).
+6. **Verification**: Run `pytest`, `eidos delta verify DLT-2026-144 --json`, `eidos delta apply DLT-2026-144`, and `eidos drift --uncommitted --json`.

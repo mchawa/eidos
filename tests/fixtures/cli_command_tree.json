@@ -645,6 +645,21 @@
         "type": "STRING"
       },
       {
+        "name": "client",
+        "opts": [
+          "--client",
+          "-c"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Owning client ID (CLT-*), path, or slug (required when creating a 'screen' specification).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
         "name": "path",
         "opts": [
           "--path",

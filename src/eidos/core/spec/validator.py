@@ -850,6 +850,30 @@ class SpecValidator:
                     f"INV-INTERFACE-BOUNDARY-GOVERNANCE violation: Component '{doc.doc_id}' cannot declare boundary protocol contracts. "
                     f"Boundary contracts (CTR-*) must be declared on a Container (CNT-*)."
                 )
+        elif dtype == "design/screen" and doc.file_path.suffix == ".adoc":
+            spec_root, _ = resolve_spec_and_repo_roots(root_dir, doc.file_path)
+            res_doc = doc.file_path.resolve()
+            try:
+                rel_to_spec = tuple(p.lower() for p in res_doc.relative_to(spec_root.resolve()).parts)
+            except ValueError:
+                rel_to_spec = ()
+            if not rel_to_spec or rel_to_spec[0] != "design":
+                lower_parts = tuple(p.lower() for p in res_doc.parts)
+                if "design" in lower_parts:
+                    design_idx = len(lower_parts) - 1 - lower_parts[::-1].index("design")
+                    rel_to_spec = lower_parts[design_idx:]
+            is_client_scoped = (
+                len(rel_to_spec) >= 5
+                and rel_to_spec[0] == "design"
+                and rel_to_spec[1] == "clients"
+                and bool(rel_to_spec[2])
+                and rel_to_spec[3] == "screens"
+            )
+            if not is_client_scoped:
+                _record_err(
+                    f"INV-DESIGN-SCREEN-CLIENT-OWNERSHIP violation: Screen manifest '{doc.doc_id}' must reside "
+                    f"under 'eidos/design/clients/<client>/screens/<screen>.adoc'."
+                )
 
     def _check_dict_references(
         self,

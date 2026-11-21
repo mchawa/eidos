@@ -5518,3 +5518,145 @@ def test_ts_and_js_exported_variable_public_surface(tmp_path: Path, validator: S
     report_missing = validator.validate_directory(repo / "eidos")
     assert not report_missing.is_clean
     assert any("MISSING_DATA" in error for error in report_missing.broken_references)
+
+
+def test_design_screen_client_path_and_ownership_enforcement(tmp_path: Path):
+    """Verify INV-DESIGN-SCREEN-CLIENT-OWNERSHIP: client-scoped screen paths, required --client scaffolding, and active client ownership."""
+    from eidos.core.lifecycle.scaffolder import create_spec
+
+    eidos_dir = tmp_path / "eidos"
+    (eidos_dir / "design" / "systems" / "core").mkdir(parents=True)
+    (eidos_dir / "design" / "systems" / "core" / "tokens.json").write_text(
+        '{"color": {"brand": {"$value": "#0052cc", "$type": "color"}}}',
+        encoding="utf-8",
+    )
+    (eidos_dir / "design" / "systems" / "core" / "system.adoc").write_text(
+        "---\ntype: design/system\nid: DS-CORE\ntitle: Core DS\nstatus: active\n"
+        "tokens:\n  spec_format: w3c_design_tokens\n  manifest: tokens.json\n---\n= Core DS\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "design" / "clients" / "web-app").mkdir(parents=True)
+    clt_file = eidos_dir / "design" / "clients" / "web-app" / "client.adoc"
+    clt_file.write_text(
+        "---\ntype: design/client\nid: CLT-WEB-APP\ntitle: Web App\nstatus: active\n"
+        "platform: web\ndesign_system: DS-CORE\nscreens: []\n---\n= Web App\n",
+        encoding="utf-8",
+    )
+
+    # 1. Scaffolding a screen without --client must raise ValueError (no silent default)
+    with pytest.raises(ValueError, match="--client"):
+        create_spec(eidos_dir, "screen", "SCR-ORPHAN", "Orphan Screen")
+    with pytest.raises(ValueError, match="Invalid --client"):
+        create_spec(eidos_dir, "screen", "SCR-BAD-CLT", "Bad Client", client="---")
+
+    # 2. Misplaced screen under flat eidos/design/screens/ fails validation
+    bad_dir = eidos_dir / "design" / "screens"
+    bad_dir.mkdir(parents=True)
+    bad_scr = bad_dir / "flat.adoc"
+    bad_scr.write_text(
+        "---\ntype: design/screen\nid: SCR-FLAT\ntitle: Flat Screen\nroute: /flat\nstatus: draft\n---\n= Flat\n",
+        encoding="utf-8",
+    )
+    validator = SpecValidator()
+    rep_bad = validator.validate_directory(eidos_dir)
+    assert not rep_bad.is_clean
+    assert any("INV-DESIGN-SCREEN-CLIENT-OWNERSHIP" in err for errs in rep_bad.schema_errors.values() for err in errs)
+    bad_scr.unlink()
+
+    # 3. Client-scoped draft screen passes without being claimed in CLT-*.screens yet
+    scr_file = create_spec(eidos_dir, "screen", "SCR-DASHBOARD", "Dashboard", client="CLT-WEB-APP")
+    assert scr_file == eidos_dir / "design" / "clients" / "web-app" / "screens" / "dashboard.adoc"
+    rep_draft = validator.validate_directory(eidos_dir)
+    assert rep_draft.is_clean, (
+        f"Expected draft client-scoped screen to pass, got {rep_draft.schema_errors} / {rep_draft.broken_references}"
+    )
+
+    # 4. Promoting screen to status: active without adding it to CLT-*.screens fails as blocking error
+    scr_file.write_text(
+        scr_file.read_text(encoding="utf-8").replace("status: draft", "status: active"), encoding="utf-8"
+    )
+    rep_orphan = validator.validate_directory(eidos_dir)
+    assert not rep_orphan.is_clean
+    assert any("INV-DESIGN-SCREEN-CLIENT-OWNERSHIP" in b and "SCR-DASHBOARD" in b for b in rep_orphan.broken_references)
+
+    # 5. Claiming by SCR-* ID passes validation
+    clt_file.write_text(
+        clt_file.read_text(encoding="utf-8").replace("screens: []", "screens:\n  - SCR-DASHBOARD"),
+        encoding="utf-8",
+    )
+    assert validator.validate_directory(eidos_dir).is_clean
+
+    # 6. Claiming by relative .adoc path also passes (including subdirectory validation)
+    clt_file.write_text(
+        clt_file.read_text(encoding="utf-8").replace(
+            "screens:\n  - SCR-DASHBOARD",
+            "screens:\n  - eidos/design/clients/web-app/screens/dashboard.adoc",
+        ),
+        encoding="utf-8",
+    )
+    assert validator.validate_directory(eidos_dir).is_clean
+    assert validator.validate_directory(eidos_dir / "design" / "clients" / "web-app" / "screens").is_clean
+
+
+def test_contract_protocol_schema_and_grpc_proto_parity(tmp_path: Path):
+    """Verify INV-CONTRACT-PROTOCOL-SCHEMA-SYNC: aligned modern protocol docs and identical protobuf/grpc_proto verification."""
+    from eidos.core.lifecycle.scaffolder import get_spec_schema_info
+
+    schema_info = get_spec_schema_info("contract")
+    proto_desc = schema_info["properties"]["protocol"]["description"]
+    for expected_proto in (
+        "openapi",
+        "rest_openapi",
+        "rest_http",
+        "http_json",
+        "protobuf",
+        "grpc_proto",
+        "graphql",
+        "asyncapi",
+        "json_schema",
+        "json_rpc_stdio",
+        "python_protocol",
+        "cli_args",
+    ):
+        assert expected_proto in proto_desc
+    assert "soap_wcf" not in proto_desc
+
+    skill_text = (
+        Path(__file__).parent.parent / "assets" / "plugin_reference" / "skills" / "eidos-spec" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    assert "rest_http" in skill_text
+    assert "grpc_proto" in skill_text
+    assert "--client" in skill_text
+
+    # Verify grpc_proto and protobuf enforce identical message/enum parity on .proto files
+    eidos_dir = tmp_path / "eidos"
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True)
+    (eidos_dir / "architecture" / "contracts").mkdir(parents=True)
+    (tmp_path / "proto").mkdir(parents=True)
+    (tmp_path / "proto" / "orders.proto").write_text(
+        'syntax = "proto3";\n'
+        "service OrderService {\n"
+        "  rpc CreateOrder (CreateOrderRequest) returns (CreateOrderResponse);\n"
+        "}\n"
+        "message CreateOrderRequest { string id = 1; }\n"
+        "message CreateOrderResponse { bool ok = 1; }\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "orders.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-ORDERS\ntitle: Orders\nstatus: active\n"
+        "container_type: service\nruntime: Go\nsource_path: proto\n---\n= Orders\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "contracts" / "orders-grpc.adoc").write_text(
+        "---\ntype: tech/contract\nid: CTR-ORDERS-GRPC\ntitle: Orders gRPC\nstatus: active\n"
+        "protocol: grpc_proto\ncontainer: CNT-ORDERS\nspecification_file: proto/orders.proto\n---\n"
+        "= Orders gRPC\n\nExposes `service OrderService`, `rpc CreateOrder`, and `message GhostPayload`.\n",
+        encoding="utf-8",
+    )
+
+    rep = SpecValidator().validate_directory(eidos_dir)
+    assert not rep.is_clean
+    assert any("CreateOrderRequest" in b for b in rep.broken_references)
+    assert any("CreateOrderResponse" in b for b in rep.broken_references)
+    assert any("GhostPayload" in b for b in rep.broken_references)
+

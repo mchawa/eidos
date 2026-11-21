@@ -290,7 +290,7 @@ type: tech/contract
 id: CTR-EIDOS-CLI
 title: "Eidos CLI Interface Contract"
 status: active # draft | planned | active | deprecated | retired
-protocol: cli_args # openapi | protobuf | graphql | asyncapi | json_schema | json_rpc_stdio | python_protocol | cli_args
+protocol: cli_args # openapi/rest_openapi | rest_http/http_json | protobuf/grpc_proto | graphql | asyncapi | json_schema | json_rpc_stdio | python_protocol | cli_args
 container: "CNT-EIDOS-CLI"
 specification_file: "src/eidos/cli/main.py"
 ---

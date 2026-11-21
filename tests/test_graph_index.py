@@ -2619,10 +2619,10 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     cnt_gw_path = create_spec(eidos_dir, "container", "CNT-GW-104", title="Gateway Container 104")
     ctr_path = create_spec(eidos_dir, "contract", "CTR-API-104", title="API Contract 104")
     ds_path = create_spec(eidos_dir, "design-system", "DS-BRAND-104", title="Brand DS 104")
-    scr_path = create_spec(eidos_dir, "screen", "SCR-DASH-104", title="Dashboard Screen 104")
+    clt_path = create_spec(eidos_dir, "client", "CLT-WEB-104", title="Web Client 104")
+    scr_path = create_spec(eidos_dir, "screen", "SCR-DASH-104", title="Dashboard Screen 104", client="CLT-WEB-104")
     flw_path = create_spec(eidos_dir, "flow", "FLOW-ONBOARD-104", title="Onboarding Flow 104")
     uic_path = create_spec(eidos_dir, "ui-component", "UIC-CARD-104", title="Card UI Component 104")
-    clt_path = create_spec(eidos_dir, "client", "CLT-WEB-104", title="Web Client 104")
     cap_path = create_spec(eidos_dir, "capability", "CAP-DASH-104", title="Dashboard Capability 104")
 
     ctr_doc = parse_spec_file(ctr_path)
