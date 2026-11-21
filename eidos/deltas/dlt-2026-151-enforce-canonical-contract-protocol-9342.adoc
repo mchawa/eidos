@@ -1,0 +1,163 @@
+---
+type: delta/mutation
+id: DLT-2026-151-ENFORCE-CANONICAL-CONTRACT-PROTOCOL-9342
+title: "Enforce Canonical Contract Protocol Enum with Conditional Custom Protocol"
+status: applied
+intent:
+  kind: feature
+  motivation: "tech/contract currently leaves protocol as an open free-text string (pattern: non-whitespace), allowing misspelled or non-canonical protocol names (e.g. grpc, rest, open_api) to pass schema validation silently while bypassing ContractParityValidator; enforcing a strict canonical protocol enum plus an explicit other option with a conditionally required custom_protocol field eliminates silent parity bypasses while preserving extensibility for niche or custom protocols."
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: "Update assets/schemas/v1/tech/contract.schema.yaml to enforce a strict canonical protocol enum (openapi, rest_http, protobuf, graphql, asyncapi, json_schema, json_rpc_stdio, python_protocol, cli_args, other) and add optional custom_protocol (#/$defs/non_empty_string) with Draft 2020-12 if/then/else requiring custom_protocol iff protocol == 'other' and forbidding custom_protocol for all standard enum values. Record DEC-CORE-CANONICAL-CONTRACT-PROTOCOL-ENUM in eidos/architecture/containers/core.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-CORE-CANONICAL-CONTRACT-PROTOCOL-ENUM"
+      body:
+        contains:
+          - "custom_protocol"
+          - "DEC-CORE-CANONICAL-CONTRACT-PROTOCOL-ENUM"
+  - operation: modify
+    target: CMP-DOMAIN-MODELS
+    details: "Add custom_protocol: str | None = None to FrontmatterModel in src/eidos/core/spec/models.py and update eidos/architecture/components/domain-models.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/core/spec/models.py"
+      body:
+        contains:
+          - "custom_protocol"
+  - operation: modify
+    target: CMP-CONTRACT-PARITY-VALIDATOR
+    details: "Restrict ContractParityValidator._CONTRACT_PROTOCOL_VERIFIERS in src/eidos/core/spec/contract_parity.py to canonical protocol enum values (removing redundant rest_openapi, http_json, and grpc_proto alias keys while treating protocol: other as intentionally custom/unverified). Update eidos/architecture/components/contract-parity-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/contract_parity.py"
+          - "src/eidos/core/spec/cli_contract_parity.py"
+      body:
+        contains:
+          - "custom_protocol"
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: "Update rest_http multi-target dispatch in src/eidos/core/spec/validator.py to match canonical protocol: rest_http strictly (no http_json alias). Update eidos/architecture/components/spec-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/validator.py"
+          - "src/eidos/core/spec/design_validation.py"
+      body:
+        contains:
+          - "rest_http"
+  - operation: modify
+    target: CMP-HTTP-TOPOLOGY-LINKER
+    details: "Update _extract_contract_http_routes in src/eidos/core/index/http_linker.py to match canonical protocol values openapi and rest_http strictly. Update eidos/architecture/components/http-topology-linker.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/index/ast_http.py"
+          - "src/eidos/core/index/http_linker.py"
+      body:
+        contains:
+          - "rest_http"
+  - operation: modify
+    target: CTR-EIDOS-PORTAL
+    details: "Migrate protocol from 'http_json' to canonical 'rest_http' in eidos/architecture/contracts/portal.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        protocol: "rest_http"
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+    details: "Format canonical 'rest_http' label ('REST HTTP') and display custom_protocol when protocol == 'other' in src/eidos/portal/mermaid.py and src/eidos/portal/generator.py. Update eidos/architecture/components/portal-generator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/portal/generator.py"
+          - "src/eidos/portal/mermaid.py"
+      body:
+        contains:
+          - "custom_protocol"
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+    details: "Add 'rest_http' protocol display label and render custom_protocol when protocol == 'other' in src/eidos/portal/frontend/src/lib/presentation.ts (and rebuild assets/portal/bundle.html.gz). Update eidos/architecture/components/portal-assets.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/portal/assets.py"
+          - "src/eidos/portal/frontend/scripts/build_assets.py"
+          - "src/eidos/portal/frontend/scripts/hatch_build.py"
+          - "src/eidos/portal/frontend/src"
+      body:
+        contains:
+          - "custom_protocol"
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Update tech/contract protocol enum and conditional custom_protocol guidance in assets/plugin_reference/skills/eidos-spec/SKILL.md (staying under INV-PLUGIN-SKILL-SIZE-CEILING) and eidos/architecture/containers/plugin.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "custom_protocol"
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: "Update canonical protocol enum and conditional custom_protocol examples in docs/concepts/schema-glossary.md, docs/concepts/how-eidos-works.md, and docs/concepts/architectural-index.md (`INV-DOCS-SYNCHRONIZATION`), and update eidos/architecture/components/docs-core-concepts.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/concepts"
+      body:
+        contains:
+          - "custom_protocol"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Update canonical contract parity protocol list in docs/guides/cli.md (`INV-DOCS-SYNCHRONIZATION`), and update eidos/architecture/components/docs-user-guides.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/guides"
+      body:
+        contains:
+          - "rest_http"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Update INV-CONTRACT-PROTOCOL-SCHEMA-SYNC in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc to reflect the strict canonical protocol enum and conditional custom_protocol field."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "custom_protocol"
+vcs:
+  branch: main
+  base_commit: 7106d5477b53ace59adfe4ed4b141a9bfc0ee951
+---
+= SpecDelta: Enforce Canonical Contract Protocol Enum with Conditional Custom Protocol
+:toc: left
+
+== Problem Statement
+`assets/schemas/v1/tech/contract.schema.yaml` currently validates `protocol` only as `#/$defs/non_empty_string` (`pattern: \S`). Because any non-empty string passes schema validation, typos or ad-hoc spellings (such as `grpc`, `rest`, `http`, `open_api`, or `proto3`) pass `eidos validate` silently while bypassing `ContractParityValidator` and `CMP-HTTP-TOPOLOGY-LINKER`. Meanwhile, maintaining redundant runtime aliases (`rest_openapi`, `http_json`, `grpc_proto`) creates unnecessary ambiguity in specs, docs, and portal rendering.
+
+== Proposed Specification Changes
+* **`CNT-EIDOS-CORE` (`assets/schemas/v1/tech/contract.schema.yaml`, `eidos/architecture/containers/core.adoc`)**:
+  - Restrict `protocol` to a strict canonical 10-value enum: `openapi`, `rest_http`, `protobuf`, `graphql`, `asyncapi`, `json_schema`, `json_rpc_stdio`, `python_protocol`, `cli_args`, and `other`.
+  - Add optional `custom_protocol` (`#/$defs/non_empty_string`) governed by Draft 2020-12 `if/then/else`: required when `protocol == "other"`, forbidden whenever `protocol` is any standard enum value.
+  - Record `DEC-CORE-CANONICAL-CONTRACT-PROTOCOL-ENUM` (`graduated_from: DLT-2026-151-ENFORCE-CANONICAL-CONTRACT-PROTOCOL-9342`, rejecting open free-text `protocol` strings, inline `other:<name>` compound strings, and redundant runtime alias sprawl).
+* **`CMP-DOMAIN-MODELS`, `CMP-CONTRACT-PARITY-VALIDATOR`, `CMP-SPEC-VALIDATOR`, `CMP-HTTP-TOPOLOGY-LINKER`**: Add `FrontmatterModel.custom_protocol`, remove redundant `rest_openapi`/`http_json`/`grpc_proto` alias keys so runtime dispatch matches the canonical schema enum 1:1, and treat `protocol: other` as explicitly custom (no parity check).
+* **`CTR-EIDOS-PORTAL`, `CMP-PORTAL-GENERATOR`, `CMP-PORTAL-ASSETS`**: Migrate `CTR-EIDOS-PORTAL` from `http_json` to `rest_http`, add `"REST HTTP"` display formatting, and render `custom_protocol` when `protocol == "other"` across Mermaid diagrams and React views.
+* **`CNT-EIDOS-PLUGIN`, `CMP-DOCS-CORE-CONCEPTS`, `CMP-DOCS-USER-GUIDES`, `CAP-PROD-001`**: Sync `eidos-spec/SKILL.md`, `docs/concepts/schema-glossary.md`, `docs/concepts/how-eidos-works.md`, `docs/concepts/architectural-index.md`, `docs/guides/cli.md`, and `INV-CONTRACT-PROTOCOL-SCHEMA-SYNC`.
+
+== Implementation Plan
+1. **Schema & Domain Model (`CNT-EIDOS-CORE`, `CMP-DOMAIN-MODELS`)**: Add canonical `enum` + `custom_protocol` `if/then/else` to `assets/schemas/v1/tech/contract.schema.yaml` and `custom_protocol` to `src/eidos/core/spec/models.py`, verifying `eidos spec schema contract` synthesizes a valid enum example (`get_spec_schema_info` in `scaffolder.py` — check if `enum[0]` is already used).
+2. **Canonical Runtime Dispatch & Portal (`CMP-CONTRACT-PARITY-VALIDATOR`, `CMP-SPEC-VALIDATOR`, `CMP-HTTP-TOPOLOGY-LINKER`, `CTR-EIDOS-PORTAL`, `CMP-PORTAL-GENERATOR`, `CMP-PORTAL-ASSETS`)**: Remove legacy alias keys (`rest_openapi`, `http_json`, `grpc_proto`) across `src/eidos/core/spec/contract_parity.py`, `src/eidos/core/spec/validator.py`, and `src/eidos/core/index/http_linker.py` (`CNT-EIDOS-INDEX` covered via `CMP-HTTP-TOPOLOGY-LINKER`); migrate `eidos/architecture/contracts/portal.adoc` to `rest_http`; update `src/eidos/portal/mermaid.py`, `src/eidos/portal/generator.py`, and `src/eidos/portal/frontend/src/lib/presentation.ts` (`CNT-EIDOS-PORTAL` covered via `CMP-PORTAL-GENERATOR`, `CMP-PORTAL-ASSETS`, and `CTR-EIDOS-PORTAL`) and rebuild `assets/portal/bundle.html.gz`.
+3. **Skill, Docs & Living Specs (`CNT-EIDOS-PLUGIN`, `CMP-DOCS-CORE-CONCEPTS`, `CMP-DOCS-USER-GUIDES`, `CAP-PROD-001`)**: Synchronize `assets/plugin_reference/skills/eidos-spec/SKILL.md`, `docs/concepts/*`, `docs/guides/cli.md`, and all declared living specs.
+4. **Tests & Coverage (`POL-005-STATEMENT-TEST-COVERAGE`)**: Update existing tests that used legacy aliases (`http_json`, `rest_openapi`, `grpc_proto`, `http`) and extend `tests/test_validator.py::test_contract_protocol_schema_and_grpc_proto_parity` to verify enum rejection of typos, `protocol: other` requiring `custom_protocol`, rejection of `custom_protocol` on standard enum values, and `>90.0%` per-file statement coverage.
+5. **Verification**: Run `pytest`, `eidos delta verify DLT-2026-151 --json`, `eidos delta apply DLT-2026-151`, and `eidos drift --uncommitted --json`.

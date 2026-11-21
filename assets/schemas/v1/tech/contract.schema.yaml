@@ -25,13 +25,27 @@ properties:
   status:
     $ref: "#/$defs/lifecycle_status"
   protocol:
+    type: string
+    enum:
+      - openapi
+      - rest_http
+      - protobuf
+      - graphql
+      - asyncapi
+      - json_schema
+      - json_rpc_stdio
+      - python_protocol
+      - cli_args
+      - other
+    description: "Canonical protocol format: openapi, rest_http, protobuf, graphql, asyncapi, json_schema, json_rpc_stdio, python_protocol, cli_args, or other (requiring custom_protocol)."
+  custom_protocol:
     $ref: "#/$defs/non_empty_string"
-    description: "Protocol format: openapi (alias: rest_openapi), rest_http (alias: http_json), protobuf (alias: grpc_proto), graphql, asyncapi, json_schema, json_rpc_stdio, python_protocol, or cli_args."
+    description: "Free-text custom protocol identifier (e.g. nats_jetstream, mqtt_v5, custom_binary_tcp). Required when protocol is 'other' and forbidden for all standard protocol enum values."
   container:
     $ref: "#/$defs/container_ref"
   specification_file:
     $ref: "#/$defs/non_empty_string"
-    description: "Relative path from repository root to the raw interface schema file (e.g. contracts/api.openapi.yaml) or a modern REST HTTP source file, directory, or glob/brace-glob pattern (e.g. src/Api/Controllers or src/Api/{Controllers,Endpoints}/**/*.cs) for rest_http / http_json contracts."
+    description: "Relative path from repository root to the raw interface schema file (e.g. contracts/api.openapi.yaml) or a modern REST HTTP source file, directory, or glob/brace-glob pattern (e.g. src/Api/Controllers or src/Api/{Controllers,Endpoints}/**/*.cs) for rest_http contracts."
   version:
     $ref: "#/$defs/semver"
   decisions:
@@ -39,3 +53,16 @@ properties:
     description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on this contract specification (POL-001)."
     items:
       $ref: "#/$defs/decision"
+if:
+  properties:
+    protocol:
+      const: "other"
+  required:
+    - protocol
+then:
+  required:
+    - custom_protocol
+else:
+  not:
+    required:
+      - custom_protocol

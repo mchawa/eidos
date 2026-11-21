@@ -249,7 +249,7 @@ def test_static_frontend_request_to_backend_endpoint_autolink(tmp_path: Path) ->
     # http_json AsciiDoc table contract on CNT-API (whose specification_file is a .py source file!)
     d_ev = parse_spec_file(ctr_events)
     d_ev.frontmatter["status"] = "active"
-    d_ev.frontmatter["protocol"] = "http_json"
+    d_ev.frontmatter["protocol"] = "rest_http"
     d_ev.frontmatter["container"] = "CNT-API"
     d_ev.frontmatter["specification_file"] = "services/api/routes.py"
     ev_body = (

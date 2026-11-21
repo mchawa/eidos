@@ -5269,7 +5269,7 @@ def test_executable_import_boundaries_and_ratchet_baseline(tmp_path: Path) -> No
     # Declare a CTR-* between CNT-CORE and CNT-UI so edges has provenance='declared_spec' on CNT-CORE -> CNT-UI,
     # proving that tier_rules + ratchet_baseline STILL count raw ast_import and ast_http couplings in code_couplings!
     (eidos_dir / "architecture" / "contracts" / "ui-ctr.adoc").write_text(
-        "---\ntype: tech/contract\nid: CTR-UI-HTTP\ntitle: UI HTTP\nstatus: active\nprotocol: http_json\ncontainer: CNT-UI\n---\n= UI HTTP\n",
+        "---\ntype: tech/contract\nid: CTR-UI-HTTP\ntitle: UI HTTP\nstatus: active\nprotocol: rest_http\ncontainer: CNT-UI\n---\n= UI HTTP\n",
         encoding="utf-8",
     )
     (eidos_dir / "architecture" / "containers" / "core.adoc").write_text(

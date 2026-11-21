@@ -248,7 +248,7 @@ Appends immutable credit/debit usage entries and computes point-in-time account 
 
 ### 3.4 Interface Contracts (`eidos/architecture/contracts/<name>.adoc`)
 
-`eidos validate` enforces **bidirectional contract parity** against `specification_file` (`cli_args` across Typer/Click/argparse, `openapi`/`rest_openapi`, `protobuf`/`grpc_proto`, `graphql`, `python_protocol`): operations added in `specification_file` must be documented in the `CTR-*` body, and operations removed from code must be removed from the `CTR-*` body so phantom entries never linger.
+`eidos validate` enforces **bidirectional contract parity** against `specification_file` (`cli_args`, `openapi`, `rest_http`, `protobuf`, `graphql`, `json_schema`, `python_protocol`): added operations must be documented and removed ones pruned. Use `protocol: other` with `custom_protocol: "<name>"` (forbidden on standard values) for custom protocols.
 
 ```yaml
 ---
@@ -256,10 +256,10 @@ type: tech/contract
 id: CTR-BILLING-API
 title: "Billing Usage Ingestion REST Contract"
 status: active
-version: "1.1.0" # Strictly SemVer 2.0.0
+version: "1.1.0" # SemVer 2.0.0
 container: CNT-BILLING-WORKER
 specification_file: "src/billing/openapi.yaml"
-protocol: openapi # openapi/rest_openapi | rest_http/http_json | protobuf/grpc_proto | graphql | asyncapi | json_schema | json_rpc_stdio | cli_args | python_protocol
+protocol: openapi # openapi | rest_http | protobuf | graphql | asyncapi | json_schema | json_rpc_stdio | python_protocol | cli_args | other
 ---
 = Contract: Billing Usage Ingestion REST Contract
 ```

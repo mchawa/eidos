@@ -281,7 +281,7 @@ invariants:
 * **Schema**: `schemas/v1/tech/contract.schema.yaml`
 * **ID Convention**: `CTR-<NAME>` (e.g., `CTR-EIDOS-CLI`, `CTR-EIDOS-PORTAL`)
 * **Location**: `eidos/architecture/contracts/<name>.adoc`
-* **Required Properties**: `type`, `id`, `title`, `status`, `protocol`, `container`
+* **Required Properties**: `type`, `id`, `title`, `status`, `protocol`, `container` (plus `custom_protocol` when `protocol: other`; `custom_protocol` is forbidden on all standard protocol values)
 * **Intent**: Formal interface protocol boundary contract owned by a C4 Level 2 Container (`CNT-*`, `INV-INTERFACE-BOUNDARY-GOVERNANCE`). Binds APIs, CLI signatures, or RPC services to concrete schemas or implementation entrypoints.
 
 ```yaml
@@ -290,7 +290,8 @@ type: tech/contract
 id: CTR-EIDOS-CLI
 title: "Eidos CLI Interface Contract"
 status: active # draft | planned | active | deprecated | retired
-protocol: cli_args # openapi/rest_openapi | rest_http/http_json | protobuf/grpc_proto | graphql | asyncapi | json_schema | json_rpc_stdio | python_protocol | cli_args
+protocol: cli_args # openapi | rest_http | protobuf | graphql | asyncapi | json_schema | json_rpc_stdio | python_protocol | cli_args | other
+# custom_protocol: "nats_jetstream" # Required iff protocol == "other"; forbidden otherwise
 container: "CNT-EIDOS-CLI"
 specification_file: "src/eidos/cli/main.py"
 ---

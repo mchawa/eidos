@@ -597,7 +597,7 @@ def test_validator_checks_package_path_specification_file_and_cli_contract_parit
         "type: tech/contract\n"
         "id: CTR-MISSING\n"
         "title: Missing Contract File\n"
-        "protocol: rest_openapi\n"
+        "protocol: openapi\n"
         "container: CNT-CLI\n"
         "specification_file: src/cli/nonexistent_openapi.yaml\n"
         "---\n"
@@ -1341,7 +1341,7 @@ def test_v1_schema_parity_invariants_decisions_contracts_and_delta_refs(
         "title: Billing REST API\n"
         "status: active\n"
         "version: 1.2.0\n"
-        "protocol: rest_openapi\n"
+        "protocol: openapi\n"
         "container: CNT-BILLING\n"
         "specification_file: src/billing/api.yaml\n"
         "decisions:\n"
@@ -1841,7 +1841,7 @@ def test_pluggable_contract_protocol_verifier_registry(tmp_path: Path, validator
         "type: tech/contract\n"
         "id: CTR-OPENAPI\n"
         "title: Charges REST API\n"
-        "protocol: rest_openapi\n"
+        "protocol: openapi\n"
         "container: CNT-API\n"
         "specification_file: src/api/openapi.yaml\n"
         "---\n"
@@ -1877,7 +1877,7 @@ def test_pluggable_contract_protocol_verifier_registry(tmp_path: Path, validator
         "type: tech/contract\n"
         "id: CTR-GRPC\n"
         "title: Ledger gRPC\n"
-        "protocol: grpc_proto\n"
+        "protocol: protobuf\n"
         "container: CNT-API\n"
         "specification_file: src/api/ledger.proto\n"
         "---\n"
@@ -2166,7 +2166,7 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
         "type: tech/contract\n"
         "id: CTR-BAD-OWNER\n"
         "title: Bad Owner Contract\n"
-        "protocol: rest_openapi\n"
+        "protocol: openapi\n"
         "container: CMP-ILLEGAL\n"
         "specification_file: N/A\n"
         "---\n"
@@ -2231,7 +2231,7 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
         "type: tech/contract\n"
         "id: CTR-BAD-OA\n"
         "title: Bad OpenAPI\n"
-        "protocol: rest_openapi\n"
+        "protocol: openapi\n"
         "container: CNT-CLEAN\n"
         "specification_file: src/clean/bad_openapi.yaml\n"
         "---\n"
@@ -2542,7 +2542,7 @@ def test_dlt_2026_082_bidirectional_contract_parity_and_multi_framework_cli(tmp_
         "type: tech/contract\n"
         "id: CTR-OA\n"
         "title: OpenAPI Contract\n"
-        "protocol: rest_openapi\n"
+        "protocol: openapi\n"
         "container: CNT-SVC\n"
         "specification_file: src/svc/openapi.yaml\n"
         "---\n"
@@ -2560,7 +2560,7 @@ def test_dlt_2026_082_bidirectional_contract_parity_and_multi_framework_cli(tmp_
         "type: tech/contract\n"
         "id: CTR-GRPC\n"
         "title: gRPC Contract\n"
-        "protocol: grpc_proto\n"
+        "protocol: protobuf\n"
         "container: CNT-SVC\n"
         "specification_file: src/svc/svc.proto\n"
         "---\n"
@@ -3007,7 +3007,7 @@ def test_warm_cache_idempotence_duplicate_ids_and_non_src_repo_validation(
         "id: CTR-BAD-OWNER\n"
         "title: Bad Owner Contract\n"
         "container: CMP-DUP-001\n"
-        "protocol: http\n"
+        "protocol: rest_http\n"
         "specification_file: src/api.py\n"
         "---\n= Bad Owner Contract\n",
         encoding="utf-8",
@@ -3669,7 +3669,7 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
         "type: tech/contract\n"
         "id: CTR-BAD-OWNER\n"
         "title: Bad Owner\n"
-        "protocol: rest_openapi\n"
+        "protocol: openapi\n"
         "container: eidos/architecture/components/cmp-auth.adoc\n"
         "---\n= Bad Owner\n",
         encoding="utf-8",
@@ -4329,7 +4329,7 @@ def test_dlt_135_contract_parity_public_surface_parser_models_and_brace_globs(tm
         "id: CTR-ORDER-GRPC\n"
         "title: Order gRPC\n"
         "status: active\n"
-        "protocol: grpc\n"
+        "protocol: protobuf\n"
         "container: CNT-CORE\n"
         "specification_file: proto/svc.proto\n"
         "---\n= Order gRPC\n\n"
@@ -5599,36 +5599,42 @@ def test_design_screen_client_path_and_ownership_enforcement(tmp_path: Path):
 
 
 def test_contract_protocol_schema_and_grpc_proto_parity(tmp_path: Path):
-    """Verify INV-CONTRACT-PROTOCOL-SCHEMA-SYNC: aligned modern protocol docs and identical protobuf/grpc_proto verification."""
+    """Verify INV-CONTRACT-PROTOCOL-SCHEMA-SYNC: strict canonical 10-value protocol enum, conditional custom_protocol, and protobuf parity."""
     from eidos.core.lifecycle.scaffolder import get_spec_schema_info
+    from eidos.core.spec.parser import parse_spec_file
 
     schema_info = get_spec_schema_info("contract")
-    proto_desc = schema_info["properties"]["protocol"]["description"]
-    for expected_proto in (
+    proto_prop = schema_info["properties"]["protocol"]
+    expected_enum = [
         "openapi",
-        "rest_openapi",
         "rest_http",
-        "http_json",
         "protobuf",
-        "grpc_proto",
         "graphql",
         "asyncapi",
         "json_schema",
         "json_rpc_stdio",
         "python_protocol",
         "cli_args",
-    ):
-        assert expected_proto in proto_desc
-    assert "soap_wcf" not in proto_desc
+        "other",
+    ]
+    assert proto_prop["enum"] == expected_enum
+    assert "custom_protocol" in schema_info["properties"]
+    assert "soap_wcf" not in proto_prop["description"]
 
     skill_text = (
         Path(__file__).parent.parent / "assets" / "plugin_reference" / "skills" / "eidos-spec" / "SKILL.md"
     ).read_text(encoding="utf-8")
-    assert "rest_http" in skill_text
-    assert "grpc_proto" in skill_text
+    glossary_text = (
+        Path(__file__).parent.parent / "docs" / "concepts" / "schema-glossary.md"
+    ).read_text(encoding="utf-8")
+    for proto_val in expected_enum:
+        assert proto_val in skill_text
+        assert proto_val in glossary_text
+    assert "custom_protocol" in skill_text
+    assert "custom_protocol" in glossary_text
     assert "--client" in skill_text
 
-    # Verify grpc_proto and protobuf enforce identical message/enum parity on .proto files
+    # Set up workspace for schema + parity checks
     eidos_dir = tmp_path / "eidos"
     (eidos_dir / "architecture" / "containers").mkdir(parents=True)
     (eidos_dir / "architecture" / "contracts").mkdir(parents=True)
@@ -5647,18 +5653,66 @@ def test_contract_protocol_schema_and_grpc_proto_parity(tmp_path: Path):
         "container_type: service\nruntime: Go\nsource_path: proto\n---\n= Orders\n",
         encoding="utf-8",
     )
+
+    validator = SpecValidator()
+
+    # 1. Reject misspelled / legacy alias protocols at schema validation
+    for bad_proto in ("grpc", "grpc_proto", "rest_openapi", "http_json", "soap_wcf"):
+        bad_file = eidos_dir / "architecture" / "contracts" / "bad.adoc"
+        bad_file.write_text(
+            f"---\ntype: tech/contract\nid: CTR-BAD\ntitle: Bad\nstatus: active\n"
+            f"protocol: {bad_proto}\ncontainer: CNT-ORDERS\n---\n= Bad\n",
+            encoding="utf-8",
+        )
+        errs = validator.validate_document(parse_spec_file(bad_file))
+        assert errs, f"Expected schema error for non-canonical protocol '{bad_proto}'"
+    (eidos_dir / "architecture" / "contracts" / "bad.adoc").unlink()
+
+    # 2. protocol: other requires non-empty custom_protocol; standard protocols forbid custom_protocol
+    other_missing = eidos_dir / "architecture" / "contracts" / "other-missing.adoc"
+    other_missing.write_text(
+        "---\ntype: tech/contract\nid: CTR-OTHER-MISS\ntitle: Other Missing\nstatus: active\n"
+        "protocol: other\ncontainer: CNT-ORDERS\n---\n= Other Missing\n",
+        encoding="utf-8",
+    )
+    assert validator.validate_document(parse_spec_file(other_missing))
+    other_missing.unlink()
+
+    std_with_custom = eidos_dir / "architecture" / "contracts" / "std-custom.adoc"
+    std_with_custom.write_text(
+        "---\ntype: tech/contract\nid: CTR-STD-CUST\ntitle: Std Custom\nstatus: active\n"
+        "protocol: openapi\ncustom_protocol: nats_jetstream\ncontainer: CNT-ORDERS\n---\n= Std Custom\n",
+        encoding="utf-8",
+    )
+    assert validator.validate_document(parse_spec_file(std_with_custom))
+    std_with_custom.unlink()
+
+    other_ok = eidos_dir / "architecture" / "contracts" / "other-ok.adoc"
+    other_ok.write_text(
+        "---\ntype: tech/contract\nid: CTR-OTHER-OK\ntitle: NATS Bus\nstatus: active\n"
+        "protocol: other\ncustom_protocol: nats_jetstream\ncontainer: CNT-ORDERS\n"
+        "specification_file: proto/orders.proto\n---\n= NATS Bus\n",
+        encoding="utf-8",
+    )
+    other_doc = parse_spec_file(other_ok)
+    assert other_doc.model.custom_protocol == "nats_jetstream"
+    assert validator.validate_document(other_doc) == []
+
+    # 3. Verify canonical protobuf enforces service/rpc/message/enum parity on .proto files (and protocol: other is no-op)
     (eidos_dir / "architecture" / "contracts" / "orders-grpc.adoc").write_text(
         "---\ntype: tech/contract\nid: CTR-ORDERS-GRPC\ntitle: Orders gRPC\nstatus: active\n"
-        "protocol: grpc_proto\ncontainer: CNT-ORDERS\nspecification_file: proto/orders.proto\n---\n"
+        "protocol: protobuf\ncontainer: CNT-ORDERS\nspecification_file: proto/orders.proto\n---\n"
         "= Orders gRPC\n\nExposes `service OrderService`, `rpc CreateOrder`, and `message GhostPayload`.\n",
         encoding="utf-8",
     )
 
-    rep = SpecValidator().validate_directory(eidos_dir)
+    rep = validator.validate_directory(eidos_dir)
     assert not rep.is_clean
+    assert not rep.schema_errors, f"Unexpected schema errors: {rep.schema_errors}"
     assert any("CreateOrderRequest" in b for b in rep.broken_references)
     assert any("CreateOrderResponse" in b for b in rep.broken_references)
     assert any("GhostPayload" in b for b in rep.broken_references)
+    assert not any("CTR-OTHER-OK" in b for b in rep.broken_references)
 
 
 def test_advisory_warnings_overscoped_source_path_and_prose_symbols(tmp_path: Path) -> None:

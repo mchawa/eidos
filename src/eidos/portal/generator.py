@@ -272,6 +272,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                 "id": ct["id"],
                 "title": ct["title"],
                 "protocol": fm.get("protocol", "cli_args"),
+                "custom_protocol": str(fm.get("custom_protocol")).strip() if fm.get("custom_protocol") else None,
                 "container": _resolve_ref_id(fm.get("container", "N/A")) or "N/A",
                 "specification_file": fm.get("specification_file", "N/A"),
                 "description": ct["body"],
@@ -395,9 +396,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
 
     # Invariants list (hydrated from indexed invariant entities in ArchitecturalIndex)
     spec_title_by_id: dict[str, str] = {
-        str(s.get("id") or ""): str(s.get("title") or "")
-        for s in specs
-        if s.get("id") and s.get("title")
+        str(s.get("id") or ""): str(s.get("title") or "") for s in specs if s.get("id") and s.get("title")
     }
     invariants: list[dict[str, Any]] = []
     for inv_ent in arch_idx.get_entities(entity_type="invariant"):

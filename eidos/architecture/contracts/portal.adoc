@@ -4,7 +4,7 @@ id: CTR-EIDOS-PORTAL
 title: "Eidos Living Web Portal HTTP Interface Contract"
 status: active
 version: "1.1.0"
-protocol: "http_json"
+protocol: "rest_http"
 container: "CNT-EIDOS-PORTAL"
 specification_file: "src/eidos/portal/server.py"
 ---

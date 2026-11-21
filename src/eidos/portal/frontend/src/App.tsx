@@ -507,9 +507,9 @@ export function App() {
         id: ct.id,
         title: formatDisplayTitle(ct.title, ct.id),
         subtitle: providerTitle
-          ? `${formatProtocol(ct.protocol)} • ${providerTitle}`
-          : formatProtocol(ct.protocol),
-        searchText: `${ct.id} ${ct.title} ${ct.protocol} ${ct.container} ${providerTitle} ${extractHeadings(ct.description)}`.toLowerCase(),
+          ? `${formatProtocol(ct.protocol, ct.custom_protocol)} • ${providerTitle}`
+          : formatProtocol(ct.protocol, ct.custom_protocol),
+        searchText: `${ct.id} ${ct.title} ${ct.protocol} ${ct.custom_protocol || ""} ${ct.container} ${providerTitle} ${extractHeadings(ct.description)}`.toLowerCase(),
         category: "contracts",
         raw: ct,
       });

@@ -91,6 +91,7 @@ export interface SpecContract {
   id: string;
   title: string;
   protocol: string;
+  custom_protocol?: string | null;
   container: string;
   specification_file: string;
   description?: string;

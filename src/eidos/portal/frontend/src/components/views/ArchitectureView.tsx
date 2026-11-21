@@ -1111,7 +1111,7 @@ export function ArchitectureView({
                         {formatDisplayTitle(ctr.title, ctr.id)}
                       </h4>
                       <Badge variant="outline" className="text-[10px] shrink-0">
-                        {formatProtocol(ctr.protocol)}
+                        {formatProtocol(ctr.protocol, ctr.custom_protocol)}
                       </Badge>
                     </div>
                     {providerTitle && (
@@ -1591,13 +1591,19 @@ export function ArchitectureView({
             ? formatDisplayTitle(inspectedContract.title, inspectedContract.id)
             : "Interface Contract"
         }
-        subtitle={inspectedContract ? formatProtocol(inspectedContract.protocol) : undefined}
+        subtitle={
+          inspectedContract
+            ? formatProtocol(inspectedContract.protocol, inspectedContract.custom_protocol)
+            : undefined
+        }
         maxWidth="4xl"
       >
         {inspectedContract && (
           <div className="space-y-4 text-xs">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="primary">{formatProtocol(inspectedContract.protocol)}</Badge>
+              <Badge variant="primary">
+                {formatProtocol(inspectedContract.protocol, inspectedContract.custom_protocol)}
+              </Badge>
               {inspectedContract.container && inspectedContract.container !== "N/A" && (
                 <button
                   type="button"

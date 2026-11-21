@@ -601,7 +601,7 @@ def test_dlt_2026_107_index_driven_spec_scoped_deletion_audit(tmp_path):
         "type: tech/contract\n"
         "id: CTR-API\n"
         "title: OpenAPI Contract\n"
-        "protocol: REST\n"
+        "protocol: openapi\n"
         "specification_file: schemas/openapi.yaml\n"
         "---\n"
         "= OpenAPI Contract\n",

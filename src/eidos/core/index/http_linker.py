@@ -34,7 +34,7 @@ def _extract_contract_http_routes(
     conn: sqlite3.Connection,
     eff_root: Path | None,
 ) -> dict[tuple[str, str], list[tuple[str, str, str]]]:
-    """Extract normalized (method, path) -> [(ctr_id, ctr_rel_path, owning_cnt_id)] from openapi and rest_http/http_json CTR-* specs."""
+    """Extract normalized (method, path) -> [(ctr_id, ctr_rel_path, owning_cnt_id)] from openapi and rest_http CTR-* specs."""
     routes: dict[tuple[str, str], list[tuple[str, str, str]]] = {}
     if eff_root is None or not eff_root.is_dir():
         return routes
@@ -55,7 +55,7 @@ def _extract_contract_http_routes(
         owning_cnt = resolve_ref(fm.get("container") or "")
         spec_rel = _normalize_rel_path(str(fm.get("specification_file") or ""))
 
-        if protocol in ("openapi", "rest_openapi") and spec_rel.lower().endswith((".yaml", ".yml", ".json")):
+        if protocol == "openapi" and spec_rel.lower().endswith((".yaml", ".yml", ".json")):
             spec_abs = (eff_root / spec_rel).resolve()
             if spec_abs.is_file() and spec_abs.is_relative_to(eff_root):
                 parsed_spec: Any = None
@@ -94,7 +94,7 @@ def _extract_contract_http_routes(
                                     if entry not in bucket:
                                         bucket.append(entry)
 
-        elif protocol in ("http_json", "rest_http") and ctr_fp:
+        elif protocol == "rest_http" and ctr_fp:
             adoc_abs = (eff_root / ctr_fp).resolve()
             if not adoc_abs.is_file() and not ctr_fp.startswith("eidos/"):
                 adoc_abs = (eff_root / "eidos" / ctr_fp).resolve()

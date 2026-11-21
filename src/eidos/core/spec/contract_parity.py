@@ -556,12 +556,9 @@ class ContractParityValidator:
     _CONTRACT_PROTOCOL_VERIFIERS: ClassVar[dict[str, str]] = {
         "cli_args": "_verify_cli_contract_commands",
         "python_protocol": "_verify_python_protocol_contract",
-        "rest_openapi": "_verify_rest_openapi_contract",
         "openapi": "_verify_rest_openapi_contract",
         "rest_http": "_verify_rest_http_contract",
-        "http_json": "_verify_rest_http_contract",
         "json_schema": "_verify_json_schema_contract",
-        "grpc_proto": "_verify_grpc_proto_contract",
         "protobuf": "_verify_grpc_proto_contract",
         "graphql": "_verify_graphql_contract",
     }

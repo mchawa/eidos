@@ -267,7 +267,7 @@ type: tech/contract
 id: CTR-API-HTTP
 title: "Orders HTTP Contract"
 status: active
-protocol: "http_json"
+protocol: "rest_http"
 container: CNT-API
 specification_file: "src/Api"
 ---
@@ -295,7 +295,7 @@ type: tech/contract
 id: CTR-API-HTTP
 title: "Custom HTTP Contract"
 status: active
-protocol: "http_json"
+protocol: "rest_http"
 container: CNT-API
 specification_file: "src/Api/custom_server.py"
 ---

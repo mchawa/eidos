@@ -344,10 +344,10 @@ def test_c4_level2_container_hierarchy_and_connections():
     assert 'CNT_EIDOS_CLI -->|"In-Process Python API"| CNT_EIDOS_CORE' in c4_containers
     assert 'CNT_EIDOS_CLI -->|"Queries &amp; Stores Data"| CNT_EIDOS_INDEX' in c4_containers
     assert 'CNT_EIDOS_CLI -->|"In-Process Python API"| CNT_EIDOS_PLUGIN' in c4_containers
-    assert 'CNT_EIDOS_CLI -->|"HTTP JSON • Eidos Living Web Portal HTTP Interface Contract"| CNT_EIDOS_PORTAL' in c4_containers
+    assert 'CNT_EIDOS_CLI -->|"REST HTTP • Eidos Living Web Portal HTTP Interface Contract"| CNT_EIDOS_PORTAL' in c4_containers
     assert 'CNT_EIDOS_PORTAL -->|"In-Process Python API"| CNT_EIDOS_CORE' in c4_containers
     assert 'CNT_EIDOS_PORTAL -->|"Queries &amp; Stores Data"| CNT_EIDOS_INDEX' in c4_containers
-    assert 'CNT_EIDOS_DOCS -->|"HTTP JSON • Eidos Living Web Portal HTTP Interface Contract"| CNT_EIDOS_PORTAL' in c4_containers
+    assert 'CNT_EIDOS_DOCS -->|"REST HTTP • Eidos Living Web Portal HTTP Interface Contract"| CNT_EIDOS_PORTAL' in c4_containers
     assert 'CNT_EIDOS_PLUGIN -->|"In-Process Python API"| CNT_EIDOS_CORE' in c4_containers
     assert 'CNT_EIDOS_INDEX -->|"In-Process Python API"| CNT_EIDOS_CORE' in c4_containers
 
@@ -2584,6 +2584,8 @@ def test_portal_human_readable_ui_and_slug_free_diagrams():
     assert _humanize_container_type("web_app") == "Web App"
     assert _humanize_container_type("custom_daemon") == "Custom Daemon"
     assert _humanize_protocol("python_protocol") == "Python API"
+    assert _humanize_protocol("rest_http") == "REST HTTP"
+    assert _humanize_protocol("other", "NATS JetStream") == "NATS JetStream"
     assert _humanize_protocol("grpc_stream") == "Grpc Stream"
 
     # Component diagram fallback without contracts kwarg + with contracts kwarg
@@ -2625,7 +2627,7 @@ def test_portal_human_readable_ui_and_slug_free_diagrams():
     comp_mermaid_with_contracts = _generate_c4_component_mermaid(
         sample_comp,
         [{"id": "CNT-PEER", "title": "Peer Service"}],
-        contracts=[{"id": "CTR-SAMPLE-API", "title": "Sample HTTP Interface", "protocol": "http_json"}],
+        contracts=[{"id": "CTR-SAMPLE-API", "title": "Sample HTTP Interface", "protocol": "rest_http"}],
     )
     assert "Sample HTTP Interface" in comp_mermaid_with_contracts
     assert "Interface Contract" in comp_mermaid_with_contracts

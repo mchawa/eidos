@@ -4265,7 +4265,7 @@ def test_epistemic_provenance_tags_and_confidence_filtering(tmp_path: Path) -> N
 
     d_ctr = parse_spec_file(ctr_api)
     d_ctr.frontmatter["status"] = "active"
-    d_ctr.frontmatter["protocol"] = "http_json"
+    d_ctr.frontmatter["protocol"] = "rest_http"
     d_ctr.frontmatter["container"] = "CNT-API"
     ctr_api.write_text(dump_spec_document(d_ctr.frontmatter, d_ctr.body), encoding="utf-8")
 

@@ -154,17 +154,26 @@ export function formatContainerType(raw?: string | null): string {
 }
 
 const PROTOCOL_LABELS: Record<string, string> = {
-  http_json: "HTTP JSON",
+  rest_http: "REST HTTP",
   cli_args: "CLI",
   python_protocol: "Python API",
   openapi: "OpenAPI",
   graphql: "GraphQL",
   protobuf: "Protobuf",
+  asyncapi: "AsyncAPI",
   json_schema: "JSON Schema",
+  json_rpc_stdio: "JSON-RPC Stdio",
 };
 
-export function formatProtocol(raw?: string | null): string {
+export function formatProtocol(
+  raw?: string | null,
+  customProtocol?: string | null
+): string {
   const key = String(raw || "").trim().toLowerCase();
+  if (key === "other") {
+    const custom = String(customProtocol || "").trim();
+    if (custom) return custom;
+  }
   return PROTOCOL_LABELS[key] || humanizeToken(raw) || "API";
 }
 

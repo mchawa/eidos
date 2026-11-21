@@ -71,13 +71,15 @@ _CONTAINER_TYPE_LABELS: dict[str, str] = {
 }
 
 _PROTOCOL_LABELS: dict[str, str] = {
-    "http_json": "HTTP JSON",
+    "rest_http": "REST HTTP",
     "cli_args": "CLI",
     "python_protocol": "Python API",
     "openapi": "OpenAPI",
     "graphql": "GraphQL",
     "protobuf": "Protobuf",
+    "asyncapi": "AsyncAPI",
     "json_schema": "JSON Schema",
+    "json_rpc_stdio": "JSON-RPC Stdio",
 }
 
 
@@ -110,9 +112,13 @@ def _humanize_container_type(raw: str) -> str:
     return _humanize_token(raw) or "Container"
 
 
-def _humanize_protocol(raw: str) -> str:
-    """Return a clean human label for a contract protocol enum value."""
+def _humanize_protocol(raw: str, custom_protocol: str | None = None) -> str:
+    """Return a clean human label for a contract protocol enum value (or custom_protocol when protocol == 'other')."""
     key = str(raw or "").strip().lower()
+    if key == "other":
+        custom = str(custom_protocol or "").strip()
+        if custom:
+            return custom
     if key in _PROTOCOL_LABELS:
         return _PROTOCOL_LABELS[key]
     return _humanize_token(raw) or "API"
@@ -353,7 +359,9 @@ def _generate_c4_containers_mermaid(
             pid = str(p.get("id") or "PER")
             node_id = pid.replace("-", "_")
             ptitle = html.escape(str(p.get("title") or _humanize_token(pid))).replace('"', "'")
-            prole = html.escape(str(p.get("role") or _humanize_token(str(p.get("archetype") or "Stakeholder")))).replace('"', "'")
+            prole = html.escape(
+                str(p.get("role") or _humanize_token(str(p.get("archetype") or "Stakeholder")))
+            ).replace('"', "'")
 
             actor_lines.append(
                 f"  {node_id}[\"<div style='padding:6px 10px;'><b>{ptitle}</b><br/><i>{prole}</i></div>\"]:::actor"
@@ -565,15 +573,17 @@ def _generate_c4_containers_mermaid(
                 ctr_id = matching_contracts[0]
                 ctr_meta = contracts_by_id.get(ctr_id, {})
                 proto = ctr_meta.get("protocol")
+                custom_proto = ctr_meta.get("custom_protocol")
                 titles_str = _contract_titles(matching_contracts)
-                label = f"{_humanize_protocol(proto)} • {titles_str}" if proto else f"Uses {titles_str}"
+                label = f"{_humanize_protocol(proto, custom_proto)} • {titles_str}" if proto else f"Uses {titles_str}"
             # 2. Target provides a contract
             elif tgt_provides:
                 ctr_id = tgt_provides[0]
                 ctr_meta = contracts_by_id.get(ctr_id, {})
                 proto = ctr_meta.get("protocol")
+                custom_proto = ctr_meta.get("custom_protocol")
                 titles_str = _contract_titles(tgt_provides)
-                label = f"{_humanize_protocol(proto)} • {titles_str}" if proto else f"Uses {titles_str}"
+                label = f"{_humanize_protocol(proto, custom_proto)} • {titles_str}" if proto else f"Uses {titles_str}"
             # 3. Database / Storage target
             elif tgt_c.get("container_type") in ("database", "storage") or any(
                 k in tgt_id for k in ("INDEX", "DB", "STORAGE", "SQLITE", "SQL")
@@ -679,7 +689,7 @@ def _generate_c4_component_mermaid(
             resp_html = f"<br/><span style='font-size:11px;color:#cbd5e1;'>{html.escape(resp)}</span>" if resp else ""
             lines.append(
                 f"    {mod_id}[\"<div style='padding:10px 14px;text-align:left;min-width:260px;max-width:400px;white-space:normal;word-break:break-word;line-height:1.45;'>"
-                f"<b>{html.escape(display_mtitle)}</b>{resp_html}</div>\"]:::module"
+                f'<b>{html.escape(display_mtitle)}</b>{resp_html}</div>"]:::module'
             )
 
         # Render intra-container component dependencies derived via AST imports
