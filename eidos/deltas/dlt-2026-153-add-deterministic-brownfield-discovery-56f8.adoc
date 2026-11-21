@@ -1,0 +1,94 @@
+---
+type: delta/mutation
+id: DLT-2026-153-ADD-DETERMINISTIC-BROWNFIELD-DISCOVERY-56F8
+title: "Add Deterministic Brownfield Discovery Command eidos spec discover"
+status: applied
+intent:
+  kind: feature
+  motivation: "Onboarding existing polyglot repositories onto Eidos currently requires manual inspection of project manifests, API schemas, and test suites before scaffolding containers and contracts; a deterministic zero-AI eidos spec discover command scanning workspace manifests and interface artifacts will accelerate brownfield onboarding while upholding POL-004."
+mutations:
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+    details: "Add deterministic discover_repository_blueprint(repo_root, eidos_dir) helper (e.g. in src/eidos/core/lifecycle/scaffolder.py or a sibling submodule under CMP-LIFECYCLE-SCAFFOLDER) scanning polyglot workspace manifests (*.sln/*.csproj, package.json workspaces, pyproject.toml, go.mod, Cargo.toml, pom.xml/build.gradle), interface schemas (OpenAPI, .proto, .graphql, AsyncAPI), modern REST controller roots, and test roots to return proposed CNT-* containers, CTR-* contracts, and unmapped source_path gaps. Update eidos/architecture/components/lifecycle-scaffolder.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "discover_repository_blueprint"
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+    details: "Expose `eidos spec discover [--path PATH] [--json]` in src/eidos/cli/spec_commands.py printing a deterministic Rich discovery table or structured JSON blueprint for brownfield onboarding. Update eidos/architecture/components/cli-spec-commands.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/cli/spec_commands.py"
+      body:
+        contains:
+          - "discover"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Document `eidos spec discover [--path <path>] [--json]` in eidos/architecture/contracts/cli.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "discover"
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Reference `eidos spec discover --json` in brownfield extraction workflow in assets/plugin_reference/skills/eidos-ops/SKILL.md (within INV-PLUGIN-SKILL-SIZE-CEILING) and eidos/architecture/containers/plugin.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "discover"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Document `eidos spec discover` in docs/guides/cli.md (`INV-DOCS-SYNCHRONIZATION`), and update eidos/architecture/components/docs-user-guides.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/guides"
+      body:
+        contains:
+          - "discover"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Extend CAP-PROD-001 in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc with INV-BROWNFIELD-DETERMINISTIC-DISCOVERY."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-BROWNFIELD-DETERMINISTIC-DISCOVERY"
+      body:
+        contains:
+          - "INV-BROWNFIELD-DETERMINISTIC-DISCOVERY"
+  - operation: add
+    target: INV-BROWNFIELD-DETERMINISTIC-DISCOVERY
+    details: "Bind INV-BROWNFIELD-DETERMINISTIC-DISCOVERY in CAP-PROD-001 to tests/test_scaffolder.py::test_spec_discover_polyglot_brownfield_blueprint."
+    expect:
+      frontmatter:
+        rule: "discover"
+        test_binding: "tests/test_scaffolder.py::test_spec_discover_polyglot_brownfield_blueprint"
+vcs:
+  branch: main
+  base_commit: 7106d5477b53ace59adfe4ed4b141a9bfc0ee951
+---
+= SpecDelta: Add Deterministic Brownfield Discovery Command eidos spec discover
+:toc: left
+
+== Problem Statement
+When onboarding an existing polyglot repository onto Eidos, engineers and AI agents must manually enumerate deployable projects (`.csproj`, `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `pom.xml`), locate OpenAPI/`.proto`/GraphQL/AsyncAPI files, and identify which source directories are not yet claimed by any `CNT-*` or `CMP-*` `source_path`.
+
+== Proposed Specification Changes
+* **`CMP-LIFECYCLE-SCAFFOLDER` (`src/eidos/core/lifecycle/scaffolder.py`)**: Add 100% deterministic (`POL-004`), read-only `discover_repository_blueprint(repo_root, eidos_dir)` scanning standard build/package manifests, interface contract files, and existing `eidos/` ownership to emit structured container candidates (`suggested_id`, `runtime`, `container_type`, `source_path`, `already_mapped`), contract candidates (`protocol`, `specification_file`), and unowned top-level code roots.
+* **`CMP-CLI-SPEC-COMMANDS` (`src/eidos/cli/spec_commands.py`), `CTR-EIDOS-CLI` & `CMP-DOCS-USER-GUIDES`**: Expose `eidos spec discover [--path PATH] [--json]` and update `tests/fixtures/cli_command_tree.json` and `docs/guides/cli.md`.
+* **`CNT-EIDOS-PLUGIN` (`assets/plugin_reference/skills/eidos-ops/SKILL.md`) & `CAP-PROD-001`**: Point the brownfield extraction guide to `eidos spec discover --json` and bind `INV-BROWNFIELD-DETERMINISTIC-DISCOVERY`.
+
+== Implementation Plan
+1. **Discovery Engine (`CMP-LIFECYCLE-SCAFFOLDER`)**: Implement `discover_repository_blueprint` (`CNT-EIDOS-CORE` covered via `CMP-LIFECYCLE-SCAFFOLDER`), pruning `STANDARD_EXCLUDED_DIRS` and `.NET` `bin/`/`obj/` directories while honoring `INV-ENGINE-GENERICITY`.
+2. **CLI & Skill Integration (`CMP-CLI-SPEC-COMMANDS`, `CTR-EIDOS-CLI`, `CNT-EIDOS-PLUGIN`, `CMP-DOCS-USER-GUIDES`)**: Wire `eidos spec discover` in `src/eidos/cli/spec_commands.py` (`CNT-EIDOS-CLI` covered via `CMP-CLI-SPEC-COMMANDS` and `CTR-EIDOS-CLI`), update `tests/fixtures/cli_command_tree.json`, `assets/plugin_reference/skills/eidos-ops/SKILL.md`, and `docs/guides/cli.md`.
+3. **Living Specs, Tests & Coverage (`POL-005-STATEMENT-TEST-COVERAGE`)**: Update all declared specs and add `tests/test_scaffolder.py::test_spec_discover_polyglot_brownfield_blueprint` covering `.NET`, Python, TypeScript, Go, Rust, and OpenAPI/Protobuf discovery plus `>90.0%` coverage.
+4. **Verification**: Run `pytest`, `eidos delta verify DLT-2026-153 --json`, `eidos delta apply DLT-2026-153`, and `eidos drift --uncommitted --json`.

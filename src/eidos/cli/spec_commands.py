@@ -9,13 +9,20 @@ from rich.table import Table
 
 from eidos.cli._shared import PANEL_GOVERNANCE, console, resolve_cli_eidos_dir
 from eidos.core.lifecycle.catalog import find_spec_by_id_or_path
-from eidos.core.lifecycle.scaffolder import create_spec, delete_spec, get_spec_schema_info, list_specs
+from eidos.core.lifecycle.scaffolder import (
+    create_spec,
+    delete_spec,
+    discover_repository_blueprint,
+    get_spec_schema_info,
+    list_specs,
+)
 from eidos.core.spec.parser import parse_spec_file
 from eidos.core.spec.validator import SpecValidator
+from eidos.core.workspace.project import find_repo_root
 
 spec_app = typer.Typer(
     name="spec",
-    help="Manage living specifications (list, show, schema, create, delete).",
+    help="Manage living specifications (list, show, schema, create, delete, discover).",
     add_completion=False,
 )
 
@@ -484,6 +491,94 @@ def spec_schema_cmd(
     console.print(prop_table)
     console.print("\n[bold cyan]Example Schema-Valid YAML Frontmatter:[/bold cyan]")
     typer.echo(info["example_frontmatter"])
+
+
+@spec_app.command("discover")
+def spec_discover_cmd(
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Path to the repository root or eidos specifications directory (defaults to current repository).",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output machine-readable JSON brownfield discovery blueprint.",
+    ),
+):
+    """Deterministically scan a polyglot repository to propose CNT-* containers, CTR-* contracts, and unmapped source_path gaps."""
+    if path is None:
+        repo_root = find_repo_root(None)
+        eidos_dir = repo_root / "eidos"
+    else:
+        resolved = path.resolve()
+        if resolved.name == "eidos" or (resolved / "system.adoc").is_file():
+            eidos_dir = resolved
+            repo_root = resolved.parent
+        else:
+            repo_root = resolved
+            eidos_dir = resolved / "eidos"
+
+    try:
+        blueprint = discover_repository_blueprint(repo_root=repo_root, eidos_dir=eidos_dir)
+    except FileNotFoundError as exc:
+        if json_output:
+            typer.echo(orjson.dumps({"error": str(exc)}).decode("utf-8"))
+        else:
+            console.print(f"[bold red]Error:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    if json_output:
+        typer.echo(orjson.dumps(blueprint, option=orjson.OPT_INDENT_2).decode("utf-8"))
+        return
+
+    summary = blueprint["summary"]
+    console.print(
+        Panel(
+            f"[bold]Repository:[/bold] {blueprint['repo_root']}\n"
+            f"[bold]Containers:[/bold] {summary['containers_found']} ({summary['containers_unmapped']} unmapped)  "
+            f"[bold]Contracts:[/bold] {summary['contracts_found']} ({summary['contracts_unmapped']} unmapped)  "
+            f"[bold]Test Roots:[/bold] {summary['test_roots_found']}  "
+            f"[bold]Unmapped Code Roots:[/bold] {summary['unmapped_code_roots_found']}",
+            title="[bold blue]Eidos Brownfield Repository Discovery[/bold blue]",
+            expand=False,
+        )
+    )
+
+    if blueprint["containers"]:
+        c_table = Table(title="Candidate Containers (CNT-*)", show_header=True, header_style="bold magenta")
+        c_table.add_column("Suggested ID", style="bold cyan")
+        c_table.add_column("Type", style="yellow")
+        c_table.add_column("Runtime", style="white")
+        c_table.add_column("source_path", style="green")
+        c_table.add_column("Mapped", justify="center")
+        for cnt in blueprint["containers"]:
+            mapped_lbl = "[green]yes[/green]" if cnt["already_mapped"] else "[yellow]no[/yellow]"
+            c_table.add_row(
+                cnt["suggested_id"],
+                cnt["container_type"],
+                cnt["runtime"],
+                cnt["source_path"],
+                mapped_lbl,
+            )
+        console.print(c_table)
+
+    if blueprint["contracts"]:
+        k_table = Table(title="Candidate Contracts (CTR-*)", show_header=True, header_style="bold magenta")
+        k_table.add_column("Suggested ID", style="bold cyan")
+        k_table.add_column("Protocol", style="yellow")
+        k_table.add_column("specification_file", style="green")
+        k_table.add_column("Mapped", justify="center")
+        for ctr in blueprint["contracts"]:
+            mapped_lbl = "[green]yes[/green]" if ctr["already_mapped"] else "[yellow]no[/yellow]"
+            k_table.add_row(ctr["suggested_id"], ctr["protocol"], ctr["specification_file"], mapped_lbl)
+        console.print(k_table)
+
+    if blueprint["test_roots"]:
+        console.print(f"\n[bold cyan]Test Roots:[/bold cyan] {', '.join(blueprint['test_roots'])}")
+    if blueprint["unmapped_code_roots"]:
+        console.print(f"[bold yellow]Unmapped Code Roots:[/bold yellow] {', '.join(blueprint['unmapped_code_roots'])}")
 
 
 def register(app: typer.Typer) -> None:

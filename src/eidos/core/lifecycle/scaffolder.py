@@ -1,9 +1,12 @@
 """Lifecycle management, blueprint scaffolding, and deletion for Eidos living specifications (CMP-LIFECYCLE-SCAFFOLDER)."""
 
 import contextlib
+import os
 import re
 from pathlib import Path
 from typing import Any
+
+import orjson
 
 from eidos.core.lifecycle.catalog import (
     VALID_SPEC_TYPES,
@@ -17,6 +20,14 @@ from eidos.core.lifecycle.design_engine import DESIGN_SPEC_KEYS, build_design_sp
 from eidos.core.spec.parser import parse_spec_file
 from eidos.core.spec.validator import SpecValidator
 from eidos.core.workspace.assets import render_spec_template
+from eidos.core.workspace.project import (
+    _POLYGLOT_TEST_CODE_EXTS,
+    STANDARD_EXCLUDED_DIRS,
+    _is_test_dir_segment,
+    extract_entity_paths,
+    is_dotnet_bin_dir,
+    match_path_pattern,
+)
 
 
 def _scan_live_specs_by_id(eidos_dir: Path) -> dict[str, tuple[Path, str, dict[str, Any]]]:
@@ -735,3 +746,327 @@ def get_spec_schema_info(doc_type_key: str | None = None) -> dict[str, Any] | li
 
     supported = ", ".join(sorted(s["short_type"] for s in all_schemas))
     raise ValueError(f"Unknown specification schema type '{doc_type_key}'. Supported types: {supported}")
+
+
+def _slugify_entity_id(prefix: str, raw_name: str, seen_ids: set[str]) -> str:
+    """Build a unique uppercase Eidos ID (e.g. CNT-ORDERS-API or CTR-ORDERS-OPENAPI)."""
+    stem = re.sub(r"[^A-Za-z0-9]+", "-", raw_name.strip()).strip("-").upper() or "MODULE"
+    base = f"{prefix}-{stem}"
+    candidate = base
+    suffix = 2
+    while candidate in seen_ids:
+        candidate = f"{base}-{suffix}"
+        suffix += 1
+    seen_ids.add(candidate)
+    return candidate
+
+
+def _is_source_path_mapped(candidate_path: str, owned_patterns: list[str]) -> bool:
+    """Return True when candidate_path is covered by (or encloses) an active CNT-*/CMP-* source_path pattern."""
+    norm = candidate_path.strip().replace("\\", "/").strip("/")
+    if not norm or norm == ".":
+        return bool(owned_patterns)
+    for pat in owned_patterns:
+        norm_pat = pat.strip().replace("\\", "/").strip("/")
+        if not norm_pat:
+            continue
+        if (
+            norm_pat == norm
+            or norm.startswith(f"{norm_pat}/")
+            or norm_pat.startswith(f"{norm}/")
+            or match_path_pattern(norm, norm_pat)
+            or match_path_pattern(f"{norm}/index", norm_pat)
+        ):
+            return True
+    return False
+
+
+def _detect_contract_protocol(filename: str) -> str | None:
+    """Classify a candidate interface specification filename into its canonical tech/contract protocol."""
+    lower = filename.lower()
+    if lower.endswith(".proto"):
+        return "protobuf"
+    if lower.endswith((".graphql", ".gql")):
+        return "graphql"
+    if lower.endswith((".yaml", ".yml", ".json")):
+        if "openapi" in lower or "swagger" in lower:
+            return "openapi"
+        if "asyncapi" in lower:
+            return "asyncapi"
+        if "openrpc" in lower:
+            return "json_rpc_stdio"
+    return None
+
+
+def _rel_dir_str(cur: Path, root: Path) -> str:
+    rel = cur.relative_to(root).as_posix()
+    return rel or "."
+
+
+def _preferred_source_path(cur: Path, root: Path, sub_candidates: tuple[str, ...] = ("src",)) -> str:
+    rel_dir = _rel_dir_str(cur, root)
+    for sub in sub_candidates:
+        if (cur / sub).is_dir():
+            return sub if rel_dir == "." else f"{rel_dir}/{sub}"
+    return rel_dir
+
+
+def _inspect_manifest_container(cur: Path, root: Path, filenames: list[str]) -> list[dict[str, str]]:
+    """Extract deterministic container candidates from build/package manifests in a single directory."""
+    found: list[dict[str, str]] = []
+    rel_dir = _rel_dir_str(cur, root)
+    dir_label = root.name if rel_dir == "." else cur.name
+
+    for fn in sorted(filenames):
+        lower = fn.lower()
+        manifest_rel = fn if rel_dir == "." else f"{rel_dir}/{fn}"
+        full = cur / fn
+
+        if lower.endswith((".csproj", ".fsproj")):
+            stem = Path(fn).stem
+            if _is_test_dir_segment(stem) or _is_test_dir_segment(cur.name):
+                continue
+            text = full.read_text(encoding="utf-8", errors="ignore")
+            is_web = "microsoft.net.sdk.web" in text.lower() or (cur / "Controllers").is_dir()
+            is_exe = "<outputtype>exe</outputtype>" in text.lower()
+            ctype = "service" if is_web else ("cli" if is_exe else "library")
+            runtime = ".NET / F#" if lower.endswith(".fsproj") else ".NET / C#"
+            found.append(
+                {
+                    "title": stem,
+                    "runtime": runtime,
+                    "container_type": ctype,
+                    "source_path": rel_dir,
+                    "manifest": manifest_rel,
+                }
+            )
+            continue
+
+        if fn == "pyproject.toml":
+            text = full.read_text(encoding="utf-8", errors="ignore")
+            m_name = re.search(r'^\s*name\s*=\s*["\']([^"\']+)["\']', text, re.MULTILINE)
+            title = m_name.group(1) if m_name else dir_label
+            lower_txt = text.lower()
+            if "[project.scripts]" in lower_txt or "[tool.poetry.scripts]" in lower_txt:
+                ctype = "cli"
+            elif any(k in lower_txt for k in ("fastapi", "flask", "django", "uvicorn", "litestar")):
+                ctype = "service"
+            else:
+                ctype = "library"
+            found.append(
+                {
+                    "title": title,
+                    "runtime": "Python",
+                    "container_type": ctype,
+                    "source_path": _preferred_source_path(cur, root, ("src",)),
+                    "manifest": manifest_rel,
+                }
+            )
+            continue
+
+        if fn == "package.json":
+            try:
+                pkg = orjson.loads(full.read_bytes())
+            except orjson.JSONDecodeError:
+                continue
+            if not isinstance(pkg, dict):
+                continue
+            if "workspaces" in pkg and not any((cur / d).is_dir() for d in ("src", "app", "pages")):
+                continue
+            raw_name = str(pkg.get("name") or dir_label).split("/")[-1]
+            deps: set[str] = set()
+            for dep_key in ("dependencies", "devDependencies"):
+                val = pkg.get(dep_key)
+                if isinstance(val, dict):
+                    deps.update(str(k).lower() for k in val)
+            is_ts = (cur / "tsconfig.json").is_file() or "typescript" in deps
+            if deps & {"react", "vue", "svelte", "next", "vite", "@angular/core"}:
+                ctype = "webapp"
+            elif pkg.get("bin"):
+                ctype = "cli"
+            elif deps & {"express", "@nestjs/core", "fastify", "koa", "hono"}:
+                ctype = "service"
+            else:
+                ctype = "library"
+            found.append(
+                {
+                    "title": raw_name,
+                    "runtime": "TypeScript / Node.js" if is_ts else "Node.js",
+                    "container_type": ctype,
+                    "source_path": _preferred_source_path(cur, root, ("src", "app")),
+                    "manifest": manifest_rel,
+                }
+            )
+            continue
+
+        if fn == "go.mod":
+            text = full.read_text(encoding="utf-8", errors="ignore")
+            m_mod = re.search(r"^\s*module\s+(\S+)", text, re.MULTILINE)
+            title = m_mod.group(1).rstrip("/").split("/")[-1] if m_mod else dir_label
+            ctype = "service" if (cur / "cmd").is_dir() else "library"
+            found.append(
+                {
+                    "title": title,
+                    "runtime": "Go",
+                    "container_type": ctype,
+                    "source_path": rel_dir,
+                    "manifest": manifest_rel,
+                }
+            )
+            continue
+
+        if fn == "Cargo.toml":
+            text = full.read_text(encoding="utf-8", errors="ignore")
+            if "[package]" not in text:
+                continue
+            m_name = re.search(r'^\s*name\s*=\s*["\']([^"\']+)["\']', text, re.MULTILINE)
+            title = m_name.group(1) if m_name else dir_label
+            ctype = "cli" if (cur / "src" / "main.rs").is_file() else "library"
+            found.append(
+                {
+                    "title": title,
+                    "runtime": "Rust",
+                    "container_type": ctype,
+                    "source_path": _preferred_source_path(cur, root, ("src",)),
+                    "manifest": manifest_rel,
+                }
+            )
+            continue
+
+        if fn in ("pom.xml", "build.gradle", "build.gradle.kts"):
+            text = full.read_text(encoding="utf-8", errors="ignore")
+            lower_txt = text.lower()
+            is_kt = fn.endswith(".kts") or (cur / "src" / "main" / "kotlin").is_dir()
+            ctype = "service" if any(k in lower_txt for k in ("spring-boot", "quarkus", "micronaut")) else "library"
+            found.append(
+                {
+                    "title": dir_label,
+                    "runtime": "Kotlin / JVM" if is_kt else "Java / JVM",
+                    "container_type": ctype,
+                    "source_path": _preferred_source_path(cur, root, ("src/main", "src")),
+                    "manifest": manifest_rel,
+                }
+            )
+
+    return found
+
+
+def discover_repository_blueprint(
+    repo_root: Path,
+    eidos_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Deterministically scan a polyglot repository to propose CNT-* containers, CTR-* contracts, test roots, and unmapped source_path gaps.
+
+    Zero AI calls (read-only static filesystem inspection). Prunes standard excluded directories,
+    dot-directories, the specification root, and .NET bin/obj build outputs.
+    """
+    root = repo_root.resolve()
+    if not root.is_dir():
+        raise FileNotFoundError(f"Repository directory '{repo_root}' not found.")
+    spec_dir = (eidos_dir if eidos_dir is not None else root / "eidos").resolve()
+
+    owned_source_patterns: list[str] = []
+    mapped_contract_patterns: list[str] = []
+    if spec_dir.is_dir():
+        for _eid, (_p, doc_type, fm) in _scan_live_specs_by_id(spec_dir).items():
+            if str(fm.get("status", "active")).lower() in ("deprecated", "retired"):
+                continue
+            if doc_type in ("tech/container", "tech/component"):
+                owned_source_patterns.extend(extract_entity_paths(fm))
+            elif doc_type == "tech/contract":
+                mapped_contract_patterns.extend(extract_entity_paths(fm))
+
+    containers: list[dict[str, Any]] = []
+    contracts: list[dict[str, Any]] = []
+    test_roots: list[str] = []
+    code_top_dirs: set[str] = set()
+    seen_cnt_ids: set[str] = set()
+    seen_ctr_ids: set[str] = set()
+    skip_top_non_code = {"docs", "assets", "eidos", "scripts", "examples", "samples"}
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        cur = Path(dirpath)
+        cur_rel = _rel_dir_str(cur, root)
+
+        # Record test directories and avoid treating test projects as production containers
+        pruned_dirs: list[str] = []
+        for d in sorted(dirnames):
+            child = cur / d
+            if (
+                d in STANDARD_EXCLUDED_DIRS
+                or d.startswith(".")
+                or child.resolve() == spec_dir
+                or is_dotnet_bin_dir(child)
+            ):
+                continue
+            if _is_test_dir_segment(d, allow_root_names=(cur == root)):
+                test_rel = d if cur_rel == "." else f"{cur_rel}/{d}"
+                test_roots.append(test_rel)
+                continue
+            pruned_dirs.append(d)
+        dirnames[:] = pruned_dirs
+
+        for item in _inspect_manifest_container(cur, root, filenames):
+            sp = item["source_path"]
+            containers.append(
+                {
+                    "suggested_id": _slugify_entity_id("CNT", item["title"], seen_cnt_ids),
+                    "title": item["title"],
+                    "runtime": item["runtime"],
+                    "container_type": item["container_type"],
+                    "source_path": sp,
+                    "manifest": item["manifest"],
+                    "already_mapped": _is_source_path_mapped(sp, owned_source_patterns),
+                }
+            )
+
+        for fn in sorted(filenames):
+            rel_file = fn if cur_rel == "." else f"{cur_rel}/{fn}"
+            protocol = _detect_contract_protocol(fn)
+            if protocol is not None:
+                stem = Path(fn).stem
+                label = f"{cur.name}-{stem}" if cur_rel != "." and stem.lower() in ("openapi", "swagger", "schema", "asyncapi") else stem
+                already_mapped = any(match_path_pattern(rel_file, pat) for pat in mapped_contract_patterns)
+                contracts.append(
+                    {
+                        "suggested_id": _slugify_entity_id("CTR", label, seen_ctr_ids),
+                        "protocol": protocol,
+                        "specification_file": rel_file,
+                        "already_mapped": already_mapped,
+                    }
+                )
+            elif Path(fn).suffix.lower() in _POLYGLOT_TEST_CODE_EXTS and cur_rel != ".":
+                top_seg = cur_rel.split("/", 1)[0]
+                if top_seg.lower() not in skip_top_non_code:
+                    code_top_dirs.add(top_seg)
+
+    unmapped_roots_set: set[str] = set()
+    for cnt in containers:
+        sp = cnt["source_path"]
+        if not cnt["already_mapped"] and sp != ".":
+            unmapped_roots_set.add(sp)
+    for top_dir in sorted(code_top_dirs):
+        if not _is_source_path_mapped(top_dir, owned_source_patterns) and not any(
+            r == top_dir or r.startswith(f"{top_dir}/") for r in unmapped_roots_set
+        ):
+            unmapped_roots_set.add(top_dir)
+
+    test_roots_sorted = sorted(set(test_roots))
+    unmapped_code_roots = sorted(unmapped_roots_set)
+    return {
+        "repo_root": str(root),
+        "eidos_dir": str(spec_dir),
+        "eidos_initialized": spec_dir.is_dir(),
+        "containers": containers,
+        "contracts": contracts,
+        "test_roots": test_roots_sorted,
+        "unmapped_code_roots": unmapped_code_roots,
+        "summary": {
+            "containers_found": len(containers),
+            "containers_unmapped": sum(1 for c in containers if not c["already_mapped"]),
+            "contracts_found": len(contracts),
+            "contracts_unmapped": sum(1 for c in contracts if not c["already_mapped"]),
+            "test_roots_found": len(test_roots_sorted),
+            "unmapped_code_roots_found": len(unmapped_code_roots),
+        },
+    }

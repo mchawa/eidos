@@ -1962,3 +1962,173 @@ def test_catalog_yaml_scalar_state_machine_and_archive_symlink_filtering(tmp_pat
     assert find_spec_by_id_or_path(eidos_dir, str(arch_dlt), include_archived=False) is None
     assert find_spec_by_id_or_path(eidos_dir, "DLT-2026-777", include_archived=True) == arch_dlt.resolve()
     assert find_references_to_spec(eidos_dir, "DLT-2026-888", active_dlt) == []
+
+
+def test_spec_discover_polyglot_brownfield_blueprint(tmp_path):
+    """Verify INV-BROWNFIELD-DETERMINISTIC-DISCOVERY: deterministic zero-AI polyglot discovery via API and CLI."""
+    import orjson
+
+    from eidos.core.lifecycle.scaffolder import discover_repository_blueprint
+
+    repo = tmp_path / "polyglot-acme"
+    init_repository(project_dir=repo, title="Polyglot Acme")
+    eidos_dir = repo / "eidos"
+
+    # 1. .NET Web API project + test project + bin/obj build outputs (must be pruned)
+    dotnet_api = repo / "services" / "orders-api"
+    (dotnet_api / "Controllers").mkdir(parents=True)
+    (dotnet_api / "Orders.Api.csproj").write_text(
+        '<Project Sdk="Microsoft.NET.Sdk.Web"><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>\n',
+        encoding="utf-8",
+    )
+    (dotnet_api / "bin" / "Debug").mkdir(parents=True)
+    (dotnet_api / "bin" / "Debug" / "openapi.json").write_text("{}", encoding="utf-8")
+    (dotnet_api / "obj").mkdir(parents=True)
+    dotnet_tests = repo / "services" / "Orders.Api.Tests"
+    dotnet_tests.mkdir(parents=True)
+    (dotnet_tests / "Orders.Api.Tests.csproj").write_text(
+        '<Project Sdk="Microsoft.NET.Sdk"></Project>\n', encoding="utf-8"
+    )
+
+    # 2. Python FastAPI service
+    py_svc = repo / "services" / "billing"
+    (py_svc / "src").mkdir(parents=True)
+    (py_svc / "pyproject.toml").write_text(
+        '[project]\nname = "billing-svc"\ndependencies = ["fastapi"]\n', encoding="utf-8"
+    )
+
+    # 3. TypeScript React webapp + root monorepo workspace wrapper (skipped) + Node CLI/service/lib + invalid package.json
+    (repo / "package.json").write_bytes(orjson.dumps({"name": "monorepo", "workspaces": ["apps/*"]}))
+    web_app = repo / "apps" / "portal"
+    (web_app / "src").mkdir(parents=True)
+    (web_app / "tsconfig.json").write_text("{}\n", encoding="utf-8")
+    (web_app / "package.json").write_bytes(
+        orjson.dumps({"name": "@acme/portal-web", "dependencies": {"react": "^19.0.0"}})
+    )
+    node_cli = repo / "apps" / "cli-tool"
+    node_cli.mkdir(parents=True)
+    (node_cli / "package.json").write_bytes(orjson.dumps({"name": "acme-cli", "bin": "./cli.js"}))
+    node_svc = repo / "apps" / "bff"
+    node_svc.mkdir(parents=True)
+    (node_svc / "package.json").write_bytes(
+        orjson.dumps({"name": "portal-web", "dependencies": {"express": "^4.19.0"}})
+    )
+    node_lib = repo / "packages" / "shared"
+    node_lib.mkdir(parents=True)
+    (node_lib / "package.json").write_bytes(orjson.dumps({"name": "shared-lib"}))
+    bad_pkg = repo / "packages" / "broken"
+    bad_pkg.mkdir(parents=True)
+    (bad_pkg / "package.json").write_text("{invalid json", encoding="utf-8")
+
+    # 4. Go service, Rust CLI + workspace-only Cargo.toml, Python CLI + lib, Java Spring service, and unowned loose code root
+    go_svc = repo / "services" / "gateway"
+    (go_svc / "cmd").mkdir(parents=True)
+    (go_svc / "go.mod").write_text("module github.com/acme/gateway\n", encoding="utf-8")
+
+    (repo / "Cargo.toml").write_text('[workspace]\nmembers = ["tools/indexer"]\n', encoding="utf-8")
+    rs_cli = repo / "tools" / "indexer"
+    (rs_cli / "src").mkdir(parents=True)
+    (rs_cli / "src" / "main.rs").write_text("fn main() {}\n", encoding="utf-8")
+    (rs_cli / "Cargo.toml").write_text('[package]\nname = "acme-indexer"\n', encoding="utf-8")
+
+    py_cli = repo / "tools" / "runner"
+    py_cli.mkdir(parents=True)
+    (py_cli / "pyproject.toml").write_text(
+        '[project]\nname = "runner"\n[project.scripts]\nrun = "runner:main"\n', encoding="utf-8"
+    )
+    py_lib = repo / "packages" / "core-lib"
+    py_lib.mkdir(parents=True)
+    (py_lib / "pyproject.toml").write_text('[project]\nname = "core-lib"\n', encoding="utf-8")
+
+    jvm_svc = repo / "services" / "ledger"
+    (jvm_svc / "src" / "main").mkdir(parents=True)
+    (jvm_svc / "pom.xml").write_text("<project><artifactId>spring-boot-starter-web</artifactId></project>\n", encoding="utf-8")
+
+    (repo / "workers").mkdir(parents=True)
+    (repo / "workers" / "job.py").write_text("def run(): pass\n", encoding="utf-8")
+    (repo / "tests").mkdir(parents=True)
+
+    # 5. Interface contracts (OpenAPI, Protobuf, GraphQL, AsyncAPI, OpenRPC)
+    schemas_dir = repo / "contracts"
+    schemas_dir.mkdir(parents=True)
+    (schemas_dir / "orders-openapi.yaml").write_text("openapi: 3.1.0\n", encoding="utf-8")
+    (schemas_dir / "payments.proto").write_text('syntax = "proto3";\n', encoding="utf-8")
+    (schemas_dir / "catalog.graphql").write_text("type Query { ok: Boolean }\n", encoding="utf-8")
+    (schemas_dir / "events-asyncapi.yaml").write_text("asyncapi: 2.6.0\n", encoding="utf-8")
+    (schemas_dir / "mcp-openrpc.json").write_text('{"openrpc": "1.2.6"}\n', encoding="utf-8")
+
+    # Map one container and one contract in eidos/ to verify already_mapped detection
+    cnt_p = create_spec(eidos_dir, "container", "CNT-BILLING-SVC", "Billing Service")
+    cnt_p.write_text(
+        cnt_p.read_text(encoding="utf-8").replace("source_path: src", "source_path: services/billing/src"),
+        encoding="utf-8",
+    )
+    ctr_p = create_spec(eidos_dir, "contract", "CTR-ORDERS-API", "Orders OpenAPI")
+    ctr_doc = parse_spec_file(ctr_p)
+    ctr_doc.frontmatter["protocol"] = "openapi"
+    ctr_doc.frontmatter["specification_file"] = "contracts/orders-openapi.yaml"
+    ctr_doc.frontmatter["status"] = "active"
+    from eidos.core.spec.parser import dump_spec_document
+
+    ctr_p.write_text(dump_spec_document(ctr_doc.frontmatter, ctr_doc.body), encoding="utf-8")
+
+    bp = discover_repository_blueprint(repo_root=repo, eidos_dir=eidos_dir)
+    assert bp["eidos_initialized"] is True
+
+    cnt_by_manifest = {c["manifest"]: c for c in bp["containers"]}
+    assert cnt_by_manifest["services/orders-api/Orders.Api.csproj"]["runtime"] == ".NET / C#"
+    assert cnt_by_manifest["services/orders-api/Orders.Api.csproj"]["container_type"] == "service"
+    assert cnt_by_manifest["services/orders-api/Orders.Api.csproj"]["already_mapped"] is False
+    assert cnt_by_manifest["services/billing/pyproject.toml"]["already_mapped"] is True
+    assert cnt_by_manifest["apps/portal/package.json"]["container_type"] == "webapp"
+    assert cnt_by_manifest["apps/portal/package.json"]["runtime"] == "TypeScript / Node.js"
+    assert cnt_by_manifest["services/gateway/go.mod"]["runtime"] == "Go"
+    assert cnt_by_manifest["tools/indexer/Cargo.toml"]["runtime"] == "Rust"
+    assert cnt_by_manifest["tools/indexer/Cargo.toml"]["container_type"] == "cli"
+    assert cnt_by_manifest["services/ledger/pom.xml"]["runtime"] == "Java / JVM"
+    assert "services/Orders.Api.Tests/Orders.Api.Tests.csproj" not in cnt_by_manifest
+
+    ctr_by_file = {c["specification_file"]: c for c in bp["contracts"]}
+    assert ctr_by_file["contracts/orders-openapi.yaml"]["protocol"] == "openapi"
+    assert ctr_by_file["contracts/orders-openapi.yaml"]["already_mapped"] is True
+    assert ctr_by_file["contracts/payments.proto"]["protocol"] == "protobuf"
+    assert ctr_by_file["contracts/catalog.graphql"]["protocol"] == "graphql"
+    assert ctr_by_file["contracts/events-asyncapi.yaml"]["protocol"] == "asyncapi"
+    assert ctr_by_file["contracts/mcp-openrpc.json"]["protocol"] == "json_rpc_stdio"
+    # Pruned .NET bin/ output must not appear
+    assert "services/orders-api/bin/Debug/openapi.json" not in ctr_by_file
+
+    assert "tests" in bp["test_roots"]
+    assert "services/Orders.Api.Tests" in bp["test_roots"]
+    assert "workers" in bp["unmapped_code_roots"]
+    assert "services/billing/src" not in bp["unmapped_code_roots"]
+
+    # CLI --json (passing repo root and passing eidos dir), Rich rendering, and missing path errors
+    res_json = runner.invoke(app, ["spec", "discover", "--path", str(repo), "--json"])
+    assert res_json.exit_code == 0, res_json.stdout
+    parsed = orjson.loads(res_json.stdout)
+    assert parsed["summary"]["containers_found"] == 11
+    assert parsed["summary"]["contracts_found"] == 5
+    assert any(c["suggested_id"].endswith("-2") for c in parsed["containers"])
+
+    res_eidos_arg = runner.invoke(app, ["spec", "discover", "--path", str(eidos_dir), "--json"])
+    assert res_eidos_arg.exit_code == 0
+    assert orjson.loads(res_eidos_arg.stdout)["summary"]["containers_found"] == 11
+
+    res_rich = runner.invoke(app, ["spec", "discover", "--path", str(repo)])
+    assert res_rich.exit_code == 0
+    assert "Eidos Brownfield Repository Discovery" in res_rich.stdout
+    assert "Candidate Containers" in res_rich.stdout
+    assert "Candidate Contracts" in res_rich.stdout
+
+    res_missing = runner.invoke(app, ["spec", "discover", "--path", str(tmp_path / "does-not-exist"), "--json"])
+    assert res_missing.exit_code == 1
+    assert "not found" in orjson.loads(res_missing.stdout)["error"]
+
+    res_missing_rich = runner.invoke(app, ["spec", "discover", "--path", str(tmp_path / "does-not-exist")])
+    assert res_missing_rich.exit_code == 1
+    assert "Error" in res_missing_rich.stdout
+
+    res_default = runner.invoke(app, ["spec", "discover", "--json"])
+    assert res_default.exit_code == 0
+    assert orjson.loads(res_default.stdout)["summary"]["containers_found"] >= 1

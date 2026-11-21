@@ -494,14 +494,15 @@
     ]
   },
   {
-    "help": "Manage living specifications (list, show, schema, create, delete).",
+    "help": "Manage living specifications (list, show, schema, create, delete, discover).",
     "hidden": false,
     "order": [
       "list",
       "show",
       "create",
       "delete",
-      "schema"
+      "schema",
+      "discover"
     ],
     "panel": "Living Catalog & Mutations",
     "params": [],
@@ -814,6 +815,47 @@
     "path": [
       "spec",
       "schema"
+    ]
+  },
+  {
+    "help": "Deterministically scan a polyglot repository to propose CNT-* containers, CTR-* contracts, and unmapped source_path gaps.",
+    "hidden": false,
+    "order": [],
+    "panel": null,
+    "params": [
+      {
+        "default": "None",
+        "envvar": "None",
+        "help": "Path to the repository root or eidos specifications directory (defaults to current repository).",
+        "kind": "TyperOption",
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "default": "False",
+        "envvar": "None",
+        "help": "Output machine-readable JSON brownfield discovery blueprint.",
+        "kind": "TyperOption",
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "BOOL"
+      }
+    ],
+    "path": [
+      "spec",
+      "discover"
     ]
   },
   {

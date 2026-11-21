@@ -343,6 +343,10 @@ eidos spec create component CMP-AUTH-SERVICE --title "Authentication Service"
 
 # Safely delete a specification document
 eidos spec delete CMP-AUTH-SERVICE
+
+# Deterministically scan a polyglot repository for brownfield container/contract candidates and unmapped source roots
+eidos spec discover
+eidos spec discover --path . --json
 ```
 
 Sub-commands:
@@ -351,6 +355,7 @@ Sub-commands:
 * `schema [type] [--json]`: Dynamically loads and inspects bundled v1 YAML frontmatter schemas from `assets/schemas/v1/` across all 16 specification types (omit `[type]` to list all 16 schemas, or pass a short alias like `capability` or canonical type like `product/capability`), displaying required/optional keys, nested object/array item constraints, and schema-synthesized YAML frontmatter templates.
 * `create <type> <id> --title <title> [--client <client>] [--path <path>]`: Scaffolds a minimal, schema-valid draft specification blueprint (`status: draft`) across all 15 living specification types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`). Pass `--client, -c <CLT-ID|path|slug>` when creating a `screen` (`design/screen`), placing it under `eidos/design/clients/<client>/screens/<screen>.adoc`.
 * `delete <id_or_path>`: Safely deletes a living specification document with cross-reference safety checks (`--force, -f` to override).
+* `discover [--path <path>] [--json]`: Deterministically scans polyglot build manifests, API schemas (OpenAPI, AsyncAPI, Protobuf, GraphQL, OpenRPC), and test roots to output proposed `CNT-*` containers, `CTR-*` contracts, and unmapped code roots in Rich table or `--json` format.
 
 ---
 
