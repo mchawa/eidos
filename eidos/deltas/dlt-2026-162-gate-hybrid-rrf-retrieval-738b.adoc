@@ -1,0 +1,73 @@
+---
+type: delta/mutation
+id: DLT-2026-162-GATE-HYBRID-RRF-RETRIEVAL-738B
+title: "Gate Hybrid RRF Retrieval on Complete Semantic Embedding Sync"
+status: applied
+intent:
+  kind: bug
+  motivation: "When a local Harrier ONNX semantic sync is interrupted mid-run, spec_embeddings is left partially populated (e.g., 126/176 entities), causing Hybrid RRF queries to fuse incomplete cosine rankings with BM25 and silently demote unembedded specifications."
+mutations:
+  - operation: modify
+    target: CMP-SEMANTIC-EMBEDDING-ENGINE
+    details: "Track semantic embedding completeness in src/eidos/core/index/semantic.py via the existing SQLite metadata table (setting semantic_sync_complete='0' when starting a rebuild and semantic_sync_complete='1' only after all batches and orphan pruning commit) and expose is_semantic_index_complete(conn) -> bool (verifying both completion marker and non-partial coverage against embeddable entities). Update eidos/architecture/components/semantic-embedding-engine.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/core/index/semantic.py"
+      body:
+        contains:
+          - "is_semantic_index_complete"
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+    details: "Check is_semantic_index_complete(conn) in execute_fts_query (src/eidos/core/index/fts_query.py) before fusing Hybrid RRF results, falling back deterministically to FTS5 BM25 whenever spec_embeddings is partially populated from an interrupted sync. Update eidos/architecture/components/fts-query-engine.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/core/index/fts_query.py"
+      body:
+        contains:
+          - "is_semantic_index_complete"
+  - operation: modify
+    target: CAP-AGENT-001
+    details: "Extend CAP-AGENT-001 in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc with INV-SEMANTIC-COMPLETE-RRF-GATE."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-SEMANTIC-COMPLETE-RRF-GATE"
+      body:
+        contains:
+          - "INV-SEMANTIC-COMPLETE-RRF-GATE"
+  - operation: add
+    target: INV-SEMANTIC-COMPLETE-RRF-GATE
+    details: "Bind INV-SEMANTIC-COMPLETE-RRF-GATE in CAP-AGENT-001 to tests/test_graph_index.py::test_partial_semantic_embeddings_fall_back_to_bm25."
+    expect:
+      frontmatter:
+        rule: "is_semantic_index_complete"
+        test_binding: "tests/test_graph_index.py::test_partial_semantic_embeddings_fall_back_to_bm25"
+vcs:
+  branch: main
+  base_commit: 8035ba42f0aebea767b8fee2a90c416b0350310a
+---
+= SpecDelta: Gate Hybrid RRF Retrieval on Complete Semantic Embedding Sync
+:toc: left
+
+== Problem Statement
+`sync_spec_embeddings` in `src/eidos/core/index/semantic.py` commits `spec_embeddings` batch-by-batch so progress is persisted across batches. However, `execute_fts_query` in `src/eidos/core/index/fts_query.py` currently checks only `SELECT 1 FROM spec_embeddings LIMIT 1` to decide whether to activate Hybrid RRF. If an ONNX sync is interrupted mid-run (e.g., Ctrl+C or cancelled background subprocess), `spec_embeddings` holds a partial subset of entities and Hybrid RRF silently boosts embedded specs while demoting unembedded specs.
+
+== Proposed Specification Changes
+* **`CMP-SEMANTIC-EMBEDDING-ENGINE` (`src/eidos/core/index/semantic.py`)**:
+  * Use the existing SQLite `metadata` key-value table (no `SCHEMA_VERSION` change required) to set `semantic_sync_complete = "0"` before batch encoding when pending entities exist and flip it to `"1"` only after all batches and orphan pruning finish cleanly.
+  * Export `is_semantic_index_complete(conn: sqlite3.Connection) -> bool`, returning `False` when `spec_embeddings` is empty, `semantic_sync_complete == "0"`, or embedded coverage drops below an interrupted-sync threshold relative to sliceable entities (while still allowing small 1–4 incremental spec edits that `_refresh_stale_embeddings_for_query` refreshes on the fly).
+  * Surface `is_complete` in `get_semantic_index_status`.
+* **`CMP-FTS-QUERY-ENGINE` (`src/eidos/core/index/fts_query.py`)**:
+  * Gate Hybrid RRF activation in `execute_fts_query` on `is_semantic_index_complete(conn)` (unless an explicit `query_embedding` test override is passed with complete rows), falling back cleanly to deterministic FTS5 BM25 (`provenance: "fts_bm25"`) whenever `spec_embeddings` is incomplete.
+* **`CAP-AGENT-001` (`eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc`)**:
+  * Add and bind `INV-SEMANTIC-COMPLETE-RRF-GATE` to `tests/test_graph_index.py::test_partial_semantic_embeddings_fall_back_to_bm25`.
+
+== Implementation Plan
+1. **Completeness Marker & Helper (`CMP-SEMANTIC-EMBEDDING-ENGINE`)**: Add `is_semantic_index_complete(conn)` and `semantic_sync_complete` metadata transitions in `src/eidos/core/index/semantic.py` (`CNT-EIDOS-INDEX` covered via `CMP-SEMANTIC-EMBEDDING-ENGINE`).
+2. **FTS Hybrid RRF Gate (`CMP-FTS-QUERY-ENGINE`)**: Gate semantic fusion in `src/eidos/core/index/fts_query.py` on `is_semantic_index_complete(conn)` (`CNT-EIDOS-INDEX` covered via `CMP-FTS-QUERY-ENGINE`).
+3. **Living Specs (`CMP-SEMANTIC-EMBEDDING-ENGINE`, `CMP-FTS-QUERY-ENGINE`, `CAP-AGENT-001`, `INV-SEMANTIC-COMPLETE-RRF-GATE`)**: Update `eidos/architecture/components/semantic-embedding-engine.adoc`, `eidos/architecture/components/fts-query-engine.adoc`, and `eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc`.
+4. **Tests & Coverage (`POL-005-STATEMENT-TEST-COVERAGE`)**: Add `tests/test_graph_index.py::test_partial_semantic_embeddings_fall_back_to_bm25` simulating an interrupted mid-batch `sync_spec_embeddings` failure and asserting pure `fts_bm25` fallback until a clean sync completes, maintaining `>90.0%` coverage on `semantic.py` and `fts_query.py`.
+5. **Verification**: Run `pytest tests/test_graph_index.py tests/test_context.py`, `eidos delta verify DLT-2026-162 --json`, `eidos delta apply DLT-2026-162`, and `eidos drift --uncommitted --fail-on-warnings --json`.

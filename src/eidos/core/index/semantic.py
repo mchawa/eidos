@@ -457,6 +457,65 @@ def encode_semantic_query(text: str, eidos_dir: Path | None = None) -> bytes | N
         return None
 
 
+SEMANTIC_SYNC_COMPLETE_KEY = "semantic_sync_complete"
+_SEMANTIC_MAX_INCREMENTAL_GAP = 4
+_SEMANTIC_MIN_COMPLETE_RATIO = 0.85
+
+
+def is_semantic_index_complete(conn: sqlite3.Connection | None) -> bool:
+    """Return True iff ``spec_embeddings`` reflects a completed semantic sync rather than an interrupted partial run."""
+    if conn is None:
+        return False
+    try:
+        emb_row = conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()
+        if not emb_row or int(emb_row[0]) <= 0:
+            return False
+
+        marker_row = conn.execute(
+            "SELECT value FROM metadata WHERE key = ?;",
+            (SEMANTIC_SYNC_COMPLETE_KEY,),
+        ).fetchone()
+        marker = str(marker_row[0]).strip() if marker_row and marker_row[0] is not None else None
+        if marker == "0":
+            return False
+
+        total_row = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM specs_fts f
+            JOIN entities e ON e.id = f.entity_id
+            WHERE e.type NOT IN ('delta/mutation', 'product/exploration');
+            """
+        ).fetchone()
+        total_embeddable = int(total_row[0]) if total_row else 0
+        if total_embeddable <= 0:
+            return False
+
+        covered_row = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM spec_embeddings s
+            JOIN entities e ON e.id = s.entity_id
+            JOIN specs_fts f ON f.entity_id = s.entity_id
+            WHERE e.type NOT IN ('delta/mutation', 'product/exploration');
+            """
+        ).fetchone()
+        covered_count = int(covered_row[0]) if covered_row else 0
+        if covered_count <= 0:
+            return False
+
+        missing = max(0, total_embeddable - covered_count)
+        if missing == 0:
+            return True
+        if missing > _SEMANTIC_MAX_INCREMENTAL_GAP:
+            return False
+        if marker == "1":
+            return True
+        return total_embeddable >= 10 and (covered_count / total_embeddable) >= _SEMANTIC_MIN_COMPLETE_RATIO
+    except sqlite3.Error:
+        return False
+
+
 def get_semantic_index_status(conn: sqlite3.Connection, eidos_dir: Path) -> dict[str, Any]:
     """Return telemetry for the optional semantic embedding index (`eidos index semantic status`)."""
     runtime = is_semantic_runtime_available()
@@ -498,6 +557,7 @@ def get_semantic_index_status(conn: sqlite3.Connection, eidos_dir: Path) -> dict
         "fresh_embeddings": matching_fresh,
         "stale_or_missing_entities": max(0, total_sliceable - matching_fresh),
         "stale_or_missing_embeddings": max(0, total_sliceable - matching_fresh),
+        "is_complete": is_semantic_index_complete(conn),
         "hybrid_rrf": {
             "k0": HYBRID_RRF_K0,
             "w_lex": HYBRID_RRF_W_LEX,
@@ -1097,6 +1157,12 @@ def sync_spec_embeddings(
                 records, to_encode, reused = _compute_pending()
 
         total_to_encode = len(to_encode)
+        if total_to_encode > 0:
+            with conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, '0');",
+                    (SEMANTIC_SYNC_COMPLETE_KEY,),
+                )
         if progress_cb is not None and total_to_encode > 0:
             progress_cb({"phase": "sync_start", "total": total_to_encode})
         for batch in _build_semantic_sync_batches(to_encode, batch_size=batch_size):
@@ -1142,6 +1208,10 @@ def sync_spec_embeddings(
             """
         )
         pruned = max(0, cur.rowcount or 0)
+        conn.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?);",
+            (SEMANTIC_SYNC_COMPLETE_KEY, "1" if len(records) > 0 else "0"),
+        )
 
     duration_ms = (time.perf_counter() - t0) * 1000
     return {

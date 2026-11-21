@@ -81,6 +81,9 @@ technical:
     - id: INV-CONTEXT-GIT-DIFF-SLICING
       rule: "eidos context must support --uncommitted (-u), --base (-b REF), and --head REF options backed by CMP-GIT-DIFF-INSPECTOR to slice deduplicated architectural guardrails across modified Git files, returning exit code 0 on clean empty working trees and failing closed (exit code 1) on unresolvable --base references."
       test_binding: "tests/test_context.py::test_context_uncommitted_and_base_diff_slicing"
+    - id: INV-SEMANTIC-COMPLETE-RRF-GATE
+      rule: "sync_spec_embeddings must track completion via metadata['semantic_sync_complete'] (0 during batch encoding, 1 only after all batches and orphan pruning commit), is_semantic_index_complete(conn) must return False on empty, interrupted, or partial spec_embeddings coverage, and execute_fts_query must gate Hybrid RRF on is_semantic_index_complete(conn) so interrupted semantic syncs fall back deterministically to FTS5 BM25."
+      test_binding: "tests/test_graph_index.py::test_partial_semantic_embeddings_fall_back_to_bm25"
 ---
 = Capability: Universal Agent Adapter & Context Slicing Layer
 :toc: left
@@ -116,7 +119,7 @@ Eidos implements a three-tier context compression model:
 |===
 
 == Hybrid Retrieval & Freshness Invariant
-* **FTS5 BM25 Lexical Ranking & Opt-In Harrier Hybrid RRF (`CMP-SEMANTIC-EMBEDDING-ENGINE`)**: Translates natural language engineering tasks into exact architectural IDs using two-tier multi-term `AND` coordination boosting over `OR` prefix matches, direct-over-1-hop container prioritization, and optional gated Harrier-OSS-v1-0.6B ONNX Reciprocal Rank Fusion (`spec_embeddings` over living specifications with pinned HuggingFace commit SHAs, `SHA-256` and `Content-Length` verification, 3-file `fp32` completeness checks, atomic `semantic_sync.lock` background refresh locking, `HARRIER_DOC_MAX_LENGTH = 4096`, $\tau_{\min} = 0.50$, $w_{\text{sem}} = 0.50$) with 100% deterministic fallback to FTS5 BM25 (`INV-AGENT-HYBRID-SEMANTIC-FALLBACK`).
+* **FTS5 BM25 Lexical Ranking & Opt-In Harrier Hybrid RRF (`CMP-SEMANTIC-EMBEDDING-ENGINE`, `INV-SEMANTIC-COMPLETE-RRF-GATE`)**: Translates natural language engineering tasks into exact architectural IDs using two-tier multi-term `AND` coordination boosting over `OR` prefix matches, direct-over-1-hop container prioritization, and optional gated Harrier-OSS-v1-0.6B ONNX Reciprocal Rank Fusion (`spec_embeddings` over living specifications with pinned HuggingFace commit SHAs, `SHA-256` and `Content-Length` verification, 3-file `fp32` completeness checks, atomic `semantic_sync.lock` background refresh locking, `semantic_sync_complete` completeness gating via `is_semantic_index_complete`, `HARRIER_DOC_MAX_LENGTH = 4096`, $\tau_{\min} = 0.50$, $w_{\text{sem}} = 0.50$) with 100% deterministic fallback to FTS5 BM25 (`INV-AGENT-HYBRID-SEMANTIC-FALLBACK`).
 * **Calibrated Token Budget Estimation**: `TieredContextSlice._estimate_tokens` weights structural syntax characters (`{}[]:,"'|`) at ~3.0 characters per token and natural-language prose at ~4.0 characters per token so `anchor`, `guardrails`, and `deep` slices honor strict token budgets across both Markdown and JSON outputs.
 * **Zero-Drift Freshness (`INV-AGENT-GRAPH-INDEX-FRESHNESS`)**: Every CLI query lazily checks dirty status via SHA-256 and mtime hashing, synchronizing modified specs in sub-5ms so agents never operate on stale architecture.
 * **Non-Destructive Plugin Management (`INV-PLUGIN-INSTALL-TRUTHFULNESS`)**: The `eidos plugin` ecosystem ensures truthful `"modified"` reporting when `force=False` skips edited skills, comment-safe `.aider.conf.yml` updates, self-hosted symlink tolerance, and clean target uninstallation.

@@ -4652,3 +4652,114 @@ def test_index_governance_health_scorecard_cli_and_portal(tmp_path):
         import eidos.core.index.graph_index as gi
 
         gi._INDEX_INSTANCES.pop(eidos_dir.resolve(), None)
+
+
+def test_partial_semantic_embeddings_fall_back_to_bm25(tmp_path: Path) -> None:
+    """Verify INV-SEMANTIC-COMPLETE-RRF-GATE: interrupted mid-batch sync_spec_embeddings sets semantic_sync_complete='0',
+    is_semantic_index_complete returns False, and execute_fts_query falls back deterministically to FTS5 BM25 until a full sync completes."""
+    from eidos.core.index.fts_query import execute_fts_query
+    from eidos.core.index.semantic import (
+        HARRIER_EMBEDDING_DIM,
+        SEMANTIC_SYNC_COMPLETE_KEY,
+        get_semantic_index_status,
+        is_semantic_index_complete,
+        pack_embedding_f32,
+        sync_spec_embeddings,
+    )
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
+
+    init_repository(tmp_path, title="partial-semantic-repo")
+    eidos_dir = tmp_path / "eidos"
+    for i in range(1, 7):
+        create_spec(eidos_dir, "container", f"CNT-SVC-{i:02d}", title=f"Service Container {i:02d}")
+
+    idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=True)
+        conn = idx._get_connection()
+
+        # 1. Empty spec_embeddings -> incomplete
+        assert is_semantic_index_complete(None) is False
+        assert is_semantic_index_complete(conn) is False
+        assert get_semantic_index_status(conn, eidos_dir)["is_complete"] is False
+
+        unit_vec = pack_embedding_f32([1.0] + [0.0] * (HARRIER_EMBEDDING_DIM - 1))
+
+        # 2. Simulate an interrupted mid-batch sync (batch 1 commits, batch 2 raises RuntimeError)
+        batch_calls = 0
+
+        def _failing_encode(texts: list[str]) -> list[bytes]:
+            nonlocal batch_calls
+            batch_calls += 1
+            if batch_calls == 2:
+                raise RuntimeError("simulated mid-sync interruption")
+            return [unit_vec for _ in texts]
+
+        with pytest.raises(RuntimeError, match="simulated mid-sync interruption"):
+            sync_spec_embeddings(conn, eidos_dir, force=True, batch_size=2, encode_fn=_failing_encode)
+
+        # Partial rows persisted from batch 1, but completeness marker is '0'
+        partial_rows = conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0]
+        assert partial_rows >= 2
+        marker = conn.execute(
+            "SELECT value FROM metadata WHERE key = ?;", (SEMANTIC_SYNC_COMPLETE_KEY,)
+        ).fetchone()[0]
+        assert marker == "0"
+        assert is_semantic_index_complete(conn) is False
+        assert get_semantic_index_status(conn, eidos_dir)["is_complete"] is False
+
+        # Hybrid RRF is gated off; execute_fts_query falls back cleanly to pure FTS5 BM25
+        bm25_hits = execute_fts_query(
+            conn,
+            "Service Container",
+            limit=5,
+            use_semantic=True,
+            eidos_dir=eidos_dir,
+            query_embedding=unit_vec,
+        )
+        assert bm25_hits
+        assert all(hit["provenance"] == "fts_bm25" for hit in bm25_hits)
+        assert all(hit["confidence"] == "observed" for hit in bm25_hits)
+        assert all("semantic_score" not in hit for hit in bm25_hits)
+
+        # 3. Also verify un-marked legacy DB with partial coverage falls back to BM25
+        with conn:
+            conn.execute("DELETE FROM metadata WHERE key = ?;", (SEMANTIC_SYNC_COMPLETE_KEY,))
+        assert is_semantic_index_complete(conn) is False
+
+        # 4. Complete sync cleanly -> marker flips to '1', is_semantic_index_complete becomes True, Hybrid RRF activates
+        res_ok = sync_spec_embeddings(
+            conn,
+            eidos_dir,
+            force=False,
+            batch_size=2,
+            encode_fn=lambda texts: [unit_vec for _ in texts],
+        )
+        assert res_ok["encoded_entities"] > 0
+        assert res_ok["reused_entities"] >= 2
+        assert is_semantic_index_complete(conn) is True
+        assert get_semantic_index_status(conn, eidos_dir)["is_complete"] is True
+
+        hybrid_hits = execute_fts_query(
+            conn,
+            "Service Container",
+            limit=5,
+            use_semantic=True,
+            eidos_dir=eidos_dir,
+            query_embedding=unit_vec,
+        )
+        assert hybrid_hits
+        assert any(hit["provenance"] in ("hybrid_rrf", "semantic_rrf") for hit in hybrid_hits)
+
+        # 5. Small incremental edit (+1 new spec) after clean sync keeps index complete for lazy refresh
+        create_spec(eidos_dir, "container", "CNT-SVC-99", title="Service Container 99")
+        idx.sync(force=False)
+        assert is_semantic_index_complete(idx._get_connection()) is True
+    finally:
+        idx.close()
+        import eidos.core.index.graph_index as gi
+        import eidos.core.index.semantic as sem_mod
+
+        gi._INDEX_INSTANCES.pop(eidos_dir.resolve(), None)
+        sem_mod._CUSTOM_ENCODE_FNS.pop(str(eidos_dir.resolve()), None)

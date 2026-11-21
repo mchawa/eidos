@@ -306,7 +306,9 @@ def execute_fts_query(
         has_embeddings = False
         if use_semantic:
             try:
-                has_embeddings = conn.execute("SELECT 1 FROM spec_embeddings LIMIT 1;").fetchone() is not None
+                from eidos.core.index.semantic import is_semantic_index_complete
+
+                has_embeddings = is_semantic_index_complete(conn)
             except sqlite3.OperationalError:
                 has_embeddings = False
 
