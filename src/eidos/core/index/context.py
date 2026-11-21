@@ -1048,17 +1048,26 @@ def build_tiered_context_slice(
             inv_focus_tokens -= _focus_noise
             inv_leaf_tokens -= _focus_noise
 
-        def _cap_inv_rank_key(item: tuple[int, dict[str, Any]]) -> tuple[int, int, int]:
-            inv_toks = set(
-                _tokenize_text(
-                    f"{item[1].get('id', '')} {item[1].get('test_binding', '')}".replace("/", " ")
-                    .replace("_", " ")
-                    .replace("-", " ")
-                    .replace(":", " ")
-                    .replace(".", " ")
-                )
+        def _cap_inv_rank_key(item: tuple[int, dict[str, Any]]) -> tuple[int, int, int, int, int]:
+            inv_obj = item[1]
+            id_toks = _tokenize_text(str(inv_obj.get("id", "")).replace("_", " ").replace("-", " "))
+            tb_raw = str(inv_obj.get("test_binding", "") or "")
+            tb_toks = _tokenize_text(
+                tb_raw.replace("/", " ").replace("_", " ").replace("-", " ").replace(":", " ").replace(".", " ")
             )
-            return (-len(inv_leaf_tokens & inv_toks), -len(inv_focus_tokens & inv_toks), item[0])
+            tb_file_stem = tb_raw.split("::", 1)[0].rsplit("/", 1)[-1].rsplit(".", 1)[0]
+            tb_file_toks = _tokenize_text(tb_file_stem.replace("_", " ").replace("-", " "))
+            leaf_id_hits = len(inv_leaf_tokens & id_toks)
+            focus_id_hits = len(inv_focus_tokens & id_toks)
+            leaf_tb_hits = len(inv_leaf_tokens & tb_file_toks)
+            tb_tiebreak = len(inv_focus_tokens & tb_toks) if (leaf_id_hits or focus_id_hits or leaf_tb_hits) else 0
+            return (
+                -leaf_id_hits,
+                -focus_id_hits,
+                -leaf_tb_hits,
+                -tb_tiebreak,
+                item[0],
+            )
 
         for source_list in (sorted_comps, sorted_caps, sorted_pols):
             if len(ordered_invs) >= max_invs:

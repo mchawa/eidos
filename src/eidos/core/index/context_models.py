@@ -563,7 +563,9 @@ class TieredContextSlice(ArchitecturalContextSlice):
         is_secondary = self._is_secondary_dependency(cid)
         if self.tier == "anchor":
             base_keys: tuple[str, ...] = ("type", "container_type", "runtime", "source_path", "domain", "container")
-        elif is_secondary and (self._compact_prose or len(self.components) > 4):
+        elif is_secondary and self._compact_prose:
+            base_keys = ("type", "container", "file_path")
+        elif is_secondary and len(self.components) > 4:
             base_keys = ("type", "source_path", "domain", "container", "file_path")
         else:
             base_keys = (
@@ -691,9 +693,10 @@ class TieredContextSlice(ArchitecturalContextSlice):
 
     def _project_invariant(self, inv: dict[str, Any]) -> dict[str, Any]:
         raw_rule = str(inv.get("rule", ""))
+        rule_limit = 95 if (self._compact_prose and self._compact_decisions) else 110
         out: dict[str, Any] = {
             "id": inv.get("id", ""),
-            "rule": self._compact_summary(raw_rule, 110) if self._compact_prose else raw_rule,
+            "rule": self._compact_summary(raw_rule, rule_limit) if self._compact_prose else raw_rule,
             "has_test_coverage": bool(inv.get("has_test_coverage")),
         }
         tb = inv.get("test_binding")
@@ -768,7 +771,11 @@ class TieredContextSlice(ArchitecturalContextSlice):
             "capabilities": [self._project_capability(c, idx) for idx, c in enumerate(self.capabilities)],
             "invariants": [self._project_invariant(i) for i in self.invariants],
             "policies": [self._project_policy(p) for p in self.policies],
-            "matched_reasons": dict(self.matched_reasons),
+            "matched_reasons": (
+                {k: v[:1] for k, v in self.matched_reasons.items()}
+                if self._compact_decisions
+                else dict(self.matched_reasons)
+            ),
         }
         if self.tier in ("guardrails", "deep"):
             payload["provenance_tags"] = self._project_provenance_tags()
@@ -1039,6 +1046,11 @@ class TieredContextSlice(ArchitecturalContextSlice):
 
         _pop_non_direct(self.capabilities, direct_caps, min_len=2)
         _pop_non_direct(self.policies, direct_pols, min_len=1)
+        if self.tier == "guardrails" and self._exceeds_budget(budget):
+            _pop_non_direct(self.capabilities, direct_caps, min_len=1)
+            if self._exceeds_budget(budget) and not self._compact_decisions:
+                self._compact_decisions = True
+                self._invalidate_budget_cache()
         _pop_non_direct(self.invariants, direct_invs, min_len=2)
         _pop_non_direct(self.invariants, direct_invs, min_len=1)
         _pop_non_direct(self.capabilities, direct_caps, min_len=1)

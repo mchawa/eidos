@@ -80,6 +80,9 @@ technical:
     - id: INV-INDEX-GOVERNANCE-HEALTH-SCORECARD
       rule: "compute_governance_health, ArchitecturalIndex.get_governance_health, eidos index health [--json], and PortalGenerator.governance_health must deterministically compute repository governance health metrics across source file ownership, Public Surface coverage, verified contract specification_file bindings, capability bound-invariant coverage, validation warning counts, and ratchet_baseline debt."
       test_binding: "tests/test_graph_index.py::test_index_governance_health_scorecard_cli_and_portal"
+    - id: INV-CONTEXT-GUARDRAIL-INVARIANT-RETENTION
+      rule: "Tiered context slicing at the guardrails tier (<= 1,000 tokens) must weight invariant ID token matches above incidental test_binding path/function tokens in _cap_inv_rank_key and trim secondary 1-hop components or compact secondary decision prose in _enforce_token_budget before evicting capability invariants below min_len=3 when budget headroom remains."
+      test_binding: "tests/test_context.py::test_context_guardrail_retains_invariants_within_budget_headroom"
 ---
 = Capability: Polyglot AST Code Graph & Structural Repo Map Intelligence
 :toc: left
@@ -96,8 +99,8 @@ In strict compliance with *POL-004-ZERO-AI-CALL-DEPENDENCY*, all AST extraction,
 
 == 2. Key Responsibilities
 
-1. **Token-Budgeted AI Repo Map (`eidos index repo-map`) & Context Slicing (`eidos context`)**:
-   Synthesizes a compact structural outline of classes, public methods, `interface` and trait member signatures, overload-disambiguated function/method declarations, and file coordinates across polyglot source trees (Python, TypeScript/JS, Go, Rust, Java, Kotlin, C/C++ with length-preserving `*_API` / `*_EXPORT` macro normalization, C#, Ruby, PHP, Swift, Vue, Svelte), achieving $\ge 85\%$ token compression compared to raw code ingestion, enforces strict tier token budgets (`anchor`, `guardrails`, `deep`) across both Markdown and JSON (`--json`) context slices—compacting primary-component `DEC-*` narratives in Stage 1a before evicting 1-hop capability `INV-*` or `POL-*` guardrails while retaining compact primary `DEC-*` summaries—and returns honest empty slices when explicit queries match zero entities.
+1. **Token-Budgeted AI Repo Map (`eidos index repo-map`) & Context Slicing (`eidos context`, `INV-CONTEXT-GUARDRAIL-INVARIANT-RETENTION`)**:
+   Synthesizes a compact structural outline of classes, public methods, `interface` and trait member signatures, overload-disambiguated function/method declarations, and file coordinates across polyglot source trees (Python, TypeScript/JS, Go, Rust, Java, Kotlin, C/C++ with length-preserving `*_API` / `*_EXPORT` macro normalization, C#, Ruby, PHP, Swift, Vue, Svelte), achieving $\ge 85\%$ token compression compared to raw code ingestion, enforces strict tier token budgets (`anchor`, `guardrails`, `deep`) across both Markdown and JSON (`--json`) context slices—weighting invariant ID token matches above incidental `test_binding` substrings and compacting primary-component `DEC-*` narratives plus trimming secondary 1-hop components before evicting 1-hop capability `INV-*` guardrails below `min_len=3` while retaining compact primary `DEC-*` summaries—and returns honest empty slices when explicit queries match zero entities.
 2. **Sub-Millisecond Symbol & Test Discovery (`eidos index find-symbol`)**:
    Exposes machine-readable (`--json`) lookup of symbol declarations, exported TypeScript and JavaScript variable bindings, class methods, and automated test symbols (`is_test = 1`, e.g. `test_*`), line numbers, docstrings, and owning C4 components for agent tool calling.
 3. **Vertical Grounding**:

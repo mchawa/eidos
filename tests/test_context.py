@@ -1095,3 +1095,100 @@ def test_context_uncommitted_and_base_diff_slicing(tmp_path) -> None:
         assert bad_txt.exit_code == 1
     finally:
         _clear_indexes()
+
+
+def test_context_guardrail_retains_invariants_within_budget_headroom():
+    """Verify INV-CONTEXT-GUARDRAIL-INVARIANT-RETENTION: guardrails context slicing weights invariant IDs above incidental test_binding substrings and trims secondary 1-hop components before evicting core capability invariants down to 1."""
+    from eidos.core.index.graph_index import TIER_TOKEN_BUDGETS, TieredContextSlice
+
+    # 1. Live repo slice for src/eidos/cli/main.py stays within guardrails budget (<= 1000) while retaining
+    #    multiple foundational CAP-PROD-001 invariants including INV-SPEC-VALIDATION
+    cli_slice = get_context_slice(files=["src/eidos/cli/main.py"], tier="guardrails")
+    assert cli_slice.token_estimate <= TIER_TOKEN_BUDGETS["guardrails"]
+    assert len(cli_slice.to_markdown()) // 4 <= TIER_TOKEN_BUDGETS["guardrails"]
+    assert len(cli_slice.to_json()) // 4 <= TIER_TOKEN_BUDGETS["guardrails"]
+    inv_ids = [inv["id"] for inv in cli_slice.invariants]
+    assert len(inv_ids) >= 3, f"Expected >= 3 retained capability invariants on guardrails slice, got {inv_ids}"
+    assert "INV-SPEC-VALIDATION" in inv_ids, f"Foundational INV-SPEC-VALIDATION displaced by incidental match: {inv_ids}"
+    assert inv_ids[0] == "INV-SPEC-VALIDATION", f"Expected INV-SPEC-VALIDATION ranked first, got {inv_ids}"
+
+    # 2. Synthetic guardrails headroom check: secondary 1-hop components and secondary DEC-* prose trim
+    #    before evicting 1-hop capability invariants below min_len=3
+    syn = TieredContextSlice(
+        query={"files": ["src/app/main.py"]},
+        tier="guardrails",
+        components=[
+            {
+                "id": "CMP-PRIMARY",
+                "title": "Primary Component",
+                "type": "tech/component",
+                "container": "CNT-PRIMARY",
+                "source_path": ["src/app/main.py"],
+                "file_path": "eidos/architecture/components/primary.adoc",
+            },
+            {
+                "id": "CNT-PRIMARY",
+                "title": "Primary Container",
+                "type": "tech/container",
+                "runtime": "Python 3.12",
+                "source_path": "src/app",
+                "file_path": "eidos/architecture/containers/primary.adoc",
+                "decisions": [
+                    {
+                        "id": "DEC-PRIM-1",
+                        "title": "Primary Architecture Decision",
+                        "decision": "Keep primary contract strict. " * 6,
+                        "rationale": "Avoids breaking downstream callers. " * 6,
+                    }
+                ],
+            },
+            *[
+                {
+                    "id": f"CNT-DEP-{i}",
+                    "title": f"Secondary Dependency Container {i}",
+                    "type": "tech/container",
+                    "runtime": "Python 3.12 / FastAPI / SQLite",
+                    "source_path": f"src/dep_{i}",
+                    "file_path": f"eidos/architecture/containers/dep_{i}.adoc",
+                }
+                for i in range(4)
+            ],
+        ],
+        capabilities=[
+            {
+                "id": "CAP-CORE-001",
+                "title": "Core Capability",
+                "domain": "DOM-CORE",
+                "file_path": "eidos/domains/core/capabilities/cap-core-001.adoc",
+            }
+        ],
+        invariants=[
+            {
+                "id": f"RULE-CORE-{i:02d}",
+                "rule": f"Core invariant {i} must remain enforced across every boundary transaction.",
+                "has_test_coverage": True,
+                "test_binding": f"tests/test_core.py::test_core_{i}",
+            }
+            for i in range(1, 10)
+        ],
+        policies=[
+            {
+                "id": "POL-001",
+                "title": "Core Policy",
+                "category": "governance",
+                "severity": "blocking",
+                "file_path": "eidos/policies/pol-001.adoc",
+            }
+        ],
+        matched_reasons={
+            "CMP-PRIMARY": ["Source file match on 'src/app/main.py'"],
+            "CNT-PRIMARY": ["Owning container of CMP-PRIMARY"],
+            **{f"CNT-DEP-{i}": ["Internal dependency"] for i in range(4)},
+        },
+    )
+    syn._enforce_token_budget(primary_cids={"CMP-PRIMARY", "CNT-PRIMARY"})
+    assert syn.token_estimate <= TIER_TOKEN_BUDGETS["guardrails"]
+    assert len(syn.to_json()) // 4 <= TIER_TOKEN_BUDGETS["guardrails"]
+    assert len(syn.invariants) >= 3, f"Expected >= 3 invariants retained after trimming secondary deps, got {len(syn.invariants)}"
+    assert [i["id"] for i in syn.invariants[:3]] == ["RULE-CORE-01", "RULE-CORE-02", "RULE-CORE-03"]
+    assert {"CMP-PRIMARY", "CNT-PRIMARY"} <= {c["id"] for c in syn.components}

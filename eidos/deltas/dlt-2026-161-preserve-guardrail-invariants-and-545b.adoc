@@ -1,0 +1,65 @@
+---
+type: delta/mutation
+id: DLT-2026-161-PRESERVE-GUARDRAIL-INVARIANTS-AND-545B
+title: "Preserve Guardrail Invariants and Headroom in Tiered Context Slicing"
+status: applied
+intent:
+  kind: bug
+  motivation: "When slicing files under high-invariant capabilities at guardrails tier (<= 1,000 tokens), incidental token overlap in test_binding paths can promote a narrow invariant ahead of foundational capability invariants, and _enforce_token_budget can evict invariants down to a single item while leaving >300 tokens of unused budget headroom."
+mutations:
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+    details: "Refine capability invariant ranking (_cap_inv_rank_key) in src/eidos/core/index/context.py to weight invariant ID matches above incidental test_binding path tokens, and refine _enforce_token_budget in src/eidos/core/index/context_models.py so Stage 1b/2 trims secondary 1-hop components or compacts secondary DEC-* narratives before evicting capability invariants down to 1 when budget headroom remains. Update eidos/architecture/components/tiered-context-compressor.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/index/context.py"
+          - "src/eidos/core/index/context_globs.py"
+          - "src/eidos/core/index/context_models.py"
+      body:
+        contains:
+          - "INV-CONTEXT-GUARDRAIL-INVARIANT-RETENTION"
+  - operation: modify
+    target: CAP-AGENT-002
+    details: "Extend CAP-AGENT-002 in eidos/domains/agent-intelligence/capabilities/cap-agent-002.adoc with INV-CONTEXT-GUARDRAIL-INVARIANT-RETENTION."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-CONTEXT-GUARDRAIL-INVARIANT-RETENTION"
+      body:
+        contains:
+          - "INV-CONTEXT-GUARDRAIL-INVARIANT-RETENTION"
+  - operation: add
+    target: INV-CONTEXT-GUARDRAIL-INVARIANT-RETENTION
+    details: "Bind INV-CONTEXT-GUARDRAIL-INVARIANT-RETENTION in CAP-AGENT-002 to tests/test_context.py::test_context_guardrail_retains_invariants_within_budget_headroom."
+    expect:
+      frontmatter:
+        rule: "guardrails"
+        test_binding: "tests/test_context.py::test_context_guardrail_retains_invariants_within_budget_headroom"
+vcs:
+  branch: main
+  base_commit: deb9b48e8b6206c5f9cae9bb306a95b150c7ec8d
+---
+= SpecDelta: Preserve Guardrail Invariants and Headroom in Tiered Context Slicing
+:toc: left
+
+== Problem Statement
+During `eidos context -f src/eidos/cli/main.py` (`tier="guardrails"`, budget `<= 1,000` tokens), two compounding defects surfaced as `CAP-PROD-001` grew to 21 invariants:
+
+1. `_cap_inv_rank_key` in `src/eidos/core/index/context.py` treats tokens from `inv.id` and `inv.test_binding` with equal weight, so an incidental token match inside a test function name (e.g., `cli` in `test_validation_warnings_in_portal_and_cli_fail_on_warnings`) promoted that narrow invariant ahead of foundational invariants such as `INV-SPEC-VALIDATION`.
+2. `_enforce_token_budget` in `src/eidos/core/index/context_models.py` popped invariants down to `min_len=1` before trimming lower-priority secondary components or compacting secondary decision prose, finishing at ~646 tokens (~354 tokens of unused budget headroom) with only 1 surviving invariant.
+
+== Proposed Specification Changes
+* **`CMP-TIERED-CONTEXT-COMPRESSOR` (`src/eidos/core/index/context.py`, `src/eidos/core/index/context_models.py`)**:
+  * Differentiate invariant ID token matches from `test_binding` path/function token matches in `_cap_inv_rank_key` (keeping exact leaf/ID matches highest while preventing incidental test-path substrings from displacing core capability invariants).
+  * Reorder `_enforce_token_budget` Stage 1b/2 eviction priorities for `guardrails` so secondary 1-hop components and verbose decision narratives are trimmed/compacted before evicting capability invariants below `min_len=3`, and stop evicting invariants as soon as the slice fits within the tier budget.
+* **`CAP-AGENT-002` (`eidos/domains/agent-intelligence/capabilities/cap-agent-002.adoc`)**:
+  * Add and bind `INV-CONTEXT-GUARDRAIL-INVARIANT-RETENTION` to `tests/test_context.py::test_context_guardrail_retains_invariants_within_budget_headroom`.
+
+== Implementation Plan
+1. **Ranking & Budget Eviction (`CMP-TIERED-CONTEXT-COMPRESSOR`)**: Update `_cap_inv_rank_key` in `src/eidos/core/index/context.py` and `_enforce_token_budget` in `src/eidos/core/index/context_models.py` (`CNT-EIDOS-INDEX` covered via `CMP-TIERED-CONTEXT-COMPRESSOR`).
+2. **Living Specs (`CMP-TIERED-CONTEXT-COMPRESSOR`, `CAP-AGENT-002`, `INV-CONTEXT-GUARDRAIL-INVARIANT-RETENTION`)**: Update `eidos/architecture/components/tiered-context-compressor.adoc` and `eidos/domains/agent-intelligence/capabilities/cap-agent-002.adoc`.
+3. **Tests & Coverage (`POL-005-STATEMENT-TEST-COVERAGE`)**: Add `tests/test_context.py::test_context_guardrail_retains_invariants_within_budget_headroom` asserting that `get_context_slice(files=["src/eidos/cli/main.py"], tier="guardrails")` stays `<= 1000` tokens while retaining multiple core invariants including `INV-SPEC-VALIDATION`, plus synthetic multi-invariant headroom unit tests maintaining `>90.0%` coverage on `context.py` and `context_models.py`.
+4. **Verification**: Run `pytest tests/test_context.py`, `eidos delta verify DLT-2026-161 --json`, `eidos delta apply DLT-2026-161`, and `eidos drift --uncommitted --fail-on-warnings --json`.
