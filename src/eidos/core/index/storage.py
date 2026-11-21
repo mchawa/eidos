@@ -344,6 +344,7 @@ def _unlink_cache_files(db_path: Path) -> None:
 
 
 _TEST_BINDING_CACHE_VERSION = "2"
+_CODE_SYMBOL_CACHE_VERSION = "2"
 
 
 def _is_schema_current(conn: sqlite3.Connection) -> bool:
@@ -354,7 +355,13 @@ def _is_schema_current(conn: sqlite3.Connection) -> bool:
         row = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()
         if row and row[0] == SCHEMA_VERSION:
             tbc_row = conn.execute("SELECT value FROM metadata WHERE key = 'test_binding_cache_ver';").fetchone()
-            if tbc_row and tbc_row[0] == _TEST_BINDING_CACHE_VERSION:
+            csc_row = conn.execute("SELECT value FROM metadata WHERE key = 'code_symbol_cache_ver';").fetchone()
+            if (
+                tbc_row
+                and tbc_row[0] == _TEST_BINDING_CACHE_VERSION
+                and csc_row
+                and csc_row[0] == _CODE_SYMBOL_CACHE_VERSION
+            ):
                 return True
     return False
 
@@ -367,14 +374,26 @@ def _apply_cache_schema_ddl(conn: sqlite3.Connection) -> None:
         row = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()
         if row and row[0] == SCHEMA_VERSION:
             tbc_row = conn.execute("SELECT value FROM metadata WHERE key = 'test_binding_cache_ver';").fetchone()
-            if not tbc_row or tbc_row[0] != _TEST_BINDING_CACHE_VERSION:
+            csc_row = conn.execute("SELECT value FROM metadata WHERE key = 'code_symbol_cache_ver';").fetchone()
+            needs_tbc = not tbc_row or tbc_row[0] != _TEST_BINDING_CACHE_VERSION
+            needs_csc = not csc_row or csc_row[0] != _CODE_SYMBOL_CACHE_VERSION
+            if needs_tbc or needs_csc:
                 with _immediate_write_transaction(conn):
-                    conn.execute("DELETE FROM test_binding_cache;")
-                    conn.execute("UPDATE indexed_files SET mtime = -1.0 WHERE doc_type = 'code/test';")
-                    conn.execute(
-                        "INSERT OR REPLACE INTO metadata (key, value) VALUES ('test_binding_cache_ver', ?);",
-                        (_TEST_BINDING_CACHE_VERSION,),
-                    )
+                    if needs_tbc:
+                        conn.execute("DELETE FROM test_binding_cache;")
+                        conn.execute("UPDATE indexed_files SET mtime = -1.0 WHERE doc_type = 'code/test';")
+                        conn.execute(
+                            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('test_binding_cache_ver', ?);",
+                            (_TEST_BINDING_CACHE_VERSION,),
+                        )
+                    if needs_csc:
+                        conn.execute(
+                            "UPDATE indexed_files SET mtime = -1.0, sha256 = '' WHERE doc_type = 'code/source';"
+                        )
+                        conn.execute(
+                            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('code_symbol_cache_ver', ?);",
+                            (_CODE_SYMBOL_CACHE_VERSION,),
+                        )
             return
     if user_tables:
         stored_version = None
@@ -394,6 +413,10 @@ def _apply_cache_schema_ddl(conn: sqlite3.Connection) -> None:
         conn.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('test_binding_cache_ver', ?);",
             (_TEST_BINDING_CACHE_VERSION,),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('code_symbol_cache_ver', ?);",
+            (_CODE_SYMBOL_CACHE_VERSION,),
         )
 
 

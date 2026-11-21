@@ -25,3 +25,4 @@ Enforces code-to-architecture conformance across active C4 specifications: stati
 
 == Design Constraints & Operational Notes
 * **Deterministic Coupling Attribution**: Evaluates raw `code_couplings` rows independently from precedence-collapsed `edges` so declared `CTR-*` links never mask forbidden cross-boundary imports or HTTP calls.
+* **TypeScript & JavaScript Public Surface**: Resolves exported TypeScript and JavaScript variable bindings (`.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`, ESM and CommonJS) through the shared AST extractor (`CMP-AST-SYMBOL-INDEXER`), without a validator-specific regex fallback; genuinely absent or container-private symbols remain errors.

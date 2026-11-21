@@ -30,8 +30,12 @@ AST_DIFF_EXTS = frozenset(
         ".py",
         ".ts",
         ".tsx",
+        ".mts",
+        ".cts",
         ".js",
         ".jsx",
+        ".mjs",
+        ".cjs",
         ".go",
         ".rs",
         ".java",
@@ -254,8 +258,21 @@ def boundary_symbol_map(
                                     reexported[("export", "", bound_name)] = f"reexport {bound_name}"
         except (RuntimeError, ValueError):
             py_dunder_all = None
-    elif fname_lower in ("index.ts", "index.tsx", "index.js", "index.jsx"):
-        ts_lang = "tsx" if suffix in (".tsx", ".jsx") else ("typescript" if suffix == ".ts" else "javascript")
+    elif fname_lower in (
+        "index.ts",
+        "index.tsx",
+        "index.mts",
+        "index.cts",
+        "index.js",
+        "index.jsx",
+        "index.mjs",
+        "index.cjs",
+    ):
+        ts_lang = (
+            "tsx"
+            if suffix in (".tsx", ".jsx")
+            else ("typescript" if suffix in (".ts", ".mts", ".cts") else "javascript")
+        )
         for name in _extract_ts_exported_names(content, lang=ts_lang):
             if not name.startswith("_"):
                 reexported[("export", "", name)] = f"reexport {name}"
@@ -444,7 +461,9 @@ def _extract_ui_contract(content: str, suffix: str) -> dict[str, set[str]]:
     props: set[str] = set()
     blocks = _extract_sfc_script_blocks(content) if suffix in (".vue", ".svelte") else [(content, 0)]
     ts_lang = (
-        "tsx" if suffix in (".tsx", ".jsx", ".vue", ".svelte") else ("typescript" if suffix == ".ts" else "javascript")
+        "tsx"
+        if suffix in (".tsx", ".jsx", ".vue", ".svelte")
+        else ("typescript" if suffix in (".ts", ".mts", ".cts") else "javascript")
     )
     if suffix != ".html":
         for block_text, _ in blocks:

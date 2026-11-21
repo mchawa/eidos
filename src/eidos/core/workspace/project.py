@@ -125,7 +125,11 @@ _POLYGLOT_TEST_CODE_EXTS = frozenset(
     {
         ".py",
         ".ts",
+        ".mts",
+        ".cts",
         ".js",
+        ".mjs",
+        ".cjs",
         ".tsx",
         ".jsx",
         ".go",

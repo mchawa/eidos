@@ -5459,3 +5459,62 @@ def test_safe_dump_yaml_fast_yaml_08_compatibility():
     res_comp = runner.invoke(app, ["spec", "schema", "component", "--json"])
     assert res_comp.exit_code == 0, res_comp.output
     assert orjson.loads(res_comp.stdout)["type"] == "tech/component"
+
+
+def test_ts_and_js_exported_variable_public_surface(tmp_path: Path, validator: SpecValidator) -> None:
+    repo = tmp_path / "ts_js_surface"
+    src = repo / "src"
+    src.mkdir(parents=True)
+    components = repo / "eidos/architecture/components"
+    containers = repo / "eidos/architecture/containers"
+    components.mkdir(parents=True)
+    containers.mkdir(parents=True)
+    (containers / "app.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-APP\ntitle: App\nstatus: active\n"
+        "container_type: library\nruntime: TypeScript / JavaScript\nsource_path: src\n---\n"
+        "= App\n\n== Public Surface\n* `DATA`\n* `JS_DATA`\n* `CJS_DATA`\n",
+        encoding="utf-8",
+    )
+    specs = []
+    for suffix, name in (("ts", "DATA"), ("tsx", "VIEW"), ("js", "JS_DATA"), ("jsx", "JSX_VIEW"), ("mjs", "MJS_DATA")):
+        (src / f"app.{suffix}").write_text(
+            f'export const {name} = "ready", {name}_OPTIONS = {{enabled: true}};\n'
+            f"const {name}_LOCAL = 3, {name}_PRIVATE = 4;\nexport {{ {name}_LOCAL }};\n",
+            encoding="utf-8",
+        )
+        spec = components / f"app-{suffix}.adoc"
+        spec.write_text(
+            f"---\ntype: tech/component\nid: CMP-{suffix.upper()}\ntitle: App {suffix}\n"
+            f"container: CNT-APP\nstatus: active\nsource_path: src/app.{suffix}\n---\n"
+            f"= App\n\n== Public Surface\n* `{name}`\n* `{name}_OPTIONS`\n* `{name}_LOCAL`\n",
+            encoding="utf-8",
+        )
+        specs.append(spec)
+    (src / "legacy.cjs").write_text(
+        'const CJS_DATA = "ready";\nmodule.exports = { CJS_DATA };\nexports.CJS_DIRECT = 1;\n',
+        encoding="utf-8",
+    )
+    cjs_spec = components / "app-cjs.adoc"
+    cjs_spec.write_text(
+        "---\ntype: tech/component\nid: CMP-CJS\ntitle: App CJS\n"
+        "container: CNT-APP\nstatus: active\nsource_path: src/legacy.cjs\n---\n"
+        "= App CJS\n\n== Public Surface\n* `CJS_DATA`\n* `CJS_DIRECT`\n",
+        encoding="utf-8",
+    )
+    report = validator.validate_directory(repo / "eidos")
+    assert report.is_clean, report.broken_references
+
+    # Private non-exported JS/TS binding must still be rejected on container Public Surface
+    (containers / "app.adoc").write_text(
+        (containers / "app.adoc").read_text(encoding="utf-8") + "* `DATA_PRIVATE`\n",
+        encoding="utf-8",
+    )
+    report_priv = validator.validate_directory(repo / "eidos")
+    assert not report_priv.is_clean
+    assert any("DATA_PRIVATE" in error for error in report_priv.broken_references)
+
+    # Absent symbol must still be flagged on component Public Surface
+    specs[0].write_text(specs[0].read_text(encoding="utf-8") + "* `MISSING_DATA`\n", encoding="utf-8")
+    report_missing = validator.validate_directory(repo / "eidos")
+    assert not report_missing.is_clean
+    assert any("MISSING_DATA" in error for error in report_missing.broken_references)

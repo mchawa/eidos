@@ -358,10 +358,10 @@ def _extract_preceding_context(lines: list[str], start_line_1based: int) -> str:
 
 @dataclass
 class CodeSymbol:
-    """A granular syntax-level code symbol (class, function, method, interface)."""
+    """A granular syntax-level code symbol (class, function, method, interface, variable)."""
 
     name: str
-    kind: str  # "class", "function", "method", "interface", "struct", "enum"
+    kind: str  # "class", "function", "method", "interface", "struct", "enum", "variable"
     file_path: str
     line_start: int
     line_end: int
@@ -579,8 +579,38 @@ def _extract_sg_node_name(node: Any, lang: str = "") -> str | None:
     return None
 
 
+def _unwrap_js_parens(val_node: Any) -> Any:
+    """Unwrap nested Tree-sitter parenthesized_expression wrappers around a JS/TS expression."""
+    while val_node is not None and val_node.kind() == "parenthesized_expression":
+        val_node = next(
+            (child for child in val_node.children() if child.kind() not in ("(", ")", "comment")),
+            None,
+        )
+    return val_node
+
+
+def _ts_variable_binding_names(declarator: Any) -> list[str]:
+    """Extract bound local identifier names from a JS/TS variable_declarator (including shallow destructuring)."""
+    name = declarator.field("name")
+    if name is None:
+        return []
+    if name.kind() == "identifier":
+        return [name.text()]
+    if name.kind() not in ("object_pattern", "array_pattern"):
+        return []
+    names: list[str] = []
+    for child in name.children():
+        if child.kind() in ("identifier", "shorthand_property_identifier_pattern"):
+            names.append(child.text())
+        elif child.kind() == "pair_pattern":
+            value = child.field("value")
+            if value is not None and value.kind() == "identifier":
+                names.append(value.text())
+    return names
+
+
 def _extract_ts_exported_names(content: str, ts_root: Any = None, lang: str = "tsx") -> set[str]:
-    """Return all identifier names exported via export declarations, export lists, or export default via SgRoot."""
+    """Return all identifier names exported via ESM export declarations/lists or CommonJS exports via SgRoot."""
     if ts_root is None:
         if "export" not in content:
             return set()
@@ -614,15 +644,13 @@ def _extract_ts_exported_names(content: str, ts_root: Any = None, lang: str = "t
                         if n:
                             exports.add(n)
                     elif ack in ("lexical_declaration", "variable_declaration"):
-                        for vd in amb_ch.find_all(kind="variable_declarator"):
-                            n = _extract_sg_node_name(vd, lang)
-                            if n:
-                                exports.add(n)
+                        for vd in amb_ch.children():
+                            if vd.kind() == "variable_declarator":
+                                exports.update(_ts_variable_binding_names(vd))
             elif ck in ("lexical_declaration", "variable_declaration"):
-                for vd in ch.find_all(kind="variable_declarator"):
-                    n = _extract_sg_node_name(vd, lang)
-                    if n:
-                        exports.add(n)
+                for vd in ch.children():
+                    if vd.kind() == "variable_declarator":
+                        exports.update(_ts_variable_binding_names(vd))
             elif ck == "export_clause":
                 for spec in ch.find_all(kind="export_specifier"):
                     for id_node in spec.children():
@@ -634,6 +662,48 @@ def _extract_ts_exported_names(content: str, ts_root: Any = None, lang: str = "t
                         exports.add(id_node.text().strip())
             elif ck in ("identifier", "type_identifier"):
                 exports.add(ch.text().strip())
+
+    # CommonJS module-level exports: module.exports = Ident / { ... }, exports.NAME = ..., module.exports.NAME = ...
+    for stmt in ts_root.children():
+        if stmt.kind() != "expression_statement":
+            continue
+        assign = next((c for c in stmt.children() if c.kind() == "assignment_expression"), None)
+        if assign is None:
+            continue
+        left = assign.field("left")
+        right = assign.field("right")
+        if left is None or right is None or left.kind() != "member_expression":
+            continue
+        left_text = left.text().strip()
+        if left_text == "module.exports":
+            rhs = _unwrap_js_parens(right)
+            if rhs is None:
+                continue
+            if rhs.kind() == "identifier":
+                exports.add(rhs.text().strip())
+            elif rhs.kind() == "object":
+                for prop in rhs.children():
+                    pk = prop.kind()
+                    if pk == "shorthand_property_identifier":
+                        exports.add(prop.text().strip())
+                    elif pk == "pair":
+                        key = prop.field("key")
+                        if key is not None and key.kind() in ("property_identifier", "identifier"):
+                            exports.add(key.text().strip())
+                    elif pk == "method_definition":
+                        mname = _extract_sg_node_name(prop, lang)
+                        if mname:
+                            exports.add(mname)
+        else:
+            obj = left.field("object")
+            prop = left.field("property")
+            if (
+                obj is not None
+                and prop is not None
+                and obj.text().strip() in ("exports", "module.exports")
+                and prop.kind() == "property_identifier"
+            ):
+                exports.add(prop.text().strip())
     return exports
 
 
@@ -666,7 +736,7 @@ def _evaluate_symbol_visibility(
             return bool(_RUST_PUB_RE.search(sig))
         return not sym.name.startswith("_")
 
-    if suffix in (".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte"):
+    if suffix in (".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte"):
         if sym.kind == "method":
             if sym.parent_symbol and class_is_public is not None and not class_is_public.get(sym.parent_symbol, False):
                 return False
@@ -789,7 +859,7 @@ def _is_component_surface_symbol(
     if suffix in (".java", ".kt", ".kts"):
         return not bool(re.search(r"\b(?:private|protected)\b", sig_prefix))
 
-    if suffix in (".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte"):
+    if suffix in (".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte"):
         return not bool(_TS_PRIVATE_METHOD_RE.match(sig))
 
     if suffix in (".c", ".cpp", ".h", ".hpp"):
@@ -811,8 +881,12 @@ _BOUNDARY_ENTRYPOINT_NAMES = frozenset(
         "cli.py",
         "index.ts",
         "index.tsx",
+        "index.mts",
+        "index.cts",
         "index.js",
         "index.jsx",
+        "index.mjs",
+        "index.cjs",
         "mod.rs",
         "lib.rs",
         "main.rs",

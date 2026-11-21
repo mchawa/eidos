@@ -782,6 +782,62 @@ def test_spec_edit_keeps_package_code_symbols(tmp_path):
         idx.close()
 
 
+def test_ts_js_exported_variables_cache_upgrade(tmp_path):
+    """Verify code_symbol_cache_ver reindexes unchanged TS/JS source files on upgrade without dropping spec_embeddings."""
+    import hashlib
+
+    repo, _, _ = _make_symbol_repo(tmp_path, "ts_js_upgrade")
+    sources = [
+        (repo / "src/pkg/data.ts", "DATA_VALUE", "export const DATA_VALUE = 42;\n"),
+        (repo / "src/pkg/view.tsx", "VIEW_VALUE", "export const VIEW_VALUE = 43;\n"),
+        (repo / "src/pkg/app.js", "JS_VALUE", "export const JS_VALUE = 44;\n"),
+        (repo / "src/pkg/widget.jsx", "JSX_VALUE", "export const JSX_VALUE = 45;\n"),
+        (repo / "src/pkg/mod.mjs", "MJS_VALUE", "export const MJS_VALUE = 46;\n"),
+        (repo / "src/pkg/cjs.cjs", "CJS_VALUE", "exports.CJS_VALUE = 47;\n"),
+    ]
+    for path, _, text in sources:
+        path.write_text(text, encoding="utf-8")
+    db_path = repo / "eidos/.cache/index.db"
+    idx = ArchitecturalIndex(db_path=db_path, repo_root=repo, eidos_dir=repo / "eidos")
+    try:
+        idx.sync()
+        conn = idx._get_connection()
+        for path, name, _ in sources:
+            rel = path.relative_to(repo).as_posix()
+            row = conn.execute("SELECT mtime, sha256 FROM indexed_files WHERE rel_path = ?", (rel,)).fetchone()
+            assert row is not None
+            assert row["mtime"] == path.stat().st_mtime
+            assert row["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
+            conn.execute("DELETE FROM code_symbols WHERE symbol = ?", (name,))
+            conn.execute("DELETE FROM symbol_mappings WHERE symbol = ?", (name,))
+        # Seed a spec_embeddings row to verify non-destructive incremental cache invalidation
+        conn.execute(
+            "INSERT OR REPLACE INTO spec_embeddings (entity_id, content_sha256, model_id, embedding) VALUES (?, ?, ?, ?);",
+            ("CNT-SAMPLE", "abc123", "test-model", b"\x00" * 8),
+        )
+        conn.execute("DELETE FROM metadata WHERE key = 'code_symbol_cache_ver'")
+        conn.commit()
+        timestamps = [p.stat().st_mtime_ns for p, _, _ in sources]
+    finally:
+        idx.close()
+
+    reopened = ArchitecturalIndex(db_path=db_path, repo_root=repo, eidos_dir=repo / "eidos")
+    try:
+        for path, name, _ in sources:
+            hit = next(row for row in reopened.find_symbol(name) if row["symbol"] == name)
+            assert hit["kind"] == "variable"
+            assert hit["location"]["file"] == path.relative_to(repo).as_posix()
+        assert [p.stat().st_mtime_ns for p, _, _ in sources] == timestamps
+        conn_reopened = reopened._get_connection()
+        assert not conn_reopened.execute("SELECT 1 FROM edges WHERE rel_type LIKE '%call%'").fetchone()
+        emb_row = conn_reopened.execute(
+            "SELECT content_sha256 FROM spec_embeddings WHERE entity_id = 'CNT-SAMPLE';"
+        ).fetchone()
+        assert emb_row is not None and emb_row["content_sha256"] == "abc123"
+    finally:
+        reopened.close()
+
+
 def test_schema_version_mismatch_rebuilds_cache(tmp_path):
     """INV-KNOWLEDGE-GRAPH-CATALOG: a legacy (unversioned) index.db is dropped and rebuilt with the 2.0.0 schema."""
     repo, _src, _spec = _make_symbol_repo(tmp_path, "migrepo")

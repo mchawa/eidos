@@ -24,6 +24,137 @@ from eidos.core.index.graph_index import get_architectural_index
 runner = CliRunner()
 
 
+def test_ts_and_js_exported_variable_bindings():
+    from eidos.core.index.ast_indexer import boundary_symbol_map, diff_public_symbols, public_symbol_map
+
+    base_source = (
+        'export const LABEL = "ready", LIMIT = 10;\n'
+        "export let OPTIONS = { enabled: true };\n"
+        "export var COUNT = 1;\n"
+        "const LOCAL = 2, PRIVATE = 3;\n"
+        "export { LOCAL };\n"
+        "export const { first, key: alias, deep: { inner }, skip = 1, ...rest } = input;\n"
+        "export const [one, , two, [nested], ...tail] = input;\n"
+        "export const arrow = () => 1, expr = function () {};\n"
+        "export function declared() { const hidden = 2; return hidden; }\n"
+        "if (true) { const blocked = 1; }\n"
+    )
+    ts_exts = ("ts", "tsx", "mts", "cts")
+    js_exts = ("js", "jsx", "mjs", "cjs")
+    for extension in (*ts_exts, *js_exts):
+        is_ts = extension in ts_exts
+        source = base_source + ("export type Value = string;\n" if is_ts else "")
+        path = f"src/index.{extension}"
+        symbols = get_ast_indexer().extract_symbols(path, source)
+        by_name = {s.name: s for s in symbols}
+        expected = {
+            "LABEL": 1,
+            "LIMIT": 1,
+            "OPTIONS": 2,
+            "COUNT": 3,
+            "LOCAL": 4,
+            "first": 6,
+            "alias": 6,
+            "one": 7,
+            "two": 7,
+        }
+        for name, line in expected.items():
+            sym = by_name[name]
+            assert (sym.kind, sym.line_start, sym.is_public, sym.is_boundary_export) == ("variable", line, True, True)
+            assert ("variable", "", name) in public_symbol_map(source, path)
+            assert ("variable", "", name) in boundary_symbol_map(source, path)
+        assert not by_name["PRIVATE"].is_public
+        assert not by_name["PRIVATE"].is_boundary_export
+        assert not ({"inner", "deep", "skip", "rest", "nested", "tail", "hidden", "blocked"} & by_name.keys())
+        assert all(by_name[name].kind == "function" for name in ("arrow", "expr", "declared"))
+        if is_ts:
+            assert by_name["Value"].kind == "interface"
+        diff = diff_public_symbols("", source, path)
+        assert ("variable", "", "LABEL") in diff.added
+        assert ("function", "", "LABEL") not in diff.added
+
+
+def test_ts_and_js_callable_pattern_and_commonjs_visibility():
+    ts_source = (
+        "const hidden = 1;\n"
+        "export const run = () => { const hidden = 2; return hidden; };\n"
+        "export const {length: arity} = (x: number) => x;\n"
+        "export const {nested: {ignored}, ...rest} = (x: number) => x;\n"
+        "export const wrapped = (((() => 1)));\n"
+        "export declare const declared: string;\n"
+    )
+    for extension in ("ts", "tsx", "mts", "cts"):
+        symbols = get_ast_indexer().extract_symbols(f"src/data.{extension}", ts_source)
+        by_name = {s.name: s for s in symbols}
+        assert not by_name["hidden"].is_public
+        assert not by_name["hidden"].is_boundary_export
+        assert by_name["arity"].kind == "variable" and by_name["arity"].is_public
+        assert by_name["wrapped"].kind == "function" and by_name["wrapped"].is_public
+        assert by_name["run"].kind == "function" and by_name["run"].is_public
+        assert by_name["declared"].kind == "variable" and by_name["declared"].is_public
+        assert not ({"length", "ignored", "nested", "rest", "{length: arity}"} & by_name.keys())
+
+    js_source = (
+        "const hidden = 1;\n"
+        "export const run = () => { const hidden = 2; return hidden; };\n"
+        "export const {length: arity} = (x) => x;\n"
+        "export const wrapped = (((() => 1)));\n"
+    )
+    for extension in ("js", "jsx", "mjs"):
+        symbols = get_ast_indexer().extract_symbols(f"src/data.{extension}", js_source)
+        by_name = {s.name: s for s in symbols}
+        assert not by_name["hidden"].is_public
+        assert not by_name["hidden"].is_boundary_export
+        assert by_name["arity"].kind == "variable" and by_name["arity"].is_public
+        assert by_name["wrapped"].kind == "function" and by_name["wrapped"].is_public
+        assert by_name["run"].kind == "function" and by_name["run"].is_public
+
+    cjs_source = (
+        "const FOO = 1;\n"
+        "const PRIVATE_CJS = 2;\n"
+        "const localFn = () => 3;\n"
+        "function helper() { exports.NESTED = 99; }\n"
+        "module.exports = { FOO, aliasedFn: localFn, INLINE_VAL: 4, inlineFn: () => 5, methodFn() { return 6; } };\n"
+        'exports.DIRECT_CONST = "ok";\n'
+        "module.exports.DIRECT_FN = function () { return 7; };\n"
+    )
+    for extension in ("js", "cjs"):
+        symbols = get_ast_indexer().extract_symbols(f"src/cjs.{extension}", cjs_source)
+        by_name = {s.name: s for s in symbols}
+        assert (by_name["FOO"].kind, by_name["FOO"].is_public) == ("variable", True)
+        assert (by_name["INLINE_VAL"].kind, by_name["INLINE_VAL"].is_public) == ("variable", True)
+        assert (by_name["DIRECT_CONST"].kind, by_name["DIRECT_CONST"].is_public) == ("variable", True)
+        assert (by_name["aliasedFn"].kind, by_name["aliasedFn"].is_public) == ("function", True)
+        assert (by_name["inlineFn"].kind, by_name["inlineFn"].is_public) == ("function", True)
+        assert by_name["methodFn"].kind in ("function", "method") and by_name["methodFn"].is_public
+        assert (by_name["DIRECT_FN"].kind, by_name["DIRECT_FN"].is_public) == ("function", True)
+        assert not by_name["PRIVATE_CJS"].is_public
+        assert not by_name["localFn"].is_public
+        assert "NESTED" not in by_name
+
+    cjs_default = "const CONFIG = { mode: 'prod' };\nmodule.exports = CONFIG;\n"
+    cjs_def_syms = {s.name: s for s in get_ast_indexer().extract_symbols("src/config.cjs", cjs_default)}
+    assert (cjs_def_syms["CONFIG"].kind, cjs_def_syms["CONFIG"].is_public) == ("variable", True)
+
+    # Large multi-line constant signatures stay bounded; merged type+const and duplicate var do not duplicate symbols
+    huge_entries = ",\n".join(f'  key_{i}: "value_{i}_padding"' for i in range(40))
+    edge_ts = (
+        f"export const HUGE_MAP = {{\n{huge_entries}\n}};\n"
+        'export type Status = "ok" | "err";\n'
+        'export const Status = { OK: "ok", ERR: "err" } as const;\n'
+        "export var DUP = 1;\n"
+        "export var DUP = 2;\n"
+    )
+    edge_syms = get_ast_indexer().extract_symbols("src/edges.ts", edge_ts)
+    huge_sym = next(s for s in edge_syms if s.name == "HUGE_MAP")
+    assert huge_sym.kind == "variable" and huge_sym.is_public
+    assert huge_sym.signature is not None
+    assert len(huge_sym.signature) <= 210
+    assert huge_sym.signature.endswith("...")
+    assert sum(1 for s in edge_syms if s.name == "Status") == 1
+    assert sum(1 for s in edge_syms if s.name == "DUP") == 1
+
+
 def test_inv_index_optional_ast_fallback():
     """Verify INV-INDEX-OPTIONAL-AST-FALLBACK: Engine extracts Python stdlib ast signatures and falls back to Tree-sitter on broken syntax without unhandled exceptions."""
     idx = get_ast_indexer()
@@ -57,9 +188,13 @@ def test_inv_index_optional_ast_fallback():
 
 
 def test_inv_index_polyglot_symbol_precision():
-    """Verify INV-INDEX-POLYGLOT-SYMBOL-PRECISION: Sub-10ms precision symbol extraction across Python & TypeScript."""
+    """Verify INV-INDEX-POLYGLOT-SYMBOL-PRECISION: Sub-10ms precision symbol extraction across Python, TypeScript & JavaScript."""
     idx = get_ast_indexer()
     is_instrumented = "coverage" in sys.modules or sys.gettrace() is not None
+    ts_exported = idx.extract_symbols("sample.ts", 'export const LABEL = "ready";')
+    assert any(s.name == "LABEL" and s.kind == "variable" and s.is_public for s in ts_exported)
+    js_exported = idx.extract_symbols("sample.js", 'export const JS_LABEL = "ready";')
+    assert any(s.name == "JS_LABEL" and s.kind == "variable" and s.is_public for s in js_exported)
 
     # Warm up symbol extractor to avoid one-off dynamic import overhead skewing latency
     idx.extract_symbols(Path("src/eidos/core/index/ast_preprocess.py"))
@@ -1399,13 +1534,17 @@ def test_all_ast_languages_and_corner_cases(tmp_path: Path) -> None:
     inv_p = "INV" + "-"
     pol_p = "POL" + "-"
 
-    # 1. Verify all 20 extensions in LANGUAGE_MAP map to the 17 supported AST grammars
+    # 1. Verify all 24 extensions in LANGUAGE_MAP map to the 17 supported AST grammars
     expected_exts = {
         ".py",
         ".ts",
         ".tsx",
+        ".mts",
+        ".cts",
         ".js",
         ".jsx",
+        ".mjs",
+        ".cjs",
         ".rs",
         ".go",
         ".java",

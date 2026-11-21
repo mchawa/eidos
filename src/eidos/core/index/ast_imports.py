@@ -82,11 +82,11 @@ class BaseAstIndexer(ABC):
                                 _add(f"{mod}.{tok}" if mod and not mod.endswith(".") else f"{mod}{tok}")
                 return imports
 
-            if suffix in (".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte"):
+            if suffix in (".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte"):
                 ts_lang = (
                     "tsx"
                     if suffix in (".tsx", ".jsx", ".vue", ".svelte")
-                    else ("typescript" if suffix == ".ts" else "javascript")
+                    else ("typescript" if suffix in (".ts", ".mts", ".cts") else "javascript")
                 )
                 blocks = _extract_sfc_script_blocks(content) if suffix in (".vue", ".svelte") else [(content, 0)]
                 for block_text, _ in blocks:

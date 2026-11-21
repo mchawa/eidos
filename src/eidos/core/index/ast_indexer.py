@@ -22,6 +22,8 @@ from eidos.core.index.ast_preprocess import (
     _extract_sfc_script_blocks,
     _extract_sg_node_name,
     _extract_ts_exported_names,
+    _ts_variable_binding_names,
+    _unwrap_js_parens,
 )
 from eidos.core.index.ast_preprocess import (
     INV_OR_POL_TOKEN_RE as INV_OR_POL_TOKEN_RE,
@@ -55,6 +57,14 @@ from eidos.core.index.ast_preprocess import (
 )
 
 
+def _compact_variable_signature(raw_text: str, *, max_len: int = 200) -> str:
+    """Normalize whitespace and cap variable declaration signatures to prevent multi-line literal bloat."""
+    compact = re.sub(r"\s+", " ", raw_text[: max_len * 4].strip())
+    if len(compact) > max_len:
+        return f"{compact[: max_len - 3].rstrip()}..."
+    return compact
+
+
 def _extract_python_docstring(node: Any) -> str | None:
     """Extract and cleandoc the Python docstring from a class_definition or function_definition SgNode."""
     body = node.field("body")
@@ -85,8 +95,12 @@ class AstGrepIndexer(BaseAstIndexer):
         ".py": "python",
         ".ts": "typescript",
         ".tsx": "tsx",
+        ".mts": "typescript",
+        ".cts": "typescript",
         ".js": "javascript",
         ".jsx": "jsx",
+        ".mjs": "javascript",
+        ".cjs": "javascript",
         ".rs": "rust",
         ".go": "go",
         ".java": "java",
@@ -882,20 +896,22 @@ class AstGrepIndexer(BaseAstIndexer):
 
         if lang in ("typescript", "tsx", "javascript", "jsx"):
             seen_fn_names = {s.name for s in symbols if s.kind == "function" and not s.parent_symbol}
-            fn_like_kinds = all_fn_kinds | {
+            seen_top_names = {s.name for s in symbols if not s.parent_symbol}
+            callable_val_kinds = (
                 "arrow_function",
                 "function_expression",
                 "function",
                 "generator_function",
-            }
+            )
+            fn_like_kinds = all_fn_kinds | set(callable_val_kinds)
+            is_js_ts_module = sfc_lang is None
             for vdecl in node.find_all(kind="variable_declarator"):
-                val_node = vdecl.field("value")
-                if val_node is None or val_node.kind() not in (
-                    "arrow_function",
-                    "function_expression",
-                    "function",
-                    "generator_function",
-                ):
+                val_node = _unwrap_js_parens(vdecl.field("value")) if is_js_ts_module else vdecl.field("value")
+                name_node = vdecl.field("name")
+                is_callable = val_node is not None and val_node.kind() in callable_val_kinds
+                if is_js_ts_module and (name_node is None or name_node.kind() != "identifier"):
+                    is_callable = False
+                if not is_callable and not is_js_ts_module:
                     continue
                 anc = vdecl.parent()
                 nested_in_fn_or_cls = False
@@ -906,6 +922,15 @@ class AstGrepIndexer(BaseAstIndexer):
                     if akind in fn_like_kinds or akind in ("class_declaration", "class_body"):
                         nested_in_fn_or_cls = True
                         break
+                    if not is_callable and akind not in (
+                        "program",
+                        "lexical_declaration",
+                        "variable_declaration",
+                        "export_statement",
+                        "ambient_declaration",
+                    ):
+                        nested_in_fn_or_cls = True
+                        break
                     if akind in ("lexical_declaration", "variable_declaration"):
                         stmt_node = anc
                     elif akind == "export_statement":
@@ -914,31 +939,119 @@ class AstGrepIndexer(BaseAstIndexer):
                     anc = anc.parent()
                 if nested_in_fn_or_cls:
                     continue
-                fname = self._node_name(vdecl, lang)
-                if not fname or fname in seen_fn_names:
-                    continue
-                seen_fn_names.add(fname)
-                rng = stmt_node.range()
-                sig = _node_header_sig(stmt_node, rng)
-                if is_exported_decl and not sig.startswith("export "):
-                    sig = f"export {sig}"
-                sym = CodeSymbol(
-                    name=fname,
-                    kind="function",
-                    file_path=rel_path,
-                    line_start=rng.start.line + 1 + line_offset,
-                    line_end=rng.end.line + 1 + line_offset,
-                    parent_symbol=None,
-                    signature=sig,
-                )
-                sym.is_public = _evaluate_symbol_visibility(
-                    sym,
-                    py_dunder_all=py_dunder_all,
-                    ts_exports=ts_exports,
-                    class_is_public=class_is_public,
-                )
-                sym.is_boundary_export = _evaluate_boundary_export(sym, py_dunder_all=py_dunder_all)
-                symbols.append(sym)
+                names = [self._node_name(vdecl, lang)] if is_callable else _ts_variable_binding_names(vdecl)
+                for fname in names:
+                    if not fname:
+                        continue
+                    if is_callable and fname in seen_fn_names:
+                        continue
+                    if not is_callable and fname in seen_top_names:
+                        continue
+                    if is_callable:
+                        seen_fn_names.add(fname)
+                    seen_top_names.add(fname)
+                    rng = stmt_node.range() if is_callable else vdecl.range()
+                    sig = (
+                        _node_header_sig(stmt_node, stmt_node.range())
+                        if is_callable
+                        else _compact_variable_signature(vdecl.text())
+                    )
+                    if is_exported_decl and not sig.startswith("export "):
+                        sig = f"export {sig}"
+                    sym = CodeSymbol(
+                        name=fname,
+                        kind="function" if is_callable else "variable",
+                        file_path=rel_path,
+                        line_start=rng.start.line + 1 + line_offset,
+                        line_end=rng.end.line + 1 + line_offset,
+                        parent_symbol=None,
+                        signature=sig,
+                    )
+                    sym.is_public = _evaluate_symbol_visibility(
+                        sym,
+                        py_dunder_all=py_dunder_all,
+                        ts_exports=ts_exports,
+                        class_is_public=class_is_public,
+                    )
+                    sym.is_boundary_export = _evaluate_boundary_export(sym, py_dunder_all=py_dunder_all)
+                    symbols.append(sym)
+
+            # CommonJS direct / aliased module-level exports: exports.NAME = ..., module.exports.NAME = ...,
+            # and module.exports = { key: expr } for symbols not already declared at top level.
+            if is_js_ts_module:
+                for stmt in node.children():
+                    if stmt.kind() != "expression_statement":
+                        continue
+                    assign = next((c for c in stmt.children() if c.kind() == "assignment_expression"), None)
+                    if assign is None:
+                        continue
+                    left = assign.field("left")
+                    right = assign.field("right")
+                    if left is None or right is None or left.kind() != "member_expression":
+                        continue
+                    left_text = left.text().strip()
+                    cjs_entries: list[tuple[str, bool, Any, str]] = []
+                    if left_text == "module.exports":
+                        rhs = _unwrap_js_parens(right)
+                        if rhs is not None and rhs.kind() == "object":
+                            for prop in rhs.children():
+                                if prop.kind() == "pair":
+                                    key = prop.field("key")
+                                    pval = _unwrap_js_parens(prop.field("value"))
+                                    if key is not None and key.kind() in ("property_identifier", "identifier"):
+                                        kname = key.text().strip()
+                                        is_fn = pval is not None and (
+                                            pval.kind() in callable_val_kinds
+                                            or (pval.kind() == "identifier" and pval.text().strip() in seen_fn_names)
+                                        )
+                                        psig = _compact_variable_signature(prop.text())
+                                        cjs_entries.append((kname, is_fn, prop, psig))
+                    else:
+                        obj = left.field("object")
+                        prop_node = left.field("property")
+                        if (
+                            obj is not None
+                            and prop_node is not None
+                            and obj.text().strip() in ("exports", "module.exports")
+                            and prop_node.kind() == "property_identifier"
+                        ):
+                            ename = prop_node.text().strip()
+                            rhs = _unwrap_js_parens(right)
+                            is_fn = rhs is not None and (
+                                rhs.kind() in callable_val_kinds
+                                or (rhs.kind() == "identifier" and rhs.text().strip() in seen_fn_names)
+                            )
+                            esig = (
+                                _node_header_sig(stmt, stmt.range())
+                                if is_fn
+                                else _compact_variable_signature(stmt.text())
+                            )
+                            cjs_entries.append((ename, is_fn, stmt, esig))
+
+                    for ename, is_fn, target_node, esig in cjs_entries:
+                        if not ename or ename in seen_top_names:
+                            continue
+                        seen_top_names.add(ename)
+                        if is_fn:
+                            seen_fn_names.add(ename)
+                        erng = target_node.range()
+                        sym = CodeSymbol(
+                            name=ename,
+                            kind="function" if is_fn else "variable",
+                            file_path=rel_path,
+                            line_start=erng.start.line + 1 + line_offset,
+                            line_end=erng.end.line + 1 + line_offset,
+                            parent_symbol=None,
+                            signature=esig,
+                        )
+                        sym.is_public = _evaluate_symbol_visibility(
+                            sym,
+                            py_dunder_all=py_dunder_all,
+                            ts_exports=ts_exports,
+                            class_is_public=class_is_public,
+                        )
+                        sym.is_boundary_export = _evaluate_boundary_export(sym, py_dunder_all=py_dunder_all)
+                        symbols.append(sym)
 
             if sfc_lang == "vue":
                 for call in node.find_all(kind="call_expression"):

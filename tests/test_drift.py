@@ -5443,3 +5443,49 @@ def test_executable_import_boundaries_and_ratchet_baseline(tmp_path: Path) -> No
     )
     assert evaluate_import_boundaries(eidos_dir, repo_root=repo) == ([], [])
     gi._INDEX_INSTANCES.pop(eidos_dir.resolve(), None)
+
+
+def test_ts_and_js_exported_variable_public_surface_drift(tmp_path: Path, monkeypatch) -> None:
+    import subprocess
+
+    from eidos.core.lifecycle.initializer import init_repository
+
+    repo = tmp_path / "ts_js_drift"
+    init_repository(repo, title="ts-js-drift")
+    src = repo / "src"
+    src.mkdir()
+    for ext, name in (("ts", "DATA"), ("tsx", "VIEW"), ("js", "JS_DATA"), ("jsx", "JSX_VIEW")):
+        (src / f"app.{ext}").write_text(f"export const {name} = 1;\n", encoding="utf-8")
+    containers = repo / "eidos/architecture/containers"
+    components = repo / "eidos/architecture/components"
+    containers.mkdir(parents=True, exist_ok=True)
+    components.mkdir(parents=True, exist_ok=True)
+    (containers / "app.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-APP\ntitle: App\nstatus: active\n"
+        "container_type: library\nruntime: TypeScript / JavaScript\nsource_path: src\n---\n= App\n",
+        encoding="utf-8",
+    )
+    spec = components / "app.adoc"
+    spec.write_text(
+        "---\ntype: tech/component\nid: CMP-APP\ntitle: App\ncontainer: CNT-APP\n"
+        "status: active\nsource_path: src\n---\n= App\n\n== Public Surface\n* `DATA`\n* `VIEW`\n* `JS_DATA`\n* `JSX_VIEW`\n",
+        encoding="utf-8",
+    )
+    for args in (
+        ["init", "-q", "-b", "main"],
+        ["config", "user.email", "dev@eidos.dev"],
+        ["config", "user.name", "Dev"],
+        ["add", "."],
+        ["commit", "-qm", "baseline"],
+    ):
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+    spec.write_text(spec.read_text(encoding="utf-8") + "\nMore detail.\n", encoding="utf-8")
+    with monkeypatch.context() as m:
+        m.chdir(repo)
+        result = runner.invoke(app, ["drift", "--uncommitted", "--json"])
+        assert result.exit_code == 0, result.stdout
+        assert orjson.loads(result.stdout)["is_clean"]
+        spec.write_text(spec.read_text(encoding="utf-8") + "* `MISSING_DATA`\n", encoding="utf-8")
+        result = runner.invoke(app, ["drift", "--uncommitted", "--json"])
+        assert result.exit_code != 0
+        assert "MISSING_DATA" in result.stdout
