@@ -1,0 +1,62 @@
+---
+type: delta/mutation
+id: DLT-2026-164-ELIMINATE-TEST-ONNX-BOTTLENECK-5A3A
+title: "Eliminate Test ONNX Bottleneck, Vite 8 Deprecation, and Spec Hygiene Warnings"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Local test runs currently stall for ~8 minutes when Harrier ONNX is provisioned because test_cli_index_commands runs 'eidos index sync' without --no-semantic, Vite 8 emits a __dirname deprecation warning on every portal build, and dlt-2026-119-publish-official-9237.adoc emits 7 Asciidoctor list-item index warnings during Vitest."
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+    details: "Replace Node CJS __dirname with ESM import.meta.dirname in src/eidos/portal/frontend/vite.config.ts (eliminating Vite 8 native configLoader warnings) and add a zero-Asciidoctor-warning check in src/eidos/portal/frontend/tests/asciidoc.test.ts. Update eidos/architecture/containers/portal.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "import.meta.dirname"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Add INV-ASCIIDOC-ZERO-WARNING-HYGIENE in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-ASCIIDOC-ZERO-WARNING-HYGIENE"
+      body:
+        contains:
+          - "INV-ASCIIDOC-ZERO-WARNING-HYGIENE"
+  - operation: add
+    target: INV-ASCIIDOC-ZERO-WARNING-HYGIENE
+    details: "Bind INV-ASCIIDOC-ZERO-WARNING-HYGIENE in CAP-PROD-001 to tests/test_docs_sync.py::test_repo_specs_zero_asciidoc_list_warnings_and_fast_index_cli_test."
+    expect:
+      frontmatter:
+        rule: "Asciidoctor"
+        test_binding: "tests/test_docs_sync.py::test_repo_specs_zero_asciidoc_list_warnings_and_fast_index_cli_test"
+vcs:
+  branch: main
+  base_commit: 7248a3e1fe77d5795ae1347f569450b7df663b7f
+---
+= SpecDelta: Eliminate Test ONNX Bottleneck, Vite 8 Deprecation, and Spec Hygiene Warnings
+:toc: left
+
+== Problem Statement
+Three accumulated developer-experience and hygiene issues were observed during full-suite verification:
+
+1. **Test Suite ONNX Bottleneck**: `tests/test_context.py::test_cli_index_commands` invokes `eidos index sync` without `--no-semantic` against Eidos's live repo, triggering a multi-minute CPU ONNX embedding pass whenever `eidos/.cache/models/harrier-oss-v1-0.6b` is provisioned locally (even though semantic sync has dedicated mocked unit tests).
+2. **Vite 8 Config Deprecation**: `src/eidos/portal/frontend/vite.config.ts` uses `__dirname` on lines 56 and 74, emitting a Vite 8 `configLoader: 'native'` deprecation warning on every `pnpm build:assets` run.
+3. **Asciidoctor List Warnings**: `src/eidos/portal/frontend/tests/asciidoc.test.ts` emits 7 `asciidoctor: WARNING: list item index: expected N, got M` diagnostics caused by nested `1.` ordered lists (instead of AsciiDoc `..` nested syntax) in `eidos/deltas/dlt-2026-119-publish-official-9237.adoc`.
+
+== Proposed Specification Changes
+* **`CNT-EIDOS-PORTAL` (`src/eidos/portal/frontend/vite.config.ts`, `src/eidos/portal/frontend/tests/asciidoc.test.ts`, `eidos/architecture/containers/portal.adoc`)**:
+  * Replace `__dirname` with `import.meta.dirname` in `vite.config.ts` for clean Vite 8 builds.
+  * Assert zero Asciidoctor `MemoryLogger` warnings when converting repository `.adoc` bodies in `src/eidos/portal/frontend/tests/asciidoc.test.ts`.
+* **`CAP-PROD-001` (`eidos/domains/spec-engine/capabilities/living-spec-engine.adoc`)**:
+  * Bind `INV-ASCIIDOC-ZERO-WARNING-HYGIENE` to `tests/test_docs_sync.py::test_repo_specs_zero_asciidoc_list_warnings_and_fast_index_cli_test`.
+
+== Implementation Plan
+1. **Vite 8 & Vitest Zero-Warning Gate (`CNT-EIDOS-PORTAL`)**: Replace `__dirname` with `import.meta.dirname` in `src/eidos/portal/frontend/vite.config.ts` and assert zero Asciidoctor list-index warnings in `src/eidos/portal/frontend/tests/asciidoc.test.ts`; update `eidos/architecture/containers/portal.adoc`.
+2. **Fast Deterministic Index CLI Test (test-only; no spec mutation)**: Pass `--no-semantic` to `eidos index sync` inside `tests/test_context.py::test_cli_index_commands` so full `pytest` never stalls on local CPU ONNX runs.
+3. **AsciiDoc List Syntax & `CAP-PROD-001` Invariant Binding**: Convert nested `1.` sublists to canonical AsciiDoc `..` syntax in `eidos/deltas/dlt-2026-119-publish-official-9237.adoc` (SpecDelta AsciiDoc formatting cleanup; no target mutation), and add `INV-ASCIIDOC-ZERO-WARNING-HYGIENE` in `eidos/domains/spec-engine/capabilities/living-spec-engine.adoc`.
+4. **Tests & Verification (`INV-ASCIIDOC-ZERO-WARNING-HYGIENE`)**: Add `tests/test_docs_sync.py::test_repo_specs_zero_asciidoc_list_warnings_and_fast_index_cli_test`, run `pnpm test -- --run`, `pnpm build:assets` (verifying zero Vite `__dirname` warnings), `pytest tests/test_docs_sync.py tests/test_context.py`, `eidos delta verify DLT-2026-164 --json`, `eidos delta apply DLT-2026-164`, and `eidos drift --uncommitted --fail-on-warnings --json`.

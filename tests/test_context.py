@@ -493,8 +493,8 @@ def test_cli_index_commands():
     assert "Eidos Architectural Knowledge Graph Index" in res_status.output
     assert "Entities by Type" in res_status.output
 
-    # 2. sync
-    res_sync = runner.invoke(app, ["index", "sync"])
+    # 2. sync (--no-semantic keeps local runs deterministic when Harrier ONNX is provisioned)
+    res_sync = runner.invoke(app, ["index", "sync", "--no-semantic"])
     assert res_sync.exit_code == 0
     assert "Index is up to date" in res_sync.output or "Synchronized index" in res_sync.output
 

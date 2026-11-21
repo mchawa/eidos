@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from "vitest";
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { LoggerManager, MemoryLogger } from "@asciidoctor/core";
 import { renderAsciiDoc, extractAsciiDocOutline } from "@/lib/asciidoc";
 import { buildMermaidConfig, sanitizeMermaidCode } from "@/lib/mermaid";
 import { isSpecDocumentPath, looksLikeSpecId, resolveSpecTarget } from "@/lib/specNav";
@@ -204,28 +205,42 @@ describe("every living specification converts", () => {
     expect(files.length).toBeGreaterThan(30);
   });
 
-  test("INV-PORTAL-READING-ERGONOMICS: every eidos/**/*.adoc body renders without error or raw-source fallback", async () => {
+  test("INV-PORTAL-READING-ERGONOMICS & INV-ASCIIDOC-ZERO-WARNING-HYGIENE: every eidos/**/*.adoc body renders without error, warning, or raw-source fallback", async () => {
     const failures: string[] = [];
-    for (const file of files) {
-      const rel = path.relative(REPO_ROOT, file);
-      try {
-        const body = bodyOf(readFileSync(file, "utf8"));
-        const { html, outline } = await renderAsciiDoc(body);
-        if (!html.trim()) failures.push(`${rel}: empty output`);
-        // Markers that survive only when the AsciiDoc source was not converted.
-        for (const raw of ["|===", "[quote", "[source", "\n----\n", "xref:", "link:"]) {
-          // Allow markers that live inside rendered code blocks (specs documenting AsciiDoc itself).
-          const tpl = document.createElement("template");
-          tpl.innerHTML = html;
-          tpl.content.querySelectorAll("pre, code").forEach((n) => n.remove());
-          if ((tpl.content.textContent || "").includes(raw.trim())) failures.push(`${rel}: unconverted marker ${JSON.stringify(raw)}`);
+    const prevLogger = LoggerManager.getLogger();
+    const memoryLogger = MemoryLogger.create();
+    LoggerManager.setLogger(memoryLogger);
+    try {
+      for (const file of files) {
+        const rel = path.relative(REPO_ROOT, file);
+        memoryLogger.clear();
+        try {
+          const body = bodyOf(readFileSync(file, "utf8"));
+          const { html, outline } = await renderAsciiDoc(body);
+          if (!html.trim()) failures.push(`${rel}: empty output`);
+          for (const msg of memoryLogger.getMessages()) {
+            const sev = msg.getSeverity();
+            if (sev === "WARN" || sev === "ERROR" || sev === "FATAL") {
+              failures.push(`${rel}: Asciidoctor ${sev}: ${msg.getText()}`);
+            }
+          }
+          // Markers that survive only when the AsciiDoc source was not converted.
+          for (const raw of ["|===", "[quote", "[source", "\n----\n", "xref:", "link:"]) {
+            // Allow markers that live inside rendered code blocks (specs documenting AsciiDoc itself).
+            const tpl = document.createElement("template");
+            tpl.innerHTML = html;
+            tpl.content.querySelectorAll("pre, code").forEach((n) => n.remove());
+            if ((tpl.content.textContent || "").includes(raw.trim())) failures.push(`${rel}: unconverted marker ${JSON.stringify(raw)}`);
+          }
+          const ids = outline.map((o) => o.id);
+          if (new Set(ids).size !== ids.length) failures.push(`${rel}: duplicate heading ids`);
+          for (const id of ids) if (!html.includes(`id="${id}"`)) failures.push(`${rel}: outline id ${id} missing in HTML`);
+        } catch (err) {
+          failures.push(`${rel}: ${(err as Error).message}`);
         }
-        const ids = outline.map((o) => o.id);
-        if (new Set(ids).size !== ids.length) failures.push(`${rel}: duplicate heading ids`);
-        for (const id of ids) if (!html.includes(`id="${id}"`)) failures.push(`${rel}: outline id ${id} missing in HTML`);
-      } catch (err) {
-        failures.push(`${rel}: ${(err as Error).message}`);
       }
+    } finally {
+      LoggerManager.setLogger(prevLogger);
     }
     expect(failures).toEqual([]);
   });

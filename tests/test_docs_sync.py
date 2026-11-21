@@ -332,3 +332,67 @@ def test_documented_cli_flags_match_live_command_tree():
                 checked_invocations += 1
 
     assert checked_invocations >= 80, f"Expected at least 80 checked CLI invocations, checked {checked_invocations}"
+
+
+def test_repo_specs_zero_asciidoc_list_warnings_and_fast_index_cli_test():
+    """Verify INV-ASCIIDOC-ZERO-WARNING-HYGIENE: zero nested '1.' AsciiDoc list-index warnings, ESM import.meta.dirname in vite.config.ts, and fast --no-semantic index CLI test."""
+    import ast
+    import re
+
+    repo_root = Path(__file__).parent.parent
+
+    # 1. Portal Vite 8 config uses import.meta.dirname instead of CJS __dirname
+    vite_cfg = (repo_root / "src/eidos/portal/frontend/vite.config.ts").read_text(encoding="utf-8")
+    assert "import.meta.dirname" in vite_cfg, "vite.config.ts must use ESM import.meta.dirname"
+    assert "__dirname" not in vite_cfg, "vite.config.ts must not use deprecated CJS __dirname"
+
+    # 2. Vitest asciidoc suite enforces MemoryLogger zero-warning gate
+    asciidoc_test = (repo_root / "src/eidos/portal/frontend/tests/asciidoc.test.ts").read_text(encoding="utf-8")
+    assert "MemoryLogger" in asciidoc_test and "LoggerManager" in asciidoc_test
+
+    # 3. test_cli_index_commands invokes `eidos index sync` with `--no-semantic`
+    ctx_tree = ast.parse((repo_root / "tests/test_context.py").read_text(encoding="utf-8"))
+    fn = next(
+        n for n in ctx_tree.body if isinstance(n, ast.FunctionDef) and n.name == "test_cli_index_commands"
+    )
+    sync_calls: list[list[str]] = []
+    for node in ast.walk(fn):
+        if isinstance(node, ast.List):
+            elts = [e.value for e in node.elts if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+            if elts[:2] == ["index", "sync"]:
+                sync_calls.append(elts)
+    assert sync_calls, "test_cli_index_commands must invoke ['index', 'sync', ...]"
+    for call_args in sync_calls:
+        assert "--no-semantic" in call_args, (
+            f"test_cli_index_commands must pass --no-semantic to avoid ONNX CPU stall: {call_args}"
+        )
+
+    # 4. No .adoc file under eidos/ has nested indented numeric `1.` sublists inside an open top-level numeric list
+    top_num_re = re.compile(r"^\d+\.\s+")
+    nested_num_re = re.compile(r"^\s+\d+\.\s+")
+    offenders: list[str] = []
+    for adoc in sorted((repo_root / "eidos").rglob("*.adoc")):
+        text = adoc.read_text(encoding="utf-8")
+        # Strip YAML frontmatter
+        fm_match = re.match(r"^---\r?\n[\s\S]*?\r?\n---\r?\n", text)
+        body = text[fm_match.end() :] if fm_match else text
+        in_delim = False
+        in_top_num_list = False
+        for lineno, line in enumerate(body.splitlines(), start=1):
+            stripped = line.strip()
+            if stripped in ("----", "....", "====", "++++") or stripped.startswith("```"):
+                in_delim = not in_delim
+                continue
+            if in_delim:
+                continue
+            if not stripped:
+                in_top_num_list = False
+                continue
+            if top_num_re.match(line):
+                in_top_num_list = True
+                continue
+            if in_top_num_list and nested_num_re.match(line):
+                offenders.append(f"{adoc.relative_to(repo_root)}:{lineno}: {line.strip()}")
+    assert not offenders, "Nested numeric AsciiDoc lists trigger Asciidoctor list-index warnings:\n" + "\n".join(
+        offenders
+    )

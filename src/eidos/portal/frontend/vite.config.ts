@@ -53,7 +53,7 @@ function escapeInlineHeadClose(): Plugin {
   };
 }
 
-const UNBUNDLED_STUB = path.resolve(__dirname, "./src/stubs/unbundled-optional-dependency.ts");
+const UNBUNDLED_STUB = path.resolve(import.meta.dirname, "./src/stubs/unbundled-optional-dependency.ts");
 const UNBUNDLED_MERMAID_OPTIONALS = [
   /^elkjs\/lib\/elk\.bundled\.js$/, // `layout: elk` engine (~1.4 MB); dagre is the portal default and what generator.py targets
 ];
@@ -71,7 +71,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: [
-      { find: "@", replacement: path.resolve(__dirname, "./src") },
+      { find: "@", replacement: path.resolve(import.meta.dirname, "./src") },
       // Optional Mermaid dependencies that would blow the 5 MiB single-file budget (INV-PORTAL-AIR-GAPPED-BUNDLE
       // keeps everything inline, so unused heavyweight engines are stubbed rather than shipped).
       ...UNBUNDLED_MERMAID_OPTIONALS.map((find) => ({ find, replacement: UNBUNDLED_STUB })),
