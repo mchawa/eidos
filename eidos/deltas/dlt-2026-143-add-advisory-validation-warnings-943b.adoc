@@ -1,0 +1,160 @@
+---
+type: delta/mutation
+id: DLT-2026-143-ADD-ADVISORY-VALIDATION-WARNINGS-943B
+title: "Add Advisory Validation Warnings for Over-Scoped source_path Entries and Prose Symbol Drift"
+status: applied
+intent:
+  kind: feature
+  motivation: "eidos validate currently emits only blocking errors (schema_errors and broken_references), leaving two real drift blind spots undetected: (1) over-scoped directories in multi-entry CMP-*.source_path that contribute zero symbols to == Public Surface and inject spurious consumes_api/depends_on edges, and (2) nonexistent code symbols referenced outside == Public Surface in active CNT-*/CMP-* narrative sections."
+mutations:
+  - operation: modify
+    target: CMP-DOMAIN-MODELS
+    details: "Add warnings: list[str] = field(default_factory=list) to ValidationReport in src/eidos/core/spec/models.py while keeping ValidationReport.is_clean governed strictly by blocking invalid_docs, broken_references, and schema_errors. Update eidos/architecture/components/domain-models.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/core/spec/models.py"
+      body:
+        contains:
+          - "ValidationReport"
+          - "warnings"
+  - operation: modify
+    target: CMP-ARCHITECTURE-BOUNDARY-VALIDATOR
+    details: "Extend PublicSurfaceValidator in src/eidos/core/spec/surface_validator.py to: (1) track per-source_path symbol matches on active CMP-* specs with multiple source_path entries and a non-empty == Public Surface, emitting a ValidationReport.warnings entry when any code-bearing source_path entry (directory or standalone source file containing >=1 AST code file) contributes zero == Public Surface symbols and has no intra-component import linkage to the component's other source_path entries; and (2) conservatively scan non-Public-Surface body sections of active CNT-*/CMP-* specs (excluding fenced code blocks and contrastive/deprecated clauses) for explicit code references (PascalType.member, PascalType::member, and explicit func_name(...) calls excluding common builtins/stdlib calls) against the repo-wide AST symbol catalog, emitting ValidationReport.warnings for unmatched symbols. Update eidos/architecture/components/architecture-boundary-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/surface_validator.py"
+          - "src/eidos/core/spec/boundary_validator.py"
+      body:
+        contains:
+          - "warnings"
+          - "source_path"
+          - "Public Surface"
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: "Propagate repo-wide AST symbol context and collect advisory warnings from PublicSurfaceValidator into ValidationReport.warnings in SpecValidator.validate_directory (src/eidos/core/spec/validator.py). Update eidos/architecture/components/spec-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/validator.py"
+          - "src/eidos/core/spec/design_validation.py"
+      body:
+        contains:
+          - "warnings"
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    details: "Expose validation_warnings property on DriftCheckResult in src/eidos/vcs/drift.py and render an advisory Specification Validation Warnings section in Markdown reports in src/eidos/vcs/report.py without failing DriftCheckResult.is_clean. Update eidos/architecture/components/drift-detector.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/vcs/drift.py"
+          - "src/eidos/vcs/snapshot.py"
+          - "src/eidos/vcs/structural.py"
+          - "src/eidos/vcs/report.py"
+      body:
+        contains:
+          - "validation_warnings"
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+    details: "Expose 'warnings': report.warnings in eidos validate --json output and render an advisory Validation Warnings panel/list in terminal output in src/eidos/cli/spec_commands.py while preserving exit code 0 when report.is_clean is True. Update eidos/architecture/components/cli-spec-commands.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/cli/spec_commands.py"
+      body:
+        contains:
+          - "warnings"
+  - operation: modify
+    target: CMP-CLI-DRIFT-COMMANDS
+    details: "Expose 'validation_warnings': result.validation_warnings in eidos drift --json output and render advisory validation warnings in terminal output in src/eidos/cli/drift_commands.py while preserving exit code 0 when result.is_clean is True. Update eidos/architecture/components/cli-drift-commands.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/cli/drift_commands.py"
+      body:
+        contains:
+          - "validation_warnings"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Document the non-blocking warnings field in eidos validate [PATH] [--json] and validation_warnings field in eidos drift [--json] JSON and terminal output in eidos/architecture/contracts/cli.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "warnings"
+          - "validation_warnings"
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: "Record DEC-CORE-ADVISORY-VALIDATION-WARNINGS in eidos/architecture/containers/core.adoc documenting the non-blocking ValidationReport.warnings channel and high-precision false-positive guardrails."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-CORE-ADVISORY-VALIDATION-WARNINGS"
+      body:
+        contains:
+          - "ValidationReport.warnings"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Document the advisory warnings output of eidos validate [--json] and validation_warnings output of eidos drift [--json] in docs/guides/cli.md (`INV-DOCS-SYNCHRONIZATION`), and update eidos/architecture/components/docs-user-guides.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/guides"
+      body:
+        contains:
+          - "warnings"
+          - "validation_warnings"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Extend CAP-PROD-001 in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc with INV-VALIDATION-ADVISORY-WARNINGS."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-VALIDATION-ADVISORY-WARNINGS"
+      body:
+        contains:
+          - "INV-VALIDATION-ADVISORY-WARNINGS"
+  - operation: add
+    target: INV-VALIDATION-ADVISORY-WARNINGS
+    details: "Bind INV-VALIDATION-ADVISORY-WARNINGS in CAP-PROD-001 to tests/test_validator.py::test_advisory_warnings_overscoped_source_path_and_prose_symbols."
+    expect:
+      frontmatter:
+        rule: "warnings"
+        test_binding: "tests/test_validator.py::test_advisory_warnings_overscoped_source_path_and_prose_symbols"
+vcs:
+  branch: main
+  base_commit: f5fb0f2a5d56e8ea5d4c9c092a82e329bda97372
+---
+= SpecDelta: Add Advisory Validation Warnings for Over-Scoped source_path Entries and Prose Symbol Drift
+:toc: left
+
+== Problem Statement
+Two classes of living-spec drift currently pass `eidos validate` with zero signal:
+
+1. **Unchecked `source_path` over-scoping**: `SpecValidator` only verifies that each `source_path` exists on disk, and `PublicSurfaceValidator` flattens all `source_paths()` into one symbol set. If a component lists an unrelated directory in `source_path` that contributes 0 symbols to `== Public Surface`, validation passes silently while `CMP-HTTP-TOPOLOGY-LINKER` and `CMP-INCREMENTAL-SYNC-ENGINE` attribute spurious `consumes_api` / `depends_on` edges to that component.
+2. **No symbol verification outside `== Public Surface`**: `PublicSurfaceValidator` only inspects `== Public Surface` sections on active `CNT-*`/`CMP-*` specs; nonexistent code types/methods cited in other sections (`== Responsibility`, `== Internal Structure & Key Mechanisms`, `== Key Responsibilities & Collaborators`) go unnoticed.
+
+At the same time, `ValidationReport` currently has no non-blocking `warnings` channel, and Eidos's own `CMP-*` specs legitimately include internal helper submodules in multi-entry `source_path` arrays (`DEC-ARCH-MODULAR-COMPONENT-COHESION`).
+
+== Proposed Specification Changes
+* **`CMP-DOMAIN-MODELS` (`src/eidos/core/spec/models.py`)**: Add `warnings: list[str]` to `ValidationReport` (non-blocking: `is_clean` remains `True` when only warnings exist).
+* **`CMP-ARCHITECTURE-BOUNDARY-VALIDATOR` (`src/eidos/core/spec/surface_validator.py`) & `CMP-SPEC-VALIDATOR` (`src/eidos/core/spec/validator.py`)**:
+  - Emit a warning when a multi-entry `CMP-*.source_path` includes a code-bearing **directory or standalone source file** (containing `>= 1` AST code file) contributing zero `== Public Surface` symbols with no intra-component import linkage to the rest of the component's `source_path` entries.
+  - Emit a high-precision advisory warning for explicit code references (`PascalType.member`, `PascalType::member`, and explicit `func_name(...)` calls, skipping fenced code blocks, contrastive/deprecated clauses, entity IDs, file paths, and common builtins/stdlib calls — never flagging bare `PascalCase` product/framework words) in non-`== Public Surface` sections of active `CNT-*`/`CMP-*` specs that do not exist in the repository's AST symbol catalog (100% deterministic per `POL-004-ZERO-AI-CALL-DEPENDENCY`).
+* **`CMP-DRIFT-DETECTOR` (`src/eidos/vcs/drift.py`, `src/eidos/vcs/report.py`) & `CMP-CLI-DRIFT-COMMANDS` (`src/eidos/cli/drift_commands.py`)**: Expose non-blocking `validation_warnings` on `DriftCheckResult`, Markdown drift summaries, and `eidos drift [--json]` terminal/JSON output (preserving exit code `0` when `is_clean` is `True`).
+* **`CMP-CLI-SPEC-COMMANDS` (`src/eidos/cli/spec_commands.py`), `CTR-EIDOS-CLI`, `CMP-DOCS-USER-GUIDES` (`docs/guides/cli.md`)**: Surface `warnings` in `eidos validate` rich output and `--json` payload (preserving exit code `0` on warnings-only runs) and document `validation_warnings` in `eidos drift`.
+* **`CNT-EIDOS-CORE` & `CAP-PROD-001`**: Record `DEC-CORE-ADVISORY-VALIDATION-WARNINGS` (`graduated_from: DLT-2026-143-ADD-ADVISORY-VALIDATION-WARNINGS-943B`, documenting the non-blocking `ValidationReport.warnings` channel and rejecting blocking hard-errors on zero-contribution internal helper files and noisy bare-`PascalCase` prose matching) and add `INV-VALIDATION-ADVISORY-WARNINGS`.
+
+== Implementation Plan
+1. **Report Model (`CMP-DOMAIN-MODELS`)**: Add `warnings: list[str] = field(default_factory=list)` to `ValidationReport` in `src/eidos/core/spec/models.py`.
+2. **Over-Scoped `source_path` & High-Precision Prose Symbol Warning Passes (`CMP-ARCHITECTURE-BOUNDARY-VALIDATOR`, `CMP-SPEC-VALIDATOR`)**: Implement per-`source_path` contribution tracking across directories and standalone code files (with bidirectional intra-component import linkage checks to protect internal helper submodules) and 2-tier lazy high-precision repo-wide prose symbol verification (`PascalType.member`, `PascalType::member`, and `func_name(...)`, resolving Tier 1 from already-parsed `== Public Surface` symbols with zero extra I/O and lazily scanning remaining declared `CNT-*`/`CMP-*` files in Tier 2 only on misses) in `src/eidos/core/spec/surface_validator.py`, wired from `src/eidos/core/spec/validator.py`.
+3. **Drift & CLI Surfacing (`CMP-DRIFT-DETECTOR`, `CMP-CLI-SPEC-COMMANDS`, `CMP-CLI-DRIFT-COMMANDS`, `CTR-EIDOS-CLI`, `CMP-DOCS-USER-GUIDES`)**: Expose `DriftCheckResult.validation_warnings` in `src/eidos/vcs/drift.py` and `src/eidos/vcs/report.py` (`CNT-EIDOS-VCS` covered via `CMP-DRIFT-DETECTOR`), surface `"warnings"` in `src/eidos/cli/spec_commands.py` and `"validation_warnings"` in `src/eidos/cli/drift_commands.py` (`CNT-EIDOS-CLI` covered via `CMP-CLI-SPEC-COMMANDS`, `CMP-CLI-DRIFT-COMMANDS`, and `CTR-EIDOS-CLI`), and update `eidos/architecture/contracts/cli.adoc` and `docs/guides/cli.md` (`INV-DOCS-SYNCHRONIZATION`).
+4. **Living Specs, Tests & Coverage (`POL-005-STATEMENT-TEST-COVERAGE`)**: Update `CMP-DOMAIN-MODELS`, `CMP-ARCHITECTURE-BOUNDARY-VALIDATOR`, `CMP-SPEC-VALIDATOR`, `CMP-DRIFT-DETECTOR`, `CMP-CLI-SPEC-COMMANDS`, `CMP-CLI-DRIFT-COMMANDS`, `CTR-EIDOS-CLI`, `CNT-EIDOS-CORE` (`DEC-CORE-ADVISORY-VALIDATION-WARNINGS`), `CMP-DOCS-USER-GUIDES`, and `CAP-PROD-001` (`INV-VALIDATION-ADVISORY-WARNINGS`). Add `tests/test_validator.py::test_advisory_warnings_overscoped_source_path_and_prose_symbols` verifying zero false positives on Eidos's own `eidos/` catalog, non-blocking `eidos validate` / `eidos drift` surfacing, and `>90.0%` per-file statement coverage.
+5. **Verification**: Run `pytest`, `eidos delta verify DLT-2026-143 --json`, `eidos delta apply DLT-2026-143`, and `eidos drift --uncommitted --json`.

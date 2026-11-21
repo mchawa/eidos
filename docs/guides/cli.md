@@ -84,10 +84,10 @@ eidos validate --json
 
 Options:
 * `PATH`: Positional path to the specification directory or file (default: `eidos`).
-* `--json`: Output structured JSON validation report.
+* `--json`: Output structured JSON validation report (including non-blocking advisory `warnings` for over-scoped `CMP-*.source_path` entries and stale explicit prose symbol references).
 
 Exit Codes:
-* `0`: All specifications conform to schema with zero broken cross-references or missing file bindings.
+* `0`: All specifications conform to schema with zero broken cross-references or missing file bindings (advisory `warnings` do not fail exit code `0`).
 * `1`: Schema validation errors, broken cross-references, missing declared files, or undocumented/stale contract operations detected.
 
 > [!NOTE]
@@ -121,12 +121,12 @@ Options:
 * `--uncommitted, -u`: Analyze uncommitted working tree and staged changes instead of branch diff.
 * `--path, -p PATH`: Path to eidos specifications directory (defaults to `./eidos`).
 * `--markdown, -m FILE`: Path to write the markdown summary comment.
-* `--json`: Output raw JSON verification result (including `structural_code_files`, `body_only_code_files`, `trivially_covered_files`, `boundary_violations`, and `ratchet_shrink_candidates`).
+* `--json`: Output raw JSON verification result (including `structural_code_files`, `body_only_code_files`, `trivially_covered_files`, `boundary_violations`, `ratchet_shrink_candidates`, and non-blocking `validation_warnings`).
 * `--strict`: Treat body-only code changes as drift unless accompanied by a 1-hop spec, active SpecDelta, or test update.
 * `--warn-only`: Do not exit with code 1 when drift is detected.
 
 Exit Codes:
-* `0`: Specifications and code are synchronized, all schemas, import boundaries, and bindings valid, invariant tests green (advisory `ratchet_shrink_candidates` do not fail exit code `0`).
+* `0`: Specifications and code are synchronized, all schemas, import boundaries, and bindings valid, invariant tests green (advisory `ratchet_shrink_candidates` and `validation_warnings` do not fail exit code `0`).
 * `1`: Spec-to-code drift detected, architectural import `boundary_violations` detected, unowned structural code found, specification validation errors found, or uncovered/orphan invariants detected.
 
 > [!IMPORTANT]
@@ -342,7 +342,7 @@ Sub-commands:
 * `list`: Lists all living specifications across the 15 blueprint types in tabular or JSON format, with optional `--type, -t`, `--status, -s`, `--include-archived`, `--path, -p`, and `--json` flags.
 * `show <id_or_path>`: Displays detailed frontmatter metadata and preview of a specification document.
 * `schema [type] [--json]`: Dynamically loads and inspects bundled v1 YAML frontmatter schemas from `assets/schemas/v1/` across all 16 specification types (omit `[type]` to list all 16 schemas, or pass a short alias like `capability` or canonical type like `product/capability`), displaying required/optional keys, nested object/array item constraints, and schema-synthesized YAML frontmatter templates.
-* `create <type> <id> --title <title> [--client <client>] [--path <path>]`: Scaffolds a minimal, schema-valid draft blueprint (`status: draft`) across all 15 living specification types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`). Pass `--client, -c <CLT-ID|path|slug>` when creating a `screen` (`design/screen`), placing it under `eidos/design/clients/<client>/screens/<screen>.adoc`.
+* `create <type> <id> --title <title> [--client <client>] [--path <path>]`: Scaffolds a minimal, schema-valid draft specification blueprint (`status: draft`) across all 15 living specification types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`). Pass `--client, -c <CLT-ID|path|slug>` when creating a `screen` (`design/screen`), placing it under `eidos/design/clients/<client>/screens/<screen>.adoc`.
 * `delete <id_or_path>`: Safely deletes a living specification document with cross-reference safety checks (`--force, -f` to override).
 
 ---

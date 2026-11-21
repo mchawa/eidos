@@ -721,12 +721,249 @@ class PublicSurfaceValidator:
 
         return candidates
 
+    _PROSE_CONTRAST_CUE_RE: ClassVar[re.Pattern[str]] = re.compile(
+        r"\b(?:replaces?|replaced|removed|renamed|instead\s+of|rather\s+than|unlike|deprecated|legacy|rejected|formerly|e\.g\.|for\s+example|such\s+as|never|does\s+not|not\s+exist)\b",
+        re.IGNORECASE,
+    )
+    _PROSE_ENTITY_PREFIXES: ClassVar[frozenset[str]] = frozenset(
+        {
+            "SYS",
+            "ARCH",
+            "DOM",
+            "CAP",
+            "POL",
+            "PER",
+            "EXP",
+            "CNT",
+            "CMP",
+            "CTR",
+            "DS",
+            "UIC",
+            "SCR",
+            "CLT",
+            "FLOW",
+            "DLT",
+            "INV",
+            "DEC",
+        }
+    )
+    _PROSE_EXTERNAL_TYPES: ClassVar[frozenset[str]] = frozenset(
+        {
+            "Path",
+            "Console",
+            "Math",
+            "Object",
+            "String",
+            "Date",
+            "DateTime",
+            "Task",
+            "Guid",
+            "Results",
+            "HttpContext",
+            "JsonSerializer",
+            "Window",
+            "Document",
+            "Promise",
+            "Array",
+            "Map",
+            "Set",
+            "Error",
+            "Response",
+            "Request",
+            "URL",
+            "Process",
+            "File",
+            "Directory",
+            "Environment",
+            "Enum",
+            "Protocol",
+            "ABC",
+            "Deno",
+            "Router",
+            "WebApplication",
+            "BaseHTTPRequestHandler",
+            "ThreadingHTTPServer",
+            "EventSource",
+            "URLSearchParams",
+            "FormData",
+        }
+    )
+    _PROSE_BUILTIN_CALLS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "print",
+            "len",
+            "str",
+            "int",
+            "float",
+            "bool",
+            "list",
+            "dict",
+            "set",
+            "tuple",
+            "open",
+            "range",
+            "type",
+            "isinstance",
+            "getattr",
+            "setattr",
+            "hasattr",
+            "super",
+            "next",
+            "iter",
+            "sorted",
+            "min",
+            "max",
+            "sum",
+            "any",
+            "all",
+            "zip",
+            "map",
+            "filter",
+            "enumerate",
+            "format",
+            "repr",
+            "fetch",
+            "require",
+            "import",
+            "export",
+            "bm25",
+            "Ok",
+            "BadRequest",
+            "NotFound",
+            "Route",
+            "Blueprint",
+            "APIRouter",
+            "FastAPI",
+        }
+    )
+
+    @staticmethod
+    def _new_repo_symbol_accumulator() -> dict[str, Any]:
+        """Create a mutable accumulator for repo-wide AST symbols collected during validation."""
+        return {
+            "symbols": set(),
+            "classes": set(),
+            "methods": set(),
+            "methods_by_class": {},
+            "bases_by_class": {},
+            "parsed_files": set(),
+        }
+
+    @classmethod
+    def _accumulate_file_symbols(cls, code_file: Path, repo_symbol_acc: dict[str, Any]) -> None:
+        """Add component-scoped AST symbols for ``code_file`` into ``repo_symbol_acc`` if not yet recorded."""
+        resolved = code_file.resolve()
+        if resolved in repo_symbol_acc["parsed_files"]:
+            return
+        repo_symbol_acc["parsed_files"].add(resolved)
+        f_syms, f_clss, f_meths, f_cls_meths, f_cls_bases = cls._extract_cached_public_surface_symbols(
+            resolved,
+            include_component_internal=True,
+        )
+        repo_symbol_acc["symbols"].update(f_syms)
+        repo_symbol_acc["classes"].update(f_clss)
+        repo_symbol_acc["methods"].update(f_meths)
+        for cn, mset in f_cls_meths.items():
+            repo_symbol_acc["methods_by_class"].setdefault(cn, set()).update(mset)
+        for cn, bset in f_cls_bases.items():
+            repo_symbol_acc["bases_by_class"].setdefault(cn, set()).update(bset)
+
+    def _resolve_entry_code_files(self, raw_sp: str, repo_root: Path, root_dir: Path) -> list[Path]:
+        """Resolve a single source_path entry (file, directory, or glob/brace-glob) to deduplicated AST code files."""
+        p = raw_sp.strip()
+        if (
+            not p
+            or p.upper() in ("N/A", "TBD", "NONE")
+            or p.endswith((".adoc", ".md", ".toml", ".yaml", ".yml", ".json"))
+        ):
+            return []
+        found: list[Path] = []
+        for expanded in expand_brace_globs(p):
+            if any(ch in expanded for ch in ("*", "?", "[")):
+                matches = sorted(repo_root.glob(expanded)) or sorted(root_dir.glob(expanded))
+                for m_path in matches:
+                    if m_path.is_file() and m_path.suffix.lower() in AST_DIFF_EXTS:
+                        found.append(m_path)
+                    elif m_path.is_dir():
+                        found.extend(self._iter_public_surface_code_files(m_path))
+                continue
+            resolved = self._resolve_source_path(repo_root, root_dir, expanded)
+            if resolved is None:
+                continue
+            if resolved.is_file() and resolved.suffix.lower() in AST_DIFF_EXTS:
+                found.append(resolved)
+            elif resolved.is_dir():
+                found.extend(self._iter_public_surface_code_files(resolved))
+        return list(dict.fromkeys(found))
+
+    @staticmethod
+    def _has_intra_component_import_link(files_a: list[Path], files_b: list[Path], repo_root: Path) -> bool:
+        """Return True if any file in ``files_a`` and ``files_b`` are linked via imports or shared C#/Java/Go package."""
+        indexer = get_ast_indexer()
+        resolved_root = repo_root.resolve()
+
+        def _build_keys(files: list[Path]) -> tuple[set[str], set[str], set[Path]]:
+            keys: set[str] = set()
+            namespaces: set[str] = set()
+            go_dirs: set[Path] = set()
+            for f in files:
+                rf = f.resolve()
+                stem = rf.stem
+                if stem and stem != "__init__":
+                    keys.add(stem)
+                if rf.is_relative_to(resolved_root):
+                    rel_no_ext = rf.relative_to(resolved_root).with_suffix("").as_posix()
+                    parts = [pt for pt in rel_no_ext.split("/") if pt and pt != "__init__"]
+                    for idx in range(len(parts)):
+                        keys.add(".".join(parts[idx:]))
+                        keys.add("/".join(parts[idx:]))
+                if rf.suffix.lower() in (".cs", ".java", ".kt", ".kts"):
+                    with contextlib.suppress(OSError, RuntimeError, ValueError):
+                        namespaces.update(indexer.extract_declared_namespaces(rf))
+                elif rf.suffix.lower() == ".go":
+                    go_dirs.add(rf.parent)
+            return keys, namespaces, go_dirs
+
+        keys_a, ns_a, go_a = _build_keys(files_a)
+        keys_b, ns_b, go_b = _build_keys(files_b)
+        if (ns_a & ns_b) or (go_a & go_b):
+            return True
+
+        def _imports_match(src_files: list[Path], target_keys: set[str], target_ns: set[str]) -> bool:
+            for sf in src_files:
+                with contextlib.suppress(OSError, RuntimeError, ValueError):
+                    for imp in indexer.extract_imports(sf):
+                        clean = imp.strip().strip("\"'")
+                        if not clean:
+                            continue
+                        if clean in target_keys or clean in target_ns:
+                            return True
+                        # Handle relative JS/TS/Py imports (./helper, ../helper, .helper) and member imports (pkg.mod.sym)
+                        norm_slash = (
+                            re.sub(r"^\.+/?", "", clean).rsplit(".", 1)[0]
+                            if clean.endswith((".js", ".ts", ".mjs", ".cjs"))
+                            else re.sub(r"^\.+/?", "", clean)
+                        )
+                        if norm_slash in target_keys:
+                            return True
+                        tail_dot = clean.rsplit(".", 1)[-1]
+                        if tail_dot in target_keys:
+                            return True
+                        parent_dot = clean.rsplit(".", 1)[0] if "." in clean else ""
+                        if parent_dot and (parent_dot in target_keys or parent_dot in target_ns):
+                            return True
+            return False
+
+        return _imports_match(files_a, keys_b, ns_b) or _imports_match(files_b, keys_a, ns_a)
+
     def _verify_entity_public_surface(
         self,
         doc: SpecDocument,
         repo_root: Path,
         root_dir: Path,
         report: ValidationReport,
+        *,
+        repo_symbol_acc: dict[str, Any] | None = None,
     ) -> None:
         """Verify that backticked code symbols under '== Public Surface' in CMP-*/CNT-* specs exist in their source_path."""
         clean_body = self._strip_asciidoc_comments(doc.body or "")
@@ -738,31 +975,12 @@ class PublicSurfaceValidator:
         if not sec_m:
             return
 
+        entry_files: list[tuple[str, list[Path]]] = []
         code_files: list[Path] = []
         for raw_sp in doc.model.source_paths():
-            p = raw_sp.strip()
-            if (
-                not p
-                or p.upper() in ("N/A", "TBD", "NONE")
-                or p.endswith((".adoc", ".md", ".toml", ".yaml", ".yml", ".json"))
-            ):
-                continue
-            for expanded in expand_brace_globs(p):
-                if any(ch in expanded for ch in ("*", "?", "[")):
-                    matches = sorted(repo_root.glob(expanded)) or sorted(root_dir.glob(expanded))
-                    for m_path in matches:
-                        if m_path.is_file() and m_path.suffix.lower() in AST_DIFF_EXTS:
-                            code_files.append(m_path)
-                        elif m_path.is_dir():
-                            code_files.extend(self._iter_public_surface_code_files(m_path))
-                    continue
-                resolved = self._resolve_source_path(repo_root, root_dir, expanded)
-                if resolved is None:
-                    continue
-                if resolved.is_file() and resolved.suffix.lower() in AST_DIFF_EXTS:
-                    code_files.append(resolved)
-                elif resolved.is_dir():
-                    code_files.extend(self._iter_public_surface_code_files(resolved))
+            ef = self._resolve_entry_code_files(raw_sp, repo_root, root_dir)
+            entry_files.append((raw_sp, ef))
+            code_files.extend(ef)
 
         if not code_files:
             return
@@ -773,11 +991,13 @@ class PublicSurfaceValidator:
         defined_methods: set[str] = set()
         methods_by_class: dict[str, set[str]] = {}
         base_classes_by_class: dict[str, set[str]] = {}
+        file_symbol_map: dict[Path, tuple[set[str], set[str], dict[str, set[str]]]] = {}
         for cf in dict.fromkeys(code_files):
             f_syms, f_clss, f_meths, f_cls_meths, f_cls_bases = self._extract_cached_public_surface_symbols(
                 cf,
                 include_component_internal=include_cmp_internal,
             )
+            file_symbol_map[cf] = (f_syms, f_clss, f_cls_meths)
             defined_symbols.update(f_syms)
             defined_classes.update(f_clss)
             defined_methods.update(f_meths)
@@ -785,6 +1005,21 @@ class PublicSurfaceValidator:
                 methods_by_class.setdefault(cn, set()).update(mset)
             for cn, bset in f_cls_bases.items():
                 base_classes_by_class.setdefault(cn, set()).update(bset)
+            if repo_symbol_acc is not None:
+                self._accumulate_file_symbols(cf, repo_symbol_acc)
+
+        entry_symbol_index: dict[str, tuple[set[str], set[str], dict[str, set[str]]]] = {}
+        for raw_sp, ef in entry_files:
+            e_syms: set[str] = set()
+            e_clss: set[str] = set()
+            e_cls_meths: dict[str, set[str]] = {}
+            for cf in ef:
+                fs, fc, fcm = file_symbol_map[cf]
+                e_syms.update(fs)
+                e_clss.update(fc)
+                for cn, mset in fcm.items():
+                    e_cls_meths.setdefault(cn, set()).update(mset)
+            entry_symbol_index[raw_sp] = (e_syms, e_clss, e_cls_meths)
 
         neutral_bases = {
             "object",
@@ -835,7 +1070,21 @@ class PublicSurfaceValidator:
                 return True
             return cls_name in classes_with_external_bases and f".{member_name}" in defined_methods
 
+        def _entry_contributes_ident(raw_sp: str, ident: str) -> bool:
+            e_syms, e_clss, e_cls_meths = entry_symbol_index[raw_sp]
+            if ident in e_syms:
+                return True
+            if "::" in ident:
+                penult, leaf = ident.split("::")[-2], ident.split("::")[-1]
+                return penult in e_clss or leaf in e_syms or leaf in e_cls_meths.get(penult, set())
+            if "." in ident:
+                c_part, m_part = ident.split(".")[-2], ident.split(".")[-1]
+                return c_part in e_clss or m_part in e_cls_meths.get(c_part, set())
+            return False
+
         seen_missing: set[str] = set()
+        matched_entries: set[str] = set()
+        matched_surface_count = 0
         for s in self._iter_public_surface_candidate_spans(sec_m.group(1)):
             # Normalize Go receiver headers: func (s *Server) Start(...) -> Server.Start(...)
             go_m = re.match(
@@ -885,3 +1134,182 @@ class PublicSurfaceValidator:
                 report.broken_references.append(
                     f"Public surface drift in {doc.file_path.name}: {kind_label} '{doc.doc_id}' documents symbol '{ident}' under '== Public Surface' which does not exist in its source_path"
                 )
+            else:
+                matched_surface_count += 1
+                for raw_sp, ef in entry_files:
+                    if ef and _entry_contributes_ident(raw_sp, ident):
+                        matched_entries.add(raw_sp)
+
+        # Advisory Check 1 (DLT-2026-143): flag code-bearing source_path entries on multi-entry CMP-* specs
+        # that contribute 0 == Public Surface symbols, have no intra-component import linkage, and are not
+        # explicitly cited in the component specification body.
+        code_bearing_entries = [(raw_sp, ef) for raw_sp, ef in entry_files if ef]
+        if doc.doc_type == "tech/component" and len(code_bearing_entries) >= 2 and matched_surface_count > 0:
+            for raw_sp, ef in code_bearing_entries:
+                if raw_sp in matched_entries:
+                    continue
+                other_files = [f for sp, fs in code_bearing_entries if sp != raw_sp for f in fs]
+                if self._has_intra_component_import_link(ef, other_files, repo_root):
+                    continue
+                entry_path_tokens = {raw_sp.strip(), Path(raw_sp.strip()).name}
+                entry_path_tokens.update(cf.name for cf in ef)
+                if any(tok and tok in clean_body for tok in entry_path_tokens):
+                    continue
+                report.warnings.append(
+                    f"Over-scoped source_path in {doc.file_path.name}: Component '{doc.doc_id}' includes '{raw_sp}' which contributes 0 symbols to '== Public Surface' and has no intra-component import linkage to its other source_path entries"
+                )
+
+    @classmethod
+    def _extract_prose_symbol_candidates(cls, doc: SpecDocument) -> list[tuple[str, str, str, str, bool]]:
+        """Extract high-precision explicit code references (Type.member, Type::member, func(...)) outside '== Public Surface'."""
+        clean_body = cls._strip_asciidoc_comments(doc.body or "")
+        without_ps = re.sub(
+            r"^==\s+Public Surface\b[^\r\n]*\r?\n.*?(?=^==\s+|\Z)",
+            "",
+            clean_body,
+            flags=re.MULTILINE | re.DOTALL,
+        )
+        stripped = re.sub(
+            r"(?ms)^(?:----|```)[^\r\n]*\r?\n.*?^(?:----|```)\s*$",
+            "",
+            without_ps,
+        )
+        candidates: list[tuple[str, str, str, str, bool]] = []
+        seen_display: set[str] = set()
+        bt_re = re.compile(r"`([^`]+)`")
+        qual_re = re.compile(r"^([A-Z][A-Za-z0-9_]*)(?:\.|::)([A-Za-z][A-Za-z0-9_]*)(?:\s*(\())?")
+        call_re = re.compile(r"^([A-Za-z][A-Za-z0-9_]*)\([^`]*\)$")
+
+        for raw_line in stripped.splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith(("==", "|===", "[", ":")):
+                continue
+            for m in bt_re.finditer(raw_line):
+                span = m.group(1).strip()
+                if (
+                    not span
+                    or "/" in span
+                    or "\\" in span
+                    or "://" in span
+                    or span.startswith(("-", "@", "$", "#", "[", "<", "'", '"'))
+                    or span in cls._PUBLIC_SURFACE_NON_SYMBOL_KEYWORDS
+                ):
+                    continue
+                if "(" not in span and "::" not in span and span.lower().endswith(cls._PUBLIC_SURFACE_SKIP_EXTENSIONS):
+                    continue
+                clause_before = re.split(r"[;!?]|(?<!\be)(?<!\bg)\.\s+", raw_line[: m.start()])[-1]
+                if cls._PROSE_CONTRAST_CUE_RE.search(clause_before):
+                    continue
+
+                m_qual = qual_re.match(span)
+                if m_qual:
+                    cls_part, mem_part, has_open_paren = m_qual.group(1), m_qual.group(2), bool(m_qual.group(3))
+                    if cls_part in cls._PROSE_ENTITY_PREFIXES:
+                        continue
+                    # Ensure span is strictly a qualified member or call (no trailing sentence prose).
+                    rest = span[m_qual.end() :].strip()
+                    if has_open_paren and not rest.endswith(")"):
+                        continue
+                    if not has_open_paren and rest:
+                        continue
+                    display = f"{cls_part}.{mem_part}()" if has_open_paren else f"{cls_part}.{mem_part}"
+                    if display not in seen_display:
+                        seen_display.add(display)
+                        candidates.append(("qualified", display, cls_part, mem_part, has_open_paren))
+                    continue
+
+                m_call = call_re.match(span)
+                if m_call:
+                    fn_name = m_call.group(1)
+                    if fn_name in cls._PROSE_BUILTIN_CALLS or fn_name.isupper():
+                        continue
+                    display = f"{fn_name}()"
+                    if display not in seen_display:
+                        seen_display.add(display)
+                        candidates.append(("call", display, "", fn_name, True))
+        return candidates
+
+    @classmethod
+    def _prose_candidate_resolved(
+        cls,
+        kind: str,
+        cls_part: str,
+        mem_part: str,
+        has_call: bool,
+        repo_symbol_acc: dict[str, Any],
+    ) -> bool:
+        """Return True if an explicit prose symbol candidate exists in (or is an external/stdlib type relative to) repo_symbol_acc."""
+        symbols: set[str] = repo_symbol_acc["symbols"]
+        classes: set[str] = repo_symbol_acc["classes"]
+        methods: set[str] = repo_symbol_acc["methods"]
+        methods_by_class: dict[str, set[str]] = repo_symbol_acc["methods_by_class"]
+        bases_by_class: dict[str, set[str]] = repo_symbol_acc["bases_by_class"]
+
+        if kind == "call":
+            return mem_part in symbols or f".{mem_part}" in methods
+
+        if cls_part in classes or cls_part in methods_by_class:
+            if f"{cls_part}.{mem_part}" in symbols or mem_part in methods_by_class.get(cls_part, set()):
+                return True
+            # Walk known in-repo ancestors for inherited members.
+            stack = list(bases_by_class.get(cls_part, set()))
+            seen: set[str] = {cls_part}
+            has_ext_base = False
+            while stack:
+                anc = stack.pop()
+                if anc in seen:
+                    continue
+                seen.add(anc)
+                if anc in classes or anc in methods_by_class:
+                    if mem_part in methods_by_class.get(anc, set()) or f"{anc}.{mem_part}" in symbols:
+                        return True
+                    stack.extend(bases_by_class.get(anc, set()))
+                else:
+                    has_ext_base = True
+            return has_ext_base and f".{mem_part}" in methods
+
+        # Type not defined in-repo: skip known external/stdlib or imported types, and skip non-call dotted prose.
+        return bool(cls_part in cls._PROSE_EXTERNAL_TYPES or cls_part in symbols or not has_call)
+
+    def _verify_prose_symbol_drift(
+        self,
+        docs: list[SpecDocument],
+        repo_root: Path,
+        root_dir: Path,
+        report: ValidationReport,
+        repo_symbol_acc: dict[str, Any],
+    ) -> None:
+        """Conservatively verify explicit prose code references outside '== Public Surface' via 2-tier lazy AST lookup (DLT-2026-143)."""
+        pending: list[tuple[SpecDocument, str, str, str, str, bool]] = []
+        for doc in docs:
+            for kind, display, cls_part, mem_part, has_call in self._extract_prose_symbol_candidates(doc):
+                if not self._prose_candidate_resolved(kind, cls_part, mem_part, has_call, repo_symbol_acc):
+                    pending.append((doc, kind, display, cls_part, mem_part, has_call))
+
+        if not pending:
+            return
+
+        # Tier 2 lazy expansion: only parse remaining declared CNT-*/CMP-* files when unresolved candidates remain.
+        for doc in docs:
+            if not pending:
+                break
+            for raw_sp in doc.model.source_paths():
+                for cf in self._resolve_entry_code_files(raw_sp, repo_root, root_dir):
+                    if cf.resolve() in repo_symbol_acc["parsed_files"]:
+                        continue
+                    self._accumulate_file_symbols(cf, repo_symbol_acc)
+                    pending = [
+                        item
+                        for item in pending
+                        if not self._prose_candidate_resolved(item[1], item[3], item[4], item[5], repo_symbol_acc)
+                    ]
+                    if not pending:
+                        break
+                if not pending:
+                    break
+
+        for doc, _kind, display, _cls_part, _mem_part, _has_call in pending:
+            kind_label = "Component" if doc.doc_type == "tech/component" else "Container"
+            report.warnings.append(
+                f"Prose symbol drift in {doc.file_path.name}: {kind_label} '{doc.doc_id}' references '{display}' outside '== Public Surface' which does not exist in the repository AST symbol catalog"
+            )

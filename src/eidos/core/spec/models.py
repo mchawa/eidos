@@ -535,6 +535,7 @@ class ValidationReport:
     documents: list[SpecDocument] = field(default_factory=list)
     schema_errors: dict[str, list[str]] = field(default_factory=_SchemaErrorsMap)
     broken_references: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
     entity_index: dict[str, SpecDocument] = field(default_factory=dict)
 
     @property

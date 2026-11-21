@@ -100,6 +100,7 @@ def drift_cmd(
             "valid_specs": result.validation_report.valid_docs,
             "total_specs": result.validation_report.total_docs,
             "validation_errors": result.validation_errors,
+            "validation_warnings": result.validation_warnings,
             "uncovered_invariants": [inv.invariant_id for inv in result.uncovered_invariants],
             "orphan_invariants": [{"invariant_id": oid, "location": loc} for oid, loc in result.orphan_invariants],
             "remediation_suggestions": result.remediation_suggestions,
@@ -200,6 +201,11 @@ def drift_cmd(
                     f"  [cyan]• {sc['source']} -> {sc['target']}[/cyan] ({sc.get('spec_path', '')}): "
                     f"observed {sc['observed_imports']} < max_imports {sc['max_imports']} ({sc['action']})"
                 )
+
+        if result.validation_warnings:
+            console.print("\n[bold yellow]⚠ Advisory Validation Warnings:[/bold yellow]")
+            for warn in result.validation_warnings:
+                console.print(f"  [yellow]•[/yellow] {warn}")
 
         if result.is_clean:
             console.print(

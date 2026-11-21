@@ -26,9 +26,9 @@ Displays current engine version, loaded v1 schemas, and available agent plugin t
 Validates all specification documents under `PATH` (defaults to `./eidos`) against the bundled JSON/YAML schemas and verifies cross-references, `== Public Surface` AST symbols, active `test_binding` coverage, and contract parity.
 * **Arguments**: `PATH` (Optional directory path)
 * **Options**:
-  - `--json`: Output a compact machine-readable JSON validation report (`is_clean`, `total_docs`, `valid_docs`, `broken_references`, repo-relative `schema_errors`, and any invalid `documents`).
+  - `--json`: Output a compact machine-readable JSON validation report (`is_clean`, `total_docs`, `valid_docs`, `broken_references`, non-blocking advisory `warnings`, repo-relative `schema_errors`, and any invalid `documents`).
 * **Exit Codes**:
-  - `0`: All specifications are valid.
+  - `0`: All specifications are valid (advisory `warnings` do not fail exit code `0`).
   - `1`: One or more validation errors or broken cross-references found.
 
 === `eidos context [--file PATH] [--component ID] [--task PROMPT] [--tier TIER] [--semantic/--no-semantic] [--json] [--path PATH]`
@@ -106,7 +106,7 @@ Detects spec-to-code drift, schema validity, executable `import_boundaries` and 
   - `--uncommitted, -u`: Analyze uncommitted working tree and staged changes instead of branch diff.
   - `--strict`: Enforce strict drift detection on behavioral (`body_only_code_files`) modifications, requiring a substantive 1-hop specification update, an active SpecDelta target, or a modified bound test file.
   - `--markdown, -m`: Path to write the markdown summary comment (e.g. for CI/CD reports).
-  - `--json`: Output raw JSON verification result, including `structural_code_files`, `body_only_code_files`, `trivially_covered_files`, `boundary_violations`, and `ratchet_shrink_candidates`.
+  - `--json`: Output raw JSON verification result, including `structural_code_files`, `body_only_code_files`, `trivially_covered_files`, `boundary_violations`, `ratchet_shrink_candidates`, and non-blocking `validation_warnings`.
   - `--warn-only`: Do not exit with code 1 on drift.
 * **Exit Codes**:
   - `0`: Specifications and code are synchronized, all schemas valid, invariant tests green.

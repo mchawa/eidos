@@ -130,6 +130,11 @@ class DriftCheckResult:
         return errs
 
     @property
+    def validation_warnings(self) -> list[str]:
+        """Non-blocking advisory validation warnings from SpecValidator."""
+        return list(self.validation_report.warnings)
+
+    @property
     def uncovered_invariants(self) -> list[InvariantTrace]:
         """Invariants lacking a verified static test binding."""
         return [inv for inv in self.invariants if not inv.has_test_coverage]

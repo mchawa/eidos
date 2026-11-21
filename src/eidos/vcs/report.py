@@ -250,6 +250,12 @@ def build_drift_remediation_and_summary(
             )
         summary_lines.append("")
 
+    if validation_report.warnings:
+        summary_lines.append("### ⚠️ Specification Validation Warnings (Advisory):")
+        for warn in validation_report.warnings:
+            summary_lines.append(f"- {warn}")
+        summary_lines.append("")
+
     return remediation, "\n".join(summary_lines)
 
 

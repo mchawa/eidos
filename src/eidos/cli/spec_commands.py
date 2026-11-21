@@ -55,6 +55,7 @@ def validate(
             "total_docs": report.total_docs,
             "valid_docs": report.valid_docs,
             "broken_references": report.broken_references,
+            "warnings": report.warnings,
             "schema_errors": {str(k): v for k, v in report.schema_errors.items()},
             "documents": [
                 {
@@ -92,6 +93,11 @@ def validate(
         table.add_row(doc.doc_id, doc.doc_type, status_label, rel_path)
 
     console.print(table)
+
+    if report.warnings:
+        console.print("\n[bold yellow]Advisory Validation Warnings:[/bold yellow]")
+        for warn in report.warnings:
+            console.print(f"  [yellow]⚠[/yellow] {warn}")
 
     if not report.is_clean:
         console.print("\n[bold red]Validation Failures Detected:[/bold red]")

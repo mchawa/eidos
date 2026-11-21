@@ -5660,3 +5660,167 @@ def test_contract_protocol_schema_and_grpc_proto_parity(tmp_path: Path):
     assert any("CreateOrderResponse" in b for b in rep.broken_references)
     assert any("GhostPayload" in b for b in rep.broken_references)
 
+
+def test_advisory_warnings_overscoped_source_path_and_prose_symbols(tmp_path: Path) -> None:
+    """Verify INV-VALIDATION-ADVISORY-WARNINGS: non-blocking warnings for over-scoped CMP-*.source_path entries,
+    2-tier lazy high-precision prose symbol drift, CLI/drift surfacing, and zero false warnings on Eidos's own catalog."""
+    import json
+    import subprocess
+
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app as cli_app
+    from eidos.vcs.drift import detect_drift
+
+    # 1. Eidos's own catalog must validate cleanly with ZERO false-positive advisory warnings.
+    repo_eidos = Path(__file__).parent.parent / "eidos"
+    self_report = SpecValidator().validate_directory(repo_eidos, check_import_boundaries=False)
+    assert self_report.is_clean, f"Self catalog errors: {self_report.schema_errors} / {self_report.broken_references}"
+    assert self_report.warnings == [], f"Unexpected warnings on Eidos catalog: {self_report.warnings}"
+
+    # 2. Synthetic git repo testing:
+    #    - Over-scoped directory (src/unrelated) and standalone file (src/stray.py) -> warned
+    #    - Imported sibling helper (src/auth/helper.py) -> NOT warned
+    #    - C# shared-namespace siblings -> NOT warned
+    #    - Prose inherited method + Tier-2 lazy symbol + external types + bare PascalCase + contrastive cues -> NOT warned
+    #    - Prose ghost method on real class, deleted Class.Call(), deleted func() -> warned
+    #    - eidos validate (--json & terminal) and eidos drift (--json, terminal & --markdown) surface warnings with exit 0
+    ws = tmp_path / "adv_repo"
+    eidos_dir = ws / "eidos"
+    (eidos_dir / "domains" / "core").mkdir(parents=True)
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True)
+    (eidos_dir / "architecture" / "components").mkdir(parents=True)
+    (ws / "src" / "auth").mkdir(parents=True)
+    (ws / "src" / "unrelated").mkdir(parents=True)
+    (ws / "src" / "lazy_only").mkdir(parents=True)
+    (ws / "src" / "cs_mod").mkdir(parents=True)
+
+    (ws / "src" / "auth" / "helper.py").write_text(
+        "class BaseAuth:\n    def base_op(self) -> bool:\n        return True\n\n"
+        "def internal_check() -> bool:\n    return True\n",
+        encoding="utf-8",
+    )
+    (ws / "src" / "auth" / "service.py").write_text(
+        "from src.auth.helper import BaseAuth, internal_check\n\n"
+        "class AuthService(BaseAuth):\n"
+        "    def authenticate(self) -> bool:\n"
+        "        return internal_check()\n",
+        encoding="utf-8",
+    )
+    (ws / "src" / "unrelated" / "billing.py").write_text(
+        "def compute_invoice() -> int:\n    return 42\n",
+        encoding="utf-8",
+    )
+    (ws / "src" / "stray.py").write_text(
+        "def stray_fn() -> None:\n    pass\n",
+        encoding="utf-8",
+    )
+    (ws / "src" / "lazy_only" / "worker.py").write_text(
+        "def lazy_only_fn() -> str:\n    return 'ok'\n",
+        encoding="utf-8",
+    )
+    (ws / "src" / "cs_mod" / "A.cs").write_text(
+        "namespace Demo.Cs;\npublic class Alpha { public void Run() {} }\n",
+        encoding="utf-8",
+    )
+    (ws / "src" / "cs_mod" / "B.cs").write_text(
+        "namespace Demo.Cs;\npublic class BetaHelper { public void Assist() {} }\n",
+        encoding="utf-8",
+    )
+
+    (eidos_dir / "system.adoc").write_text(
+        "---\ntype: product/system\nid: SYS-ADV\ntitle: Advisory Demo\nstatus: active\narchetypes:\n  - api\n---\n= Advisory Demo\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "domains" / "core" / "domain.adoc").write_text(
+        "---\ntype: product/domain\nid: DOM-CORE\ntitle: Core\nstatus: active\nclassification: core\n---\n= Core\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "backend.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-BACKEND\ntitle: Backend\nstatus: active\n"
+        "container_type: service\nruntime: Python\ndomain: DOM-CORE\nsource_path: src\n---\n"
+        "= Backend\n\nUses `Pydantic`, `PostgreSQL`, and `Path.resolve()` while invoking `lazy_only_fn()`.\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "auth.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-AUTH\ntitle: Auth\ncontainer: CNT-BACKEND\nstatus: active\n"
+        "source_path:\n"
+        "  - src/auth/service.py\n"
+        "  - src/auth/helper.py\n"
+        "  - src/unrelated\n"
+        "  - src/stray.py\n"
+        "---\n"
+        "= Component: Auth\n\n"
+        "== Responsibility\n"
+        "Validates credentials using `AuthService.base_op()`, `lazy_only_fn()`, and `len(items)`.\n"
+        "Replaces `LegacyAuth.Verify()` and `old_removed_fn()`.\n"
+        "Also accidentally cites `AuthService.ghost_method`, `DeletedService.Execute()`, and `removed_helper()`.\n\n"
+        "== Public Surface\n"
+        "* `AuthService.authenticate()`\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "cs-comp.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-CS\ntitle: CsComp\ncontainer: CNT-BACKEND\nstatus: active\n"
+        "source_path:\n"
+        "  - src/cs_mod/A.cs\n"
+        "  - src/cs_mod/B.cs\n"
+        "---\n"
+        "= Component: CsComp\n\n"
+        "== Public Surface\n"
+        "* `Alpha.Run()`\n",
+        encoding="utf-8",
+    )
+
+    rep = SpecValidator().validate_directory(eidos_dir, check_import_boundaries=False)
+    assert rep.is_clean, f"Advisory warnings must be non-blocking: {rep.schema_errors} / {rep.broken_references}"
+    joined = "\n".join(rep.warnings)
+    # Check 1 assertions
+    assert "src/unrelated" in joined
+    assert "src/stray.py" in joined
+    assert "src/auth/helper.py" not in joined
+    assert "src/cs_mod/B.cs" not in joined
+    # Check 2 assertions
+    assert "AuthService.ghost_method" in joined
+    assert "DeletedService.Execute()" in joined
+    assert "removed_helper()" in joined
+    assert "base_op" not in joined
+    assert "lazy_only_fn" not in joined
+    assert "LegacyAuth" not in joined
+    assert "old_removed_fn" not in joined
+    assert "Pydantic" not in joined
+    assert "PostgreSQL" not in joined
+    assert "Path.resolve" not in joined
+
+    # 3. Verify eidos validate CLI (--json & terminal) surfaces warnings with exit code 0
+    runner = CliRunner()
+    res_json = runner.invoke(cli_app, ["validate", str(eidos_dir), "--json"])
+    assert res_json.exit_code == 0, res_json.output
+    val_payload = json.loads(res_json.output)
+    assert val_payload["is_clean"] is True
+    assert len(val_payload["warnings"]) == len(rep.warnings)
+
+    res_term = runner.invoke(cli_app, ["validate", str(eidos_dir)])
+    assert res_term.exit_code == 0, res_term.output
+    assert "Advisory Validation Warnings" in res_term.output
+
+    # 4. Initialize git repo and verify detect_drift + eidos drift (--json, terminal & --markdown) surface validation_warnings with exit 0
+    subprocess.run(["git", "init"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=ws, check=True, capture_output=True)
+
+    drift_res = detect_drift(repo_root=ws, eidos_dir=eidos_dir, uncommitted=True)
+    assert drift_res.is_clean is True
+    assert len(drift_res.validation_warnings) == len(rep.warnings)
+    assert "Specification Validation Warnings (Advisory)" in drift_res.summary_markdown
+
+    drift_json = runner.invoke(cli_app, ["drift", "--path", str(eidos_dir), "--uncommitted", "--json"])
+    assert drift_json.exit_code == 0, drift_json.output
+    drift_payload = json.loads(drift_json.output)
+    assert drift_payload["is_clean"] is True
+    assert len(drift_payload["validation_warnings"]) == len(rep.warnings)
+
+    drift_term = runner.invoke(cli_app, ["drift", "--path", str(eidos_dir), "--uncommitted"])
+    assert drift_term.exit_code == 0, drift_term.output
+    assert "Advisory Validation Warnings" in drift_term.output

@@ -1136,6 +1136,9 @@ class SpecValidator:
             "discarded",
             "rejected",
         }
+        active_arch_docs: list[SpecDocument] = []
+        surface_validator = PublicSurfaceValidator()
+        repo_symbol_acc = surface_validator._new_repo_symbol_accumulator()
         for doc in report.documents:
             model = doc.model
             status = str(model.status or "active").strip().lower()
@@ -1155,7 +1158,10 @@ class SpecValidator:
                             f"Container '{doc.doc_id}' references '{raw_p}' which does not exist on disk"
                         )
                 if not missing_sp:
-                    self._verify_entity_public_surface(doc, repo_root, root_dir, report)
+                    active_arch_docs.append(doc)
+                    surface_validator._verify_entity_public_surface(
+                        doc, repo_root, root_dir, report, repo_symbol_acc=repo_symbol_acc
+                    )
             elif doc.doc_type == "tech/component":
                 missing_sp = False
                 for raw_sp in model.source_paths():
@@ -1169,7 +1175,10 @@ class SpecValidator:
                             f"Component '{doc.doc_id}' references '{raw_sp}' which does not exist on disk"
                         )
                 if not missing_sp:
-                    self._verify_entity_public_surface(doc, repo_root, root_dir, report)
+                    active_arch_docs.append(doc)
+                    surface_validator._verify_entity_public_surface(
+                        doc, repo_root, root_dir, report, repo_symbol_acc=repo_symbol_acc
+                    )
             elif doc.doc_type == "tech/contract":
                 sf = model.specification_file
                 if (
@@ -1200,6 +1209,9 @@ class SpecValidator:
                             )
                         else:
                             self._verify_contract_protocol(protocol, doc, resolved_sf, report)
+
+        if active_arch_docs:
+            surface_validator._verify_prose_symbol_drift(active_arch_docs, repo_root, root_dir, report, repo_symbol_acc)
 
     def _validate_test_bindings(
         self,
@@ -1321,9 +1333,17 @@ class SpecValidator:
         return PublicSurfaceValidator._extract_cached_public_surface_symbols(file_path, is_component=is_component)
 
     def _verify_entity_public_surface(
-        self, doc: SpecDocument, repo_root: Path, root_dir: Path, report: ValidationReport
+        self,
+        doc: SpecDocument,
+        repo_root: Path,
+        root_dir: Path,
+        report: ValidationReport,
+        *,
+        repo_symbol_acc: dict[str, Any] | None = None,
     ) -> None:
-        PublicSurfaceValidator()._verify_entity_public_surface(doc, repo_root, root_dir, report)
+        PublicSurfaceValidator()._verify_entity_public_surface(
+            doc, repo_root, root_dir, report, repo_symbol_acc=repo_symbol_acc
+        )
 
     def _validate_import_boundary_declarations(self, report: ValidationReport, root_dir: Path) -> None:
         validate_import_boundary_declarations(report, root_dir, self._schema_error_key)
