@@ -79,16 +79,14 @@ def resolve_cli_target_files_and_workspace(
                     elif cwd_resolved != repo_root and cwd_resolved.is_relative_to(repo_root):
                         raw_parent = clean_pat.rsplit("/", 1)[0] if "/" in clean_pat else ""
                         parent_pat = (
-                            raw_parent
-                            if any(not _has_glob_magic(seg) for seg in raw_parent.split("/") if seg)
-                            else ""
+                            raw_parent if any(not _has_glob_magic(seg) for seg in raw_parent.split("/") if seg) else ""
                         )
                         pat_variants = expand_brace_globs(clean_pat)
                         parent_variants = expand_brace_globs(parent_pat) if parent_pat else []
                         try:
-                            root_has_match = any(
-                                p.is_file() for v in pat_variants for p in repo_root.glob(v)
-                            ) or any(p.is_dir() for pv in parent_variants for p in repo_root.glob(pv))
+                            root_has_match = any(p.is_file() for v in pat_variants for p in repo_root.glob(v)) or any(
+                                p.is_dir() for pv in parent_variants for p in repo_root.glob(pv)
+                            )
                         except (OSError, ValueError, NotImplementedError):
                             root_has_match = False
                         if not root_has_match:
@@ -133,6 +131,23 @@ def context_cmd(
         "-t",
         help="Free-text task description or prompt to slice architectural context for.",
     ),
+    uncommitted: bool = typer.Option(
+        False,
+        "--uncommitted",
+        "-u",
+        help="Slice architectural context for all uncommitted working-tree and staged Git changes.",
+    ),
+    base: str | None = typer.Option(
+        None,
+        "--base",
+        "-b",
+        help="Slice architectural context for files changed relative to a base Git reference (e.g. 'origin/main').",
+    ),
+    head: str = typer.Option(
+        "HEAD",
+        "--head",
+        help="Head Git reference when slicing with --base (defaults to 'HEAD').",
+    ),
     tier: str = typer.Option(
         "guardrails",
         "--tier",
@@ -162,6 +177,36 @@ def context_cmd(
         path,
         json_output=json_output,
     )
+
+    if uncommitted or base is not None:
+        from eidos.core.index.context_models import TieredContextSlice
+        from eidos.vcs.diff import GitResolutionError, get_git_diff_files
+
+        diff_label = "--uncommitted" if uncommitted else f"{base}...{head}"
+        try:
+            diff_files = get_git_diff_files(
+                repo_root,
+                base_ref=base,
+                head_ref=head,
+                uncommitted=uncommitted,
+            )
+        except GitResolutionError as exc:
+            if json_output:
+                typer.echo(orjson.dumps({"error": str(exc)}).decode("utf-8"))
+            else:
+                console.print(f"[bold red]Error:[/bold red] {exc}", soft_wrap=True)
+            raise typer.Exit(code=1) from None
+
+        combined = list(dict.fromkeys([*(normalized_files or []), *diff_files]))
+        if not combined and not component and not task:
+            if json_output:
+                empty_slice = TieredContextSlice(tier=tier, query=diff_label)
+                typer.echo(empty_slice.to_json())
+            else:
+                typer.echo(f"No changed files detected ({diff_label}).")
+            return
+        normalized_files = combined or None
+
     idx = get_architectural_index(repo_root=repo_root, eidos_dir=eidos_dir)
     slice_result = idx.get_tiered_context_slice(
         files=normalized_files,

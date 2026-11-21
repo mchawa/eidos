@@ -31,18 +31,22 @@ Validates all specification documents under `PATH` (defaults to `./eidos`) again
   - `0`: All specifications are valid (advisory `warnings` do not fail exit code `0`).
   - `1`: One or more validation errors or broken cross-references found.
 
-=== `eidos context [--file PATH] [--component ID] [--task PROMPT] [--tier TIER] [--semantic/--no-semantic] [--json] [--path PATH]`
+=== `eidos context [--file PATH] [--component ID] [--task PROMPT] [--uncommitted] [--base REF] [--head REF] [--tier TIER] [--semantic/--no-semantic] [--json] [--path PATH]`
 Extracts a compact, token-efficient architectural subgraph context slice (C4 components, bound contracts, domain capabilities, active invariants, governing policies, and structured epistemic `provenance_tags` on `guardrails` and `deep` tiers).
 * **Options**:
   - `--file, -f`: Target source file path(s), comma-separated paths, or quoted glob patterns including `{a,b}` brace globs (e.g. `'apps/*/Dockerfile'`, `'src/**/*.{ts,tsx}'`).
   - `--component, -c`: Target component identifier (e.g. `CMP-EIDOS-CLI`).
   - `--task, -t`: Free-text task description or prompt.
+  - `--uncommitted, -u`: Slice deduplicated architectural context for all uncommitted working-tree and staged Git changes.
+  - `--base, -b`: Slice deduplicated architectural context for files changed relative to a base Git reference (e.g. `origin/main`).
+  - `--head`: Head Git reference when slicing with `--base` (default: `HEAD`).
   - `--tier, -T`: Context tier budget: `anchor` (~140 tokens), `guardrails` (default, ~260-890 tokens), or `deep` (~500-1500 tokens).
   - `--semantic/--no-semantic`: Enable or disable opt-in Hybrid RRF semantic fusion when `spec_embeddings` are available (default: `--semantic`).
   - `--json`: Output context slice as machine-readable JSON instead of Markdown.
   - `--path, -p`: Path to specifications directory (default: `./eidos`).
 * **Exit Codes**:
-  - `0`: Slice successfully extracted.
+  - `0`: Slice successfully extracted (including clean empty-diff responses).
+  - `1`: Missing specifications directory or invalid `--base` Git reference.
 
 === `eidos index`
 Manages the embedded SQLite architectural knowledge graph and FTS5 hybrid search index (`eidos/.cache/index.db`).

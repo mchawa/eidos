@@ -673,7 +673,9 @@ def test_inv_context_token_compression():
         plugin_sl = get_context_slice(files=["assets/plugin_reference/skills/*/SKILL.md"], tier=tier)
         md_out = plugin_sl.to_markdown()
         js_out = plugin_sl.to_json()
-        assert plugin_sl.token_estimate <= max_budget, f"{tier} token_estimate={plugin_sl.token_estimate} > {max_budget}"
+        assert plugin_sl.token_estimate <= max_budget, (
+            f"{tier} token_estimate={plugin_sl.token_estimate} > {max_budget}"
+        )
         assert len(md_out) // 4 <= max_budget, f"{tier} markdown tokens={len(md_out) // 4} > {max_budget}"
         assert len(js_out) // 4 <= max_budget, f"{tier} json tokens={len(js_out) // 4} > {max_budget}"
         if tier in ("guardrails", "deep"):
@@ -998,3 +1000,96 @@ def test_context_brace_globs_and_csv_splitting(tmp_path, monkeypatch) -> None:
         assert "CMP-AUTH-WEB" in {c["id"] for c in orjson.loads(sub_res.stdout)["components"]}
     finally:
         _close_singleton_index()
+
+
+def test_context_uncommitted_and_base_diff_slicing(tmp_path) -> None:
+    """Verify INV-CONTEXT-GIT-DIFF-SLICING: eidos context --uncommitted, --base/--head, empty diff, and invalid ref handling."""
+    import subprocess
+
+    import orjson
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.core.index.graph_index import _INDEX_INSTANCES
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
+    from eidos.core.spec.parser import dump_spec_document, parse_spec_file
+
+    def _clear_indexes() -> None:
+        for inst in list(_INDEX_INSTANCES.values()):
+            inst.close()
+        _INDEX_INSTANCES.clear()
+
+    repo = tmp_path / "git_ctx_repo"
+    init_repository(repo, title="GitCtx")
+    eidos_dir = repo / "eidos"
+
+    cnt_core = create_spec(eidos_dir, "container", "CNT-CORE", "Core")
+    cmp_auth = create_spec(eidos_dir, "component", "CMP-AUTH", "Auth")
+    cmp_bill = create_spec(eidos_dir, "component", "CMP-BILL", "Billing")
+
+    d = parse_spec_file(cnt_core)
+    d.frontmatter["status"] = "active"
+    d.frontmatter["source_path"] = "src"
+    cnt_core.write_text(dump_spec_document(d.frontmatter, d.body), encoding="utf-8")
+
+    for p_cmp, sp in ((cmp_auth, "src/auth.py"), (cmp_bill, "src/billing.py")):
+        dc = parse_spec_file(p_cmp)
+        dc.frontmatter["status"] = "active"
+        dc.frontmatter["container"] = "CNT-CORE"
+        dc.frontmatter["source_path"] = sp
+        p_cmp.write_text(dump_spec_document(dc.frontmatter, dc.body), encoding="utf-8")
+
+    (repo / "src").mkdir(parents=True, exist_ok=True)
+    (repo / "src" / "auth.py").write_text("def login() -> bool:\n    return True\n", encoding="utf-8")
+    (repo / "src" / "billing.py").write_text("def charge() -> bool:\n    return True\n", encoding="utf-8")
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+
+    _clear_indexes()
+    try:
+        runner = CliRunner()
+
+        # 1. Clean working tree -> exit 0 empty diff in both Markdown and JSON
+        empty_md = runner.invoke(app, ["context", "--uncommitted", "--path", str(eidos_dir)])
+        assert empty_md.exit_code == 0
+        assert "No changed files detected" in empty_md.stdout
+
+        empty_json = runner.invoke(app, ["context", "--uncommitted", "--path", str(eidos_dir), "--json"])
+        assert empty_json.exit_code == 0
+        assert orjson.loads(empty_json.stdout)["components"] == []
+
+        # 2. Uncommitted modification to src/auth.py slices CMP-AUTH automatically
+        (repo / "src" / "auth.py").write_text("def login() -> bool:\n    return False\n", encoding="utf-8")
+        uncomm_res = runner.invoke(app, ["context", "-u", "--path", str(eidos_dir), "--json"])
+        assert uncomm_res.exit_code == 0
+        uncomm_ids = {c["id"] for c in orjson.loads(uncomm_res.stdout)["components"]}
+        assert "CMP-AUTH" in uncomm_ids
+        assert "CMP-BILL" not in uncomm_ids
+
+        # 3. Commit on feature branch and slice with --base main --head HEAD
+        subprocess.run(["git", "checkout", "-b", "feat/billing"], cwd=repo, check=True, capture_output=True)
+        (repo / "src" / "billing.py").write_text("def charge() -> bool:\n    return False\n", encoding="utf-8")
+        subprocess.run(["git", "add", "src/auth.py", "src/billing.py"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "update both"], cwd=repo, check=True, capture_output=True)
+
+        base_res = runner.invoke(
+            app, ["context", "--base", "main", "--head", "HEAD", "--path", str(eidos_dir), "--json"]
+        )
+        assert base_res.exit_code == 0
+        base_ids = {c["id"] for c in orjson.loads(base_res.stdout)["components"]}
+        assert {"CMP-AUTH", "CMP-BILL"} <= base_ids
+
+        # 4. Unresolvable --base ref fails closed with exit code 1 in both JSON and text modes
+        bad_json = runner.invoke(app, ["context", "--base", "nonexistent-ref-xyz", "--path", str(eidos_dir), "--json"])
+        assert bad_json.exit_code == 1
+        assert "error" in orjson.loads(bad_json.stdout)
+
+        bad_txt = runner.invoke(app, ["context", "--base", "nonexistent-ref-xyz", "--path", str(eidos_dir)])
+        assert bad_txt.exit_code == 1
+    finally:
+        _clear_indexes()

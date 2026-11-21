@@ -1,0 +1,75 @@
+---
+type: delta/mutation
+id: DLT-2026-152-ADD-GIT-AWARE-UNCOMMITTED-610D
+title: "Add Git-Aware Uncommitted and Base Diff Slicing to eidos context"
+status: applied
+intent:
+  kind: feature
+  motivation: "Engineers and AI agents inspecting active changes currently have to run git status or git diff manually, parse modified filenames, and pass comma-separated paths to eidos context -f; adding --uncommitted and --base options directly to eidos context enables single-command deduplicated guardrails context slicing over any working tree or branch diff."
+mutations:
+  - operation: modify
+    target: CMP-CLI-CONTEXT-COMMAND
+    details: "Add --uncommitted / -u and --base / -b REF (plus optional --head REF) options to eidos context in src/eidos/cli/context_command.py, resolving modified files via CMP-GIT-DIFF-INSPECTOR and passing them into TieredContextCompressor / ArchitecturalIndex without requiring manual -f file enumeration. Update eidos/architecture/components/cli-context-command.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "src/eidos/cli/context_command.py"
+      body:
+        contains:
+          - "--uncommitted"
+          - "--base"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Document --uncommitted / -u, --base / -b, and --head options on eidos context in eidos/architecture/contracts/cli.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "--uncommitted"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Document eidos context --uncommitted and --base usage in docs/guides/cli.md (`INV-DOCS-SYNCHRONIZATION`), and update eidos/architecture/components/docs-user-guides.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/guides"
+      body:
+        contains:
+          - "--uncommitted"
+  - operation: modify
+    target: CAP-AGENT-001
+    details: "Extend CAP-AGENT-001 in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc with INV-CONTEXT-GIT-DIFF-SLICING."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-CONTEXT-GIT-DIFF-SLICING"
+      body:
+        contains:
+          - "INV-CONTEXT-GIT-DIFF-SLICING"
+  - operation: add
+    target: INV-CONTEXT-GIT-DIFF-SLICING
+    details: "Bind INV-CONTEXT-GIT-DIFF-SLICING in CAP-AGENT-001 to tests/test_context.py::test_context_uncommitted_and_base_diff_slicing."
+    expect:
+      frontmatter:
+        rule: "--uncommitted"
+        test_binding: "tests/test_context.py::test_context_uncommitted_and_base_diff_slicing"
+vcs:
+  branch: main
+  base_commit: 7106d5477b53ace59adfe4ed4b141a9bfc0ee951
+---
+= SpecDelta: Add Git-Aware Uncommitted and Base Diff Slicing to eidos context
+:toc: left
+
+== Problem Statement
+Before editing or reviewing a PR, developers and AI agents want the deduplicated architectural guardrails (`CNT-*`, `CMP-*`, `CTR-*`, `CAP-*`, `INV-*`, `DEC-*`, `POL-*`) governing every modified file in the current Git working tree or branch diff. Today, `eidos context` only accepts explicit `-f/--file`, `-c/--component`, or `-t/--task` arguments, forcing extra shell turns to enumerate changed paths via `git status` or `git diff`.
+
+== Proposed Specification Changes
+* **`CMP-CLI-CONTEXT-COMMAND` (`src/eidos/cli/context_command.py`) & `CTR-EIDOS-CLI`**: Add `--uncommitted` (`-u`), `--base` (`-b REF`), and `--head REF` (default `HEAD`) to `eidos context`, reusing `CMP-GIT-DIFF-INSPECTOR` (`src/eidos/vcs/diff.py`, read-only reuse; no mutation required) to collect modified code/spec files (respecting monorepo sub-project scoping and fail-closed `--base` ref resolution) and feed them into the existing deduplicated `extract_context` pipeline. Emit a clean empty-diff response (exit code `0`) when zero files changed.
+* **`CMP-DOCS-USER-GUIDES` & `CAP-AGENT-001`**: Synchronize `docs/guides/cli.md`, update `tests/fixtures/cli_command_tree.json`, and bind `INV-CONTEXT-GIT-DIFF-SLICING`.
+
+== Implementation Plan
+1. **CLI Diff Slicing (`CMP-CLI-CONTEXT-COMMAND`, `CTR-EIDOS-CLI`)**: Wire `--uncommitted`, `--base`, and `--head` in `src/eidos/cli/context_command.py` (`CNT-EIDOS-CLI` covered via `CMP-CLI-CONTEXT-COMMAND` and `CTR-EIDOS-CLI`) reusing `CMP-GIT-DIFF-INSPECTOR` (`get_changed_files`, body-only reuse), and update `tests/fixtures/cli_command_tree.json`.
+2. **Docs, Living Specs & Tests (`POL-005-STATEMENT-TEST-COVERAGE`, `INV-DOCS-SYNCHRONIZATION`)**: Update `docs/guides/cli.md`, all declared living specs, and add `tests/test_context.py::test_context_uncommitted_and_base_diff_slicing` covering `--uncommitted`, `--base`, empty working trees, invalid base refs, and `>90.0%` statement coverage.
+3. **Verification**: Run `pytest`, `eidos delta verify DLT-2026-152 --json`, `eidos delta apply DLT-2026-152`, and `eidos drift --uncommitted --json`.

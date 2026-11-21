@@ -154,6 +154,10 @@ eidos context -c CNT-EIDOS-CORE --tier deep
 # Slice context from a free-text task description
 eidos context -t "Implement Git-native drift detection"
 
+# Slice context for uncommitted working-tree changes or a PR branch diff
+eidos context --uncommitted --json
+eidos context --base origin/main --head HEAD --tier guardrails
+
 # Output in JSON format
 eidos context -c CNT-EIDOS-CORE --json
 ```
@@ -162,6 +166,9 @@ Options:
 * `-f, --file TEXT`: Target source file path(s), comma-separated paths, or quoted glob patterns (e.g. `'apps/*/Dockerfile'`). Always quote globs so your shell does not expand them into positional arguments.
 * `-c, --component TEXT`: Target container or component identifier (e.g. `CNT-EIDOS-CLI`, `CMP-SPEC-VALIDATOR`).
 * `-t, --task TEXT`: Free-text task description or engineering prompt.
+* `-u, --uncommitted`: Slice deduplicated architectural context for all uncommitted working-tree and staged Git changes.
+* `-b, --base REF`: Slice deduplicated architectural context for files changed relative to a base Git reference (e.g. `origin/main`).
+* `--head REF`: Head Git reference when slicing with `--base` (default: `HEAD`).
 * `-T, --tier [anchor|guardrails|deep]`: Context compression budget (default: `guardrails`).
   * `anchor`: Container/component metadata, direct contract signatures, and 1-line `DEC-*` summaries (`<= 300 tokens`).
   * `guardrails`: Adds structured epistemic `provenance_tags`, domain capabilities, active invariants with `test_binding`, policies, and full `DEC-*` rationale (`<= 1,000 tokens`).

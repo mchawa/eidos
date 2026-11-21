@@ -78,6 +78,9 @@ technical:
     - id: INV-DOCTOR-ONBOARDING-INTEGRITY
       rule: "eidos doctor must verify that the root AGENTS.md managed block (<!-- eidos:begin agents-md ... -->) is intact whenever Agent Skills or .eidos-manifest.json are present unless explicitly opted out via <!-- eidos:agents-md off -->."
       test_binding: "tests/test_plugin.py::test_doctor_detects_wiped_agents_md"
+    - id: INV-CONTEXT-GIT-DIFF-SLICING
+      rule: "eidos context must support --uncommitted (-u), --base (-b REF), and --head REF options backed by CMP-GIT-DIFF-INSPECTOR to slice deduplicated architectural guardrails across modified Git files, returning exit code 0 on clean empty working trees and failing closed (exit code 1) on unresolvable --base references."
+      test_binding: "tests/test_context.py::test_context_uncommitted_and_base_diff_slicing"
 ---
 = Capability: Universal Agent Adapter & Context Slicing Layer
 :toc: left
@@ -92,7 +95,7 @@ In strict adherence to *POL-004*, Eidos never initiates AI/LLM calls itself. Ins
 
 == Key Responsibilities
 * **Deterministic Substrate for Coding Agents**: Exposing machine-readable JSON envelopes across CLI inspection commands (`eidos context`, `eidos index`, `eidos drift`).
-* **Tiered Context Slicing (`CMP-TIERED-CONTEXT-COMPRESSOR`, `CMP-CLI-CONTEXT-COMMAND`, `INV-AGENT-CONTEXT-SLICING`)**: Extracting token-efficient architectural subgraphs across exact file paths, comma-separated file lists, quoted `--file` glob patterns (including `{a,b}` brace globs and planned non-existent files under existing or indexed parent directories), entity IDs, and task prompts.
+* **Tiered Context Slicing (`CMP-TIERED-CONTEXT-COMPRESSOR`, `CMP-CLI-CONTEXT-COMMAND`, `INV-AGENT-CONTEXT-SLICING`, `INV-CONTEXT-GIT-DIFF-SLICING`)**: Extracting token-efficient architectural subgraphs across exact file paths, comma-separated file lists, quoted `--file` glob patterns (including `{a,b}` brace globs and planned non-existent files under existing or indexed parent directories), working-tree or branch changes (`--uncommitted`, `--base`, `--head`), entity IDs, and task prompts.
 * **Hybrid Lexical-Relational Retrieval**: Combining FTS5 BM25 search with graph-neighborhood traversals to resolve engineering prompts to architectural entities.
 * **Architectural Blast-Radius Analysis**: Confidence-filtered recursive CTE impact mapping (`eidos index blast-radius --min-confidence <inferred|derived|observed>`) allowing agents to distinguish directly observed spec facts and derived AST/HTTP couplings from inferred hits before proposing code changes.
 * **Turn-Scoped Stateless 1-Turn Stop / PreToolUse Lifecycle Hook**: Unified `Stop` / `PreToolUse` hook (`eidos hook`) honoring both snake_case `stop_hook_active` and camelCase `stopHookActive` retry markers, gating Cline premature completion on `attempt_completion`, short-circuiting zero-edit Q&A turns via session baselines (`eidos/.cache/hook_baselines/`), and verifying specification schemas, cross-references, invariant test bindings, and spec-to-code synchronization via `detect_drift`.
