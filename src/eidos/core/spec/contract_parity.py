@@ -561,6 +561,243 @@ class ContractParityValidator:
                     f"Contract drift in {doc.file_path.name}: REST HTTP endpoint '{method} {norm_path}' in contract '{doc.doc_id}' documents [AllowAnonymous] but code in '{display_label}' enforces [Authorize]"
                 )
 
+    def _verify_asyncapi_contract(self, doc: SpecDocument, spec_file: Path, report: ValidationReport) -> None:
+        """Verify bidirectional parity between AsyncAPI 2.x/3.x channels & operations and the contract (DLT-2026-147)."""
+        try:
+            data = safe_load_yaml(spec_file.read_text(encoding="utf-8"))
+        except (OSError, YamlError) as exc:
+            report.broken_references.append(
+                f"Invalid AsyncAPI specification_file in {doc.file_path.name}: '{spec_file.name}' failed to parse ({exc})"
+            )
+            return
+        if not isinstance(data, dict):
+            report.broken_references.append(
+                f"Invalid AsyncAPI specification_file in {doc.file_path.name}: '{spec_file.name}' root must be a mapping"
+            )
+            return
+
+        channels_raw = data.get("channels")
+        operations_raw = data.get("operations")
+        defined_channels: list[tuple[str, str]] = []  # (canonical_display, alt_key)
+        defined_ops: list[str] = []
+        valid_channel_tokens: set[str] = set()
+
+        if isinstance(channels_raw, dict):
+            for ch_key, ch_val in channels_raw.items():
+                key_s = str(ch_key).strip()
+                if not key_s:
+                    continue
+                addr_s = (
+                    str(ch_val.get("address")).strip()
+                    if isinstance(ch_val, dict) and isinstance(ch_val.get("address"), str) and ch_val["address"].strip()
+                    else key_s
+                )
+                defined_channels.append((addr_s, key_s))
+                valid_channel_tokens.add(addr_s)
+                valid_channel_tokens.add(key_s)
+                if isinstance(ch_val, dict):
+                    for verb_k in ("publish", "subscribe"):
+                        verb_obj = ch_val.get(verb_k)
+                        if isinstance(verb_obj, dict) and isinstance(verb_obj.get("operationId"), str):
+                            op_id = verb_obj["operationId"].strip()
+                            if op_id:
+                                defined_ops.append(op_id)
+
+        if isinstance(operations_raw, dict):
+            for op_key in operations_raw:
+                op_s = str(op_key).strip()
+                if op_s:
+                    defined_ops.append(op_s)
+
+        defined_ops = list(dict.fromkeys(defined_ops))
+        if not defined_channels and not defined_ops:
+            return
+
+        body = self._strip_asciidoc_comments(doc.body or "")
+        for addr_s, key_s in defined_channels:
+            matched = bool(
+                re.search(rf"(?<![A-Za-z0-9_./:-]){re.escape(addr_s)}(?![A-Za-z0-9_./:-])", body)
+                or (
+                    key_s != addr_s and re.search(rf"(?<![A-Za-z0-9_./:-]){re.escape(key_s)}(?![A-Za-z0-9_./:-])", body)
+                )
+            )
+            if not matched:
+                report.broken_references.append(
+                    f"Contract drift in {doc.file_path.name}: AsyncAPI channel '{addr_s}' defined in '{spec_file.name}' is not documented in contract '{doc.doc_id}'"
+                )
+
+        for op_name in defined_ops:
+            if not re.search(rf"(?<![A-Za-z0-9_./:-]){re.escape(op_name)}(?![A-Za-z0-9_./:-])", body):
+                report.broken_references.append(
+                    f"Contract drift in {doc.file_path.name}: AsyncAPI operation '{op_name}' defined in '{spec_file.name}' is not documented in contract '{doc.doc_id}'"
+                )
+
+        defined_op_set = set(defined_ops)
+        seen_phantom_ch: set[str] = set()
+        seen_phantom_op: set[str] = set()
+        for sec_chunk in self._iter_contract_interface_sections(body):
+            for raw_line in sec_chunk.splitlines():
+                for m_ch in re.finditer(
+                    r"`\s*(?:channel|publish|subscribe|send|receive)\s+([A-Za-z0-9_./{}-]+)\s*`",
+                    raw_line,
+                    re.IGNORECASE,
+                ):
+                    clause_before = re.split(r"[.;!?]", raw_line[: m_ch.start()])[-1]
+                    if _CONTRAST_CUE_RE.search(clause_before):
+                        continue
+                    cand = m_ch.group(1).strip()
+                    if cand not in valid_channel_tokens and cand not in defined_op_set and cand not in seen_phantom_ch:
+                        seen_phantom_ch.add(cand)
+                        report.broken_references.append(
+                            f"Contract drift in {doc.file_path.name}: documented AsyncAPI channel '{cand}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
+                        )
+                for m_op in re.finditer(
+                    r"`\s*operation\s+([A-Za-z0-9_.-]+)\s*`",
+                    raw_line,
+                    re.IGNORECASE,
+                ):
+                    clause_before = re.split(r"[.;!?]", raw_line[: m_op.start()])[-1]
+                    if _CONTRAST_CUE_RE.search(clause_before):
+                        continue
+                    cand = m_op.group(1).strip()
+                    if cand not in defined_op_set and cand not in seen_phantom_op:
+                        seen_phantom_op.add(cand)
+                        report.broken_references.append(
+                            f"Contract drift in {doc.file_path.name}: documented AsyncAPI operation '{cand}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
+                        )
+
+    def _verify_json_rpc_stdio_contract(self, doc: SpecDocument, spec_file: Path, report: ValidationReport) -> None:
+        """Verify bidirectional parity between OpenRPC/JSON-RPC/MCP manifests or handler sources and the contract (DLT-2026-147)."""
+        suffix = spec_file.suffix.lower()
+        defined_methods: list[str] = []
+
+        if suffix in (".yaml", ".yml", ".json"):
+            try:
+                data = safe_load_yaml(spec_file.read_text(encoding="utf-8"))
+            except (OSError, YamlError) as exc:
+                report.broken_references.append(
+                    f"Invalid JSON-RPC specification_file in {doc.file_path.name}: '{spec_file.name}' failed to parse ({exc})"
+                )
+                return
+            if not isinstance(data, dict):
+                report.broken_references.append(
+                    f"Invalid JSON-RPC specification_file in {doc.file_path.name}: '{spec_file.name}' root must be a mapping"
+                )
+                return
+            raw_methods = data.get("methods")
+            if isinstance(raw_methods, list):
+                for entry in raw_methods:
+                    if isinstance(entry, dict) and isinstance(entry.get("name"), str) and entry["name"].strip():
+                        defined_methods.append(entry["name"].strip())
+                    elif isinstance(entry, str) and entry.strip():
+                        defined_methods.append(entry.strip())
+            elif isinstance(raw_methods, dict):
+                defined_methods.extend(str(k).strip() for k in raw_methods if str(k).strip())
+            raw_tools = data.get("tools")
+            if isinstance(raw_tools, list):
+                for entry in raw_tools:
+                    if isinstance(entry, dict) and isinstance(entry.get("name"), str) and entry["name"].strip():
+                        defined_methods.append(entry["name"].strip())
+        elif suffix in (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"):
+            try:
+                text = spec_file.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                return
+            if suffix == ".py":
+                # @mcp.tool("name") / @server.tool(name="name") / @mcp.tool()\nasync def func_name
+                for m_dec in re.finditer(
+                    r"@[A-Za-z_][A-Za-z0-9_.]*\.(?:tool|method|rpc_method)\s*(?:\(([^)]*)\))?\s*\r?\n\s*(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)",
+                    text,
+                ):
+                    args_s, fn_name = m_dec.group(1) or "", m_dec.group(2)
+                    m_explicit = re.search(r"(?:name\s*=\s*)?[\"']([A-Za-z0-9_./:-]+)[\"']", args_s)
+                    defined_methods.append(m_explicit.group(1) if m_explicit else fn_name)
+                for m_reg in re.finditer(
+                    r"\.(?:register_method|register_tool|add_tool)\s*\(\s*[\"']([A-Za-z0-9_./:-]+)[\"']",
+                    text,
+                ):
+                    defined_methods.append(m_reg.group(1))
+                for m_cmp in re.finditer(
+                    r"\bmethod\s*==\s*[\"']([A-Za-z0-9_./:-]+)[\"']|\bcase\s+[\"']([A-Za-z0-9_./:-]+)[\"']\s*:",
+                    text,
+                ):
+                    defined_methods.append(m_cmp.group(1) or m_cmp.group(2))
+            else:
+                for m_ts in re.finditer(
+                    r"\.(?:tool|registerTool|method|registerMethod)\s*\(\s*[\"']([A-Za-z0-9_./:-]+)[\"']",
+                    text,
+                ):
+                    defined_methods.append(m_ts.group(1))
+                for m_cmp in re.finditer(
+                    r"\bmethod\s*===?\s*[\"']([A-Za-z0-9_./:-]+)[\"']|\bcase\s+[\"']([A-Za-z0-9_./:-]+)[\"']\s*:",
+                    text,
+                ):
+                    defined_methods.append(m_cmp.group(1) or m_cmp.group(2))
+        else:
+            return
+
+        defined_methods = list(dict.fromkeys(defined_methods))
+        # Zero-method fallback for custom dispatchers
+        if not defined_methods:
+            return
+
+        body = self._strip_asciidoc_comments(doc.body or "")
+        for meth in defined_methods:
+            if not re.search(rf"(?<![A-Za-z0-9_./:-]){re.escape(meth)}(?![A-Za-z0-9_./:-])", body):
+                report.broken_references.append(
+                    f"Contract drift in {doc.file_path.name}: JSON-RPC method '{meth}' defined in '{spec_file.name}' is not documented in contract '{doc.doc_id}'"
+                )
+
+        defined_set = set(defined_methods)
+        seen_phantom: set[str] = set()
+        for sec_chunk in self._iter_contract_interface_sections(body):
+            in_table = False
+            method_col_idx: int | None = None
+            header_seen = False
+            for raw_line in sec_chunk.splitlines():
+                stripped = raw_line.strip()
+                if stripped.startswith("|==="):
+                    in_table = not in_table
+                    method_col_idx = None
+                    header_seen = False
+                    continue
+                if stripped.startswith("|"):
+                    cells = [c.strip().strip("`*") for c in stripped.split("|")[1:]]
+                    if in_table and not header_seen:
+                        header_seen = True
+                        for idx, c in enumerate(cells):
+                            if re.search(r"\b(?:method|tool|rpc)\b", c, re.IGNORECASE):
+                                method_col_idx = idx
+                                break
+                        continue
+                    if method_col_idx is not None and method_col_idx < len(cells):
+                        cand = cells[method_col_idx].strip()
+                        if (
+                            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_./:-]*", cand)
+                            and cand not in defined_set
+                            and cand not in seen_phantom
+                        ):
+                                seen_phantom.add(cand)
+                                report.broken_references.append(
+                                    f"Contract drift in {doc.file_path.name}: documented JSON-RPC method '{cand}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
+                                )
+                    continue
+
+                for m_doc in re.finditer(
+                    r"`\s*(?:method|rpc|tool)\s+([A-Za-z_][A-Za-z0-9_./:-]*)\s*`",
+                    raw_line,
+                    re.IGNORECASE,
+                ):
+                    clause_before = re.split(r"[.;!?]", raw_line[: m_doc.start()])[-1]
+                    if _CONTRAST_CUE_RE.search(clause_before):
+                        continue
+                    cand = m_doc.group(1).strip()
+                    if cand not in defined_set and cand not in seen_phantom:
+                        seen_phantom.add(cand)
+                        report.broken_references.append(
+                            f"Contract drift in {doc.file_path.name}: documented JSON-RPC method '{cand}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
+                        )
+
     _CONTRACT_PROTOCOL_VERIFIERS: ClassVar[dict[str, str]] = {
         "cli_args": "_verify_cli_contract_commands",
         "python_protocol": "_verify_python_protocol_contract",
@@ -569,6 +806,8 @@ class ContractParityValidator:
         "json_schema": "_verify_json_schema_contract",
         "protobuf": "_verify_grpc_proto_contract",
         "graphql": "_verify_graphql_contract",
+        "asyncapi": "_verify_asyncapi_contract",
+        "json_rpc_stdio": "_verify_json_rpc_stdio_contract",
     }
 
     def _verify_contract_protocol(

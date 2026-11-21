@@ -75,7 +75,7 @@ Options:
 ## 2. Governance & Verification
 
 ### `eidos validate`
-Validate all AsciiDoc specification documents against their bundled v1 JSON/YAML schemas (including shared `$defs` for `DEC-*` and `INV-*`, canonical `tech/contract` `protocol` enum + conditional `custom_protocol`, and closed `mutations[].expect` schemas), check `x-eidos-ref` cross-document graph integrity, verify on-disk existence of declared container package paths and contract specification files, and enforce bidirectional multi-protocol contract parity (`cli_args`, `openapi`, `rest_http`, `protobuf`, `graphql`, `json_schema`, `python_protocol`).
+Validate all AsciiDoc specification documents against their bundled v1 JSON/YAML schemas (including shared `$defs` for `DEC-*` and `INV-*`, canonical `tech/contract` `protocol` enum + conditional `custom_protocol`, and closed `mutations[].expect` schemas), check `x-eidos-ref` cross-document graph integrity, verify on-disk existence of declared container package paths and contract specification files, and enforce bidirectional multi-protocol contract parity (`cli_args`, `openapi`, `rest_http`, `protobuf`, `graphql`, `json_schema`, `python_protocol`, `asyncapi`, `json_rpc_stdio`).
 
 ```bash
 eidos validate eidos

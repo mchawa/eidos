@@ -617,3 +617,180 @@ specification_file: "src/Api"
     joined_err = "\n".join(bad_rep.broken_references)
     assert "/api/v1/orders/{*}" in joined_err
     assert "WrongPolicy" in joined_err
+
+
+def test_asyncapi_and_json_rpc_stdio_bidirectional_parity(tmp_path: Path) -> None:
+    """Verify INV-CONTRACT-ASYNCAPI-AND-JSONRPC-PARITY: bidirectional AsyncAPI 2.x/3.x and JSON-RPC/MCP stdio parity."""
+    ws = tmp_path / "async_rpc_ws"
+    eidos_dir = ws / "eidos"
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True)
+    (eidos_dir / "architecture" / "contracts").mkdir(parents=True)
+
+    _write(
+        ws / "src" / "events" / "asyncapi2.yaml",
+        """
+asyncapi: 2.6.0
+channels:
+  orders.created:
+    publish:
+      operationId: publishOrderCreated
+  orders.cancelled:
+    subscribe:
+      operationId: onOrderCancelled
+""",
+    )
+    _write(
+        ws / "src" / "events" / "asyncapi3.yaml",
+        """
+asyncapi: 3.0.0
+channels:
+  invoiceChannel:
+    address: billing.invoices.paid
+operations:
+  sendInvoicePaid:
+    action: send
+""",
+    )
+    _write(ws / "src" / "events" / "bad_async.yaml", ":\n  - [unclosed")
+    _write(ws / "src" / "events" / "list_async.yaml", "- not-a-dict\n")
+
+    _write(
+        ws / "src" / "rpc" / "openrpc.json",
+        """
+{
+  "openrpc": "1.3.2",
+  "methods": [
+    {"name": "ledger.record"},
+    {"name": "ledger.balance"}
+  ],
+  "tools": [
+    {"name": "search_docs"}
+  ]
+}
+""",
+    )
+    _write(
+        ws / "src" / "rpc" / "mcp_server.py",
+        """
+@mcp.tool("list_specs")
+async def list_specs_handler():
+    return []
+
+@server.tool()
+def get_context():
+    return {}
+
+def dispatch(method):
+    if method == "initialize":
+        return {}
+""",
+    )
+    _write(
+        ws / "src" / "rpc" / "mcp_server.ts",
+        """
+server.tool("ts_lookup", async () => ({}));
+server.registerMethod("ts.ping", () => "pong");
+switch (req.method) {
+  case "shutdown":
+    break;
+}
+""",
+    )
+    _write(ws / "src" / "rpc" / "custom_empty.py", "def handle(raw):\n    return raw\n")
+    _write(ws / "src" / "rpc" / "bad_rpc.yaml", "- not-a-mapping\n")
+
+    _write(
+        eidos_dir / "architecture" / "containers" / "bus.adoc",
+        "---\ntype: tech/container\nid: CNT-BUS\ntitle: Event Bus\nstatus: active\n"
+        "container_type: service\nruntime: Python\nsource_path:\n  - src/events\n  - src/rpc\n---\n= Event Bus\n",
+    )
+
+    # Clean AsyncAPI 2.x + 3.x + OpenRPC + Python MCP + TS MCP + zero-method fallback
+    _write(
+        eidos_dir / "architecture" / "contracts" / "a2.adoc",
+        "---\ntype: tech/contract\nid: CTR-ASYNC-V2\ntitle: Async V2\nstatus: active\n"
+        "protocol: asyncapi\ncontainer: CNT-BUS\nspecification_file: src/events/asyncapi2.yaml\n---\n"
+        "= Async V2\n\n* `publish orders.created` (`operation publishOrderCreated`)\n"
+        "* `subscribe orders.cancelled` (`operation onOrderCancelled`)\n"
+        "Unlike `channel legacy.ignored`, only active channels apply.\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "a3.adoc",
+        "---\ntype: tech/contract\nid: CTR-ASYNC-V3\ntitle: Async V3\nstatus: active\n"
+        "protocol: asyncapi\ncontainer: CNT-BUS\nspecification_file: src/events/asyncapi3.yaml\n---\n"
+        "= Async V3\n\n* `channel billing.invoices.paid` (`operation sendInvoicePaid`)\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "rpc-manifest.adoc",
+        "---\ntype: tech/contract\nid: CTR-RPC-MANIFEST\ntitle: OpenRPC\nstatus: active\n"
+        "protocol: json_rpc_stdio\ncontainer: CNT-BUS\nspecification_file: src/rpc/openrpc.json\n---\n"
+        "= OpenRPC\n\n|===\n| Method | Summary\n| `ledger.record` | Record\n| `ledger.balance` | Balance\n| `search_docs` | Search\n|===\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "rpc-py.adoc",
+        "---\ntype: tech/contract\nid: CTR-RPC-PY\ntitle: Python MCP\nstatus: active\n"
+        "protocol: json_rpc_stdio\ncontainer: CNT-BUS\nspecification_file: src/rpc/mcp_server.py\n---\n"
+        "= Python MCP\n\n* `tool list_specs`\n* `tool get_context`\n* `method initialize`\n"
+        "Unlike `method legacy.ignored`, these are active.\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "rpc-ts.adoc",
+        "---\ntype: tech/contract\nid: CTR-RPC-TS\ntitle: TS MCP\nstatus: active\n"
+        "protocol: json_rpc_stdio\ncontainer: CNT-BUS\nspecification_file: src/rpc/mcp_server.ts\n---\n"
+        "= TS MCP\n\n* `tool ts_lookup`\n* `method ts.ping`\n* `method shutdown`\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "rpc-empty.adoc",
+        "---\ntype: tech/contract\nid: CTR-RPC-EMPTY\ntitle: Custom Dispatcher\nstatus: active\n"
+        "protocol: json_rpc_stdio\ncontainer: CNT-BUS\nspecification_file: src/rpc/custom_empty.py\n---\n"
+        "= Custom Dispatcher\n\n* `method dynamic.any`\n",
+    )
+
+    validator = SpecValidator()
+    clean_rep = validator.validate_directory(eidos_dir, check_import_boundaries=False)
+    assert clean_rep.is_clean, (
+        f"Expected clean AsyncAPI/JSON-RPC contracts: {clean_rep.schema_errors} / {clean_rep.broken_references}"
+    )
+
+    # Now introduce forward + reverse drift and invalid YAML/non-dict files
+    _write(
+        eidos_dir / "architecture" / "contracts" / "a2.adoc",
+        "---\ntype: tech/contract\nid: CTR-ASYNC-V2\ntitle: Async V2\nstatus: active\n"
+        "protocol: asyncapi\ncontainer: CNT-BUS\nspecification_file: src/events/asyncapi2.yaml\n---\n"
+        "= Async V2\n\n* `channel orders.ghost`\n* `operation ghostOp`\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "rpc-manifest.adoc",
+        "---\ntype: tech/contract\nid: CTR-RPC-MANIFEST\ntitle: OpenRPC\nstatus: active\n"
+        "protocol: json_rpc_stdio\ncontainer: CNT-BUS\nspecification_file: src/rpc/openrpc.json\n---\n"
+        "= OpenRPC\n\n|===\n| Method | Summary\n| `ledger.record` | Record\n| `ledger.ghost` | Phantom\n|===\n"
+        "Also `tool phantom_tool`.\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "a-bad.adoc",
+        "---\ntype: tech/contract\nid: CTR-ASYNC-BAD\ntitle: Bad Async\nstatus: active\n"
+        "protocol: asyncapi\ncontainer: CNT-BUS\nspecification_file: src/events/bad_async.yaml\n---\n= Bad\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "a-list.adoc",
+        "---\ntype: tech/contract\nid: CTR-ASYNC-LIST\ntitle: List Async\nstatus: active\n"
+        "protocol: asyncapi\ncontainer: CNT-BUS\nspecification_file: src/events/list_async.yaml\n---\n= List\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "rpc-bad.adoc",
+        "---\ntype: tech/contract\nid: CTR-RPC-BAD\ntitle: Bad RPC\nstatus: active\n"
+        "protocol: json_rpc_stdio\ncontainer: CNT-BUS\nspecification_file: src/rpc/bad_rpc.yaml\n---\n= Bad\n",
+    )
+
+    drift_rep = validator.validate_directory(eidos_dir, check_import_boundaries=False)
+    assert not drift_rep.is_clean
+    joined = "\n".join(drift_rep.broken_references)
+    assert "orders.created" in joined
+    assert "publishOrderCreated" in joined
+    assert "orders.ghost" in joined
+    assert "ghostOp" in joined
+    assert "ledger.balance" in joined
+    assert "ledger.ghost" in joined
+    assert "phantom_tool" in joined
+    assert "failed to parse" in joined
+    assert "root must be a mapping" in joined

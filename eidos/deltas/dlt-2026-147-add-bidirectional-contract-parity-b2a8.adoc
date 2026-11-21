@@ -1,0 +1,95 @@
+---
+type: delta/mutation
+id: DLT-2026-147-ADD-BIDIRECTIONAL-CONTRACT-PARITY-B2A8
+title: "Add Bidirectional Contract Parity for AsyncAPI and JSON-RPC Stdio Protocols"
+status: applied
+intent:
+  kind: feature
+  motivation: "Seven of the nine protocols documented in contract.schema.yaml now enforce bidirectional parity in ContractParityValidator, leaving asyncapi (event channels and operations) and json_rpc_stdio (JSON-RPC / MCP tool and method names) as the only two unverified schema protocols."
+mutations:
+  - operation: modify
+    target: CMP-CONTRACT-PARITY-VALIDATOR
+    details: "Register asyncapi and json_rpc_stdio in ContractParityValidator._CONTRACT_PROTOCOL_VERIFIERS in src/eidos/core/spec/contract_parity.py: add _verify_asyncapi_contract (supporting AsyncAPI 2.x and 3.x YAML/JSON channels and operations bidirectionally) and _verify_json_rpc_stdio_contract (verifying JSON-RPC / MCP method declarations in schema/source files bidirectionally against CTR-* method tables). Update eidos/architecture/components/contract-parity-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/contract_parity.py"
+          - "src/eidos/core/spec/cli_contract_parity.py"
+      body:
+        contains:
+          - "asyncapi"
+          - "json_rpc_stdio"
+          - "_verify_asyncapi_contract"
+          - "_verify_json_rpc_stdio_contract"
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: "Update multi-protocol contract parity coverage in eidos/architecture/containers/core.adoc to reflect all 9 verified protocols including asyncapi and json_rpc_stdio."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "asyncapi"
+          - "json_rpc_stdio"
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: "Document bidirectional asyncapi and json_rpc_stdio contract parity in docs/concepts/how-eidos-works.md (`INV-DOCS-SYNCHRONIZATION`), and update eidos/architecture/components/docs-core-concepts.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/concepts"
+      body:
+        contains:
+          - "asyncapi"
+          - "json_rpc_stdio"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Update eidos validate contract parity summary in docs/guides/cli.md to include asyncapi and json_rpc_stdio (`INV-DOCS-SYNCHRONIZATION`), and update eidos/architecture/components/docs-user-guides.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/guides"
+      body:
+        contains:
+          - "asyncapi"
+          - "json_rpc_stdio"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Extend CAP-PROD-001 in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc with INV-CONTRACT-ASYNCAPI-AND-JSONRPC-PARITY."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-CONTRACT-ASYNCAPI-AND-JSONRPC-PARITY"
+      body:
+        contains:
+          - "INV-CONTRACT-ASYNCAPI-AND-JSONRPC-PARITY"
+  - operation: add
+    target: INV-CONTRACT-ASYNCAPI-AND-JSONRPC-PARITY
+    details: "Bind INV-CONTRACT-ASYNCAPI-AND-JSONRPC-PARITY in CAP-PROD-001 to tests/test_contract_parity.py::test_asyncapi_and_json_rpc_stdio_bidirectional_parity."
+    expect:
+      frontmatter:
+        rule: "asyncapi"
+        test_binding: "tests/test_contract_parity.py::test_asyncapi_and_json_rpc_stdio_bidirectional_parity"
+vcs:
+  branch: main
+  base_commit: 7106d5477b53ace59adfe4ed4b141a9bfc0ee951
+---
+= SpecDelta: Add Bidirectional Contract Parity for AsyncAPI and JSON-RPC Stdio Protocols
+:toc: left
+
+== Problem Statement
+`ContractParityValidator` enforces bidirectional parity across 7 of the 9 canonical protocols listed in `assets/schemas/v1/tech/contract.schema.yaml` (`cli_args`, `python_protocol`, `openapi`, `rest_http`, `protobuf`, `graphql`, and `json_schema`; see `DLT-2026-151` for canonical enum enforcement). Contracts using `protocol: asyncapi` (event-driven Kafka/RabbitMQ/EventBridge specs) or `protocol: json_rpc_stdio` (JSON-RPC 2.0 / MCP stdio servers) currently pass `eidos validate` silently even when channels, operations, or RPC methods drift from `specification_file`.
+
+== Proposed Specification Changes
+* **`CMP-CONTRACT-PARITY-VALIDATOR` (`src/eidos/core/spec/contract_parity.py`)**:
+  - **`_verify_asyncapi_contract`**: Parse YAML/JSON AsyncAPI 2.x (`channels.<name>` + `publish`/`subscribe` `operationId`) and 3.x (`channels.<name>.address` + `operations.<name>`) specifications; enforce bidirectional parity between defined channels/operations and documented entries in `CTR-*` (excluding non-interface/contrastive prose sections).
+  - **`_verify_json_rpc_stdio_contract`**: Support both OpenRPC/JSON-RPC YAML/JSON manifests (`methods[].name`) and static Python/TypeScript MCP/JSON-RPC handler files (`@server.tool(...)`, `server.tool("...")`, `method == "..."`), enforcing bidirectional method parity with zero-method fallback for custom dispatchers.
+* **`CNT-EIDOS-CORE`, `CMP-DOCS-CORE-CONCEPTS`, `CMP-DOCS-USER-GUIDES` & `CAP-PROD-001`**: Synchronize docs (`docs/concepts/how-eidos-works.md`, `docs/guides/cli.md`) and bind `INV-CONTRACT-ASYNCAPI-AND-JSONRPC-PARITY`.
+
+== Implementation Plan
+1. **AsyncAPI & JSON-RPC Verifiers (`CMP-CONTRACT-PARITY-VALIDATOR`)**: Implement `_verify_asyncapi_contract` and `_verify_json_rpc_stdio_contract` and register `"asyncapi"` and `"json_rpc_stdio"` in `_CONTRACT_PROTOCOL_VERIFIERS` in `src/eidos/core/spec/contract_parity.py`.
+2. **Documentation & Living Specs (`CNT-EIDOS-CORE`, `CMP-DOCS-CORE-CONCEPTS`, `CMP-DOCS-USER-GUIDES`, `CAP-PROD-001`)**: Update `docs/concepts/how-eidos-works.md`, `docs/guides/cli.md`, and all declared living specs.
+3. **Tests & Coverage (`POL-005-STATEMENT-TEST-COVERAGE`)**: Add `tests/test_contract_parity.py::test_asyncapi_and_json_rpc_stdio_bidirectional_parity` covering AsyncAPI 2.x & 3.x missing/phantom channels & operations, JSON-RPC / OpenRPC manifests, MCP tool handler source files, invalid YAML/JSON diagnostics, and `>90.0%` per-file statement coverage.
+4. **Verification**: Run `pytest`, `eidos delta verify DLT-2026-147 --json`, `eidos delta apply DLT-2026-147`, and `eidos drift --uncommitted --json`.
