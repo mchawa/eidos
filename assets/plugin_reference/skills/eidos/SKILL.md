@@ -4,22 +4,20 @@ description: "Core workflow for repositories governed by Eidos living specs (eid
 ---
 # Eidos: Master Architecture & Engineering Orchestrator
 
-This repository uses **Eidos** to maintain a zero-drift bond between living specifications (`eidos/`), source code, and automated tests.
-
-You MUST follow these workflows and guardrails whenever you inspect, plan, implement, refactor, or review changes in this repository.
+This repository uses **Eidos** to keep living specifications (`eidos/`), source code, and tests synchronized. Follow these guardrails whenever inspecting, planning, implementing, refactoring, or reviewing changes.
 
 ---
 
 ## 1. Constitutional Guardrails (Non-Negotiable)
 
-1. **Single Source of Truth**: Domains, capabilities, personas, C4 containers/components, interface contracts, design systems, and policies live in `eidos/` as AsciiDoc (`.adoc`) files with YAML frontmatter (layout in §6).
-2. **Zero ADRs**: NEVER create standalone ADRs (`docs/adr/`, `eidos/adr/`, `ADR-*.md`). Record design rationale and rejected alternatives in the owning spec's `decisions:` block (`CNT-*`, `CMP-*`, `CTR-*`, `CAP-*`), and govern architectural transitions with SpecDeltas (`eidos/deltas/dlt-*.adoc`).
-3. **Dual Workflow Mode Selection**: Select Direct or Planned Mode *before* writing code (§3).
-4. **Mandatory Invariant-Test Traceability**: Every `INV-*` declares `test_binding: path/to/test_file::test_function`, and the bound test references the `INV-*` ID in its docstring, comment, or marker.
-5. **CLI-First Discovery & Determinism**: Run the Eidos discovery commands (§2, with `--json`) *before* raw file reads or `grep`/`find`. Never hand-write `.adoc` specs or SpecDeltas from scratch: scaffold with `eidos spec create <type> <ID> --title "..."` or `eidos delta create --title "..." --slug --kind <kind>`, and check exact keys with `eidos spec schema <type> [--json]` before adding nested frontmatter.
-6. **Subagent Context Propagation**: When delegating coding, refactoring, or spec work, include the relevant `eidos context --json` slice in the subagent's prompt and instruct it to trust `eidos context` directly (without re-reading the summarized `.adoc` files unless editing them).
-7. **Zero Unreconciled Drift**: Never conclude a task with failing schemas or unmanaged spec-to-code drift (§5, Stage 1).
-8. **Mandatory Autonomous Pre-Completion Review**: Never present work without the adversarial self-review of your diff and requirements, fixing every gap before responding (§5, Stage 2).
+1. **Single Source of Truth**: Domains, capabilities, personas, C4 containers/components, contracts, design systems, and policies live in `eidos/` as `.adoc` files with YAML frontmatter (§6).
+2. **Zero ADRs**: NEVER create standalone ADRs (`docs/adr/`, `eidos/adr/`, `ADR-*.md`). Record rationale and rejected alternatives in the owning spec's `decisions:` block (`CNT-*`, `CMP-*`, `CTR-*`, `CAP-*`), and govern architectural changes via SpecDeltas (`eidos/deltas/dlt-*.adoc`).
+3. **Dual Workflow Mode**: Select Direct or Planned Mode *before* writing code (§3).
+4. **Invariant-Test Traceability**: Every `INV-*` declares `test_binding: path/to/test_file::test_function`, and the bound test references its `INV-*` ID.
+5. **CLI-First Discovery & Scaffolding**: Run Eidos discovery commands (§2, `--json`) *before* raw reads or `grep`/`find`. Never hand-write `.adoc` specs or SpecDeltas from scratch: scaffold with `eidos spec create <type> <ID> --title "..."` or `eidos delta create --title "..." --slug --kind <kind>`, and inspect exact keys with `eidos spec schema <type> [--json]`.
+6. **Subagent Context Propagation**: If your harness supports subagents, pass the relevant `eidos context --json` slice in subagent prompts and instruct them to trust it without re-reading summarized `.adoc` files.
+7. **Zero Unreconciled Drift**: Never finish with failing schemas or drift (§5, Stage 1).
+8. **Mandatory Post-Implementation Adversarial Review**: Never finish without running `git diff` and an adversarial falsification review, fixing every finding before responding (§5, Stage 2).
 
 ---
 
@@ -126,18 +124,26 @@ eidos drift --uncommitted --json
 * **`eidos drift`** runs `eidos validate` internally (v1 JSON Schemas, `x-eidos-ref` links, `source_path`/`specification_file` paths, `import_boundaries` / `import_boundary` couplings, `== Public Surface` AST symbols, and **bidirectional multi-protocol contract parity** across all canonical `tech/contract` protocols) plus Git diff ownership mapping, workflow mode verification, substantive spec diff checks, `stale_removed_symbol` rejection, `--strict` body-level drift, and polyglot `INV-*` `test_binding` verification. (Use `eidos validate eidos --json` only outside a Git repo.)
 * **If `is_clean: false` or `drift_detected: true`**: Follow `remediation_suggestions`, `boundary_violations` (remove forbidden cross-boundary imports/HTTP calls or adjust `ratchet_baseline` via a SpecDelta), and `validation_errors` in the JSON output and re-run until exit code is `0` (`ratchet_shrink_candidates` are non-blocking tightening hints).
 
-### Stage 2: Mandatory Autonomous Adversarial Gap Review
+### Stage 2: Mandatory Post-Implementation Adversarial Diff Review
 
-Step back and audit your own `git diff` (and run `eidos-plan` §3's 5-Dimension Review before presenting any `proposed` or updated SpecDelta) as an adversarial Staff Reviewer before responding:
+**Before responding**, inspect your actual diff as an adversarial reviewer — do not rely on memory of what you intended to write:
 
-1. **Requirements Completeness**: Did you address every stated requirement and implicit constraint without leaving `TODO`s, stubs, or partial implementations?
-2. **Edge Cases & Failure Modes**: How does the modified code handle empty inputs, `None`/`null`, invalid schemas, missing files, or error paths?
-3. **Contract & SemVer Parity (`CTR-*`)**: Did any CLI flags, endpoints, schemas, or public signatures change? Are callers updated, deleted operations removed from `CTR-*` tables, and `version:` bumped per SemVer?
-4. **Invariant & Test Rigor (`INV-*`)**: Do tests make genuine behavioral assertions on new/modified logic rather than superficial pass-through checks? Is every `INV-*` bound via `test_binding: file::func`?
-5. **Decision Capture (`DEC-*`)**: Are non-obvious trade-offs and rejected alternatives recorded under `decisions:` in the owning spec frontmatter?
-6. **Domain, Persona, Policy & Design Co-Evolution (`DOM-*`, `PER-*`, `POL-*`, `design/*`)**: Did domain terms (`ubiquitous_language`), actor workflows (`PER-*`), NFR policies (`POL-*`), or UI contracts/tokens (`DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`) change, and are their specs updated?
+```bash
+git diff
+```
 
-**Autonomous Remediation Rule**: If this review reveals **any** gap, missing test assertion, or unhandled edge case, **fix it immediately** and re-run `eidos drift --uncommitted --json` before responding to the user. In your final response, briefly report your gate status (`clean`) and key edge cases verified.
+If your harness supports subagents, you may delegate this read-only audit of `git diff` + the `eidos context --json` slice to a fresh-context reviewer subagent on multi-file edits to avoid author bias; **when subagents are unavailable (or on focused edits), execute every check below directly**:
+
+1. **Requirements Completeness**: Verify every explicit and implicit requirement is met with zero `TODO`s, stubs, or partial paths.
+2. **Adversarial Code & Heuristic Falsification**: Actively try to break at least 2 assumptions in your diff:
+   * *Parsing vs. substring heuristics*: Could regex/substring checks misfire on comments, prose, case variants, or dot-directories (`.github/`, `.agents/`) where a structured parser or canonical helper is safer?
+   * *Sibling callers & shared state*: Inspect other readers/writers of any touched helper, schema, or table (`eidos index find-symbol`) for unintended side effects.
+   * *Scale, boundaries & fallbacks*: Check empty/`None`/unmatched inputs, SQLite/batch limits (`IN (...)` chunking), parent↔child inheritance, and single- vs. multi-container edge cases.
+3. **Contract, Public Surface & SemVer Parity (`CTR-*`, `CMP-*`)**: Sync added/removed CLI flags, routes, schemas, and `== Public Surface` symbols with SemVer bumps.
+4. **Invariant & Test Rigor (`INV-*`)**: Ensure tests assert real behavior and edge cases (hermetic fixtures for ordering/logic; catalog-agnostic smoke checks on live specs) and bind every `INV-*` (`test_binding: file::func`).
+5. **Decisions & Multi-Layer Co-Evolution (`DEC-*`, `DOM-*`, `PER-*`, `POL-*`, `design/*`)**: Record non-obvious trade-offs under `decisions:` and co-evolve any affected domain terms, personas, policies, or UI/design specs.
+
+**Autonomous Remediation Rule**: Fix **every** defect, edge case, or missing test found immediately, then re-run `git diff` checks, tests, and `eidos drift --uncommitted --json` before responding. Briefly report gate status (`clean`) and key edge cases verified.
 
 ---
 

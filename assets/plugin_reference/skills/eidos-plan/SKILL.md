@@ -85,7 +85,8 @@ eidos delta status DLT-2026-015 in_review
 eidos context -f "apps/*/Dockerfile" --tier guardrails --json
 eidos context -f src/billing/verifier.py,src/billing/routes.py --tier guardrails --json
 
-# 5. Implement code, update living specs in eidos/, bind tests, then verify, apply, and audit
+# 5. Implement code, update living specs in eidos/, bind tests, run adversarial `git diff` review, then verify, apply, and audit
+git diff
 eidos delta verify DLT-2026-015 --json
 eidos delta apply DLT-2026-015
 eidos delta audit DLT-2026-015 --strict --json
@@ -179,7 +180,7 @@ Every entity supports `operation: add | modify | deprecate | remove`, except `SY
 
 ## 3. Staff Systems Architect 5-Dimension Review (`eidos-review`)
 
-Run this 5-dimension audit **autonomously before presenting any authored or updated SpecDelta** (fixing every `[BLOCKER]`, `[WARNING]`, and `[NIT]` first), and whenever asked to review a SpecDelta (`DLT-*`), branch/PR diff, or architectural proposal:
+Run this 5-dimension audit **autonomously** both (a) **before presenting any authored or updated SpecDelta** and (b) **after implementing a SpecDelta** (inspecting `git diff` directly — or via a read-only reviewer subagent if your harness supports subagents — to catch heuristic false positives, sibling-caller side effects, batch/scale limits, and hierarchy edge cases before `eidos delta apply`), fixing every `[BLOCKER]`, `[WARNING]`, and `[NIT]` first:
 
 ```bash
 eidos drift --uncommitted --json
