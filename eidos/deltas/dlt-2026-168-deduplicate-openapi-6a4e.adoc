@@ -1,0 +1,115 @@
+---
+type: delta/mutation
+id: DLT-2026-168-DEDUPLICATE-OPENAPI-6A4E
+title: "Deduplicate OpenAPI vs rest_http Discovery, Prioritize Service Container Types, and Harden FastAPI Route Scanning"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: medium
+  motivation: "Eliminate three real-world brownfield discovery defects reported on OpenAPI-first FastAPI repositories: redundant unmapped rest_http candidates alongside mapped/co-located OpenAPI contracts, web services with [project.scripts] or package.json bin entries misclassified as cli, and FastAPI routes missed due to @*.api_route, keyword path=, dotted decorator targets, imperative add_api_route/add_route, f-string/concat paths, or over-broad test filename filtering."
+mutations:
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+    details: "Record DEC-CORE-DISCOVER-OPENAPI-DEDUP-AND-SERVICE-PRECEDENCE and update discover_repository_blueprint in src/eidos/core/lifecycle/scaffolder.py to deduplicate rest_http candidates covered by active or co-located OpenAPI contracts, prioritize web-service frameworks and discovered HTTP routes ahead of [project.scripts]/bin when inferring container_type, expand Python HTTP pre-filter hints, and match camelCase Test/Tests filenames case-sensitively."
+    expect:
+      frontmatter:
+        decisions.id:
+          - "DEC-CORE-DISCOVER-OPENAPI-DEDUP-AND-SERVICE-PRECEDENCE"
+      body:
+        contains:
+          - "DEC-CORE-DISCOVER-OPENAPI-DEDUP-AND-SERVICE-PRECEDENCE"
+          - "OpenAPI"
+          - "container_type"
+  - operation: modify
+    target: CMP-HTTP-TOPOLOGY-LINKER
+    details: "Extend Python FastAPI/Flask/Starlette route extraction in src/eidos/core/index/ast_http.py to support @*.api_route, dotted decorator targets (@self.router.get), keyword path= arguments, f-string and constant-concatenation route expressions, tuple/set methods=, and imperative .add_api_route() / .add_route() registrations."
+    expect:
+      body:
+        contains:
+          - "api_route"
+          - "add_api_route"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Bump CAP-PROD-001 to 1.20.0 and tighten INV-BROWNFIELD-DETERMINISTIC-DISCOVERY and INV-BROWNFIELD-REST-CONTROLLER-DISCOVERY for OpenAPI-vs-rest_http deduplication, service-first container_type inference, and comprehensive FastAPI route discovery."
+    expect:
+      frontmatter:
+        version: "1.20.0"
+        technical.invariants.id:
+          - "INV-BROWNFIELD-DETERMINISTIC-DISCOVERY"
+          - "INV-BROWNFIELD-REST-CONTROLLER-DISCOVERY"
+      body:
+        contains:
+          - "OpenAPI"
+  - operation: modify
+    target: INV-BROWNFIELD-DETERMINISTIC-DISCOVERY
+    details: "Require service-first container_type precedence (web frameworks and discovered HTTP routes ahead of [project.scripts]/bin) in discover_repository_blueprint."
+    expect:
+      frontmatter:
+        rule: "service-first"
+        test_binding: "tests/test_scaffolder.py::test_spec_discover_polyglot_brownfield_blueprint"
+  - operation: modify
+    target: INV-BROWNFIELD-REST-CONTROLLER-DISCOVERY
+    details: "Require OpenAPI-vs-rest_http deduplication for containers covered by active or co-located OpenAPI contracts, case-sensitive camelCase test-filename filtering, and FastAPI @*.api_route/dotted-target/keyword-path/imperative add_api_route extraction."
+    expect:
+      frontmatter:
+        rule: "deduplicating"
+        test_binding: "tests/test_scaffolder.py::test_spec_discover_code_first_rest_http_controllers"
+vcs:
+  branch: main
+  base_commit: 14013a9a5927dceaca316612d7beddecf065f9c6
+---
+= SpecDelta: Deduplicate OpenAPI vs rest_http Discovery, Prioritize Service Container Types, and Harden FastAPI Route Scanning
+:toc: left
+
+== Problem Statement
+
+Field usage of `eidos spec discover` on multi-service OpenAPI-first FastAPI repositories surfaced three deterministic heuristic defects:
+
+1. **Duplicate OpenAPI / `rest_http` Proposals**: When a container already maps an active `protocol: openapi` contract (or contains a co-located OpenAPI file), `discover_repository_blueprint` still emits a sibling `protocol: rest_http` candidate as `already_mapped: false`, generating false-positive unmapped contract noise.
+2. **Web Services Misclassified as `cli`**: `_inspect_manifest_container` checks `[project.scripts]` / `[tool.poetry.scripts]` (and `package.json` `bin`) *before* web service frameworks (`fastapi`, `uvicorn`, `express`, `@nestjs/core`, etc.), misclassifying Python/Node HTTP services that expose launcher entrypoints as `container_type: "cli"`.
+3. **FastAPI Route Scanning Blind Spots**: `_extract_polyglot_http_endpoints` in `ast_http.py` and `_has_modern_http_route_hint` / `_is_test_source_filename` in `scaffolder.py` miss valid FastAPI/Starlette services using `@router.api_route(...)`, dotted targets (`@self.router.get(...)`), keyword `path="..."` arguments, f-string/constant concatenation paths, imperative `.add_api_route()`/`.add_route()` or `Route(...)` calls, or non-test filenames ending in lowercase `test` (such as `latest.py` or `attest.py`).
+
+== Proposed Specification Changes
+
+=== 1. OpenAPI ↔ `rest_http` Deduplication & Service-First Container Inference (`CMP-LIFECYCLE-SCAFFOLDER`)
+
+* **Decision Capture (`DEC-CORE-DISCOVER-OPENAPI-DEDUP-AND-SERVICE-PRECEDENCE`)**: Record `DEC-CORE-DISCOVER-OPENAPI-DEDUP-AND-SERVICE-PRECEDENCE` on `CMP-LIFECYCLE-SCAFFOLDER` explaining why `rest_http` candidates inside OpenAPI-covered containers are suppressed (unless already mapped by an active `rest_http` contract) and why web-service frameworks + discovered HTTP routes take precedence over `[project.scripts]` / `bin`.
+* **OpenAPI Coverage Resolution (`src/eidos/core/lifecycle/scaffolder.py`)**:
+  * While reading live `eidos/` specs, resolve every active `protocol: openapi` `CTR-*` contract's owning `CNT-*`/`CMP-*` entities (via both `CTR-*.provider` and `CNT-*/CMP-*.contracts.provides`) and collect their `source_path` patterns into `openapi_covered_source_patterns`.
+  * Also treat any discovered `openapi` file located inside a non-root container's manifest directory as covering that container's `source_path`.
+  * Suppress redundant `rest_http` candidates whose `spec_target` / `member_files` are covered by `openapi_covered_source_patterns` (unless already explicitly mapped by an active `rest_http` `CTR-*`).
+* **Service-First `container_type` Inference**:
+  * In `pyproject.toml`, check web frameworks (`fastapi`, `flask`, `django`, `uvicorn`, `litestar`, `starlette`, `aiohttp`, `sanic`, `tornado`, `gunicorn`, `hypercorn`) *before* `[project.scripts]` / `[tool.poetry.scripts]`.
+  * In `package.json`, check backend web frameworks (`express`, `@nestjs/core`, `fastify`, `koa`, `hono`) *before* `bin` (retaining `webapp` first).
+  * After scanning HTTP routes, promote any discovered `"cli"` or `"library"` container with non-root `source_path` containing discovered HTTP routes to `"service"`.
+* **Pre-Filter & Case-Sensitive Test Filename Filter**:
+  * Expand `.py` pre-filter hints in `_has_modern_http_route_hint` to include `.options(`, `.head(`, `.add_api_route(`, `.add_route(`, and `Route(`.
+  * Restrict `Test`/`Tests` suffix matching in `_is_test_source_filename` to case-sensitive camelCase `raw_stem.endswith(("Test", "Tests"))` while keeping `_test`/`_tests`/`.test`/`.spec`/`test_*` case-insensitive so files like `latest.py` or `attest.py` are never skipped.
+
+=== 2. Comprehensive FastAPI / Starlette Route Extraction (`CMP-HTTP-TOPOLOGY-LINKER`)
+
+* Update `_extract_polyglot_http_endpoints` in `src/eidos/core/index/ast_http.py` (Python branch) to:
+  * Match `@<dotted_obj>.(get|post|put|patch|delete|options|head|route|api_route)(...)`, resolving `router_prefixes` by full target or trailing attribute name.
+  * Support keyword `path=...` arguments alongside positional arguments, evaluating expressions through `_eval_url_expr` (literals, f-strings, constants, and `+` concatenations).
+  * Support `methods=` specified as lists, tuples, or sets (`[...]`, `(...)`, `{...}`).
+  * Extract imperative `<obj>.add_api_route(...)` and `<obj>.add_route(...)` registrations.
+
+=== 3. Capability Invariants (`CAP-PROD-001`)
+
+* Bump `CAP-PROD-001` from `1.19.0` to `1.20.0`, updating `INV-BROWNFIELD-DETERMINISTIC-DISCOVERY` and `INV-BROWNFIELD-REST-CONTROLLER-DISCOVERY` to cover service-first container classification, OpenAPI-vs-`rest_http` deduplication, and expanded FastAPI route discovery.
+
+== Implementation Plan
+
+1. **FastAPI / Starlette Route Extraction (`CMP-HTTP-TOPOLOGY-LINKER`; parent `CNT-EIDOS-INDEX` covered via child component)**:
+   * Update `src/eidos/core/index/ast_http.py` (`_extract_polyglot_http_endpoints`) to handle `@*.api_route`, dotted decorator targets, `path=` keyword arguments, `_eval_url_expr` path evaluation, tuple/set `methods=`, and imperative `.add_api_route()` / `.add_route()`.
+2. **Brownfield Discovery Heuristics (`CMP-LIFECYCLE-SCAFFOLDER`; parent `CNT-EIDOS-CORE` covered via child component)**:
+   * Update `src/eidos/core/lifecycle/scaffolder.py` (`_inspect_manifest_container`, `_is_test_source_filename`, `_has_modern_http_route_hint`, `discover_repository_blueprint`) for service-first `container_type` precedence + route-backed promotion, OpenAPI ↔ `rest_http` deduplication, expanded Python pre-filter hints, and case-sensitive camelCase test filename matching.
+3. **Living Specifications**:
+   * Update `eidos/architecture/components/lifecycle-scaffolder.adoc` (`DEC-CORE-DISCOVER-OPENAPI-DEDUP-AND-SERVICE-PRECEDENCE` + responsibilities).
+   * Update `eidos/architecture/components/http-topology-linker.adoc` (expanded FastAPI/Starlette extraction).
+   * Update `eidos/domains/spec-engine/capabilities/living-spec-engine.adoc` (`1.20.0`, `INV-BROWNFIELD-DETERMINISTIC-DISCOVERY`, `INV-BROWNFIELD-REST-CONTROLLER-DISCOVERY`).
+4. **Regression Tests & Verification (`tests/test_scaffolder.py`, `tests/test_http_autolink.py`)**:
+   * Extend `tests/test_scaffolder.py::test_spec_discover_polyglot_brownfield_blueprint` to verify Python FastAPI + `[project.scripts]` and Node Express + `bin` infer `container_type == "service"` while pure CLIs stay `"cli"`, plus route-backed promotion for monorepo sub-services without local framework deps.
+   * Extend `tests/test_scaffolder.py::test_spec_discover_code_first_rest_http_controllers` to verify OpenAPI ↔ `rest_http` deduplication (both active `CTR-*` via `contracts.provides`/`provider` and co-located `openapi.yaml`), explicit `rest_http` retention, non-test `latest.py` inclusion, and FastAPI `@router.api_route`, `@self.router.get`, `path=`, f-string/concat, and `add_api_route` discovery.
+   * Run `pytest` with `>90.0%` per-file coverage (`POL-005`) on `scaffolder.py` and `ast_http.py`, `ruff check`, `ruff format --check`, `eidos validate --fail-on-warnings --json`, `eidos delta verify/apply/audit DLT-2026-168`, and `eidos drift --uncommitted --fail-on-warnings --json`.

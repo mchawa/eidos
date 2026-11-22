@@ -4,7 +4,7 @@ id: CAP-PROD-001
 title: "Living Baseline Specification Engine"
 domain: DOM-SPEC-ENGINE
 status: active
-version: "1.19.0"
+version: "1.20.0"
 
 business:
   personas:
@@ -117,7 +117,7 @@ technical:
       rule: "extract_http_endpoints_with_metadata and ContractParityValidator._verify_rest_http_contract must extract and verify opt-in contradiction-only authorization metadata across Java/Kotlin Spring (@PreAuthorize, @Secured, @RolesAllowed, @PermitAll), TypeScript NestJS (@UseGuards, @Roles, @Public), and Python FastAPI (Security, Depends) alongside ASP.NET Core without affecting plain route tables."
       test_binding: "tests/test_contract_parity.py::test_polyglot_rest_http_authorization_parity_spring_nestjs_fastapi"
     - id: INV-BROWNFIELD-DETERMINISTIC-DISCOVERY
-      rule: "discover_repository_blueprint and eidos spec discover [--path] [--json] must deterministically scan polyglot workspace manifests, interface schemas (including .wsdl as wsdl, .avsc/.avdl as avro, .prisma and canonical schema .sql files as sql_ddl while excluding numbered migration/seed scripts), and test roots with zero AI calls, prune excluded and .NET bin/obj directories, and report candidate containers, contracts, already_mapped ownership flags, and unmapped source_path gaps."
+      rule: "discover_repository_blueprint and eidos spec discover [--path] [--json] must deterministically scan polyglot workspace manifests (using service-first container_type precedence that prioritizes web frameworks and discovered HTTP routes ahead of [project.scripts] and package.json bin), interface schemas (including .wsdl as wsdl, .avsc/.avdl as avro, .prisma and canonical schema .sql files as sql_ddl while excluding numbered migration/seed scripts), and test roots with zero AI calls, prune excluded and .NET bin/obj directories, and report candidate containers, contracts, already_mapped ownership flags, and unmapped source_path gaps."
       test_binding: "tests/test_scaffolder.py::test_spec_discover_polyglot_brownfield_blueprint"
     - id: INV-INIT-CI-WORKFLOW-TEMPLATES
       rule: "init_repository(..., ci=...) and eidos init --ci github|gitlab must scaffold valid, project-agnostic YAML CI workflow templates (.github/workflows/eidos-drift.yml or .gitlab-ci.eidos.yml) running eidos validate and eidos drift with full Git history, preserve existing workflow files unless --force is supplied, and reject unsupported --ci providers."
@@ -129,7 +129,7 @@ technical:
       rule: "Repository living specifications under eidos/**/*.adoc must convert cleanly with zero Asciidoctor warnings (enforced via MemoryLogger in src/eidos/portal/frontend/tests/asciidoc.test.ts), portal Vite 8 config must use ESM import.meta.dirname instead of __dirname, and tests/test_context.py::test_cli_index_commands must invoke eidos index sync with --no-semantic so local suites never stall on CPU ONNX embedding."
       test_binding: "tests/test_docs_sync.py::test_repo_specs_zero_asciidoc_list_warnings_and_fast_index_cli_test"
     - id: INV-BROWNFIELD-REST-CONTROLLER-DISCOVERY
-      rule: "discover_repository_blueprint and eidos spec discover must scan non-test polyglot source files via CMP-HTTP-TOPOLOGY-LINKER to emit grouped protocol: 'rest_http' contract candidates (suggested_id, specification_file, route_count, already_mapped) for modern code-first REST controller/router roots while honoring DEC-CORE-MODERN-REST-PARITY-ONLY."
+      rule: "discover_repository_blueprint and eidos spec discover must scan non-test polyglot source files via CMP-HTTP-TOPOLOGY-LINKER (supporting FastAPI @*.api_route, dotted decorator targets, keyword path=, f-string/concat paths, imperative add_api_route/add_route, and case-sensitive camelCase test-filename filtering) to emit grouped protocol: 'rest_http' contract candidates (suggested_id, specification_file, route_count, already_mapped) for modern code-first REST controller/router roots while deduplicating containers already covered by active or co-located OpenAPI contracts and honoring DEC-CORE-MODERN-REST-PARITY-ONLY."
       test_binding: "tests/test_scaffolder.py::test_spec_discover_code_first_rest_http_controllers"
     - id: INV-MERMAID-SPEC-VALIDATION
       rule: "SpecValidator and CMP-MERMAID-VALIDATOR must extract embedded [mermaid] and [source,mermaid] AsciiDoc blocks (skipping comment blocks and historical applied/rejected SpecDeltas), validate syntax in-process via thread-safe quickjs-ng mermaid.parse() (securityLevel: 'strict') against pinned assets/mermaid/mermaid.min.js.gz with stateless SHA-256 mermaid_validation_cache caching and pure-Python structural-v1 fallback when quickjs-ng is unavailable, and report blocking schema_errors with lazily resolved 1-based .adoc line offsets."

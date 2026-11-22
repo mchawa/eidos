@@ -508,10 +508,17 @@ def _extract_polyglot_http_endpoints(
     # 2. Python: FastAPI / APIRouter, Flask / Blueprint, Starlette Route
     if suffix == ".py":
         router_prefixes: dict[str, str] = {}
-        for m_r in re.finditer(r"([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:APIRouter|Blueprint)\s*\(", cleaned):
+        for m_r in re.finditer(
+            r"([A-Za-z_][A-Za-z0-9_.]*)(?:\s*:\s*[^=\n]+)?\s*=\s*(?:[A-Za-z_][A-Za-z0-9_.]*\.)?(?:APIRouter|Blueprint)\s*\(",
+            cleaned,
+        ):
             args_txt, _ = _extract_balanced_call_args(cleaned, m_r.end() - 1)
             m_pref = re.search(r"(?:url_)?prefix\s*=\s*(\"[^\"]+\"|'[^']+')", args_txt)
-            router_prefixes[m_r.group(1)] = m_pref.group(1).strip("\"'") if m_pref else ""
+            r_key = m_r.group(1)
+            pref_val = m_pref.group(1).strip("\"'") if m_pref else ""
+            router_prefixes[r_key] = pref_val
+            if "." in r_key:
+                router_prefixes.setdefault(r_key.rsplit(".", 1)[-1], pref_val)
         for m_inc in re.finditer(r"\.(?:include_router|register_blueprint)\s*\(", cleaned):
             args_txt, _ = _extract_balanced_call_args(cleaned, m_inc.end() - 1)
             args = _split_top_level_args(args_txt)
@@ -523,8 +530,30 @@ def _extract_polyglot_http_endpoints(
                     sub_p = router_prefixes[rname].lstrip("/")
                     router_prefixes[rname] = f"{inc_p}/{sub_p}".rstrip("/") if sub_p else inc_p
 
+        def _resolve_py_route_path(call_args: list[str], prefix: str) -> tuple[str, str]:
+            path_expr = ""
+            for arg in call_args:
+                m_kw = re.match(r"^path\s*=\s*(.+)$", arg.strip(), re.DOTALL)
+                if m_kw:
+                    path_expr = m_kw.group(1).strip()
+                    break
+            if not path_expr and call_args and not re.match(r"^[A-Za-z_][A-Za-z0-9_]*\s*=", call_args[0].strip()):
+                path_expr = call_args[0].strip()
+            if not path_expr:
+                return "", ""
+            lit, is_t = _unquote_str_token(path_expr)
+            if lit is not None and not is_t:
+                return _join_http_paths(prefix, lit), lit
+            resolved = _eval_url_expr(path_expr, consts, {}, base_prefix=prefix)
+            return resolved, path_expr
+
+        def _extract_py_methods(args_text: str) -> list[str]:
+            m_methods = re.search(r"methods\s*=\s*[\[\(\{]([^\]\)\}]+)[\]\)\}]", args_text)
+            verbs = re.findall(r"[\"']([A-Za-z]+)[\"']", m_methods.group(1)) if m_methods else []
+            return verbs or ["GET"]
+
         for m_dec in re.finditer(
-            r"@([A-Za-z_][A-Za-z0-9_]*)\.(get|post|put|patch|delete|options|head|route)\s*\(",
+            r"@([A-Za-z_][A-Za-z0-9_.]*)\.(get|post|put|patch|delete|options|head|route|api_route)\s*\(",
             cleaned,
         ):
             obj, verb_or_route = m_dec.group(1), m_dec.group(2).lower()
@@ -532,30 +561,39 @@ def _extract_polyglot_http_endpoints(
             args = _split_top_level_args(args_txt)
             if not args:
                 continue
-            raw_p, _ = _unquote_str_token(args[0])
-            if raw_p is None:
-                raw_p = consts.get(args[0].strip())
-            if raw_p is None:
+            prefix = router_prefixes.get(obj) or router_prefixes.get(obj.rsplit(".", 1)[-1], "")
+            full_path, raw_p = _resolve_py_route_path(args, prefix)
+            if not full_path:
                 continue
-            full_path = _join_http_paths(router_prefixes.get(obj, ""), raw_p)
-            if verb_or_route == "route":
-                m_methods = re.search(r"methods\s*=\s*\[([^\]]+)\]", args_txt)
-                verbs = re.findall(r"[\"']([A-Za-z]+)[\"']", m_methods.group(1)) if m_methods else ["GET"]
-                for v in verbs:
+            if verb_or_route in ("route", "api_route"):
+                for v in _extract_py_methods(args_txt):
                     _emit(v, full_path, raw_p, m_dec.start(), close_idx)
             else:
                 _emit(verb_or_route, full_path, raw_p, m_dec.start(), close_idx)
+
+        for m_add in re.finditer(
+            r"(?<![.\w])([A-Za-z_][A-Za-z0-9_.]*)\.(?:add_api_route|add_route)\s*\(",
+            cleaned,
+        ):
+            obj = m_add.group(1)
+            args_txt, close_idx = _extract_balanced_call_args(cleaned, m_add.end() - 1)
+            args = _split_top_level_args(args_txt)
+            if not args:
+                continue
+            prefix = router_prefixes.get(obj) or router_prefixes.get(obj.rsplit(".", 1)[-1], "")
+            full_path, raw_p = _resolve_py_route_path(args, prefix)
+            if not full_path:
+                continue
+            for v in _extract_py_methods(args_txt):
+                _emit(v, full_path, raw_p, m_add.start(), close_idx)
 
         for m_st in re.finditer(r"\bRoute\s*\(", cleaned):
             args_txt, close_idx = _extract_balanced_call_args(cleaned, m_st.end() - 1)
             args = _split_top_level_args(args_txt)
             if len(args) >= 2:
-                raw_p, _ = _unquote_str_token(args[0])
-                if raw_p is not None:
-                    m_methods = re.search(r"methods\s*=\s*\[([^\]]+)\]", args_txt)
-                    verbs = re.findall(r"[\"']([A-Za-z]+)[\"']", m_methods.group(1)) if m_methods else ["GET"]
-                    norm_p = normalize_http_route_path(raw_p)
-                    for v in verbs:
+                norm_p, raw_p = _resolve_py_route_path(args, "")
+                if norm_p:
+                    for v in _extract_py_methods(args_txt):
                         _emit(v, norm_p, raw_p, m_st.start(), close_idx)
         return results
 

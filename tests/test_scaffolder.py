@@ -1990,11 +1990,24 @@ def test_spec_discover_polyglot_brownfield_blueprint(tmp_path):
         '<Project Sdk="Microsoft.NET.Sdk"></Project>\n', encoding="utf-8"
     )
 
-    # 2. Python FastAPI service
+    # 2. Python FastAPI service with [project.scripts] launcher MUST still infer container_type == 'service'
     py_svc = repo / "services" / "billing"
     (py_svc / "src").mkdir(parents=True)
     (py_svc / "pyproject.toml").write_text(
-        '[project]\nname = "billing-svc"\ndependencies = ["fastapi"]\n', encoding="utf-8"
+        '[project]\nname = "billing-svc"\ndependencies = ["fastapi", "uvicorn"]\n'
+        '[project.scripts]\nbilling-svc = "billing.main:run"\n',
+        encoding="utf-8",
+    )
+    # Python monorepo sub-service with no local web dep in pyproject.toml promoted to 'service' via discovered routes
+    py_monorepo_svc = repo / "services" / "classifier"
+    (py_monorepo_svc / "src").mkdir(parents=True)
+    (py_monorepo_svc / "pyproject.toml").write_text(
+        '[project]\nname = "classifier-svc"\n[project.scripts]\nclassifier = "classifier.main:run"\n',
+        encoding="utf-8",
+    )
+    (py_monorepo_svc / "src" / "routes.py").write_text(
+        'from fastapi import APIRouter\nrouter = APIRouter()\n@router.post("/classify")\ndef classify(): return {}\n',
+        encoding="utf-8",
     )
 
     # 3. TypeScript React webapp + root monorepo workspace wrapper (skipped) + Node CLI/service/lib + invalid package.json
@@ -2011,7 +2024,7 @@ def test_spec_discover_polyglot_brownfield_blueprint(tmp_path):
     node_svc = repo / "apps" / "bff"
     node_svc.mkdir(parents=True)
     (node_svc / "package.json").write_bytes(
-        orjson.dumps({"name": "portal-web", "dependencies": {"express": "^4.19.0"}})
+        orjson.dumps({"name": "portal-web", "bin": "./server.js", "dependencies": {"express": "^4.19.0"}})
     )
     node_lib = repo / "packages" / "shared"
     node_lib.mkdir(parents=True)
@@ -2034,7 +2047,9 @@ def test_spec_discover_polyglot_brownfield_blueprint(tmp_path):
     py_cli = repo / "tools" / "runner"
     py_cli.mkdir(parents=True)
     (py_cli / "pyproject.toml").write_text(
-        '[project]\nname = "runner"\n[project.scripts]\nrun = "runner:main"\n', encoding="utf-8"
+        '[project]\nname = "runner"\ndescription = "CLI tool for inspecting FastAPI services"\n'
+        '[project.scripts]\nrun = "runner:main"\n',
+        encoding="utf-8",
     )
     py_lib = repo / "packages" / "core-lib"
     py_lib.mkdir(parents=True)
@@ -2095,6 +2110,11 @@ def test_spec_discover_polyglot_brownfield_blueprint(tmp_path):
     assert cnt_by_manifest["services/orders-api/Orders.Api.csproj"]["container_type"] == "service"
     assert cnt_by_manifest["services/orders-api/Orders.Api.csproj"]["already_mapped"] is False
     assert cnt_by_manifest["services/billing/pyproject.toml"]["already_mapped"] is True
+    assert cnt_by_manifest["services/billing/pyproject.toml"]["container_type"] == "service"
+    assert cnt_by_manifest["services/classifier/pyproject.toml"]["container_type"] == "service"
+    assert cnt_by_manifest["tools/runner/pyproject.toml"]["container_type"] == "cli"
+    assert cnt_by_manifest["apps/bff/package.json"]["container_type"] == "service"
+    assert cnt_by_manifest["apps/cli-tool/package.json"]["container_type"] == "cli"
     assert cnt_by_manifest["apps/portal/package.json"]["container_type"] == "webapp"
     assert cnt_by_manifest["apps/portal/package.json"]["runtime"] == "TypeScript / Node.js"
     assert cnt_by_manifest["services/gateway/go.mod"]["runtime"] == "Go"
@@ -2132,13 +2152,13 @@ def test_spec_discover_polyglot_brownfield_blueprint(tmp_path):
     res_json = runner.invoke(app, ["spec", "discover", "--path", str(repo), "--json"])
     assert res_json.exit_code == 0, res_json.stdout
     parsed = orjson.loads(res_json.stdout)
-    assert parsed["summary"]["containers_found"] == 11
-    assert parsed["summary"]["contracts_found"] == 11
+    assert parsed["summary"]["containers_found"] == 12
+    assert parsed["summary"]["contracts_found"] == 12
     assert any(c["suggested_id"].endswith("-2") for c in parsed["containers"])
 
     res_eidos_arg = runner.invoke(app, ["spec", "discover", "--path", str(eidos_dir), "--json"])
     assert res_eidos_arg.exit_code == 0
-    assert orjson.loads(res_eidos_arg.stdout)["summary"]["containers_found"] == 11
+    assert orjson.loads(res_eidos_arg.stdout)["summary"]["containers_found"] == 12
 
     res_rich = runner.invoke(app, ["spec", "discover", "--path", str(repo)])
     assert res_rich.exit_code == 0
@@ -2294,9 +2314,74 @@ def test_spec_discover_code_first_rest_http_controllers(tmp_path):
         encoding="utf-8",
     )
 
-    # 6. Test files with routes must be ignored
+    # 6. Test files with routes must be ignored, while legitimate files ending in lowercase 'test' (e.g. latest.py) MUST be scanned
     (repo / "services" / "billing" / "src" / "test_app.py").write_text(
         '@app.get("/fake-test-route")\ndef fake(): pass\n',
+        encoding="utf-8",
+    )
+    (repo / "services" / "billing" / "src" / "BillingTests.cs").write_text(
+        '[ApiController]\npublic class BillingTests { [HttpGet("/fake")] public void X() {} }\n',
+        encoding="utf-8",
+    )
+
+    # 7. FastAPI advanced route styles: module-qualified/typed APIRouter, @*.api_route, dotted @self.router.get, keyword path=, f-string/concat, add_api_route, latest.py
+    cls_dir = repo / "services" / "hs-classifier" / "src" / "routers"
+    cls_dir.mkdir(parents=True)
+    (cls_dir / "latest.py").write_text(
+        "import fastapi\n"
+        'API_PREFIX = "/v1"\n'
+        'router: fastapi.APIRouter = fastapi.APIRouter(prefix="/v1/classify")\n'
+        "app = fastapi.FastAPI()\n\n"
+        '@router.api_route("/batch", methods=("GET", "POST"))\n'
+        "def batch_classify(): return {}\n\n"
+        '@router.post(path="/single")\n'
+        "def single_classify(): return {}\n\n"
+        '@router.get(f"{API_PREFIX}/status")\n'
+        "def status(): return {}\n\n"
+        "class ClassifierRoutes:\n"
+        '    self.router = fastapi.APIRouter(prefix="/v1/classify")\n'
+        '    @self.router.delete("/cache/{item_id}")\n'
+        "    def evict(): return {}\n\n"
+        'app.add_api_route("/health", status, methods=["GET"])\n'
+        'app.add_route(path=API_PREFIX + "/ready", route=status, methods={"GET"})\n',
+        encoding="utf-8",
+    )
+
+    # 8. OpenAPI-first services MUST deduplicate sibling rest_http proposals:
+    #    (a) active CNT-* providing active protocol: openapi CTR-* (with external contracts/ path)
+    #    (b) co-located openapi.yaml inside a non-root container directory
+    oapi_mapped_dir = repo / "services" / "payments" / "src"
+    oapi_mapped_dir.mkdir(parents=True)
+    (repo / "services" / "payments" / "pyproject.toml").write_text(
+        '[project]\nname = "payments"\ndependencies = ["fastapi"]\n', encoding="utf-8"
+    )
+    (oapi_mapped_dir / "main.py").write_text(
+        'from fastapi import FastAPI\napp = FastAPI()\n@app.post("/v1/pay")\ndef pay(): return {}\n',
+        encoding="utf-8",
+    )
+    (repo / "contracts").mkdir(parents=True, exist_ok=True)
+    (repo / "contracts" / "payments-openapi.yaml").write_text("openapi: 3.1.0\n", encoding="utf-8")
+    cnt_pay = create_spec(eidos_dir, "container", "CNT-PAYMENTS", "Payments Service")
+    d_pay = parse_spec_file(cnt_pay)
+    d_pay.frontmatter["status"] = "active"
+    d_pay.frontmatter["source_path"] = "services/payments/src"
+    d_pay.frontmatter["contracts"] = {"provides": ["CTR-PAYMENTS-OPENAPI"], "consumes": []}
+    cnt_pay.write_text(dump_spec_document(d_pay.frontmatter, d_pay.body), encoding="utf-8")
+    ctr_pay = create_spec(eidos_dir, "contract", "CTR-PAYMENTS-OPENAPI", "Payments OpenAPI")
+    d_ctr_pay = parse_spec_file(ctr_pay)
+    d_ctr_pay.frontmatter["status"] = "active"
+    d_ctr_pay.frontmatter["protocol"] = "openapi"
+    d_ctr_pay.frontmatter["specification_file"] = "contracts/payments-openapi.yaml"
+    ctr_pay.write_text(dump_spec_document(d_ctr_pay.frontmatter, d_ctr_pay.body), encoding="utf-8")
+
+    oapi_coloc = repo / "services" / "invoices"
+    (oapi_coloc / "src").mkdir(parents=True)
+    (oapi_coloc / "pyproject.toml").write_text(
+        '[project]\nname = "invoices"\ndependencies = ["fastapi"]\n', encoding="utf-8"
+    )
+    (oapi_coloc / "openapi.yaml").write_text("openapi: 3.1.0\n", encoding="utf-8")
+    (oapi_coloc / "src" / "main.py").write_text(
+        'from fastapi import FastAPI\napp = FastAPI()\n@app.get("/v1/inv")\ndef inv(): return []\n',
         encoding="utf-8",
     )
 
@@ -2320,6 +2405,10 @@ def test_spec_discover_code_first_rest_http_controllers(tmp_path):
     assert rest_contracts["services/billing/src/app.py"]["route_count"] == 2
     assert rest_contracts["services/billing/src/app.py"]["already_mapped"] is False
 
+    assert "services/hs-classifier/src/routers" in rest_contracts
+    assert rest_contracts["services/hs-classifier/src/routers"]["route_count"] == 7
+    assert rest_contracts["services/hs-classifier/src/routers"]["already_mapped"] is False
+
     assert "services/catalog/src/controllers" in rest_contracts
     assert rest_contracts["services/catalog/src/controllers"]["route_count"] == 1
     assert rest_contracts["services/catalog/src/controllers"]["already_mapped"] is False
@@ -2330,13 +2419,18 @@ def test_spec_discover_code_first_rest_http_controllers(tmp_path):
     assert "services/gateway/router.go" in rest_contracts
     assert rest_contracts["services/gateway/router.go"]["route_count"] == 1
 
+    # OpenAPI-covered services must NOT emit redundant sibling rest_http proposals
+    assert not any("services/payments" in k for k in rest_contracts)
+    assert not any("services/invoices" in k for k in rest_contracts)
+
     # Legacy WCF and test files must never be proposed
     assert not any("legacy-wcf" in k for k in rest_contracts)
     assert not any("test_app.py" in k for k in rest_contracts)
+    assert not any("BillingTests.cs" in k for k in rest_contracts)
 
     # CLI JSON parity
     cli_res = runner.invoke(app, ["spec", "discover", "--path", str(repo), "--json"])
     assert cli_res.exit_code == 0, cli_res.stdout
     cli_payload = orjson.loads(cli_res.stdout)
     cli_rest = [c for c in cli_payload["contracts"] if c["protocol"] == "rest_http"]
-    assert len(cli_rest) == 5
+    assert len(cli_rest) == 6

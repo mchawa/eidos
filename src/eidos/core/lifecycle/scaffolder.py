@@ -856,14 +856,55 @@ def _inspect_manifest_container(cur: Path, root: Path, filenames: list[str]) -> 
             continue
 
         if fn == "pyproject.toml":
+            import tomllib
+
             text = full.read_text(encoding="utf-8", errors="ignore")
-            m_name = re.search(r'^\s*name\s*=\s*["\']([^"\']+)["\']', text, re.MULTILINE)
-            title = m_name.group(1) if m_name else dir_label
-            lower_txt = text.lower()
-            if "[project.scripts]" in lower_txt or "[tool.poetry.scripts]" in lower_txt:
-                ctype = "cli"
-            elif any(k in lower_txt for k in ("fastapi", "flask", "django", "uvicorn", "litestar")):
+            py_web_deps = {
+                "fastapi",
+                "flask",
+                "django",
+                "uvicorn",
+                "litestar",
+                "starlette",
+                "aiohttp",
+                "sanic",
+                "tornado",
+                "gunicorn",
+                "hypercorn",
+            }
+            parsed_toml: dict[str, Any] = {}
+            with contextlib.suppress(tomllib.TOMLDecodeError, ValueError):
+                parsed_toml = tomllib.loads(text)
+            proj_tbl = parsed_toml.get("project") if isinstance(parsed_toml.get("project"), dict) else {}
+            poetry_tbl = (
+                parsed_toml.get("tool", {}).get("poetry")
+                if isinstance(parsed_toml.get("tool"), dict) and isinstance(parsed_toml["tool"].get("poetry"), dict)
+                else {}
+            )
+            raw_title = proj_tbl.get("name") or poetry_tbl.get("name")
+            if isinstance(raw_title, str) and raw_title.strip():
+                title = raw_title.strip()
+            else:
+                m_name = re.search(r'^\s*name\s*=\s*["\']([^"\']+)["\']', text, re.MULTILINE)
+                title = m_name.group(1) if m_name else dir_label
+
+            py_dep_names: set[str] = set()
+            for raw_dep in proj_tbl.get("dependencies") or ():
+                if isinstance(raw_dep, str):
+                    dep_pkg = re.split(r"[\s\[<>=!~;]", raw_dep.strip(), maxsplit=1)[0].lower().replace("_", "-")
+                    if dep_pkg:
+                        py_dep_names.add(dep_pkg)
+            if isinstance(poetry_tbl.get("dependencies"), dict):
+                py_dep_names.update(str(k).lower().replace("_", "-") for k in poetry_tbl["dependencies"])
+
+            has_scripts = bool(
+                (isinstance(proj_tbl.get("scripts"), dict) and proj_tbl["scripts"])
+                or (isinstance(poetry_tbl.get("scripts"), dict) and poetry_tbl["scripts"])
+            )
+            if py_dep_names & py_web_deps:
                 ctype = "service"
+            elif has_scripts:
+                ctype = "cli"
             else:
                 ctype = "library"
             found.append(
@@ -895,10 +936,10 @@ def _inspect_manifest_container(cur: Path, root: Path, filenames: list[str]) -> 
             is_ts = (cur / "tsconfig.json").is_file() or "typescript" in deps
             if deps & {"react", "vue", "svelte", "next", "vite", "@angular/core"}:
                 ctype = "webapp"
-            elif pkg.get("bin"):
-                ctype = "cli"
             elif deps & {"express", "@nestjs/core", "fastify", "koa", "hono"}:
                 ctype = "service"
+            elif pkg.get("bin"):
+                ctype = "cli"
             else:
                 ctype = "library"
             found.append(
@@ -977,11 +1018,13 @@ _REST_HTTP_GENERIC_PARENTS: frozenset[str] = frozenset(
 
 def _is_test_source_filename(filename: str) -> bool:
     """Return True when a filename follows common polyglot unit/integration test naming conventions."""
+    raw_stem = Path(filename).stem
     lower = filename.lower()
-    stem = Path(lower).stem
+    stem = raw_stem.lower()
     return (
         stem.startswith("test_")
-        or stem.endswith(("_test", "_tests", ".test", ".spec", "tests", "test"))
+        or stem.endswith(("_test", "_tests", ".test", ".spec"))
+        or raw_stem.endswith(("Test", "Tests"))
         or ".test." in lower
         or ".spec." in lower
     )
@@ -994,9 +1037,22 @@ def _has_modern_http_route_hint(suffix: str, content: str) -> bool:
     if suffix == ".cs":
         return "Http" in content or ".Map" in content
     if suffix == ".py":
-        return "@" in content and any(
-            tok in content for tok in (".get(", ".post(", ".put(", ".delete(", ".patch(", ".route(", ".api_route(")
-        )
+        if "@" in content and any(
+            tok in content
+            for tok in (
+                ".get(",
+                ".post(",
+                ".put(",
+                ".delete(",
+                ".patch(",
+                ".options(",
+                ".head(",
+                ".route(",
+                ".api_route(",
+            )
+        ):
+            return True
+        return any(tok in content for tok in (".add_api_route(", ".add_route(", "Route("))
     if suffix in (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"):
         return any(
             tok in content
@@ -1091,20 +1147,53 @@ def discover_repository_blueprint(
 
     owned_source_patterns: list[str] = []
     mapped_contract_patterns: list[str] = []
+    openapi_covered_source_patterns: list[str] = []
     if spec_dir.is_dir():
-        for _eid, (_p, doc_type, fm) in _scan_live_specs_by_id(spec_dir).items():
+        active_code_owners: dict[str, list[str]] = {}
+        comp_parent_cnt: dict[str, str] = {}
+        owner_provides: dict[str, set[str]] = {}
+        active_openapi_ids: set[str] = set()
+        openapi_provider_ids: set[str] = set()
+        for eid, (_p, doc_type, fm) in _scan_live_specs_by_id(spec_dir).items():
             if str(fm.get("status", "active")).lower() in ("deprecated", "retired"):
                 continue
             if doc_type in ("tech/container", "tech/component"):
-                owned_source_patterns.extend(extract_entity_paths(fm))
+                epaths = extract_entity_paths(fm)
+                owned_source_patterns.extend(epaths)
+                active_code_owners[eid] = epaths
+                if doc_type == "tech/component":
+                    p_cnt = str(fm.get("container") or "").strip()
+                    if p_cnt:
+                        comp_parent_cnt[eid] = p_cnt
+                ctrs_block = fm.get("contracts")
+                if isinstance(ctrs_block, dict):
+                    provides = ctrs_block.get("provides")
+                    if isinstance(provides, list):
+                        owner_provides[eid] = {str(x).strip() for x in provides if isinstance(x, str) and x.strip()}
             elif doc_type == "tech/contract":
                 mapped_contract_patterns.extend(extract_entity_paths(fm))
+                if str(fm.get("protocol", "")).strip().lower() == "openapi":
+                    active_openapi_ids.add(eid)
+                    prov = fm.get("provider")
+                    if isinstance(prov, str) and prov.strip():
+                        openapi_provider_ids.add(prov.strip())
+        if active_openapi_ids:
+            for owner_id, provided_ids in owner_provides.items():
+                if provided_ids & active_openapi_ids:
+                    openapi_provider_ids.add(owner_id)
+            for cmp_id, parent_cnt in comp_parent_cnt.items():
+                if parent_cnt in openapi_provider_ids:
+                    openapi_provider_ids.add(cmp_id)
+            for owner_id in openapi_provider_ids:
+                openapi_covered_source_patterns.extend(active_code_owners.get(owner_id, ()))
 
     containers: list[dict[str, Any]] = []
     contracts: list[dict[str, Any]] = []
     test_roots: list[str] = []
     code_top_dirs: set[str] = set()
     rest_routes_by_dir: dict[str, list[tuple[str, int]]] = {}
+    discovered_openapi_files: list[str] = []
+    container_manifest_dirs: list[tuple[str, str]] = []
     http_indexer: Any = None
     seen_cnt_ids: set[str] = set()
     seen_ctr_ids: set[str] = set()
@@ -1134,6 +1223,7 @@ def discover_repository_blueprint(
 
         for item in _inspect_manifest_container(cur, root, filenames):
             sp = item["source_path"]
+            container_manifest_dirs.append((cur_rel, sp))
             containers.append(
                 {
                     "suggested_id": _slugify_entity_id("CNT", item["title"], seen_cnt_ids),
@@ -1162,6 +1252,8 @@ def discover_repository_blueprint(
                     else stem
                 )
                 already_mapped = any(match_path_pattern(rel_file, pat) for pat in mapped_contract_patterns)
+                if protocol == "openapi":
+                    discovered_openapi_files.append(rel_file)
                 contracts.append(
                     {
                         "suggested_id": _slugify_entity_id("CTR", label, seen_ctr_ids),
@@ -1193,6 +1285,29 @@ def discover_repository_blueprint(
                         if endpoints:
                             rest_routes_by_dir.setdefault(cur_rel, []).append((rel_file, len(endpoints)))
 
+    # Promote cli/library containers to 'service' when modern HTTP routes are discovered under their source_path
+    discovered_route_files = [rf for entries in rest_routes_by_dir.values() for rf, _ in entries]
+    single_container = len(containers) == 1
+    if discovered_route_files:
+        for cnt in containers:
+            sp = cnt["source_path"]
+            if cnt["container_type"] in ("cli", "library") and (
+                (sp != "." and any(rf == sp or rf.startswith(f"{sp}/") for rf in discovered_route_files))
+                or (sp == "." and single_container)
+            ):
+                cnt["container_type"] = "service"
+
+    # Co-located OpenAPI files inside a container directory (or root in a single-container repo) cover its routes
+    for manifest_dir, sp in container_manifest_dirs:
+        if manifest_dir == ".":
+            if single_container and discovered_openapi_files:
+                openapi_covered_source_patterns.append(sp)
+            continue
+        if any(oapi == manifest_dir or oapi.startswith(f"{manifest_dir}/") for oapi in discovered_openapi_files):
+            openapi_covered_source_patterns.append(manifest_dir)
+            if sp != ".":
+                openapi_covered_source_patterns.append(sp)
+
     for dir_rel in sorted(rest_routes_by_dir):
         entries = rest_routes_by_dir[dir_rel]
         dir_leaf = dir_rel.rsplit("/", 1)[-1].lower() if dir_rel != "." else ""
@@ -1200,6 +1315,11 @@ def discover_repository_blueprint(
         spec_target = dir_rel if use_dir else entries[0][0]
         route_count = sum(cnt for _, cnt in entries)
         member_files = [rf for rf, _ in entries]
+        is_rest_mapped = _is_contract_target_mapped(spec_target, member_files, mapped_contract_patterns)
+        if not is_rest_mapped and _is_contract_target_mapped(
+            spec_target, member_files, openapi_covered_source_patterns
+        ):
+            continue
         label = _rest_contract_label(spec_target, is_dir=use_dir)
         contracts.append(
             {
@@ -1207,7 +1327,7 @@ def discover_repository_blueprint(
                 "protocol": "rest_http",
                 "specification_file": spec_target,
                 "route_count": route_count,
-                "already_mapped": _is_contract_target_mapped(spec_target, member_files, mapped_contract_patterns),
+                "already_mapped": is_rest_mapped,
             }
         )
 
