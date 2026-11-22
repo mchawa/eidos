@@ -80,6 +80,13 @@ _PROTOCOL_LABELS: dict[str, str] = {
     "asyncapi": "AsyncAPI",
     "json_schema": "JSON Schema",
     "json_rpc_stdio": "JSON-RPC Stdio",
+    "code_interface": "Code Interface",
+    "wsdl": "WSDL",
+    "avro": "Avro",
+    "sql_ddl": "SQL DDL",
+    "trpc": "tRPC",
+    "websocket": "WebSocket",
+    "mcp": "MCP",
 }
 
 

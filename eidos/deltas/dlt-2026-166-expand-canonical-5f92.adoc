@@ -1,0 +1,306 @@
+---
+type: delta/mutation
+id: DLT-2026-166-EXPAND-CANONICAL-5F92
+title: "Expand Canonical Contract Protocols with Polyglot Interface, WSDL, Avro, SQL DDL, tRPC, WebSocket, MCP, Polyglot CLI, OpenAPI 3.1 Webhooks, and Bidirectional JSON Schema Parity"
+status: applied
+intent:
+  kind: feature
+  motivation: "Eidos currently enforces a 10-value canonical tech/contract protocol enum (9 verified protocols plus other/custom_protocol), skips non-Python files on cli_args contracts, inspects only paths (ignoring OpenAPI 3.1 webhooks) on openapi contracts, and checks json_schema only forward-only on top-level properties (ignoring $defs/definitions and phantom removed properties). Adding 7 first-class canonical protocols (code_interface, wsdl, avro, sql_ddl, trpc, websocket, mcp) alongside polyglot cli_args support (Go cobra, Rust clap, Node/TS commander/yargs, C# System.CommandLine), OpenAPI 3.1 webhooks parity, and bidirectional json_schema + $defs/definitions parity closes these contract drift blind spots via deterministic, zero-network static verification across two focused leaf parity modules while preserving POL-004 and INV-CORE-MODULAR-COMPONENT-COHESION."
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: "Expand the canonical protocol enum in assets/schemas/v1/tech/contract.schema.yaml from 10 to 17 values by adding code_interface, wsdl, avro, sql_ddl, trpc, websocket, and mcp (retaining conditional custom_protocol iff protocol == 'other'), broaden specification_file description for multi-file/directory/glob source-backed protocols (including polyglot cli_args), and record DEC-CORE-EXTENDED-CONTRACT-PROTOCOLS in eidos/architecture/containers/core.adoc (amending DEC-CORE-MODERN-REST-PARITY-ONLY strictly for stdlib XML WSDL 1.1/2.0 while continuing to exclude legacy code-first .asmx/WebForms/Web API 2, and covering schema_contract_parity.py + source_contract_parity.py modularity, polyglot cli_args, OpenAPI 3.1 webhooks, and bidirectional json_schema $defs parity)."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-CORE-EXTENDED-CONTRACT-PROTOCOLS"
+      body:
+        contains:
+          - "DEC-CORE-EXTENDED-CONTRACT-PROTOCOLS"
+          - "code_interface"
+          - "wsdl"
+          - "avro"
+          - "sql_ddl"
+          - "trpc"
+          - "websocket"
+          - "mcp"
+          - "webhooks"
+          - "$defs"
+  - operation: modify
+    target: CMP-CONTRACT-PARITY-VALIDATOR
+    details: "Add two focused leaf modules under CMP-CONTRACT-PARITY-VALIDATOR.source_path: src/eidos/core/spec/schema_contract_parity.py (wsdl, avro, sql_ddl) and src/eidos/core/spec/source_contract_parity.py (code_interface, trpc, websocket, mcp, and polyglot cli_args for Go cobra, Rust clap, Node/TS commander/yargs, and C# System.CommandLine); register all 7 new protocols in ContractParityValidator._CONTRACT_PROTOCOL_VERIFIERS, update cli_args dispatch to route single .py files to verify_cli_contract_commands and directory/list/non-.py targets safely via _collect_cli_source_files without calling read_text on directories, extend _verify_rest_openapi_contract for bidirectional OpenAPI 3.1 webhooks parity alongside paths, and extend _verify_json_schema_contract for $defs/definitions and recursive bare-identifier reverse phantom parity in src/eidos/core/spec/contract_parity.py; update eidos/architecture/components/contract-parity-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/contract_parity.py"
+          - "src/eidos/core/spec/cli_contract_parity.py"
+          - "src/eidos/core/spec/schema_contract_parity.py"
+          - "src/eidos/core/spec/source_contract_parity.py"
+      body:
+        contains:
+          - "schema_contract_parity.py"
+          - "source_contract_parity.py"
+          - "code_interface"
+          - "wsdl"
+          - "avro"
+          - "sql_ddl"
+          - "trpc"
+          - "websocket"
+          - "mcp"
+          - "cobra"
+          - "clap"
+          - "webhooks"
+          - "$defs"
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: "Generalize multi-target (file, directory, and glob/brace-glob) specification_file resolution in src/eidos/core/spec/validator.py from rest_http-only to the canonical multi-target protocol set (rest_http, cli_args, code_interface, sql_ddl, trpc, websocket, mcp) and update eidos/architecture/components/spec-validator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/spec/validator.py"
+          - "src/eidos/core/spec/design_validation.py"
+      body:
+        contains:
+          - "cli_args"
+          - "code_interface"
+          - "sql_ddl"
+          - "trpc"
+          - "websocket"
+          - "mcp"
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+    details: "Extend _detect_contract_protocol in src/eidos/core/lifecycle/scaffolder.py so eidos spec discover deterministically classifies .wsdl as wsdl, .avsc/.avdl as avro, .prisma unconditionally as sql_ddl, and .sql strictly for canonical schema filenames (schema.sql, ddl.sql, or *schema*.sql, explicitly excluding numbered migration and seed .sql scripts); update eidos/architecture/components/lifecycle-scaffolder.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/core/lifecycle/scaffolder.py"
+          - "src/eidos/core/lifecycle/catalog.py"
+      body:
+        contains:
+          - "wsdl"
+          - "avro"
+          - "sql_ddl"
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+    details: "Add curated human-readable display labels for code_interface ('Code Interface'), wsdl ('WSDL'), avro ('Avro'), sql_ddl ('SQL DDL'), trpc ('tRPC'), websocket ('WebSocket'), and mcp ('MCP') to _PROTOCOL_LABELS in src/eidos/portal/mermaid.py, and update eidos/architecture/components/portal-generator.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/portal/generator.py"
+          - "src/eidos/portal/mermaid.py"
+      body:
+        contains:
+          - "Code Interface"
+          - "WSDL"
+          - "Avro"
+          - "SQL DDL"
+          - "tRPC"
+          - "WebSocket"
+          - "MCP"
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+    details: "Add curated human-readable display labels for code_interface ('Code Interface'), wsdl ('WSDL'), avro ('Avro'), sql_ddl ('SQL DDL'), trpc ('tRPC'), websocket ('WebSocket'), and mcp ('MCP') to PROTOCOL_LABELS in src/eidos/portal/frontend/src/lib/presentation.ts, rebuild assets/portal/bundle.html.gz via pnpm run build:assets (preserving <= 5 MiB size and INV-PORTAL-AIR-GAPPED-BUNDLE), and update eidos/architecture/components/portal-assets.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/portal/assets.py"
+          - "src/eidos/portal/frontend/scripts/build_assets.py"
+          - "src/eidos/portal/frontend/scripts/hatch_build.py"
+          - "src/eidos/portal/frontend/src"
+      body:
+        contains:
+          - "Code Interface"
+          - "WSDL"
+          - "Avro"
+          - "SQL DDL"
+          - "tRPC"
+          - "WebSocket"
+          - "MCP"
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Update assets/plugin_reference/skills/eidos-spec/SKILL.md to list the 17 canonical tech/contract protocols in the YAML enum comment while deduplicating the redundant inline prose protocol list on line 251 so the body stays safely <= 2,250 words (current baseline 2,231 words; INV-PLUGIN-SKILL-SIZE-CEILING) and generalize line 126 of assets/plugin_reference/skills/eidos/SKILL.md to reference all canonical protocols; update eidos/architecture/containers/plugin.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "code_interface"
+          - "wsdl"
+          - "avro"
+          - "sql_ddl"
+          - "trpc"
+          - "websocket"
+          - "mcp"
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: "Update canonical 17-value protocol enum documentation, polyglot cli_args frameworks, OpenAPI 3.1 webhooks, and bidirectional json_schema $defs parity in docs/concepts/schema-glossary.md, docs/concepts/how-eidos-works.md, and docs/concepts/architectural-index.md (INV-DOCS-SYNCHRONIZATION), and update eidos/architecture/components/docs-core-concepts.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/concepts"
+      body:
+        contains:
+          - "code_interface"
+          - "wsdl"
+          - "avro"
+          - "sql_ddl"
+          - "trpc"
+          - "websocket"
+          - "mcp"
+          - "webhooks"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Update canonical contract parity protocols (including polyglot cli_args, OpenAPI 3.1 webhooks, and bidirectional json_schema $defs parity) and eidos spec discover artifact detection (.wsdl, .avsc/.avdl, .prisma, canonical schema .sql) in docs/guides/cli.md (INV-DOCS-SYNCHRONIZATION), and update eidos/architecture/components/docs-user-guides.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/guides"
+      body:
+        contains:
+          - "code_interface"
+          - "wsdl"
+          - "avro"
+          - "sql_ddl"
+          - "trpc"
+          - "websocket"
+          - "mcp"
+          - "webhooks"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Bump CAP-PROD-001 to 1.19.0 in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc, update INV-CONTRACT-PROTOCOL-SCHEMA-SYNC to the 17-value canonical enum, update INV-BROWNFIELD-DETERMINISTIC-DISCOVERY for .wsdl/.avsc/.avdl/.prisma/canonical schema .sql detection, and add INV-CONTRACT-EXTENDED-PROTOCOLS-PARITY and INV-CONTRACT-CLI-OPENAPI-JSONSCHEMA-PARITY to technical.invariants."
+    expect:
+      frontmatter:
+        status: "active"
+        version: "1.19.0"
+        technical.invariants.id:
+          - "INV-CONTRACT-PROTOCOL-SCHEMA-SYNC"
+          - "INV-CONTRACT-EXTENDED-PROTOCOLS-PARITY"
+          - "INV-CONTRACT-CLI-OPENAPI-JSONSCHEMA-PARITY"
+          - "INV-BROWNFIELD-DETERMINISTIC-DISCOVERY"
+      body:
+        contains:
+          - "INV-CONTRACT-EXTENDED-PROTOCOLS-PARITY"
+          - "INV-CONTRACT-CLI-OPENAPI-JSONSCHEMA-PARITY"
+          - "code_interface"
+          - "wsdl"
+          - "avro"
+          - "sql_ddl"
+          - "trpc"
+          - "websocket"
+          - "mcp"
+  - operation: modify
+    target: INV-CONTRACT-PROTOCOL-SCHEMA-SYNC
+    details: "Update INV-CONTRACT-PROTOCOL-SCHEMA-SYNC rule in CAP-PROD-001 to enforce synchronization of all 17 canonical protocol enum values (adding code_interface, wsdl, avro, sql_ddl, trpc, websocket, mcp) across contract.schema.yaml, ContractParityValidator, eidos-spec/SKILL.md, and docs/concepts/schema-glossary.md."
+    expect:
+      frontmatter:
+        rule: "17-value protocol enum"
+        test_binding: "tests/test_validator.py::test_contract_protocol_schema_and_grpc_proto_parity"
+  - operation: add
+    target: INV-CONTRACT-EXTENDED-PROTOCOLS-PARITY
+    details: "Bind INV-CONTRACT-EXTENDED-PROTOCOLS-PARITY in CAP-PROD-001 to tests/test_contract_parity.py::test_extended_contract_protocols_bidirectional_parity verifying static bidirectional parity, malformed-schema diagnostics, zero-symbol fallback, and portal protocol labeling across code_interface, wsdl, avro, sql_ddl, trpc, websocket, and mcp."
+    expect:
+      frontmatter:
+        rule: "code_interface, wsdl, avro, sql_ddl, trpc, websocket, and mcp"
+        test_binding: "tests/test_contract_parity.py::test_extended_contract_protocols_bidirectional_parity"
+  - operation: add
+    target: INV-CONTRACT-CLI-OPENAPI-JSONSCHEMA-PARITY
+    details: "Bind INV-CONTRACT-CLI-OPENAPI-JSONSCHEMA-PARITY in CAP-PROD-001 to tests/test_contract_parity.py::test_polyglot_cli_openapi_webhooks_and_json_schema_parity verifying bidirectional polyglot cli_args parity across Go cobra, Rust clap, Node/TS commander/yargs, and C# System.CommandLine (single-file and directory/multi-file targets including safe Python directory handling and zero-command fallback), bidirectional OpenAPI 3.1 webhooks parity alongside paths, and bidirectional json_schema $defs/definitions and recursive bare-identifier reverse phantom property parity."
+    expect:
+      frontmatter:
+        rule: "OpenAPI 3.1 webhooks"
+        test_binding: "tests/test_contract_parity.py::test_polyglot_cli_openapi_webhooks_and_json_schema_parity"
+  - operation: modify
+    target: INV-BROWNFIELD-DETERMINISTIC-DISCOVERY
+    details: "Extend INV-BROWNFIELD-DETERMINISTIC-DISCOVERY rule in CAP-PROD-001 to include deterministic auto-detection of .wsdl (wsdl), .avsc/.avdl (avro), .prisma (sql_ddl), and canonical schema .sql files (schema.sql, ddl.sql, *schema*.sql, excluding numbered migration/seed scripts) in discover_repository_blueprint."
+    expect:
+      frontmatter:
+        rule: "wsdl"
+        test_binding: "tests/test_scaffolder.py::test_spec_discover_polyglot_brownfield_blueprint"
+vcs:
+  branch: main
+  base_commit: a5a0191b6fc8f38fa9dc54622c53eb9bb8fd71ba
+---
+= SpecDelta: Expand Canonical Contract Protocols with Polyglot Interface, WSDL, Avro, SQL DDL, tRPC, WebSocket, MCP, Polyglot CLI, OpenAPI 3.1 Webhooks, and Bidirectional JSON Schema Parity
+:toc: left
+
+== Problem Statement
+`assets/schemas/v1/tech/contract.schema.yaml` currently defines a 10-value canonical `protocol` enum (`openapi`, `rest_http`, `protobuf`, `graphql`, `asyncapi`, `json_schema`, `json_rpc_stdio`, `python_protocol`, `cli_args`, and `other`), while three existing verifiers have narrow scope limitations:
+
+* **Polyglot library/SDK interfaces (`code_interface`)**: `python_protocol` only verifies Python `Protocol`/`ABC` classes, leaving TypeScript `.d.ts`/`export interface`, C# `public interface`, Go `type ... interface`, Rust `pub trait`, and Java/Kotlin `interface` contracts unchecked.
+* **WSDL SOAP services (`wsdl`)**: Enterprise SOAP services that commit standard WSDL 1.1/2.0 XML files (`.wsdl`) lack deterministic operation parity even though stdlib `xml.etree.ElementTree` parses `.wsdl` cleanly with zero external dependencies.
+* **Event & data schemas (`avro`, `sql_ddl`)**: Kafka/Schema Registry `.avsc`/`.avdl` schemas and SQL/Prisma database contracts (`.sql`, `.prisma`) have no static parity verifier.
+* **Modern RPC, real-time & AI agent protocols (`trpc`, `websocket`, `mcp`)**: TypeScript tRPC routers, real-time SignalR/NestJS/Socket.IO hubs, and transport-agnostic MCP servers (including Streamable HTTP/SSE plus `resources` and `prompts` beyond `json_rpc_stdio` tools) lack dedicated canonical verifiers.
+* **Python-only `cli_args` parity**: `ContractParityValidator._verify_contract_protocol` currently skips any `cli_args` contract whose `specification_file` is not a single `.py` file, leaving Go (`cobra`), Rust (`clap`), Node/TS (`commander`/`yargs`), and C# (`System.CommandLine`) CLIs unverified.
+* **OpenAPI 3.1 `webhooks` blind spot**: `_verify_rest_openapi_contract` currently inspects only `data.get("paths")` and returns early when `paths` is absent, missing OpenAPI 3.1 top-level `webhooks:` outbound event contracts.
+* **Forward-only, top-level-only `json_schema` parity**: `_verify_json_schema_contract` currently inspects only top-level `properties`/`required` (returning early on `$defs`-only shared definition schemas) and performs no reverse check for phantom properties removed from the schema.
+
+== Proposed Specification Changes
+
+=== 1. Canonical 17-Value Protocol Enum & Decision Amendment (`CNT-EIDOS-CORE`)
+* Expand `assets/schemas/v1/tech/contract.schema.yaml` `properties.protocol.enum` to 17 canonical values:
+  `openapi`, `rest_http`, `protobuf`, `graphql`, `asyncapi`, `json_schema`, `json_rpc_stdio`, `python_protocol`, `cli_args`, `code_interface`, `wsdl`, `avro`, `sql_ddl`, `trpc`, `websocket`, `mcp`, `other`.
+* Preserve the Draft 2020-12 `if/then/else` constraint requiring non-empty `custom_protocol` strictly when `protocol == "other"` and forbidding it on all 16 standard enum values.
+* Record `DEC-CORE-EXTENDED-CONTRACT-PROTOCOLS` in `eidos/architecture/containers/core.adoc` (`graduated_from: DLT-2026-166-EXPAND-CANONICAL-5F92`), documenting:
+  * **Decision**: Add 7 statically verifiable canonical protocols (`code_interface`, `wsdl`, `avro`, `sql_ddl`, `trpc`, `websocket`, `mcp`) plus polyglot `cli_args` verification decomposed across two focused leaf modules (`src/eidos/core/spec/schema_contract_parity.py` for schema/IDL formats and `src/eidos/core/spec/source_contract_parity.py` for source-backed protocols) under `CMP-CONTRACT-PARITY-VALIDATOR`, extend `_verify_rest_openapi_contract` for OpenAPI 3.1 `webhooks`, extend `_verify_json_schema_contract` for `$defs`/`definitions` and recursive bare-identifier reverse phantom-property parity, and generalize multi-target (`file | dir | glob`) resolution in `CMP-SPEC-VALIDATOR`. Amend `DEC-CORE-MODERN-REST-PARITY-ONLY` solely to allow stdlib XML `.wsdl` 1.1/2.0 parsing under dedicated `protocol: wsdl` while continuing to exclude legacy code-first `.asmx`/WebForms/Web API 2 from `rest_http` and `wsdl`.
+  * **Rejected alternatives**: (1) Folding all 7 protocols into `protocol: other` with `custom_protocol` heuristics (re-introduces silent typo bypasses rejected in `DEC-CORE-CANONICAL-CONTRACT-PROTOCOL-ENUM`); (2) Concentrating all 8 new verifiers in a single ~1,300-line catch-all module (undermines `INV-CORE-MODULAR-COMPONENT-COHESION` and complicates per-file coverage maintenance under `POL-005`); (3) Replacing `python_protocol` or `json_rpc_stdio` with breaking renames (breaks existing living specs); (4) Adding third-party XML/SQL/Avro parser dependencies (violates zero-bloat deterministic stdlib parsing under `POL-004`).
+
+=== 2. Static Bidirectional Parity Verifiers (`CMP-CONTRACT-PARITY-VALIDATOR`, `CMP-SPEC-VALIDATOR`)
+Decompose new parity verifiers into two cohesive leaf modules under `CMP-CONTRACT-PARITY-VALIDATOR.source_path` (preserving acyclic modular cohesion per `INV-CORE-MODULAR-COMPONENT-COHESION` and keeping `ContractParityValidator._CONTRACT_PROTOCOL_VERIFIERS` in `contract_parity.py` as the single dispatch facade). All verifiers strip AsciiDoc comments (`_strip_asciidoc_comments`), scope reverse phantom checks to interface sections (`_iter_contract_interface_sections`) respecting contrastive cues (`_CONTRAST_CUE_RE`), and apply zero-symbol fallbacks on source-backed protocols to prevent false positives on custom frameworks:
+
+==== Schema & IDL Verifiers (`src/eidos/core/spec/schema_contract_parity.py`)
+* **`wsdl`** *(single `.wsdl` file)*: Parses WSDL 1.1 (`<service>`, `<portType>/<operation>`) and WSDL 2.0 (`<service>`, `<interface>/<operation>`) XML via stdlib `xml.etree.ElementTree` (rejecting disallowed `<!DOCTYPE`/`<!ENTITY` declarations and >5 MiB payloads before parsing; namespace-stripped; emits malformed-XML error on `ET.ParseError`). Verifies forward parity of services/operations and reverse parity of documented `` `operation <Name>` `` / `` `service <Name>` `` tokens and `Operation`-column table rows.
+* **`avro`** *(single `.avsc` or `.avdl` file)*: Parses `.avsc` JSON (`record`, `enum`, `fixed`, `error`, top-level `name`, and `fields[].name`; emits malformed-JSON error on parse failure) and `.avdl` IDL (`protocol`, `record`, `enum`, `fixed`, `error`, and RPC message declarations). Verifies forward presence and reverse parity of backticked `` `record|enum|fixed|error|message <Name>` `` tokens and schema tables.
+* **`sql_ddl`** *(file, directory, or glob/brace-glob via shared `collect_protocol_source_files`)*: Parses `.sql` DDL (`CREATE [OR REPLACE] [TEMP|TEMPORARY|MATERIALIZED] TABLE|VIEW|FUNCTION|PROCEDURE [IF NOT EXISTS] <name>`, comment-stripped) and `.prisma` schemas (`model`, `enum`, `view`). Verifies forward presence of object names and reverse parity of backticked `` `table|view|function|procedure|model|enum <Name>` `` tokens and object tables.
+
+==== Source-Backed Protocol Verifiers (`src/eidos/core/spec/source_contract_parity.py`)
+All multi-target source-backed verifiers share `collect_protocol_source_files` (safely expanding files, directories with `STANDARD_EXCLUDED_DIRS` + test pruning, and `list[Path]` globs without calling `.read_text()` on directories):
+* **`code_interface`** *(file, directory, or glob/brace-glob)*: Extracts exported/public interface/trait names and public method names across TypeScript (`.ts`, `.tsx`, `.d.ts`, `.mts`, `.cts`: `export interface`, `export type`), C# (`.cs`: `public interface`), Go (`.go`: `type <Name> interface`), Rust (`.rs`: `pub trait`), and Java/Kotlin (`.java`, `.kt`, `.kts`: `interface`). Verifies forward presence of interfaces/methods and reverse parity for documented interface/method signatures.
+* **`trpc`** *(file, directory, or glob/brace-glob)*: Statically scans TypeScript router definitions (`.ts`, `.tsx`, `.mts`, `.cts`) for `router({ ... })` / `createTRPCRouter({ ... })` procedure keys bound to `.query(...)`, `.mutation(...)`, or `.subscription(...)`. Verifies forward presence and reverse parity of backticked `` `query|mutation|subscription <name>` `` tokens and `Procedure`-column tables.
+* **`websocket`** *(file, directory, or glob/brace-glob)*: Extracts real-time hub/event names across ASP.NET Core SignalR `Hub` / `Hub<T>` public methods (plus opt-in contradiction-only `[Authorize]`/`[AllowAnonymous]` parity reusing `_parse_doc_auth_expectation`), NestJS `@SubscribeMessage("...")` handlers, and Socket.IO / WS `socket.on("...")` / `io.emit("...")` events. Verifies forward presence and reverse parity of documented `` `event|hub|message <name>` `` tokens and `Event`/`Method`-column tables.
+* **`mcp`** *(file, directory, or glob/brace-glob)*: Transport-agnostic (stdio + Streamable HTTP / SSE) Model Context Protocol verifier parsing JSON/YAML MCP manifests (`tools`, `resources`, `prompts`) and Python/TypeScript MCP server sources via shared `extract_mcp_symbols_from_text` (`@mcp.tool`/`@mcp.resource`/`@mcp.prompt`, `.tool()`/`.resource()`/`.prompt()`, `registerTool`/`registerResource`/`registerPrompt`, `add_tool`/`add_resource`/`add_prompt`). Verifies forward presence and reverse parity across tools, resources, and prompts while preserving backward compatibility for `json_rpc_stdio`.
+* **Polyglot `cli_args`** *(file, directory, or glob/brace-glob)*:
+  * **Safe dispatch**: When `spec_file` is a single `.py` file (`isinstance(spec_file, Path) and spec_file.is_file() and spec_file.suffix == ".py"`), dispatch directly to existing `verify_cli_contract_commands` (`cli_contract_parity.py`). When `spec_file` is a directory, `list[Path]`, or non-`.py` file, collect supported CLI source files via `collect_protocol_source_files` (never calling `.read_text()` on a directory), routing `.py` entrypoint files to `verify_cli_contract_commands` safely and `.go` (`cobra`: `cobra.Command{Use: "..."}` and flag bindings), `.rs` (`clap`: `#[derive(Subcommand)]` variants, `Command::new("...")`, `#[arg(long...)]`), `.ts`/`.js` (`commander`/`yargs`: `.command("...")`, `.option(...)`), and `.cs` (`System.CommandLine`: `new Command("...")`, `new Option<...>("...")`) files to the polyglot CLI parity verifier (forward + reverse with zero-command fallback).
+
+==== Hardening Existing Verifiers (`src/eidos/core/spec/contract_parity.py`) & Multi-Target Dispatch (`CMP-SPEC-VALIDATOR`)
+* **OpenAPI 3.1 `webhooks`** *(extending `_verify_rest_openapi_contract`)*: Inspects top-level `data.get("webhooks")` alongside `data.get("paths")` (supporting webhook-only OpenAPI 3.1 documents without `paths`), verifying forward presence of every webhook key and reverse parity of documented `` `webhook <name>` `` tokens and `Webhook`-column tables.
+* **Bidirectional `json_schema` + `$defs`/`definitions`** *(extending `_verify_json_schema_contract`)*:
+  * **Forward parity**: Verifies required top-level `properties` when top-level `properties` are declared, and enforces forward presence of `$defs` / `definitions` names when top-level `properties` is absent (definitions-only library schemas, avoiding false positives on internal `$defs` helper types in root-object schemas).
+  * **Reverse parity**: Scans interface sections (`_iter_contract_interface_sections`) for `Property`/`Field`/`Definition`-column table rows and explicit `` `property|field|def <name>` `` tokens (respecting `_CONTRAST_CUE_RE`), matching strictly bare identifiers (`^[A-Za-z_$][A-Za-z0-9_$-]*$` — skipping dotted/bracketed paths like `user.email`, `items[].id`, and multi-word prose) against the full recursive union of top-level `properties`, `$defs`/`definitions` names, and nested sub-schema `properties` (`properties.*.properties`, `items.properties`, `$defs.*.properties`) so optional or nested documented fields never false-positive while deleted fields are caught as phantom drift.
+* **`CMP-SPEC-VALIDATOR`**: Generalize multi-target (`_resolve_all_source_paths`) dispatch in `src/eidos/core/spec/validator.py` from `protocol == "rest_http"` to `protocol in {"rest_http", "cli_args", "code_interface", "sql_ddl", "trpc", "websocket", "mcp"}`.
+
+=== 3. Brownfield Discovery, Portal Labels, Skills, Docs & Invariants
+* **`CMP-LIFECYCLE-SCAFFOLDER`**: Extend `_detect_contract_protocol` in `src/eidos/core/lifecycle/scaffolder.py` to auto-detect `.wsdl` (`wsdl`), `.avsc`/`.avdl` (`avro`), `.prisma` unconditionally (`sql_ddl`), and `.sql` **strictly** for canonical schema filenames (`schema.sql`, `ddl.sql`, or `*schema*.sql`, excluding numbered migration scripts like `001_*.sql`, seed/query `.sql` files, and non-code sample/example directories, while prefixing parent directory names onto `"ddl"` stems just like `"schema"`).
+* **`CMP-PORTAL-GENERATOR` & `CMP-PORTAL-ASSETS`**: Add curated labels (`Code Interface`, `WSDL`, `Avro`, `SQL DDL`, `tRPC`, `WebSocket`, `MCP`) in `src/eidos/portal/mermaid.py` and `src/eidos/portal/frontend/src/lib/presentation.ts`, rebuilding `assets/portal/bundle.html.gz` (`<= 5 MiB`, air-gapped per `INV-PORTAL-AIR-GAPPED-BUNDLE`).
+* **`CNT-EIDOS-PLUGIN`, `CMP-DOCS-CORE-CONCEPTS`, `CMP-DOCS-USER-GUIDES`, `CAP-PROD-001`**: Synchronize the 17-value enum, polyglot `cli_args`, OpenAPI 3.1 `webhooks`, and bidirectional `json_schema` `$defs` parity across `assets/plugin_reference/skills/eidos-spec/SKILL.md` (deduplicating the redundant inline protocol list on line 251 and keeping the single canonical enum comment on line 262 so the body stays safely `<= 2,250` words from the live 2,231-word baseline per `INV-PLUGIN-SKILL-SIZE-CEILING`), `assets/plugin_reference/skills/eidos/SKILL.md` (generalizing line 126 to reference all canonical protocols), `docs/concepts/*`, `docs/guides/cli.md`, `INV-CONTRACT-PROTOCOL-SCHEMA-SYNC`, `INV-BROWNFIELD-DETERMINISTIC-DISCOVERY`, `INV-CONTRACT-EXTENDED-PROTOCOLS-PARITY`, and `INV-CONTRACT-CLI-OPENAPI-JSONSCHEMA-PARITY`.
+
+== Implementation Plan
+1. **Schema & Architectural Decision (`CNT-EIDOS-CORE`)**:
+   * Update `assets/schemas/v1/tech/contract.schema.yaml` to the 17-value canonical enum and broaden `specification_file` description for multi-target protocols (including polyglot `cli_args`).
+   * Record `DEC-CORE-EXTENDED-CONTRACT-PROTOCOLS` in `eidos/architecture/containers/core.adoc` and verify `eidos spec schema contract --json`.
+2. **Focused Leaf Parity Modules, Polyglot CLI, OpenAPI 3.1 Webhooks & Bidirectional JSON Schema (`CMP-CONTRACT-PARITY-VALIDATOR`, `CMP-SPEC-VALIDATOR`)**:
+   * Implement `src/eidos/core/spec/schema_contract_parity.py` (`wsdl`, `avro`, `sql_ddl`) and `src/eidos/core/spec/source_contract_parity.py` (`code_interface`, `trpc`, `websocket`, `mcp`, and polyglot `cli_args` for `cobra`, `clap`, `commander`/`yargs`, `System.CommandLine`) using stdlib-only deterministic static parsing (`POL-004`, `>90.0%` statement coverage per module under `POL-005-STATEMENT-TEST-COVERAGE`).
+   * Register all 7 new verifiers in `ContractParityValidator._CONTRACT_PROTOCOL_VERIFIERS`, update `cli_args` dispatch in `_verify_contract_protocol` to route single `.py` files to `verify_cli_contract_commands` and directory/list/non-`.py` targets safely via `_collect_cli_source_files`, add bidirectional OpenAPI 3.1 `webhooks` verification to `_verify_rest_openapi_contract`, and add `$defs`/`definitions` + recursive bare-identifier reverse phantom parity to `_verify_json_schema_contract` in `src/eidos/core/spec/contract_parity.py`.
+   * Generalize multi-target `specification_file` resolution in `src/eidos/core/spec/validator.py` for `rest_http`, `cli_args`, `code_interface`, `sql_ddl`, `trpc`, `websocket`, and `mcp`.
+   * Update `eidos/architecture/components/contract-parity-validator.adoc` (adding `src/eidos/core/spec/schema_contract_parity.py` and `src/eidos/core/spec/source_contract_parity.py` to `source_path`) and `eidos/architecture/components/spec-validator.adoc`.
+3. **Brownfield Discovery (`CMP-LIFECYCLE-SCAFFOLDER`)**:
+   * Extend `_detect_contract_protocol` in `src/eidos/core/lifecycle/scaffolder.py` for `.wsdl`, `.avsc`/`.avdl`, `.prisma`, and canonical schema `.sql` filenames (`schema.sql`, `ddl.sql`, `*schema*.sql`, excluding numbered migration/seed scripts), and update `eidos/architecture/components/lifecycle-scaffolder.adoc`.
+4. **Living Web Portal Labels & Bundle (`CMP-PORTAL-GENERATOR`, `CMP-PORTAL-ASSETS`)**:
+   * Update `_PROTOCOL_LABELS` in `src/eidos/portal/mermaid.py` and `PROTOCOL_LABELS` in `src/eidos/portal/frontend/src/lib/presentation.ts` (`CNT-EIDOS-PORTAL` covered via `CMP-PORTAL-GENERATOR` and `CMP-PORTAL-ASSETS`).
+   * Add unit assertions for all 7 new protocol labels in `src/eidos/portal/frontend/tests/presentation.test.ts` (body-only test update; verified via `pnpm test` in `src/eidos/portal/frontend/`) and rebuild `assets/portal/bundle.html.gz` via `pnpm run build:assets` (invoking `tsc --noEmit && vite build && python3 scripts/build_assets.py`, verifying `<= 5 MiB` and zero remote URLs per `INV-PORTAL-AIR-GAPPED-BUNDLE`).
+   * Update `eidos/architecture/components/portal-generator.adoc` and `eidos/architecture/components/portal-assets.adoc`.
+5. **Agent Skills, Docs & Capability Invariants (`CNT-EIDOS-PLUGIN`, `CMP-DOCS-CORE-CONCEPTS`, `CMP-DOCS-USER-GUIDES`, `CAP-PROD-001`)**:
+   * Update `assets/plugin_reference/skills/eidos-spec/SKILL.md` (deduplicating line 251's inline protocol list and listing all 17 values in line 262's YAML comment so body stays `<= 2,250` words and description `<= 400` chars per `INV-PLUGIN-SKILL-SIZE-CEILING`) and generalize line 126 of `assets/plugin_reference/skills/eidos/SKILL.md` (automatically reflected via the canonical `.agents/skills -> ../assets/plugin_reference/skills` symlink); update `eidos/architecture/containers/plugin.adoc`.
+   * Update `docs/concepts/schema-glossary.md`, `docs/concepts/how-eidos-works.md`, `docs/concepts/architectural-index.md`, and `docs/guides/cli.md` (`CNT-EIDOS-DOCS` covered via `CMP-DOCS-CORE-CONCEPTS` and `CMP-DOCS-USER-GUIDES`), plus `eidos/architecture/components/docs-core-concepts.adoc` and `eidos/architecture/components/docs-user-guides.adoc`.
+   * Update `eidos/domains/spec-engine/capabilities/living-spec-engine.adoc` (`CAP-PROD-001` `version: "1.19.0"`, `INV-CONTRACT-PROTOCOL-SCHEMA-SYNC`, `INV-BROWNFIELD-DETERMINISTIC-DISCOVERY`, `INV-CONTRACT-EXTENDED-PROTOCOLS-PARITY`, and `INV-CONTRACT-CLI-OPENAPI-JSONSCHEMA-PARITY`).
+6. **Automated Regression Tests & Coverage Gate (`POL-005-STATEMENT-TEST-COVERAGE`)**:
+   * Update `tests/test_validator.py::test_contract_protocol_schema_and_grpc_proto_parity` (`INV-CONTRACT-PROTOCOL-SCHEMA-SYNC`) to assert all 17 canonical enum values, conditional `custom_protocol`, and schema/skill/glossary sync.
+   * Add `tests/test_contract_parity.py::test_extended_contract_protocols_bidirectional_parity` (`INV-CONTRACT-EXTENDED-PROTOCOLS-PARITY`) exercising forward/reverse drift, malformed XML/JSON diagnostics, zero-symbol fallback, multi-file globs, SignalR opt-in auth parity, and `_humanize_protocol` labels across all 7 new protocols.
+   * Add `tests/test_contract_parity.py::test_polyglot_cli_openapi_webhooks_and_json_schema_parity` (`INV-CONTRACT-CLI-OPENAPI-JSONSCHEMA-PARITY`) verifying bidirectional parity across Go `cobra`, Rust `clap`, Node/TS `commander`/`yargs`, C# `System.CommandLine` (single-file and directory/multi-file targets including safe Python directory handling and zero-command fallback), OpenAPI 3.1 `webhooks` (both alongside `paths` and in webhook-only specs), and `json_schema` `$defs`/`definitions` (definitions-only schemas, nested/dotted path non-false-positive checks, optional properties, and reverse phantom property/definition drift).
+   * Extend `tests/test_scaffolder.py::test_spec_discover_polyglot_brownfield_blueprint` (`INV-BROWNFIELD-DETERMINISTIC-DISCOVERY`) with `.wsdl`, `.avsc`, `.avdl`, `.prisma`, canonical `schema.sql`, and negative numbered-migration `001_init.sql` assertions.
+   * Run `uv run pytest --cov=src/eidos --cov-report=json:coverage.json` confirming `>90.0%` statement coverage on every module under `src/eidos/` (including `schema_contract_parity.py` and `source_contract_parity.py`), `eidos delta verify DLT-2026-166 --json`, `eidos delta apply DLT-2026-166`, and `eidos drift --uncommitted --json`.

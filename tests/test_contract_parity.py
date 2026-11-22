@@ -1068,3 +1068,383 @@ specification_file: src/fastapi_app
     assert "/api/admin/metrics" in joined
     assert "wrong:scope" in joined
     assert "/api/ping" in joined
+
+
+def test_extended_contract_protocols_bidirectional_parity(tmp_path: Path) -> None:
+    """Verify INV-CONTRACT-EXTENDED-PROTOCOLS-PARITY: static bidirectional parity, malformed-schema diagnostics,
+    zero-symbol fallbacks, multi-file globs, SignalR opt-in auth checks, and curated portal labels across
+    code_interface, wsdl, avro, sql_ddl, trpc, websocket, and mcp."""
+    from eidos.portal.mermaid import _humanize_protocol
+
+    # Curated portal display labels for all 7 new protocols
+    expected_labels = {
+        "code_interface": "Code Interface",
+        "wsdl": "WSDL",
+        "avro": "Avro",
+        "sql_ddl": "SQL DDL",
+        "trpc": "tRPC",
+        "websocket": "WebSocket",
+        "mcp": "MCP",
+    }
+    for proto, label in expected_labels.items():
+        assert _humanize_protocol(proto) == label
+
+    repo = tmp_path / "ext_proto_repo"
+    eidos_dir = repo / "eidos"
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True)
+    (eidos_dir / "architecture" / "contracts").mkdir(parents=True)
+    _write(
+        eidos_dir / "architecture" / "containers" / "platform.adoc",
+        "---\ntype: tech/container\nid: CNT-PLAT\ntitle: Platform\nstatus: active\ncontainer_type: service\nruntime: Polyglot\nsource_path: src\n---\n= Platform\n",
+    )
+
+    # 1. WSDL 1.1 & 2.0 + malformed XML + unsafe DTD rejection
+    _write(
+        repo / "contracts" / "billing.wsdl",
+        '<?xml version="1.0"?>\n'
+        '<definitions xmlns="http://schemas.xmlsoap.org/wsdl/" name="Billing">\n'
+        '  <portType name="BillingPort"><operation name="ChargeCard"/><operation name="RefundCharge"/></portType>\n'
+        '  <service name="BillingService"/>\n'
+        "</definitions>\n",
+    )
+    _write(
+        repo / "contracts" / "shipping_v2.wsdl",
+        '<?xml version="1.0"?>\n'
+        '<description xmlns="http://www.w3.org/ns/wsdl">\n'
+        '  <interface name="ShipIface"><operation name="DispatchParcel"/></interface>\n'
+        '  <service name="ShippingService"/>\n'
+        "</description>\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "wsdl_ok.adoc",
+        "---\ntype: tech/contract\nid: CTR-WSDL-OK\ntitle: Billing WSDL\nstatus: active\nprotocol: wsdl\ncontainer: CNT-PLAT\nspecification_file: contracts/billing.wsdl\n---\n"
+        "= Billing WSDL\n\n== Operations\n|===\n| Operation | Notes\n| `ChargeCard` | Charges card\n| `RefundCharge` | Refunds\n|===\n"
+        "Exposed by `service BillingService`. Unlike `operation LegacyCancel`, removed ops are excluded.\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "wsdl_v2.adoc",
+        "---\ntype: tech/contract\nid: CTR-WSDL-V2\ntitle: Shipping WSDL\nstatus: active\nprotocol: wsdl\ncontainer: CNT-PLAT\nspecification_file: contracts/shipping_v2.wsdl\n---\n"
+        "= Shipping WSDL\nExposes `service ShippingService` and `operation DispatchParcel`.\n",
+    )
+
+    # 2. Avro .avsc + .avdl
+    _write(
+        repo / "schemas" / "order.avsc",
+        '{"type":"record","name":"OrderPlaced","fields":[{"name":"orderId","type":"string"},{"name":"status","type":{"type":"enum","name":"OrderState","symbols":["NEW","PAID"]}}]}\n',
+    )
+    _write(
+        repo / "schemas" / "ledger.avdl",
+        "protocol LedgerProtocol {\n  record Entry { string id; }\n  void postEntry(Entry e);\n}\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "avro_json.adoc",
+        "---\ntype: tech/contract\nid: CTR-AVRO-JSON\ntitle: Order Avro\nstatus: active\nprotocol: avro\ncontainer: CNT-PLAT\nspecification_file: schemas/order.avsc\n---\n"
+        "= Order Avro\nRecord `record OrderPlaced` has fields `orderId` and `status` of enum `enum OrderState`.\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "avro_idl.adoc",
+        "---\ntype: tech/contract\nid: CTR-AVRO-IDL\ntitle: Ledger Avro IDL\nstatus: active\nprotocol: avro\ncontainer: CNT-PLAT\nspecification_file: schemas/ledger.avdl\n---\n"
+        "= Ledger Avro IDL\nProtocol `LedgerProtocol` defines `record Entry` and `message postEntry`.\n",
+    )
+
+    # 3. SQL DDL (.sql + .prisma across directory)
+    _write(
+        repo / "db" / "schema.sql",
+        "-- core schema\nCREATE TABLE IF NOT EXISTS public.accounts (id INT);\nCREATE OR REPLACE VIEW active_accounts AS SELECT * FROM accounts;\n",
+    )
+    _write(
+        repo / "db" / "schema.prisma",
+        "model Invoice {\n  id Int @id\n}\nenum InvoiceStatus {\n  OPEN\n}\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "sql_ok.adoc",
+        "---\ntype: tech/contract\nid: CTR-SQL-OK\ntitle: Core DB Schema\nstatus: active\nprotocol: sql_ddl\ncontainer: CNT-PLAT\nspecification_file: db\n---\n"
+        "= Core DB Schema\n\n== Database Objects\n|===\n| Object | Kind\n| `accounts` | Table\n| `active_accounts` | View\n| `Invoice` | Model\n| `InvoiceStatus` | Enum\n|===\n",
+    )
+
+    # 4. Polyglot code_interface (TS, C#, Go, Rust, Java)
+    _write(repo / "src" / "sdk" / "client.d.ts", "export interface SdkClient {\n  fetchToken(id: string): Promise<string>;\n}\n")
+    _write(repo / "src" / "sdk" / "IStore.cs", "public interface IStore {\n  void SaveItem(string key);\n}\n")
+    _write(repo / "src" / "sdk" / "cache.go", "package sdk\ntype CacheStore interface {\n  GetEntry(k string) string\n}\n")
+    _write(repo / "src" / "sdk" / "codec.rs", "pub trait Codec {\n  fn encode_frame(&self) -> Vec<u8>;\n}\n")
+    _write(repo / "src" / "sdk" / "Mailer.java", "public interface Mailer {\n  void sendReceipt(String to);\n}\n")
+    _write(
+        eidos_dir / "architecture" / "contracts" / "sdk_ok.adoc",
+        "---\ntype: tech/contract\nid: CTR-SDK-OK\ntitle: Polyglot SDK\nstatus: active\nprotocol: code_interface\ncontainer: CNT-PLAT\nspecification_file: src/sdk\n---\n"
+        "= Polyglot SDK\n\n== Interfaces\n"
+        "* `interface SdkClient`: `method fetchToken`\n"
+        "* `interface IStore`: `method SaveItem`\n"
+        "* `interface CacheStore`: `method GetEntry`\n"
+        "* `trait Codec`: `method encode_frame`\n"
+        "* `interface Mailer`: `method sendReceipt`\n",
+    )
+
+    # 5. tRPC router
+    _write(
+        repo / "src" / "trpc" / "router.ts",
+        "export const appRouter = createTRPCRouter({\n"
+        "  getUser: publicProcedure.query(() => null),\n"
+        "  updateUser: protectedProcedure.mutation(() => true),\n"
+        "  onAlert: publicProcedure.subscription(() => null),\n"
+        "});\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "trpc_ok.adoc",
+        "---\ntype: tech/contract\nid: CTR-TRPC-OK\ntitle: App tRPC\nstatus: active\nprotocol: trpc\ncontainer: CNT-PLAT\nspecification_file: src/trpc/router.ts\n---\n"
+        "= App tRPC\n\n== Procedures\n|===\n| Procedure | Type\n| `getUser` | query\n| `updateUser` | mutation\n| `onAlert` | subscription\n|===\n",
+    )
+
+    # 6. WebSocket: ASP.NET Core SignalR Hub (with [Authorize]/[AllowAnonymous]) + NestJS + Socket.IO
+    _write(
+        repo / "src" / "ws" / "ChatHub.cs",
+        '[Authorize(Policy = "ChatUser", Roles = "Member")]\n'
+        "public class ChatHub : Hub {\n"
+        "  public async Task SendMessage(string msg) {}\n"
+        "  [AllowAnonymous]\n"
+        "  public Task PingStatus() { return Task.CompletedTask; }\n"
+        "}\n",
+    )
+    _write(
+        repo / "src" / "ws" / "gateway.ts",
+        '@SubscribeMessage("join_room")\nhandleJoin() {}\nsocket.on("typing_start", () => {});\nsocket.on("disconnect", () => {});\n',
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "ws_ok.adoc",
+        "---\ntype: tech/contract\nid: CTR-WS-OK\ntitle: Realtime Events\nstatus: active\nprotocol: websocket\ncontainer: CNT-PLAT\nspecification_file: src/ws\n---\n"
+        "= Realtime Events\n\n== Hub & Events\n"
+        '|===\n| Method | Auth\n| `SendMessage` | `[Authorize(Policy = "ChatUser", Roles = "Member")]`\n| `PingStatus` | `[AllowAnonymous]`\n| `join_room` | Open\n| `typing_start` | Open\n|===\n',
+    )
+
+    # 7. Transport-agnostic MCP (YAML manifest + Python/TS server sources)
+    _write(
+        repo / "src" / "mcp" / "manifest.yaml",
+        "tools:\n  - name: search_docs\nresources:\n  - uri: eidos://catalog\nprompts:\n  - name: review_delta\n",
+    )
+    _write(
+        repo / "src" / "mcp" / "server.py",
+        '@mcp.tool()\ndef ping_health(): pass\n@mcp.resource("eidos://status")\ndef get_status(): pass\n@mcp.prompt("summarize")\ndef sum_p(): pass\n',
+    )
+    _write(
+        repo / "src" / "mcp" / "server.ts",
+        'server.registerTool("ts_lookup", {}, async () => ({}));\nserver.registerResource("eidos://ts", async () => ({}));\nserver.registerPrompt("ts_guide", async () => ({}));\n',
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "mcp_ok.adoc",
+        "---\ntype: tech/contract\nid: CTR-MCP-OK\ntitle: Agent MCP\nstatus: active\nprotocol: mcp\ncontainer: CNT-PLAT\nspecification_file: src/mcp\n---\n"
+        "= Agent MCP\n\n== Capabilities\n"
+        "* `tool search_docs`, `resource eidos://catalog`, `prompt review_delta`\n"
+        "* `tool ping_health`, `resource eidos://status`, `prompt summarize`\n"
+        "* `tool ts_lookup`, `resource eidos://ts`, `prompt ts_guide`\n",
+    )
+
+    # Zero-symbol fallback: empty source file must not false-positive
+    _write(repo / "src" / "empty" / "custom.ts", "// custom wrapper with no tRPC router\nexport const x = 1;\n")
+    _write(
+        eidos_dir / "architecture" / "contracts" / "trpc_empty.adoc",
+        "---\ntype: tech/contract\nid: CTR-TRPC-EMPTY\ntitle: Custom Wrapper\nstatus: active\nprotocol: trpc\ncontainer: CNT-PLAT\nspecification_file: src/empty/custom.ts\n---\n"
+        "= Custom Wrapper\nDocuments `query phantomIgnored` safely under zero-symbol fallback.\n",
+    )
+
+    validator = SpecValidator()
+    clean_rep = validator.validate_directory(eidos_dir, check_import_boundaries=False)
+    assert clean_rep.is_clean, f"Expected clean extended protocols validation, got: {clean_rep.broken_references}"
+
+    # Now exercise forward drift, reverse phantom drift, SignalR auth contradiction, malformed XML/JSON/MCP, and unsafe DTD
+    _write(repo / "contracts" / "bad.wsdl", "<definitions><unclosed></definitions>")
+    _write(repo / "contracts" / "dtd.wsdl", '<!DOCTYPE foo [<!ENTITY xxe "bad">]><definitions/>')
+    _write(repo / "schemas" / "bad.avsc", "{not-json")
+    _write(repo / "src" / "mcp_bad" / "bad.json", "{bad: [yaml")
+
+    _write(
+        eidos_dir / "architecture" / "contracts" / "wsdl_bad.adoc",
+        "---\ntype: tech/contract\nid: CTR-WSDL-BAD\ntitle: Bad WSDL\nstatus: active\nprotocol: wsdl\ncontainer: CNT-PLAT\nspecification_file: contracts/bad.wsdl\n---\n= Bad\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "wsdl_dtd.adoc",
+        "---\ntype: tech/contract\nid: CTR-WSDL-DTD\ntitle: DTD WSDL\nstatus: active\nprotocol: wsdl\ncontainer: CNT-PLAT\nspecification_file: contracts/dtd.wsdl\n---\n= DTD\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "avro_bad.adoc",
+        "---\ntype: tech/contract\nid: CTR-AVRO-BAD\ntitle: Bad Avro\nstatus: active\nprotocol: avro\ncontainer: CNT-PLAT\nspecification_file: schemas/bad.avsc\n---\n= Bad\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "mcp_bad.adoc",
+        "---\ntype: tech/contract\nid: CTR-MCP-BAD\ntitle: Bad MCP\nstatus: active\nprotocol: mcp\ncontainer: CNT-PLAT\nspecification_file: src/mcp_bad/bad.json\n---\n= Bad\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "drift_mix.adoc",
+        "---\ntype: tech/contract\nid: CTR-DRIFT-WS\ntitle: Drift WS\nstatus: active\nprotocol: websocket\ncontainer: CNT-PLAT\nspecification_file: src/ws\n---\n"
+        "= Drift WS\n\n== Hub & Events\n"
+        "|===\n| Method | Auth\n"
+        '| `SendMessage` | `[AllowAnonymous]`\n'
+        '| `PingStatus` | `[Authorize(Policy = "WrongPol")]`\n'
+        "| `GhostEvent` | Open\n|===\n"
+        'Also `SendMessage` with `[Authorize(Policy = "WrongPol", Roles = "WrongRole")]`.\n',
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "drift_trpc.adoc",
+        "---\ntype: tech/contract\nid: CTR-DRIFT-TRPC\ntitle: Drift tRPC\nstatus: active\nprotocol: trpc\ncontainer: CNT-PLAT\nspecification_file: src/trpc/router.ts\n---\n"
+        "= Drift tRPC\nExposes `query getUser` and `mutation deletedProc`.\n",
+    )
+
+    bad_rep = validator.validate_directory(eidos_dir, check_import_boundaries=False)
+    assert not bad_rep.is_clean
+    joined = "\n".join(bad_rep.broken_references)
+    assert "failed to parse" in joined
+    assert "disallowed XML DTD/ENTITY" in joined
+    assert "GhostEvent" in joined
+    assert "join_room" in joined
+    assert "WrongPol" in joined
+    assert "WrongRole" in joined
+    assert "deletedProc" in joined
+    assert "updateUser" in joined
+
+
+def test_polyglot_cli_openapi_webhooks_and_json_schema_parity(tmp_path: Path) -> None:
+    """Verify INV-CONTRACT-CLI-OPENAPI-JSONSCHEMA-PARITY: polyglot cli_args across Go cobra, Rust clap,
+    Node/TS commander/yargs, and C# System.CommandLine (plus safe Python directory delegation & zero-command fallback),
+    bidirectional OpenAPI 3.1 webhooks parity alongside paths and webhook-only specs, and bidirectional json_schema
+    $defs/definitions and recursive bare-identifier reverse phantom parity."""
+    repo = tmp_path / "cli_oas_js_repo"
+    eidos_dir = repo / "eidos"
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True)
+    (eidos_dir / "architecture" / "contracts").mkdir(parents=True)
+    _write(
+        eidos_dir / "architecture" / "containers" / "tools.adoc",
+        "---\ntype: tech/container\nid: CNT-TOOLS\ntitle: Tools\nstatus: active\ncontainer_type: cli\nruntime: Polyglot\nsource_path: src\n---\n= Tools\n",
+    )
+
+    # 1. Polyglot cli_args: Go cobra, Rust clap, Node commander, C# System.CommandLine, Python dir, and zero-cmd fallback
+    _write(
+        repo / "src" / "cli_go" / "cmd.go",
+        'package main\nvar deployCmd = &cobra.Command{Use: "deploy [env]"}\nfunc init() { deployCmd.Flags().String("region", "us", "r") }\n',
+    )
+    _write(
+        repo / "src" / "cli_rs" / "main.rs",
+        "#[derive(Subcommand)]\nenum Commands {\n  SyncState,\n  #[allow(dead_code)]\n  CheckDrift,\n}\n"
+        'fn extra() { Command::new("status"); }\n'
+        "#[arg(long)]\npub dry_run: bool,\n",
+    )
+    _write(
+        repo / "src" / "cli_ts" / "index.ts",
+        'program.command("publish <pkg>").option("-f, --force", "force");\n',
+    )
+    _write(
+        repo / "src" / "cli_cs" / "Program.cs",
+        'var cmd = new Command("migrate");\nvar opt = new Option<bool>("--verbose");\n',
+    )
+    _write(
+        repo / "src" / "cli_py" / "main.py",
+        "import typer\napp = typer.Typer()\n@app.command('hello')\ndef hello_cmd(): pass\n",
+    )
+    _write(repo / "src" / "cli_empty" / "main.go", "package main\nfunc main() {}\n")
+
+    _write(
+        eidos_dir / "architecture" / "contracts" / "cli_go.adoc",
+        "---\ntype: tech/contract\nid: CTR-CLI-GO\ntitle: Go CLI\nstatus: active\nprotocol: cli_args\ncontainer: CNT-TOOLS\nspecification_file: src/cli_go\n---\n"
+        "= Go CLI\n\n== Commands\n|===\n| Command | Flags\n| `deploy` | `--region`\n|===\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "cli_rs.adoc",
+        "---\ntype: tech/contract\nid: CTR-CLI-RS\ntitle: Rust CLI\nstatus: active\nprotocol: cli_args\ncontainer: CNT-TOOLS\nspecification_file: src/cli_rs/main.rs\n---\n"
+        "= Rust CLI\nCommands: `command sync-state`, `command check-drift`, `command status` with `--dry-run`.\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "cli_ts.adoc",
+        "---\ntype: tech/contract\nid: CTR-CLI-TS\ntitle: Node CLI\nstatus: active\nprotocol: cli_args\ncontainer: CNT-TOOLS\nspecification_file: src/cli_ts/index.ts\n---\n"
+        "= Node CLI\nSupports `command publish` and `--force`.\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "cli_cs.adoc",
+        "---\ntype: tech/contract\nid: CTR-CLI-CS\ntitle: Dotnet CLI\nstatus: active\nprotocol: cli_args\ncontainer: CNT-TOOLS\nspecification_file: src/cli_cs/Program.cs\n---\n"
+        "= Dotnet CLI\nSupports `command migrate` and `--verbose`.\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "cli_py_dir.adoc",
+        "---\ntype: tech/contract\nid: CTR-CLI-PY-DIR\ntitle: Py Dir CLI\nstatus: active\nprotocol: cli_args\ncontainer: CNT-TOOLS\nspecification_file: src/cli_py\n---\n"
+        "= Py Dir CLI\n\n== Commands\n|===\n| Command | Description\n| `hello` | Say hello\n|===\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "cli_empty.adoc",
+        "---\ntype: tech/contract\nid: CTR-CLI-EMPTY\ntitle: Empty CLI\nstatus: active\nprotocol: cli_args\ncontainer: CNT-TOOLS\nspecification_file: src/cli_empty/main.go\n---\n"
+        "= Empty CLI\nCustom `command ignored-cmd` under zero-command fallback.\n",
+    )
+
+    # 2. OpenAPI 3.1 webhooks (both alongside paths and webhook-only)
+    _write(
+        repo / "api" / "mixed.openapi.yaml",
+        "openapi: 3.1.0\ninfo: {title: Mixed, version: 1.0.0}\n"
+        "paths:\n  /v1/orders:\n    post: {}\n"
+        "webhooks:\n  orderCreated:\n    post: {}\n",
+    )
+    _write(
+        repo / "api" / "webhooks_only.openapi.yaml",
+        "openapi: 3.1.0\ninfo: {title: Hooks, version: 1.0.0}\n"
+        "webhooks:\n  invoicePaid:\n    post: {}\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "oas_mixed.adoc",
+        "---\ntype: tech/contract\nid: CTR-OAS-MIXED\ntitle: Mixed OpenAPI\nstatus: active\nprotocol: openapi\ncontainer: CNT-TOOLS\nspecification_file: api/mixed.openapi.yaml\n---\n"
+        "= Mixed OpenAPI\n\n== Endpoints & Webhooks\n* `POST /v1/orders`\n* `webhook orderCreated`\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "oas_hooks.adoc",
+        "---\ntype: tech/contract\nid: CTR-OAS-HOOKS\ntitle: Webhook Only OpenAPI\nstatus: active\nprotocol: openapi\ncontainer: CNT-TOOLS\nspecification_file: api/webhooks_only.openapi.yaml\n---\n"
+        "= Webhook Only OpenAPI\n\n== Webhooks\n|===\n| Webhook | Event\n| `invoicePaid` | Paid\n|===\n",
+    )
+
+    # 3. Bidirectional json_schema ($defs-only library + root properties with nested/optional fields + dotted paths)
+    _write(
+        repo / "schemas" / "defs_only.json",
+        '{"$schema":"https://json-schema.org/draft/2020-12/schema","$defs":{"Money":{"type":"object","properties":{"amount":{"type":"number"}}},"Currency":{"type":"string"}}}\n',
+    )
+    _write(
+        repo / "schemas" / "order_payload.json",
+        '{"type":"object","required":["id"],"properties":{"id":{"type":"string"},"note":{"type":"string"},"customer":{"type":"object","properties":{"email":{"type":"string"}}},"items":{"type":"array","items":{"type":"object","properties":{"sku":{"type":"string"}}}}}}\n',
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "js_defs.adoc",
+        "---\ntype: tech/contract\nid: CTR-JS-DEFS\ntitle: Shared Defs\nstatus: active\nprotocol: json_schema\ncontainer: CNT-TOOLS\nspecification_file: schemas/defs_only.json\n---\n"
+        "= Shared Defs\n\n== Definitions\n|===\n| Definition | Description\n| `Money` | Monetary amount\n| `Currency` | ISO currency\n| `amount` | Nested numeric field\n|===\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "js_order.adoc",
+        "---\ntype: tech/contract\nid: CTR-JS-ORDER\ntitle: Order Payload\nstatus: active\nprotocol: json_schema\ncontainer: CNT-TOOLS\nspecification_file: schemas/order_payload.json\n---\n"
+        "= Order Payload\n\n== Properties\n|===\n| Property | Notes\n"
+        "| `id` | Required\n| `note` | Optional top-level\n| `email` | Nested customer field\n"
+        "| `sku` | Nested item field\n| `customer.email` | Dotted path skipped cleanly\n| `items[].sku` | Bracketed path skipped\n|===\n"
+        "Unlike `property legacyRemoved`, old fields are excluded.\n",
+    )
+
+    validator = SpecValidator()
+    clean_rep = validator.validate_directory(eidos_dir, check_import_boundaries=False)
+    assert clean_rep.is_clean, f"Expected clean validation, got: {clean_rep.broken_references}"
+
+    # Inject forward + reverse drift across polyglot CLI, OpenAPI webhooks, and json_schema $defs/phantom properties
+    _write(
+        eidos_dir / "architecture" / "contracts" / "cli_go.adoc",
+        "---\ntype: tech/contract\nid: CTR-CLI-GO\ntitle: Go CLI\nstatus: active\nprotocol: cli_args\ncontainer: CNT-TOOLS\nspecification_file: src/cli_go\n---\n"
+        "= Go CLI\n\n== Commands\n|===\n| Command | Flags\n| `ghost-cmd` | `--ghost-flag`\n|===\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "oas_hooks.adoc",
+        "---\ntype: tech/contract\nid: CTR-OAS-HOOKS\ntitle: Webhook Only OpenAPI\nstatus: active\nprotocol: openapi\ncontainer: CNT-TOOLS\nspecification_file: api/webhooks_only.openapi.yaml\n---\n"
+        "= Webhook Only OpenAPI\n\n== Webhooks\n|===\n| Webhook | Event\n| `deletedHook` | Removed\n|===\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "js_defs.adoc",
+        "---\ntype: tech/contract\nid: CTR-JS-DEFS\ntitle: Shared Defs\nstatus: active\nprotocol: json_schema\ncontainer: CNT-TOOLS\nspecification_file: schemas/defs_only.json\n---\n"
+        "= Shared Defs\n\n== Definitions\n|===\n| Definition | Description\n| `Money` | Present\n| `PhantomDef` | Removed\n|===\n",
+    )
+    _write(
+        eidos_dir / "architecture" / "contracts" / "js_order.adoc",
+        "---\ntype: tech/contract\nid: CTR-JS-ORDER\ntitle: Order Payload\nstatus: active\nprotocol: json_schema\ncontainer: CNT-TOOLS\nspecification_file: schemas/order_payload.json\n---\n"
+        "= Order Payload\n\n== Properties\n|===\n| Property | Notes\n| `id` | Required\n| `removedField` | Phantom\n|===\n",
+    )
+
+    bad_rep = validator.validate_directory(eidos_dir, check_import_boundaries=False)
+    assert not bad_rep.is_clean
+    joined = "\n".join(bad_rep.broken_references)
+    assert "deploy" in joined and "ghost-cmd" in joined and "--region" in joined and "--ghost-flag" in joined
+    assert "invoicePaid" in joined and "deletedHook" in joined
+    assert "Currency" in joined and "PhantomDef" in joined and "removedField" in joined

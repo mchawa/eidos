@@ -781,6 +781,9 @@ def _is_source_path_mapped(candidate_path: str, owned_patterns: list[str]) -> bo
     return False
 
 
+_CANONICAL_SQL_SCHEMA_RE = re.compile(r"^(?:schema|ddl|[a-z][a-z0-9_-]*schema[a-z0-9_-]*)\.sql$", re.IGNORECASE)
+
+
 def _detect_contract_protocol(filename: str) -> str | None:
     """Classify a candidate interface specification filename into its canonical tech/contract protocol."""
     lower = filename.lower()
@@ -788,6 +791,16 @@ def _detect_contract_protocol(filename: str) -> str | None:
         return "protobuf"
     if lower.endswith((".graphql", ".gql")):
         return "graphql"
+    if lower.endswith(".wsdl"):
+        return "wsdl"
+    if lower.endswith((".avsc", ".avdl")):
+        return "avro"
+    if lower.endswith(".prisma"):
+        return "sql_ddl"
+    if lower.endswith(".sql"):
+        if _CANONICAL_SQL_SCHEMA_RE.fullmatch(lower):
+            return "sql_ddl"
+        return None
     if lower.endswith((".yaml", ".yml", ".json")):
         if "openapi" in lower or "swagger" in lower:
             return "openapi"
@@ -1128,11 +1141,13 @@ def discover_repository_blueprint(
         for fn in sorted(filenames):
             rel_file = fn if cur_rel == "." else f"{cur_rel}/{fn}"
             protocol = _detect_contract_protocol(fn)
+            if protocol == "sql_ddl" and fn.lower().endswith(".sql") and in_non_code_top:
+                protocol = None
             if protocol is not None:
                 stem = Path(fn).stem
                 label = (
                     f"{cur.name}-{stem}"
-                    if cur_rel != "." and stem.lower() in ("openapi", "swagger", "schema", "asyncapi")
+                    if cur_rel != "." and stem.lower() in ("openapi", "swagger", "schema", "asyncapi", "ddl")
                     else stem
                 )
                 already_mapped = any(match_path_pattern(rel_file, pat) for pat in mapped_contract_patterns)

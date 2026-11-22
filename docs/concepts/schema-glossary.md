@@ -290,7 +290,7 @@ type: tech/contract
 id: CTR-EIDOS-CLI
 title: "Eidos CLI Interface Contract"
 status: active # draft | planned | active | deprecated | retired
-protocol: cli_args # openapi | rest_http | protobuf | graphql | asyncapi | json_schema | json_rpc_stdio | python_protocol | cli_args | other
+protocol: cli_args # openapi | rest_http | protobuf | graphql | asyncapi | json_schema | json_rpc_stdio | python_protocol | cli_args | code_interface | wsdl | avro | sql_ddl | trpc | websocket | mcp | other
 # custom_protocol: "nats_jetstream" # Required iff protocol == "other"; forbidden otherwise
 container: "CNT-EIDOS-CLI"
 specification_file: "src/eidos/cli/main.py"

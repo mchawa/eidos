@@ -2048,7 +2048,7 @@ def test_spec_discover_polyglot_brownfield_blueprint(tmp_path):
     (repo / "workers" / "job.py").write_text("def run(): pass\n", encoding="utf-8")
     (repo / "tests").mkdir(parents=True)
 
-    # 5. Interface contracts (OpenAPI, Protobuf, GraphQL, AsyncAPI, OpenRPC)
+    # 5. Interface contracts (OpenAPI, Protobuf, GraphQL, AsyncAPI, OpenRPC, WSDL, Avro, Prisma, canonical SQL)
     schemas_dir = repo / "contracts"
     schemas_dir.mkdir(parents=True)
     (schemas_dir / "orders-openapi.yaml").write_text("openapi: 3.1.0\n", encoding="utf-8")
@@ -2056,6 +2056,19 @@ def test_spec_discover_polyglot_brownfield_blueprint(tmp_path):
     (schemas_dir / "catalog.graphql").write_text("type Query { ok: Boolean }\n", encoding="utf-8")
     (schemas_dir / "events-asyncapi.yaml").write_text("asyncapi: 2.6.0\n", encoding="utf-8")
     (schemas_dir / "mcp-openrpc.json").write_text('{"openrpc": "1.2.6"}\n', encoding="utf-8")
+    (schemas_dir / "erp.wsdl").write_text("<definitions/>\n", encoding="utf-8")
+    (schemas_dir / "order-event.avsc").write_text('{"type":"record","name":"Order","fields":[]}\n', encoding="utf-8")
+    (schemas_dir / "ledger.avdl").write_text("protocol Ledger {}\n", encoding="utf-8")
+    db_dir = repo / "db"
+    db_dir.mkdir(parents=True)
+    (db_dir / "schema.prisma").write_text("model User { id Int @id }\n", encoding="utf-8")
+    (db_dir / "schema.sql").write_text("CREATE TABLE users (id INT);\n", encoding="utf-8")
+    (db_dir / "ddl.sql").write_text("CREATE VIEW active_users AS SELECT * FROM users;\n", encoding="utf-8")
+    # Numbered migration, seed script, and example SQL must be excluded
+    (db_dir / "001_init.sql").write_text("CREATE TABLE migrations (id INT);\n", encoding="utf-8")
+    (db_dir / "seed.sql").write_text("INSERT INTO users VALUES (1);\n", encoding="utf-8")
+    (repo / "examples").mkdir(parents=True)
+    (repo / "examples" / "schema.sql").write_text("CREATE TABLE demo (id INT);\n", encoding="utf-8")
 
     # Map one container and one contract in eidos/ to verify already_mapped detection
     cnt_p = create_spec(eidos_dir, "container", "CNT-BILLING-SVC", "Billing Service")
@@ -2095,6 +2108,16 @@ def test_spec_discover_polyglot_brownfield_blueprint(tmp_path):
     assert ctr_by_file["contracts/catalog.graphql"]["protocol"] == "graphql"
     assert ctr_by_file["contracts/events-asyncapi.yaml"]["protocol"] == "asyncapi"
     assert ctr_by_file["contracts/mcp-openrpc.json"]["protocol"] == "json_rpc_stdio"
+    assert ctr_by_file["contracts/erp.wsdl"]["protocol"] == "wsdl"
+    assert ctr_by_file["contracts/order-event.avsc"]["protocol"] == "avro"
+    assert ctr_by_file["contracts/ledger.avdl"]["protocol"] == "avro"
+    assert ctr_by_file["db/schema.prisma"]["protocol"] == "sql_ddl"
+    assert ctr_by_file["db/schema.sql"]["protocol"] == "sql_ddl"
+    assert ctr_by_file["db/ddl.sql"]["protocol"] == "sql_ddl"
+    assert ctr_by_file["db/ddl.sql"]["suggested_id"] == "CTR-DB-DDL"
+    assert "db/001_init.sql" not in ctr_by_file
+    assert "db/seed.sql" not in ctr_by_file
+    assert "examples/schema.sql" not in ctr_by_file
     # Pruned .NET bin/ output must not appear
     assert "services/orders-api/bin/Debug/openapi.json" not in ctr_by_file
 
@@ -2108,7 +2131,7 @@ def test_spec_discover_polyglot_brownfield_blueprint(tmp_path):
     assert res_json.exit_code == 0, res_json.stdout
     parsed = orjson.loads(res_json.stdout)
     assert parsed["summary"]["containers_found"] == 11
-    assert parsed["summary"]["contracts_found"] == 5
+    assert parsed["summary"]["contracts_found"] == 11
     assert any(c["suggested_id"].endswith("-2") for c in parsed["containers"])
 
     res_eidos_arg = runner.invoke(app, ["spec", "discover", "--path", str(eidos_dir), "--json"])

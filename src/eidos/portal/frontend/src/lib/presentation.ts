@@ -163,6 +163,13 @@ const PROTOCOL_LABELS: Record<string, string> = {
   asyncapi: "AsyncAPI",
   json_schema: "JSON Schema",
   json_rpc_stdio: "JSON-RPC Stdio",
+  code_interface: "Code Interface",
+  wsdl: "WSDL",
+  avro: "Avro",
+  sql_ddl: "SQL DDL",
+  trpc: "tRPC",
+  websocket: "WebSocket",
+  mcp: "MCP",
 };
 
 export function formatProtocol(

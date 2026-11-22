@@ -466,6 +466,13 @@ describe("INV-PORTAL-HUMAN-READABLE-UI: presentation formatters", () => {
     expect(formatSpecType("design/ui-component")).toBe("UI Component");
     expect(formatContainerType("web_app")).toBe("Web App");
     expect(formatProtocol("rest_http")).toBe("REST HTTP");
+    expect(formatProtocol("code_interface")).toBe("Code Interface");
+    expect(formatProtocol("wsdl")).toBe("WSDL");
+    expect(formatProtocol("avro")).toBe("Avro");
+    expect(formatProtocol("sql_ddl")).toBe("SQL DDL");
+    expect(formatProtocol("trpc")).toBe("tRPC");
+    expect(formatProtocol("websocket")).toBe("WebSocket");
+    expect(formatProtocol("mcp")).toBe("MCP");
     expect(formatProtocol("other", "NATS JetStream")).toBe("NATS JetStream");
     expect(formatProtocol("http_json")).toBe("HTTP JSON");
     expect(formatStatus("in_review")).toBe("In Review");

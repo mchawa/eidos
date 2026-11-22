@@ -20,6 +20,19 @@ from eidos.core.index.ast_indexer import get_ast_indexer
 from eidos.core.spec.cli_contract_parity import _parse_python_ast, verify_cli_contract_commands
 from eidos.core.spec.models import SpecDocument, ValidationReport
 from eidos.core.spec.parser import YamlError, safe_load_yaml
+from eidos.core.spec.schema_contract_parity import (
+    check_forward_and_reverse_symbols,
+    verify_avro_contract,
+    verify_sql_ddl_contract,
+    verify_wsdl_contract,
+)
+from eidos.core.spec.source_contract_parity import (
+    verify_code_interface_contract,
+    verify_mcp_contract,
+    verify_polyglot_cli_contract,
+    verify_trpc_contract,
+    verify_websocket_contract,
+)
 from eidos.core.workspace.project import STANDARD_EXCLUDED_DIRS
 
 _HTTP_VERBS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"})
@@ -63,7 +76,7 @@ _AUTH_COL_AUTH_RE = re.compile(
 
 
 class ContractParityValidator:
-    """Verifies bidirectional parity between CTR-* contract specs and specification_file targets across 7 protocols."""
+    """Verifies bidirectional parity between CTR-* contract specs and specification_file targets across all 16 verifiable canonical protocols."""
 
     def _verify_cli_contract_commands(self, doc: SpecDocument, cli_file: Path, report: ValidationReport) -> None:
         verify_cli_contract_commands(doc, cli_file, report)
@@ -132,7 +145,7 @@ class ContractParityValidator:
                     )
 
     def _verify_rest_openapi_contract(self, doc: SpecDocument, spec_file: Path, report: ValidationReport) -> None:
-        """Verify bidirectional parity between OpenAPI specification_file paths and documented routes in the contract (DLT-2026-082)."""
+        """Verify bidirectional parity between OpenAPI specification_file paths/webhooks and documented routes in the contract."""
         try:
             data = safe_load_yaml(spec_file.read_text(encoding="utf-8"))
         except (OSError, YamlError) as exc:
@@ -146,50 +159,90 @@ class ContractParityValidator:
             )
             return
         paths = data.get("paths")
-        if not isinstance(paths, dict):
+        webhooks = data.get("webhooks")
+        has_paths = isinstance(paths, dict) and bool(paths)
+        has_webhooks = isinstance(webhooks, dict) and bool(webhooks)
+        if not has_paths and not has_webhooks:
             return
         body = self._strip_asciidoc_comments(doc.body or "")
-        defined_routes = {str(k) for k in paths}
-        for route in sorted(defined_routes):
-            if not re.search(rf"(?<![A-Za-z0-9_./:~-]){re.escape(route)}(?=$|[\s`\"'|),;\]>])", body):
-                report.broken_references.append(
-                    f"Contract drift in {doc.file_path.name}: OpenAPI path '{route}' defined in '{spec_file.name}' is not documented in contract '{doc.doc_id}'"
-                )
+        if has_paths:
+            defined_routes = {str(k) for k in paths}
+            for route in sorted(defined_routes):
+                if not re.search(rf"(?<![A-Za-z0-9_./:~-]){re.escape(route)}(?=$|[\s`\"'|),;\]>])", body):
+                    report.broken_references.append(
+                        f"Contract drift in {doc.file_path.name}: OpenAPI path '{route}' defined in '{spec_file.name}' is not documented in contract '{doc.doc_id}'"
+                    )
 
-        sections_to_scan = self._iter_contract_interface_sections(body)
+            sections_to_scan = self._iter_contract_interface_sections(body)
 
-        doc_route_candidates: list[str] = []
-        for sec_chunk in sections_to_scan:
-            for raw_line in sec_chunk.splitlines():
-                stripped_line = raw_line.strip()
-                if stripped_line.startswith("|") and not stripped_line.startswith("|==="):
-                    cells = [c.strip().strip("`*") for c in stripped_line.split("|")[1:]]
-                    if any(c.upper() in _HTTP_VERBS for c in cells):
-                        for cell in cells:
-                            if re.fullmatch(r"/[A-Za-z0-9._~/{}:-]*", cell):
-                                doc_route_candidates.append(cell)
-                for m in re.finditer(
-                    r"`\s*(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(/[A-Za-z0-9._~/{}:-]*)(?:\s[^`\r\n]*)?`",
-                    raw_line,
-                ):
-                    if not stripped_line.startswith("|"):
-                        clause_before = re.split(r"[.;!?]", raw_line[: m.start()])[-1]
-                        if _CONTRAST_CUE_RE.search(clause_before):
-                            continue
-                    doc_route_candidates.append(m.group(1))
+            doc_route_candidates: list[str] = []
+            for sec_chunk in sections_to_scan:
+                for raw_line in sec_chunk.splitlines():
+                    stripped_line = raw_line.strip()
+                    if stripped_line.startswith("|") and not stripped_line.startswith("|==="):
+                        cells = [c.strip().strip("`*") for c in stripped_line.split("|")[1:]]
+                        if any(c.upper() in _HTTP_VERBS for c in cells):
+                            for cell in cells:
+                                if re.fullmatch(r"/[A-Za-z0-9._~/{}:-]*", cell):
+                                    doc_route_candidates.append(cell)
+                    for m in re.finditer(
+                        r"`\s*(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(/[A-Za-z0-9._~/{}:-]*)(?:\s[^`\r\n]*)?`",
+                        raw_line,
+                    ):
+                        if not stripped_line.startswith("|"):
+                            clause_before = re.split(r"[.;!?]", raw_line[: m.start()])[-1]
+                            if _CONTRAST_CUE_RE.search(clause_before):
+                                continue
+                        doc_route_candidates.append(m.group(1))
 
-        seen_doc_routes: set[str] = set()
-        for doc_route in doc_route_candidates:
-            if "..." in doc_route or "*" in doc_route:
-                continue
-            if doc_route not in defined_routes and doc_route not in seen_doc_routes:
-                seen_doc_routes.add(doc_route)
-                report.broken_references.append(
-                    f"Contract drift in {doc.file_path.name}: documented OpenAPI path '{doc_route}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
-                )
+            seen_doc_routes: set[str] = set()
+            for doc_route in doc_route_candidates:
+                if "..." in doc_route or "*" in doc_route:
+                    continue
+                if doc_route not in defined_routes and doc_route not in seen_doc_routes:
+                    seen_doc_routes.add(doc_route)
+                    report.broken_references.append(
+                        f"Contract drift in {doc.file_path.name}: documented OpenAPI path '{doc_route}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
+                    )
+
+        if has_webhooks:
+            defined_webhooks = sorted(str(k) for k in webhooks)
+            check_forward_and_reverse_symbols(
+                doc,
+                spec_file.name,
+                body,
+                defined_webhooks,
+                entity_label="OpenAPI webhook",
+                table_header_re=r"\bwebhook\b",
+                backtick_prefixes=("webhook",),
+                report=report,
+            )
+
+    @staticmethod
+    def _collect_json_schema_allowed_names(node: object, out: set[str]) -> None:
+        if isinstance(node, list):
+            for item in node:
+                ContractParityValidator._collect_json_schema_allowed_names(item, out)
+            return
+        if not isinstance(node, dict):
+            return
+        props = node.get("properties")
+        if isinstance(props, dict):
+            for k, v in props.items():
+                out.add(str(k))
+                ContractParityValidator._collect_json_schema_allowed_names(v, out)
+        for def_key in ("$defs", "definitions"):
+            defs = node.get(def_key)
+            if isinstance(defs, dict):
+                for k, v in defs.items():
+                    out.add(str(k))
+                    ContractParityValidator._collect_json_schema_allowed_names(v, out)
+        for sub_key in ("items", "additionalProperties", "allOf", "anyOf", "oneOf", "then", "else"):
+            if sub_key in node:
+                ContractParityValidator._collect_json_schema_allowed_names(node[sub_key], out)
 
     def _verify_json_schema_contract(self, doc: SpecDocument, spec_file: Path, report: ValidationReport) -> None:
-        """Verify that JSON Schema specification_file is valid YAML/JSON and its required properties are documented in the contract."""
+        """Verify bidirectional JSON Schema parity across top-level properties, $defs/definitions, and nested sub-schema properties."""
         try:
             data = safe_load_yaml(spec_file.read_text(encoding="utf-8"))
         except (OSError, YamlError) as exc:
@@ -203,17 +256,42 @@ class ContractParityValidator:
             )
             return
         props = data.get("properties")
-        if not isinstance(props, dict) or not props:
+        has_props = isinstance(props, dict) and bool(props)
+        defs_names: list[str] = []
+        for def_key in ("$defs", "definitions"):
+            raw_defs = data.get(def_key)
+            if isinstance(raw_defs, dict):
+                defs_names.extend(str(k) for k in raw_defs)
+        defs_names = list(dict.fromkeys(defs_names))
+
+        if not has_props and not defs_names:
             return
-        raw_req = data.get("required")
-        req_source = raw_req if isinstance(raw_req, list) else props.keys()
-        required_props = list(dict.fromkeys(str(p) for p in req_source if str(p) in props))
+
         body = self._strip_asciidoc_comments(doc.body or "")
-        for prop_name in required_props:
-            if not re.search(rf"(?:`|\b){re.escape(prop_name)}\b", body):
-                report.broken_references.append(
-                    f"Contract drift in {doc.file_path.name}: JSON Schema property '{prop_name}' defined in '{spec_file.name}' is not documented in contract '{doc.doc_id}'"
-                )
+        if has_props:
+            raw_req = data.get("required")
+            req_source = raw_req if isinstance(raw_req, list) else props.keys()
+            forward_targets = list(dict.fromkeys(str(p) for p in req_source if str(p) in props))
+            entity_label = "JSON Schema property"
+        else:
+            forward_targets = defs_names
+            entity_label = "JSON Schema definition"
+
+        allowed_names: set[str] = set()
+        self._collect_json_schema_allowed_names(data, allowed_names)
+
+        check_forward_and_reverse_symbols(
+            doc,
+            spec_file.name,
+            body,
+            forward_targets,
+            allowed_symbols=allowed_names,
+            entity_label=entity_label,
+            table_header_re=r"\b(?:property|field|definition)\b",
+            backtick_prefixes=("property", "field", "def"),
+            token_pattern=r"[A-Za-z_$][A-Za-z0-9_$-]*",
+            report=report,
+        )
 
     @staticmethod
     def _extract_proto_messages_and_enums(stripped_text: str) -> tuple[list[str], set[str]]:
@@ -822,6 +900,31 @@ class ContractParityValidator:
                             f"Contract drift in {doc.file_path.name}: documented JSON-RPC method '{cand}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
                         )
 
+    def _verify_wsdl_contract(self, doc: SpecDocument, spec_file: Path, report: ValidationReport) -> None:
+        verify_wsdl_contract(doc, spec_file, report)
+
+    def _verify_avro_contract(self, doc: SpecDocument, spec_file: Path, report: ValidationReport) -> None:
+        verify_avro_contract(doc, spec_file, report)
+
+    def _verify_sql_ddl_contract(self, doc: SpecDocument, spec_file: Path | list[Path], report: ValidationReport) -> None:
+        verify_sql_ddl_contract(doc, spec_file, report)
+
+    def _verify_code_interface_contract(
+        self, doc: SpecDocument, spec_file: Path | list[Path], report: ValidationReport
+    ) -> None:
+        verify_code_interface_contract(doc, spec_file, report)
+
+    def _verify_trpc_contract(self, doc: SpecDocument, spec_file: Path | list[Path], report: ValidationReport) -> None:
+        verify_trpc_contract(doc, spec_file, report)
+
+    def _verify_websocket_contract(
+        self, doc: SpecDocument, spec_file: Path | list[Path], report: ValidationReport
+    ) -> None:
+        verify_websocket_contract(doc, spec_file, report, parse_doc_auth=self._parse_doc_auth_expectation)
+
+    def _verify_mcp_contract(self, doc: SpecDocument, spec_file: Path | list[Path], report: ValidationReport) -> None:
+        verify_mcp_contract(doc, spec_file, report)
+
     _CONTRACT_PROTOCOL_VERIFIERS: ClassVar[dict[str, str]] = {
         "cli_args": "_verify_cli_contract_commands",
         "python_protocol": "_verify_python_protocol_contract",
@@ -832,6 +935,13 @@ class ContractParityValidator:
         "graphql": "_verify_graphql_contract",
         "asyncapi": "_verify_asyncapi_contract",
         "json_rpc_stdio": "_verify_json_rpc_stdio_contract",
+        "code_interface": "_verify_code_interface_contract",
+        "wsdl": "_verify_wsdl_contract",
+        "avro": "_verify_avro_contract",
+        "sql_ddl": "_verify_sql_ddl_contract",
+        "trpc": "_verify_trpc_contract",
+        "websocket": "_verify_websocket_contract",
+        "mcp": "_verify_mcp_contract",
     }
 
     def _verify_contract_protocol(
@@ -845,7 +955,11 @@ class ContractParityValidator:
         method_name = self._CONTRACT_PROTOCOL_VERIFIERS.get(protocol)
         if not method_name:
             return
-        if protocol == "cli_args" and (not isinstance(spec_file, Path) or spec_file.suffix != ".py"):
+        if protocol == "cli_args":
+            if isinstance(spec_file, Path) and spec_file.is_file() and spec_file.suffix == ".py":
+                verify_cli_contract_commands(doc, spec_file, report)
+            else:
+                verify_polyglot_cli_contract(doc, spec_file, report)
             return
         verifier = getattr(self, method_name, None)
         if callable(verifier):

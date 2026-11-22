@@ -248,7 +248,7 @@ Appends immutable credit/debit usage entries and computes point-in-time account 
 
 ### 3.4 Interface Contracts (`eidos/architecture/contracts/<name>.adoc`)
 
-`eidos validate` enforces **bidirectional contract parity** against `specification_file` (`cli_args`, `openapi`, `rest_http`, `protobuf`, `graphql`, `json_schema`, `python_protocol`): added operations must be documented and removed ones pruned. Use `protocol: other` with `custom_protocol: "<name>"` (forbidden on standard values) for custom protocols.
+`eidos validate` enforces **bidirectional contract parity** against `specification_file` across all 16 verifiable protocols below: added operations must be documented and removed ones pruned. Use `protocol: other` with `custom_protocol: "<name>"` (forbidden on standard values) for custom protocols.
 
 ```yaml
 ---
@@ -259,7 +259,7 @@ status: active
 version: "1.1.0" # SemVer 2.0.0
 container: CNT-BILLING-WORKER
 specification_file: "src/billing/openapi.yaml"
-protocol: openapi # openapi | rest_http | protobuf | graphql | asyncapi | json_schema | json_rpc_stdio | python_protocol | cli_args | other
+protocol: openapi # openapi | rest_http | protobuf | graphql | asyncapi | json_schema | json_rpc_stdio | python_protocol | cli_args | code_interface | wsdl | avro | sql_ddl | trpc | websocket | mcp | other
 ---
 = Contract: Billing Usage Ingestion REST Contract
 ```

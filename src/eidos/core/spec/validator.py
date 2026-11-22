@@ -1299,7 +1299,7 @@ class SpecValidator:
                     and not sf.strip().endswith(".adoc")
                 ):
                     protocol = str(model.protocol or "").strip().lower()
-                    if protocol == "rest_http":
+                    if protocol in {"rest_http", "cli_args", "code_interface", "sql_ddl", "trpc", "websocket", "mcp"}:
                         resolved_targets = self._resolve_all_source_paths(repo_root, root_dir, sf)
                         if not resolved_targets:
                             report.broken_references.append(

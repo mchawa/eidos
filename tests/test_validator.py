@@ -5599,7 +5599,7 @@ def test_design_screen_client_path_and_ownership_enforcement(tmp_path: Path):
 
 
 def test_contract_protocol_schema_and_grpc_proto_parity(tmp_path: Path):
-    """Verify INV-CONTRACT-PROTOCOL-SCHEMA-SYNC: strict canonical 10-value protocol enum, conditional custom_protocol, and protobuf parity."""
+    """Verify INV-CONTRACT-PROTOCOL-SCHEMA-SYNC: strict canonical 17-value protocol enum, conditional custom_protocol, and protobuf parity."""
     from eidos.core.lifecycle.scaffolder import get_spec_schema_info
     from eidos.core.spec.parser import parse_spec_file
 
@@ -5615,6 +5615,13 @@ def test_contract_protocol_schema_and_grpc_proto_parity(tmp_path: Path):
         "json_rpc_stdio",
         "python_protocol",
         "cli_args",
+        "code_interface",
+        "wsdl",
+        "avro",
+        "sql_ddl",
+        "trpc",
+        "websocket",
+        "mcp",
         "other",
     ]
     assert proto_prop["enum"] == expected_enum

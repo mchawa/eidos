@@ -36,8 +36,15 @@ properties:
       - json_rpc_stdio
       - python_protocol
       - cli_args
+      - code_interface
+      - wsdl
+      - avro
+      - sql_ddl
+      - trpc
+      - websocket
+      - mcp
       - other
-    description: "Canonical protocol format: openapi, rest_http, protobuf, graphql, asyncapi, json_schema, json_rpc_stdio, python_protocol, cli_args, or other (requiring custom_protocol)."
+    description: "Canonical 17-value protocol format: openapi, rest_http, protobuf, graphql, asyncapi, json_schema, json_rpc_stdio, python_protocol, cli_args, code_interface, wsdl, avro, sql_ddl, trpc, websocket, mcp, or other (requiring custom_protocol)."
   custom_protocol:
     $ref: "#/$defs/non_empty_string"
     description: "Free-text custom protocol identifier (e.g. nats_jetstream, mqtt_v5, custom_binary_tcp). Required when protocol is 'other' and forbidden for all standard protocol enum values."
@@ -45,7 +52,7 @@ properties:
     $ref: "#/$defs/container_ref"
   specification_file:
     $ref: "#/$defs/non_empty_string"
-    description: "Relative path from repository root to the raw interface schema file (e.g. contracts/api.openapi.yaml) or a modern REST HTTP source file, directory, or glob/brace-glob pattern (e.g. src/Api/Controllers or src/Api/{Controllers,Endpoints}/**/*.cs) for rest_http contracts."
+    description: "Relative path from repository root to the raw interface schema file (e.g. contracts/api.openapi.yaml, contracts/service.wsdl, schemas/event.avsc) or a source file, directory, or glob/brace-glob pattern (e.g. src/Api/Controllers or src/Api/{Controllers,Endpoints}/**/*.cs) for multi-target source-backed protocols (rest_http, cli_args, code_interface, sql_ddl, trpc, websocket, mcp)."
   version:
     $ref: "#/$defs/semver"
   decisions:

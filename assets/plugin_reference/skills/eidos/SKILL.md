@@ -123,7 +123,7 @@ Before concluding **any** task or presenting your final response, complete both 
 eidos drift --uncommitted --json
 ```
 
-* **`eidos drift`** runs `eidos validate` internally (v1 JSON Schemas, `x-eidos-ref` links, `source_path`/`specification_file` paths, `import_boundaries` / `import_boundary` couplings, `== Public Surface` AST symbols, and **bidirectional multi-protocol contract parity** across `cli_args`, `openapi`, `protobuf`, `graphql`, `python_protocol`) plus Git diff ownership mapping, workflow mode verification, substantive spec diff checks, `stale_removed_symbol` rejection, `--strict` body-level drift, and polyglot `INV-*` `test_binding` verification. (Use `eidos validate eidos --json` only outside a Git repo.)
+* **`eidos drift`** runs `eidos validate` internally (v1 JSON Schemas, `x-eidos-ref` links, `source_path`/`specification_file` paths, `import_boundaries` / `import_boundary` couplings, `== Public Surface` AST symbols, and **bidirectional multi-protocol contract parity** across all canonical `tech/contract` protocols) plus Git diff ownership mapping, workflow mode verification, substantive spec diff checks, `stale_removed_symbol` rejection, `--strict` body-level drift, and polyglot `INV-*` `test_binding` verification. (Use `eidos validate eidos --json` only outside a Git repo.)
 * **If `is_clean: false` or `drift_detected: true`**: Follow `remediation_suggestions`, `boundary_violations` (remove forbidden cross-boundary imports/HTTP calls or adjust `ratchet_baseline` via a SpecDelta), and `validation_errors` in the JSON output and re-run until exit code is `0` (`ratchet_shrink_candidates` are non-blocking tightening hints).
 
 ### Stage 2: Mandatory Autonomous Adversarial Gap Review
