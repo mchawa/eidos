@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import contextlib
 import os
+import posixpath
 import re
 import sqlite3
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -426,14 +428,77 @@ def index_source_file(
     _upsert_file_tokens_fts(conn, rel_path, "code/source", content or "")
 
 
+def build_module_to_file_map(known_files: Iterable[str]) -> dict[str, str]:
+    """Map polyglot import module names and stem paths to repo-relative source file paths."""
+    module_to_file: dict[str, str] = {}
+    for kf in sorted(known_files):
+        if kf.endswith(".py"):
+            no_ext = kf[:-3]
+            if no_ext.endswith("/__init__"):
+                pkg_dotted = no_ext[:-9].replace("/", ".")
+                module_to_file.setdefault(pkg_dotted, kf)
+                if pkg_dotted.startswith("src."):
+                    module_to_file.setdefault(pkg_dotted[4:], kf)
+            mod_dotted = no_ext.replace("/", ".")
+            module_to_file.setdefault(mod_dotted, kf)
+            if mod_dotted.startswith("src."):
+                module_to_file.setdefault(mod_dotted[4:], kf)
+        else:
+            stem_path, _ = posixpath.splitext(kf)
+            module_to_file.setdefault(stem_path, kf)
+            if stem_path.endswith("/index"):
+                module_to_file.setdefault(stem_path[:-6], kf)
+    return module_to_file
+
+
+def resolve_import_target_file(
+    src_file: str,
+    imp: str,
+    known_files: set[str],
+    module_to_file: dict[str, str],
+    *,
+    fallback_parent: bool = False,
+) -> str | None:
+    """Resolve one extracted AST import string from ``src_file`` to a known repo-relative source file."""
+    if not src_file or not imp:
+        return None
+    if src_file.endswith(".py"):
+        if imp.startswith("."):
+            level = len(imp) - len(imp.lstrip("."))
+            rem = imp[level:].replace(".", "/")
+            parts = src_file.split("/")[:-1]
+            if level - 1 <= len(parts):
+                base = "/".join(parts[: len(parts) - (level - 1)])
+                cand = f"{base}/{rem}".strip("/") if rem else base
+                if f"{cand}.py" in known_files:
+                    return f"{cand}.py"
+                if f"{cand}/__init__.py" in known_files:
+                    return f"{cand}/__init__.py"
+            return None
+        hit = module_to_file.get(imp)
+        if hit is not None or not fallback_parent or "." not in imp:
+            return hit
+        return module_to_file.get(imp.rsplit(".", 1)[0])
+    if imp.startswith("."):
+        norm_imp = _normalize_rel_path(posixpath.normpath(posixpath.join(posixpath.dirname(src_file), imp)))
+        if norm_imp in known_files:
+            return norm_imp
+        base_imp = (
+            norm_imp[:-3] if norm_imp.endswith(".js") else (norm_imp[:-4] if norm_imp.endswith(".jsx") else norm_imp)
+        )
+        return module_to_file.get(base_imp)
+    hit = module_to_file.get(imp)
+    if hit is not None or not fallback_parent or "/" not in imp:
+        return hit
+    return module_to_file.get(imp.rsplit("/", 1)[0])
+
+
 def _derive_ast_import_edges(
     conn: sqlite3.Connection,
     resolver: _CodeOwnershipResolver | None = None,
     repo_root: Path | None = None,
 ) -> None:
     """Derive component consumes_api and container depends_on edges from AST imports, namespaces, .csproj ProjectReferences, and contract links."""
-    import posixpath
-
     if resolver is None:
         resolver = _CodeOwnershipResolver(conn)
 
@@ -485,24 +550,7 @@ def _derive_ast_import_edges(
             known_files.add(_normalize_rel_path(fp))
     known_files.update(resolver.declared_files())
 
-    module_to_file: dict[str, str] = {}
-    for kf in sorted(known_files):
-        if kf.endswith(".py"):
-            no_ext = kf[:-3]
-            if no_ext.endswith("/__init__"):
-                pkg_dotted = no_ext[:-9].replace("/", ".")
-                module_to_file.setdefault(pkg_dotted, kf)
-                if pkg_dotted.startswith("src."):
-                    module_to_file.setdefault(pkg_dotted[4:], kf)
-            mod_dotted = no_ext.replace("/", ".")
-            module_to_file.setdefault(mod_dotted, kf)
-            if mod_dotted.startswith("src."):
-                module_to_file.setdefault(mod_dotted[4:], kf)
-        else:
-            stem_path, _ = posixpath.splitext(kf)
-            module_to_file.setdefault(stem_path, kf)
-            if stem_path.endswith("/index"):
-                module_to_file.setdefault(stem_path[:-6], kf)
+    module_to_file = build_module_to_file_map(known_files)
 
     ns_to_owners: dict[str, set[tuple[str, str]]] = {}
     file_declared_ns: dict[str, set[str]] = {}
@@ -646,34 +694,7 @@ def _derive_ast_import_edges(
         if not src_file or not imp:
             continue
 
-        dst_file: str | None = None
-        if src_file.endswith(".py"):
-            if imp.startswith("."):
-                level = len(imp) - len(imp.lstrip("."))
-                rem = imp[level:].replace(".", "/")
-                parts = src_file.split("/")[:-1]
-                if level - 1 <= len(parts):
-                    base = "/".join(parts[: len(parts) - (level - 1)])
-                    cand = f"{base}/{rem}".strip("/") if rem else base
-                    if f"{cand}.py" in known_files:
-                        dst_file = f"{cand}.py"
-                    elif f"{cand}/__init__.py" in known_files:
-                        dst_file = f"{cand}/__init__.py"
-            else:
-                dst_file = module_to_file.get(imp)
-        elif imp.startswith("."):
-            norm_imp = _normalize_rel_path(posixpath.normpath(posixpath.join(posixpath.dirname(src_file), imp)))
-            if norm_imp in known_files:
-                dst_file = norm_imp
-            else:
-                base_imp = (
-                    norm_imp[:-3]
-                    if norm_imp.endswith(".js")
-                    else (norm_imp[:-4] if norm_imp.endswith(".jsx") else norm_imp)
-                )
-                dst_file = module_to_file.get(base_imp)
-        else:
-            dst_file = module_to_file.get(imp)
+        dst_file = resolve_import_target_file(src_file, imp, known_files, module_to_file)
 
         if not dst_file:
             if src_file.endswith((".cs", ".java", ".kt", ".kts")):

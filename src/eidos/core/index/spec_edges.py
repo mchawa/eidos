@@ -18,6 +18,7 @@ from eidos.core.index.code_graph import (
     _TEST_BINDING_MEM_CACHE,
     _can_use_ast_mem_cache,
     _derive_ast_import_edges,
+    _find_import_line,
     _json_dumps,
     _normalize_rel_path,
     _upsert_file_tokens_fts,
@@ -466,12 +467,17 @@ def index_test_bindings(
         src_cached = _SOURCE_AST_MEM_CACHE.get(src_cache_key) if src_cache_key is not None else None
         if src_cached is not None:
             test_symbols = list(src_cached[0])
-        elif hasattr(ast_idx, "extract_symbols"):
-            test_symbols = list(ast_idx.extract_symbols(test_path, content))
-            if src_cache_key is not None:
-                _SOURCE_AST_MEM_CACHE[src_cache_key] = (test_symbols, [])
+            test_imports: list[Any] = list(src_cached[1])
         else:
-            test_symbols = []
+            test_symbols = (
+                list(ast_idx.extract_symbols(test_path, content)) if hasattr(ast_idx, "extract_symbols") else []
+            )
+            raw_test_imports = (
+                ast_idx.extract_imports(test_path, content) if hasattr(ast_idx, "extract_imports") else []
+            )
+            test_imports = [(imp, _find_import_line(content, imp)) for imp in raw_test_imports]
+            if src_cache_key is not None:
+                _SOURCE_AST_MEM_CACHE[src_cache_key] = (test_symbols, test_imports)
         known_test_names = {s.name for s in test_symbols} | {
             f"{s.parent_symbol}::{s.name}" for s in test_symbols if s.parent_symbol
         }
@@ -491,7 +497,7 @@ def index_test_bindings(
                         )
                     )
                     known_test_names.add(bare_fn)
-        store_code_symbols(conn, rel_test, ["tests"], test_symbols, is_test=True)
+        store_code_symbols(conn, rel_test, ["tests"], test_symbols, imports=test_imports, is_test=True)
     _upsert_file_tokens_fts(conn, rel_test, "code/test", content)
     for test_name, fn_tokens in functions.items():
         identifier = f"{rel_test}::{test_name}"

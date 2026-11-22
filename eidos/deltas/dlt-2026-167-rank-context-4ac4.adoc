@@ -1,0 +1,111 @@
+---
+type: delta/mutation
+id: DLT-2026-167-RANK-CONTEXT-4AC4
+title: "Rank Context Capability Invariants by AST Test-to-Source Coupling and ID Specificity"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Replace fragile lexical-only capability invariant ranking in TieredContextCompressor with observed AST test-to-source import coupling and ID token specificity precision, while isolating hermetic ranking assertions from live-catalog smoke tests in tests/test_context.py."
+mutations:
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    details: "Persist test-file AST imports (kind='import', is_test=1) in code_symbols during index_test_file, perform a one-time metadata-gated backfill ('test_imports_indexed') on existing SCHEMA_VERSION 2.22.0 caches without polluting production code_couplings or bumping SCHEMA_VERSION, and expose shared polyglot import-to-file resolution helpers (build_module_to_file_map, resolve_import_target_file) in code_graph.py."
+    expect:
+      body:
+        contains:
+          - "is_test = 1"
+          - "test_imports_indexed"
+          - "build_module_to_file_map"
+          - "resolve_import_target_file"
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+    details: "Record DEC-CONTEXT-AST-TEST-COUPLING-RANKING and upgrade _cap_inv_rank_key in context.py to rank capability invariants by observed AST test-to-source import coupling (edited file > primary CMP-* file), lexical ID specificity precision (focus_id_hits / max(len(id_core_toks), 1)), and stem fallback before capability declaration order."
+    expect:
+      frontmatter:
+        decisions.id:
+          - "DEC-CONTEXT-AST-TEST-COUPLING-RANKING"
+      body:
+        contains:
+          - "DEC-CONTEXT-AST-TEST-COUPLING-RANKING"
+          - "AST test-to-source"
+          - "specificity"
+  - operation: modify
+    target: CAP-AGENT-002
+    details: "Bump CAP-AGENT-002 to 1.9.0 and extend INV-CONTEXT-GUARDRAIL-INVARIANT-RETENTION to require observed AST test-to-source coupling precedence, ID specificity precision scoring, and separated hermetic ranking vs live-catalog smoke tests."
+    expect:
+      frontmatter:
+        version: "1.9.0"
+        technical.invariants.id:
+          - "INV-CONTEXT-GUARDRAIL-INVARIANT-RETENTION"
+      body:
+        contains:
+          - "AST test-to-source"
+          - "specificity"
+  - operation: modify
+    target: INV-CONTEXT-GUARDRAIL-INVARIANT-RETENTION
+    details: "Extend INV-CONTEXT-GUARDRAIL-INVARIANT-RETENTION to enforce observed AST test-to-source import coupling precedence, ID specificity precision scoring in _cap_inv_rank_key, zero pollution of production code_couplings, and hermetic synthetic ranking assertions separated from catalog-agnostic live-repo smoke checks."
+    expect:
+      frontmatter:
+        rule: "AST test-to-source"
+        test_binding: "tests/test_context.py::test_context_guardrail_retains_invariants_within_budget_headroom"
+vcs:
+  branch: main
+  base_commit: 93b3d8155b9197553437f501f0a14faaf2a76796
+---
+= SpecDelta: Rank Context Capability Invariants by AST Test-to-Source Coupling and ID Specificity
+:toc: left
+
+== Problem Statement
+
+`_cap_inv_rank_key` in `src/eidos/core/index/context.py` currently ranks capability invariants solely by lexical token overlap between the queried file path / component ID and each invariant's `id` or `test_binding`. This creates two recurring failure modes as a repository's living specification catalog grows:
+
+1. **Keyword Coincidence Over Observed Coupling**: A broad invariant whose ID happens to mention a directory or domain word (for example, `INV-CONTRACT-CLI-OPENAPI-JSONSCHEMA-PARITY`, whose bound test exercises `ContractParityValidator`, not `src/eidos/cli/main.py`) matches `"cli"` identically to a tightly scoped invariant whose test suite actually imports the edited module.
+2. **Raw Hit Count Ignores Specificity**: A 1-of-5 incidental token match (`0.20` precision) currently ties with a 1-of-2 focused invariant such as `INV-CLI-PARITY` (`0.50` precision).
+3. **Brittle Live-Catalog Ordering Assertions**: Exact invariant ordering checks in `tests/test_context.py` run against the live `eidos/` repository, causing unrelated SpecDeltas that add new capabilities or invariants to break CI even when ranking semantics are sound.
+
+== Proposed Specification Changes
+
+=== 1. Test-File AST Import Persistence & Shared Import Resolution (`CMP-INCREMENTAL-SYNC-ENGINE`)
+
+* **Persist Test Imports in `code_symbols` (`src/eidos/core/index/spec_edges.py`)**: During `index_test_file`, extract polyglot AST imports via `ast_idx.extract_imports(test_path, content)` (with 1-based line numbers via `_find_import_line`, cached alongside `test_symbols` in `_SOURCE_AST_MEM_CACHE`) and persist them via `store_code_symbols(conn, rel_test, ["tests"], test_symbols, imports=test_imports, is_test=True)`.
+* **Zero Boundary or Telemetry Pollution**: Production `code_couplings` and `_derive_ast_import_edges` continue filtering `is_test = 0`, preserving `INV-DRIFT-IMPORT-BOUNDARY-RATCHET` untouched. Existing symbol/repo-map/status queries (`traversal.py`, `graph_index.py`, `fts_query.py`) already exclude `kind IN ('import', 'namespace')`, preserving `INV-INDEX-STATUS-AST-TELEMETRY` and `INV-INDEX-POLYGLOT-SYMBOL-PRECISION`.
+* **Non-Destructive One-Time Backfill (`src/eidos/core/index/sync.py`)**: In `sync_index`, check `metadata.key = 'test_imports_indexed'`; when absent on an existing `SCHEMA_VERSION` `2.22.0` cache that already indexes `code/test` files, re-index test files once and record `test_imports_indexed = '1'`. This avoids bumping `SCHEMA_VERSION` and preserves warm `spec_embeddings`, `public_surface_cache`, and `mermaid_validation_cache` tables on existing developer workspaces (`CNT-EIDOS-INDEX` and `CMP-GRAPH-STORAGE` remain unchanged on disk).
+* **Shared Polyglot Import-to-File Resolver (`src/eidos/core/index/code_graph.py`)**: Extract `build_module_to_file_map(known_files)` and `resolve_import_target_file(src_file, imp, known_files, module_to_file)` from `_derive_ast_import_edges` (supporting Python dotted modules including `from pkg.mod import sym` parent-module trimming, relative `.py`/`.ts`/`.js` imports, and non-Python stems) so `CMP-INCREMENTAL-SYNC-ENGINE` and `CMP-TIERED-CONTEXT-COMPRESSOR` share one canonical resolver.
+
+=== 2. AST Test-to-Source Coupling & ID Specificity Ranking (`CMP-TIERED-CONTEXT-COMPRESSOR`)
+
+* **Decision Capture (`DEC-CONTEXT-AST-TEST-COUPLING-RANKING`)**: Record `DEC-CONTEXT-AST-TEST-COUPLING-RANKING` in `eidos/architecture/components/tiered-context-compressor.adoc` documenting why test imports live in `code_symbols` (`kind = 'import', is_test = 1`) with `metadata` backfill rather than `code_couplings` or a `SCHEMA_VERSION` bump, and why AST coupling + ID specificity outranks raw lexical hit counts.
+* **4-Tier Deterministic Invariant Precedence (`src/eidos/core/index/context.py`)**:
+  1. **Explicit Component-Owned Invariants**: `CMP-*.invariants` (`primary_comp_inv_ids`, already emitted ahead of capability invariants).
+  2. **Observed AST Test-to-Source Coupling (`ast_test_coupling`)**: Query `code_symbols WHERE kind = 'import' AND is_test = 1 AND file_path IN (<candidate test_binding files>)` and resolve each import against known indexed source files via `resolve_import_target_file`:
+     * Tier `2`: test file directly imports an edited file in `clean_files`.
+     * Tier `1`: test file directly imports another source file owned by a primary `CMP-*` (or primary `CNT-*` when no `CMP-*` matched).
+     * Tier `0`: no observed direct AST import (clean fallback for subprocess/integration tests).
+  3. **Lexical ID Specificity Precision & Stem Fallback**: In `_cap_inv_rank_key`, compute `id_core_toks = id_toks - {"inv"}` and `id_specificity = round(focus_id_hits / max(len(id_core_toks), 1), 6)`, ordering by `(-ast_test_coupling, -leaf_id_hits, -focus_id_hits, -id_specificity, -exact_tb_file, -leaf_tb_hits, -tb_tiebreak, item[0])`.
+  4. **Capability Declaration Order**: `item[0]` preserves foundational capability invariants when coupling and lexical signals tie.
+* **Offline Determinism (`POL-004-ZERO-AI-CALL-DEPENDENCY`)**: All import extraction, resolution, and ranking execute 100% deterministically on local SQLite with zero external or LLM calls.
+
+=== 3. Capability Invariant & Hermetic Test Separation (`CAP-AGENT-002`, `tests/test_context.py`)
+
+* **Capability & Invariant Update**: Bump `CAP-AGENT-002` to `1.9.0` and extend `INV-CONTEXT-GUARDRAIL-INVARIANT-RETENTION` to bind the new observed AST test-to-source coupling precedence, ID specificity precision, and hermetic test structure.
+* **Live-Catalog Smoke Tests vs Hermetic Ranking Fixtures (`tests/test_context.py`)**:
+  * Keep live-repo slices (`get_context_slice(files=["src/eidos/cli/main.py"])`) focused strictly on catalog-agnostic invariants: token budget compliance (`<= 1000` tokens across Markdown and JSON per `INV-CONTEXT-TOKEN-COMPRESSION`), owning `CMP-*`/`CNT-*`/`CTR-*`/`CAP-*` presence, and `len(invariants) >= 3`.
+  * Move every exact invariant ordering assertion (`CMP-*.invariants` precedence, AST test-to-source coupling tier 2 > tier 1 > tier 0, zero `code_couplings` pollution, ID specificity precision `0.50 > 0.20`, ID-over-`test_binding` tie-break, exact stem match, capability declaration order, and secondary 1-hop metadata/decision compaction) into hermetic synthetic `tmp_path` fixtures in `tests/test_context.py`.
+
+== Implementation Plan
+
+1. **Test-File AST Imports & Shared Import Resolver (`CMP-INCREMENTAL-SYNC-ENGINE`; parent `CNT-EIDOS-INDEX` covered via child components)**:
+   * Refactor `src/eidos/core/index/code_graph.py` to export `build_module_to_file_map` and `resolve_import_target_file` (handling `from pkg.mod import sym` parent-module resolution alongside relative JS/TS/Python paths) and reuse them inside `_derive_ast_import_edges`.
+   * Update `src/eidos/core/index/spec_edges.py` (`index_test_file`) to extract imports via `ast_idx.extract_imports(test_path, content)` and pass `imports=test_imports` to `store_code_symbols(..., is_test=True)`.
+   * Update `src/eidos/core/index/sync.py` (`sync_index`) to run a one-time backfill when `metadata.key = 'test_imports_indexed'` is missing and set `'1'` after indexing test files.
+2. **AST Test-Coupling & ID Specificity Ranking (`CMP-TIERED-CONTEXT-COMPRESSOR`; parent `CNT-EIDOS-INDEX` covered via child components)**:
+   * Update `src/eidos/core/index/context.py` (`build_tiered_context_slice` and `_cap_inv_rank_key`) to load candidate `test_binding` file imports from `code_symbols` (`kind = 'import' AND is_test = 1`), resolve them against edited `clean_files` (tier `2`) and primary `CMP-*` source files (tier `1`), and score `-id_specificity = -round(focus_id_hits / max(len(id_core_toks), 1), 6)` alongside existing lexical/stem fallbacks.
+3. **Living Specifications Update**:
+   * Update `eidos/architecture/components/incremental-sync-engine.adoc` (`CMP-INCREMENTAL-SYNC-ENGINE`, including `== Public Surface` for `build_module_to_file_map` and `resolve_import_target_file`).
+   * Update `eidos/architecture/components/tiered-context-compressor.adoc` (`CMP-TIERED-CONTEXT-COMPRESSOR`, adding `DEC-CONTEXT-AST-TEST-COUPLING-RANKING` and updated ranking responsibilities).
+   * Update `eidos/domains/agent-intelligence/capabilities/cap-agent-002.adoc` (`CAP-AGENT-002` `1.9.0` and `INV-CONTEXT-GUARDRAIL-INVARIANT-RETENTION`).
+4. **Hermetic Ranking Tests & Live-Catalog Smoke Cleanup (`tests/test_context.py`)**:
+   * Refactor `test_context_guardrail_retains_invariants_within_budget_headroom` in `tests/test_context.py` to keep live-repo checks catalog-agnostic (`<= 1000` tokens, owning `CMP-*`/`CNT-*`/`CTR-*`/`CAP-*`, `len(invariants) >= 3`) and add hermetic synthetic `tmp_path` fixtures covering: (a) `CMP-*.invariants` highest precedence, (b) observed AST test-to-source coupling (edited file > primary `CMP-*` sibling > uncoupled lexical match, plus zero `code_couplings` leakage and `metadata` backfill on pre-existing caches), (c) ID specificity precision (`INV-CLI-PARITY` 0.50 outranking `INV-CONTRACT-CLI-OPENAPI-JSONSCHEMA-PARITY` 0.20), (d) ID-over-`test_binding` tie-break & capability declaration order fallback, and (e) secondary 1-hop compaction headroom.
+5. **Verification & Coverage Gates**:
+   * Run `pytest` with per-file coverage verification ensuring `>90.0%` statement coverage (`POL-005-TEST-COVERAGE-ENFORCEMENT`) on `code_graph.py`, `spec_edges.py`, `sync.py`, and `context.py`.
+   * Run `ruff check`, `eidos validate --fail-on-warnings --json`, `eidos delta verify DLT-2026-167 --json`, `eidos delta apply DLT-2026-167`, `eidos delta audit DLT-2026-167 --strict --json`, and `eidos drift --uncommitted --fail-on-warnings --json`.

@@ -507,7 +507,13 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
 
     to_update.sort()
     deleted = sorted(Path(rel) for rel in db_files.keys() - disk_files)
-    is_dirty = len(to_update) > 0 or len(deleted) > 0
+    needs_test_imports = False
+    if not to_update and not deleted and db_files:
+        ti_row = cursor.execute("SELECT value FROM metadata WHERE key = 'test_imports_indexed';").fetchone()
+        if ti_row is None or ti_row[0] != "1":
+            has_tests = cursor.execute("SELECT 1 FROM indexed_files WHERE doc_type = 'code/test' LIMIT 1;").fetchone()
+            needs_test_imports = has_tests is not None
+    is_dirty = len(to_update) > 0 or len(deleted) > 0 or needs_test_imports
     return is_dirty, to_update, deleted
 
 
@@ -1134,6 +1140,8 @@ def _sync_index_locked(
                 """
             )
 
+        ti_meta_row = conn.execute("SELECT value FROM metadata WHERE key = 'test_imports_indexed';").fetchone()
+        needs_test_import_backfill = ti_meta_row is None or ti_meta_row[0] != "1"
         needs_unindexed_test_scan = False
         if spec_updates and not force:
             for inv_json, inv_id in conn.execute(
@@ -1224,6 +1232,7 @@ def _sync_index_locked(
                 or abs(stat.st_mtime - cached_entry["mtime"]) > 1e-7
                 or force
                 or needs_unindexed_test_scan
+                or needs_test_import_backfill
             ):
                 if cached_entry and cached_entry["doc_type"] != "code/test":
                     store_code_symbols(conn, rel_t, [], [])
@@ -1240,6 +1249,8 @@ def _sync_index_locked(
                 index_test_bindings(
                     conn, ast_idx, tp, rel_t, sha=t_sha, raw_bytes=t_raw_bytes, mtime_ns=stat.st_mtime_ns
                 )
+
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('test_imports_indexed', '1');")
 
         conn.execute(
             """

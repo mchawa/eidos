@@ -8,6 +8,7 @@ from typing import Any
 
 import orjson
 
+from eidos.core.index.code_graph import _normalize_rel_path, build_module_to_file_map, resolve_import_target_file
 from eidos.core.index.context_globs import (
     _expand_context_file_pattern,
 )
@@ -1033,6 +1034,24 @@ def build_tiered_context_slice(
 
         inv_focus_tokens: set[str] = set()
         inv_leaf_tokens: set[str] = set()
+        tb_coupling_tier: dict[str, int] = {}
+
+        def _inv_test_files(inv_obj: dict[str, Any]) -> list[str]:
+            files_out: list[str] = []
+            tb_raw_val = str(inv_obj.get("test_binding", "") or "").strip()
+            if tb_raw_val and tb_raw_val.upper() != "TBD":
+                norm_tb = _normalize_rel_path(tb_raw_val.split("::", 1)[0])
+                if norm_tb:
+                    files_out.append(norm_tb)
+            if not files_out:
+                m_inv = matched_invariants.get(str(inv_obj.get("id", "")))
+                if isinstance(m_inv, dict):
+                    for mt in m_inv.get("matching_tests") or ():
+                        norm_mt = _normalize_rel_path(str(mt).split("::", 1)[0])
+                        if norm_mt and norm_mt not in files_out:
+                            files_out.append(norm_mt)
+            return files_out
+
         if clean_files or component:
             for f in clean_files:
                 inv_focus_tokens.update(
@@ -1048,24 +1067,90 @@ def build_tiered_context_slice(
             inv_focus_tokens -= _focus_noise
             inv_leaf_tokens -= _focus_noise
 
-        def _cap_inv_rank_key(item: tuple[int, dict[str, Any]]) -> tuple[int, int, int, int, int, int]:
+            edited_file_set = {_normalize_rel_path(f) for f in clean_files if f and f.strip()}
+            primary_cmp_ids = [cid for cid in primary_cids if cid.startswith("CMP-")]
+            coupling_owner_ids = primary_cmp_ids or list(primary_cids)
+            primary_comp_file_set: set[str] = set()
+            if coupling_owner_ids:
+                ph_own = ",".join("?" for _ in coupling_owner_ids)
+                for (sym_fp,) in cursor.execute(
+                    f"""
+                    SELECT DISTINCT file_path FROM code_symbols WHERE is_test = 0 AND entity_id IN ({ph_own})
+                    UNION
+                    SELECT DISTINCT symbol FROM symbol_mappings WHERE kind = 'source_path' AND entity_id IN ({ph_own});
+                    """,
+                    tuple(coupling_owner_ids) * 2,
+                ).fetchall():
+                    if sym_fp and not _has_glob_magic(str(sym_fp)):
+                        norm_sf = _normalize_rel_path(str(sym_fp))
+                        if norm_sf:
+                            primary_comp_file_set.add(norm_sf)
+
+            candidate_tb_files: set[str] = set()
+            for cap_src in sorted_caps:
+                raw_cap_invs = (cap_src.get("technical") or {}).get("invariants") or cap_src.get("invariants") or []
+                for inv_d in raw_cap_invs:
+                    if isinstance(inv_d, dict):
+                        candidate_tb_files.update(_inv_test_files(inv_d))
+
+            target_source_files = edited_file_set | primary_comp_file_set
+            if candidate_tb_files and target_source_files:
+                sorted_tb_files = sorted(candidate_tb_files)
+                test_imp_rows: list[Any] = []
+                for batch_start in range(0, len(sorted_tb_files), 400):
+                    batch = sorted_tb_files[batch_start : batch_start + 400]
+                    ph_tb = ",".join("?" for _ in batch)
+                    test_imp_rows.extend(
+                        cursor.execute(
+                            f"SELECT file_path, symbol FROM code_symbols WHERE kind = 'import' AND is_test = 1 AND file_path IN ({ph_tb});",
+                            tuple(batch),
+                        ).fetchall()
+                    )
+                if test_imp_rows:
+                    target_mod_map = build_module_to_file_map(target_source_files)
+                    for tb_fp, imp_sym in test_imp_rows:
+                        norm_tb = _normalize_rel_path(str(tb_fp or ""))
+                        resolved = resolve_import_target_file(
+                            norm_tb,
+                            str(imp_sym or "").strip(),
+                            target_source_files,
+                            target_mod_map,
+                            fallback_parent=True,
+                        )
+                        if not resolved:
+                            continue
+                        if resolved in edited_file_set:
+                            tb_coupling_tier[norm_tb] = 2
+                        elif resolved in primary_comp_file_set and tb_coupling_tier.get(norm_tb, 0) < 1:
+                            tb_coupling_tier[norm_tb] = 1
+
+        def _cap_inv_rank_key(
+            item: tuple[int, dict[str, Any]],
+        ) -> tuple[int, int, int, float, int, int, int, int]:
             inv_obj = item[1]
             id_toks = _tokenize_text(str(inv_obj.get("id", "")).replace("_", " ").replace("-", " "))
+            id_core_toks = id_toks - {"inv"}
             tb_raw = str(inv_obj.get("test_binding", "") or "")
+            tb_files = _inv_test_files(inv_obj)
+            tb_file_path = tb_files[0] if tb_files else _normalize_rel_path(tb_raw.split("::", 1)[0])
+            ast_coupling = max((tb_coupling_tier.get(fp, 0) for fp in tb_files), default=0)
             tb_toks = _tokenize_text(
                 tb_raw.replace("/", " ").replace("_", " ").replace("-", " ").replace(":", " ").replace(".", " ")
             )
-            tb_file_stem = tb_raw.split("::", 1)[0].rsplit("/", 1)[-1].rsplit(".", 1)[0]
+            tb_file_stem = tb_file_path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
             tb_file_toks = _tokenize_text(tb_file_stem.replace("_", " ").replace("-", " "))
             tb_file_core = tb_file_toks - {"test", "tests"}
             leaf_id_hits = len(inv_leaf_tokens & id_toks)
             focus_id_hits = len(inv_focus_tokens & id_toks)
+            id_specificity = round(focus_id_hits / max(len(id_core_toks), 1), 6)
             exact_tb_file = 1 if (inv_leaf_tokens and tb_file_core == inv_leaf_tokens) else 0
             leaf_tb_hits = len(inv_leaf_tokens & tb_file_toks)
             tb_tiebreak = len(inv_focus_tokens & tb_toks) if (leaf_id_hits or focus_id_hits or leaf_tb_hits) else 0
             return (
+                -ast_coupling,
                 -leaf_id_hits,
                 -focus_id_hits,
+                -id_specificity,
                 -exact_tb_file,
                 -leaf_tb_hits,
                 -tb_tiebreak,
@@ -1080,7 +1165,7 @@ def build_tiered_context_slice(
             for src in source_list:
                 raw_invs = list((src.get("technical") or {}).get("invariants") or src.get("invariants") or [])
                 valid_invs = [inv for inv in raw_invs if isinstance(inv, dict) and inv.get("id")]
-                if is_cap_group and inv_focus_tokens:
+                if is_cap_group and (inv_focus_tokens or tb_coupling_tier):
                     valid_invs = [inv_d for _, inv_d in sorted(enumerate(valid_invs), key=_cap_inv_rank_key)]
                 inv_lists.append([inv["id"] for inv in valid_invs])
             # Give the top-ranked capability up to 2 leading invariants before round-robining across lower-ranked capabilities

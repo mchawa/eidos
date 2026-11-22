@@ -1097,24 +1097,221 @@ def test_context_uncommitted_and_base_diff_slicing(tmp_path) -> None:
         _clear_indexes()
 
 
-def test_context_guardrail_retains_invariants_within_budget_headroom():
-    """Verify INV-CONTEXT-GUARDRAIL-INVARIANT-RETENTION: guardrails context slicing weights invariant IDs above incidental test_binding substrings and trims secondary 1-hop components before evicting core capability invariants down to 1."""
-    from eidos.core.index.graph_index import TIER_TOKEN_BUDGETS, TieredContextSlice
+def test_context_guardrail_retains_invariants_within_budget_headroom(tmp_path):
+    """Verify INV-CONTEXT-GUARDRAIL-INVARIANT-RETENTION: live-repo catalog-agnostic guardrails smoke check, hermetic AST test-to-source coupling and ID specificity ranking precedence, zero code_couplings pollution, metadata backfill, and secondary compaction headroom."""
+    from eidos.core.index.code_graph import build_module_to_file_map, resolve_import_target_file
+    from eidos.core.index.graph_index import TIER_TOKEN_BUDGETS, ArchitecturalIndex, TieredContextSlice
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
+    from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 
-    # 1. Live repo slice for src/eidos/cli/main.py stays within guardrails budget (<= 1000) while retaining
-    #    multiple foundational CAP-PROD-001 invariants including INV-SPEC-VALIDATION
+    # 1. Live-repo smoke test (strictly catalog-agnostic properties so catalog growth never causes brittle failures)
     cli_slice = get_context_slice(files=["src/eidos/cli/main.py"], tier="guardrails")
     assert cli_slice.token_estimate <= TIER_TOKEN_BUDGETS["guardrails"]
     assert len(cli_slice.to_markdown()) // 4 <= TIER_TOKEN_BUDGETS["guardrails"]
     assert len(cli_slice.to_json()) // 4 <= TIER_TOKEN_BUDGETS["guardrails"]
-    inv_ids = [inv["id"] for inv in cli_slice.invariants]
-    assert len(inv_ids) >= 3, f"Expected >= 3 retained capability invariants on guardrails slice, got {inv_ids}"
-    assert "INV-SPEC-VALIDATION" in inv_ids, f"Foundational INV-SPEC-VALIDATION displaced by incidental match: {inv_ids}"
-    assert "INV-ASCIIDOC-ZERO-WARNING-HYGIENE" not in inv_ids[:2], (
-        f"Incidental test_binding substring match displaced core invariants: {inv_ids}"
+    assert {"CMP-CLI-APP", "CNT-EIDOS-CLI"} <= {c["id"] for c in cli_slice.components}
+    assert any(c["id"] == "CTR-EIDOS-CLI" for c in cli_slice.contracts)
+    assert any(c["id"] == "CAP-PROD-001" for c in cli_slice.capabilities)
+    assert len(cli_slice.invariants) >= 3, (
+        f"Expected >= 3 retained capability invariants on guardrails slice, got {[i['id'] for i in cli_slice.invariants]}"
     )
 
-    # 2. Synthetic guardrails headroom check: secondary 1-hop components and secondary DEC-* prose trim
+    # 2. Hermetic synthetic repo: verify exact ranking precedence:
+    #    CMP-*.invariants > AST test coupling (edited file > primary CMP-* sibling) >
+    #    lexical ID specificity (1/2 = 0.50 > 1/5 = 0.20) > declaration order (not displaced by incidental test_binding)
+    inv_pfx = "INV"
+    id_explicit = f"{inv_pfx}-CMP-EXPLICIT"
+    id_foundational = f"{inv_pfx}-FOUNDATIONAL-BASE"
+    id_incidental = f"{inv_pfx}-INCIDENTAL-TB-ONLY"
+    id_broad = f"{inv_pfx}-BROAD-CLI-OPENAPI-SCHEMA-PARITY"
+    id_narrow = f"{inv_pfx}-CLI-PARITY"
+    id_sibling = f"{inv_pfx}-SIBLING-IMPORT-COUPLED"
+    id_edited = f"{inv_pfx}-EDITED-IMPORT-COUPLED"
+    id_tbd_coupled = f"{inv_pfx}-DISCOVERED-COUPLED"
+
+    repo = tmp_path / "ast_rank_repo"
+    init_repository(repo, title="AstRank")
+    eidos_dir = repo / "eidos"
+
+    cnt_app = create_spec(eidos_dir, "container", "CNT-APP", "App Container")
+    cmp_cli = create_spec(eidos_dir, "component", "CMP-CLI", "CLI Component")
+    dom_core = create_spec(eidos_dir, "domain", "DOM-CORE", "Core Domain")
+    cap_app = create_spec(eidos_dir, "capability", "CAP-APP-001", "CLI Capability")
+
+    d_dom = parse_spec_file(dom_core)
+    d_dom.frontmatter["status"] = "active"
+    dom_core.write_text(dump_spec_document(d_dom.frontmatter, d_dom.body), encoding="utf-8")
+
+    d_cnt = parse_spec_file(cnt_app)
+    d_cnt.frontmatter["status"] = "active"
+    d_cnt.frontmatter["domain"] = "DOM-CORE"
+    d_cnt.frontmatter["source_path"] = "src/app"
+    cnt_app.write_text(dump_spec_document(d_cnt.frontmatter, d_cnt.body), encoding="utf-8")
+
+    d_cmp = parse_spec_file(cmp_cli)
+    d_cmp.frontmatter["status"] = "active"
+    d_cmp.frontmatter["container"] = "CNT-APP"
+    d_cmp.frontmatter["source_path"] = ["src/app/cli/main.py", "src/app/cli/helpers.py"]
+    d_cmp.frontmatter["invariants"] = [
+        {
+            "id": id_explicit,
+            "rule": "Explicit CMP-CLI invariant always ranks ahead of capability invariants.",
+            "test_binding": "tests/test_unrelated.py::test_explicit",
+        }
+    ]
+    cmp_cli.write_text(dump_spec_document(d_cmp.frontmatter, d_cmp.body), encoding="utf-8")
+
+    d_cap = parse_spec_file(cap_app)
+    d_cap.frontmatter["status"] = "active"
+    d_cap.frontmatter["domain"] = "DOM-CORE"
+    d_cap.frontmatter["technical"] = {
+        "containers": ["CNT-APP"],
+        "components": ["CMP-CLI"],
+        "invariants": [
+            {
+                "id": id_foundational,
+                "rule": "Foundational capability invariant declared first.",
+                "test_binding": "tests/test_unrelated.py::test_foundational",
+            },
+            {
+                "id": id_incidental,
+                "rule": "Unrelated invariant whose test function name happens to contain cli.",
+                "test_binding": "tests/test_unrelated.py::test_cli_incidental_noise",
+            },
+            {
+                "id": id_broad,
+                "rule": "Broad multi-topic invariant with 1/5 = 0.20 ID token specificity on cli.",
+                "test_binding": "tests/test_subproc_broad.py::test_broad",
+            },
+            {
+                "id": id_narrow,
+                "rule": "Focused invariant with 1/2 = 0.50 ID token specificity on cli.",
+                "test_binding": "tests/test_subproc_narrow.py::test_narrow",
+            },
+            {
+                "id": id_sibling,
+                "rule": "Invariant whose test imports sibling file helpers.py in primary CMP-CLI.",
+                "test_binding": "tests/test_beta.py::test_beta",
+            },
+            {
+                "id": id_edited,
+                "rule": "Invariant whose test directly imports edited file src/app/cli/main.py.",
+                "test_binding": "tests/test_alpha.py::test_alpha",
+            },
+            {
+                "id": id_tbd_coupled,
+                "rule": "Invariant with omitted test_binding resolved via AST matching_tests importing sibling helpers.py.",
+                "test_binding": "",
+            },
+        ],
+    }
+    cap_app.write_text(dump_spec_document(d_cap.frontmatter, d_cap.body), encoding="utf-8")
+
+    (repo / "src" / "app" / "cli").mkdir(parents=True, exist_ok=True)
+    (repo / "src" / "app" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "src" / "app" / "cli" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "src" / "app" / "cli" / "main.py").write_text("def run() -> int:\n    return 0\n", encoding="utf-8")
+    (repo / "src" / "app" / "cli" / "helpers.py").write_text(
+        "def fmt(v: str) -> str:\n    return v\n", encoding="utf-8"
+    )
+
+    (repo / "tests").mkdir(parents=True, exist_ok=True)
+    (repo / "tests" / "test_alpha.py").write_text(
+        f"from app.cli.main import run\n\ndef test_alpha():\n    # {id_edited}\n    assert run() == 0\n",
+        encoding="utf-8",
+    )
+    (repo / "tests" / "test_beta.py").write_text(
+        f"from app.cli.helpers import fmt\n\ndef test_beta():\n    # {id_sibling}\n    # {id_tbd_coupled}\n    assert fmt('x') == 'x'\n",
+        encoding="utf-8",
+    )
+    (repo / "tests" / "test_subproc_narrow.py").write_text(
+        f"def test_narrow():\n    # {id_narrow}\n    assert True\n",
+        encoding="utf-8",
+    )
+    (repo / "tests" / "test_subproc_broad.py").write_text(
+        f"def test_broad():\n    # {id_broad}\n    assert True\n",
+        encoding="utf-8",
+    )
+    (repo / "tests" / "test_unrelated.py").write_text(
+        f"def test_explicit():\n    # {id_explicit}\n    assert True\n\n"
+        f"def test_foundational():\n    # {id_foundational}\n    assert True\n\n"
+        f"def test_cli_incidental_noise():\n    # {id_incidental}\n    assert True\n",
+        encoding="utf-8",
+    )
+
+    idx = ArchitecturalIndex(eidos_dir=eidos_dir, repo_root=repo)
+    try:
+        idx.sync(auto_semantic=False)
+        conn = idx._get_connection()
+
+        # Test imports persisted in code_symbols (is_test = 1) with ZERO leakage into production code_couplings
+        test_imp_cnt = conn.execute(
+            "SELECT COUNT(*) FROM code_symbols WHERE kind = 'import' AND is_test = 1;"
+        ).fetchone()[0]
+        assert test_imp_cnt >= 2
+        polluted_couplings = conn.execute(
+            "SELECT COUNT(*) FROM code_couplings WHERE src_file LIKE 'tests/%';"
+        ).fetchone()[0]
+        assert polluted_couplings == 0
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'test_imports_indexed';").fetchone()[0] == "1"
+
+        # Deep slice exercises full deterministic precedence across all 8 invariants (including TBD matching_tests coupling)
+        deep_sl = idx.get_tiered_context_slice(files=["src/app/cli/main.py"], tier="deep")
+        deep_inv_ids = [i["id"] for i in deep_sl.invariants]
+        assert deep_inv_ids[:8] == [
+            id_explicit,
+            id_edited,
+            id_sibling,
+            id_tbd_coupled,
+            id_narrow,
+            id_broad,
+            id_foundational,
+            id_incidental,
+        ], f"Unexpected hermetic invariant order: {deep_inv_ids}"
+
+        # Guardrails slice honors token budget and retains top causally coupled invariants
+        guard_sl = idx.get_tiered_context_slice(files=["src/app/cli/main.py"], tier="guardrails")
+        assert guard_sl.token_estimate <= TIER_TOKEN_BUDGETS["guardrails"]
+        assert [i["id"] for i in guard_sl.invariants[:4]] == [
+            id_explicit,
+            id_edited,
+            id_sibling,
+            id_tbd_coupled,
+        ]
+
+        # Simulate pre-existing SCHEMA_VERSION 2.22.0 cache missing test_imports_indexed -> one-time backfill
+        conn.execute("DELETE FROM metadata WHERE key = 'test_imports_indexed';")
+        conn.execute("DELETE FROM code_symbols WHERE kind = 'import' AND is_test = 1;")
+        conn.commit()
+        dirty_before, _, _ = idx.is_dirty()
+        assert dirty_before is True
+        idx.sync(auto_semantic=False)
+        assert (
+            conn.execute("SELECT COUNT(*) FROM code_symbols WHERE kind = 'import' AND is_test = 1;").fetchone()[0] >= 2
+        )
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'test_imports_indexed';").fetchone()[0] == "1"
+        dirty_after, _, _ = idx.is_dirty()
+        assert dirty_after is False
+    finally:
+        idx.close()
+
+    # 3. Direct unit check of shared resolve_import_target_file fallback_parent & relative JS/TS resolution
+    known = {"src/pkg/mod.py", "src/pkg/__init__.py", "web/ui/button.tsx", "web/ui/index.ts"}
+    mod_map = build_module_to_file_map(known)
+    assert (
+        resolve_import_target_file("tests/t.py", "pkg.mod.Symbol", known, mod_map, fallback_parent=True)
+        == "src/pkg/mod.py"
+    )
+    assert resolve_import_target_file("tests/t.py", "pkg.mod.Symbol", known, mod_map, fallback_parent=False) is None
+    assert resolve_import_target_file("web/ui/page.test.ts", "./button.js", known, mod_map) == "web/ui/button.tsx"
+    assert (
+        resolve_import_target_file("web/ui/page.test.ts", "web/ui/index/Export", known, mod_map, fallback_parent=True)
+        == "web/ui/index.ts"
+    )
+    assert resolve_import_target_file("", "pkg.mod", known, mod_map) is None
+
+    # 4. Synthetic guardrails headroom check: secondary 1-hop components and secondary DEC-* prose trim
     #    before evicting 1-hop capability invariants below min_len=3
     syn = TieredContextSlice(
         query={"files": ["src/app/main.py"]},
@@ -1191,6 +1388,8 @@ def test_context_guardrail_retains_invariants_within_budget_headroom():
     syn._enforce_token_budget(primary_cids={"CMP-PRIMARY", "CNT-PRIMARY"})
     assert syn.token_estimate <= TIER_TOKEN_BUDGETS["guardrails"]
     assert len(syn.to_json()) // 4 <= TIER_TOKEN_BUDGETS["guardrails"]
-    assert len(syn.invariants) >= 3, f"Expected >= 3 invariants retained after trimming secondary deps, got {len(syn.invariants)}"
+    assert len(syn.invariants) >= 3, (
+        f"Expected >= 3 invariants retained after trimming secondary deps, got {len(syn.invariants)}"
+    )
     assert [i["id"] for i in syn.invariants[:3]] == ["RULE-CORE-01", "RULE-CORE-02", "RULE-CORE-03"]
     assert {"CMP-PRIMARY", "CNT-PRIMARY"} <= {c["id"] for c in syn.components}
