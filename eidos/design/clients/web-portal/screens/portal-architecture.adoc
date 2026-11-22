@@ -24,6 +24,10 @@ states:
     description: "Interactive C4 Level 3 Component Whitebox view showing internal building blocks and responsibilities."
   - name: "component_inspected"
     description: "Slide-over drawer detailing selected module responsibility, source path, and contract bindings."
+  - name: "full_page_c4"
+    description: "In-place fixed full-viewport zoomed-in C4 diagram stage (z-[45], 25%–400% zoom, Escape dismissal) above NavigationRail and below Sheet inspectors."
+  - name: "connection_highlighted"
+    description: "Interactive component-and-connections focus isolating a selected node's incoming and outgoing SVG edges, edge labels, and direct neighbors while dimming unrelated elements."
   - name: "error"
     description: "Alert state when architecture manifests are invalid."
 ---
@@ -36,5 +40,7 @@ The Technical Architecture View (`SCR-PORTAL-ARCHITECTURE`) visualizes the techn
 * **Interactive Breadcrumbs & Navigation**: Seamless drill-down on click with human-readable tooltips, ancestor navigation trail, container quick-switcher dropdown displaying container titles, and level-up controls.
 * **Component Inspector Drawer**: Slide-over details drawer revealing module responsibilities, resolved upstream/downstream container and external service titles, resolved contract bindings, uncramped full-height **Full Specification** AsciiDoc prose (`measure="full"`, zero nested scroll boxes) for both Containers (`CNT-*`) and focused internal Components (`CMP-*`), a one-click **"Open in Full Reader"** escalation action launching `SpecReader` with sticky Table of Contents, and automatic drawer dismissal when drilling down into internal component diagrams.
 * **Containers & Components Matrix**: Container and internal module cards leading with human-readable titles, humanized container types (`Web App`, `CLI App`, `Library`), and one-click `"Explore Internal Components"` drill-down.
-* **Interactive Blast Radius Simulator & SVG Highlighting**: Client-side impact analyzer over pre-computed `data.edges` highlighting **Direct Impact** (`data-blast-hop="1"`) and **Indirect Impact** (`data-blast-hop="2"`) nodes directly on the diagram canvas while listing upstream dependencies, downstream dependents, and enforced rules with resolved human titles.
+* **Full-Page Zoomed C4 Stage (`full_page_c4`)**: Explicit **"Full Page"** toggle (`#btnC4FullPage` / `#btnC4ExitFullPage`) promoting the live `#c4DiagramContainer` in-place to a `z-[45]` full-viewport dialog opening at a readable zoomed-in scale (`1.0x`–`1.5x`, interactive `25%`–`400%` wheel/button zoom, `"Fit All"`, `"100%"`, and `Escape` dismissal respecting open `Sheet` drawers).
+* **Component & Connection Highlighting (`connection_highlighted`)**: Toolbar component focus selector (`#c4HighlightSelect`), `All / Incoming / Outgoing` direction toggle, **"Focus Connections"** canvas click mode (`#btnC4FocusMode` plus `Shift`/`Alt`+click), floating Connection Summary Pill (`<Title> • X incoming • Y outgoing`), and `"Highlight on Diagram"` drawer action that isolate a component's incoming and outgoing connections (nodes, SVG edge paths, and `.edgeLabel` text) while dimming unrelated elements.
+* **Interactive Blast Radius Simulator & SVG Highlighting**: Client-side impact analyzer over pre-computed `data.edges` highlighting **Direct Impact** (`data-blast-hop="1"`) and **Indirect Impact** (`data-blast-hop="2"`) nodes and connecting edges directly on the diagram canvas while listing upstream dependencies, downstream dependents, and enforced rules with resolved human titles.
 * **Boundary Interface Contracts & Architectural Decisions**: Interactive contract and decision explorers surfacing resolved provider/consumer container titles, humanized protocol badges (`HTTP JSON`, `CLI`, `Python API`), and full AsciiDoc readers.

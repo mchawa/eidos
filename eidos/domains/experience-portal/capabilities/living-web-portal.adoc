@@ -4,7 +4,7 @@ id: CAP-EXP-001
 title: "Interactive Living Web Portal & Visual Documentation Engine"
 domain: DOM-EXPERIENCE-PORTAL
 status: active
-version: "1.4.0"
+version: "1.5.0"
 
 business:
   personas:
@@ -77,6 +77,9 @@ technical:
     - id: INV-PORTAL-INSPECTOR-FULL-SPEC-READING
       rule: "Container and Component inspector drawers (#c4InspectorDrawer) must render Full Specification prose for both containers (CNT-*) and focused internal components (CMP-*) without fixed-height nested scroll traps (max-h-[360px]) or redundant double-nested card frames, honor AsciiDocRenderer measure='full', and expose 'Open in Full Reader' navigation with mode='reader' to launch SpecReader directly."
       test_binding: "tests/test_portal.py::test_portal_inspector_full_specification_ergonomics"
+    - id: INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT
+      rule: "ArchitectureView must provide an in-place full-page zoomed C4 diagram stage (#btnC4FullPage, z-[45], 25%–400% zoom, readable >= 1.0x initial scale) and underscore-safe client-side SVG highlighting of any component's incoming and outgoing connections (#c4HighlightSelect, #btnC4FocusMode, data-c4-highlight, data-c4-edge-state) under Mermaid securityLevel 'strict' with clean style restoration and mutual exclusion with blast-radius highlighting."
+      test_binding: "tests/test_portal.py::test_portal_c4_fullpage_and_connection_highlighting"
 ---
 = Capability: Interactive Living Web Portal & Visual Documentation Engine
 :toc: left
@@ -88,7 +91,7 @@ Explore, search, and visually inspect living C4 architecture models, multi-clien
 Technical specifications and architecture models are often trapped in raw text files or separate wikis. This capability provides a local, zero-dependency embedded HTTP server (`eidos portal serve`) and static site builder (`eidos portal build`) that turns living AsciiDoc files into an interactive single-page application.
 
 == Key Responsibilities
-* Real-time inspection and clickable hierarchical exploration of C4 Level 1 (Context), Level 2 (Containers), and Level 3 (Component Whitebox) models using client-side Mermaid rendering (`securityLevel: "strict"`), direct C4 SVG node Blast Radius simulation, and boundary interface contract (`CTR-*`) inspection.
+* Real-time inspection and clickable hierarchical exploration of C4 Level 1 (Context), Level 2 (Containers), and Level 3 (Component Whitebox) models using client-side Mermaid rendering (`securityLevel: "strict"`), an in-place **full-page** zoomed diagram stage (`z-[45]`, up to `400%` zoom), interactive component-and-**connections** SVG highlighting (`c4Highlight.ts`), direct C4 SVG node Blast Radius simulation, and boundary interface contract (`CTR-*`) inspection.
 * Slide-over component inspection drawer with uncramped full-height **Full Specification** prose for both containers and focused internal components plus **"Open in Full Reader"** escalation into `SpecReader`, lazy local `specs/<id>.json` body loading (with `--single-file` offline archive support), DOMPurify `SANITIZE_DOM` AsciiDoc rendering, and shareable `window.location.hash` (`#/...`) deep linking revealing module responsibilities, source paths, bound contracts, and catalog specifications.
 * Same-origin loopback `Host` header isolation and real-time Server-Sent Events (`GET /api/events`) streaming live workspace and uncommitted drift (`/api/drift`) updates across `eidos/`, `src/`, and `tests/`.
 * Interactive SpecDelta Kanban dashboard and Chronological Timeline tracking proposed, in-review, and applied mutations.

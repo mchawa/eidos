@@ -2909,3 +2909,75 @@ def test_portal_inspector_full_specification_ergonomics() -> None:
     assert "Full Specification" in bundle_html
     assert "max-h-[360px]" not in bundle_html
     assert "prose-reading" in bundle_html
+
+
+def test_portal_c4_fullpage_and_connection_highlighting() -> None:
+    """Verify INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT: ArchitectureView provides an in-place z-[45]
+    Full-Page zoomed C4 diagram stage (#btnC4FullPage / #btnC4ExitFullPage, 25%-400% zoom) and underscore-safe
+    client-side SVG highlighting of component connections (c4Highlight.ts, #c4HighlightSelect, #btnC4FocusMode,
+    data-c4-highlight, data-c4-edge-state) under Mermaid securityLevel 'strict' while preserving existing hooks."""
+    from eidos.portal.assets import get_portal_html_template
+
+    frontend_src = Path(__file__).resolve().parent.parent / "src" / "eidos" / "portal" / "frontend" / "src"
+    arch_src = (frontend_src / "components" / "views" / "ArchitectureView.tsx").read_text(encoding="utf-8")
+    hl_src = (frontend_src / "lib" / "c4Highlight.ts").read_text(encoding="utf-8")
+    css_src = (frontend_src / "theme" / "theme.css").read_text(encoding="utf-8")
+    mermaid_src = (frontend_src / "lib" / "mermaid.ts").read_text(encoding="utf-8")
+
+    # 1. Pure highlight engine exports and underscore-safe edge/node resolution
+    for symbol in (
+        "parseMermaidEdges",
+        "resolveSvgNodeId",
+        "matchSvgEdgeEndpoints",
+        "restoreC4SvgStyles",
+        "applyC4ConnectionHighlight",
+        "applyC4BlastRadiusEdges",
+        "computeFullPageZoom",
+        "data-c4-highlight",
+        "data-c4-edge-state",
+    ):
+        assert symbol in hl_src
+
+    # 2. Full-page z-[45] in-place stage, extended zoom bounds, focus controls, and preserved C4 hooks
+    for token in (
+        'id="btnC4FullPage"',
+        'id="btnC4ExitFullPage"',
+        'id="c4HighlightSelect"',
+        'id="btnC4FocusMode"',
+        'id="c4DiagramStage"',
+        'id="c4DiagramContainer"',
+        'id="c4ActiveDiagram"',
+        'id="c4LevelSwitcher"',
+        'id="c4InspectorDrawer"',
+        "z-[45]",
+        "Highlight on Diagram",
+        "Focus Connections",
+        "Exit Full Page",
+    ):
+        assert token in arch_src
+
+    # 3. High-contrast CSS rules for nodes, incoming/outgoing edges, and edge labels
+    for cls in (
+        ".c4-node-selected",
+        ".c4-node-connected",
+        ".c4-node-dimmed",
+        ".c4-edge-incoming",
+        ".c4-edge-outgoing",
+        ".c4-edge-dimmed",
+        ".c4-edge-label-connected",
+        ".c4-edge-label-dimmed",
+    ):
+        assert cls in css_src
+
+    # 4. Mermaid strict security preserved and compiled bundle updated within budget
+    assert 'securityLevel: "strict"' in mermaid_src
+    bundle_html = get_portal_html_template()
+    for token in (
+        "btnC4FullPage",
+        "c4HighlightSelect",
+        "btnC4FocusMode",
+        "data-c4-edge-state",
+        "data-c4-highlight",
+        "z-[45]",
+    ):
+        assert token in bundle_html

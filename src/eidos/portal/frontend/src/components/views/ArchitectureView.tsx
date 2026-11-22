@@ -12,6 +12,8 @@ import {
   ShieldCheck,
   ChevronRight,
   Maximize2,
+  Maximize,
+  Minimize2,
   Expand,
   Shrink,
   Move,
@@ -20,6 +22,8 @@ import {
   Crosshair,
   ExternalLink,
   ChevronDown,
+  GitFork,
+  X,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,10 +32,22 @@ import { Sheet } from "@/components/ui/sheet";
 import { AsciiDocRenderer } from "@/components/ui/AsciiDocRenderer";
 import { requestSpecNavigation } from "@/lib/specNav";
 import {
+  applyC4BlastRadiusEdges,
+  applyC4ConnectionHighlight,
+  computeCenterPanForNode,
+  computeFullPageZoom,
+  parseMermaidEdges,
+  resolveSvgNodeId,
+  restoreC4SvgStyles,
+  type C4ConnectionHighlightResult,
+  type HighlightDirection,
+} from "@/lib/c4Highlight";
+import {
   formatContainerType,
   formatDisplayTitle,
   formatProtocol,
   humanizeInvariantTitle,
+  humanizeToken,
   resolveEntityTitle,
   useEntityLabels,
 } from "@/lib/presentation";
@@ -82,6 +98,11 @@ export function ArchitectureView({
   const [zoom, setZoom] = React.useState<number>(1);
   const [pan, setPan] = React.useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isExpanded, setIsExpanded] = React.useState<boolean>(false);
+  const [isFullPage, setIsFullPage] = React.useState<boolean>(false);
+  const [highlightedNodeId, setHighlightedNodeId] = React.useState<string>("");
+  const [highlightDirection, setHighlightDirection] = React.useState<HighlightDirection>("all");
+  const [focusClickMode, setFocusClickMode] = React.useState<boolean>(false);
+  const [connectionSummary, setConnectionSummary] = React.useState<C4ConnectionHighlightResult | null>(null);
   const [inspectorOpen, setInspectorOpen] = React.useState<boolean>(false);
   const [inspectedComponent, setInspectedComponent] = React.useState<SpecComponent | null>(null);
   const [focusedSubComponentId, setFocusedSubComponentId] = React.useState<string | null>(null);
@@ -89,6 +110,21 @@ export function ArchitectureView({
   const [inspectedContract, setInspectedContract] = React.useState<SpecContract | null>(null);
   const [blastTargetId, setBlastTargetId] = React.useState<string>("");
   const [diagramError, setDiagramError] = React.useState<string | null>(null);
+  const pendingHighlightNodeRef = React.useRef<string | null>(null);
+
+  const selectHighlightNode = React.useCallback((nodeId: string) => {
+    setHighlightedNodeId(nodeId);
+    if (nodeId) {
+      setBlastTargetId("");
+    }
+  }, []);
+
+  const selectBlastTarget = React.useCallback((targetId: string) => {
+    setBlastTargetId(targetId);
+    if (targetId) {
+      setHighlightedNodeId("");
+    }
+  }, []);
 
   const selectedContainerTitle = React.useMemo(() => {
     const comp = data.components.find((c) => c.id === selectedContainerId);
@@ -167,10 +203,154 @@ export function ArchitectureView({
     };
   }, [blastTargetId, data.edges]);
 
-  // Apply direct / indirect / target / dimmed blast-radius styling directly onto SVG nodes
-  const applyBlastRadiusToSvg = React.useCallback(() => {
-    if (!diagramRef.current) return;
-    const nodes = diagramRef.current.querySelectorAll(
+  const currentDiagramSource = React.useMemo(() => {
+    if (level === 1) {
+      return data.diagrams.c4_context || "graph TD\nUser[User]-->System[System]";
+    } else if (level === 2) {
+      return data.diagrams.c4_containers || "graph TD\nCore[System]";
+    } else {
+      const compMap = data.diagrams.c4_components || {};
+      return (
+        compMap[selectedContainerId] ||
+        `graph TD\n${sanitizeNodeSlug(selectedContainerId || "System")}["${selectedContainerTitle}"]`
+      );
+    }
+  }, [level, selectedContainerId, selectedContainerTitle, data.diagrams]);
+
+  const parsedDiagram = React.useMemo(
+    () => parseMermaidEdges(currentDiagramSource),
+    [currentDiagramSource]
+  );
+
+  // Build humanized dropdown options for every node rendered in the active C4 diagram
+  const highlightOptions = React.useMemo(() => {
+    const sysId = data.overview?.system_id || "SYS";
+    const sysSlug = sanitizeNodeSlug(sysId);
+    const sysTitle = data.overview?.system_title || "System";
+    const options: Array<{ nodeId: string; label: string; entityId?: string }> = [];
+    const seen = new Set<string>();
+
+    const extractInlineLabel = (nid: string): string | null => {
+      const escaped = nid.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const m = new RegExp(`\\b${escaped}\\s*(?:\\[|\\(|\\{)\\s*"?([^"\\]\\)\\}]+)`, "m").exec(
+        currentDiagramSource
+      );
+      if (!m) return null;
+      const firstLine = m[1]
+        .replace(/<[^>]+>/g, " ")
+        .split(/\\n|\n/)[0]
+        .replace(/\s+/g, " ")
+        .trim();
+      return firstLine || null;
+    };
+
+    const resolveOption = (nid: string): { nodeId: string; label: string; entityId?: string } => {
+      if (nid === "SYS" || nid === sysSlug || nid === sysId) {
+        return { nodeId: nid, label: sysTitle, entityId: sysId };
+      }
+
+      const cntMatch = data.components.find(
+        (c) =>
+          nid === sanitizeNodeSlug(c.id) ||
+          nid === c.id ||
+          nid === `peer_${sanitizeNodeSlug(c.id)}`
+      );
+      if (cntMatch) {
+        return {
+          nodeId: nid,
+          label: formatDisplayTitle(cntMatch.title, cntMatch.id),
+          entityId: cntMatch.id,
+        };
+      }
+
+      const ctrMatch = (data.contracts || []).find(
+        (ct) =>
+          nid === `ctr_${sanitizeNodeSlug(ct.id)}` ||
+          nid === sanitizeNodeSlug(ct.id) ||
+          nid === ct.id
+      );
+      if (ctrMatch) {
+        return {
+          nodeId: nid,
+          label: formatDisplayTitle(ctrMatch.title, ctrMatch.id),
+          entityId: ctrMatch.id,
+        };
+      }
+
+      for (const comp of data.components) {
+        const subMatch = (comp.internal_components || []).find(
+          (sub) =>
+            sub.id &&
+            (nid === `mod_${sanitizeNodeSlug(sub.id)}` ||
+              nid === sanitizeNodeSlug(sub.id) ||
+              nid === sub.id)
+        );
+        if (subMatch) {
+          return {
+            nodeId: nid,
+            label: formatDisplayTitle(subMatch.title, subMatch.id),
+            entityId: subMatch.id,
+          };
+        }
+      }
+
+      const perMatch = (data.personas || []).find(
+        (p) => nid === sanitizeNodeSlug(p.id) || nid === p.id
+      );
+      if (perMatch) {
+        return {
+          nodeId: nid,
+          label: formatDisplayTitle(perMatch.title, perMatch.id),
+          entityId: perMatch.id,
+        };
+      }
+
+      const inlineLabel = extractInlineLabel(nid);
+      if (inlineLabel) {
+        return { nodeId: nid, label: inlineLabel };
+      }
+      return {
+        nodeId: nid,
+        label: humanizeToken(nid.replace(/^(?:CNT|CMP|CTR|PER|EXT|mod|peer|ctr)_/i, "")),
+      };
+    };
+
+    parsedDiagram.nodeIds.forEach((nid) => {
+      if (seen.has(nid)) return;
+      seen.add(nid);
+      options.push(resolveOption(nid));
+    });
+
+    return options.sort((a, b) => a.label.localeCompare(b.label));
+  }, [parsedDiagram, currentDiagramSource, data.overview, data.components, data.contracts, data.personas]);
+
+  const selectedHighlightOption = React.useMemo(
+    () => highlightOptions.find((opt) => opt.nodeId === highlightedNodeId) || null,
+    [highlightOptions, highlightedNodeId]
+  );
+
+  // Unified SVG highlight pipeline for Component Connection Highlighting and Blast Radius
+  const applyDiagramHighlights = React.useCallback(() => {
+    const svgRoot = diagramRef.current?.querySelector("svg") || diagramRef.current;
+    if (!svgRoot) return;
+
+    if (highlightedNodeId) {
+      const result = applyC4ConnectionHighlight(svgRoot, {
+        selectedNodeId: highlightedNodeId,
+        direction: highlightDirection,
+        parsedEdges: parsedDiagram.edges,
+        knownNodeIds: parsedDiagram.nodeIds,
+      });
+      setConnectionSummary(result);
+      return;
+    }
+
+    restoreC4SvgStyles(svgRoot);
+    setConnectionSummary(null);
+
+    if (!blastRadiusReport) return;
+
+    const nodes = svgRoot.querySelectorAll(
       '[data-c4-entity], [id*="CNT-"], [id*="CNT_"], [id*="CMP-"], [id*="CMP_"], [id*="SYS-"], .node'
     );
     const nodeMatchesEntity = (el: Element, entityId: string): boolean => {
@@ -183,32 +363,11 @@ export function ArchitectureView({
       return txt.includes(entityId) || nid.includes(slug) || nid.includes(entityId);
     };
 
+    const impactedMermaidNodeIds = new Set<string>();
+
     nodes.forEach((n) => {
       const el = n as HTMLElement;
-      el.classList.remove(
-        "blast-radius-target",
-        "blast-radius-1-hop",
-        "blast-radius-2-hop",
-        "blast-radius-dimmed"
-      );
-      el.removeAttribute("data-blast-hop");
-
       const shape = el.querySelector<SVGElement>("rect, polygon, path, circle");
-      if (shape) {
-        const origStroke = shape.getAttribute("data-orig-stroke");
-        const origStrokeW = shape.getAttribute("data-orig-stroke-width");
-        const origDash = shape.getAttribute("data-orig-dasharray");
-        if (origStroke !== null) shape.style.stroke = origStroke;
-        if (origStrokeW !== null) shape.style.strokeWidth = origStrokeW;
-        if (origDash !== null) shape.style.strokeDasharray = origDash;
-      }
-
-      if (!blastRadiusReport) {
-        el.style.opacity = "1";
-        el.style.filter = "";
-        return;
-      }
-
       const saveOrigShapeStyle = () => {
         if (!shape) return;
         if (shape.getAttribute("data-orig-stroke") === null) {
@@ -230,6 +389,11 @@ export function ArchitectureView({
             if (nodeMatchesEntity(el, id)) isHop2 = true;
           });
         }
+      }
+
+      const resolvedNid = resolveSvgNodeId(el, parsedDiagram.nodeIds);
+      if (isTarget || isHop1 || isHop2) {
+        if (resolvedNid) impactedMermaidNodeIds.add(resolvedNid);
       }
 
       if (isTarget) {
@@ -272,11 +436,17 @@ export function ArchitectureView({
         el.style.filter = "grayscale(0.45)";
       }
     });
-  }, [blastRadiusReport]);
+
+    applyC4BlastRadiusEdges(svgRoot, {
+      impactedNodeIds: impactedMermaidNodeIds,
+      parsedEdges: parsedDiagram.edges,
+      knownNodeIds: parsedDiagram.nodeIds,
+    });
+  }, [highlightedNodeId, highlightDirection, parsedDiagram, blastRadiusReport]);
 
   React.useEffect(() => {
-    applyBlastRadiusToSvg();
-  }, [applyBlastRadiusToSvg, level, selectedContainerId]);
+    applyDiagramHighlights();
+  }, [applyDiagramHighlights, level, selectedContainerId]);
 
   const activeTiers = React.useMemo(() => {
     const tierMap = new Map<string, { id: string; name: string }>();
@@ -339,6 +509,93 @@ export function ArchitectureView({
     setPan({ x: 0, y: 0 });
   }, []);
 
+  const applyFullPageZoom = React.useCallback(
+    (targetNodeId?: string) => {
+      if (!diagramRef.current || !containerRef.current) return;
+      const svgEl = diagramRef.current.querySelector("svg");
+      if (!svgEl) return;
+
+      let svgWidth = 0;
+      let svgHeight = 0;
+      if (svgEl.viewBox && svgEl.viewBox.baseVal && svgEl.viewBox.baseVal.width > 0) {
+        svgWidth = svgEl.viewBox.baseVal.width;
+        svgHeight = svgEl.viewBox.baseVal.height;
+      } else if (typeof svgEl.getBBox === "function") {
+        const bbox = svgEl.getBBox();
+        svgWidth = bbox.width;
+        svgHeight = bbox.height;
+      }
+
+      const nextZoom = computeFullPageZoom(
+        { width: svgWidth, height: svgHeight },
+        {
+          width: containerRef.current.clientWidth || window.innerWidth,
+          height: containerRef.current.clientHeight || window.innerHeight,
+        }
+      );
+
+      let nextPan = { x: 0, y: 0 };
+      const focusNode = targetNodeId ?? highlightedNodeId;
+      if (focusNode && svgWidth > 0 && svgHeight > 0) {
+        const nodeEls = Array.from(svgEl.querySelectorAll("g.node, .node"));
+        const matchEl = nodeEls.find(
+          (el) => resolveSvgNodeId(el, parsedDiagram.nodeIds) === focusNode
+        ) as SVGGraphicsElement | undefined;
+        if (matchEl && typeof matchEl.getBBox === "function") {
+          try {
+            const nodeBox = matchEl.getBBox();
+            nextPan = computeCenterPanForNode(
+              { width: svgWidth, height: svgHeight },
+              nodeBox,
+              nextZoom
+            );
+          } catch {
+            nextPan = { x: 0, y: 0 };
+          }
+        }
+      }
+
+      setZoom(nextZoom);
+      setPan(nextPan);
+    },
+    [highlightedNodeId, parsedDiagram.nodeIds]
+  );
+
+  const enterFullPage = React.useCallback(() => {
+    setIsFullPage(true);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        applyFullPageZoom();
+      });
+    });
+  }, [applyFullPageZoom]);
+
+  const exitFullPage = React.useCallback(() => {
+    setIsFullPage(false);
+    requestAnimationFrame(() => {
+      autoFitDiagram();
+    });
+  }, [autoFitDiagram]);
+
+  // Body scroll lock & Escape dismissal for full-page stage (respects open Sheet drawers on top)
+  React.useEffect(() => {
+    if (!isFullPage) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (inspectorOpen || inspectedContract) return;
+        e.preventDefault();
+        exitFullPage();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isFullPage, inspectorOpen, inspectedContract, exitFullPage]);
+
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
     isDraggingRef.current = true;
@@ -376,39 +633,61 @@ export function ArchitectureView({
   React.useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    const minZoom = isFullPage ? 0.25 : 0.35;
+    const maxZoom = isFullPage ? 4.0 : 3.0;
     const onNativeWheel = (e: WheelEvent) => {
       e.preventDefault();
       e.stopPropagation();
       const delta = e.deltaY < 0 ? 0.1 : -0.1;
-      setZoom((prev) => Math.min(3.0, Math.max(0.35, Number((prev + delta).toFixed(2)))));
+      setZoom((prev) => Math.min(maxZoom, Math.max(minZoom, Number((prev + delta).toFixed(2)))));
     };
     el.addEventListener("wheel", onNativeWheel, { passive: false });
     return () => el.removeEventListener("wheel", onNativeWheel);
-  }, []);
+  }, [isFullPage]);
 
-  const currentDiagramSource = React.useMemo(() => {
-    if (level === 1) {
-      return data.diagrams.c4_context || "graph TD\nUser[User]-->System[System]";
-    } else if (level === 2) {
-      return data.diagrams.c4_containers || "graph TD\nCore[System]";
-    } else {
-      const compMap = data.diagrams.c4_components || {};
-      return (
-        compMap[selectedContainerId] ||
-        `graph TD\n${sanitizeNodeSlug(selectedContainerId || "System")}["${selectedContainerTitle}"]`
-      );
+  const setC4Level = (lvl: 1 | 2 | 3, preservePendingHighlight = false) => {
+    if (!preservePendingHighlight) {
+      pendingHighlightNodeRef.current = null;
+      setHighlightedNodeId("");
     }
-  }, [level, selectedContainerId, selectedContainerTitle, data.diagrams]);
-
-  const setC4Level = (lvl: 1 | 2 | 3) => {
     setLevelState(lvl);
     setZoom(1);
   };
 
-  const drillDownToContainer = (cid: string) => {
+  const drillDownToContainer = (cid: string, preservePendingHighlight = false) => {
+    if (!preservePendingHighlight) {
+      pendingHighlightNodeRef.current = null;
+      setHighlightedNodeId("");
+    }
     setSelectedContainerId(cid);
     setLevelState(3);
     setZoom(1);
+  };
+
+  const highlightEntityOnDiagram = (
+    targetLevel: 2 | 3,
+    mermaidNodeId: string,
+    containerId?: string
+  ) => {
+    closeC4Inspector();
+    setBlastTargetId("");
+    if (targetLevel === 2) {
+      if (level === 2) {
+        selectHighlightNode(mermaidNodeId);
+      } else {
+        pendingHighlightNodeRef.current = mermaidNodeId;
+        setC4Level(2, true);
+      }
+      return;
+    }
+    if (targetLevel === 3 && containerId) {
+      if (level === 3 && selectedContainerId === containerId) {
+        selectHighlightNode(mermaidNodeId);
+      } else {
+        pendingHighlightNodeRef.current = mermaidNodeId;
+        drillDownToContainer(containerId, true);
+      }
+    }
   };
 
   const openC4Inspector = (comp: SpecComponent, subCompId?: string | null) => {
@@ -514,6 +793,15 @@ export function ArchitectureView({
     if (!node || !diagramRef.current.contains(node)) return;
     e.stopPropagation();
 
+    // Direct canvas connection-focus mode (toggle button or Shift/Alt+click)
+    if (focusClickMode || e.shiftKey || e.altKey) {
+      const resolvedNid = resolveSvgNodeId(node, parsedDiagram.nodeIds);
+      if (resolvedNid) {
+        selectHighlightNode(resolvedNid === highlightedNodeId ? "" : resolvedNid);
+      }
+      return;
+    }
+
     const text = node.textContent || "";
     const nodeId = node.id || "";
     const entityAttr = node.getAttribute("data-c4-entity") || "";
@@ -586,8 +874,12 @@ export function ArchitectureView({
     }
   };
 
-  const applyBlastRef = React.useRef(applyBlastRadiusToSvg);
-  applyBlastRef.current = applyBlastRadiusToSvg;
+  const applyHighlightsRef = React.useRef(applyDiagramHighlights);
+  applyHighlightsRef.current = applyDiagramHighlights;
+  const applyFullPageZoomRef = React.useRef(applyFullPageZoom);
+  applyFullPageZoomRef.current = applyFullPageZoom;
+  const isFullPageRef = React.useRef(isFullPage);
+  isFullPageRef.current = isFullPage;
 
   React.useEffect(() => {
     let isCancelled = false;
@@ -606,9 +898,19 @@ export function ArchitectureView({
             svgEl.style.maxWidth = "none";
           }
           decorateC4Nodes();
-          applyBlastRef.current();
+          if (pendingHighlightNodeRef.current) {
+            const pending = pendingHighlightNodeRef.current;
+            pendingHighlightNodeRef.current = null;
+            selectHighlightNode(pending);
+          } else {
+            applyHighlightsRef.current();
+          }
           requestAnimationFrame(() => {
-            autoFitDiagram();
+            if (isFullPageRef.current) {
+              applyFullPageZoomRef.current();
+            } else {
+              autoFitDiagram();
+            }
           });
         }
       } catch (err) {
@@ -626,236 +928,461 @@ export function ArchitectureView({
     return () => {
       isCancelled = true;
     };
-  }, [currentDiagramSource, darkMode, level, selectedContainerId, autoFitDiagram, decorateC4Nodes]);
+  }, [
+    currentDiagramSource,
+    darkMode,
+    level,
+    selectedContainerId,
+    autoFitDiagram,
+    decorateC4Nodes,
+    selectHighlightNode,
+  ]);
+
+  const minZoomBound = isFullPage ? 0.25 : 0.35;
+  const maxZoomBound = isFullPage ? 4.0 : 3.0;
+
+  const inspectHighlightedEntity = () => {
+    const eid = selectedHighlightOption?.entityId;
+    if (!eid) return;
+    const ctr = (data.contracts || []).find((ct) => ct.id === eid);
+    if (ctr) {
+      setInspectedContract(ctr);
+      return;
+    }
+    const cnt = data.components.find((c) => c.id === eid);
+    if (cnt) {
+      openC4Inspector(cnt);
+      return;
+    }
+    for (const c of data.components) {
+      const sub = (c.internal_components || []).find((ic) => ic.id === eid);
+      if (sub) {
+        openC4Inspector(c, sub.id);
+        return;
+      }
+    }
+  };
 
   return (
-    <div className="space-y-4 animate-in fade-in duration-200">
-      {/* Top Toolbar / Controls */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-card border border-border md-elevation-1">
-        {/* Architecture Zoom Level Switcher */}
-        <div id="c4LevelSwitcher" className="flex items-center gap-1.5 bg-muted/60 p-1 rounded-full border border-border/60">
-          <button
-            id="btnC4Level1"
-            onClick={() => setC4Level(1)}
-            className={`px-3 py-1 text-xs font-medium rounded-full transition-all cursor-pointer ${
-              level === 1
-                ? "bg-primary text-primary-foreground md-elevation-1 font-semibold"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            System Context
-          </button>
-          <button
-            id="btnC4Level2"
-            onClick={() => setC4Level(2)}
-            className={`px-3 py-1 text-xs font-medium rounded-full transition-all cursor-pointer ${
-              level === 2
-                ? "bg-primary text-primary-foreground md-elevation-1 font-semibold"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Containers
-          </button>
-          <button
-            id="btnC4Level3"
-            onClick={() => setC4Level(3)}
-            className={`px-3 py-1 text-xs font-medium rounded-full transition-all cursor-pointer ${
-              level === 3
-                ? "bg-primary text-primary-foreground md-elevation-1 font-semibold"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Components
-          </button>
-        </div>
-
-        {/* Containers Breadcrumbs */}
-        {level === 2 && (
-          <div id="c4Breadcrumbs" className="flex items-center gap-2 text-xs">
-            <button
-              onClick={() => setC4Level(1)}
-              className="p-1 rounded-lg bg-muted/60 text-muted-foreground hover:text-foreground flex items-center gap-1 px-2 cursor-pointer transition-colors"
-              title="Return to System Context"
-            >
-              <ArrowUp className="h-3 w-3" />
-              <span>System Context</span>
-            </button>
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="font-semibold text-primary text-xs">Containers</span>
-          </div>
-        )}
-
-        {/* Components Breadcrumbs and selector */}
-        {level === 3 && (
-          <div id="c4Breadcrumbs" className="flex items-center gap-2 text-xs min-w-0">
-            <button
-              onClick={() => setC4Level(1)}
-              className="p-1 rounded-lg bg-muted/60 text-muted-foreground hover:text-foreground flex items-center gap-1 px-2 cursor-pointer transition-colors shrink-0"
-              title="Return to System Context"
-            >
-              <span>System Context</span>
-            </button>
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <button
-              id="btnC4LevelUp"
-              onClick={() => setC4Level(2)}
-              className="p-1 rounded-lg bg-muted/60 text-muted-foreground hover:text-foreground flex items-center gap-1 px-2 cursor-pointer transition-colors shrink-0"
-              title="Return to Containers"
-            >
-              <ArrowUp className="h-3 w-3" />
-              <span>Containers</span>
-            </button>
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <select
-              id="c4ContainerSelect"
-              value={selectedContainerId}
-              onChange={(e) => drillDownToContainer(e.target.value)}
-              className="bg-card border border-border text-xs rounded-lg px-2.5 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[200px] sm:max-w-[280px] md:max-w-[340px] truncate"
-            >
-              {data.components.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {formatDisplayTitle(c.title, c.id)}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {/* Zoom & Pan Controls */}
-        <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-full border border-border/60">
-          <button
-            onClick={() => setZoom((z) => Math.max(0.35, +(z - 0.15).toFixed(2)))}
-            className="p-1.5 rounded-full hover:bg-card text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            title="Zoom Out"
-          >
-            <ZoomOut className="h-4 w-4" />
-          </button>
-          <span className="text-[11px] font-mono px-2 text-muted-foreground select-none font-semibold min-w-[42px] text-center">
-            {Math.round(zoom * 100)}%
-          </span>
-          <button
-            onClick={() => setZoom((z) => Math.min(3.0, +(z + 0.15).toFixed(2)))}
-            className="p-1.5 rounded-full hover:bg-card text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            title="Zoom In"
-          >
-            <ZoomIn className="h-4 w-4" />
-          </button>
-          <button
-            onClick={autoFitDiagram}
-            className="p-1.5 rounded-full hover:bg-card text-muted-foreground hover:text-primary transition-colors cursor-pointer"
-            title="Fit Diagram to Screen"
-          >
-            <Maximize2 className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={() => {
-              setZoom(1);
-              setPan({ x: 0, y: 0 });
-            }}
-            className="p-1.5 rounded-full hover:bg-card text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            title="Reset Zoom"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={() => {
-              setIsExpanded((prev) => !prev);
-              setTimeout(autoFitDiagram, 150);
-            }}
-            className="p-1.5 rounded-full hover:bg-card text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            title={isExpanded ? "Collapse Diagram Height" : "Expand Diagram Height"}
-          >
-            {isExpanded ? <Shrink className="h-3.5 w-3.5" /> : <Expand className="h-3.5 w-3.5" />}
-          </button>
-        </div>
-      </div>
-
-      {/* View Level Indicator & Tier Legend */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-        {level === 2 && activeTiers.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Layers:
-            </span>
-            {activeTiers.map((tier) => {
-              const style = getTierStyle(tier.id);
-              return (
-                <span
-                  key={tier.id}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border",
-                    style.bg,
-                    style.text,
-                    style.border
-                  )}
-                >
-                  <span className={cn("w-1.5 h-1.5 rounded-full", style.dot)} />
-                  {tier.name}
-                </span>
-              );
-            })}
-          </div>
-        )}
-        <div className="ml-auto">
-          <span className="text-xs text-muted-foreground hidden sm:inline">
-            {level === 1
-              ? "System Context"
-              : level === 2
-              ? "Container Overview"
-              : `Inside ${selectedContainerTitle}`}
-          </span>
-        </div>
-      </div>
-
-      {/* Main Diagram Viewport Card with Drag-to-Pan */}
-      <Card
-        id="c4DiagramContainer"
-        ref={containerRef}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+    <div className="space-y-4">
+      {/* Promoted In-Place C4 Diagram Stage (inline or fixed z-[45] Full Page dialog) */}
+      <div
+        id="c4DiagramStage"
+        role={isFullPage ? "dialog" : undefined}
+        aria-modal={isFullPage ? true : undefined}
+        aria-label={isFullPage ? "Full-Page C4 Architecture Diagram" : undefined}
         className={cn(
-          "p-4 sm:p-6 flex items-center justify-center overflow-hidden overscroll-contain bg-card/60 relative select-none transition-all duration-200",
-          isExpanded ? "h-[800px]" : "h-[580px]"
+          isFullPage
+            ? "fixed inset-0 sm:inset-2 z-[45] flex flex-col rounded-none sm:rounded-2xl bg-background/95 backdrop-blur-md border border-border shadow-2xl overflow-hidden p-3 sm:p-4 gap-2.5"
+            : "space-y-4"
         )}
       >
-        <div className="absolute bottom-3 left-3 z-20 pointer-events-none flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-background/80 backdrop-blur-md border border-border/80 text-[10px] text-muted-foreground">
-          <Move className="h-3 w-3 text-primary" />
-          <span>Drag to pan • Scroll to zoom</span>
-        </div>
-
-        <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1">
-          <button
-            onClick={autoFitDiagram}
-            className="px-2.5 py-1 rounded-lg bg-background/80 hover:bg-background backdrop-blur-md border border-border/80 text-[11px] text-foreground font-medium flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
-            title="Fit to View"
-          >
-            <Maximize2 className="h-3 w-3 text-primary" />
-            <span>Fit to View</span>
-          </button>
-        </div>
-
-        {diagramError && (
-          <div
-            role="alert"
-            className="absolute inset-x-4 top-4 z-30 rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-xs text-rose-400"
-          >
-            {diagramError}
+        {/* Top Toolbar / Controls */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 p-3 sm:p-4 rounded-2xl bg-card border border-border md-elevation-1 shrink-0">
+          {/* Architecture Zoom Level Switcher */}
+          <div id="c4LevelSwitcher" className="flex items-center gap-1.5 bg-muted/60 p-1 rounded-full border border-border/60">
+            <button
+              id="btnC4Level1"
+              onClick={() => setC4Level(1)}
+              className={`px-3 py-1 text-xs font-medium rounded-full transition-all cursor-pointer ${
+                level === 1
+                  ? "bg-primary text-primary-foreground md-elevation-1 font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              System Context
+            </button>
+            <button
+              id="btnC4Level2"
+              onClick={() => setC4Level(2)}
+              className={`px-3 py-1 text-xs font-medium rounded-full transition-all cursor-pointer ${
+                level === 2
+                  ? "bg-primary text-primary-foreground md-elevation-1 font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Containers
+            </button>
+            <button
+              id="btnC4Level3"
+              onClick={() => setC4Level(3)}
+              className={`px-3 py-1 text-xs font-medium rounded-full transition-all cursor-pointer ${
+                level === 3
+                  ? "bg-primary text-primary-foreground md-elevation-1 font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Components
+            </button>
           </div>
-        )}
 
-        <div
-          id="c4ActiveDiagram"
-          ref={diagramRef}
-          onClick={handleDiagramClick}
-          style={{
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-            transformOrigin: "center center",
-          }}
-          className="transition-transform duration-75 ease-out flex items-center justify-center shrink-0"
-        />
-      </Card>
+          {/* Containers Breadcrumbs */}
+          {level === 2 && (
+            <div id="c4Breadcrumbs" className="flex items-center gap-2 text-xs">
+              <button
+                onClick={() => setC4Level(1)}
+                className="p-1 rounded-lg bg-muted/60 text-muted-foreground hover:text-foreground flex items-center gap-1 px-2 cursor-pointer transition-colors"
+                title="Return to System Context"
+              >
+                <ArrowUp className="h-3 w-3" />
+                <span>System Context</span>
+              </button>
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="font-semibold text-primary text-xs">Containers</span>
+            </div>
+          )}
+
+          {/* Components Breadcrumbs and selector */}
+          {level === 3 && (
+            <div id="c4Breadcrumbs" className="flex items-center gap-2 text-xs min-w-0">
+              <button
+                onClick={() => setC4Level(1)}
+                className="p-1 rounded-lg bg-muted/60 text-muted-foreground hover:text-foreground flex items-center gap-1 px-2 cursor-pointer transition-colors shrink-0"
+                title="Return to System Context"
+              >
+                <span>System Context</span>
+              </button>
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <button
+                id="btnC4LevelUp"
+                onClick={() => setC4Level(2)}
+                className="p-1 rounded-lg bg-muted/60 text-muted-foreground hover:text-foreground flex items-center gap-1 px-2 cursor-pointer transition-colors shrink-0"
+                title="Return to Containers"
+              >
+                <ArrowUp className="h-3 w-3" />
+                <span>Containers</span>
+              </button>
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <select
+                id="c4ContainerSelect"
+                value={selectedContainerId}
+                onChange={(e) => drillDownToContainer(e.target.value)}
+                className="bg-card border border-border text-xs rounded-lg px-2.5 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[200px] sm:max-w-[280px] md:max-w-[340px] truncate"
+              >
+                {data.components.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {formatDisplayTitle(c.title, c.id)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Component & Connection Highlight Controls */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex items-center gap-1 bg-muted/50 px-2 py-1 rounded-xl border border-border/60">
+              <GitFork className="h-3.5 w-3.5 text-primary shrink-0" />
+              <select
+                id="c4HighlightSelect"
+                aria-label="Highlight component connections"
+                value={highlightedNodeId}
+                onChange={(e) => selectHighlightNode(e.target.value)}
+                className="bg-transparent text-xs text-foreground focus:outline-none max-w-[190px] truncate cursor-pointer"
+              >
+                <option value="">Highlight connections...</option>
+                {highlightOptions.map((opt) => (
+                  <option key={opt.nodeId} value={opt.nodeId}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              {highlightedNodeId && (
+                <button
+                  type="button"
+                  onClick={() => selectHighlightNode("")}
+                  className="p-0.5 rounded hover:bg-card text-muted-foreground hover:text-foreground cursor-pointer"
+                  title="Clear connection highlight"
+                  aria-label="Clear connection highlight"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+
+            {highlightedNodeId && (
+              <div
+                className="flex items-center gap-0.5 bg-muted/60 p-0.5 rounded-full border border-border/60"
+                role="group"
+                aria-label="Connection direction filter"
+              >
+                {(
+                  [
+                    { key: "all", label: "All" },
+                    { key: "incoming", label: "Incoming" },
+                    { key: "outgoing", label: "Outgoing" },
+                  ] as const
+                ).map((dir) => (
+                  <button
+                    key={dir.key}
+                    type="button"
+                    onClick={() => setHighlightDirection(dir.key)}
+                    className={cn(
+                      "px-2 py-0.5 text-[11px] font-medium rounded-full transition-colors cursor-pointer",
+                      highlightDirection === dir.key
+                        ? "bg-primary text-primary-foreground font-semibold"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {dir.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <button
+              id="btnC4FocusMode"
+              type="button"
+              aria-pressed={focusClickMode}
+              onClick={() => setFocusClickMode((prev) => !prev)}
+              className={cn(
+                "px-2.5 py-1 rounded-xl text-xs font-medium border flex items-center gap-1.5 transition-colors cursor-pointer",
+                focusClickMode
+                  ? "bg-primary/15 text-primary border-primary/40 font-semibold"
+                  : "bg-muted/50 text-muted-foreground hover:text-foreground border-border/60"
+              )}
+              title="Click any diagram node to highlight its incoming and outgoing connections (or Shift+Click anytime)"
+            >
+              <Crosshair className="h-3.5 w-3.5" />
+              <span>Focus Connections</span>
+            </button>
+          </div>
+
+          {/* Zoom, Fit & Full Page Controls */}
+          <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-full border border-border/60">
+              <button
+                type="button"
+                onClick={() => setZoom((z) => Math.max(minZoomBound, +(z - 0.15).toFixed(2)))}
+                className="p-1.5 rounded-full hover:bg-card text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                title="Zoom Out"
+              >
+                <ZoomOut className="h-4 w-4" />
+              </button>
+              <span className="text-[11px] font-mono px-2 text-muted-foreground select-none font-semibold min-w-[42px] text-center">
+                {Math.round(zoom * 100)}%
+              </span>
+              <button
+                type="button"
+                onClick={() => setZoom((z) => Math.min(maxZoomBound, +(z + 0.15).toFixed(2)))}
+                className="p-1.5 rounded-full hover:bg-card text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                title="Zoom In"
+              >
+                <ZoomIn className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={autoFitDiagram}
+                className="p-1.5 rounded-full hover:bg-card text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+                title={isFullPage ? "Fit All" : "Fit Diagram to Screen"}
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setZoom(1);
+                  setPan({ x: 0, y: 0 });
+                }}
+                className="px-2 py-1 rounded-full hover:bg-card text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                title="Reset Zoom to 100%"
+              >
+                {isFullPage ? "100%" : <RotateCcw className="h-3.5 w-3.5" />}
+              </button>
+              {!isFullPage && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsExpanded((prev) => !prev);
+                    setTimeout(autoFitDiagram, 150);
+                  }}
+                  className="p-1.5 rounded-full hover:bg-card text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  title={isExpanded ? "Collapse Diagram Height" : "Expand Diagram Height"}
+                >
+                  {isExpanded ? <Shrink className="h-3.5 w-3.5" /> : <Expand className="h-3.5 w-3.5" />}
+                </button>
+              )}
+            </div>
+
+            {isFullPage ? (
+              <button
+                id="btnC4ExitFullPage"
+                type="button"
+                onClick={exitFullPage}
+                className="px-3 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+                aria-label="Exit Full Page diagram view"
+              >
+                <Minimize2 className="h-3.5 w-3.5" />
+                <span>Exit Full Page</span>
+              </button>
+            ) : (
+              <button
+                id="btnC4FullPage"
+                type="button"
+                aria-expanded={isFullPage}
+                aria-label="Open diagram in Full Page view"
+                onClick={enterFullPage}
+                className="px-3 py-1.5 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary border border-primary/25 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
+                title="Open enlarged Full Page diagram view"
+              >
+                <Maximize className="h-3.5 w-3.5" />
+                <span>Full Page</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* View Level Indicator & Tier Legend */}
+        <div className="flex flex-wrap items-center justify-between gap-3 px-1 shrink-0">
+          {level === 2 && activeTiers.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                Layers:
+              </span>
+              {activeTiers.map((tier) => {
+                const style = getTierStyle(tier.id);
+                return (
+                  <span
+                    key={tier.id}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border",
+                      style.bg,
+                      style.text,
+                      style.border
+                    )}
+                  >
+                    <span className={cn("w-1.5 h-1.5 rounded-full", style.dot)} />
+                    {tier.name}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          <div className="ml-auto">
+            <span className="text-xs text-muted-foreground hidden sm:inline">
+              {level === 1
+                ? "System Context"
+                : level === 2
+                ? "Container Overview"
+                : `Inside ${selectedContainerTitle}`}
+            </span>
+          </div>
+        </div>
+
+        {/* Main Diagram Viewport Card with Drag-to-Pan */}
+        <Card
+          id="c4DiagramContainer"
+          ref={containerRef}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          className={cn(
+            "p-4 sm:p-6 flex items-center justify-center overflow-hidden overscroll-contain bg-card/60 relative select-none transition-all duration-200",
+            isFullPage ? "flex-1 min-h-0" : isExpanded ? "h-[800px]" : "h-[580px]"
+          )}
+        >
+          {/* Floating Connection Summary Pill */}
+          {highlightedNodeId && connectionSummary && (
+            <div
+              data-c4-connection-pill="true"
+              className="absolute top-3 left-3 z-20 flex flex-wrap items-center gap-2 px-3 py-1.5 rounded-xl bg-background/90 backdrop-blur-md border border-primary/35 shadow-sm text-xs"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <span className="font-semibold text-foreground">
+                {selectedHighlightOption?.label ||
+                  humanizeToken(highlightedNodeId.replace(/^(?:CNT|CMP|CTR|PER|EXT|mod|peer|ctr)_/i, ""))}
+              </span>
+              <span className="text-muted-foreground">•</span>
+              <span className="text-emerald-500 font-medium">
+                {connectionSummary.incomingCount} incoming
+              </span>
+              <span className="text-muted-foreground">•</span>
+              <span className="text-indigo-400 font-medium">
+                {connectionSummary.outgoingCount} outgoing
+              </span>
+              {selectedHighlightOption?.entityId && (
+                <button
+                  type="button"
+                  onClick={inspectHighlightedEntity}
+                  className="ml-1 px-2 py-0.5 rounded-md bg-primary/10 hover:bg-primary/20 text-primary font-medium text-[11px] cursor-pointer transition-colors"
+                >
+                  Inspect
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => selectHighlightNode("")}
+                className="px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground font-medium text-[11px] cursor-pointer transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+          )}
+
+          <div className="absolute bottom-3 left-3 z-20 pointer-events-none flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-background/80 backdrop-blur-md border border-border/80 text-[10px] text-muted-foreground">
+            <Move className="h-3 w-3 text-primary" />
+            <span>
+              {focusClickMode
+                ? "Click a node to highlight connections • Drag to pan • Scroll to zoom"
+                : "Drag to pan • Scroll to zoom • Shift+Click node to focus connections"}
+            </span>
+          </div>
+
+          <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1.5" onMouseDown={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={autoFitDiagram}
+              className="px-2.5 py-1 rounded-lg bg-background/80 hover:bg-background backdrop-blur-md border border-border/80 text-[11px] text-foreground font-medium flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+              title={isFullPage ? "Fit All" : "Fit to View"}
+            >
+              <Maximize2 className="h-3 w-3 text-primary" />
+              <span>{isFullPage ? "Fit All" : "Fit to View"}</span>
+            </button>
+            {isFullPage ? (
+              <button
+                type="button"
+                onClick={exitFullPage}
+                className="px-2.5 py-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] font-medium flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                title="Exit Full Page"
+              >
+                <Minimize2 className="h-3 w-3" />
+                <span>Exit Full Page</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                data-c4-fullpage-trigger="true"
+                onClick={enterFullPage}
+                className="px-2.5 py-1 rounded-lg bg-background/80 hover:bg-background backdrop-blur-md border border-primary/30 text-[11px] text-primary font-medium flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                title="Open Full Page Diagram"
+              >
+                <Maximize className="h-3 w-3" />
+                <span>Full Page</span>
+              </button>
+            )}
+          </div>
+
+          {diagramError && (
+            <div
+              role="alert"
+              className="absolute inset-x-4 top-4 z-30 rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-xs text-rose-400"
+            >
+              {diagramError}
+            </div>
+          )}
+
+          <div
+            id="c4ActiveDiagram"
+            ref={diagramRef}
+            onClick={handleDiagramClick}
+            style={{
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              transformOrigin: "center center",
+            }}
+            className="transition-transform duration-75 ease-out flex items-center justify-center shrink-0"
+          />
+        </Card>
+      </div>
 
       {/* Client-Side Blast Radius Simulator Panel */}
       <Card className="p-4 rounded-2xl bg-card border border-border/80 space-y-3">
@@ -869,7 +1396,7 @@ export function ArchitectureView({
           <div className="flex items-center gap-2">
             <select
               value={blastTargetId}
-              onChange={(e) => setBlastTargetId(e.target.value)}
+              onChange={(e) => selectBlastTarget(e.target.value)}
               className="bg-muted/50 border border-border text-xs rounded-xl px-3 py-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             >
               <option value="">Select a container or component to inspect impact...</option>
@@ -1197,13 +1724,27 @@ export function ArchitectureView({
         <div id="c4InspectorDrawer" className="space-y-5">
           {inspectedComponent && (
             <>
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="primary">
-                  {formatContainerType(inspectedComponent.container_type)}
-                </Badge>
-                {inspectedComponent.runtime && inspectedComponent.runtime !== "N/A" && (
-                  <Badge variant="default">{inspectedComponent.runtime}</Badge>
-                )}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="primary">
+                    {formatContainerType(inspectedComponent.container_type)}
+                  </Badge>
+                  {inspectedComponent.runtime && inspectedComponent.runtime !== "N/A" && (
+                    <Badge variant="default">{inspectedComponent.runtime}</Badge>
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    highlightEntityOnDiagram(2, sanitizeNodeSlug(inspectedComponent.id))
+                  }
+                  className="h-7 text-[11px] gap-1.5"
+                >
+                  <GitFork className="h-3 w-3 text-primary" />
+                  <span>Highlight on Diagram</span>
+                </Button>
               </div>
 
               {(inspectedComponent.responsibility || inspectedComponent.summary) && (
@@ -1239,19 +1780,37 @@ export function ArchitectureView({
                         <h3 className="text-sm font-bold text-foreground">{focusedTitle}</h3>
                       </div>
                       {focusedSub.id && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            closeC4Inspector();
-                            requestSpecNavigation(focusedSub.id!, { mode: "reader" });
-                          }}
-                          className="h-7 text-[11px] gap-1.5"
-                        >
-                          <ExternalLink className="h-3 w-3" />
-                          <span>Open in Full Reader</span>
-                        </Button>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              highlightEntityOnDiagram(
+                                3,
+                                `mod_${sanitizeNodeSlug(focusedSub.id!)}`,
+                                inspectedComponent.id
+                              )
+                            }
+                            className="h-7 text-[11px] gap-1.5"
+                          >
+                            <GitFork className="h-3 w-3 text-primary" />
+                            <span>Highlight on Diagram</span>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              closeC4Inspector();
+                              requestSpecNavigation(focusedSub.id!, { mode: "reader" });
+                            }}
+                            className="h-7 text-[11px] gap-1.5"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            <span>Open in Full Reader</span>
+                          </Button>
+                        </div>
                       )}
                     </div>
                     {focusedSub.responsibility && (
@@ -1323,17 +1882,33 @@ export function ArchitectureView({
                             </button>
                           )}
                           {sub.id && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                closeC4Inspector();
-                                requestSpecNavigation(sub.id!, { mode: "reader" });
-                              }}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 cursor-pointer transition-colors"
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                              <span>Open in Full Reader</span>
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  highlightEntityOnDiagram(
+                                    3,
+                                    `mod_${sanitizeNodeSlug(sub.id!)}`,
+                                    inspectedComponent.id
+                                  )
+                                }
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-muted hover:bg-muted/80 text-foreground border border-border/60 cursor-pointer transition-colors"
+                              >
+                                <GitFork className="h-3 w-3 text-primary" />
+                                <span>Highlight on Diagram</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  closeC4Inspector();
+                                  requestSpecNavigation(sub.id!, { mode: "reader" });
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 cursor-pointer transition-colors"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                <span>Open in Full Reader</span>
+                              </button>
+                            </>
                           )}
                         </div>
                       </div>

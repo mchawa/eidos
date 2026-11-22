@@ -749,3 +749,88 @@ html, body {
   max-width: 100%;
   height: auto;
 }
+
+/* ============================================================================
+ * C4 Diagram Connection Highlighting (DEC-PORTAL-C4-FULLPAGE-AND-CONNECTION-FOCUS)
+ * ============================================================================ */
+#c4ActiveDiagram svg .c4-node-selected {
+  opacity: 1 !important;
+  filter: drop-shadow(0 0 12px color-mix(in srgb, var(--primary) 85%, transparent));
+  transition: opacity 140ms ease, filter 140ms ease;
+}
+#c4ActiveDiagram svg .c4-node-selected > rect,
+#c4ActiveDiagram svg .c4-node-selected > polygon,
+#c4ActiveDiagram svg .c4-node-selected > path,
+#c4ActiveDiagram svg .c4-node-selected > circle {
+  stroke: var(--primary) !important;
+  stroke-width: 3.5px !important;
+}
+#c4ActiveDiagram svg .c4-node-connected {
+  opacity: 1 !important;
+  filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.55));
+  transition: opacity 140ms ease, filter 140ms ease;
+}
+#c4ActiveDiagram svg .c4-node-incoming > rect,
+#c4ActiveDiagram svg .c4-node-incoming > polygon,
+#c4ActiveDiagram svg .c4-node-incoming > path,
+#c4ActiveDiagram svg .c4-node-incoming > circle {
+  stroke: #10b981 !important;
+  stroke-width: 2.75px !important;
+}
+#c4ActiveDiagram svg .c4-node-outgoing > rect,
+#c4ActiveDiagram svg .c4-node-outgoing > polygon,
+#c4ActiveDiagram svg .c4-node-outgoing > path,
+#c4ActiveDiagram svg .c4-node-outgoing > circle {
+  stroke: #6366f1 !important;
+  stroke-width: 2.75px !important;
+}
+#c4ActiveDiagram svg .c4-node-dimmed {
+  opacity: 0.16 !important;
+  filter: grayscale(0.55);
+  transition: opacity 140ms ease, filter 140ms ease;
+}
+#c4ActiveDiagram svg path.c4-edge-incoming {
+  stroke: #10b981 !important;
+  stroke-width: 3px !important;
+  opacity: 1 !important;
+  filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.65));
+  transition: opacity 140ms ease, stroke-width 140ms ease;
+}
+#c4ActiveDiagram svg path.c4-edge-outgoing {
+  stroke: #6366f1 !important;
+  stroke-width: 3px !important;
+  opacity: 1 !important;
+  filter: drop-shadow(0 0 4px rgba(99, 102, 241, 0.65));
+  transition: opacity 140ms ease, stroke-width 140ms ease;
+}
+#c4ActiveDiagram svg path.c4-edge-dimmed {
+  opacity: 0.14 !important;
+  transition: opacity 140ms ease;
+}
+#c4ActiveDiagram svg .c4-edge-label-connected {
+  opacity: 1 !important;
+  font-weight: 600;
+  transition: opacity 140ms ease;
+}
+#c4ActiveDiagram svg .c4-edge-label-dimmed {
+  opacity: 0.14 !important;
+  transition: opacity 140ms ease;
+}
+:root.dark #c4ActiveDiagram svg path.c4-edge-incoming {
+  stroke: #34d399 !important;
+}
+:root.dark #c4ActiveDiagram svg path.c4-edge-outgoing {
+  stroke: #818cf8 !important;
+}
+:root.dark #c4ActiveDiagram svg .c4-node-incoming > rect,
+:root.dark #c4ActiveDiagram svg .c4-node-incoming > polygon,
+:root.dark #c4ActiveDiagram svg .c4-node-incoming > path,
+:root.dark #c4ActiveDiagram svg .c4-node-incoming > circle {
+  stroke: #34d399 !important;
+}
+:root.dark #c4ActiveDiagram svg .c4-node-outgoing > rect,
+:root.dark #c4ActiveDiagram svg .c4-node-outgoing > polygon,
+:root.dark #c4ActiveDiagram svg .c4-node-outgoing > path,
+:root.dark #c4ActiveDiagram svg .c4-node-outgoing > circle {
+  stroke: #818cf8 !important;
+}

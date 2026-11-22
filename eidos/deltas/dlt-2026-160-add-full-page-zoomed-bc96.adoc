@@ -1,0 +1,143 @@
+---
+type: delta/mutation
+id: DLT-2026-160-ADD-FULL-PAGE-ZOOMED-BC96
+title: "Add Full-Page Zoomed C4 Diagram Mode and Component Connection Highlighting"
+status: applied
+intent:
+  kind: feature
+  motivation: "The inline C4 diagram viewport in ArchitectureView (580px default / 800px expanded, with autoFitDiagram capped at 1.0x zoom) is cramped and hard to read on real-world repositories, and selecting an entity in the Blast Radius panel only outlines nodes while leaving all diagram arrows and edge labels tangled at full opacity. Adding a dedicated Full-Page zoomed-in diagram stage and interactive component-and-connection highlighting lets architects inspect large C4 Level 1–3 diagrams comfortably and trace any specific component's incoming and outgoing connections at a glance."
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+    details: "Record architectural decision DEC-PORTAL-C4-FULLPAGE-AND-CONNECTION-FOCUS in eidos/architecture/containers/portal.adoc governing the in-place full-viewport zoomed-in C4 diagram stage (z-[45], strictly above NavigationRail z-40 and strictly below Sheet z-50) and unified pure client-side Mermaid v12 SVG edge-and-neighbor highlighting (c4Highlight.ts) under Mermaid securityLevel: 'strict'."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-PORTAL-C4-FULLPAGE-AND-CONNECTION-FOCUS"
+      body:
+        contains:
+          - "DEC-PORTAL-C4-FULLPAGE-AND-CONNECTION-FOCUS"
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+    details: "Introduce pure unified SVG edge/node highlight utility src/eidos/portal/frontend/src/lib/c4Highlight.ts, update src/eidos/portal/frontend/src/components/views/ArchitectureView.tsx and src/eidos/portal/frontend/src/theme/theme.css to add the 'Full Page' zoomed-in diagram overlay (#btnC4FullPage / #btnC4ExitFullPage promoted in-place at z-[45], up to 400% zoom, Escape dismissal) and interactive component-and-connection highlighting (#c4HighlightSelect, direction filter, focus-click mode, SVG edge & edge-label highlighting, mutual exclusion with blastTargetId, connection summary pill, and 'Highlight on Diagram' drawer trigger), and rebuild assets/portal/bundle.html.gz within the 5 MiB air-gapped budget. Update eidos/architecture/components/portal-assets.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/portal/assets.py"
+          - "src/eidos/portal/frontend/scripts/build_assets.py"
+          - "src/eidos/portal/frontend/scripts/hatch_build.py"
+          - "src/eidos/portal/frontend/src"
+      body:
+        contains:
+          - "c4Highlight.ts"
+          - "Full Page"
+  - operation: modify
+    target: SCR-PORTAL-ARCHITECTURE
+    details: "Add full_page_c4 and connection_highlighted screen states in eidos/design/clients/web-portal/screens/portal-architecture.adoc and document the Full-Page zoomed-in C4 canvas button/overlay and interactive component + incoming/outgoing connection highlighting controls."
+    expect:
+      frontmatter:
+        status: "active"
+        states.name:
+          - "full_page_c4"
+          - "connection_highlighted"
+      body:
+        contains:
+          - "Full Page"
+          - "connections"
+  - operation: modify
+    target: CAP-EXP-001
+    details: "Extend CAP-EXP-001 in eidos/domains/experience-portal/capabilities/living-web-portal.adoc with INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT (bumping version per SemVer on apply) and document full-page zoomed C4 viewing and component-connection highlighting."
+    expect:
+      frontmatter:
+        status: "active"
+        technical.invariants.id:
+          - "INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT"
+      body:
+        contains:
+          - "full-page"
+          - "connections"
+  - operation: add
+    target: INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT
+    details: "Bind INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT under CAP-EXP-001 (technical.invariants) to tests/test_portal.py::test_portal_c4_fullpage_and_connection_highlighting."
+    expect:
+      frontmatter:
+        rule: "connections"
+        test_binding: "tests/test_portal.py::test_portal_c4_fullpage_and_connection_highlighting"
+vcs:
+  branch: main
+  base_commit: e3e8cb79b502922c2603575241e4bba9a3ec92c9
+---
+= SpecDelta: Add Full-Page Zoomed C4 Diagram Mode and Component Connection Highlighting
+:toc: left
+
+== Problem Statement
+While the Architecture view (`SCR-PORTAL-ARCHITECTURE`, `src/eidos/portal/frontend/src/components/views/ArchitectureView.tsx`) renders interactive C4 Level 1–3 diagrams and a node-only Blast Radius panel, two usability bottlenecks hinder real-world architectural analysis:
+
+1. **No True Full-Page Zoomed-In View**: The current expand toggle (`isExpanded`) only stretches the inline card from `h-[580px]` to `h-[800px]` within the page column, and `autoFitDiagram()` clamps zoom to `<= 1.0` (`Math.min(1.0, optimalScale)`). On medium-to-large C4 Level 2 Container or Level 3 Component diagrams, nodes shrink to `35%–55%` scale with tiny, hard-to-read labels and no way to open the diagram full-page at a comfortable zoomed-in scale. (Note: `DLT-2026-120-SCALABLE-PORTAL-9B81` remains a broad, multi-view `proposed` overhaul; this SpecDelta delivers a focused, immediately shippable full-page zoomed C4 stage plus SVG connection highlighting.)
+2. **No Component + Connections Highlighting on the Diagram Canvas**: `applyBlastRadiusToSvg()` (`ArchitectureView.tsx:168-272`) only styles `.node` boxes; it never highlights or dims Mermaid v12 SVG edges (`.edgePaths path[data-edge="true"]` / `.flowchart-link`) or edge labels (`.edgeLabels .edgeLabel`). On dense diagrams with dozens of crisscrossing arrows, tracing which incoming and outgoing connections belong to a specific component (`CMP-*`) or container (`CNT-*`) remains visually noisy—and clicking a node on the canvas immediately drills down or opens the inspector instead of offering an in-canvas connection focus mode.
+
+== Proposed Specification Changes
+
+=== 1. Full-Page Zoomed-In C4 Diagram Stage (`SCR-PORTAL-ARCHITECTURE`, `CMP-PORTAL-ASSETS`, `CNT-EIDOS-PORTAL`)
+* **Enlarge Button (`#btnC4FullPage`)**: Add an explicit **"Full Page"** button (with `Maximize` icon, accessible `aria-label`, and `aria-expanded` state) in both the top C4 toolbar and the bottom-right viewport overlay bar beside `"Fit to View"`.
+* **In-Place Full-Viewport Overlay (`state: full_page_c4`)**:
+  * Promotes the live `#c4DiagramContainer` / `#c4ActiveDiagram` wrapper in-place into a fixed full-page stage (`fixed inset-0 sm:inset-2 z-[45]` with translucent backdrop, `role="dialog"`, `aria-modal="true"`, `aria-label="Full-Page C4 Architecture Diagram"`, and body scroll lock), preserving the rendered SVG and all active highlight attributes with zero unmount/re-render flicker.
+  * Layered explicitly at `z-[45]`—strictly above `NavigationRail` (`z-40`, `NavigationRail.tsx:86`) and sticky top `header` (`z-30`, `App.tsx:740`), and strictly below `Sheet` (`z-50`, `sheet.tsx:68`) and `CommandDialog` (`z-50`)—with no transform-creating ancestor trapping `position: fixed`, so clicking a node to inspect it opens `#c4InspectorDrawer` cleanly **above** the full-page diagram.
+  * Dismisses cleanly via an **"Exit Full Page"** (`#btnC4ExitFullPage`) button or `Escape` key (only when no `Sheet` inspector is open on top; when a `Sheet` is open, `Escape` closes the `Sheet` first).
+* **Zoomed-In Initial Scaling & Extended Zoom Range**:
+  * On entering Full Page mode, re-measure the full-viewport canvas after layout settles and automatically open at a **readable zoomed-in scale** (`Math.min(1.5, Math.max(optimalScale, 1.0))`, centered on the highlighted node's SVG bounding box if a component is highlighted, or centered at `(0, 0)` otherwise), ensuring node titles and descriptions are immediately legible rather than zoomed out to 40%.
+  * Expand interactive button and native wheel zoom bounds (`[isFullPage]` dependency on the wheel listener effect) in Full Page mode to `0.25x`–`4.0x` (`25%`–`400%`) while keeping **"Fit All"** (`optimalScale`), **"100%"**, drag-to-pan, and wheel zoom controls directly accessible in the full-page header.
+  * Retain the full C4 Level Switcher (`#btnC4Level1`–`3`), breadcrumbs, Level 3 container dropdown (`#c4ContainerSelect`), tier legend, and Component Connection Highlight controls inside the full-page top bar.
+
+=== 2. Highlight a Specific Component & Its Connections (`SCR-PORTAL-ARCHITECTURE`, `CMP-PORTAL-ASSETS`)
+* **Unified Pure SVG Connection Highlighting Engine (`src/eidos/portal/frontend/src/lib/c4Highlight.ts`)**:
+  * Parse directed connections (`-->`, `==>`, `-.->`) and declared node IDs from the active Mermaid source (`currentDiagramSource`).
+  * Resolve Mermaid v12 SVG nodes (`g.node`) by matching `el.getAttribute("data-id")` or stripping Mermaid's `flowchart-<nodeId>-<n>` prefix against `knownNodeIds` (with `data-c4-entity` as a secondary mapping), ensuring **all** visible nodes across Levels 1, 2, and 3—including `CNT_*`, `mod_CMP_*`, `peer_CNT_*`, `ctr_CTR_*`, `PER_*`, and `EXT_*`—are covered uniformly.
+  * Resolve Mermaid v12 SVG edge elements (`path[data-edge="true"]` / `.edgePaths path.flowchart-link` with `data-id="L_<src>_<dst>_<idx>"` or `id`) and matching `.edgeLabels .edgeLabel` elements against the exact set of known diagram node IDs—safely handling underscores inside entity slugs without naive `split("_")`.
+  * Support directional filtering: `all` (incoming + outgoing), `incoming` (used by), and `outgoing` (depends on).
+  * Enforce mutual exclusion between component-connection focus (`highlightedEntityId`) and Blast Radius simulation (`blastTargetId`), routing both through the same SVG style-snapshot/restoration pipeline so `data-orig-*` attributes are never corrupted:
+    * Selected node: `data-c4-highlight="selected"` (`.c4-node-selected`, prominent primary ring + glow, `opacity: 1`).
+    * Connected neighbor nodes: `data-c4-highlight="incoming" | "outgoing" | "connected"` (`.c4-node-connected`, distinct accent border, `opacity: 1`).
+    * Connected edges & edge labels: `data-c4-edge-state="incoming" | "outgoing"` (`.c4-edge-incoming`, `.c4-edge-outgoing`, thickened `3px` high-contrast stroke + drop-shadow keeping Mermaid arrowhead markers crisp, and `.c4-edge-label-connected` label).
+    * Unrelated nodes, unrelated edges, and unrelated edge labels: `data-c4-highlight="dimmed"` / `data-c4-edge-state="dimmed"` (`opacity: 0.14`–`0.18`), isolating the selected component's exact connection graph.
+  * Also highlight connecting edges between impacted hops when `blastTargetId` is active via the same shared edge-matching helper.
+* **Intuitive User Controls (`state: connection_highlighted`)**:
+  * **Highlight Component Selector (`#c4HighlightSelect`)**: Available in both inline and full-page toolbars, populated with human-readable titles (`INV-PORTAL-HUMAN-READABLE-UI`) for the entities present in the active C4 level (Containers at L2; Internal Components `CMP-*`, Related Containers, and Contracts at L3; System/Actors/External Systems at L1), paired with an `All / Incoming / Outgoing` direction toggle and **"Clear"** button.
+  * **Direct Canvas Focus Mode**: Add a **"Focus Connections"** toggle button (`#btnC4FocusMode`, `aria-pressed`) in the toolbar (plus `Shift`/`Alt`+click shortcut on any node) so clicking any node on the canvas highlights that component and its connections directly instead of drilling down—clicking the same node again clears focus.
+  * **Connection Summary Pill & Inspector Integration**: When a node is highlighted, show a compact human-readable pill (`<Title> • X incoming • Y outgoing`, plus quick **"Inspect"** and **"Clear"** actions) in the diagram viewport; also add a **"Highlight on Diagram"** action inside `#c4InspectorDrawer` (for both containers and internal components) to close the drawer and highlight that entity and its connections on the canvas.
+
+=== 3. Living Specifications & Invariant Traceability
+* **`CNT-EIDOS-PORTAL` (`eidos/architecture/containers/portal.adoc`)**: Record `DEC-PORTAL-C4-FULLPAGE-AND-CONNECTION-FOCUS`.
+* **`CMP-PORTAL-ASSETS` (`eidos/architecture/components/portal-assets.adoc`)**: Document `c4Highlight.ts`, the in-place `z-[45]` full-page zoomed C4 stage, and unified SVG connection highlighting.
+* **`SCR-PORTAL-ARCHITECTURE` (`eidos/design/clients/web-portal/screens/portal-architecture.adoc`)**: Add `full_page_c4` and `connection_highlighted` screen states and describe the controls and visual behavior.
+* **`CAP-EXP-001` (`eidos/domains/experience-portal/capabilities/living-web-portal.adoc`) & `INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT`**: Bind the new invariant to `tests/test_portal.py::test_portal_c4_fullpage_and_connection_highlighting` (bumping `CAP-EXP-001` `version` per SemVer on apply).
+
+== Implementation Plan
+1. **Pure Unified Connection-Highlight Module (`CMP-PORTAL-ASSETS`)**:
+   * Create `src/eidos/portal/frontend/src/lib/c4Highlight.ts` implementing:
+     * `parseMermaidEdges(source: string)`: parses directed edges (`-->`, `==>`, `-.->`) and known node IDs from the active Mermaid diagram source.
+     * `resolveSvgNodeId(nodeEl: Element, knownNodeIds: Set<string>)`: resolves the Mermaid node ID from `data-id` or `flowchart-<nodeId>-<n>` without breaking on underscores.
+     * `matchSvgEdgeEndpoints(edgeEl: Element, knownNodeIds: Set<string>, parsedEdges: ParsedMermaidEdge[], edgeIndex: number)`: resolves `(sourceNodeId, targetNodeId)` deterministically from Mermaid v12 `data-id` / `id` (`L_<src>_<dst>_<n>`) matched against `knownNodeIds`, falling back to parsed edge order.
+     * `restoreC4SvgStyles(svgRoot: Element)` and `applyC4ConnectionHighlight(svgRoot: Element, options: { selectedNodeId: string | null; direction: "all" | "incoming" | "outgoing"; parsedEdges: ParsedMermaidEdge[]; knownNodeIds: Set<string> })`: restores prior inline styles cleanly before applying highlight/dim attributes to nodes, edges, and `.edgeLabel` elements, and returns `{ incomingCount, outgoingCount, connectedNodeIds }`.
+     * `computeFullPageZoom(svgSize: { width: number; height: number }, viewportSize: { width: number; height: number })`: computes a readable zoomed-in entry scale (`>= 1.0`, capped at `1.5`, falling back cleanly for invalid dimensions) and optional pan-to-node centering helper.
+2. **In-Place Full-Page Stage & Highlight UI (`CMP-PORTAL-ASSETS`)**:
+   * Update `src/eidos/portal/frontend/src/components/views/ArchitectureView.tsx`:
+     * Add `isFullPage`, `highlightedEntityId`, `highlightDirection` (`"all" | "incoming" | "outgoing"`), and `focusClickMode` states; enforce mutual exclusion between `highlightedEntityId` and `blastTargetId`; reset `highlightedEntityId` cleanly when switching C4 levels or containers (unless navigating explicitly to highlight a target).
+     * Promote the live `#c4DiagramContainer` / `#c4ActiveDiagram` wrapper in-place into `fixed inset-0 sm:inset-2 z-[45]` (`role="dialog"`, `aria-modal="true"`, body scroll lock, `Escape` handler respecting open `Sheet` drawers, `#btnC4FullPage` / `#btnC4ExitFullPage`), removing any transform-creating wrapper that would trap `position: fixed`.
+     * Re-run `computeFullPageZoom` on entering full-page mode and bind `[isFullPage]` to the native wheel listener effect with `0.25x`–`4.0x` zoom bounds in full-page mode (`0.35x`–`3.0x` inline).
+     * Add `#c4HighlightSelect`, `#btnC4FocusMode` (`aria-pressed`), direction filter pills (`All`, `Incoming`, `Outgoing`), floating Connection Summary Pill, `Shift`/`Alt`+click canvas highlight support, and `"Highlight on Diagram"` button inside `#c4InspectorDrawer`.
+     * Ensure all visible labels, options, and summary pills resolve human-readable titles via `EntityLabelProvider` (`INV-PORTAL-HUMAN-READABLE-UI`) and preserve existing `#c4LevelSwitcher`, `#btnC4Level1`–`3`, `#c4Breadcrumbs`, `#c4ContainerSelect`, `#c4DiagramContainer`, `#c4ActiveDiagram`, and `#c4InspectorDrawer` hooks.
+   * Update `src/eidos/portal/frontend/src/theme/theme.css` with high-contrast light/dark CSS rules for `.c4-node-selected`, `.c4-node-connected`, `.c4-node-dimmed`, `.c4-edge-incoming`, `.c4-edge-outgoing`, `.c4-edge-dimmed`, and `.c4-edge-label-connected` / `.c4-edge-label-dimmed`.
+3. **Rebuild & Verify Air-Gapped Portal Bundle (`CMP-PORTAL-ASSETS`, `CNT-EIDOS-PORTAL`)**:
+   * Rebuild `assets/portal/bundle.html.gz` via `cd src/eidos/portal/frontend && pnpm build:assets` and verify bundle size (`<= 5 MiB`) and zero remote subresources via `python3 src/eidos/portal/frontend/scripts/build_assets.py --check` (`INV-PORTAL-AIR-GAPPED-BUNDLE`).
+4. **Update Living Specifications**:
+   * Update `eidos/architecture/containers/portal.adoc` (`CNT-EIDOS-PORTAL`) with `DEC-PORTAL-C4-FULLPAGE-AND-CONNECTION-FOCUS`.
+   * Update `eidos/architecture/components/portal-assets.adoc` (`CMP-PORTAL-ASSETS`).
+   * Update `eidos/design/clients/web-portal/screens/portal-architecture.adoc` (`SCR-PORTAL-ARCHITECTURE`) adding `full_page_c4` and `connection_highlighted` states.
+   * Update `eidos/domains/experience-portal/capabilities/living-web-portal.adoc` (`CAP-EXP-001`) adding `INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT` and bumping `version` per SemVer.
+5. **Automated Tests & Governance Verification (`INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT`, `POL-005-STATEMENT-TEST-COVERAGE`)**:
+   * Add Vitest unit & jsdom tests in `src/eidos/portal/frontend/tests/c4-highlight.test.ts` `(covered via CNT-EIDOS-PORTAL)` referencing `INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT` covering: underscore-containing entity IDs (`CNT_EIDOS_CLI`, `mod_CMP_PORTAL_ASSETS`, `PER_*`, `EXT_*`), `all` / `incoming` / `outgoing` edge and label highlighting, dimming of unrelated nodes/edges, clean style restoration on clear and mutual exclusion with blast-radius highlighting, empty/missing SVG edge cases, and `computeFullPageZoom` zoomed-in bounds.
+   * Add `tests/test_portal.py::test_portal_c4_fullpage_and_connection_highlighting` referencing `INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT` verifying that the source and compiled `PORTAL_HTML_TEMPLATE` include `#btnC4FullPage`, `#c4HighlightSelect`, `#btnC4FocusMode`, `z-[45]` full-page layering, connection highlight attributes (`data-c4-edge-state`, `data-c4-highlight`), and preserve Mermaid `securityLevel: "strict"` and existing C4 DOM hooks.
+   * Run `cd src/eidos/portal/frontend && pnpm test`, `pytest tests/test_portal.py tests/test_portal_spike.py`, `eidos delta verify DLT-2026-160 --json`, `eidos delta apply DLT-2026-160`, and `eidos drift --uncommitted --json`.
