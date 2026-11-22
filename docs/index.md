@@ -49,7 +49,7 @@ Modern software development often suffers from two major problems:
 * **Bidirectional Polyglot Invariant-Test Traceability (`POL-002`)**: Every capability and policy enforces invariants (`INV-*`, `POL-*`) statically verified against automated tests across Python, TypeScript/JS, Go, Rust, Java, and Kotlin via `eidos drift`.
 * **Multi-Design Systems & W3C Tokens**: White-label and multi-brand design systems (`DS-*`), official W3C DTCG tokens, UI component contracts (`UIC-*`), client manifests (`CLT-*`), screen state machines (`SCR-*`), and interaction flows (`FLOW-*`).
 * **Agent-Agnostic Plugin, 4 Cohesive Skills & Stateless Stop Hook**: Equips AI agents (Google Antigravity, Claude Code, Cursor, GitHub Copilot, Aider, Cline, Kilo Code, OpenCode, Codex) with 4 Discovery-First workflow skills, dynamic schema introspection (`eidos spec schema`), and an opt-in stateless 1-turn `Stop` drift gate (`eidos hook`).
-* **Interactive Air-Gapped Living Portal**: Generates a self-contained static visual C4 architecture explorer with URL hash deep-linking (`#/...`), interactive client-side Blast Radius simulation, first-class Contract (`CTR-*`) inspection, and SpecDelta Kanban/Timeline views directly from your specs with zero Node.js runtime dependencies.
+* **Interactive Air-Gapped Living Portal**: Generates a self-contained static visual C4 architecture explorer with URL hash deep-linking (`#/...`), a full-page zoomed C4 diagram stage, interactive component-and-connection SVG highlighting, client-side Blast Radius simulation, uncramped container/component Full Specification reading, a Governance Health Scorecard, first-class Contract (`CTR-*`) inspection, and SpecDelta Kanban/Timeline views directly from your specs with zero Node.js runtime dependencies.
 
 ---
 

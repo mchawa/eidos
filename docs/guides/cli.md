@@ -181,7 +181,7 @@ Options:
   * `anchor`: Container/component metadata, direct contract signatures, and 1-line `DEC-*` summaries (`<= 300 tokens`).
   * `guardrails`: Adds structured epistemic `provenance_tags`, domain capabilities, active invariants with `test_binding`, policies, and full `DEC-*` rationale (`<= 1,000 tokens`).
   * `deep`: Adds standalone C4 component details, contract schemas, and downstream dependents with `provenance_tags` (`<= 2,500 tokens`).
-* `--semantic / --no-semantic`: Enable or disable opt-in Harrier Hybrid RRF semantic fusion when `spec_embeddings` are available (default: `--semantic`).
+* `--semantic / --no-semantic`: Enable or disable opt-in Harrier Hybrid RRF semantic fusion when `spec_embeddings` synchronization is complete (`semantic_sync_complete = 1`; partial/interrupted syncs deterministically fall back to FTS5 BM25) (default: `--semantic`).
 * `--json`: Output context slice as machine-readable JSON instead of Markdown.
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
@@ -238,7 +238,7 @@ eidos index search "authentication" --json
 Options:
 * `QUERY`: Search query or keywords.
 * `-l, --limit INTEGER`: Maximum number of search results to return (default: `10`).
-* `--semantic / --no-semantic`: Enable or disable opt-in Harrier Hybrid RRF semantic fusion when `spec_embeddings` are available (default: `--semantic`).
+* `--semantic / --no-semantic`: Enable or disable opt-in Harrier Hybrid RRF semantic fusion when `spec_embeddings` synchronization is complete (`semantic_sync_complete = 1`; partial/interrupted syncs deterministically fall back to FTS5 BM25) (default: `--semantic`).
 * `--json`: Output search results as machine-readable JSON.
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
@@ -324,7 +324,7 @@ Options:
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
 #### `eidos index health`
-Display a deterministic architecture governance health scorecard across source file ownership coverage, `== Public Surface` adoption, verified contract `specification_file` bindings, capability bound-invariant coverage, advisory validation warnings, and import-boundary `ratchet_baseline` debt.
+Display a deterministic architecture governance health scorecard across source file ownership coverage (excluding gitignored and `linguist-generated`/`linguist-vendored` files), component-scoped `== Public Surface` adoption (`CMP-*` primary coverage with `CNT-*` container counts reported separately), verified contract `specification_file` bindings, capability bound-invariant coverage, advisory validation warnings, and import-boundary `ratchet_baseline` debt.
 
 ```bash
 eidos index health
