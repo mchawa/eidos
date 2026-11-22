@@ -1083,6 +1083,14 @@ def build_tiered_context_slice(
                 if is_cap_group and inv_focus_tokens:
                     valid_invs = [inv_d for _, inv_d in sorted(enumerate(valid_invs), key=_cap_inv_rank_key)]
                 inv_lists.append([inv["id"] for inv in valid_invs])
+            # Give the top-ranked capability up to 2 leading invariants before round-robining across lower-ranked capabilities
+            if is_cap_group and inv_lists:
+                for iid in inv_lists[0][:2]:
+                    if len(ordered_invs) >= max_invs:
+                        break
+                    if iid in matched_invariants and iid not in seen_inv_ids:
+                        ordered_invs.append(matched_invariants[iid])
+                        seen_inv_ids.add(iid)
             max_len = max((len(lst) for lst in inv_lists), default=0)
             for idx in range(max_len):
                 if len(ordered_invs) >= max_invs:

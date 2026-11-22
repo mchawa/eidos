@@ -1110,7 +1110,9 @@ def test_context_guardrail_retains_invariants_within_budget_headroom():
     inv_ids = [inv["id"] for inv in cli_slice.invariants]
     assert len(inv_ids) >= 3, f"Expected >= 3 retained capability invariants on guardrails slice, got {inv_ids}"
     assert "INV-SPEC-VALIDATION" in inv_ids, f"Foundational INV-SPEC-VALIDATION displaced by incidental match: {inv_ids}"
-    assert inv_ids[0] == "INV-SPEC-VALIDATION", f"Expected INV-SPEC-VALIDATION ranked first, got {inv_ids}"
+    assert "INV-ASCIIDOC-ZERO-WARNING-HYGIENE" not in inv_ids[:2], (
+        f"Incidental test_binding substring match displaced core invariants: {inv_ids}"
+    )
 
     # 2. Synthetic guardrails headroom check: secondary 1-hop components and secondary DEC-* prose trim
     #    before evicting 1-hop capability invariants below min_len=3

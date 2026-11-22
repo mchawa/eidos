@@ -563,6 +563,8 @@ class TieredContextSlice(ArchitecturalContextSlice):
         is_secondary = self._is_secondary_dependency(cid)
         if self.tier == "anchor":
             base_keys: tuple[str, ...] = ("type", "container_type", "runtime", "source_path", "domain", "container")
+        elif is_secondary and self._compact_decisions:
+            base_keys = ("type", "container")
         elif is_secondary and self._compact_prose:
             base_keys = ("type", "container", "file_path")
         elif is_secondary and len(self.components) > 4:
@@ -772,7 +774,11 @@ class TieredContextSlice(ArchitecturalContextSlice):
             "invariants": [self._project_invariant(i) for i in self.invariants],
             "policies": [self._project_policy(p) for p in self.policies],
             "matched_reasons": (
-                {k: v[:1] for k, v in self.matched_reasons.items()}
+                {
+                    k: v[:1]
+                    for k, v in self.matched_reasons.items()
+                    if not (self.tier == "guardrails" and self._is_secondary_dependency(k))
+                }
                 if self._compact_decisions
                 else dict(self.matched_reasons)
             ),
