@@ -99,3 +99,19 @@ We follow the Conventional Commits specification:
 * `refactor(...)`: Code changes that neither fix a bug nor add a feature
 * `test(...)`: Adding or updating test suites
 
+---
+
+## Creating a Release
+
+Releases are driven by annotated SemVer Git tags (`vX.Y.Z`) via `hatch-vcs` and [.github/workflows/ci.yml](https://github.com/mchawa/eidos/blob/main/.github/workflows/ci.yml). Always push `main` **first** and push the tag **last** as a separate command so `origin/main` is updated before the release tag triggers (the tag workflow automatically cancels superseded `main` push CI runs without ever being cancelled by `main`):
+
+```bash
+# 1. Update version examples in docs/guides/agent-plugin.md and commit
+git commit -m "chore(release): bump version to vX.Y.Z"
+
+# 2. Push main first, then create and push the release tag last
+git push origin main
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin vX.Y.Z
+```
+

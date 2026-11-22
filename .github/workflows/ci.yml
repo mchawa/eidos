@@ -20,7 +20,23 @@ jobs:
   validate:
     name: Validate Specs & Plugin
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     steps:
+      - name: Cancel superseded main CI runs on release tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for status in in_progress queued; do
+            gh api "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?branch=main&event=push&status=${status}" \
+              --jq ".workflow_runs[] | select(.id != ${{ github.run_id }}) | .id" | \
+            while read -r run_id; do
+              [ -n "$run_id" ] && gh api -X POST "repos/${{ github.repository }}/actions/workflows/ci.yml/runs/${run_id}/cancel" || true
+            done
+          done
+
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
