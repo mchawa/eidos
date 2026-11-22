@@ -19,34 +19,34 @@ import type { PortalData } from "@/types";
 
 const SAMPLE_L2_MERMAID = `graph TD
   subgraph tier_presentation["Presentation Layer"]
-    CNT_EIDOS_CLI["Eidos CLI"]
-    CNT_EIDOS_PORTAL["Living Web Portal"]
+    CNT_ACME_CLI["Acme CLI"]
+    CNT_ACME_PORTAL["Living Web Portal"]
   end
   subgraph tier_core["Core Layer"]
-    CNT_EIDOS_CORE["Eidos Core Engine"]
+    CNT_ACME_CORE["Acme Core Engine"]
   end
-  PER_ARCHITECT["Software Architect"] -->|"runs commands"| CNT_EIDOS_CLI
-  CNT_EIDOS_CLI -->|"invokes"| CNT_EIDOS_CORE
-  CNT_EIDOS_PORTAL -.->|"reads specs"| CNT_EIDOS_CORE
-  CNT_EIDOS_CORE ==>|"writes"| EXT_SQLITE["SQLite Index"]
+  PER_ARCHITECT["Software Architect"] -->|"runs commands"| CNT_ACME_CLI
+  CNT_ACME_CLI -->|"invokes"| CNT_ACME_CORE
+  CNT_ACME_PORTAL -.->|"reads specs"| CNT_ACME_CORE
+  CNT_ACME_CORE ==>|"writes"| EXT_SQLITE["SQLite Index"]
 `;
 
 const SAMPLE_L3_MERMAID = `graph TD
   mod_CMP_PORTAL_ASSETS["Portal Assets"]
   mod_CMP_PORTAL_SERVER["Portal Server"]
-  peer_CNT_EIDOS_CORE["Eidos Core Engine"]
-  ctr_CTR_EIDOS_PORTAL["Portal HTTP API"]
+  peer_CNT_ACME_CORE["Acme Core Engine"]
+  ctr_CTR_ACME_PORTAL["Portal HTTP API"]
   mod_CMP_PORTAL_SERVER -->|"loads bundle"| mod_CMP_PORTAL_ASSETS
-  mod_CMP_PORTAL_SERVER -->|"queries"| peer_CNT_EIDOS_CORE
-  mod_CMP_PORTAL_SERVER -->|"provides"| ctr_CTR_EIDOS_PORTAL
+  mod_CMP_PORTAL_SERVER -->|"queries"| peer_CNT_ACME_CORE
+  mod_CMP_PORTAL_SERVER -->|"provides"| ctr_CTR_ACME_PORTAL
 `;
 
 const MOCK_SVG = `<svg viewBox="0 0 800 400">
   <g class="edgePaths">
-    <path data-edge="true" data-id="L_PER_ARCHITECT_CNT_EIDOS_CLI_0" class="flowchart-link" d="M0,0 L10,10" />
-    <path data-edge="true" data-id="L_CNT_EIDOS_CLI_CNT_EIDOS_CORE_1" class="flowchart-link" d="M0,0 L10,10" />
-    <path data-edge="true" data-id="L_CNT_EIDOS_PORTAL_CNT_EIDOS_CORE_2" class="flowchart-link" d="M0,0 L10,10" />
-    <path data-edge="true" data-id="L_CNT_EIDOS_CORE_EXT_SQLITE_3" class="flowchart-link" d="M0,0 L10,10" />
+    <path data-edge="true" data-id="L_PER_ARCHITECT_CNT_ACME_CLI_0" class="flowchart-link" d="M0,0 L10,10" />
+    <path data-edge="true" data-id="L_CNT_ACME_CLI_CNT_ACME_CORE_1" class="flowchart-link" d="M0,0 L10,10" />
+    <path data-edge="true" data-id="L_CNT_ACME_PORTAL_CNT_ACME_CORE_2" class="flowchart-link" d="M0,0 L10,10" />
+    <path data-edge="true" data-id="L_CNT_ACME_CORE_EXT_SQLITE_3" class="flowchart-link" d="M0,0 L10,10" />
   </g>
   <g class="edgeLabels">
     <g class="edgeLabel"><text>runs commands</text></g>
@@ -56,9 +56,9 @@ const MOCK_SVG = `<svg viewBox="0 0 800 400">
   </g>
   <g class="nodes">
     <g class="node" id="flowchart-PER_ARCHITECT-0" data-id="PER_ARCHITECT"><rect /></g>
-    <g class="node" id="flowchart-CNT_EIDOS_CLI-1" data-id="CNT_EIDOS_CLI"><rect /></g>
-    <g class="node" id="flowchart-CNT_EIDOS_PORTAL-2" data-id="CNT_EIDOS_PORTAL"><rect /></g>
-    <g class="node" id="flowchart-CNT_EIDOS_CORE-3" data-id="CNT_EIDOS_CORE"><rect /></g>
+    <g class="node" id="flowchart-CNT_ACME_CLI-1" data-id="CNT_ACME_CLI"><rect /></g>
+    <g class="node" id="flowchart-CNT_ACME_PORTAL-2" data-id="CNT_ACME_PORTAL"><rect /></g>
+    <g class="node" id="flowchart-CNT_ACME_CORE-3" data-id="CNT_ACME_CORE"><rect /></g>
     <g class="node" id="flowchart-EXT_SQLITE-4" data-id="EXT_SQLITE"><rect /></g>
   </g>
 </svg>`;
@@ -97,36 +97,36 @@ describe("INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT: pure SVG highlight en
   test("parses directed edges and handles underscore-containing node IDs without split('_') bugs", () => {
     const parsed = parseMermaidEdges(SAMPLE_L2_MERMAID);
     expect(parsed.edges).toEqual([
-      { source: "PER_ARCHITECT", target: "CNT_EIDOS_CLI", label: "runs commands" },
-      { source: "CNT_EIDOS_CLI", target: "CNT_EIDOS_CORE", label: "invokes" },
-      { source: "CNT_EIDOS_PORTAL", target: "CNT_EIDOS_CORE", label: "reads specs" },
-      { source: "CNT_EIDOS_CORE", target: "EXT_SQLITE", label: "writes" },
+      { source: "PER_ARCHITECT", target: "CNT_ACME_CLI", label: "runs commands" },
+      { source: "CNT_ACME_CLI", target: "CNT_ACME_CORE", label: "invokes" },
+      { source: "CNT_ACME_PORTAL", target: "CNT_ACME_CORE", label: "reads specs" },
+      { source: "CNT_ACME_CORE", target: "EXT_SQLITE", label: "writes" },
     ]);
-    expect(parsed.nodeIds.has("CNT_EIDOS_CLI")).toBe(true);
+    expect(parsed.nodeIds.has("CNT_ACME_CLI")).toBe(true);
     expect(parsed.nodeIds.has("PER_ARCHITECT")).toBe(true);
     expect(parsed.nodeIds.has("EXT_SQLITE")).toBe(true);
 
     const parsedL3 = parseMermaidEdges(SAMPLE_L3_MERMAID);
     expect(parsedL3.edges).toHaveLength(3);
     expect(parsedL3.nodeIds.has("mod_CMP_PORTAL_ASSETS")).toBe(true);
-    expect(parsedL3.nodeIds.has("peer_CNT_EIDOS_CORE")).toBe(true);
-    expect(parsedL3.nodeIds.has("ctr_CTR_EIDOS_PORTAL")).toBe(true);
+    expect(parsedL3.nodeIds.has("peer_CNT_ACME_CORE")).toBe(true);
+    expect(parsedL3.nodeIds.has("ctr_CTR_ACME_PORTAL")).toBe(true);
 
     const svg = createSvgElement(MOCK_SVG);
-    const cliNode = svg.querySelector("#flowchart-CNT_EIDOS_CLI-1")!;
-    expect(resolveSvgNodeId(cliNode, parsed.nodeIds)).toBe("CNT_EIDOS_CLI");
+    const cliNode = svg.querySelector("#flowchart-CNT_ACME_CLI-1")!;
+    expect(resolveSvgNodeId(cliNode, parsed.nodeIds)).toBe("CNT_ACME_CLI");
 
     // Verify matching when data-id is absent and only flowchart-<id>-<n> exists
     cliNode.removeAttribute("data-id");
-    expect(resolveSvgNodeId(cliNode, parsed.nodeIds)).toBe("CNT_EIDOS_CLI");
+    expect(resolveSvgNodeId(cliNode, parsed.nodeIds)).toBe("CNT_ACME_CLI");
 
     const edgePaths = Array.from(svg.querySelectorAll('path[data-edge="true"]'));
     expect(matchSvgEdgeEndpoints(edgePaths[1], parsed.nodeIds, parsed.edges, 1)).toEqual({
-      source: "CNT_EIDOS_CLI",
-      target: "CNT_EIDOS_CORE",
+      source: "CNT_ACME_CLI",
+      target: "CNT_ACME_CORE",
     });
     expect(matchSvgEdgeEndpoints(edgePaths[3], parsed.nodeIds, parsed.edges, 3)).toEqual({
-      source: "CNT_EIDOS_CORE",
+      source: "CNT_ACME_CORE",
       target: "EXT_SQLITE",
     });
   });
@@ -135,18 +135,18 @@ describe("INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT: pure SVG highlight en
     const parsed = parseMermaidEdges(SAMPLE_L2_MERMAID);
     const svg = createSvgElement(MOCK_SVG);
 
-    // Focus CNT_EIDOS_CORE with direction='all' (2 incoming: CLI & PORTAL; 1 outgoing: EXT_SQLITE; PER_ARCHITECT dimmed)
+    // Focus CNT_ACME_CORE with direction='all' (2 incoming: CLI & PORTAL; 1 outgoing: EXT_SQLITE; PER_ARCHITECT dimmed)
     const allRes = applyC4ConnectionHighlight(svg, {
-      selectedNodeId: "CNT_EIDOS_CORE",
+      selectedNodeId: "CNT_ACME_CORE",
       direction: "all",
       parsedEdges: parsed.edges,
       knownNodeIds: parsed.nodeIds,
     });
     expect(allRes.incomingCount).toBe(2);
     expect(allRes.outgoingCount).toBe(1);
-    expect(svg.querySelector("#flowchart-CNT_EIDOS_CORE-3")!.getAttribute("data-c4-highlight")).toBe("selected");
-    expect(svg.querySelector("#flowchart-CNT_EIDOS_CLI-1")!.getAttribute("data-c4-highlight")).toBe("incoming");
-    expect(svg.querySelector("#flowchart-CNT_EIDOS_PORTAL-2")!.getAttribute("data-c4-highlight")).toBe("incoming");
+    expect(svg.querySelector("#flowchart-CNT_ACME_CORE-3")!.getAttribute("data-c4-highlight")).toBe("selected");
+    expect(svg.querySelector("#flowchart-CNT_ACME_CLI-1")!.getAttribute("data-c4-highlight")).toBe("incoming");
+    expect(svg.querySelector("#flowchart-CNT_ACME_PORTAL-2")!.getAttribute("data-c4-highlight")).toBe("incoming");
     expect(svg.querySelector("#flowchart-EXT_SQLITE-4")!.getAttribute("data-c4-highlight")).toBe("outgoing");
     expect(svg.querySelector("#flowchart-PER_ARCHITECT-0")!.getAttribute("data-c4-highlight")).toBe("dimmed");
 
@@ -162,24 +162,24 @@ describe("INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT: pure SVG highlight en
 
     // Direction='outgoing' dims incoming neighbors and incoming edges
     applyC4ConnectionHighlight(svg, {
-      selectedNodeId: "CNT_EIDOS_CORE",
+      selectedNodeId: "CNT_ACME_CORE",
       direction: "outgoing",
       parsedEdges: parsed.edges,
       knownNodeIds: parsed.nodeIds,
     });
-    expect(svg.querySelector("#flowchart-CNT_EIDOS_CLI-1")!.getAttribute("data-c4-highlight")).toBe("dimmed");
+    expect(svg.querySelector("#flowchart-CNT_ACME_CLI-1")!.getAttribute("data-c4-highlight")).toBe("dimmed");
     expect(svg.querySelector("#flowchart-EXT_SQLITE-4")!.getAttribute("data-c4-highlight")).toBe("outgoing");
     expect(edges[1].getAttribute("data-c4-edge-state")).toBe("dimmed");
     expect(edges[3].getAttribute("data-c4-edge-state")).toBe("outgoing");
 
     // Direction='incoming' dims outgoing neighbor and outgoing edge
     applyC4ConnectionHighlight(svg, {
-      selectedNodeId: "CNT_EIDOS_CORE",
+      selectedNodeId: "CNT_ACME_CORE",
       direction: "incoming",
       parsedEdges: parsed.edges,
       knownNodeIds: parsed.nodeIds,
     });
-    expect(svg.querySelector("#flowchart-CNT_EIDOS_CLI-1")!.getAttribute("data-c4-highlight")).toBe("incoming");
+    expect(svg.querySelector("#flowchart-CNT_ACME_CLI-1")!.getAttribute("data-c4-highlight")).toBe("incoming");
     expect(svg.querySelector("#flowchart-EXT_SQLITE-4")!.getAttribute("data-c4-highlight")).toBe("dimmed");
     expect(edges[1].getAttribute("data-c4-edge-state")).toBe("incoming");
     expect(edges[3].getAttribute("data-c4-edge-state")).toBe("dimmed");
@@ -196,7 +196,7 @@ describe("INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT: pure SVG highlight en
 
     // Blast radius edge helper highlights edges between impacted hops and restores cleanly
     applyC4BlastRadiusEdges(svg, {
-      impactedNodeIds: new Set(["CNT_EIDOS_CLI", "CNT_EIDOS_CORE"]),
+      impactedNodeIds: new Set(["CNT_ACME_CLI", "CNT_ACME_CORE"]),
       parsedEdges: parsed.edges,
       knownNodeIds: parsed.nodeIds,
     });
@@ -206,7 +206,7 @@ describe("INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT: pure SVG highlight en
     expect(svg.querySelectorAll("[data-c4-edge-state]")).toHaveLength(0);
     // Null SVG safety
     expect(applyC4ConnectionHighlight(null, {
-      selectedNodeId: "CNT_EIDOS_CORE",
+      selectedNodeId: "CNT_ACME_CORE",
       direction: "all",
       parsedEdges: parsed.edges,
       knownNodeIds: parsed.nodeIds,
@@ -234,8 +234,8 @@ describe("INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT: pure SVG highlight en
   test("ArchitectureView promotes #c4DiagramContainer in-place into z-[45] Full Page dialog and highlights connections", async () => {
     const data: PortalData = {
       overview: {
-        system_id: "SYS-EIDOS",
-        system_title: "Eidos Platform",
+        system_id: "SYS-ACME",
+        system_title: "Acme Platform",
         total_specs: 3,
         valid_specs: 3,
         is_clean: true,
@@ -262,40 +262,40 @@ describe("INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT: pure SVG highlight en
       ],
       components: [
         {
-          id: "CNT-EIDOS-CLI",
-          title: "Eidos CLI",
+          id: "CNT-ACME-CLI",
+          title: "Acme CLI",
           status: "active",
           container_type: "cli_app",
           runtime: "Python",
           tier: "tier_presentation",
           tier_name: "Presentation",
-          source_path: "src/eidos/cli",
+          source_path: "src/acme/cli",
           internal_components: [],
-          dependencies: { internal_containers: ["CNT-EIDOS-CORE"], external_services: [] },
+          dependencies: { internal_containers: ["CNT-ACME-CORE"], external_services: [] },
           contracts: { provides: [], consumes: [] },
         },
         {
-          id: "CNT-EIDOS-PORTAL",
+          id: "CNT-ACME-PORTAL",
           title: "Living Web Portal",
           status: "active",
           container_type: "web_app",
           runtime: "React",
           tier: "tier_presentation",
           tier_name: "Presentation",
-          source_path: "src/eidos/portal",
+          source_path: "src/acme/portal",
           internal_components: [],
-          dependencies: { internal_containers: ["CNT-EIDOS-CORE"], external_services: [] },
+          dependencies: { internal_containers: ["CNT-ACME-CORE"], external_services: [] },
           contracts: { provides: [], consumes: [] },
         },
         {
-          id: "CNT-EIDOS-CORE",
-          title: "Eidos Core Engine",
+          id: "CNT-ACME-CORE",
+          title: "Acme Core Engine",
           status: "active",
           container_type: "library",
           runtime: "Python",
           tier: "tier_core",
           tier_name: "Core",
-          source_path: "src/eidos/core",
+          source_path: "src/acme/core",
           internal_components: [],
           dependencies: { internal_containers: [], external_services: [] },
           contracts: { provides: [], consumes: [] },
@@ -312,8 +312,8 @@ describe("INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT: pure SVG highlight en
         c4_components: {},
       },
       edges: [
-        { source: "CNT-EIDOS-CLI", target: "CNT-EIDOS-CORE", rel_type: "depends_on" },
-        { source: "CNT-EIDOS-PORTAL", target: "CNT-EIDOS-CORE", rel_type: "depends_on" },
+        { source: "CNT-ACME-CLI", target: "CNT-ACME-CORE", rel_type: "depends_on" },
+        { source: "CNT-ACME-PORTAL", target: "CNT-ACME-CORE", rel_type: "depends_on" },
       ],
     };
 
@@ -356,7 +356,7 @@ describe("INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT: pure SVG highlight en
     expect(stage.className).toContain("z-[45]");
     expect(document.body.style.overflow).toBe("hidden");
 
-    // Highlight CNT_EIDOS_CORE via #c4HighlightSelect
+    // Highlight CNT_ACME_CORE via #c4HighlightSelect
     const select = document.getElementById("c4HighlightSelect") as HTMLSelectElement;
     expect(select).not.toBeNull();
     await React.act(async () => {
@@ -364,12 +364,12 @@ describe("INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT: pure SVG highlight en
         HTMLSelectElement.prototype,
         "value"
       )?.set;
-      nativeSetter?.call(select, "CNT_EIDOS_CORE");
+      nativeSetter?.call(select, "CNT_ACME_CORE");
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });
     const pill = document.querySelector('[data-c4-connection-pill="true"]');
     expect(pill).not.toBeNull();
-    expect(pill!.textContent).toContain("Eidos Core Engine");
+    expect(pill!.textContent).toContain("Acme Core Engine");
     expect(pill!.textContent).toContain("2 incoming");
     expect(pill!.textContent).toContain("1 outgoing");
 

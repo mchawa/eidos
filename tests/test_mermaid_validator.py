@@ -105,6 +105,7 @@ def test_mermaid_spec_validation_and_cache_lifecycle(tmp_path: Path, monkeypatch
     assert unclosed_rows == []
 
     # 3. Validate all 6 canonical Mermaid diagram types + invalid syntax via QuickJS mermaid.parse()
+    mv._shutdown_quickjs_worker()
     cache_dir = tmp_path / "qjs_cache"
     valid_diagrams = [
         'C4Context\n  Person(u, "User", "desc")\n  System(s, "Sys", "desc")\n  Rel(u, s, "uses")',
