@@ -34,7 +34,7 @@ from eidos.core.workspace.assets import get_mermaid_bundle_path
 
 
 def _make_fake_quickjs_module() -> types.ModuleType:
-    """Build a minimal in-process `quickjs` module stub for Python environments where `quickjs-ng` is unavailable (e.g. 3.15)."""
+    """Build a minimal in-process `quickjs` module stub for environments where `quickjs-ng` is unavailable."""
     valid_bc = b"EIDOS-FAKE-QJSBC-V1"
 
     class _FakeContext:
@@ -164,9 +164,9 @@ def test_mermaid_spec_validation_and_cache_lifecycle(tmp_path: Path, monkeypatch
     assert unclosed_rows == []
 
     # 3. Validate all 6 canonical Mermaid diagram types + invalid syntax via QuickJS mermaid.parse()
-    #    On Python 3.15+ (where quickjs-ng has no wheel yet and is marker-gated out in pyproject.toml),
-    #    inject a lightweight quickjs.Context stub so the full QuickJS worker, bytecode cache, corrupt-cache
-    #    self-heal, and line-offset reporting paths are still verified without skipping POL-005 coverage.
+    #    If quickjs-ng is unavailable in a minimal/no-deps environment, inject a lightweight quickjs.Context
+    #    stub so the full QuickJS worker, bytecode cache, corrupt-cache self-heal, and line-offset reporting
+    #    paths are still verified without skipping POL-005 coverage.
     mv._shutdown_quickjs_worker()
     use_fake_quickjs = not mv._is_quickjs_available()
     with contextlib.ExitStack() as qjs_stack:

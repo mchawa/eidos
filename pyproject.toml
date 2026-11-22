@@ -30,7 +30,7 @@ dependencies = [
     "pydantic>=2.7.0",
     "ast-grep-py>=0.50.0",
     "orjson>=3.10.0",
-    "quickjs-ng>=0.15.1; python_version < '3.15'",
+    "quickjs-ng>=0.18.0.2",
 ]
 
 [project.optional-dependencies]

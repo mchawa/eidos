@@ -233,7 +233,7 @@ dependencies = [
     { name = "jsonschema" },
     { name = "orjson" },
     { name = "pydantic" },
-    { name = "quickjs-ng", marker = "python_full_version < '3.15'" },
+    { name = "quickjs-ng" },
     { name = "rich" },
     { name = "typer" },
 ]
@@ -265,7 +265,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.7.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
-    { name = "quickjs-ng", marker = "python_full_version < '3.15'", specifier = ">=0.15.1" },
+    { name = "quickjs-ng", specifier = ">=0.18.0.2" },
     { name = "rich", specifier = ">=13.7.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4.0" },
     { name = "tokenizers", marker = "extra == 'semantic'", specifier = ">=0.20.0" },
