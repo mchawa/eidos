@@ -611,7 +611,9 @@ def test_dlt_135_changelog_frontmatter_only_status_colliding_short_ids_and_sys_t
     subprocess.run(["git", "config", "user.email", "dev@orbit.io"], cwd=repo, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.name", "Orbit Dev"], cwd=repo, check=True, capture_output=True)
     subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "chore: propose alpha with prose example"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "chore: propose alpha with prose example"], cwd=repo, check=True, capture_output=True
+    )
     subprocess.run(["git", "tag", "v0.1.0"], cwd=repo, check=True, capture_output=True)
 
     # After v0.1.0, transition DLT-2026-119-ALPHA frontmatter to applied AND land a commit for sibling DLT-2026-119-BETA

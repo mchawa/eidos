@@ -1287,7 +1287,9 @@ def test_cli_doctor_update_check(tmp_path, monkeypatch):
     importlib.reload(eidos)
     non_editable_pkg = tmp_path / "wheel_site" / "eidos"
     non_editable_pkg.mkdir(parents=True)
-    assert eidos.resolve_runtime_version(pkg_root=non_editable_pkg, use_cache=False) == eidos._fallback_package_version()
+    assert (
+        eidos.resolve_runtime_version(pkg_root=non_editable_pkg, use_cache=False) == eidos._fallback_package_version()
+    )
     assert eidos.resolve_runtime_version() == eidos.__version__
     assert eidos._parse_git_describe_version("") is None
     assert eidos._parse_git_describe_version("foo-2-g1234abc") is None
@@ -1296,9 +1298,11 @@ def test_cli_doctor_update_check(tmp_path, monkeypatch):
     monkeypatch.setattr(
         importlib,
         "import_module",
-        lambda name, *a, **kw: (_ for _ in ()).throw(ImportError("no _version"))
-        if name == "eidos._version"
-        else orig_import_module(name, *a, **kw),
+        lambda name, *a, **kw: (
+            (_ for _ in ()).throw(ImportError("no _version"))
+            if name == "eidos._version"
+            else orig_import_module(name, *a, **kw)
+        ),
     )
     assert isinstance(eidos._fallback_package_version(), str)
     monkeypatch.setattr(
@@ -2543,9 +2547,7 @@ def test_managed_block_preserves_user_content(tmp_path, case):
     elif case == "append":
         user = "# Team\nRun pnpm test.\n\n"
         path.write_text(user, encoding="utf-8")
-        res = upsert_managed_block(
-            path, "agents-md", render, target="antigravity", skills_dir=".agents/skills"
-        )
+        res = upsert_managed_block(path, "agents-md", render, target="antigravity", skills_dir=".agents/skills")
         assert res.status is BlockStatus.APPENDED
         assert path.read_text(encoding="utf-8").startswith(user)
 
@@ -2586,9 +2588,7 @@ def test_managed_block_preserves_user_content(tmp_path, case):
         path.write_bytes(crlf.encode("utf-8"))
         res = upsert_managed_block(path, "agents-md", render, target="claude", skills_dir=".claude/skills")
         assert res.status is BlockStatus.UNCHANGED, "a CRLF conversion must not be mistaken for a user edit"
-        res = upsert_managed_block(
-            path, "agents-md", render, target="cursor", skills_dir=".agents/skills"
-        )
+        res = upsert_managed_block(path, "agents-md", render, target="cursor", skills_dir=".agents/skills")
         assert res.status is BlockStatus.UPDATED
         out = path.read_bytes().decode("utf-8")
         assert out.startswith("# Team\r\n\r\n") and "\n" not in out.replace("\r\n", "")
@@ -2790,7 +2790,9 @@ def test_opt_in_hooks_flag_and_doctor_hook_health_reporting(tmp_path):
     subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path, check=True)
 
     # --no-hooks is not a valid option on install, and --hooks is not accepted on update
-    assert runner.invoke(app, ["plugin", "install", "cursor", "--no-hooks", "--project-dir", str(tmp_path)]).exit_code != 0
+    assert (
+        runner.invoke(app, ["plugin", "install", "cursor", "--no-hooks", "--project-dir", str(tmp_path)]).exit_code != 0
+    )
     assert runner.invoke(app, ["plugin", "update", "cursor", "--hooks", "--project-dir", str(tmp_path)]).exit_code != 0
 
     # 1. Default install without --hooks: hooks=False -> PASS with (hooks: disabled)
@@ -3073,7 +3075,9 @@ def test_installer_truthful_version_comments_symlinks_and_uninstall(tmp_path):
     assert "# Header" in txt_empty_added and "AGENTS.md" in txt_empty_added and "lint: true" in txt_empty_added
     assert _remove_project_aider_conf(aider_conf, "AGENTS.md") is True
     txt_empty_removed = aider_conf.read_text(encoding="utf-8")
-    assert "# Header" in txt_empty_removed and "AGENTS.md" not in txt_empty_removed and "lint: true" in txt_empty_removed
+    assert (
+        "# Header" in txt_empty_removed and "AGENTS.md" not in txt_empty_removed and "lint: true" in txt_empty_removed
+    )
 
     # Sole read: [AGENTS.md] unlinks file cleanly; also cover quoted scalars, CRLF, comments, & idempotent re-runs
     sole_conf = tmp_path / "sole_aider" / ".aider.conf.yml"
@@ -3416,5 +3420,3 @@ def test_plugin_cli_error_and_partial_failure_branches(tmp_path, monkeypatch):
 
     monkeypatch.setattr(plugin_cmd_mod, "update_plugin", _raise_runtime)
     assert runner.invoke(app, ["plugin", "update", "claude", "-p", str(tmp_path)]).exit_code == 1
-
-

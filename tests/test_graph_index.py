@@ -4706,9 +4706,7 @@ def test_partial_semantic_embeddings_fall_back_to_bm25(tmp_path: Path) -> None:
         # Partial rows persisted from batch 1, but completeness marker is '0'
         partial_rows = conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0]
         assert partial_rows >= 2
-        marker = conn.execute(
-            "SELECT value FROM metadata WHERE key = ?;", (SEMANTIC_SYNC_COMPLETE_KEY,)
-        ).fetchone()[0]
+        marker = conn.execute("SELECT value FROM metadata WHERE key = ?;", (SEMANTIC_SYNC_COMPLETE_KEY,)).fetchone()[0]
         assert marker == "0"
         assert is_semantic_index_complete(conn) is False
         assert get_semantic_index_status(conn, eidos_dir)["is_complete"] is False

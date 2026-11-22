@@ -74,8 +74,10 @@ jobs:
           pnpm build
           python3 scripts/build_assets.py --check
 
-      - name: Lint code with Ruff
-        run: uv run ruff check src/ tests/
+      - name: Lint and check formatting with Ruff
+        run: |
+          uv run ruff check src/ tests/
+          uv run ruff format --check src/ tests/
 
       - name: Validate Eidos living specifications
         run: uv run eidos validate eidos --fail-on-warnings

@@ -406,9 +406,7 @@ class SpecValidator:
                     msg = f"Mermaid syntax error in [{m_res.block.header_kind}] block at line {line_no}: {m_res.error_message}"
                     if msg not in doc.errors:
                         doc.errors.append(msg)
-                    err_key = self._schema_error_key(
-                        doc.file_path, root_dir=root_dir, repo_root=resolved_repo_root
-                    )
+                    err_key = self._schema_error_key(doc.file_path, root_dir=root_dir, repo_root=resolved_repo_root)
                     bucket = report.schema_errors.setdefault(err_key, [])
                     if msg not in bucket:
                         bucket.append(msg)

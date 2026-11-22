@@ -352,9 +352,7 @@ def test_repo_specs_zero_asciidoc_list_warnings_and_fast_index_cli_test():
 
     # 3. test_cli_index_commands invokes `eidos index sync` with `--no-semantic`
     ctx_tree = ast.parse((repo_root / "tests/test_context.py").read_text(encoding="utf-8"))
-    fn = next(
-        n for n in ctx_tree.body if isinstance(n, ast.FunctionDef) and n.name == "test_cli_index_commands"
-    )
+    fn = next(n for n in ctx_tree.body if isinstance(n, ast.FunctionDef) and n.name == "test_cli_index_commands")
     sync_calls: list[list[str]] = []
     for node in ast.walk(fn):
         if isinstance(node, ast.List):

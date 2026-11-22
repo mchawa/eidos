@@ -26,7 +26,18 @@ _MCP_EXTS = frozenset({".json", ".yaml", ".yml", ".py", ".ts", ".tsx", ".js", ".
 _CLI_EXTS = frozenset({".py", ".go", ".rs", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".cs"})
 
 _WS_LIFECYCLE_EVENTS = frozenset(
-    {"connection", "disconnect", "disconnecting", "connect", "connect_error", "error", "close", "open", "listening", "upgrade"}
+    {
+        "connection",
+        "disconnect",
+        "disconnecting",
+        "connect",
+        "connect_error",
+        "error",
+        "close",
+        "open",
+        "listening",
+        "upgrade",
+    }
 )
 
 _TS_IFACE_RE = re.compile(r"\bexport\s+(?:declare\s+)?(?:interface|type)\s+([A-Za-z_][A-Za-z0-9_]*)")
@@ -34,7 +45,9 @@ _CS_IFACE_RE = re.compile(r"\bpublic\s+(?:partial\s+)?interface\s+([A-Za-z_][A-Z
 _GO_IFACE_RE = re.compile(r"\btype\s+([A-Za-z_][A-Za-z0-9_]*)\s+interface\s*\{")
 _RS_TRAIT_RE = re.compile(r"\bpub\s+trait\s+([A-Za-z_][A-Za-z0-9_]*)")
 _JVM_IFACE_RE = re.compile(r"\b(?:public\s+)?interface\s+([A-Za-z_][A-Za-z0-9_]*)")
-_METHOD_STOPWORDS = frozenset({"if", "for", "while", "switch", "catch", "return", "new", "typeof", "sizeof", "constructor"})
+_METHOD_STOPWORDS = frozenset(
+    {"if", "for", "while", "switch", "catch", "return", "new", "typeof", "sizeof", "constructor"}
+)
 
 _TRPC_PROC_RE = re.compile(
     r"\b([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[^,\n;{}]*?\.(query|mutation|subscription)\s*\(",
@@ -53,9 +66,7 @@ _NEST_SUB_MSG_RE = re.compile(r"@SubscribeMessage\s*\(\s*[\"']([^\"']+)[\"']\s*\
 _SOCKET_IO_EVENT_RE = re.compile(r"\b(?:socket|io|ws|client|server)\.(?:on|emit)\s*\(\s*[\"']([^\"']+)[\"']")
 
 _COBRA_USE_RE = re.compile(r'\bUse\s*:\s*"([A-Za-z0-9_:-]+)(?:\s[^"]*)?"')
-_COBRA_FLAG_RE = re.compile(
-    r'(?:Persistent)?Flags\(\)\.\w+\(\s*(?:&[^,]+,\s*)?"([A-Za-z0-9_-]+)"'
-)
+_COBRA_FLAG_RE = re.compile(r'(?:Persistent)?Flags\(\)\.\w+\(\s*(?:&[^,]+,\s*)?"([A-Za-z0-9_-]+)"')
 _CLAP_SUBCMD_ENUM_RE = re.compile(
     r"#\[derive\([^)]*\bSubcommand\b[^)]*\)\]\s*(?:pub\s+)?enum\s+[A-Za-z_][A-Za-z0-9_]*\s*\{",
     re.DOTALL,
@@ -100,7 +111,9 @@ def _extract_interface_methods(body_chunk: str, lang: str) -> list[str]:
         for m in re.finditer(r"^\s*([A-Z][A-Za-z0-9_]*)\s*\(", body_chunk, re.MULTILINE):
             methods.append(m.group(1))
     elif lang == "ts":
-        for m in re.finditer(r"^\s*(?:readonly\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\??\s*(?:<[^>]*>)?\s*\(", body_chunk, re.MULTILINE):
+        for m in re.finditer(
+            r"^\s*(?:readonly\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\??\s*(?:<[^>]*>)?\s*\(", body_chunk, re.MULTILINE
+        ):
             if m.group(1) not in _METHOD_STOPWORDS:
                 methods.append(m.group(1))
     else:
@@ -111,9 +124,7 @@ def _extract_interface_methods(body_chunk: str, lang: str) -> list[str]:
     return methods
 
 
-def verify_code_interface_contract(
-    doc: SpecDocument, spec_file: Path | list[Path], report: ValidationReport
-) -> None:
+def verify_code_interface_contract(doc: SpecDocument, spec_file: Path | list[Path], report: ValidationReport) -> None:
     """Verify bidirectional parity for polyglot code_interface contracts (TS, C#, Go, Rust, Java/Kotlin)."""
     source_files = collect_protocol_source_files(spec_file, _CODE_IFACE_EXTS)
     if not source_files:

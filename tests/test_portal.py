@@ -344,10 +344,16 @@ def test_c4_level2_container_hierarchy_and_connections():
     assert 'CNT_EIDOS_CLI -->|"In-Process Python API"| CNT_EIDOS_CORE' in c4_containers
     assert 'CNT_EIDOS_CLI -->|"Queries &amp; Stores Data"| CNT_EIDOS_INDEX' in c4_containers
     assert 'CNT_EIDOS_CLI -->|"In-Process Python API"| CNT_EIDOS_PLUGIN' in c4_containers
-    assert 'CNT_EIDOS_CLI -->|"REST HTTP • Eidos Living Web Portal HTTP Interface Contract"| CNT_EIDOS_PORTAL' in c4_containers
+    assert (
+        'CNT_EIDOS_CLI -->|"REST HTTP • Eidos Living Web Portal HTTP Interface Contract"| CNT_EIDOS_PORTAL'
+        in c4_containers
+    )
     assert 'CNT_EIDOS_PORTAL -->|"In-Process Python API"| CNT_EIDOS_CORE' in c4_containers
     assert 'CNT_EIDOS_PORTAL -->|"Queries &amp; Stores Data"| CNT_EIDOS_INDEX' in c4_containers
-    assert 'CNT_EIDOS_DOCS -->|"REST HTTP • Eidos Living Web Portal HTTP Interface Contract"| CNT_EIDOS_PORTAL' in c4_containers
+    assert (
+        'CNT_EIDOS_DOCS -->|"REST HTTP • Eidos Living Web Portal HTTP Interface Contract"| CNT_EIDOS_PORTAL'
+        in c4_containers
+    )
     assert 'CNT_EIDOS_PLUGIN -->|"In-Process Python API"| CNT_EIDOS_CORE' in c4_containers
     assert 'CNT_EIDOS_INDEX -->|"In-Process Python API"| CNT_EIDOS_CORE' in c4_containers
 
@@ -2698,7 +2704,9 @@ def test_portal_human_readable_ui_and_slug_free_diagrams():
     assert "<b>CMP-PORTAL-ASSETS</b>" not in portal_l3
 
     # Every live Level 3 diagram omits literal backticks and raw internal IDs inside visible labels
-    raw_inline_re = re.compile(r"\b(?:SYS|DOM|CAP|POL|PER|INV|DEC|CNT|CMP|CTR|DS|CLT|SCR|UIC|FLOW|DLT|EXP)-[A-Z0-9_-]+\b")
+    raw_inline_re = re.compile(
+        r"\b(?:SYS|DOM|CAP|POL|PER|INV|DEC|CNT|CMP|CTR|DS|CLT|SCR|UIC|FLOW|DLT|EXP)-[A-Z0-9_-]+\b"
+    )
     for cid, diag in data["diagrams"]["c4_components"].items():
         for lbl in re.findall(r'"([^"]+)"', diag):
             assert "`" not in lbl, f"Backtick leaked in c4_components[{cid}]: {lbl}"
@@ -2860,9 +2868,7 @@ def test_validation_warnings_in_portal_and_cli_fail_on_warnings(tmp_path: Path):
     )
     assert res_drift_fail_json.exit_code == 1
 
-    res_drift_fail_rich = cli.invoke(
-        app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--fail-on-warnings"]
-    )
+    res_drift_fail_rich = cli.invoke(app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--fail-on-warnings"])
     assert res_drift_fail_rich.exit_code == 1
     assert "--fail-on-warnings" in res_drift_fail_rich.stdout
 

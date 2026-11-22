@@ -182,9 +182,7 @@ def _build_chunked_bootstrap_payload(data: dict[str, Any], specs_dir: Path) -> d
         slim_fm = {k: v for k, v in full_fm.items() if k not in _SLIM_FRONTMATTER_DROP_KEYS}
         if isinstance(slim_fm.get("steps"), list):
             slim_fm["steps"] = [
-                {"client": st.get("client")}
-                for st in slim_fm["steps"]
-                if isinstance(st, dict) and st.get("client")
+                {"client": st.get("client")} for st in slim_fm["steps"] if isinstance(st, dict) and st.get("client")
             ]
 
         spec_copy = dict(raw_spec)

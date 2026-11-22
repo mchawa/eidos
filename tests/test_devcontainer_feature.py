@@ -152,4 +152,3 @@ def test_devcontainer_feature_manifest_and_installer_conformance(tmp_path: Path)
     with_cfg = devcontainer_steps[0].get("with", {})
     assert str(with_cfg.get("publish-features")).lower() == "true"
     assert with_cfg.get("base-path-to-features") == "./devcontainer-features/src"
-

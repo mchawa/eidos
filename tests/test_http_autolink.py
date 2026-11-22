@@ -26,17 +26,17 @@ def test_static_frontend_request_to_backend_endpoint_autolink(tmp_path: Path) ->
     # 2. Verify polyglot server endpoint extraction across all 7 language families
     # (a) Python: FastAPI APIRouter + Flask Blueprint + Starlette Route
     py_srv = (
-        'from fastapi import APIRouter\n'
-        'from flask import Blueprint\n'
-        'from starlette.routing import Route\n'
+        "from fastapi import APIRouter\n"
+        "from flask import Blueprint\n"
+        "from starlette.routing import Route\n"
         'router = APIRouter(prefix="/v1")\n'
         '@router.get("/orders/{order_id}")\n'
-        'async def get_order(order_id: str):\n'
-        '    return {}\n'
+        "async def get_order(order_id: str):\n"
+        "    return {}\n"
         'bp = Blueprint("users", __name__, url_prefix="/api")\n'
         '@bp.route("/users/<int:user_id>", methods=["GET", "DELETE"])\n'
-        'def user_handler(user_id: int):\n'
-        '    return {}\n'
+        "def user_handler(user_id: int):\n"
+        "    return {}\n"
         'routes = [Route("/healthz", endpoint=user_handler, methods=["GET"])]\n'
     )
     py_eps = {s.name for s in idx_ast.extract_http_endpoints("src/server.py", py_srv)}
@@ -50,41 +50,40 @@ def test_static_frontend_request_to_backend_endpoint_autolink(tmp_path: Path) ->
     # (b) TypeScript: Express/Hono + NestJS Controller + Next.js App Router
     ts_express = (
         'const BASE = "/api";\n'
-        'app.post(`${BASE}/payments/:paymentId`, handler);\n'
+        "app.post(`${BASE}/payments/:paymentId`, handler);\n"
         '@Controller("billing")\n'
-        'export class BillingController {\n'
+        "export class BillingController {\n"
         '  @Get("invoices/:id")\n'
-        '  findOne() {}\n'
-        '  @Post()\n'
-        '  create() {}\n'
-        '}\n'
+        "  findOne() {}\n"
+        "  @Post()\n"
+        "  create() {}\n"
+        "}\n"
     )
     ts_eps = {s.name for s in idx_ast.extract_http_endpoints("src/billing.controller.ts", ts_express)}
     assert {"POST /api/payments/{*}", "GET /billing/invoices/{*}", "POST /billing"} <= ts_eps
 
     next_route = (
-        'export async function GET(req: Request) { return Response.json({}); }\n'
-        'export const PATCH = async (req: Request) => Response.json({});\n'
+        "export async function GET(req: Request) { return Response.json({}); }\n"
+        "export const PATCH = async (req: Request) => Response.json({});\n"
     )
-    next_eps = {
-        s.name
-        for s in idx_ast.extract_http_endpoints("apps/web/src/app/api/orders/[id]/route.ts", next_route)
-    }
+    next_eps = {s.name for s in idx_ast.extract_http_endpoints("apps/web/src/app/api/orders/[id]/route.ts", next_route)}
     assert next_eps == {"GET /api/orders/{*}", "PATCH /api/orders/{*}"}
     next_catchall = {
         s.name
-        for s in idx_ast.extract_http_endpoints("src/app/(marketing)/docs/[...slug]/route.tsx", "export function GET() {}")
+        for s in idx_ast.extract_http_endpoints(
+            "src/app/(marketing)/docs/[...slug]/route.tsx", "export function GET() {}"
+        )
     }
     assert next_catchall == {"GET /docs/{*}"}
 
     # (c) Go: net/http + Gin group
     go_srv = (
-        'package main\n'
-        'func register(r *gin.Engine) {\n'
+        "package main\n"
+        "func register(r *gin.Engine) {\n"
         '    http.HandleFunc("GET /go/ping", ping)\n'
         '    v1 := r.Group("/api/v1")\n'
         '    v1.POST("/shipments/:id", ship)\n'
-        '}\n'
+        "}\n"
     )
     go_eps = {s.name for s in idx_ast.extract_http_endpoints("cmd/server/main.go", go_srv)}
     assert {"GET /go/ping", "POST /api/v1/shipments/{*}"} <= go_eps
@@ -92,38 +91,38 @@ def test_static_frontend_request_to_backend_endpoint_autolink(tmp_path: Path) ->
     # (d) Rust: axum Router::route + actix-web attribute
     rs_srv = (
         '#[get("/actix/orders/{id}")]\n'
-        'async fn actix_order() {}\n'
-        'fn app() -> Router {\n'
+        "async fn actix_order() {}\n"
+        "fn app() -> Router {\n"
         '    Router::new().route("/rust/items/{id}", get(get_item).post(create_item))\n'
-        '}\n'
+        "}\n"
     )
     rs_eps = {s.name for s in idx_ast.extract_http_endpoints("src/main.rs", rs_srv)}
     assert {"GET /actix/orders/{*}", "GET /rust/items/{*}", "POST /rust/items/{*}"} <= rs_eps
 
     # (e) Java / Kotlin Spring
     kt_srv = (
-        '@RestController\n'
+        "@RestController\n"
         '@RequestMapping("/spring")\n'
-        'class AccountController {\n'
+        "class AccountController {\n"
         '    @GetMapping("/accounts/{id}")\n'
-        '    fun getAccount() {}\n'
+        "    fun getAccount() {}\n"
         '    @PostMapping("/accounts")\n'
-        '    fun createAccount() {}\n'
-        '}\n'
+        "    fun createAccount() {}\n"
+        "}\n"
     )
     kt_eps = {s.name for s in idx_ast.extract_http_endpoints("src/AccountController.kt", kt_srv)}
     assert {"GET /spring/accounts/{*}", "POST /spring/accounts"} <= kt_eps
 
     # (f) C# ASP.NET Core Controller + Minimal API MapGroup
     cs_srv = (
-        '[ApiController]\n'
+        "[ApiController]\n"
         '[Route("api/[controller]")]\n'
-        'public class OrdersController : ControllerBase {\n'
+        "public class OrdersController : ControllerBase {\n"
         '    [HttpGet("{id:guid}")]\n'
-        '    public IActionResult Get(Guid id) => Ok();\n'
-        '    [HttpPost]\n'
-        '    public IActionResult Create() => Ok();\n'
-        '}\n'
+        "    public IActionResult Get(Guid id) => Ok();\n"
+        "    [HttpPost]\n"
+        "    public IActionResult Create() => Ok();\n"
+        "}\n"
         'var grp = app.MapGroup("/minimal");\n'
         'grp.MapPut("/items/{id}", () => Results.Ok());\n'
     )
@@ -133,22 +132,22 @@ def test_static_frontend_request_to_backend_endpoint_autolink(tmp_path: Path) ->
     # 3. Verify polyglot client HTTP request extraction (fetch, EventSource, axios, ky, Angular, Vue SFC, Python)
     ts_client = (
         'const API_PREFIX = "/v1";\n'
-        'const apiUrl = (p: string) => `${API_PREFIX}${p}`;\n'
+        "const apiUrl = (p: string) => `${API_PREFIX}${p}`;\n"
         'const api = axios.create({ baseURL: "/billing" });\n'
         'const kyApi = ky.create({ prefixUrl: "/api" });\n'
-        'export async function loadAll(orderId: string, invId: string) {\n'
+        "export async function loadAll(orderId: string, invId: string) {\n"
         '  // fetch("http://ignored-comment/fake")\n'
-        '  await window.fetch(apiUrl(`/orders/${orderId}`));\n'
+        "  await window.fetch(apiUrl(`/orders/${orderId}`));\n"
         '  await fetch(`/api/payments/${invId}`, { method: "POST" });\n'
         '  const es = new window.EventSource("/api/events");\n'
-        '  await api.get(`/invoices/${invId}`);\n'
+        "  await api.get(`/invoices/${invId}`);\n"
         '  await api.post("/invoices", { amount: 100 });\n'
         '  await axios({ method: "POST", url: "/billing" });\n'
-        '  await kyApi.delete(`users/${orderId}`);\n'
+        "  await kyApi.delete(`users/${orderId}`);\n"
         '  await kyApi.post("users", { json: { id: orderId } });\n'
         '  await this.apiClient.post("/orders", { id: orderId });\n'
-        '  this.http.put<void>(`/minimal/items/${orderId}`, {});\n'
-        '}\n'
+        "  this.http.put<void>(`/minimal/items/${orderId}`, {});\n"
+        "}\n"
     )
     ts_reqs = {s.name for s in idx_ast.extract_http_requests("src/client/api.ts", ts_client)}
     assert {
@@ -166,21 +165,21 @@ def test_static_frontend_request_to_backend_endpoint_autolink(tmp_path: Path) ->
     assert idx_ast.extract_http_endpoints("src/client/api.ts", ts_client) == []
 
     vue_sfc = (
-        '<template><div>Orders</div></template>\n'
+        "<template><div>Orders</div></template>\n"
         '<script setup lang="ts">\n'
-        'fetch(`/spring/accounts/${accountId}`);\n'
-        '</script>\n'
+        "fetch(`/spring/accounts/${accountId}`);\n"
+        "</script>\n"
     )
     assert {s.name for s in idx_ast.extract_http_requests("src/OrdersView.vue", vue_sfc)} == {
         "GET /spring/accounts/{*}"
     }
 
     py_client = (
-        'import httpx, requests\n'
+        "import httpx, requests\n"
         'API_ROOT = "https://internal.local/api/v1"\n'
-        'def sync_shipment(sid: str):\n'
+        "def sync_shipment(sid: str):\n"
         '    requests.get("http://localhost:8000/healthz")\n'
-        '    with httpx.Client(base_url=API_ROOT) as client:\n'
+        "    with httpx.Client(base_url=API_ROOT) as client:\n"
         '        client.post(f"/shipments/{sid}")\n'
     )
     py_reqs = {s.name for s in idx_ast.extract_http_requests("src/worker/client.py", py_client)}
@@ -264,23 +263,23 @@ def test_static_frontend_request_to_backend_endpoint_autolink(tmp_path: Path) ->
     # Backend FastAPI routes: includes unique /api/v2/catalog/{item_id} and ambiguous /v1/dup & /v2/dup
     (repo / "services" / "api").mkdir(parents=True)
     (repo / "services" / "api" / "routes.py").write_text(
-        'from fastapi import FastAPI\n'
-        'app = FastAPI()\n'
+        "from fastapi import FastAPI\n"
+        "app = FastAPI()\n"
         '@app.get("/api/orders/{order_id}")\n'
-        'def get_order(order_id: str):\n'
-        '    return {}\n'
+        "def get_order(order_id: str):\n"
+        "    return {}\n"
         '@app.get("/api/v2/catalog/{item_id}")\n'
-        'def get_catalog_item(item_id: str):\n'
-        '    return {}\n'
+        "def get_catalog_item(item_id: str):\n"
+        "    return {}\n"
         '@app.get("/v1/dup/{id}")\n'
-        'def dup_v1(id: str):\n'
-        '    return {}\n'
+        "def dup_v1(id: str):\n"
+        "    return {}\n"
         '@app.get("/v2/dup/{id}")\n'
-        'def dup_v2(id: str):\n'
-        '    return {}\n'
+        "def dup_v2(id: str):\n"
+        "    return {}\n"
         '@app.delete("/test-only/nuke")\n'
-        'def nuke():\n'
-        '    return {}\n',
+        "def nuke():\n"
+        "    return {}\n",
         encoding="utf-8",
     )
 
@@ -288,31 +287,27 @@ def test_static_frontend_request_to_backend_endpoint_autolink(tmp_path: Path) ->
     # and ambiguous /dup/${id} (which must NOT guess between /v1/dup and /v2/dup)
     (repo / "apps" / "web").mkdir(parents=True)
     (repo / "apps" / "web" / "api.ts").write_text(
-        'export async function fetchOrder(id: string) {\n'
-        '  await fetch(`/api/orders/${id}`);\n'
+        "export async function fetchOrder(id: string) {\n"
+        "  await fetch(`/api/orders/${id}`);\n"
         '  await fetch("/api/orders/ord_literal_42");\n'
-        '  await fetch(`/catalog/${id}`);\n'
+        "  await fetch(`/catalog/${id}`);\n"
         '  await fetch(`/pay-api/charges/${id}`, { method: "POST" });\n'
-        '  await fetch(`/dup/${id}`);\n'
-        '}\n',
+        "  await fetch(`/dup/${id}`);\n"
+        "}\n",
         encoding="utf-8",
     )
 
     # Container-direct CNT-SPA (no CMP-* child) subscribes to /api/events
     (repo / "apps" / "spa").mkdir(parents=True)
     (repo / "apps" / "spa" / "main.tsx").write_text(
-        'export function connectStream() {\n'
-        '  return new window.EventSource("/api/events");\n'
-        '}\n',
+        'export function connectStream() {\n  return new window.EventSource("/api/events");\n}\n',
         encoding="utf-8",
     )
 
     # Automated test file calling DELETE /test-only/nuke MUST be ignored (is_test = 1)
     (repo / "tests").mkdir(parents=True)
     (repo / "tests" / "test_e2e_http.py").write_text(
-        'import requests\n'
-        'def test_nuke_endpoint():\n'
-        '    requests.delete("http://localhost:8000/test-only/nuke")\n',
+        'import requests\ndef test_nuke_endpoint():\n    requests.delete("http://localhost:8000/test-only/nuke")\n',
         encoding="utf-8",
     )
 
@@ -341,8 +336,7 @@ def test_static_frontend_request_to_backend_endpoint_autolink(tmp_path: Path) ->
         # Single-candidate prefix disambiguation recorded /catalog/{*} -> /api/v2/catalog/{*},
         # while multi-candidate /dup/{*} and test-only /test-only/nuke were NOT linked
         couplings = [
-            dict(r)
-            for r in conn.execute("SELECT * FROM code_couplings ORDER BY src_file, line_start;").fetchall()
+            dict(r) for r in conn.execute("SELECT * FROM code_couplings ORDER BY src_file, line_start;").fetchall()
         ]
         target_refs = [c["target_ref"] for c in couplings]
         assert any("GET /api/orders/{*}" in tr for tr in target_refs)

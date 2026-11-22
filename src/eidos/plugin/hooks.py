@@ -336,9 +336,7 @@ def _zero_governed_changes_since_baseline(
     if not changed_paths:
         return True
     cls = classify_changed_files(changed_paths, repo_root=resolved_root, eidos_dir=eidos_dir)
-    return not (
-        cls.code_files or cls.spec_files or cls.delta_files or cls.test_files or cls.onboarding_files
-    )
+    return not (cls.code_files or cls.spec_files or cls.delta_files or cls.test_files or cls.onboarding_files)
 
 
 def find_workspace_root(payload: dict[str, Any] | None = None) -> Path:

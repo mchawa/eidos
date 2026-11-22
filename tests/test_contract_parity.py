@@ -1163,9 +1163,14 @@ def test_extended_contract_protocols_bidirectional_parity(tmp_path: Path) -> Non
     )
 
     # 4. Polyglot code_interface (TS, C#, Go, Rust, Java)
-    _write(repo / "src" / "sdk" / "client.d.ts", "export interface SdkClient {\n  fetchToken(id: string): Promise<string>;\n}\n")
+    _write(
+        repo / "src" / "sdk" / "client.d.ts",
+        "export interface SdkClient {\n  fetchToken(id: string): Promise<string>;\n}\n",
+    )
     _write(repo / "src" / "sdk" / "IStore.cs", "public interface IStore {\n  void SaveItem(string key);\n}\n")
-    _write(repo / "src" / "sdk" / "cache.go", "package sdk\ntype CacheStore interface {\n  GetEntry(k string) string\n}\n")
+    _write(
+        repo / "src" / "sdk" / "cache.go", "package sdk\ntype CacheStore interface {\n  GetEntry(k string) string\n}\n"
+    )
     _write(repo / "src" / "sdk" / "codec.rs", "pub trait Codec {\n  fn encode_frame(&self) -> Vec<u8>;\n}\n")
     _write(repo / "src" / "sdk" / "Mailer.java", "public interface Mailer {\n  void sendReceipt(String to);\n}\n")
     _write(
@@ -1276,7 +1281,7 @@ def test_extended_contract_protocols_bidirectional_parity(tmp_path: Path) -> Non
         "---\ntype: tech/contract\nid: CTR-DRIFT-WS\ntitle: Drift WS\nstatus: active\nprotocol: websocket\ncontainer: CNT-PLAT\nspecification_file: src/ws\n---\n"
         "= Drift WS\n\n== Hub & Events\n"
         "|===\n| Method | Auth\n"
-        '| `SendMessage` | `[AllowAnonymous]`\n'
+        "| `SendMessage` | `[AllowAnonymous]`\n"
         '| `PingStatus` | `[Authorize(Policy = "WrongPol")]`\n'
         "| `GhostEvent` | Open\n|===\n"
         'Also `SendMessage` with `[Authorize(Policy = "WrongPol", Roles = "WrongRole")]`.\n',
@@ -1379,8 +1384,7 @@ def test_polyglot_cli_openapi_webhooks_and_json_schema_parity(tmp_path: Path) ->
     )
     _write(
         repo / "api" / "webhooks_only.openapi.yaml",
-        "openapi: 3.1.0\ninfo: {title: Hooks, version: 1.0.0}\n"
-        "webhooks:\n  invoicePaid:\n    post: {}\n",
+        "openapi: 3.1.0\ninfo: {title: Hooks, version: 1.0.0}\nwebhooks:\n  invoicePaid:\n    post: {}\n",
     )
     _write(
         eidos_dir / "architecture" / "contracts" / "oas_mixed.adoc",

@@ -5631,9 +5631,9 @@ def test_contract_protocol_schema_and_grpc_proto_parity(tmp_path: Path):
     skill_text = (
         Path(__file__).parent.parent / "assets" / "plugin_reference" / "skills" / "eidos-spec" / "SKILL.md"
     ).read_text(encoding="utf-8")
-    glossary_text = (
-        Path(__file__).parent.parent / "docs" / "concepts" / "schema-glossary.md"
-    ).read_text(encoding="utf-8")
+    glossary_text = (Path(__file__).parent.parent / "docs" / "concepts" / "schema-glossary.md").read_text(
+        encoding="utf-8"
+    )
     for proto_val in expected_enum:
         assert proto_val in skill_text
         assert proto_val in glossary_text

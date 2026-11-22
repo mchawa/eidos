@@ -71,10 +71,10 @@ def _scaffold_subproject(subproject_root: Path, pkg_slug: str, pkg_upper: str) -
     tests_dir.mkdir(parents=True, exist_ok=True)
     inv_id = f"INV-{pkg_upper}-CORE"
     (tests_dir / f"test_{pkg_slug}.py").write_text(
-        f'from src.{pkg_slug}.service import run_{pkg_slug}\n\n\n'
-        f'def test_{pkg_slug}_core():\n'
+        f"from src.{pkg_slug}.service import run_{pkg_slug}\n\n\n"
+        f"def test_{pkg_slug}_core():\n"
         f'    """Verifies {inv_id}."""\n'
-        f'    assert run_{pkg_slug}(1) == 2\n',
+        f"    assert run_{pkg_slug}(1) == 2\n",
         encoding="utf-8",
     )
 
@@ -93,11 +93,11 @@ def _scaffold_subproject(subproject_root: Path, pkg_slug: str, pkg_upper: str) -
     )
     (dom_dir / "capabilities" / "core.adoc").write_text(
         f"---\ntype: product/capability\nid: {cap_id}\ntitle: {pkg_slug.title()} Core Capability\n"
-        f"domain: {dom_id}\nstatus: active\nversion: \"1.0.0\"\n"
+        f'domain: {dom_id}\nstatus: active\nversion: "1.0.0"\n'
         f"technical:\n  containers:\n    - {cnt_id}\n  components:\n    - {cmp_id}\n"
         f"  invariants:\n    - id: {inv_id}\n"
-        f"      rule: \"{pkg_slug} service must increment input deterministically.\"\n"
-        f"      test_binding: \"tests/test_{pkg_slug}.py::test_{pkg_slug}_core\"\n---\n"
+        f'      rule: "{pkg_slug} service must increment input deterministically."\n'
+        f'      test_binding: "tests/test_{pkg_slug}.py::test_{pkg_slug}_core"\n---\n'
         f"= Capability: {pkg_slug.title()} Core Capability\n\nProvides core {pkg_slug} operations.\n",
         encoding="utf-8",
     )
@@ -185,7 +185,7 @@ def test_monorepo_subproject_eidos_isolation(tmp_path: Path, monkeypatch) -> Non
     # 5. Modify ONLY billing code (uncommitted structural change) -> api MUST remain 100% clean!
     (billing_root / "src" / "billing" / "service.py").write_text(
         'def run_billing(value: int) -> int:\n    """Run billing logic."""\n    return value + 1\n\n\n'
-        'def refund_billing(amount: int) -> int:\n    return amount\n',
+        "def refund_billing(amount: int) -> int:\n    return amount\n",
         encoding="utf-8",
     )
 
@@ -236,7 +236,7 @@ def test_monorepo_subproject_eidos_isolation(tmp_path: Path, monkeypatch) -> Non
         "status: proposed\nintent:\n  kind: feature\n  motivation: Document refund note.\n"
         "mutations:\n  - operation: modify\n    target: CMP-BILLING-SERVICE\n"
         "    details: Document deterministic refund note.\n"
-        "    expect:\n      body:\n        contains:\n          - \"Deterministic refund\"\n"
+        '    expect:\n      body:\n        contains:\n          - "Deterministic refund"\n'
         "vcs:\n  branch: main\n---\n= SpecDelta: Add Refund Note\n\nDetails.\n",
         encoding="utf-8",
     )

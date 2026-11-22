@@ -91,9 +91,30 @@ def test_parallel_sync_lock_and_cli_no_semantic_json(tmp_path: Path, monkeypatch
         [sys.executable, "-m", "eidos.cli.main", "index", "sync", "--force", "--no-semantic", "--path", str(eidos_dir)],
         [sys.executable, "-m", "eidos.cli.main", "index", "sync", "--force", "--no-semantic", "--path", str(eidos_dir)],
         [sys.executable, "-m", "eidos.cli.main", "context", "-c", "CNT-APP", "--path", str(eidos_dir), "--json"],
-        [sys.executable, "-m", "eidos.cli.main", "index", "search", "increment", "--no-semantic", "--path", str(eidos_dir), "--json"],
+        [
+            sys.executable,
+            "-m",
+            "eidos.cli.main",
+            "index",
+            "search",
+            "increment",
+            "--no-semantic",
+            "--path",
+            str(eidos_dir),
+            "--json",
+        ],
         [sys.executable, "-m", "eidos.cli.main", "index", "sync", "--no-semantic", "--path", str(eidos_dir), "--json"],
-        [sys.executable, "-m", "eidos.cli.main", "context", "-f", "src/app/service.py", "--path", str(eidos_dir), "--json"],
+        [
+            sys.executable,
+            "-m",
+            "eidos.cli.main",
+            "context",
+            "-f",
+            "src/app/service.py",
+            "--path",
+            str(eidos_dir),
+            "--json",
+        ],
     ]
     for cmd in cmds:
         procs.append(
@@ -294,9 +315,7 @@ def test_dotnet_test_detection_namespace_edges_and_public_surface(tmp_path: Path
         encoding="utf-8",
     )
     (gbf_svc / "PartyServiceSharedNs.cs").write_text(
-        "namespace GBF.Model.Library {\n"
-        "    internal static class PartyExt {}\n"
-        "}\n",
+        "namespace GBF.Model.Library {\n    internal static class PartyExt {}\n}\n",
         encoding="utf-8",
     )
     rust_dir = repo / "src" / "rust_store"
@@ -331,7 +350,9 @@ def test_dotnet_test_detection_namespace_edges_and_public_surface(tmp_path: Path
         "}\n",
         encoding="utf-8",
     )
-    (gbf_tests / "PartyHelper.cs").write_text("namespace GBF.Tests;\npublic static class PartyHelper {}\n", encoding="utf-8")
+    (gbf_tests / "PartyHelper.cs").write_text(
+        "namespace GBF.Tests;\npublic static class PartyHelper {}\n", encoding="utf-8"
+    )
     (gw_tests / "Gateway_Tests.cs").write_text(
         "namespace MTSSupplyChainGateway.UnitTests;\n"
         "public class GatewayTests {\n"
@@ -347,7 +368,10 @@ def test_dotnet_test_detection_namespace_edges_and_public_surface(tmp_path: Path
 
     # 1. Verify .NET test classification, diff classification, and orphan test discovery
     assert is_polyglot_test_file("GBFSolution/GBF.Tests/PartyTests.cs", repo_root=repo) is True
-    assert is_polyglot_test_file("GBFSolution/GBF.Tests/PartyHelper.cs", repo_root=repo, package_paths=["GBFSolution"]) is True
+    assert (
+        is_polyglot_test_file("GBFSolution/GBF.Tests/PartyHelper.cs", repo_root=repo, package_paths=["GBFSolution"])
+        is True
+    )
     assert is_polyglot_test_file("GBFSolution/MTSSupplyChainGateway.UnitTests/Gateway_Tests.cs", repo_root=repo) is True
     assert is_polyglot_test_file("GBFSolution/OtherFolder/OrderTest.cs", repo_root=repo) is True
     assert is_polyglot_test_file("GBFSolution/GBF.Service/PartyService.cs", repo_root=repo) is False
@@ -543,19 +567,30 @@ def test_dotnet_test_detection_namespace_edges_and_public_surface(tmp_path: Path
 
         test_docs = {
             r[0]: r[1]
-            for r in conn.execute("SELECT rel_path, doc_type FROM indexed_files WHERE rel_path LIKE '%Tests.cs';").fetchall()
+            for r in conn.execute(
+                "SELECT rel_path, doc_type FROM indexed_files WHERE rel_path LIKE '%Tests.cs';"
+            ).fetchall()
         }
         assert test_docs["GBFSolution/GBF.Tests/PartyTests.cs"] == "code/test"
         assert test_docs["GBFSolution/MTSSupplyChainGateway.UnitTests/Gateway_Tests.cs"] == "code/test"
         assert conn.execute("SELECT COUNT(*) FROM code_symbols WHERE is_test = 1;").fetchone()[0] >= 4
 
-        assert_invs = {r[0] for r in conn.execute("SELECT DISTINCT target_id FROM edges WHERE rel_type = 'asserts';").fetchall()}
-        for req_inv in (f"{inv_pfx}-DOTNET-001", f"{inv_pfx}-DOTNET-002", f"{inv_pfx}-DOTNET-003", f"{inv_pfx}-DOTNET-004"):
+        assert_invs = {
+            r[0] for r in conn.execute("SELECT DISTINCT target_id FROM edges WHERE rel_type = 'asserts';").fetchall()
+        }
+        for req_inv in (
+            f"{inv_pfx}-DOTNET-001",
+            f"{inv_pfx}-DOTNET-002",
+            f"{inv_pfx}-DOTNET-003",
+            f"{inv_pfx}-DOTNET-004",
+        ):
             assert req_inv in assert_invs
         assert f"{inv_pfx}-DOTNET-SKIP" not in assert_invs
         assert f"{inv_pfx}-DOTNET-IGNORE" not in assert_invs
 
-        edges = {(r[0], r[1], r[2]) for r in conn.execute("SELECT source_id, target_id, rel_type FROM edges;").fetchall()}
+        edges = {
+            (r[0], r[1], r[2]) for r in conn.execute("SELECT source_id, target_id, rel_type FROM edges;").fetchall()
+        }
         assert ("CMP-GBF-SERVICE", "CMP-GBF-PARTY", "consumes_api") in edges
         assert ("CNT-SERVICE", "CNT-MODEL", "depends_on") in edges
         assert ("CMP-GBF-PARTY", "CMP-GBF-SERVICE", "consumes_api") not in edges
@@ -571,7 +606,9 @@ def test_dotnet_test_detection_namespace_edges_and_public_surface(tmp_path: Path
     many_dir = repo / "ManyCs"
     many_dir.mkdir()
     for i in range(550):
-        (many_dir / f"Item{i}.cs").write_text(f"public class Item{i} {{ public int Val{i} {{ get; set; }} }}\n", encoding="utf-8")
+        (many_dir / f"Item{i}.cs").write_text(
+            f"public class Item{i} {{ public int Val{i} {{ get; set; }} }}\n", encoding="utf-8"
+        )
     (cnt_dir / "many.adoc").write_text(
         "---\ntype: tech/container\nid: CNT-MANY\ntitle: Many\nstatus: active\ncontainer_type: library\nruntime: .NET\nsource_path: ManyCs\ndomain: DOM-BILLING\n---\n= Many\n\n== Public Surface\n* `Item0.Val0`\n* `Item549.Val549`\n",
         encoding="utf-8",
@@ -597,64 +634,68 @@ def test_orphan_invariants_ignores_commented_out_csharp_blocks_and_invoice_numbe
 
     cs_rel = "GBFSolution/GBF.Tests/RemoteDocumentAttachmentService_Tests.cs"
     cs_path = repo / cs_rel
-    cs_content = "\n".join([
-        "using Xunit;",
-        "public class RemoteDocumentAttachmentService_Tests",
-        "{",
-        "    /*",
-        "    [Fact]",
-        "    public async Task DeadAttachmentTest()",
-        "    {",
-        "        var payload = new Dictionary<string, string>",
-        "        {",
-        f'            {{ "UnifiedInvoiceNumber", "{inv_pfx}-2026-000123" }},',
-        f'            {{ "LegacyRef", "{inv_pfx}-LEGACY-COMMENTED-001" }}',
-        "        };",
-        "    }",
-        "    */",
-        "",
-        "#if false",
-        "    [Fact]",
-        "    public void DisabledByPreproc()",
-        "    {",
-        f'        var s = "{inv_pfx}-PREPROC-001";',
-        "    }",
-        "#elif false",
-        f'    var unused = "{inv_pfx}-PREPROC-ELIF";',
-        "#else",
-        "    // active else arm has no orphan",
-        "#endif",
-        "",
-        "    /*",
-        "    [Fact]",
-        "    public void PrecedingDeadTest() { }",
-        "    */",
-        f"    /// <summary>{inv_pfx}-XML-BOUND-001</summary>",
-        f"    // {inv_pfx}-REAL-BOUND-001",
-        "    [Fact]",
-        "    public void Should_Verify_Active_With_Globs()",
-        "    {",
-        f'        var liveInvoice = "{inv_pfx}-2026-999888";',
-        '        var globs = new[] { "apps/*/Dockerfile", "libs/*/Cargo.toml" };',
-        '        var verb = $@"C:\\{liveInvoice}\\/*not-comment*/";',
-        '        var raw = """/*not-comment*/""";',
-        f'        // var oldId = "{inv_pfx}-LINE-COMMENTED-001";',
-        f"        // eidos:fixture var kept = \"{inv_pfx}-FIXTURE-IN-COMMENT\";",
-        f'        var realOrphan = "{inv_pfx}-GENUINE-ORPHAN-001";',
-        "    }",
-        "}",
-        "",
-    ])
+    cs_content = "\n".join(
+        [
+            "using Xunit;",
+            "public class RemoteDocumentAttachmentService_Tests",
+            "{",
+            "    /*",
+            "    [Fact]",
+            "    public async Task DeadAttachmentTest()",
+            "    {",
+            "        var payload = new Dictionary<string, string>",
+            "        {",
+            f'            {{ "UnifiedInvoiceNumber", "{inv_pfx}-2026-000123" }},',
+            f'            {{ "LegacyRef", "{inv_pfx}-LEGACY-COMMENTED-001" }}',
+            "        };",
+            "    }",
+            "    */",
+            "",
+            "#if false",
+            "    [Fact]",
+            "    public void DisabledByPreproc()",
+            "    {",
+            f'        var s = "{inv_pfx}-PREPROC-001";',
+            "    }",
+            "#elif false",
+            f'    var unused = "{inv_pfx}-PREPROC-ELIF";',
+            "#else",
+            "    // active else arm has no orphan",
+            "#endif",
+            "",
+            "    /*",
+            "    [Fact]",
+            "    public void PrecedingDeadTest() { }",
+            "    */",
+            f"    /// <summary>{inv_pfx}-XML-BOUND-001</summary>",
+            f"    // {inv_pfx}-REAL-BOUND-001",
+            "    [Fact]",
+            "    public void Should_Verify_Active_With_Globs()",
+            "    {",
+            f'        var liveInvoice = "{inv_pfx}-2026-999888";',
+            '        var globs = new[] { "apps/*/Dockerfile", "libs/*/Cargo.toml" };',
+            '        var verb = $@"C:\\{liveInvoice}\\/*not-comment*/";',
+            '        var raw = """/*not-comment*/""";',
+            f'        // var oldId = "{inv_pfx}-LINE-COMMENTED-001";',
+            f'        // eidos:fixture var kept = "{inv_pfx}-FIXTURE-IN-COMMENT";',
+            f'        var realOrphan = "{inv_pfx}-GENUINE-ORPHAN-001";',
+            "    }",
+            "}",
+            "",
+        ]
+    )
     cs_path.write_text(cs_content, encoding="utf-8")
 
     # Also exercise polyglot helper edge cases for high coverage and precision
     js_stripped = _strip_commented_out_code_blocks(
-        "\n".join([
-            "/** @param {string} x " + f"{inv_pfx}-JSDOC-BOUND */",
-            "/* " + f"{inv_pfx}-PROSE-ONLY" + " */",
-            "const a = '/*'; const b = `/*\\`*/`; // let c = 'ignored';",
-            "/* { x = \"" + f"{inv_pfx}-DEAD-JS" + "\"; } */",
-        ]),
+        "\n".join(
+            [
+                "/** @param {string} x " + f"{inv_pfx}-JSDOC-BOUND */",
+                "/* " + f"{inv_pfx}-PROSE-ONLY" + " */",
+                "const a = '/*'; const b = `/*\\`*/`; // let c = 'ignored';",
+                '/* { x = "' + f"{inv_pfx}-DEAD-JS" + '"; } */',
+            ]
+        ),
         "sample.test.ts",
     )
     assert f"{inv_pfx}-JSDOC-BOUND" in js_stripped
@@ -666,7 +707,7 @@ def test_orphan_invariants_ignores_commented_out_csharp_blocks_and_invoice_numbe
     go_stripped = _strip_commented_out_code_blocks('const p = `/*\\` + "*/";', "a_test.go")
     assert "`/*\\`" in go_stripped
     rs_stripped = _strip_commented_out_code_blocks(
-        "fn f<'a>() { let _c = 'x'; /* { let _z = \"" + f"{inv_pfx}-DEAD-RS" + "\"; } */ }",
+        "fn f<'a>() { let _c = 'x'; /* { let _z = \"" + f"{inv_pfx}-DEAD-RS" + '"; } */ }',
         "a_test.rs",
     )
     assert "fn f<'a>()" in rs_stripped
@@ -674,26 +715,28 @@ def test_orphan_invariants_ignores_commented_out_csharp_blocks_and_invoice_numbe
 
     cap_path = dom_dir / "attachments.adoc"
     cap_path.write_text(
-        "\n".join([
-            "---",
-            "type: product/capability",
-            "id: CAP-BILLING-001",
-            "title: Attachments",
-            "domain: DOM-BILLING",
-            "status: active",
-            'version: "1.0.0"',
-            "technical:",
-            "  invariants:",
-            f"    - id: {inv_pfx}-REAL-BOUND-001",
-            "      rule: Active attachment test verifies valid glob paths.",
-            f"      test_binding: {cs_rel}::RemoteDocumentAttachmentService_Tests::Should_Verify_Active_With_Globs",
-            f"    - id: {inv_pfx}-XML-BOUND-001",
-            "      rule: XML doc comment invariant binding remains intact.",
-            f"      test_binding: {cs_rel}",
-            "---",
-            "= Attachments",
-            "",
-        ]),
+        "\n".join(
+            [
+                "---",
+                "type: product/capability",
+                "id: CAP-BILLING-001",
+                "title: Attachments",
+                "domain: DOM-BILLING",
+                "status: active",
+                'version: "1.0.0"',
+                "technical:",
+                "  invariants:",
+                f"    - id: {inv_pfx}-REAL-BOUND-001",
+                "      rule: Active attachment test verifies valid glob paths.",
+                f"      test_binding: {cs_rel}::RemoteDocumentAttachmentService_Tests::Should_Verify_Active_With_Globs",
+                f"    - id: {inv_pfx}-XML-BOUND-001",
+                "      rule: XML doc comment invariant binding remains intact.",
+                f"      test_binding: {cs_rel}",
+                "---",
+                "= Attachments",
+                "",
+            ]
+        ),
         encoding="utf-8",
     )
 
@@ -714,7 +757,10 @@ def test_orphan_invariants_ignores_commented_out_csharp_blocks_and_invoice_numbe
         eidos_dir=eidos_dir,
     )
     assert uncached_orphans == [
-        (f"{inv_pfx}-GENUINE-ORPHAN-001", f"{cs_rel}::RemoteDocumentAttachmentService_Tests::Should_Verify_Active_With_Globs")
+        (
+            f"{inv_pfx}-GENUINE-ORPHAN-001",
+            f"{cs_rel}::RemoteDocumentAttachmentService_Tests::Should_Verify_Active_With_Globs",
+        )
     ], f"Unexpected uncached orphans: {uncached_orphans}"
 
     # 3. Seed stale v1 test_binding_cache row matching mtime_ns + sha256, verify auto-invalidation
@@ -746,7 +792,10 @@ def test_orphan_invariants_ignores_commented_out_csharp_blocks_and_invoice_numbe
         eidos_dir=eidos_dir,
     )
     assert cached_orphans_1 == [
-        (f"{inv_pfx}-GENUINE-ORPHAN-001", f"{cs_rel}::RemoteDocumentAttachmentService_Tests::Should_Verify_Active_With_Globs")
+        (
+            f"{inv_pfx}-GENUINE-ORPHAN-001",
+            f"{cs_rel}::RemoteDocumentAttachmentService_Tests::Should_Verify_Active_With_Globs",
+        )
     ], f"Unexpected cached orphans: {cached_orphans_1}"
 
     cached_rows = load_test_binding_cache(db_path)

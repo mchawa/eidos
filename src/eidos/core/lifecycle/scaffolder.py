@@ -1020,7 +1020,18 @@ def _has_modern_http_route_hint(suffix: str, content: str) -> bool:
     if suffix == ".go":
         return "HandleFunc" in content or any(
             tok in content
-            for tok in (".GET(", ".POST(", ".PUT(", ".DELETE(", ".PATCH(", ".Get(", ".Post(", ".Put(", ".Delete(", ".Patch(")
+            for tok in (
+                ".GET(",
+                ".POST(",
+                ".PUT(",
+                ".DELETE(",
+                ".PATCH(",
+                ".Get(",
+                ".Post(",
+                ".Put(",
+                ".Delete(",
+                ".Patch(",
+            )
         )
     return False
 
@@ -1163,11 +1174,7 @@ def discover_repository_blueprint(
                 suffix = Path(fn).suffix.lower()
                 if suffix in _POLYGLOT_TEST_CODE_EXTS and cur_rel != "." and not in_non_code_top:
                     code_top_dirs.add(top_seg)
-                if (
-                    suffix in _REST_HTTP_DISCOVERY_EXTS
-                    and not in_non_code_top
-                    and not _is_test_source_filename(fn)
-                ):
+                if suffix in _REST_HTTP_DISCOVERY_EXTS and not in_non_code_top and not _is_test_source_filename(fn):
                     full_file = cur / fn
                     try:
                         if full_file.stat().st_size > 262_144:

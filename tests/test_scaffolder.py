@@ -2042,7 +2042,9 @@ def test_spec_discover_polyglot_brownfield_blueprint(tmp_path):
 
     jvm_svc = repo / "services" / "ledger"
     (jvm_svc / "src" / "main").mkdir(parents=True)
-    (jvm_svc / "pom.xml").write_text("<project><artifactId>spring-boot-starter-web</artifactId></project>\n", encoding="utf-8")
+    (jvm_svc / "pom.xml").write_text(
+        "<project><artifactId>spring-boot-starter-web</artifactId></project>\n", encoding="utf-8"
+    )
 
     (repo / "workers").mkdir(parents=True)
     (repo / "workers" / "job.py").write_text("def run(): pass\n", encoding="utf-8")
@@ -2230,20 +2232,20 @@ def test_spec_discover_code_first_rest_http_controllers(tmp_path):
     aspnet_ctrl = repo / "services" / "orders-api" / "Controllers"
     aspnet_ctrl.mkdir(parents=True)
     (aspnet_ctrl / "OrdersController.cs").write_text(
-        'using Microsoft.AspNetCore.Mvc;\n'
+        "using Microsoft.AspNetCore.Mvc;\n"
         '[ApiController]\n[Route("api/orders")]\n'
-        'public class OrdersController : ControllerBase {\n'
+        "public class OrdersController : ControllerBase {\n"
         '    [HttpGet("{id}")]\n    public IActionResult GetOrder(int id) => Ok();\n'
-        '    [HttpPost]\n    public IActionResult CreateOrder() => Ok();\n'
-        '}\n',
+        "    [HttpPost]\n    public IActionResult CreateOrder() => Ok();\n"
+        "}\n",
         encoding="utf-8",
     )
     (aspnet_ctrl / "ItemsController.cs").write_text(
-        'using Microsoft.AspNetCore.Mvc;\n'
+        "using Microsoft.AspNetCore.Mvc;\n"
         '[ApiController]\n[Route("api/items")]\n'
-        'public class ItemsController : ControllerBase {\n'
-        '    [HttpGet]\n    public IActionResult ListItems() => Ok();\n'
-        '}\n',
+        "public class ItemsController : ControllerBase {\n"
+        "    [HttpGet]\n    public IActionResult ListItems() => Ok();\n"
+        "}\n",
         encoding="utf-8",
     )
     wcf_dir = repo / "services" / "legacy-wcf"
@@ -2257,7 +2259,7 @@ def test_spec_discover_code_first_rest_http_controllers(tmp_path):
     fastapi_dir = repo / "services" / "billing" / "src"
     fastapi_dir.mkdir(parents=True)
     (fastapi_dir / "app.py").write_text(
-        'from fastapi import FastAPI\napp = FastAPI()\n'
+        "from fastapi import FastAPI\napp = FastAPI()\n"
         '@app.get("/v1/invoices")\ndef list_invoices():\n    return []\n'
         '@app.post("/v1/invoices")\ndef create_invoice():\n    return {}\n',
         encoding="utf-8",
@@ -2267,9 +2269,7 @@ def test_spec_discover_code_first_rest_http_controllers(tmp_path):
     nest_dir = repo / "services" / "catalog" / "src" / "controllers"
     nest_dir.mkdir(parents=True)
     (nest_dir / "products.controller.ts").write_text(
-        '@Controller("products")\nexport class ProductsController {\n'
-        '  @Get(":id")\n  findOne() { return {}; }\n'
-        '}\n',
+        '@Controller("products")\nexport class ProductsController {\n  @Get(":id")\n  findOne() { return {}; }\n}\n',
         encoding="utf-8",
     )
 
@@ -2278,9 +2278,9 @@ def test_spec_discover_code_first_rest_http_controllers(tmp_path):
     spring_dir.mkdir(parents=True)
     (spring_dir / "LedgerController.java").write_text(
         '@RestController\n@RequestMapping("/api/ledger")\n'
-        'public class LedgerController {\n'
+        "public class LedgerController {\n"
         '    @GetMapping("/entries")\n    public String list() { return "[]"; }\n'
-        '}\n',
+        "}\n",
         encoding="utf-8",
     )
 
@@ -2290,7 +2290,7 @@ def test_spec_discover_code_first_rest_http_controllers(tmp_path):
     (go_dir / "router.go").write_text(
         'package main\nimport "net/http"\nfunc setup(mux *http.ServeMux) {\n'
         '    mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {})\n'
-        '}\n',
+        "}\n",
         encoding="utf-8",
     )
 

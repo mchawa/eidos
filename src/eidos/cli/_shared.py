@@ -49,11 +49,7 @@ def resolve_cli_eidos_dir(
         return resolved
     if (target_path / "eidos").is_dir() and not has_eidos_markers(target_path):
         return target_path / "eidos"
-    if (
-        target_path.exists()
-        and not has_eidos_markers(target_path)
-        and "eidos" not in target_path.name.lower()
-    ):
+    if target_path.exists() and not has_eidos_markers(target_path) and "eidos" not in target_path.name.lower():
         git_root = find_git_root(target_path)
         repo = find_repo_root(target_path)
         if (

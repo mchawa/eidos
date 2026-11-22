@@ -906,7 +906,9 @@ class ContractParityValidator:
     def _verify_avro_contract(self, doc: SpecDocument, spec_file: Path, report: ValidationReport) -> None:
         verify_avro_contract(doc, spec_file, report)
 
-    def _verify_sql_ddl_contract(self, doc: SpecDocument, spec_file: Path | list[Path], report: ValidationReport) -> None:
+    def _verify_sql_ddl_contract(
+        self, doc: SpecDocument, spec_file: Path | list[Path], report: ValidationReport
+    ) -> None:
         verify_sql_ddl_contract(doc, spec_file, report)
 
     def _verify_code_interface_contract(

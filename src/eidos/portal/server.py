@@ -423,8 +423,7 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
                     "validation_warnings": list(res_obj.validation_warnings),
                     "uncovered_invariants": [inv.invariant_id for inv in res_obj.uncovered_invariants],
                     "orphan_invariants": [
-                        {"test_id": loc, "invariant_id": inv_id}
-                        for inv_id, loc in res_obj.orphan_invariants
+                        {"test_id": loc, "invariant_id": inv_id} for inv_id, loc in res_obj.orphan_invariants
                     ],
                     "remediation_suggestions": res_obj.remediation_suggestions,
                     "summary_markdown": res_obj.summary_markdown,
@@ -485,9 +484,7 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
             while not getattr(self.server, "_portal_shutting_down", False):
                 base_interval = max(0.02, float(self._sse_poll_interval))
                 poll_interval = (
-                    max(base_interval, min(5.0, scan_elapsed * 4.0))
-                    if base_interval >= 0.5
-                    else base_interval
+                    max(base_interval, min(5.0, scan_elapsed * 4.0)) if base_interval >= 0.5 else base_interval
                 )
                 try:
                     readable, _, _ = select.select([self.connection], [], [], poll_interval)
