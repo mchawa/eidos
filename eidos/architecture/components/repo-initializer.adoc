@@ -13,7 +13,7 @@ source_path: src/eidos/core/lifecycle/initializer.py
 Bootstraps greenfield and brownfield repositories with an Eidos living specification directory skeleton (`eidos/`), self-contained `eidos/.gitignore`, root `system.adoc` descriptor, and immediate schema validation.
 
 == Key Responsibilities & Collaborators
-* **Skeleton Provisioning**: Creates the complete 12-directory Eidos hierarchy with `.gitkeep` markers.
+* **Skeleton Provisioning**: Creates the complete 11-directory Eidos hierarchy with `.gitkeep` markers (screens reside client-scoped under `design/clients/<client>/screens/` rather than top-level `design/screens/`).
 * **System Context & Cache Isolation**: Renders `eidos/system.adoc` (`product/system`) when `--title` is provided (or a 0-byte placeholder otherwise), writes `eidos/.gitignore` via `_ensure_eidos_gitignore` to exclude `.cache/`, and validates the initialized tree via `CMP-SPEC-VALIDATOR`.
 * **Turnkey CI Workflow Scaffolding (`--ci`, `INV-INIT-CI-WORKFLOW-TEMPLATES`)**: Optionally scaffolds project-agnostic CI workflows when `ci` is `"github"` (`.github/workflows/eidos-drift.yml` with `fetch-depth: 0` and `$GITHUB_STEP_SUMMARY`) or `"gitlab"` (`.gitlab-ci.eidos.yml` includeable merge-request gate), preserving existing workflow files unless `force=True` and raising `ValueError` for unsupported providers.
 

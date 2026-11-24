@@ -15,7 +15,7 @@ This skill covers repository-level lifecycle operations in Eidos:
 ## 1. Greenfield Repository Bootstrapping (`eidos init`)
 
 ```bash
-# 1. Scaffold 12-directory eidos/ skeleton, eidos/.gitignore, and root eidos/system.adoc
+# 1. Scaffold 11-directory eidos/ skeleton, eidos/.gitignore, and root eidos/system.adoc
 eidos init --title "My System"
 
 # 2. Scaffold Arc42 Master Architecture, initial product domains, personas, and C4 containers

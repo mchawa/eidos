@@ -5522,7 +5522,14 @@ def test_ts_and_js_exported_variable_public_surface(tmp_path: Path, validator: S
 
 def test_design_screen_client_path_and_ownership_enforcement(tmp_path: Path):
     """Verify INV-DESIGN-SCREEN-CLIENT-OWNERSHIP: client-scoped screen paths, required --client scaffolding, and active client ownership."""
+    from eidos.core.lifecycle.initializer import init_repository
     from eidos.core.lifecycle.scaffolder import create_spec
+
+    # 0. eidos init must not scaffold a flat top-level eidos/design/screens/ directory
+    fresh_repo = tmp_path / "fresh_init_repo"
+    init_ok, init_msg, _ = init_repository(fresh_repo, title="Fresh Init")
+    assert init_ok, init_msg
+    assert not (fresh_repo / "eidos" / "design" / "screens").exists()
 
     eidos_dir = tmp_path / "eidos"
     (eidos_dir / "design" / "systems" / "core").mkdir(parents=True)

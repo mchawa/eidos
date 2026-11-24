@@ -276,7 +276,7 @@ AI agents execute Eidos CLI commands directly from terminal / subshell tools. Al
 | `eidos delta apply` | `<id>`, `--verify/--no-verify`, `--json` | Verifies declared mutations by default (`--verify`), validates the SpecDelta, and reconciles it in-place (`status: applied`). |
 | `eidos delta archive` | `--keep-recent <n>`, `--dry-run`, `--json` | Partitions and slims older terminal SpecDeltas and Explorations into `archive/` subdirectories. |
 | `eidos delta changelog` | `--stdout`, `--output <file>` | Compiles Keep a Changelog release notes from Git tags and applied SpecDeltas. |
-| `eidos init` | `[PATH]`, `--title <title>`, `--force` | Bootstraps a repository with the 12-directory Eidos specification skeleton, `eidos/.gitignore`, and `eidos/system.adoc`. |
+| `eidos init` | `[PATH]`, `--title <title>`, `--force` | Bootstraps a repository with the 11-directory Eidos specification skeleton, `eidos/.gitignore`, and `eidos/system.adoc`. |
 
 ---
 

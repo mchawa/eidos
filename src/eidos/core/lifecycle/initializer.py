@@ -127,7 +127,6 @@ def init_repository(
         eidos_dir / "explorations",
         eidos_dir / "design" / "clients",
         eidos_dir / "design" / "flows",
-        eidos_dir / "design" / "screens",
         eidos_dir / "design" / "systems" / "core" / "components",
     ]
     for d in skeleton_dirs:

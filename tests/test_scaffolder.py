@@ -529,11 +529,12 @@ def test_init_repository_programmatic(tmp_path):
         eidos_dir / "explorations" / ".gitkeep",
         eidos_dir / "design" / "clients" / ".gitkeep",
         eidos_dir / "design" / "flows" / ".gitkeep",
-        eidos_dir / "design" / "screens" / ".gitkeep",
         eidos_dir / "design" / "systems" / "core" / "components" / ".gitkeep",
     ]
     for gk in expected_gitkeeps:
         assert gk.exists(), f"Expected .gitkeep at {gk}"
+    assert not (eidos_dir / "design" / "screens").exists()
+    assert set(eidos_dir.rglob(".gitkeep")) == set(expected_gitkeeps)
 
     # Re-init without force must fail
     success2, msg2, _ = init_repository(project_dir=tmp_path, force=False)
@@ -565,6 +566,7 @@ def test_init_repository_cli(tmp_path):
     assert (target / "eidos" / "policies" / ".gitkeep").exists()
     assert (target / "eidos" / "architecture" / "containers" / ".gitkeep").exists()
     assert (target / "eidos" / "architecture" / "components" / ".gitkeep").exists()
+    assert not (target / "eidos" / "design" / "screens").exists()
     assert not any(p for p in (target / "eidos").rglob("*.adoc") if p.name != "system.adoc")
     assert not (target / ".agents").exists()
 
@@ -598,6 +600,7 @@ def test_init_repository_custom(tmp_path):
     assert "Custom Service" in sys_text
     assert (target / "eidos" / "architecture" / "containers" / ".gitkeep").exists()
     assert (target / "eidos" / "architecture" / "components" / ".gitkeep").exists()
+    assert not (target / "eidos" / "design" / "screens").exists()
     assert not any(p for p in (target / "eidos").rglob("*.adoc") if p.name != "system.adoc")
     assert not (target / ".agents").exists()
 
