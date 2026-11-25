@@ -5015,8 +5015,17 @@ def test_pol_statement_test_coverage(tmp_path, monkeypatch, validator):
     with pytest.raises(AssertionError, match=real_modules[0]):
         _verify_pol_coverage_json(cov_missing_json, src_eidos_dir, repo_root)
 
+    cov_mod = sys.modules.get("coverage")
+    cov_active = bool(
+        (
+            cov_mod is not None
+            and getattr(cov_mod, "Coverage", None) is not None
+            and cov_mod.Coverage.current() is not None
+        )
+        or any(arg == "--cov" or arg.startswith("--cov=") for arg in sys.argv)
+    )
     live_cov_json = repo_root / "coverage.json"
-    if live_cov_json.is_file():
+    if live_cov_json.is_file() and not cov_active:
         _verify_pol_coverage_json(live_cov_json, src_eidos_dir, repo_root)
 
     # 2. src/eidos/__init__.py version fallback branches

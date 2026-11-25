@@ -13,6 +13,7 @@ from rich.table import Table
 import eidos
 from eidos.cli._shared import PANEL_PLUGINS, PANEL_SETUP, console, has_eidos_markers, resolve_cli_eidos_dir
 from eidos.core.index.graph_index import get_architectural_index
+from eidos.core.lifecycle.delta_engine import list_deltas, verify_delta_mutations
 from eidos.core.spec.validator import SpecValidator
 from eidos.core.workspace.project import find_git_root, find_repo_root, resolve_spec_and_repo_roots
 from eidos.plugin.hooks import execute_hook
@@ -72,6 +73,56 @@ def _check_onboarding_governance(plugin_root: Path) -> dict[str, Any]:
         "path": str(agents_path),
         "agents_md_ok": agents_md_ok,
         "detail": detail,
+    }
+
+
+def _check_open_deltas(eidos_dir: Path, specs_exist: bool) -> dict[str, Any]:
+    """Detect open SpecDeltas whose mutations are already fully verified on disk (advisory, non-blocking)."""
+    if not specs_exist or not (eidos_dir / "deltas").is_dir():
+        return {
+            "ok": True,
+            "status": "clean",
+            "active_count": 0,
+            "ready_to_apply": [],
+            "detail": "No open SpecDeltas",
+        }
+    active_deltas = list_deltas(eidos_dir, status_filter="active", include_archived=False)
+    ready_to_apply: list[str] = []
+    for delta in active_deltas:
+        delta_id = str(delta.get("id") or "")
+        delta_target = str(delta.get("path") or delta_id)
+        if not delta_target:
+            continue
+        is_ok, _, rep = verify_delta_mutations(eidos_dir, delta_target)
+        if is_ok and rep is not None and rep.total_mutations > 0 and rep.is_verified:
+            ready_to_apply.append(delta_id or Path(delta_target).stem)
+    if ready_to_apply:
+        sample = ", ".join(ready_to_apply[:3])
+        suffix = f" (+{len(ready_to_apply) - 3} more)" if len(ready_to_apply) > 3 else ""
+        return {
+            "ok": True,
+            "status": "ready_to_apply",
+            "active_count": len(active_deltas),
+            "ready_to_apply": ready_to_apply,
+            "detail": (
+                f"{len(ready_to_apply)} open SpecDelta(s) already verified on disk "
+                f"({sample}{suffix}); run 'eidos delta apply <ID>'"
+            ),
+        }
+    if active_deltas:
+        return {
+            "ok": True,
+            "status": "in_progress",
+            "active_count": len(active_deltas),
+            "ready_to_apply": [],
+            "detail": f"{len(active_deltas)} active SpecDelta(s) in progress",
+        }
+    return {
+        "ok": True,
+        "status": "clean",
+        "active_count": 0,
+        "ready_to_apply": [],
+        "detail": "No open SpecDeltas",
     }
 
 
@@ -152,6 +203,7 @@ def doctor_cmd(
         "hook_error" if (plugin_installed and plugin_up_to_date and not hooks_ok) else plugin_status.get("status")
     )
     agents_md_check = _check_onboarding_governance(plugin_root)
+    open_deltas_check = _check_open_deltas(eidos_dir, specs_exist)
     cli_update = check_cli_update_status()
 
     checks = {
@@ -200,6 +252,7 @@ def doctor_cmd(
             "agents_md_ok": agents_md_check["agents_md_ok"],
         },
         "agents_md": agents_md_check,
+        "open_deltas": open_deltas_check,
     }
     overall_ok = (
         cli_ok
@@ -293,6 +346,17 @@ def doctor_cmd(
         "Onboarding Governance",
         onboarding_badge,
         str(agents_md_check["detail"]),
+    )
+
+    deltas_badge = (
+        "[bold yellow]WARN[/bold yellow]"
+        if open_deltas_check["status"] == "ready_to_apply"
+        else "[bold green]PASS[/bold green]"
+    )
+    table.add_row(
+        "Open SpecDeltas",
+        deltas_badge,
+        str(open_deltas_check["detail"]),
     )
 
     console.print(table)

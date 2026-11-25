@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -330,6 +331,107 @@ def boundary_symbol_map(
     return out
 
 
+_CLI_HELP_KWARGS = frozenset({"help", "rich_help_panel", "short_help", "epilog"})
+_CLI_HELP_KWARG_RE = re.compile(r"\b(?:help|rich_help_panel|short_help|epilog)\s*=")
+_CLI_DESCRIPTOR_CALLEES = frozenset({"Option", "Argument", "option", "argument", "command", "callback", "group"})
+
+
+def _split_py_decorator_lines(dec_prefix: str) -> list[str]:
+    """Split flattened single-line Python ``@decorator(...)`` prefixes into individual decorator lines."""
+    lines: list[str] = []
+    start = 0
+    depth = 0
+    in_q: str | None = None
+    esc = False
+    idx = 0
+    n = len(dec_prefix)
+    while idx < n:
+        ch = dec_prefix[idx]
+        if in_q is not None:
+            if esc:
+                esc = False
+                idx += 1
+                continue
+            if ch == "\\":
+                esc = True
+                idx += 1
+                continue
+            if dec_prefix.startswith(in_q, idx):
+                idx += len(in_q)
+                in_q = None
+                continue
+            idx += 1
+            continue
+        if dec_prefix.startswith(('"""', "'''"), idx):
+            in_q = dec_prefix[idx : idx + 3]
+            idx += 3
+            continue
+        if ch in ("'", '"'):
+            in_q = ch
+            idx += 1
+            continue
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth = max(0, depth - 1)
+        elif ch == "@" and depth == 0 and idx > start:
+            chunk = dec_prefix[start:idx].strip()
+            if chunk:
+                lines.append(chunk)
+            start = idx
+        idx += 1
+    tail = dec_prefix[start:].strip()
+    if tail:
+        lines.append(tail)
+    return lines
+
+
+def _normalize_signature_for_diff(sig: str) -> str:
+    """Strip prose-only CLI help keyword strings inside Typer/Click descriptors before structural signature diffing."""
+    cleaned = (sig or "").strip()
+    if not cleaned:
+        return cleaned
+    body_raw = _strip_leading_decorators_from_signature(cleaned)
+    body_sig = body_raw.strip()
+    if not body_sig.startswith(("def ", "async def ")):
+        return cleaned
+    dec_prefix = cleaned[: len(cleaned) - len(body_raw)].strip()
+    dec_lines = _split_py_decorator_lines(dec_prefix) if dec_prefix else []
+    header = body_sig[:-1].rstrip() if body_sig.endswith(":") else body_sig
+    stub_src = "\n".join([*dec_lines, f"{header}:", "    pass"])
+    try:
+        tree = ast.parse(stub_src)
+    except SyntaxError:
+        return cleaned
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        callee = (
+            node.func.id
+            if isinstance(node.func, ast.Name)
+            else (node.func.attr if isinstance(node.func, ast.Attribute) else "")
+        )
+        if callee not in _CLI_DESCRIPTOR_CALLEES:
+            continue
+        node.keywords = [
+            kw
+            for kw in node.keywords
+            if not (
+                kw.arg in _CLI_HELP_KWARGS and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str)
+            )
+        ]
+    return ast.unparse(tree)
+
+
+def _signature_changed(old_sig: str, new_sig: str) -> bool:
+    """Return True when two signatures differ structurally after normalizing prose-only CLI help kwargs."""
+    if old_sig == new_sig:
+        return False
+    if not (_CLI_HELP_KWARG_RE.search(old_sig) or _CLI_HELP_KWARG_RE.search(new_sig)):
+        return True
+    return _normalize_signature_for_diff(old_sig) != _normalize_signature_for_diff(new_sig)
+
+
 def diff_symbol_maps(
     old_map: dict[tuple[str, str, str], str],
     new_map: dict[tuple[str, str, str], str],
@@ -346,7 +448,7 @@ def diff_symbol_maps(
     return PublicSymbolDiff(
         added=added,
         removed=sorted(set(old_map) - set(new_map)),
-        changed=sorted(k for k in set(old_map) & set(new_map) if old_map[k] != new_map[k]),
+        changed=sorted(k for k in set(old_map) & set(new_map) if _signature_changed(old_map[k], new_map[k])),
         boundary_added=boundary_added,
     )
 

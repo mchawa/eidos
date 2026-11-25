@@ -29,9 +29,9 @@ def test_context_slice_by_file(tmp_path, monkeypatch):
     contract_ids = {c["id"] for c in res.contracts}
     assert "CTR-EIDOS-CLI" in contract_ids
 
-    # Bound capabilities and invariants
+    # Bound capabilities and invariants (structural tie-breaking ranks CAP-LIVING-SPEC-ENGINE and POL-GIT-SOURCE-OF-TRUTH first)
     cap_ids = {c["id"] for c in res.capabilities}
-    assert cap_ids & {"CAP-LIVING-SPEC-ENGINE", "CAP-EXPLORATION-DISCOVERY", "CAP-SPEC-DELTA-MUTATIONS"}
+    assert "CAP-LIVING-SPEC-ENGINE" in cap_ids
     inv_ids = {i["id"] for i in res.invariants}
     assert inv_ids & {"INV-SPEC-VALIDATION", "INV-VALIDATION-WARNINGS-PORTAL-AND-CI-ESCALATION"}
     val_slice = get_context_slice(files=["src/eidos/core/spec/validator.py"])
@@ -40,20 +40,17 @@ def test_context_slice_by_file(tmp_path, monkeypatch):
 
     # Governing policies
     policy_ids = {p["id"] for p in res.policies}
-    assert policy_ids & {"POL-GIT-SOURCE-OF-TRUTH", "POL-CONTINUOUS-DOCUMENTATION-SYNC"}
+    assert "POL-GIT-SOURCE-OF-TRUTH" in policy_ids
 
     # DLT-2026-125: guardrails/deep project domain_path, design, capability personas/policies/experience, and policy file_path
     proj = res.to_dict()
     cli_comp = proj["components"][0]
     assert cli_comp.get("domain_path", "").endswith("domain.adoc")
-    cap_proj = proj["capabilities"][0]
-    assert cap_proj.get("file_path", "").endswith(".adoc")
-    assert cap_proj.get("personas")
-    val_proj = val_slice.to_dict()
-    assert any(c["id"] == "CAP-LIVING-SPEC-ENGINE" for c in val_proj["capabilities"])
-    pol_entry = proj["policies"][0]
-    assert pol_entry.get("file_path", "").startswith("eidos/policies/")
-    assert pol_entry.get("file_path", "").endswith(".adoc")
+    cap_prod = next(c for c in proj["capabilities"] if c["id"] == "CAP-LIVING-SPEC-ENGINE")
+    assert cap_prod.get("file_path", "").endswith(".adoc")
+    assert cap_prod.get("personas")
+    pol_entry = next(p for p in proj["policies"] if p["id"] == "POL-GIT-SOURCE-OF-TRUTH")
+    assert pol_entry.get("file_path", "").endswith("git-source-of-truth.adoc")
     assert pol_entry.get("category")
 
     portal_sl = get_context_slice(files=["src/eidos/portal/builder.py"], tier="guardrails")
@@ -1795,3 +1792,76 @@ def test_context_secondary_team_memory_attachment_and_budget_precedence(tmp_path
     assert len(anchor_bloated.to_json()) // 4 <= TIER_TOKEN_BUDGETS["anchor"]
     assert any(c["id"] == "CMP-PAY-LEDGER" for c in anchor_bloated.components)
     assert len(anchor_bloated.memories) < 3
+
+
+def test_context_structural_tie_breaking_for_capabilities_and_policies(tmp_path):  # eidos:fixture
+    """Verify DLT-2026-175: tied 1-hop capabilities rank by shared architectural links and invariant breadth, and policies rank by severity, top-capability affinity, and reach rather than raw alphabetical ID."""
+    from eidos.core.index.context import build_tiered_context_slice
+    from eidos.core.index.graph_index import ArchitecturalIndex
+
+    repo = tmp_path / "tie_break_repo"
+    eidos_dir = repo / "eidos"
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True)
+    (eidos_dir / "architecture" / "contracts").mkdir(parents=True)
+    (eidos_dir / "domains" / "billing" / "capabilities").mkdir(parents=True)
+    (eidos_dir / "policies").mkdir(parents=True)
+    (repo / "src" / "cli").mkdir(parents=True)
+    (repo / "src" / "core").mkdir(parents=True)
+    (repo / "src" / "cli" / "entry.py").write_text("from core.engine import run\n", encoding="utf-8")
+    (repo / "src" / "core" / "engine.py").write_text("def run():\n    return 1\n", encoding="utf-8")
+    (eidos_dir / "domains" / "billing" / "domain.adoc").write_text(
+        "---\ntype: product/domain\nid: DOM-BILLING\ntitle: Billing\nstatus: active\nclassification: core\n---\n= Billing\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "cli.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-CLI\ntitle: CLI\nstatus: active\ncontainer_type: cli_app\n"
+        "runtime: Python\nsource_path: src/cli\ndomain: DOM-BILLING\ncontracts:\n  provides:\n    - CTR-CLI\n---\n= CLI\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "core.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-CORE\ntitle: Core\nstatus: active\ncontainer_type: library\n"
+        "runtime: Python\nsource_path: src/core\ndomain: DOM-BILLING\n---\n= Core\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "contracts" / "cli.adoc").write_text(
+        "---\ntype: tech/contract\nid: CTR-CLI\ntitle: CLI Contract\nstatus: active\nprotocol: cli_args\ncontainer: CNT-CLI\n---\n= CLI\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "policies" / "alpha-advisory.adoc").write_text(
+        "---\ntype: product/policy\nid: POL-ALPHA-ADVISORY\ntitle: Alpha Advisory\nstatus: active\ncategory: governance\n"
+        "severity: advisory\ninvariants:\n  - id: INV-POL-ALPHA\n    rule: Advisory rule.\n---\n= Alpha\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "policies" / "mid-blocking.adoc").write_text(
+        "---\ntype: product/policy\nid: POL-MID-BLOCKING\ntitle: Mid Blocking\nstatus: active\ncategory: governance\n"
+        "severity: blocking\ninvariants:\n  - id: INV-POL-MID\n    rule: Mid blocking rule.\n---\n= Mid\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "policies" / "zeta-blocking.adoc").write_text(
+        "---\ntype: product/policy\nid: POL-ZETA-BLOCKING\ntitle: Zeta Blocking\nstatus: active\ncategory: governance\n"
+        "severity: blocking\ninvariants:\n  - id: INV-POL-ZETA\n    rule: Zeta blocking rule.\n---\n= Zeta\n",
+        encoding="utf-8",
+    )
+    # Alphabetically first capability has fewer shared links (1) and fewer invariants (1)
+    (eidos_dir / "domains" / "billing" / "capabilities" / "alpha-tiny.adoc").write_text(
+        "---\ntype: product/capability\nid: CAP-ALPHA-TINY\ntitle: Alpha Tiny\ndomain: DOM-BILLING\nstatus: active\n"
+        "business:\n  policies:\n    - eidos/policies/alpha-advisory.adoc\n    - eidos/policies/zeta-blocking.adoc\n"
+        "technical:\n  containers:\n    - CNT-CORE\n  invariants:\n"
+        "    - id: INV-ALPHA-ONE\n      rule: Tiny rule.\n---\n= Alpha Tiny\n",
+        encoding="utf-8",
+    )
+    # Alphabetically later capability shares both CNT-CORE + CTR-CLI (2 links) and has 2 invariants
+    (eidos_dir / "domains" / "billing" / "capabilities" / "zeta-core.adoc").write_text(
+        "---\ntype: product/capability\nid: CAP-ZETA-CORE\ntitle: Zeta Core\ndomain: DOM-BILLING\nstatus: active\n"
+        "business:\n  policies:\n    - eidos/policies/mid-blocking.adoc\n    - eidos/policies/zeta-blocking.adoc\n"
+        "technical:\n  containers:\n    - CNT-CORE\n  contracts:\n    - CTR-CLI\n  invariants:\n"
+        "    - id: INV-ZETA-ONE\n      rule: Core rule one.\n"
+        "    - id: INV-ZETA-TWO\n      rule: Core rule two.\n---\n= Zeta Core\n",
+        encoding="utf-8",
+    )
+
+    idx = ArchitecturalIndex(repo_root=repo, eidos_dir=eidos_dir)
+    idx.sync(force=True, auto_semantic=False)
+    sl = build_tiered_context_slice(idx, files=["src/cli/entry.py"], tier="deep", use_semantic=False)
+    assert [c["id"] for c in sl.capabilities[:2]] == ["CAP-ZETA-CORE", "CAP-ALPHA-TINY"]
+    assert [p["id"] for p in sl.policies] == ["POL-ZETA-BLOCKING", "POL-MID-BLOCKING", "POL-ALPHA-ADVISORY"]

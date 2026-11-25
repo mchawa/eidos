@@ -1,0 +1,97 @@
+---
+type: delta/mutation
+id: DLT-2026-175-HARDEN-CONTEXT-TIE-BREAKING-FBB0
+title: "Harden Context Tie-Breaking, CLI Help AST Diffing, Schema Genericity, and Doctor Open-Delta Diagnostics"
+status: applied
+intent:
+  kind: enabler
+  motivation: Eliminate alphabetical ID sensitivity in eidos context capability/policy slicing, ignore prose-only CLI help string edits inside Typer/Click descriptors during AST structural drift classification, extend INV-ENGINE-GENERICITY to bundled v1 schemas, surface non-blocking ready-to-apply open SpecDeltas in eidos doctor, and prevent stale mid-run coverage.json false failures in test_pol_statement_test_coverage.
+mutations:
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+    details: Break 1-hop capability ties structurally by shared matched architectural links and declared invariant breadth ahead of alphabetical ID, and rank governing policies by severity, top-capability affinity, and governed capability reach before alphabetical ID.
+    expect:
+      frontmatter:
+        status: active
+      body:
+        contains:
+          - "Structural Entity Tie-Breaking"
+          - "top-capability affinity"
+  - operation: modify
+    target: CMP-AST-DIFF-CLASSIFIER
+    details: Normalize prose-only CLI help keyword string literals (help, rich_help_panel, short_help, epilog) inside Python Typer/Click descriptors via Python AST before structural signature diffing in diff_symbol_maps.
+    expect:
+      frontmatter:
+        status: active
+      body:
+        contains:
+          - "Typer/Click descriptors"
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+    details: Add non-blocking open_deltas check in eidos doctor (checks.open_deltas) detecting active SpecDeltas whose mutations are already verified on disk (status ready_to_apply).
+    expect:
+      frontmatter:
+        status: active
+      body:
+        contains:
+          - "checks.open_deltas"
+          - "ready_to_apply"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: Bump CTR-EIDOS-CLI to 1.10.0 and document additive non-blocking checks.open_deltas field under eidos doctor --json.
+    expect:
+      frontmatter:
+        version: "1.10.0"
+      body:
+        contains:
+          - "checks.open_deltas"
+  - operation: modify
+    target: CAP-LIVING-SPEC-ENGINE
+    details: Extend INV-ENGINE-GENERICITY to scan bundled v1 schemas (assets/schemas/) alongside src/eidos/ and assets/plugin_reference/skills/.
+    expect:
+      frontmatter:
+        status: active
+  - operation: modify
+    target: INV-ENGINE-GENERICITY
+    details: Update INV-ENGINE-GENERICITY rule to explicitly include bundled v1 schemas (assets/schemas/).
+    expect:
+      frontmatter:
+        rule: "assets/schemas/"
+        test_binding: "tests/test_scaffolder.py::test_engine_genericity_zero_self_references"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: Document eidos doctor checks.open_deltas advisory diagnostic in docs/guides/cli.md and eidos/architecture/components/docs-user-guides.adoc.
+    expect:
+      frontmatter:
+        status: active
+      body:
+        contains:
+          - "checks.open_deltas"
+vcs:
+  branch: main
+  base_commit: 1493b2d71cad8693766f931f37c988d7c17ef9b3
+---
+= SpecDelta: Harden Context Tie-Breaking, CLI Help AST Diffing, Schema Genericity, and Doctor Open-Delta Diagnostics
+:toc: left
+
+== Problem Statement
+Five follow-up issues surfaced after migrating living specifications from numbered IDs to semantic names (`DLT-2026-174`):
+1. Tied 1-hop capabilities and governing policies in `eidos context` fell back to raw alphabetical ID order before guardrails budget truncation.
+2. Editing prose-only `help=` strings inside Typer/Click `Argument`/`Option`/`command` signatures was classified as a structural code change by `CMP-AST-DIFF-CLASSIFIER`.
+3. `INV-ENGINE-GENERICITY` did not scan `assets/schemas/`, allowing Eidos-self IDs to slip into generic schema descriptions.
+4. `DLT-2026-170` remained at `status: proposed` after its code/spec changes landed, and `eidos doctor` had no advisory diagnostic flagging already-verified open SpecDeltas.
+5. `tests/test_validator.py::test_pol_statement_test_coverage` read pre-existing stale `coverage.json` mid-run during `pytest --cov`.
+
+== Proposed Specification Changes
+* **`CMP-TIERED-CONTEXT-COMPRESSOR`**: Add structural capability tie-breaking (`-shared_links`, `-inv_count`) and policy ranking (`severity`, top-capability affinity, `-len(pol_cap_refs)`, plus severity-ordered fallback query) in `src/eidos/core/index/context.py`.
+* **`CMP-AST-DIFF-CLASSIFIER`**: Add Python AST-based `_normalize_signature_for_diff` in `src/eidos/core/index/ast_diff.py` stripping prose-only `help`/`rich_help_panel`/`short_help`/`epilog` string literals inside Typer/Click descriptors while preserving all flag, default, type, and non-CLI signature diffs.
+* **`CMP-CLI-DOCTOR-HOOKS`, `CTR-EIDOS-CLI` (`1.10.0`), `CMP-DOCS-USER-GUIDES`**: Add non-blocking `checks.open_deltas` (`clean` | `in_progress` | `ready_to_apply`) in `src/eidos/cli/doctor_hook_commands.py` and document it in `CTR-EIDOS-CLI` and `docs/guides/cli.md`.
+* **`CAP-LIVING-SPEC-ENGINE` / `INV-ENGINE-GENERICITY`**: Extend `test_engine_genericity_zero_self_references` to scan `assets/schemas/` in addition to `src/eidos/` and `assets/plugin_reference/skills/`.
+* **Operational Hygiene**: Apply already-verified `DLT-2026-170` (`13/13` verified) and guard live `coverage.json` verification inside `test_pol_statement_test_coverage` when `--cov` is actively running.
+
+== Implementation Plan
+1. **Context Structural Tie-Breaking**: Update `src/eidos/core/index/context.py` (`CMP-TIERED-CONTEXT-COMPRESSOR`, parent `CNT-EIDOS-INDEX` covered via component) and add hermetic unit test `tests/test_context.py::test_context_structural_tie_breaking_for_capabilities_and_policies`.
+2. **CLI Help AST Diff Normalization**: Update `src/eidos/core/index/ast_diff.py` (`CMP-AST-DIFF-CLASSIFIER`) and add `tests/test_ast_indexer.py::test_ast_diff_normalizes_cli_help_kwargs_only`.
+3. **Doctor Open-Delta Diagnostics & Apply `DLT-2026-170`**: Apply `DLT-2026-170`, add `_check_open_deltas` in `src/eidos/cli/doctor_hook_commands.py` (`CMP-CLI-DOCTOR-HOOKS`, `CTR-EIDOS-CLI` `1.10.0`, `docs/guides/cli.md` via `CMP-DOCS-USER-GUIDES`), and add `tests/test_plugin.py::test_doctor_open_deltas_advisory_check`.
+4. **Schema Genericity & Stale Coverage Guard**: Extend `tests/test_scaffolder.py::test_engine_genericity_zero_self_references` (`INV-ENGINE-GENERICITY` under `CAP-LIVING-SPEC-ENGINE`) to scan `assets/schemas/`, and guard live `coverage.json` checks in `tests/test_validator.py::test_pol_statement_test_coverage` (test-only; no spec mutation).
+5. **Verification**: Run `ruff`, `eidos delta verify/apply DLT-2026-175`, `eidos drift --uncommitted --json`, and full `pytest` with per-file `>90%` coverage verification.

@@ -919,7 +919,7 @@ def test_cli_spec_create_component_with_container(tmp_path):
 
 
 def test_engine_genericity_zero_self_references():
-    """Verify INV-ENGINE-GENERICITY: runtime (src/eidos/), portal frontend views, and skills (assets/plugin_reference/skills/) contain zero Eidos-self IDs or paths."""
+    """Verify INV-ENGINE-GENERICITY: runtime (src/eidos/), portal frontend views, bundled schemas (assets/schemas/), and skills (assets/plugin_reference/skills/) contain zero Eidos-self IDs or paths."""
     import re
 
     forbidden = re.compile(
@@ -934,10 +934,10 @@ def test_engine_genericity_zero_self_references():
         r"POL-ZERO-AI-CALL-DEPENDENCY|POL-STATEMENT-TEST-COVERAGE"
         r")\b|src/eidos"
     )
-    skills_forbidden = re.compile(
+    skills_and_schemas_forbidden = re.compile(
         r"\b(POL-00\d+|INV-COMPONENT-CENTRALIZATION-MANDATE|INV-COMPONENT-CONTAINER-AFFINITY|DEC-VCS-STATIC-INVARIANT-TRACEABILITY)\b"
     )
-    scan_roots = [Path("src/eidos"), Path("assets/plugin_reference/skills")]
+    scan_roots = [Path("src/eidos"), Path("assets/plugin_reference/skills"), Path("assets/schemas")]
     violations: list[str] = []
 
     for root in scan_roots:
@@ -946,13 +946,13 @@ def test_engine_genericity_zero_self_references():
                 continue
             if any(part in ("__pycache__", "node_modules", "dist") for part in p.parts):
                 continue
-            if p.suffix.lower() not in (".py", ".ts", ".tsx", ".md", ".json", ".yaml"):
+            if p.suffix.lower() not in (".py", ".ts", ".tsx", ".md", ".json", ".yaml", ".adoc"):
                 continue
             text = p.read_text(encoding="utf-8", errors="ignore")
             for m in forbidden.finditer(text):
                 violations.append(f"{p}: matched '{m.group(0)}'")
-            if root == Path("assets/plugin_reference/skills"):
-                for m in skills_forbidden.finditer(text):
+            if root in (Path("assets/plugin_reference/skills"), Path("assets/schemas")):
+                for m in skills_and_schemas_forbidden.finditer(text):
                     violations.append(f"{p}: matched '{m.group(0)}'")
 
     portal_forbidden = re.compile(

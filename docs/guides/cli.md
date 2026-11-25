@@ -39,7 +39,7 @@ eidos info
 ---
 
 ### `eidos doctor`
-Verify Eidos tool installation, non-blocking PyPI release update availability (`checks.cli_update`), root `AGENTS.md` managed-block integrity (`checks.agents_md`), Git repository status, specification directory health, knowledge graph index freshness, and installed agent plugin currency and `Stop` / `PreToolUse` hook health (`hooks_ok`, `hooks_status`, `target_hooks`, `hook_errors`):
+Verify Eidos tool installation, non-blocking PyPI release update availability (`checks.cli_update`), root `AGENTS.md` managed-block integrity (`checks.agents_md`), non-blocking open SpecDelta verification readiness (`checks.open_deltas`), Git repository status, specification directory health, knowledge graph index freshness, and installed agent plugin currency and `Stop` / `PreToolUse` hook health (`hooks_ok`, `hooks_status`, `target_hooks`, `hook_errors`):
 
 ```bash
 eidos doctor
@@ -49,7 +49,7 @@ eidos doctor --json
 
 Options:
 * `--path, -p PATH`: Path to the project or specifications directory (default: current directory).
-* `--json`: Output diagnostic report in JSON format (including `checks.cli_update`, `checks.agents_md`, and `checks.agent_plugin` with `hooks_ok`, `hooks_status`, `target_hooks`, and `hook_errors`).
+* `--json`: Output diagnostic report in JSON format (including `checks.cli_update`, `checks.agents_md`, `checks.open_deltas`, and `checks.agent_plugin` with `hooks_ok`, `hooks_status`, `target_hooks`, and `hook_errors`).
 
 ---
 

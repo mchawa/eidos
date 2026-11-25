@@ -824,12 +824,15 @@ def build_tiered_context_slice(
             inv_data["id"] = row["id"]
             matched_invariants.setdefault(row["id"], inv_data)
 
+        pol_cap_refs: dict[str, set[str]] = {}
         cursor.execute(
             f"""
-            SELECT id, title, file_path, data_json FROM entities
-            WHERE type = 'product/policy' AND id IN (
-                SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type = 'governed_by'
-            );
+            SELECT ed.source_id, e.id, e.title, e.file_path, e.data_json
+            FROM edges ed
+            JOIN entities e ON e.id = ed.target_id
+            WHERE e.type = 'product/policy'
+              AND ed.source_id IN ({ph})
+              AND ed.rel_type = 'governed_by';
             """,
             tuple(cap_ids),
         )
@@ -839,11 +842,24 @@ def build_tiered_context_slice(
             pol_data["title"] = row["title"]
             pol_data.setdefault("file_path", row["file_path"])
             matched_policies.setdefault(row["id"], pol_data)
+            pol_cap_refs.setdefault(row["id"], set()).add(row["source_id"])
+    else:
+        pol_cap_refs = {}
 
     # 9. Fallback governing policies if none matched
     if not matched_policies and (any_matched or not has_explicit_query):
         for row in cursor.execute(
-            "SELECT id, title, type, domain, file_path, data_json FROM entities WHERE type = 'product/policy' ORDER BY id LIMIT 2;"
+            """
+            SELECT id, title, type, domain, file_path, data_json FROM entities
+            WHERE type = 'product/policy'
+            ORDER BY CASE lower(coalesce(json_extract(data_json, '$.severity'), ''))
+                WHEN 'blocking' THEN 0
+                WHEN 'warning' THEN 1
+                WHEN 'advisory' THEN 2
+                ELSE 3
+            END, id
+            LIMIT 2;
+            """
         ).fetchall():
             p_data = orjson.loads(row["data_json"])
             p_data["id"] = row["id"]
@@ -979,7 +995,9 @@ def build_tiered_context_slice(
         comp_refs = {str(t).strip() for t in (tech.get("components") or []) if isinstance(t, str)}
         return bool(comp_refs & primary_set)
 
-    def _cap_relevance_tuple(cap_entry: dict[str, Any]) -> tuple[int, int, int, str]:
+    slice_tech_ids = set(matched_components.keys()) | set(matched_contracts.keys())
+
+    def _cap_relevance_tuple(cap_entry: dict[str, Any]) -> tuple[int, int, int, int, int, str]:
         tech = cap_entry.get("technical") if isinstance(cap_entry.get("technical"), dict) else {}
         cnt_refs = [str(t).strip() for t in (tech.get("containers") or []) if isinstance(t, str) and str(t).strip()]
         primary_cnt_match = bool(cnt_refs and cnt_refs[0] in primary_set)
@@ -995,7 +1013,22 @@ def build_tiered_context_slice(
             tier_score = 1
         else:
             tier_score = 2
-        return (tier_score, -overlap, 0 if in_domain else 1, str(cap_entry.get("id", "")))
+        bound_tech_refs = {
+            str(t).strip()
+            for key in ("containers", "components", "contracts")
+            for t in (tech.get(key) if isinstance(tech.get(key), list) else ())
+            if isinstance(t, str) and str(t).strip()
+        }
+        shared_links = len(bound_tech_refs & slice_tech_ids)
+        inv_count = len(tech.get("invariants") or []) if isinstance(tech.get("invariants"), list) else 0
+        return (
+            tier_score,
+            -overlap,
+            0 if in_domain else 1,
+            -shared_links,
+            -inv_count,
+            str(cap_entry.get("id", "")),
+        )
 
     sorted_comps = sorted(
         matched_components.values(),
@@ -1026,11 +1059,16 @@ def build_tiered_context_slice(
             *_cap_relevance_tuple(x),
         ),
     )
+    pol_severity_rank = {"blocking": 0, "warning": 1, "advisory": 2}
+    top_cap_id = str(sorted_caps[0].get("id", "")) if sorted_caps else ""
     sorted_pols = sorted(
         matched_policies.values(),
         key=lambda x: (
             0 if x.get("id", "") in direct_pol_rank else 1,
             direct_pol_rank.get(x.get("id", ""), 999),
+            pol_severity_rank.get(str(x.get("severity") or "").strip().lower(), 3),
+            0 if (top_cap_id and top_cap_id in pol_cap_refs.get(x.get("id", ""), ())) else 1,
+            -len(pol_cap_refs.get(x.get("id", ""), ())),
             x.get("id", ""),
         ),
     )

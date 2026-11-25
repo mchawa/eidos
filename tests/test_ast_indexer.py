@@ -1837,3 +1837,85 @@ def test_all_ast_languages_and_corner_cases(tmp_path: Path) -> None:
     )
     assert fix_fns == {}
     assert fix_file_toks == [f"{inv_p}SYNTH-FIX-001"]
+
+
+def test_ast_diff_normalizes_cli_help_kwargs_only():
+    """Verify DLT-2026-175: prose-only CLI help/panel edits in Typer/Click descriptors are non-structural while flag, default, and non-CLI signature changes remain structural."""
+    from eidos.core.index.ast_diff import _normalize_signature_for_diff, has_structural_changes
+
+    cli_v1 = (
+        "import typer\n"
+        "from typing import Annotated\n\n"
+        "@app.command('create', help='Old command help')\n"
+        "@extra_dec('tag')\n"
+        "def create_cmd(\n"
+        "    doc_id: str = typer.Argument(..., help=('Old ' 'arg help')),\n"
+        "    verbose: Annotated[bool, typer.Option(False, '--verbose', '-v', help='Old flag help', rich_help_panel='Flags')] = False,\n"
+        "):\n"
+        "    return doc_id\n"
+    )
+    cli_v2_help_only = (
+        "import typer\n"
+        "from typing import Annotated\n\n"
+        "@app.command('create', help='Updated command help text')\n"
+        "@extra_dec('tag')\n"
+        "def create_cmd(\n"
+        "    doc_id: str = typer.Argument(..., help='New concise arg help'),\n"
+        "    verbose: Annotated[bool, typer.Option(False, '--verbose', '-v', help='New flag help', rich_help_panel='Options')] = False,\n"
+        "):\n"
+        "    return doc_id\n"
+    )
+    assert has_structural_changes(cli_v1, cli_v2_help_only, "src/cli/cmds.py") == (False, [])
+
+    # Real CLI flag rename MUST remain structural
+    cli_v3_flag_changed = cli_v1.replace("'--verbose'", "'--loud'")
+    is_struct_flag, reasons_flag = has_structural_changes(cli_v1, cli_v3_flag_changed, "src/cli/cmds.py")
+    assert is_struct_flag is True and any("create_cmd" in r for r in reasons_flag)
+
+    # Real CLI default change MUST remain structural
+    cli_v4_default_changed = cli_v1.replace("typer.Option(False,", "typer.Option(True,")
+    assert has_structural_changes(cli_v1, cli_v4_default_changed, "src/cli/cmds.py")[0] is True
+
+    # Non-CLI function parameter named `help` MUST remain structural
+    non_cli_v1 = "def render(help: str = 'old') -> str:\n    return help\n"
+    non_cli_v2 = "def render(help: str = 'new') -> str:\n    return help\n"
+    assert has_structural_changes(non_cli_v1, non_cli_v2, "src/render.py")[0] is True
+
+    # Adding or removing `help=` on a CLI option MUST remain non-structural (symmetric normalization)
+    opt_no_help = "import typer\ndef run(verbose: bool = typer.Option(False, '--verbose')):\n    return verbose\n"
+    opt_with_help = (
+        "import typer\ndef run(verbose: bool = typer.Option(False, '--verbose', help='Enable verbose')):\n"
+        "    return verbose\n"
+    )
+    assert has_structural_changes(opt_no_help, opt_with_help, "src/cli/cmds.py") == (False, [])
+    assert has_structural_changes(opt_with_help, opt_no_help, "src/cli/cmds.py") == (False, [])
+
+    # Click `@click.group(help=...)`, escaped quotes, and triple-quoted strings with `@` inside decorators
+    click_v1 = (
+        "import click\n"
+        '@click.group(help="say \\"hi\\" @team")\n'
+        "@extra_dec('''triple \"quote\" @all''')\n"
+        "def root_cli():\n    pass\n"
+    )
+    click_v2 = (
+        "import click\n"
+        '@click.group(help="updated group help")\n'
+        "@extra_dec('''triple \"quote\" @all''')\n"
+        "def root_cli():\n    pass\n"
+    )
+    assert has_structural_changes(click_v1, click_v2, "src/cli/click_app.py") == (False, [])
+
+    # Dynamic non-literal `help=CONST` and non-CLI decorator `help=` edits MUST remain structural
+    dyn_v1 = "import typer\ndef run(x: str = typer.Option('', help=OLD_HELP)):\n    return x\n"
+    dyn_v2 = "import typer\ndef run(x: str = typer.Option('', help=NEW_HELP)):\n    return x\n"
+    assert has_structural_changes(dyn_v1, dyn_v2, "src/cli/cmds.py")[0] is True
+    other_dec_v1 = "@other_dec(help='old')\ndef run():\n    pass\n"
+    other_dec_v2 = "@other_dec(help='new')\ndef run():\n    pass\n"
+    assert has_structural_changes(other_dec_v1, other_dec_v2, "src/cli/cmds.py")[0] is True
+
+    # Non-Python, empty, or unparseable signatures fall back cleanly to raw string comparison
+    assert _normalize_signature_for_diff("") == ""
+    assert _normalize_signature_for_diff("export function f(help='a')") == "export function f(help='a')"
+    assert _normalize_signature_for_diff("def broken(x = typer.Option(help='unterminated)") == (
+        "def broken(x = typer.Option(help='unterminated)"
+    )

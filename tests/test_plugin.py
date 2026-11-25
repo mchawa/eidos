@@ -3421,3 +3421,73 @@ def test_plugin_cli_error_and_partial_failure_branches(tmp_path, monkeypatch):
 
     monkeypatch.setattr(plugin_cmd_mod, "update_plugin", _raise_runtime)
     assert runner.invoke(app, ["plugin", "update", "claude", "-p", str(tmp_path)]).exit_code == 1
+
+
+def test_doctor_open_deltas_advisory_check(tmp_path, monkeypatch):
+    """Verify DLT-2026-175: eidos doctor reports clean, in_progress, and non-blocking ready_to_apply open SpecDeltas."""
+    import subprocess
+
+    from eidos.cli import doctor_hook_commands as doc_mod
+    from eidos.core.lifecycle.delta_engine import create_delta
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
+
+    monkeypatch.setattr(
+        doc_mod,
+        "check_cli_update_status",
+        lambda: {
+            "status": "up_to_date",
+            "installed_version": "0.27.3",
+            "latest_version": "0.27.3",
+            "update_available": False,
+        },
+    )
+
+    repo = tmp_path / "doctor_deltas"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+    init_repository(repo, title="Doctor Test")
+    eidos_dir = repo / "eidos"
+    pol_path = create_spec(eidos_dir, "policy", "POL-SAMPLE", title="Sample Policy")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+
+    # 1. Clean: zero open SpecDeltas
+    res_clean = runner.invoke(app, ["doctor", "--path", str(eidos_dir), "--json"])
+    assert res_clean.exit_code == 0
+    clean_data = orjson.loads(res_clean.stdout)
+    assert clean_data["healthy"] is True
+    assert clean_data["checks"]["open_deltas"]["status"] == "clean"
+    assert clean_data["checks"]["open_deltas"]["ready_to_apply"] == []
+
+    # 2. In progress: proposed SpecDelta with unsatisfied mutation (not flagged as ready_to_apply)
+    dlt_path = create_delta(eidos_dir, "DLT-2026-010", title="Update Sample Policy", kind="enabler")
+    dlt_txt = dlt_path.read_text(encoding="utf-8").replace(
+        "mutations: []",
+        'mutations:\n  - operation: modify\n    target: POL-SAMPLE\n    details: Update policy body.\n    expect:\n      body:\n        contains:\n          - "READY_SENTINEL"',
+    )
+    dlt_path.write_text(dlt_txt, encoding="utf-8")
+
+    res_prog = runner.invoke(app, ["doctor", "--path", str(eidos_dir), "--json"])
+    assert res_prog.exit_code == 0
+    prog_data = orjson.loads(res_prog.stdout)
+    assert prog_data["checks"]["open_deltas"]["status"] == "in_progress"
+    assert prog_data["checks"]["open_deltas"]["active_count"] == 1
+    assert prog_data["checks"]["open_deltas"]["ready_to_apply"] == []
+
+    # 3. Ready to apply: satisfy mutation on disk without running `eidos delta apply` -> non-blocking WARN
+    pol_path.write_text(pol_path.read_text(encoding="utf-8") + "\nREADY_SENTINEL\n", encoding="utf-8")
+    res_ready = runner.invoke(app, ["doctor", "--path", str(eidos_dir), "--json"])
+    assert res_ready.exit_code == 0
+    ready_data = orjson.loads(res_ready.stdout)
+    assert ready_data["healthy"] is True
+    assert ready_data["checks"]["open_deltas"]["ok"] is True
+    assert ready_data["checks"]["open_deltas"]["status"] == "ready_to_apply"
+    assert len(ready_data["checks"]["open_deltas"]["ready_to_apply"]) == 1
+
+    res_table = runner.invoke(app, ["doctor", "--path", str(eidos_dir)])
+    assert res_table.exit_code == 0
+    assert "Open SpecDeltas" in res_table.stdout
+    assert "WARN" in res_table.stdout

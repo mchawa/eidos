@@ -2,7 +2,7 @@
 type: delta/mutation
 id: DLT-2026-170-INDEX-TEAM-MEMORY-FRESHNESS-C09A
 title: "Index Team Memory, Freshness Cache & Context Attachment (Phase 2)"
-status: proposed
+status: applied
 graduated_from: EXP-2026-012
 vcs:
   branch: main

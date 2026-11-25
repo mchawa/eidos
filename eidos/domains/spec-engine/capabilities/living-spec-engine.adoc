@@ -86,7 +86,7 @@ technical:
       rule: "Boundary Protocol Contracts (CTR-*) must be owned by Containers (CNT-*), never by in-process Components (CMP-*)."
       test_binding: "tests/test_colocated_components.py::test_spike_1_interface_boundary_governance_enforcement"
     - id: INV-ENGINE-GENERICITY
-      rule: "The Eidos runtime (src/eidos/, including dynamic SYS-* project titles in changelog generation and catalog-resolved blueprint references in scaffolder), portal frontend views (src/eidos/portal/frontend/src/), and bundled Agent Skills (assets/plugin_reference/skills/) must remain 100% project-agnostic with zero hardcoded Eidos-self entity IDs or repository paths."
+      rule: "The Eidos runtime (src/eidos/, including dynamic SYS-* project titles in changelog generation and catalog-resolved blueprint references in scaffolder), portal frontend views (src/eidos/portal/frontend/src/), bundled v1 schemas (assets/schemas/), and bundled Agent Skills (assets/plugin_reference/skills/) must remain 100% project-agnostic with zero hardcoded Eidos-self entity IDs or repository paths."
       test_binding: "tests/test_scaffolder.py::test_engine_genericity_zero_self_references"
     - id: INV-FOREIGN-REPO-E2E
       rule: "Any external polyglot repository initialized with eidos init must support the complete Eidos lifecycle (spec create, validate, index sync, context, drift, and portal build) with clean validation and drift detection regardless of parent checkout path (including ~/.agents/ checkouts), Git-tracked source subdirectories named target/build/site/vendor, or custom spec root directory (--path)."

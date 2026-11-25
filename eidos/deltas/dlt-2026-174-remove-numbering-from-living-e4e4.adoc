@@ -2,7 +2,7 @@
 type: delta/mutation
 id: DLT-2026-174-REMOVE-NUMBERING-FROM-LIVING-E4E4
 title: Remove Numbering from Living Specification IDs and Align Semantic Naming Conventions
-status: proposed
+status: applied
 intent:
   kind: enabler
   motivation: Eliminate arbitrary numeric IDs and numbered filenames across living specifications (SYS-*, ARCH-*, CAP-*, POL-*, and policy INV-*/DEC-*) in favor of descriptive semantic names, while aligning v1 schema descriptions, scaffolder filename/example synthesis, CLI help, bundled skills, tests, and docs (keeping chronological EXP-2026-* and DLT-2026-* numbering intact).
