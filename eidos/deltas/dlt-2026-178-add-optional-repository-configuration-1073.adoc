@@ -1,0 +1,558 @@
+---
+type: delta/mutation
+id: DLT-2026-178-ADD-OPTIONAL-REPOSITORY-CONFIGURATION-1073
+title: Add Optional Repository Configuration File (eidos.yaml)
+status: proposed
+intent:
+  kind: feature
+  motivation: >
+    Provide an optional, schema-validated, project-scoped eidos.yaml configuration file for repo-level engine and
+    workflow settings (workspace paths/exclusions/test globs, drift defaults/ignore paths/check severities, context
+    budgets/semantic mirror, team memory drift thresholds/caps, archive retention, plugin targets/hooks/update checks,
+    and portal serve/build defaults) with deterministic CLI > EIDOS_* env > eidos.yaml > built-in defaults precedence,
+    while preserving 100% zero-config operation when absent and keeping architectural truth strictly inside eidos/*.adoc.
+mutations:
+  - operation: add
+    target: CMP-REPO-CONFIG
+    details: >
+      Introduce standalone component CMP-REPO-CONFIG (eidos/architecture/components/repo-config.adoc,
+      src/eidos/core/workspace/config.py) under CNT-EIDOS-CORE owning typed frozen EidosConfig models, optional
+      root/sub-project eidos.yaml discovery (find_config_file), fail-closed Draft 2020-12 + path containment +
+      HTTP(S) URL scheme validation (validate_config_file, ConfigValidationError), and deterministic EIDOS_* env +
+      file resolution (load_repo_config, load_repo_config_with_errors).
+    expect:
+      frontmatter:
+        status: active
+        container: CNT-EIDOS-CORE
+        source_path: src/eidos/core/workspace/config.py
+      body:
+        contains:
+          - "EidosConfig"
+          - "find_config_file"
+          - "validate_config_file"
+          - "load_repo_config"
+          - "load_repo_config_with_errors"
+          - "ConfigValidationError"
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: >
+      Add closed Draft 2020-12 schema assets/schemas/config/eidos-config.v1.schema.yaml (strictly outside
+      assets/schemas/v1/ so the 17 canonical living specification schemas remain unchanged, and free of Eidos-self
+      IDs/paths per INV-ENGINE-GENERICITY), register CMP-REPO-CONFIG under src/eidos/core/workspace/, and record
+      DEC-CORE-REPO-CONFIG-YAML-BOUNDARY in CNT-EIDOS-CORE.decisions.
+    expect:
+      frontmatter:
+        status: active
+        decisions.id:
+          - "DEC-CORE-REPO-CONFIG-YAML-BOUNDARY"
+      body:
+        contains:
+          - "eidos.yaml"
+          - "CMP-REPO-CONFIG"
+          - "DEC-CORE-REPO-CONFIG-YAML-BOUNDARY"
+  - operation: modify
+    target: CMP-ASSET-LOCATOR
+    details: >
+      Add get_config_schema_path() -> Path in src/eidos/core/workspace/assets.py resolving
+      assets/schemas/config/eidos-config.v1.schema.yaml across wheel installs and repo checkouts.
+    expect:
+      frontmatter:
+        status: active
+        source_path: src/eidos/core/workspace/assets.py
+      body:
+        contains:
+          - "get_config_schema_path"
+          - "eidos-config.v1.schema.yaml"
+  - operation: modify
+    target: CMP-PROJECT-RESOLVER
+    details: >
+      Integrate CMP-REPO-CONFIG in src/eidos/core/workspace/project.py so resolve_specs_dir_for_repo, find_repo_root,
+      resolve_spec_and_repo_roots (checking upward eidos.yaml before falling back to base.parent so nested
+      workspace.specs_dir paths like docs/specs resolve repo_root accurately), load_project (ProjectConfig.repo_config),
+      get_tracked_files (is_excluded_by_config), is_polyglot_test_file, and discover_nested_subproject_roots honor
+      workspace.specs_dir, workspace.exclude, workspace.tests.{include,exclude}, workspace.subprojects_exclude, and
+      drift.base_ref while preserving zero-config defaults and monorepo sub-project isolation.
+    expect:
+      frontmatter:
+        status: active
+        source_path: src/eidos/core/workspace/project.py
+      body:
+        contains:
+          - "eidos.yaml"
+          - "is_excluded_by_config"
+          - "workspace.specs_dir"
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: >
+      Validate repo-root eidos.yaml fail-closed inside SpecValidator.validate_directory() via CMP-REPO-CONFIG
+      (load_repo_config_with_errors reporting violations under report.schema_errors['eidos.yaml']) and honor
+      drift.checks severities (mermaid: error, import_boundaries: error, public_surface: error, contract_parity: error,
+      deprecated_references: warn defaults across error | warn | off, routing warn exclusively to report.warnings
+      without mutating doc.errors/schema_errors/broken_references and keeping missing source_path/specification_file
+      blocking).
+    expect:
+      frontmatter:
+        status: active
+        source_path:
+          - src/eidos/core/spec/validator.py
+          - src/eidos/core/spec/design_validation.py
+      body:
+        contains:
+          - "eidos.yaml"
+          - "drift.checks"
+  - operation: modify
+    target: CMP-GIT-DIFF-INSPECTOR
+    details: >
+      Honor workspace.specs_dir, workspace.exclude, workspace.tests.{include,exclude}, drift.ignore_paths (suppressing
+      only code_files—never spec_files, delta_files, memory_files, test_files, or onboarding_files), and
+      drift.base_ref in src/eidos/vcs/diff.py across base-ref resolution, polyglot test discovery, and changed-file
+      classification, keeping root/sub-project eidos.yaml in other_files (never code_files, doc_files, or spec_files).
+    expect:
+      frontmatter:
+        status: active
+        source_path: src/eidos/vcs/diff.py
+      body:
+        contains:
+          - "eidos.yaml"
+          - "ignore_paths"
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    details: >
+      Thread EidosConfig into detect_drift (honoring workspace.specs_dir, drift.base_ref, drift.strict,
+      drift.ignore_paths, and drift.checks—including drift.checks.import_boundaries around evaluate_import_boundaries—
+      with explicit arguments taking precedence) and load eidos.yaml strictly from --head (before base_ref/specs_dir
+      resolution and from the materialized eval_root tree extracted by git archive) on commit-range runs per
+      INV-DRIFT-SHALLOW-AND-COMMIT-TREE-FIDELITY.
+    expect:
+      frontmatter:
+        status: active
+        source_path:
+          - src/eidos/vcs/drift.py
+          - src/eidos/vcs/snapshot.py
+          - src/eidos/vcs/structural.py
+          - src/eidos/vcs/consumers.py
+          - src/eidos/vcs/report.py
+      body:
+        contains:
+          - "eidos.yaml"
+          - "eval_root"
+          - "drift.checks"
+  - operation: modify
+    target: CMP-INVARIANT-TRACEABILITY-VERIFIER
+    details: >
+      Honor workspace.specs_dir, workspace.exclude, and workspace.tests.{include,exclude} in src/eidos/vcs/invariants.py
+      across _load_or_update_test_binding_cache (including non-Git os.walk fallback), extract_invariants_and_verify,
+      and detect_orphan_invariants so test discovery stays 100% consistent with CMP-GIT-DIFF-INSPECTOR.
+    expect:
+      frontmatter:
+        status: active
+        source_path: src/eidos/vcs/invariants.py
+      body:
+        contains:
+          - "eidos.yaml"
+          - "workspace.exclude"
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    details: >
+      Honor workspace.exclude, workspace.tests.{include,exclude}, and context.semantic.enabled (suppressing
+      _trigger_auto_semantic_refresh when false) in check_index_dirty and sync_index (src/eidos/core/index/sync.py),
+      track repo_config_sha256 in SQLite metadata (without polluting indexed_files), and trigger bidirectional
+      code/source <-> code/test reconciliation plus test_binding_cache invalidation when eidos.yaml changes.
+    expect:
+      frontmatter:
+        status: active
+        source_path:
+          - src/eidos/core/index/sync.py
+          - src/eidos/core/index/code_graph.py
+          - src/eidos/core/index/spec_edges.py
+      body:
+        contains:
+          - "eidos.yaml"
+          - "workspace.exclude"
+          - "repo_config_sha256"
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+    details: >
+      Honor context.default_tier, context.budgets (anchor, guardrails, deep), memory.commit_drift_threshold (defaulting
+      commit_drift_threshold to None in evaluate_memory_freshness and resolve_memory_freshness_batch to auto-resolve
+      from load_repo_config(repo_root) so CMP-MEMORY-ENGINE and CMP-GRAPH-TRAVERSAL-ENGINE stay consistent), and
+      memory.tier_caps from EidosConfig while preserving calibrated built-in constants when eidos.yaml is absent.
+    expect:
+      frontmatter:
+        status: active
+        source_path:
+          - src/eidos/core/index/context.py
+          - src/eidos/core/index/context_globs.py
+          - src/eidos/core/index/context_models.py
+          - src/eidos/core/index/context_memories.py
+      body:
+        contains:
+          - "eidos.yaml"
+          - "commit_drift_threshold"
+  - operation: modify
+    target: CMP-SEMANTIC-EMBEDDING-ENGINE
+    details: >
+      Resolve context.semantic.variant and optional HTTP(S)-only context.semantic.model_mirror_url directly inside
+      setup_semantic_model (and honor custom root workspace.specs_dir in resolve_semantic_model_dir) in
+      src/eidos/core/index/semantic.py while unconditionally enforcing pinned SHA-256 HARRIER_ARTIFACT_MANIFEST
+      verification across both default HuggingFace and mirror downloads.
+    expect:
+      frontmatter:
+        status: active
+        source_path: src/eidos/core/index/semantic.py
+      body:
+        contains:
+          - "model_mirror_url"
+          - "HARRIER_ARTIFACT_MANIFEST"
+  - operation: modify
+    target: CMP-HOOK-RUNNER
+    details: >
+      Honor workspace.specs_dir and plugin.hooks.{enabled,strict,fail_on_warnings,baseline_ttl_seconds} in
+      src/eidos/plugin/hooks.py (loading config via load_repo_config_with_errors so malformed eidos.yaml surfaces via
+      detect_drift validation errors instead of silent swallow; plugin.hooks.enabled defaults to true as runtime
+      kill-switch, and nullable strict/fail_on_warnings inherit drift.* when omitted) while preserving 1-turn retry
+      caps and zero-edit Q&A short-circuiting.
+    expect:
+      frontmatter:
+        status: active
+        source_path: src/eidos/plugin/hooks.py
+      body:
+        contains:
+          - "eidos.yaml"
+          - "baseline_ttl_seconds"
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    details: >
+      Extend check_cli_update_status(..., allow_network: bool = True) in src/eidos/plugin/version.py to honor
+      plugin.updates_check: false from eidos.yaml (with EIDOS_NO_UPDATE_CHECK / EIDOS_FORCE_UPDATE_CHECK env
+      precedence), support multi-target sequences cleanly across install_plugin / update_plugin (capturing initial
+      prev_version once and ensuring idempotent shared .agents/skills installs), and honor custom workspace.specs_dir
+      when detecting monorepo sub-projects.
+    expect:
+      frontmatter:
+        status: active
+        source_path:
+          - src/eidos/__init__.py
+          - src/eidos/plugin/installer.py
+          - src/eidos/plugin/version.py
+          - src/eidos/plugin/managed_block.py
+      body:
+        contains:
+          - "updates_check"
+          - "allow_network"
+  - operation: modify
+    target: CMP-CLI-APP
+    details: >
+      Update resolve_cli_eidos_dir in src/eidos/cli/_shared.py to use load_repo_config_with_errors (honoring
+      workspace.specs_dir when valid and falling back cleanly on malformed eidos.yaml so validate/doctor reach
+      structured reporting), add resolve_repo_root_for_eidos_dir(eidos_dir) replacing hardcoded name == 'eidos'
+      checks, add structured ConfigValidationError JSON/Rich handling for non-validator commands, and expose
+      resolve_param_from_config(param_name: str, cli_value: Any, config_value: Any) -> Any using
+      click.get_current_context(silent=True) and ParameterSource.COMMANDLINE (preserving cli_value when ctx is None).
+    expect:
+      frontmatter:
+        status: active
+        source_path:
+          - src/eidos/cli/main.py
+          - src/eidos/cli/_shared.py
+      body:
+        contains:
+          - "resolve_param_from_config"
+          - "resolve_repo_root_for_eidos_dir"
+          - "workspace.specs_dir"
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+    details: >
+      Add checks.repo_config diagnostic row and JSON entry to eidos doctor (reporting absent/valid as OK and invalid
+      eidos.yaml as blocking exit code 1), honor plugin.updates_check, resolve repo_root via
+      resolve_repo_root_for_eidos_dir, and surface non-blocking advisory notices when configured concrete plugin.targets
+      are not installed.
+    expect:
+      frontmatter:
+        status: active
+        source_path: src/eidos/cli/doctor_hook_commands.py
+      body:
+        contains:
+          - "checks.repo_config"
+          - "eidos.yaml"
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+    details: >
+      Expose --fail-on-warnings/--no-fail-on-warnings on eidos validate in src/eidos/cli/spec_commands.py resolving
+      drift.fail_on_warnings from eidos.yaml with explicit CLI flag override precedence, and route spec discover
+      through config-aware workspace resolution (workspace.specs_dir).
+    expect:
+      frontmatter:
+        status: active
+        source_path: src/eidos/cli/spec_commands.py
+      body:
+        contains:
+          - "--no-fail-on-warnings"
+          - "eidos.yaml"
+  - operation: modify
+    target: CMP-CLI-DRIFT-COMMANDS
+    details: >
+      Expose --strict/--no-strict, --warn-only/--no-warn-only, and --fail-on-warnings/--no-fail-on-warnings on
+      eidos drift in src/eidos/cli/drift_commands.py resolving drift.* defaults from eidos.yaml with CLI precedence
+      and resolving repo_root via resolve_repo_root_for_eidos_dir.
+    expect:
+      frontmatter:
+        status: active
+        source_path: src/eidos/cli/drift_commands.py
+      body:
+        contains:
+          - "--no-strict"
+          - "--no-warn-only"
+          - "eidos.yaml"
+  - operation: modify
+    target: CMP-CLI-INDEX-COMMANDS
+    details: >
+      Upgrade eidos index sync in src/eidos/cli/index_commands.py from --no-semantic to --semantic/--no-semantic so CLI
+      can override context.semantic.enabled: false from eidos.yaml, and resolve context.repo_map_max_tokens,
+      context.semantic.enabled, and context.semantic.variant via resolve_param_from_config.
+    expect:
+      frontmatter:
+        status: active
+        source_path: src/eidos/cli/index_commands.py
+      body:
+        contains:
+          - "--semantic/--no-semantic"
+          - "eidos.yaml"
+  - operation: modify
+    target: CMP-CLI-PLUGIN-COMMANDS
+    details: >
+      Expose --hooks/--no-hooks on eidos plugin install (resolving default from plugin.hooks.install, default false),
+      allow optional [TARGET] (PluginInstallTarget | None) on eidos plugin install and update when plugin.targets is
+      configured in eidos.yaml (failing with exit code 2 when neither [TARGET] nor plugin.targets is specified, while
+      keeping uninstall <TARGET> required for safety), and resolve launcher defaults from eidos.yaml with CLI precedence.
+    expect:
+      frontmatter:
+        status: active
+        source_path: src/eidos/cli/plugin_commands.py
+      body:
+        contains:
+          - "--no-hooks"
+          - "plugin.targets"
+          - "eidos.yaml"
+  - operation: modify
+    target: CMP-CLI-PORTAL-COMMANDS
+    details: >
+      Expose --open/--no-open on eidos portal serve and --single-file/--no-single-file on eidos portal build in
+      src/eidos/cli/portal_commands.py resolving portal.serve.{host,port,open_browser} and
+      portal.build.{out_dir,single_file} defaults from eidos.yaml.
+    expect:
+      frontmatter:
+        status: active
+        source_path: src/eidos/cli/portal_commands.py
+      body:
+        contains:
+          - "--no-open"
+          - "--no-single-file"
+          - "open_browser"
+          - "eidos.yaml"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: >
+      Bump CTR-EIDOS-CLI to 1.13.0 documenting optional eidos.yaml configuration precedence (CLI > EIDOS_* env >
+      eidos.yaml > defaults), automatic eidos.yaml validation in eidos validate, checks.repo_config in eidos doctor,
+      optional [TARGET] on eidos plugin install/update when plugin.targets is configured (keeping uninstall <TARGET>
+      required), and dual boolean negation flags (--fail-on-warnings/--no-fail-on-warnings, --strict/--no-strict,
+      --warn-only/--no-warn-only, --semantic/--no-semantic on index sync, --hooks/--no-hooks, --open/--no-open,
+      --single-file/--no-single-file).
+    expect:
+      frontmatter:
+        status: active
+        version: "1.13.0"
+      body:
+        contains:
+          - "eidos.yaml"
+          - "checks.repo_config"
+          - "[TARGET]"
+          - "--no-strict"
+          - "--no-fail-on-warnings"
+          - "--semantic/--no-semantic"
+          - "--no-single-file"
+          - "plugin.targets"
+  - operation: modify
+    target: CAP-LIVING-SPEC-ENGINE
+    details: >
+      Bump CAP-LIVING-SPEC-ENGINE to 1.23.0, register CMP-REPO-CONFIG in technical.components, and add
+      INV-REPO-CONFIG-SCHEMA-AND-PRECEDENCE.
+    expect:
+      frontmatter:
+        status: active
+        version: "1.23.0"
+        technical.components:
+          - "CMP-REPO-CONFIG"
+        technical.invariants.id:
+          - "INV-REPO-CONFIG-SCHEMA-AND-PRECEDENCE"
+      body:
+        contains:
+          - "CMP-REPO-CONFIG"
+          - "INV-REPO-CONFIG-SCHEMA-AND-PRECEDENCE"
+  - operation: add
+    target: INV-REPO-CONFIG-SCHEMA-AND-PRECEDENCE
+    details: >
+      Bind INV-REPO-CONFIG-SCHEMA-AND-PRECEDENCE in CAP-LIVING-SPEC-ENGINE to
+      tests/test_config.py::test_repo_config_schema_precedence_and_subproject_isolation.
+    expect:
+      frontmatter:
+        rule: "precedence"
+        test_binding: "tests/test_config.py::test_repo_config_schema_precedence_and_subproject_isolation"
+  - operation: modify
+    target: CAP-DRIFT-DETECTION
+    details: >
+      Bump CAP-DRIFT-DETECTION to 1.17.0 and add INV-DRIFT-CONFIG-ENFORCEMENT-AND-SNAPSHOT-ISOLATION.
+    expect:
+      frontmatter:
+        status: active
+        version: "1.17.0"
+        technical.invariants.id:
+          - "INV-DRIFT-CONFIG-ENFORCEMENT-AND-SNAPSHOT-ISOLATION"
+      body:
+        contains:
+          - "INV-DRIFT-CONFIG-ENFORCEMENT-AND-SNAPSHOT-ISOLATION"
+  - operation: add
+    target: INV-DRIFT-CONFIG-ENFORCEMENT-AND-SNAPSHOT-ISOLATION
+    details: >
+      Bind INV-DRIFT-CONFIG-ENFORCEMENT-AND-SNAPSHOT-ISOLATION in CAP-DRIFT-DETECTION to
+      tests/test_config.py::test_drift_and_validator_config_enforcement_and_head_snapshot_isolation.
+    expect:
+      frontmatter:
+        rule: "eval_root"
+        test_binding: "tests/test_config.py::test_drift_and_validator_config_enforcement_and_head_snapshot_isolation"
+  - operation: modify
+    target: CAP-AGENT-ADAPTER
+    details: >
+      Bump CAP-AGENT-ADAPTER to 1.20.0 and add INV-CONTEXT-AND-HOOK-CONFIG-OVERRIDES.
+    expect:
+      frontmatter:
+        status: active
+        version: "1.20.0"
+        technical.invariants.id:
+          - "INV-CONTEXT-AND-HOOK-CONFIG-OVERRIDES"
+      body:
+        contains:
+          - "INV-CONTEXT-AND-HOOK-CONFIG-OVERRIDES"
+  - operation: add
+    target: INV-CONTEXT-AND-HOOK-CONFIG-OVERRIDES
+    details: >
+      Bind INV-CONTEXT-AND-HOOK-CONFIG-OVERRIDES in CAP-AGENT-ADAPTER to
+      tests/test_config.py::test_context_memory_hook_plugin_and_portal_config_overrides.
+    expect:
+      frontmatter:
+        rule: "override"
+        test_binding: "tests/test_config.py::test_context_memory_hook_plugin_and_portal_config_overrides"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: >
+      Document eidos.yaml configuration reference, EIDOS_* env var contract, precedence rules, checks.repo_config,
+      and dual negation CLI flags across docs/guides/cli.md, docs/guides/agent-plugin.md, and
+      docs/guides/living-portal.md (INV-DOCS-SYNCHRONIZATION).
+    expect:
+      frontmatter:
+        status: active
+        source_path: docs/guides
+      body:
+        contains:
+          - "eidos.yaml"
+          - "checks.repo_config"
+vcs:
+  branch: main
+  base_commit: 95116f7804d635e293a4aacb3d8cef674a9672d6
+---
+= SpecDelta: Add Optional Repository Configuration File (`eidos.yaml`)
+:toc: left
+
+== Problem Statement
+
+Eidos currently relies on hardcoded heuristics, constants, and repeated CLI flags for repository-level engine and workflow behavior:
+
+* **Discovery & File Classification**: Excluded directories (`STANDARD_EXCLUDED_DIRS`), polyglot test file heuristics (`is_polyglot_test_file`), nested sub-project discovery, and non-default spec directory paths (`eidos/`) require `.gitattributes` workarounds or repeating `--path` on every command.
+* **Drift & Validation Policy**: Teams using `develop` / `trunk` branches, gradual brownfield shadow mode (`--warn-only`), strict body-only co-evolution (`--strict`), `--fail-on-warnings`, non-architectural ignore paths (`scripts/dev/**`, `benchmarks/**`), or granular validator check severities must duplicate CLI flags across local invocations, agent hooks, and CI templates.
+* **Velocity-Dependent Thresholds & Ergonomics**: Team operational memory drift (`DEFAULT_MEMORY_COMMIT_DRIFT_THRESHOLD = 5`), context tier token budgets (`TIER_TOKEN_BUDGETS`), semantic model variant / air-gapped mirror URLs, archive retention (`keep_recent = 15`), plugin targets / hook behavior / PyPI update checks, and portal serve/build defaults vary per repository but cannot be committed in one canonical configuration file.
+
+At the same time, introducing a configuration file must preserve Eidos's core constitutional boundaries: zero-config operation when `eidos.yaml` is absent, zero duplication of architectural/product truth (`POL-GIT-SOURCE-OF-TRUTH`, which stays exclusively in `eidos/*.adoc`), zero credentials or user-local secrets in Git, zero LLM/AI provider configuration (`POL-ZERO-AI-CALL-DEPENDENCY`), and strict preservation of the 17 canonical living specification schemas under `assets/schemas/v1/` (`INV-SPEC-VALIDATION`, `INV-DOCS-SYNCHRONIZATION`).
+
+== Proposed Specification Changes
+
+=== Canonical v1 `eidos.yaml` Schema, Env Contract & Architectural Boundary (`CNT-EIDOS-CORE`, `CMP-REPO-CONFIG`, `CMP-ASSET-LOCATOR`)
+
+* **`assets/schemas/config/eidos-config.v1.schema.yaml`** (owned by `CNT-EIDOS-CORE`, isolated outside `assets/schemas/v1/` so the 17 living-spec schemas stay untouched and containing zero Eidos-self IDs/paths per `INV-ENGINE-GENERICITY`): Closed Draft 2020-12 JSON Schema (`additionalProperties: false` at root and every nested block, `version: const 1`) covering seven optional sections:
+** `workspace`: `specs_dir` (default `"eidos"`, strictly relative child inside `repo_root`—rejecting `"."`, absolute paths, `..`, and symlinks), `exclude` (list of repo-relative glob patterns), `tests: { include, exclude }` (glob lists), `subprojects_exclude` (glob list for fixture/example directories containing mock `eidos/` folders).
+** `drift`: `base_ref` (string, prepended ahead of `origin/main` fallback chain), `strict` (bool, default `false`), `warn_only` (bool, default `false`), `fail_on_warnings` (bool, default `false`), `ignore_paths` (glob list suppressing only `code_files`—never `spec_files`, `delta_files`, `memory_files`, `test_files`, or `onboarding_files`), `checks: { mermaid, import_boundaries, public_surface, contract_parity, deprecated_references }` (`error | warn | off`; zero-config defaults: `mermaid: error`, `import_boundaries: error`, `public_surface: error`, `contract_parity: error`, `deprecated_references: warn`).
+** `context`: `default_tier` (`anchor | guardrails | deep`, default `"guardrails"`), `budgets: { anchor, guardrails, deep }` (positive ints, built-in defaults `300 / 1000 / 2500`), `repo_map_max_tokens` (positive int, default `1500`), `semantic: { enabled, variant, model_mirror_url }` (`enabled` default `true`, `variant` default `"quantized"`, `model_mirror_url` optional strictly `https://` or `http://` URL—rejecting `file://` and non-HTTP schemes).
+** `memory`: `commit_drift_threshold` (positive int, default `5`), `tier_caps: { anchor, guardrails, deep }` (`[max_anchored, max_global]` non-negative int pairs), `default_expiry_days` (optional positive int; CLI `--expires none` opts out for a single permanent memory when configured).
+** `lifecycle`: `archive: { keep_recent, include_explorations }` (defaults `15`, `true`).
+** `plugin`: `targets` (list of the 9 concrete canonical `PluginInstallTarget` slugs—excluding `"all"` so `eidos doctor` advisories remain unambiguous), `launcher` (`eidos | uvx`, default `"eidos"`), `updates_check` (bool, default `true`), `hooks: { install, enabled, strict, fail_on_warnings, baseline_ttl_seconds }` (`install`: bool default `false` controlling `eidos plugin install --hooks` default; `enabled`: bool default `true` acting as runtime kill-switch in `CMP-HOOK-RUNNER`; `strict` and `fail_on_warnings`: nullable `bool | null` default `null` inheriting `drift.strict` / `drift.fail_on_warnings` unless explicitly overridden; `baseline_ttl_seconds`: positive number default `86400`).
+** `portal`: `serve: { host, port, open_browser }` (defaults `"127.0.0.1"`, `3000`, `false`), `build: { out_dir, single_file }` (defaults `"site"`, `false`; `out_dir` validated for repo-root containment without absolute paths, `..`, or symlink escapes).
+* **`EIDOS_*` Environment Variable Precedence Contract (`CLI flags > EIDOS_* env vars > eidos.yaml > built-in defaults`)**:
+** Explicit supported env overrides applied deterministically inside `load_repo_config(...)` (failing closed with `ConfigValidationError` on invalid non-empty values; booleans accept `1/true/yes/on` vs `0/false/no/off` case-insensitively):
+*** `EIDOS_SPECS_DIR` → `workspace.specs_dir`
+*** `EIDOS_DRIFT_BASE_REF` → `drift.base_ref`
+*** `EIDOS_DRIFT_STRICT` → `drift.strict`
+*** `EIDOS_DRIFT_WARN_ONLY` → `drift.warn_only`
+*** `EIDOS_DRIFT_FAIL_ON_WARNINGS` → `drift.fail_on_warnings`
+*** `EIDOS_CONTEXT_TIER` → `context.default_tier`
+*** `EIDOS_SEMANTIC_ENABLED` → `context.semantic.enabled`
+*** `EIDOS_SEMANTIC_VARIANT` → `context.semantic.variant`
+*** `EIDOS_SEMANTIC_MIRROR_URL` → `context.semantic.model_mirror_url`
+*** `EIDOS_HOOKS_ENABLED` → `plugin.hooks.enabled`
+*** `EIDOS_NO_UPDATE_CHECK` (disables update check regardless of `eidos.yaml`) and `EIDOS_FORCE_UPDATE_CHECK` (re-enables update check over `plugin.updates_check: false` when `EIDOS_NO_UPDATE_CHECK` is unset).
+* **`CMP-REPO-CONFIG` (`src/eidos/core/workspace/config.py`)**: New standalone component under `CNT-EIDOS-CORE` (`tier: core`, acyclic intra-container import DAG where `CMP-PROJECT-RESOLVER` imports `CMP-REPO-CONFIG`, which imports `CMP-ASSET-LOCATOR` and `CMP-SPEC-PARSER`, with zero `ARCH-EIDOS.import_boundaries` violations) exposing immutable `EidosConfig` dataclasses, `ConfigValidationError`, `CONFIG_FILENAME = "eidos.yaml"`, `find_config_file(...)`, `validate_config_file(...)` (JSON Schema + path containment for `workspace.specs_dir` and `portal.build.out_dir` rejecting `"."`, `..`, absolute paths, and symlink components even before target creation + `https://`/`http://` scheme enforcement on `context.semantic.model_mirror_url`), `load_repo_config(...)`, and non-raising `load_repo_config_with_errors(...) -> tuple[EidosConfig, list[str]]`.
+* **`DEC-CORE-REPO-CONFIG-YAML-BOUNDARY` (recorded in `CNT-EIDOS-CORE.decisions`)**: Codifies (1) optional project/sub-project root placement (`<repo_root>/eidos.yaml` or self-contained `<subproject>/eidos.yaml` with zero cross-subproject inheritance per `DEC-CORE-MONOREPO-ISOLATED-SUBPROJECTS`), (2) strict separation between operational engine config and `eidos/*.adoc` architectural truth, (3) non-spec schema isolation under `assets/schemas/config/`, (4) fail-closed `additionalProperties: false` validation and path/URL containment so typos or untrusted PR configs never silently weaken CI gates or escape workspace bounds, (5) strict split between `plugin.hooks.install` (default `false`) and `plugin.hooks.enabled` (default `true`) plus keeping `eidos plugin uninstall <TARGET>` required for safety, and (6) strict exclusion of credentials and LLM provider keys (`POL-ZERO-AI-CALL-DEPENDENCY`).
+* **`CMP-ASSET-LOCATOR`**: Adds `get_config_schema_path() -> Path` resolving `assets/schemas/config/eidos-config.v1.schema.yaml`.
+
+=== Core Workspace, Validation, Drift, Invariants & Index Integration
+
+* **`CMP-PROJECT-RESOLVER`**: Adds `resolve_specs_dir_for_repo(repo_root)` and updates `find_repo_root`, `resolve_spec_and_repo_roots` (checking upward `eidos.yaml` whose resolved `workspace.specs_dir` matches `base` before falling back to `base.parent`, so nested paths like `docs/specs` resolve `repo_root` accurately), `load_project` (`ProjectConfig.repo_config`), `get_tracked_files` (`is_excluded_by_config`), `is_polyglot_test_file`, and `discover_nested_subproject_roots` (honoring `workspace.subprojects_exclude` and sub-project `eidos.yaml` custom `specs_dir`).
+* **`CMP-SPEC-VALIDATOR`**: Validates `repo_root / "eidos.yaml"` fail-closed inside `SpecValidator.validate_directory()` via `load_repo_config_with_errors` (recording errors under `report.schema_errors["eidos.yaml"]`) and routes `drift.checks` severities (`error` → blocking `schema_errors`/`broken_references`, `warn` → `report.warnings` only without mutating `doc.errors`/`schema_errors`/`broken_references`, `off` → skip check; `public_surface` and `contract_parity` severities govern AST/protocol parity checks while keeping missing `source_path`/`specification_file` on disk blocking).
+* **`CMP-GIT-DIFF-INSPECTOR`, `CMP-DRIFT-DETECTOR` & `CMP-INVARIANT-TRACEABILITY-VERIFIER`**:
+** Apply `workspace.specs_dir`, `workspace.exclude`, `workspace.tests.{include,exclude}`, `drift.ignore_paths` (suppressing only `code_files`), `drift.base_ref`, `drift.strict`, and `drift.checks` (including explicitly honoring `drift.checks.import_boundaries` around `evaluate_import_boundaries` inside `detect_drift` since `detect_drift` calls `validate_directory(..., check_import_boundaries=False)`).
+** Route root/sub-project `eidos.yaml` strictly to `other_files`—never `code_files`, `doc_files`, or `spec_files`.
+** On commit-range runs (`--base`/`--head`), load `eidos.yaml` strictly from `--head` (via `git show <head_ref>:[<sub_prefix>/]eidos.yaml` prior to `base_ref`/`specs_dir` resolution and from the materialized `eval_root` tree already extracted by `git archive` in `_materialize_head_snapshot`) so uncommitted working-tree edits never alter commit-range verdicts (`INV-DRIFT-SHALLOW-AND-COMMIT-TREE-FIDELITY`).
+** Wire `workspace.specs_dir`, `workspace.exclude`, and `workspace.tests.{include,exclude}` into `src/eidos/vcs/invariants.py` (`_load_or_update_test_binding_cache` including non-Git `os.walk` fallback, `extract_invariants_and_verify`, and `detect_orphan_invariants`) so test discovery matches `CMP-GIT-DIFF-INSPECTOR`.
+* **`CMP-INCREMENTAL-SYNC-ENGINE`**: Applies `workspace.exclude`, `workspace.tests.{include,exclude}`, and `context.semantic.enabled` (suppressing `_trigger_auto_semantic_refresh` when `false`) during `check_index_dirty` and `sync_index`, stores `repo_config_sha256` in SQLite `metadata` (without polluting `indexed_files` / `total_indexed_files`), and triggers bidirectional `code/source <-> code/test` reclassification plus `test_binding_cache` invalidation when `eidos.yaml` changes.
+* **`CMP-TIERED-CONTEXT-COMPRESSOR` & `CMP-SEMANTIC-EMBEDDING-ENGINE`**:
+** Honor `context.default_tier`, `context.budgets`, `memory.commit_drift_threshold` (updating `evaluate_memory_freshness` and `resolve_memory_freshness_batch` to default `commit_drift_threshold: int | None = None` and auto-resolve from `load_repo_config(repo_root)` when omitted so `CMP-MEMORY-ENGINE` and `CMP-GRAPH-TRAVERSAL-ENGINE` share identical freshness verdicts automatically), and `memory.tier_caps`.
+** Resolve `context.semantic.variant` and HTTP(S)-only `context.semantic.model_mirror_url` directly inside `setup_semantic_model` (plus custom root `workspace.specs_dir` in `resolve_semantic_model_dir`) while unconditionally enforcing pinned SHA-256 `HARRIER_ARTIFACT_MANIFEST` checks across both default HuggingFace and mirror downloads (`INV-AGENT-HYBRID-SEMANTIC-FALLBACK`).
+
+=== Plugin, Hooks, CLI Contract (`CTR-EIDOS-CLI` `1.13.0`), Capabilities & Docs
+
+* **`CMP-HOOK-RUNNER` & `CMP-PLUGIN-INSTALLER`**:
+** Honor `workspace.specs_dir` and `plugin.hooks.{enabled,strict,fail_on_warnings,baseline_ttl_seconds}` in `handle_stop_hook` / `execute_hook` via `load_repo_config_with_errors` (so malformed `eidos.yaml` surfaces through `detect_drift`'s validation errors rather than being swallowed by the exception fallback, and nullable `strict`/`fail_on_warnings` inherit `drift.*` when omitted).
+** Honor `plugin.updates_check: false` via `check_cli_update_status(..., allow_network: bool = True)` (with `EIDOS_NO_UPDATE_CHECK` / `EIDOS_FORCE_UPDATE_CHECK` env precedence), support multi-target sequences cleanly across `install_plugin` / `update_plugin` (preserving initial `prev_version` and idempotent shared `.agents/skills` installs), and honor custom `workspace.specs_dir` in monorepo sub-project root checks.
+* **`CMP-CLI-APP`, `CMP-CLI-DOCTOR-HOOKS`, `CMP-CLI-SPEC-COMMANDS`, `CMP-CLI-DRIFT-COMMANDS`, `CMP-CLI-INDEX-COMMANDS`, `CMP-CLI-PLUGIN-COMMANDS`, `CMP-CLI-PORTAL-COMMANDS` & `CTR-EIDOS-CLI` (`1.13.0`)**:
+** `resolve_cli_eidos_dir` uses `load_repo_config_with_errors` to honor `workspace.specs_dir` when valid and fall back cleanly to default `eidos/` on malformed `eidos.yaml` (so `eidos validate` and `eidos doctor` always reach their structured error outputs instead of crashing early); `resolve_repo_root_for_eidos_dir(eidos_dir)` replaces ad-hoc `if eidos_dir.name == "eidos"` checks across CLI modules; `resolve_param_from_config(param_name, cli_value, config_value)` uses `click.get_current_context(silent=True)` + `ParameterSource.COMMANDLINE` (never altering command function signatures with `ctx: typer.Context` and preserving `cli_value` when `ctx is None`); non-validator `--json` CLI commands catch `ConfigValidationError` cleanly as `{"error": ...}` with exit code `1`.
+** Add dual boolean negation flags across all configurable boolean CLI options: `--fail-on-warnings/--no-fail-on-warnings` (`validate`, `drift`), `--strict/--no-strict` (`drift`), `--warn-only/--no-warn-only` (`drift`), `--semantic/--no-semantic` (`index sync`, upgrading `--no-semantic`), `--hooks/--no-hooks` (`plugin install`, backed by `plugin.hooks.install`), `--open/--no-open` (`portal serve`, backed by `portal.serve.open_browser`), and `--single-file/--no-single-file` (`portal build`).
+** Make `[TARGET]` optional (`PluginInstallTarget | None`) on `eidos plugin install` and `eidos plugin update` when `plugin.targets` is configured (exiting with code `2` when neither `[TARGET]` nor `plugin.targets` is provided; keeping `eidos plugin uninstall <TARGET>` required for safety).
+** Add `checks.repo_config` to `eidos doctor` (OK on `absent` or `valid`, blocking exit code `1` on `invalid`) plus non-blocking advisory warning when declared concrete `plugin.targets` are missing.
+* **Capabilities & New Test-Bound Invariants**:
+** `CAP-LIVING-SPEC-ENGINE` (`1.23.0`) + `INV-REPO-CONFIG-SCHEMA-AND-PRECEDENCE` → `tests/test_config.py::test_repo_config_schema_precedence_and_subproject_isolation`.
+** `CAP-DRIFT-DETECTION` (`1.17.0`) + `INV-DRIFT-CONFIG-ENFORCEMENT-AND-SNAPSHOT-ISOLATION` → `tests/test_config.py::test_drift_and_validator_config_enforcement_and_head_snapshot_isolation`.
+** `CAP-AGENT-ADAPTER` (`1.20.0`) + `INV-CONTEXT-AND-HOOK-CONFIG-OVERRIDES` → `tests/test_config.py::test_context_memory_hook_plugin_and_portal_config_overrides`.
+* **`CMP-DOCS-USER-GUIDES`**: Document `eidos.yaml`, the `EIDOS_*` env var table, precedence rules, `checks.repo_config`, and dual negation flags in `docs/guides/cli.md`, `docs/guides/agent-plugin.md`, and `docs/guides/living-portal.md` (`INV-DOCS-SYNCHRONIZATION`, `test_documented_cli_flags_match_live_command_tree`). Bundled Agent Skills (`assets/plugin_reference/skills/`) remain intentionally unchanged in this delta to stay within `INV-PLUGIN-SKILL-SIZE-CEILING`.
+
+== Implementation Plan
+
+1. **Config JSON Schema, Asset Locator & `CMP-REPO-CONFIG` (`CNT-EIDOS-CORE`, `CMP-ASSET-LOCATOR`, `CMP-REPO-CONFIG`)**:
+* Author closed Draft 2020-12 schema `assets/schemas/config/eidos-config.v1.schema.yaml` (strictly outside `assets/schemas/v1/` to preserve the 17-schema count enforced by `INV-SPEC-VALIDATION` and `tests/test_docs_sync.py`, and containing zero Eidos-self IDs or `src/eidos` paths per `INV-ENGINE-GENERICITY`) and expose `get_config_schema_path()` in `src/eidos/core/workspace/assets.py`.
+* Implement `src/eidos/core/workspace/config.py` (`EidosConfig`, nested frozen config dataclasses including split `plugin.hooks.install` vs `plugin.hooks.enabled` and explicit `drift.checks` defaults, `ConfigValidationError`, `find_config_file`, `validate_config_file` with strict repo-root containment rejecting `"."`/symlinks/`..` on both `workspace.specs_dir` and `portal.build.out_dir` plus `https://`/`http://` scheme enforcement on `context.semantic.model_mirror_url`, `load_repo_config` implementing the enumerated `EIDOS_*` env contract with `CLI > EIDOS_* env > eidos.yaml > defaults` precedence, and `load_repo_config_with_errors`).
+* Enforce `POL-STATEMENT-TEST-COVERAGE` (`> 90.0%` statement coverage per module across `src/eidos/`) and acyclic intra-container imports (`CMP-PROJECT-RESOLVER` → `CMP-REPO-CONFIG` → `CMP-ASSET-LOCATOR` / `CMP-SPEC-PARSER`, `INV-CORE-MODULAR-COMPONENT-COHESION`).
+
+2. **Workspace Discovery, Spec Validation, Drift, Invariants & Index Wiring (`CMP-PROJECT-RESOLVER`, `CMP-SPEC-VALIDATOR`, `CMP-GIT-DIFF-INSPECTOR`, `CMP-DRIFT-DETECTOR`, `CMP-INVARIANT-TRACEABILITY-VERIFIER`, `CMP-INCREMENTAL-SYNC-ENGINE`, `CMP-TIERED-CONTEXT-COMPRESSOR`, `CMP-SEMANTIC-EMBEDDING-ENGINE`)**:
+* Wire `resolve_specs_dir_for_repo`, upward `eidos.yaml`-aware `resolve_spec_and_repo_roots`, `workspace.exclude` (`is_excluded_by_config`), `workspace.tests.{include,exclude}`, `workspace.subprojects_exclude` (plus custom sub-project `specs_dir`), and `drift.base_ref` in `src/eidos/core/workspace/project.py` (preserving self-contained monorepo sub-project isolation per `INV-MONOREPO-SUBPROJECT-ISOLATION`).
+* Update hardcoded `root / "eidos"` / `name == "eidos"` fallbacks to use `resolve_specs_dir_for_repo` / `resolve_spec_and_repo_roots` across `src/eidos/core/index/graph_index.py` (`CMP-GRAPH-STORAGE`), `src/eidos/core/lifecycle/memory_engine.py` (`CMP-MEMORY-ENGINE`), `src/eidos/core/lifecycle/initializer.py` (`CMP-REPO-INITIALIZER`, honoring pre-existing `eidos.yaml` `workspace.specs_dir` when `eidos_dir_name` is default `"eidos"`), `src/eidos/core/lifecycle/changelog.py` (`CMP-CHANGELOG-GENERATOR`), `src/eidos/core/lifecycle/audit.py` (`CMP-DELTA-AUDITOR`), `src/eidos/core/lifecycle/scaffolder.py` (`CMP-LIFECYCLE-SCAFFOLDER`), `src/eidos/core/index/http_linker.py` (`CMP-HTTP-TOPOLOGY-LINKER`), and `src/eidos/portal/server.py` (`CMP-PORTAL-SERVER`) (body-only; no spec mutation on those unchanged component specs, covered via `CMP-PROJECT-RESOLVER` and `tests/test_config.py`).
+* Wire fail-closed `eidos.yaml` validation (`report.schema_errors["eidos.yaml"]`) and `drift.checks` severities (`mermaid: error`, `import_boundaries: error`, `public_surface: error`, `contract_parity: error`, `deprecated_references: warn` defaults; `warn` routing only to `report.warnings`) in `src/eidos/core/spec/validator.py`.
+* Wire `workspace.specs_dir`, `workspace.exclude`, `workspace.tests`, `drift.ignore_paths` (code-only), `drift.base_ref`, `drift.strict`, `drift.checks.import_boundaries` (around `evaluate_import_boundaries`), and `--head` config loading (`git show` before base/specs resolution + `eval_root` extracted by `git archive`) across `src/eidos/vcs/diff.py`, `src/eidos/vcs/drift.py`, `src/eidos/vcs/snapshot.py`, and `src/eidos/vcs/structural.py`; wire `workspace.specs_dir`, `workspace.exclude`, and `workspace.tests.{include,exclude}` into `src/eidos/vcs/invariants.py` (`CNT-EIDOS-VCS` container spec unchanged; covered via mutated child `CMP-*` components).
+* Wire `workspace.exclude`, `workspace.tests`, `context.semantic.enabled` (gating `_trigger_auto_semantic_refresh`), and SQLite `metadata` `repo_config_sha256` dirty detection + bidirectional `code/source <-> code/test` reconciliation into `src/eidos/core/index/sync.py`; wire `context.default_tier`, `context.budgets`, auto-resolved `memory.commit_drift_threshold` (`int | None = None`), and `memory.tier_caps` into `src/eidos/core/index/context.py`, `context_models.py`, and `context_memories.py`; and wire `context.semantic.variant`, HTTP(S)-only `model_mirror_url`, and unconditional `HARRIER_ARTIFACT_MANIFEST` SHA-256 verification (updating any custom `base_url` unit tests in `tests/test_graph_index.py` that pass without `expected_manifest`) into `src/eidos/core/index/semantic.py` (`CNT-EIDOS-INDEX` container spec unchanged; covered via mutated child `CMP-*` components).
+
+3. **Hooks, Plugin Update Checks & CLI Precedence Adapters (`CMP-HOOK-RUNNER`, `CMP-PLUGIN-INSTALLER`, `CMP-CLI-APP`, `CMP-CLI-DOCTOR-HOOKS`, `CMP-CLI-SPEC-COMMANDS`, `CMP-CLI-DRIFT-COMMANDS`, `CMP-CLI-INDEX-COMMANDS`, `CMP-CLI-PLUGIN-COMMANDS`, `CMP-CLI-PORTAL-COMMANDS`, `CTR-EIDOS-CLI`)**:
+* Wire `workspace.specs_dir` and `plugin.hooks.{enabled,strict,fail_on_warnings,baseline_ttl_seconds}` via `load_repo_config_with_errors` into `src/eidos/plugin/hooks.py`, and wire `allow_network` / `plugin.updates_check`, multi-target batching (preserving initial `prev_version` and idempotent `.agents/skills` installs), and custom `workspace.specs_dir` sub-project detection into `src/eidos/plugin/version.py` and `src/eidos/plugin/installer.py` (`CNT-EIDOS-PLUGIN` container spec unchanged; covered via mutated child components).
+* Add `resolve_param_from_config` (`click.get_current_context(silent=True)` + `ParameterSource.COMMANDLINE`), `resolve_repo_root_for_eidos_dir`, soft-fallback `resolve_cli_eidos_dir`, and clean `ConfigValidationError` JSON/Rich error handling in `src/eidos/cli/_shared.py`; add `checks.repo_config`, `plugin.updates_check`, and concrete `plugin.targets` diagnostics in `src/eidos/cli/doctor_hook_commands.py`; add dual boolean override flags + config defaults in `src/eidos/cli/spec_commands.py` (including config-aware `spec discover`), `src/eidos/cli/drift_commands.py`, `src/eidos/cli/index_commands.py` (`--semantic/--no-semantic` on `index sync`, `repo_map_max_tokens`, `semantic.variant`, `semantic.enabled`), `src/eidos/cli/plugin_commands.py` (`--hooks/--no-hooks` backed by `plugin.hooks.install`, optional `[TARGET]` on `install`/`update`, required `<TARGET>` on `uninstall`), and `src/eidos/cli/portal_commands.py` (`--open/--no-open` backed by `portal.serve.open_browser`, `--single-file/--no-single-file`) (`CNT-EIDOS-CLI` container spec unchanged; covered via `CTR-EIDOS-CLI` and mutated child `CMP-CLI-*` components).
+* Wire config defaults via `resolve_param_from_config` in `src/eidos/cli/context_command.py` (`context.default_tier`, `context.semantic.enabled`, and `resolve_repo_root_for_eidos_dir`—explicitly NOT `drift.base_ref` so non-diff context calls never trigger branch diffs), `src/eidos/cli/delta_commands.py` (`lifecycle.archive.{keep_recent,include_explorations}` and `resolve_repo_root_for_eidos_dir`), and `src/eidos/cli/memory_commands.py` (`memory.default_expiry_days` with `--expires none` opt-out and `context.semantic.enabled` on `add`/`search`/`audit`) (body-only; no spec mutation on those three unchanged CLI component specs, covered via `CTR-EIDOS-CLI`, `CMP-CLI-APP`, and `tests/test_config.py`).
+
+4. **Living Specs, CLI Snapshot, Docs, Tests & Verification (`CMP-DOCS-USER-GUIDES`, `CAP-LIVING-SPEC-ENGINE`, `CAP-DRIFT-DETECTION`, `CAP-AGENT-ADAPTER`)**:
+* Scaffold `eidos/architecture/components/repo-config.adoc` (`CMP-REPO-CONFIG`) via `eidos spec create component`, update all mutated living specs (`core.adoc`, `asset-locator.adoc`, `project-resolver.adoc`, `spec-validator.adoc`, `git-diff-inspector.adoc`, `drift-detector.adoc`, `invariant-traceability-verifier.adoc`, `incremental-sync-engine.adoc`, `tiered-context-compressor.adoc`, `semantic-embedding-engine.adoc`, `hook-runner.adoc`, `plugin-installer.adoc`, `cli-app.adoc`, `cli-doctor-hooks.adoc`, `cli-spec-commands.adoc`, `cli-drift-commands.adoc`, `cli-index-commands.adoc`, `cli-plugin-commands.adoc`, `cli-portal-commands.adoc`, `cli.adoc`, `living-spec-engine.adoc`, `drift-detection.adoc`, `agent-adapter.adoc`, `docs-user-guides.adoc`), regenerate `tests/fixtures/cli_command_tree.json` for `tests/test_cli_json.py::test_cli_command_tree_unchanged`, and update `docs/guides/cli.md`, `docs/guides/agent-plugin.md`, and `docs/guides/living-portal.md` (preserving `INV-ASCIIDOC-ZERO-WARNING-HYGIENE`).
+* Implement comprehensive unit and end-to-end tests in `tests/test_config.py` binding `INV-REPO-CONFIG-SCHEMA-AND-PRECEDENCE` (`test_repo_config_schema_precedence_and_subproject_isolation`), `INV-DRIFT-CONFIG-ENFORCEMENT-AND-SNAPSHOT-ISOLATION` (`test_drift_and_validator_config_enforcement_and_head_snapshot_isolation`), and `INV-CONTEXT-AND-HOOK-CONFIG-OVERRIDES` (`test_context_memory_hook_plugin_and_portal_config_overrides`).
+* Run full `pytest --cov=src/eidos --cov-report=json:coverage.json` (verifying `> 90.0%` per-file coverage under `POL-STATEMENT-TEST-COVERAGE`), `tests/test_docs_sync.py`, `tests/test_cli_json.py`, `tests/test_modular_architecture.py`, `eidos delta verify DLT-2026-178 --json`, `eidos delta apply DLT-2026-178`, and `eidos drift --uncommitted --json`.
