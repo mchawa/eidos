@@ -1,0 +1,25 @@
+---
+type: agent/memory
+id: MEM-USE-GENERIC-FIXTURE-IDS-IN-PORTAL-2B52
+title: Use generic fixture IDs in portal frontend tests
+category: feedback
+status: active
+summary: "src/eidos/portal/frontend/tests/ is scanned by INV-ENGINE-GENERICITY, so Vitest fixtures must never reference Eidos-self entity IDs."
+targets:
+  entities:
+    - CMP-PORTAL-ASSETS
+  paths:
+    - src/eidos/portal/frontend/tests/**
+verified_at: "2026-11-25"
+verified_commit: ff08e8d5f8af04d77f0d4b2d0f0e6d037647529b
+---
+= Memory: Use generic fixture IDs in portal frontend tests
+:toc: left
+
+== Guidance
+
+Use generic dummy IDs (e.g., CNT-DEMO-PORTAL, CMP-DEMO-*, SYS-ACME-001) in src/eidos/portal/frontend/tests/*.test.ts and run pytest tests/test_scaffolder.py -k test_engine_genericity_zero_self_references after editing portal frontend files or tests.
+
+== Why
+
+tests/test_scaffolder.py::test_engine_genericity_zero_self_references scans all .ts/.tsx files under src/eidos/ (excluding dist and node_modules), which includes src/eidos/portal/frontend/tests/, and fails CI on Eidos-self IDs such as CNT-EIDOS-* or CLT-WEB-PORTAL.

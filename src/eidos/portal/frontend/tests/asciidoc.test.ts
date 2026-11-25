@@ -680,7 +680,7 @@ describe("INV-PORTAL-DOCUMENT-MERMAID-RENDERING: AST Mermaid extraction, seriali
     const validDoc = [
       "= Spec One",
       "",
-      "See xref:CNT-EIDOS-PORTAL[Portal].",
+      "See xref:CNT-DEMO-PORTAL[Portal].",
       "",
       ".First *Diagram*",
       "[mermaid]",
@@ -786,12 +786,12 @@ describe("INV-PORTAL-DOCUMENT-MERMAID-RENDERING: AST Mermaid extraction, seriali
     portalProbeLink.remove();
     expect(onNavigateSpec).not.toHaveBeenCalled();
 
-    const realSpecLink = mountedContainer.querySelector<HTMLAnchorElement>('a[data-spec-ref="CNT-EIDOS-PORTAL"]')!;
+    const realSpecLink = mountedContainer.querySelector<HTMLAnchorElement>('a[data-spec-ref="CNT-DEMO-PORTAL"]')!;
     expect(realSpecLink).not.toBeNull();
     await React.act(async () => {
       realSpecLink.click();
     });
-    expect(onNavigateSpec).toHaveBeenCalledWith("CNT-EIDOS-PORTAL");
+    expect(onNavigateSpec).toHaveBeenCalledWith("CNT-DEMO-PORTAL");
 
     // Neighboring non-Mermaid code block copy bar remains intact and untouched
     const codeCopyBtn = mountedContainer.querySelector(".adoc-copy-btn");
