@@ -443,13 +443,13 @@ eidos plugin info
 Output:
 
 ```text
-╭───────────────── Eidos Agent Skills Package ──────────────────╮
-│ Package Identifier:  eidos-agent-skills                       │
-│            Version:  0.27.2                                   │
-│      Specification:  agentskills.io                           │
-│             Skills:  eidos, eidos-ops, eidos-plan, eidos-spec │
-│    Lifecycle Hooks:  eidos-drift-gate                         │
-╰───────────────────────────────────────────────────────────────╯
+╭──────────────────────── Eidos Agent Skills Package ─────────────────────────╮
+│ Package Identifier:  eidos-agent-skills                                     │
+│            Version:  0.28.0                                                 │
+│      Specification:  agentskills.io                                         │
+│             Skills:  eidos, eidos-memory, eidos-ops, eidos-plan, eidos-spec │
+│    Lifecycle Hooks:  eidos-drift-gate                                       │
+╰─────────────────────────────────────────────────────────────────────────────╯
 ```
 
 ### Inspect Version Status
@@ -479,16 +479,16 @@ eidos plugin validate
 Output:
 
 ```text
-       Agent Skills Package Conformance (agentskills.io)        
-┏━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Property          ┃ Value                                    ┃
-┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ Package Name      │ eidos-agent-skills                       │
-│ Package Version   │ 0.27.2                                   │
-│ Overall Status    │ CONFORMANT                               │
-│ Discovered Skills │ eidos, eidos-ops, eidos-plan, eidos-spec │
-│ Lifecycle Hooks   │ eidos-drift-gate                         │
-└───────────────────┴──────────────────────────────────────────┘
+              Agent Skills Package Conformance (agentskills.io)               
+┏━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Property          ┃ Value                                                  ┃
+┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Package Name      │ eidos-agent-skills                                     │
+│ Package Version   │ 0.28.0                                                 │
+│ Overall Status    │ CONFORMANT                                             │
+│ Discovered Skills │ eidos, eidos-memory, eidos-ops, eidos-plan, eidos-spec │
+│ Lifecycle Hooks   │ eidos-drift-gate                                       │
+└───────────────────┴────────────────────────────────────────────────────────┘
 ```
 
 ### Uninstall / Clean Up
