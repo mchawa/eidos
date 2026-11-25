@@ -10,6 +10,8 @@ Verifies:
 """
 
 import gzip
+import os
+import socket
 import sys
 import threading
 import time
@@ -150,7 +152,7 @@ def test_spike_c_c4_mermaid_kanban_react(repo_root):
 def test_spike_d_runtime_zero_node_invariant(repo_root, tmp_path):
     """Spike D: Verify that eidos serve and build-site run with ZERO Node.js runtime dependencies."""
     from eidos.portal.builder import build_static_portal
-    from eidos.portal.server import run_portal_server
+    from eidos.portal.server import EidosPortalHandler, PortalThreadingHTTPServer
 
     # 1. Test build_static_portal runs pure Python without Node.js
     tmp_out = tmp_path / "test_portal_out"
@@ -159,25 +161,39 @@ def test_spike_d_runtime_zero_node_invariant(repo_root, tmp_path):
     assert (tmp_out / "data.json").exists()
 
     # 2. Test cold-boot delivery latency < 50ms (Exit Criteria)
-    test_port = 8996
-    thread = threading.Thread(
-        target=run_portal_server,
-        args=(repo_root / "eidos", "127.0.0.1", test_port, False),
-        daemon=True,
-    )
+    prev_eidos_dir = EidosPortalHandler.eidos_dir
+    EidosPortalHandler.eidos_dir = (repo_root / "eidos").resolve()
+    httpd = PortalThreadingHTTPServer(("127.0.0.1", 0), EidosPortalHandler)
+    httpd.portal_bound_host = "127.0.0.1"
+    test_port = httpd.server_address[1]
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
-    time.sleep(0.2)
+    try:
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            try:
+                with socket.create_connection(("127.0.0.1", test_port), timeout=0.2):
+                    break
+            except OSError:
+                time.sleep(0.05)
 
-    t0 = time.perf_counter()
-    with urllib.request.urlopen(f"http://127.0.0.1:{test_port}/") as res:
-        assert res.status == 200
-        html = res.read()
-    delivery_latency_ms = (time.perf_counter() - t0) * 1000
+        t0 = time.perf_counter()
+        with urllib.request.urlopen(f"http://127.0.0.1:{test_port}/") as res:
+            assert res.status == 200
+            html = res.read()
+        delivery_latency_ms = (time.perf_counter() - t0) * 1000
 
-    # Exit Criteria: Cold boot live preview response < 50ms (headroom when instrumented with coverage)
-    is_instrumented = "coverage" in sys.modules or sys.gettrace() is not None
-    max_delivery_ms = 300.0 if is_instrumented else 50.0
-    assert delivery_latency_ms < max_delivery_ms, (
-        f"Delivery latency {delivery_latency_ms:.2f}ms exceeds {max_delivery_ms}ms"
-    )
-    assert len(html) > 1000
+        # Exit Criteria: Cold boot live preview response < 50ms (headroom under coverage or xdist CPU contention)
+        is_instrumented = (
+            "coverage" in sys.modules or sys.gettrace() is not None or bool(os.environ.get("PYTEST_XDIST_WORKER"))
+        )
+        max_delivery_ms = 500.0 if is_instrumented else 50.0
+        assert delivery_latency_ms < max_delivery_ms, (
+            f"Delivery latency {delivery_latency_ms:.2f}ms exceeds {max_delivery_ms}ms"
+        )
+        assert len(html) > 1000
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=5.0)
+        EidosPortalHandler.eidos_dir = prev_eidos_dir

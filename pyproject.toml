@@ -37,6 +37,7 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
+    "pytest-xdist>=3.6.0",
     "ruff>=0.4.0",
 ]
 docs = [
@@ -84,6 +85,7 @@ packages = ["src/eidos"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = ["-n", "auto", "--dist", "worksteal"]
 markers = [
     "invariant: Architectural invariant verification marker",
 ]

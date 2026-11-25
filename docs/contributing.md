@@ -43,10 +43,16 @@ uv run eidos plugin validate
 
 ### 3. Run the Test Suite
 
-All tests must pass and satisfy `POL-STATEMENT-TEST-COVERAGE` (`>90%` statement coverage for every Python file under `src/eidos/`, with `fail_under = 90` enforced in `pyproject.toml`):
+All tests run in parallel by default via `pytest-xdist` (`-n auto --dist worksteal` in `pyproject.toml`) and must satisfy `POL-STATEMENT-TEST-COVERAGE` (`>90%` statement coverage for every Python file under `src/eidos/`, with `fail_under = 90` enforced in `pyproject.toml`):
 
 ```bash
 uv run pytest -v --cov=src/eidos --cov-report=term-missing
+```
+
+To run serially (for example, when stepping through a single test with `--pdb` or `-s`), override with `-n 0`:
+
+```bash
+uv run pytest -n 0 -k test_name
 ```
 
 ### 4. Code Formatting & Linting

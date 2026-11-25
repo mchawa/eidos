@@ -746,4 +746,5 @@ def run_portal_server(
     except KeyboardInterrupt:
         print("\nStopping Eidos Web Portal server...")
     finally:
+        httpd._portal_shutting_down = True
         httpd.server_close()

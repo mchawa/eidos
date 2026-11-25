@@ -141,7 +141,7 @@ class ArchitecturalIndex:
 
         self._local = threading.local()
         self._conns_lock = threading.Lock()
-        self._conns: list[sqlite3.Connection] = []
+        self._conns: list[tuple[int, sqlite3.Connection]] = []
         self._closed: bool = False
         self._generation: int = 0
         self._last_synced_check: float = 0.0
@@ -161,18 +161,21 @@ class ArchitecturalIndex:
             with self._conns_lock:
                 self._closed = False
                 self._local._entry = (self._generation, value)
-                if value not in self._conns:
-                    self._conns.append(value)
+                if not any(conn is value for _, conn in self._conns):
+                    self._conns.append((threading.get_ident(), value))
 
     def _get_connection(self) -> sqlite3.Connection:
         entry = getattr(self._local, "_entry", None)
         if not self._closed and entry is not None and entry[0] == self._generation:
             return entry[1]
+        if entry is not None:
+            with contextlib.suppress(sqlite3.Error):
+                entry[1].close()
         conn = open_cache_connection(self.db_path)
         with self._conns_lock:
             self._closed = False
             self._local._entry = (self._generation, conn)
-            self._conns.append(conn)
+            self._conns.append((threading.get_ident(), conn))
         return conn
 
     def _init_db(self) -> None:
@@ -186,9 +189,13 @@ class ArchitecturalIndex:
             conns_to_close = list(self._conns)
             self._conns.clear()
         self._local.__dict__.clear()
-        for conn in conns_to_close:
-            with contextlib.suppress(sqlite3.Error):
-                conn.close()
+        cur_tid = threading.get_ident()
+        alive_tids = {th.ident for th in threading.enumerate() if th.ident is not None}
+        for owner_tid, conn in conns_to_close:
+            # Never close another live thread's active sqlite3.Connection cross-thread (causes C-level SIGSEGV).
+            if owner_tid == cur_tid or owner_tid not in alive_tids:
+                with contextlib.suppress(sqlite3.Error):
+                    conn.close()
 
     def __del__(self) -> None:
         with contextlib.suppress(Exception):

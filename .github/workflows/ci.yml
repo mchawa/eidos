@@ -118,7 +118,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --python ${{ matrix.python-version }} --all-extras --dev
 
-      - name: Run test suite with coverage
+      - name: Run parallel test suite with coverage
         env:
           COVERAGE_CORE: ${{ matrix.python-version != '3.11' && 'sysmon' || 'ctrace' }}
         run: |

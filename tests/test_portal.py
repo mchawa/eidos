@@ -1,6 +1,7 @@
 """Tests for the Eidos Living Web Portal, generator, HTTP server, and static site builder."""
 
 import re
+import socket
 import subprocess
 import threading
 import time
@@ -198,71 +199,102 @@ def test_static_portal_builder(tmp_path: Path):
     assert any(f["id"] == "FLOW-PORTAL-EXPLORATION" for f in json_data["flows"])
 
 
-def test_portal_http_server():
+def test_portal_http_server(monkeypatch):
     """Verify local HTTP server endpoints and JSON responses (CTR-EIDOS-PORTAL)."""
-    test_port = 8991
+    from eidos.portal.server import EidosPortalHandler, PortalThreadingHTTPServer
+
+    prev_eidos_dir = EidosPortalHandler.eidos_dir
+    created_servers: list[PortalThreadingHTTPServer] = []
+    server_bound = threading.Event()
+
+    class _TrackedServer(PortalThreadingHTTPServer):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            created_servers.append(self)
+            server_bound.set()
+
+    monkeypatch.setattr("eidos.portal.server.PortalThreadingHTTPServer", _TrackedServer)
+
     thread = threading.Thread(
         target=run_portal_server,
-        args=(Path("eidos"), "127.0.0.1", test_port, False),
+        args=(Path("eidos"), "127.0.0.1", 0, False),
         daemon=True,
     )
     thread.start()
-    time.sleep(0.4)
-
-    base_url = f"http://127.0.0.1:{test_port}"
-
-    # 1. GET /
-    with urllib.request.urlopen(f"{base_url}/") as res:
-        assert res.status == 200
-        assert "text/html" in res.headers.get("Content-Type", "")
-        body = res.read().decode("utf-8")
-        assert "Eidos Living Web Portal" in body
-
-    # 2. GET /api/data
-    with urllib.request.urlopen(f"{base_url}/api/data") as res:
-        assert res.status == 200
-        assert "application/json" in res.headers.get("Content-Type", "")
-        payload = orjson.loads(res.read())
-        assert payload["overview"]["system_id"] == "SYS-EIDOS"
-
-    # 3. GET /api/overview
-    with urllib.request.urlopen(f"{base_url}/api/overview") as res:
-        assert res.status == 200
-        ov = orjson.loads(res.read())
-        assert ov["total_specs"] >= 30
-
-    # 4. GET /api/validate
-    with urllib.request.urlopen(f"{base_url}/api/validate") as res:
-        assert res.status == 200
-        val = orjson.loads(res.read())
-        assert val["is_clean"] is True
-
-    # 5. GET /health
-    with urllib.request.urlopen(f"{base_url}/health") as res:
-        assert res.status == 200
-        h = orjson.loads(res.read())
-        assert h["status"] == "ok"
-
-    # 6. GET /favicon.svg
-    with urllib.request.urlopen(f"{base_url}/favicon.svg") as res:
-        assert res.status == 200
-        assert "image/svg+xml" in res.headers.get("Content-Type", "")
-        fav = res.read().decode("utf-8")
-        assert "<svg" in fav
-        assert "eidos-fav-grad" in fav
-
-    # 7. GET /favicon.ico
-    with urllib.request.urlopen(f"{base_url}/favicon.ico") as res:
-        assert res.status == 200
-        assert "image/svg+xml" in res.headers.get("Content-Type", "")
-
-    # 8. GET /unknown -> 404
     try:
-        urllib.request.urlopen(f"{base_url}/unknown-endpoint")
-        pytest.fail("Expected 404")
-    except urllib.error.HTTPError as exc:
-        assert exc.code == 404
-        exc.close()
+        assert server_bound.wait(timeout=5.0), "Portal server failed to bind within 5s"
+        test_port = created_servers[0].server_address[1]
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            try:
+                with socket.create_connection(("127.0.0.1", test_port), timeout=0.2):
+                    break
+            except OSError:
+                time.sleep(0.05)
+
+        base_url = f"http://127.0.0.1:{test_port}"
+
+        # 1. GET /
+        with urllib.request.urlopen(f"{base_url}/") as res:
+            assert res.status == 200
+            assert "text/html" in res.headers.get("Content-Type", "")
+            body = res.read().decode("utf-8")
+            assert "Eidos Living Web Portal" in body
+
+        # 2. GET /api/data
+        with urllib.request.urlopen(f"{base_url}/api/data") as res:
+            assert res.status == 200
+            assert "application/json" in res.headers.get("Content-Type", "")
+            payload = orjson.loads(res.read())
+            assert payload["overview"]["system_id"] == "SYS-EIDOS"
+
+        # 3. GET /api/overview
+        with urllib.request.urlopen(f"{base_url}/api/overview") as res:
+            assert res.status == 200
+            ov = orjson.loads(res.read())
+            assert ov["total_specs"] >= 30
+
+        # 4. GET /api/validate
+        with urllib.request.urlopen(f"{base_url}/api/validate") as res:
+            assert res.status == 200
+            val = orjson.loads(res.read())
+            assert val["is_clean"] is True
+
+        # 5. GET /health
+        with urllib.request.urlopen(f"{base_url}/health") as res:
+            assert res.status == 200
+            h = orjson.loads(res.read())
+            assert h["status"] == "ok"
+
+        # 6. GET /favicon.svg
+        with urllib.request.urlopen(f"{base_url}/favicon.svg") as res:
+            assert res.status == 200
+            assert "image/svg+xml" in res.headers.get("Content-Type", "")
+            fav = res.read().decode("utf-8")
+            assert "<svg" in fav
+            assert "eidos-fav-grad" in fav
+
+        # 7. GET /favicon.ico
+        with urllib.request.urlopen(f"{base_url}/favicon.ico") as res:
+            assert res.status == 200
+            assert "image/svg+xml" in res.headers.get("Content-Type", "")
+
+        # 8. GET /unknown -> 404
+        try:
+            urllib.request.urlopen(f"{base_url}/unknown-endpoint")
+            pytest.fail("Expected 404")
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 404
+            exc.close()
+    finally:
+        for srv in created_servers:
+            srv._portal_shutting_down = True
+            srv.shutdown()
+        thread.join(timeout=5.0)
+        for th in threading.enumerate():
+            if th.name == "eidos-portal-warmup":
+                th.join(timeout=5.0)
+        EidosPortalHandler.eidos_dir = prev_eidos_dir
 
 
 def test_cli_build_site_command(tmp_path: Path):
