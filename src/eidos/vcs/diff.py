@@ -14,13 +14,16 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from eidos.core.workspace.config import CONFIG_FILENAME, EidosConfig, load_repo_config_with_errors
 from eidos.core.workspace.project import (
     STANDARD_EXCLUDED_DIRS,
+    _is_dir_excluded_by_patterns,
     discover_nested_subproject_roots,
     extract_entity_paths,
     find_git_root,
     get_tracked_files,
     is_dotnet_bin_dir,
+    is_excluded_by_config,
     is_generated_or_vendored,
     is_polyglot_test_file,
     matches_owned_paths,
@@ -176,7 +179,27 @@ def _resolve_merge_base(repo: Path, base_ref: str, head_ref: str = "HEAD", fail_
     return None
 
 
-def _resolve_base_ref(repo: Path, base_ref: str | None = None) -> str | None:
+def _candidate_base_refs(
+    repo: Path,
+    *,
+    repo_config: EidosConfig | None = None,
+    eidos_dir: Path | None = None,
+) -> tuple[str, ...]:
+    """Return ordered candidate base refs, prepending drift.base_ref from eidos/eidos.yaml when configured."""
+    cfg = repo_config if repo_config is not None else load_repo_config_with_errors(eidos_dir=eidos_dir, repo_root=repo)[0]
+    if cfg.drift.base_ref:
+        return tuple(dict.fromkeys([cfg.drift.base_ref, *_CANDIDATE_BASE_REFS]))
+    return _CANDIDATE_BASE_REFS
+
+
+def _resolve_base_ref(
+    repo: Path,
+    base_ref: str | None = None,
+    *,
+    candidate_refs: tuple[str, ...] | None = None,
+    repo_config: EidosConfig | None = None,
+    eidos_dir: Path | None = None,
+) -> str | None:
     """Resolve the candidate base Git commit reference once per drift run (DLT-2026-052, DLT-2026-053)."""
     if base_ref:
         check = subprocess.run(
@@ -198,8 +221,13 @@ def _resolve_base_ref(repo: Path, base_ref: str | None = None) -> str | None:
         check=False,
     )
     head_sha = _stdout_str(head_check) if head_check.returncode == 0 else ""
+    eff_candidates = (
+        candidate_refs
+        if candidate_refs is not None
+        else _candidate_base_refs(repo, repo_config=repo_config, eidos_dir=eidos_dir)
+    )
 
-    for candidate in _CANDIDATE_BASE_REFS:
+    for candidate in eff_candidates:
         check = subprocess.run(
             ["git", "rev-parse", "--verify", candidate],
             cwd=repo,
@@ -208,7 +236,7 @@ def _resolve_base_ref(repo: Path, base_ref: str | None = None) -> str | None:
         )
         if check.returncode == 0:
             cand_sha = _stdout_str(check)
-            if candidate in ("origin/main", "main", "origin/master", "master") and head_sha and cand_sha == head_sha:
+            if candidate != "HEAD~1" and head_sha and cand_sha == head_sha:
                 prev_check = subprocess.run(
                     ["git", "rev-parse", "--verify", "HEAD~1"],
                     cwd=repo,
@@ -234,6 +262,9 @@ def _resolve_base_and_merge_base(
     repo: Path,
     base_ref: str | None = None,
     head_ref: str = "HEAD",
+    *,
+    repo_config: EidosConfig | None = None,
+    eidos_dir: Path | None = None,
 ) -> tuple[str | None, str | None, bool]:
     """Resolve (resolved_base, resolved_merge_base, fell_back_to_uncommitted) in a single pass."""
     git_root = find_git_root(repo) or repo
@@ -271,7 +302,12 @@ def _resolve_base_and_merge_base(
             )
         head_sha = _stdout_str(head_check)
 
-    candidate = _resolve_base_ref(repo, None)
+    eff_candidates = _candidate_base_refs(repo, repo_config=repo_config, eidos_dir=eidos_dir)
+    candidate = (
+        _resolve_base_ref(repo, None, candidate_refs=eff_candidates)
+        if eff_candidates != _CANDIDATE_BASE_REFS
+        else _resolve_base_ref(repo, None)
+    )
     if not candidate:
         if _is_shallow_repository(git_root):
             raise GitResolutionError(
@@ -282,12 +318,7 @@ def _resolve_base_and_merge_base(
 
     mb = _resolve_merge_base(repo, candidate, head_ref, fail_loudly=False)
     if mb:
-        if (
-            head_ref != "HEAD"
-            and head_sha
-            and mb == head_sha
-            and candidate in ("origin/main", "main", "origin/master", "master")
-        ):
+        if head_ref != "HEAD" and head_sha and mb == head_sha and candidate != "HEAD~1":
             prev_ref = f"{head_ref}~1"
             prev_check = subprocess.run(
                 ["git", "rev-parse", "--verify", prev_ref],
@@ -317,8 +348,8 @@ def _resolve_base_and_merge_base(
             check=False,
         )
         head_sha = _stdout_str(head_check) if head_check.returncode == 0 else ""
-    start_idx = _CANDIDATE_BASE_REFS.index(candidate) + 1 if candidate in _CANDIDATE_BASE_REFS else 0
-    for rem_cand in _CANDIDATE_BASE_REFS[start_idx:]:
+    start_idx = eff_candidates.index(candidate) + 1 if candidate in eff_candidates else 0
+    for rem_cand in eff_candidates[start_idx:]:
         check = subprocess.run(
             ["git", "rev-parse", "--verify", rem_cand],
             cwd=repo,
@@ -327,7 +358,7 @@ def _resolve_base_and_merge_base(
         )
         if check.returncode == 0:
             cand_sha = _stdout_str(check)
-            if rem_cand in ("origin/main", "main", "origin/master", "master") and head_sha and cand_sha == head_sha:
+            if rem_cand != "HEAD~1" and head_sha and cand_sha == head_sha:
                 prev_ref = f"{head_ref}~1" if head_ref != "HEAD" else "HEAD~1"
                 prev_check = subprocess.run(
                     ["git", "rev-parse", "--verify", prev_ref],
@@ -422,11 +453,13 @@ def get_git_diff_files(
     uncommitted: bool = False,
     *,
     merge_base: str | None = None,
+    repo_config: EidosConfig | None = None,
+    eidos_dir: Path | None = None,
 ) -> list[str]:
     """Retrieve list of modified and added files using NUL-delimited Git output, scoped to repo_root."""
     repo = repo_root.resolve()
     git_root = find_git_root(repo)
-    nested_roots = discover_nested_subproject_roots(repo)
+    nested_roots = discover_nested_subproject_roots(repo, repo_config=repo_config)
     nested_prefixes: tuple[str, ...] = tuple(
         f"{nr.relative_to(repo).as_posix().strip('/')}/" for nr in nested_roots if nr.is_relative_to(repo)
     )
@@ -472,9 +505,15 @@ def get_git_diff_files(
         resolved_mb: str | None = merge_base
         resolved_base: str | None = base_ref or merge_base
     else:
-        resolved_base, resolved_mb, fell_back = _resolve_base_and_merge_base(repo, base_ref, head_ref)
+        resolved_base, resolved_mb, fell_back = _resolve_base_and_merge_base(
+            repo,
+            base_ref,
+            head_ref,
+            repo_config=repo_config,
+            eidos_dir=eidos_dir,
+        )
         if fell_back or not resolved_base:
-            return get_git_diff_files(repo_root, uncommitted=True)
+            return get_git_diff_files(repo_root, uncommitted=True, repo_config=repo_config, eidos_dir=eidos_dir)
 
     try:
         diff_base = resolved_mb or f"{resolved_base}...{head_ref}"
@@ -513,7 +552,7 @@ def get_git_diff_files(
         if base_ref:
             raise GitResolutionError(f"Failed to execute git diff: {err}") from err
 
-    return get_git_diff_files(repo_root, uncommitted=True)
+    return get_git_diff_files(repo_root, uncommitted=True, repo_config=repo_config, eidos_dir=eidos_dir)
 
 
 def _has_structural_ast_change(
@@ -557,7 +596,12 @@ POLYGLOT_TEST_PATTERNS = [
 ]
 
 
-def collect_polyglot_test_files(repo_root: Path) -> dict[str, str]:
+def collect_polyglot_test_files(
+    repo_root: Path,
+    *,
+    eidos_dir: Path | None = None,
+    repo_config: EidosConfig | None = None,
+) -> dict[str, str]:
     """Scan the repository for test files across Python, TS/JS, Go, Rust, Java/Kotlin, and .NET/C#."""
     all_tests_content: dict[str, str] = {}
     root = repo_root.resolve()
@@ -565,38 +609,67 @@ def collect_polyglot_test_files(repo_root: Path) -> dict[str, str]:
     if not root.exists():
         return all_tests_content
 
-    eidos_dir = root / "eidos"
-    pkg_paths = _discover_container_package_paths(eidos_dir) if eidos_dir.is_dir() else None
+    eff_eidos = eidos_dir.resolve() if eidos_dir is not None else (root / "eidos")
+    cfg = repo_config if repo_config is not None else load_repo_config_with_errors(eidos_dir=eff_eidos, repo_root=root)[0]
+    ws_exclude = cfg.workspace.exclude
+    pkg_paths = _discover_container_package_paths(eff_eidos) if eff_eidos.is_dir() else None
 
     if find_git_root(root) is not None:
-        tracked_rels = get_tracked_files(root)
+        tracked_rels = get_tracked_files(root, eidos_dir=eff_eidos, repo_config=cfg)
         if tracked_rels:
             for rel in tracked_rels:
                 rel_parts = Path(rel).parts
                 if any(d in STANDARD_EXCLUDED_DIRS or d.startswith(".") for d in rel_parts[:-1]):
                     continue
-                if is_polyglot_test_file(Path(rel), repo_root=root, package_paths=pkg_paths):
+                if is_polyglot_test_file(
+                    Path(rel),
+                    repo_root=root,
+                    package_paths=pkg_paths,
+                    eidos_dir=eff_eidos,
+                    repo_config=cfg,
+                ):
                     try:
                         all_tests_content[rel] = (root / rel).read_text(encoding="utf-8", errors="replace")
                     except OSError:
                         continue
             return all_tests_content
 
-    nested_roots = set(discover_nested_subproject_roots(root))
+    nested_roots = set(discover_nested_subproject_roots(root, repo_config=cfg))
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [
-            d
-            for d in dirnames
-            if d not in STANDARD_EXCLUDED_DIRS
-            and not d.startswith(".")
-            and (Path(dirpath) / d).resolve() not in nested_roots
-            and not is_dotnet_bin_dir(Path(dirpath) / d)
-        ]
+        cur = Path(dirpath)
+        next_dirs: list[str] = []
+        for d in dirnames:
+            child = cur / d
+            if (
+                d in STANDARD_EXCLUDED_DIRS
+                or d.startswith(".")
+                or child.resolve() in nested_roots
+                or is_dotnet_bin_dir(child)
+            ):
+                continue
+            if ws_exclude:
+                try:
+                    rel_child = child.relative_to(root).as_posix()
+                except ValueError:
+                    rel_child = d
+                if _is_dir_excluded_by_patterns(rel_child, ws_exclude):
+                    continue
+            next_dirs.append(d)
+        dirnames[:] = next_dirs
 
         for fn in filenames:
-            file_path = Path(dirpath) / fn
+            file_path = cur / fn
             rel = str(file_path.relative_to(root))
-            if is_polyglot_test_file(Path(rel), repo_root=root, package_paths=pkg_paths):
+            norm_rel = rel.replace("\\", "/")
+            if ws_exclude and is_excluded_by_config(norm_rel, ws_exclude):
+                continue
+            if is_polyglot_test_file(
+                Path(rel),
+                repo_root=root,
+                package_paths=pkg_paths,
+                eidos_dir=eff_eidos,
+                repo_config=cfg,
+            ):
                 try:
                     all_tests_content[rel] = file_path.read_text(encoding="utf-8", errors="replace")
                 except OSError:
@@ -654,6 +727,8 @@ def classify_changed_files(
     repo_root: Path | None = None,
     eidos_dir: Path | None = None,
     package_paths: Iterable[str] | None = None,
+    *,
+    repo_config: EidosConfig | None = None,
 ) -> ChangedFilesClassification:
     """Classify file paths into code, living specs, deltas, tests, docs, and other."""
     classification = ChangedFilesClassification()
@@ -703,12 +778,20 @@ def classify_changed_files(
         eidos_rel_parts = ["eidos"]
     prefix_len = len(eidos_rel_parts)
 
+    cfg = (
+        repo_config
+        if repo_config is not None
+        else load_repo_config_with_errors(eidos_dir=resolved_eidos, repo_root=effective_root)[0]
+    )
+    ws_exclude = cfg.workspace.exclude
+    ignore_paths = cfg.drift.ignore_paths
+
     eff_pkg_paths = (
         list(package_paths) if package_paths is not None else _discover_container_package_paths(resolved_eidos)
     )
 
     candidate_code_paths: list[str] = []
-    parsed_files: list[tuple[str, Path, Path, list[str], bool, list[str], bool, bool]] = []
+    parsed_files: list[tuple[str, Path, Path, list[str], bool, list[str], bool, bool, bool, bool]] = []
     for f_str in files:
         norm_f_str = f_str.replace("\\", "/")
         f = Path(norm_f_str)
@@ -719,33 +802,50 @@ def classify_changed_files(
                 rel_f = f
         else:
             rel_f = f
+        rel_str_norm = str(rel_f).replace("\\", "/")
         parts = [p.lower() for p in rel_f.parts]
         sfx = f.suffix.lower()
         if _is_onboarding_governance_file(parts):
             classification.onboarding_files.append(f_str)
         is_in_eidos = prefix_len > 0 and len(parts) >= prefix_len and parts[:prefix_len] == eidos_rel_parts
         sub_parts = parts[prefix_len:] if is_in_eidos else []
-        is_eidos_ignored = f.name == ".gitkeep" or (is_in_eidos and any(p.startswith(".") for p in sub_parts))
-        is_eidos_spec = is_in_eidos and sfx in {".adoc", ".json", ".yaml", ".yml"}
-        is_test = is_polyglot_test_file(rel_f, repo_root=effective_root, package_paths=eff_pkg_paths)
+        is_repo_config = is_in_eidos and sub_parts == [CONFIG_FILENAME]
+        is_eidos_ignored = is_repo_config or f.name == ".gitkeep" or (is_in_eidos and any(p.startswith(".") for p in sub_parts))
+        is_eidos_spec = is_in_eidos and not is_repo_config and sfx in {".adoc", ".json", ".yaml", ".yml"}
+        is_ws_excluded = bool(ws_exclude and not is_in_eidos and is_excluded_by_config(rel_str_norm, ws_exclude))
+        is_test = (
+            False
+            if is_ws_excluded
+            else is_polyglot_test_file(
+                rel_f,
+                repo_root=effective_root,
+                package_paths=eff_pkg_paths,
+                eidos_dir=resolved_eidos,
+                repo_config=cfg,
+            )
+        )
         is_doc = sfx in {".md", ".rst"} or (bool(parts and parts[0] == "docs") and sfx in _DOCS_STATIC_EXTENSIONS)
-        parsed_files.append((f_str, f, rel_f, parts, is_in_eidos, sub_parts, is_test, is_doc))
+        parsed_files.append(
+            (f_str, f, rel_f, parts, is_in_eidos, sub_parts, is_repo_config, is_ws_excluded, is_test, is_doc)
+        )
 
         if (
             not is_eidos_ignored
             and not is_eidos_spec
+            and not is_ws_excluded
             and not is_test
             and not is_doc
             and sfx in code_extensions
             and not any(skip in STANDARD_EXCLUDED_DIRS for skip in parts[:-1])
+            and not (ignore_paths and is_excluded_by_config(rel_str_norm, ignore_paths))
         ):
-            candidate_code_paths.append(str(rel_f).replace("\\", "/"))
+            candidate_code_paths.append(rel_str_norm)
 
     vendored_paths = is_generated_or_vendored(effective_root, candidate_code_paths) if candidate_code_paths else set()
 
-    for f_str, f, rel_f, parts, is_in_eidos, sub_parts, is_test, is_doc in parsed_files:
+    for f_str, f, rel_f, parts, is_in_eidos, sub_parts, is_repo_config, is_ws_excluded, is_test, is_doc in parsed_files:
         sfx = f.suffix.lower()
-        if f.name == ".gitkeep" or (is_in_eidos and any(p.startswith(".") for p in sub_parts)):
+        if is_repo_config or f.name == ".gitkeep" or (is_in_eidos and any(p.startswith(".") for p in sub_parts)):
             classification.other_files.append(f_str)
             continue
 
@@ -756,6 +856,10 @@ def classify_changed_files(
                 classification.memory_files.append(f_str)
             else:
                 classification.spec_files.append(f_str)
+            continue
+
+        if is_ws_excluded:
+            classification.other_files.append(f_str)
             continue
 
         if is_test:
@@ -770,6 +874,7 @@ def classify_changed_files(
         if (
             sfx in code_extensions
             and not any(skip in STANDARD_EXCLUDED_DIRS for skip in parts[:-1])
+            and not (ignore_paths and is_excluded_by_config(rel_str_norm, ignore_paths))
             and rel_str_norm not in vendored_paths
             and str(rel_f) not in vendored_paths
         ):

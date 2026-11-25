@@ -2,7 +2,7 @@
 type: delta/mutation
 id: DLT-2026-178-ADD-OPTIONAL-REPOSITORY-CONFIGURATION-1073
 title: Add Optional Repository Configuration File (eidos/eidos.yaml)
-status: proposed
+status: applied
 intent:
   kind: feature
   motivation: >

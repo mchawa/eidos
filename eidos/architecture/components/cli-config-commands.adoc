@@ -1,0 +1,28 @@
+---
+type: tech/component
+id: CMP-CLI-CONFIG-COMMANDS
+title: CliConfigCommands
+container: CNT-EIDOS-CLI
+status: active
+source_path: src/eidos/cli/config_commands.py
+---
+= Component: CliConfigCommands
+:toc: left
+
+== Responsibility
+Implements the `eidos config` subcommand group (`init`, `show`, `schema`) under Setup & Workspace for scaffolding, inspecting, and viewing the offline schema for optional repository configuration (`eidos/eidos.yaml`).
+
+== Key Responsibilities & Collaborators
+* **Starter Configuration Scaffolding (`eidos config init`)**: Resolves the target `eidos/` directory via `CMP-CLI-APP` (`resolve_cli_eidos_dir`) and delegates to `CMP-REPO-CONFIG` (`init_config_file`) to generate a commented, schema-validated starter `eidos/eidos.yaml` file (refusing to overwrite an existing file with exit code `1` unless `--force` is passed) with Rich and `--json` output.
+* **Effective Configuration & Source Attribution (`eidos config show`)**: Calls `load_repo_config_with_sources` (`CMP-REPO-CONFIG`) to render the active config file path (or `absent`), every effective resolved setting (`EIDOS_*` env > `eidos/eidos.yaml` > built-in defaults), and per-key `default` / `file` / `env` source provenance in Rich tabular or `--json` format, failing closed with exit code `1` on invalid config or env values.
+* **Offline Schema & Env Introspection (`eidos config schema`)**: Calls `get_config_schema_info` (`CMP-REPO-CONFIG`) to display all seven `eidos/eidos.yaml` sections, allowed keys, type/enum constraints, defaults, and mapped `EIDOS_*` environment variables completely offline in Rich or `--json` format.
+
+== Public Surface
+* `config_app: typer.Typer`
+* `config_init_cmd(force: bool, path: Path | None, json_output: bool) -> None`
+* `config_show_cmd(path: Path | None, json_output: bool) -> None`
+* `config_schema_cmd(json_output: bool) -> None`
+
+== Design Constraints & Operational Notes
+* **Fail-Closed JSON & Rich Error Envelopes**: Catches `ConfigValidationError`, `FileNotFoundError`, `FileExistsError`, and `OSError`, emitting structured `{"error": ..., "errors": [...]}` JSON payloads under `--json` and exiting with code `1` so agents and CI scripts receive deterministic diagnostics.
+* **Disjoint Schema Introspection**: Keeps `eidos config schema` strictly scoped to `assets/schemas/config/eidos-config.v1.schema.yaml` so `eidos spec schema` remains dedicated exclusively to the 17 canonical living specification schemas.

@@ -80,7 +80,20 @@ def memory_add_cmd(
     json_output: bool = typer.Option(False, "--json", help="Output created memory metadata as JSON."),
 ) -> None:
     """Create a schema-validated team operational memory under eidos/memory/."""
+    from datetime import date, timedelta
+
+    from eidos.cli._shared import load_cli_repo_config, resolve_param_from_config
+
     eidos_dir = resolve_cli_eidos_dir(path)
+    repo_cfg = load_cli_repo_config(eidos_dir, json_output=json_output)
+    eff_semantic = bool(resolve_param_from_config("semantic", semantic, repo_cfg.context.semantic.enabled))
+    if expires is not None:
+        eff_expires: str | None = None if expires.strip().lower() == "none" else expires
+    elif repo_cfg.memory.default_expiry_days is not None:
+        eff_expires = (date.today() + timedelta(days=repo_cfg.memory.default_expiry_days)).isoformat()
+    else:
+        eff_expires = None
+
     try:
         res = add_memory(
             eidos_dir,
@@ -91,9 +104,9 @@ def memory_add_cmd(
             why=why,
             entities=entity,
             paths=file,
-            expires_at=expires,
+            expires_at=eff_expires,
             status=status,
-            use_semantic=semantic,
+            use_semantic=eff_semantic,
         )
     except ValueError as exc:
         _fail(str(exc), json_output=json_output)
@@ -188,8 +201,12 @@ def memory_search_cmd(
     json_output: bool = typer.Option(False, "--json", help="Output search results as JSON."),
 ) -> None:
     """Search active team memories via BM25 and optional Harrier Hybrid RRF."""
+    from eidos.cli._shared import load_cli_repo_config, resolve_param_from_config
+
     eidos_dir = resolve_cli_eidos_dir(path)
-    results = search_memories(eidos_dir, query, limit=limit, use_semantic=semantic)
+    repo_cfg = load_cli_repo_config(eidos_dir, json_output=json_output)
+    eff_semantic = bool(resolve_param_from_config("semantic", semantic, repo_cfg.context.semantic.enabled))
+    results = search_memories(eidos_dir, query, limit=limit, use_semantic=eff_semantic)
     if json_output:
         _echo_json({"query": query, "count": len(results), "results": results})
         return
@@ -314,8 +331,12 @@ def memory_audit_cmd(
     json_output: bool = typer.Option(False, "--json", help="Output non-blocking memory audit report as JSON."),
 ) -> None:
     """Audit team memories for staleness, expiry, duplicates, and spec overlap (strictly non-blocking, exit 0)."""
+    from eidos.cli._shared import load_cli_repo_config, resolve_param_from_config
+
     eidos_dir = resolve_cli_eidos_dir(path)
-    report = audit_memories(eidos_dir, check_overlaps=check_overlaps, use_semantic=semantic)
+    repo_cfg = load_cli_repo_config(eidos_dir, json_output=json_output)
+    eff_semantic = bool(resolve_param_from_config("semantic", semantic, semantic and repo_cfg.context.semantic.enabled))
+    report = audit_memories(eidos_dir, check_overlaps=check_overlaps, use_semantic=eff_semantic)
 
     if json_output:
         _echo_json(report)

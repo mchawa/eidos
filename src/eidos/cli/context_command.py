@@ -177,6 +177,11 @@ def context_cmd(
         path,
         json_output=json_output,
     )
+    from eidos.cli._shared import load_cli_repo_config, resolve_param_from_config
+
+    repo_cfg = load_cli_repo_config(eidos_dir, repo_root=repo_root, json_output=json_output)
+    eff_tier = str(resolve_param_from_config("tier", tier, repo_cfg.context.default_tier))
+    eff_semantic = bool(resolve_param_from_config("semantic", semantic, repo_cfg.context.semantic.enabled))
 
     if uncommitted or base is not None:
         from eidos.core.index.context_models import TieredContextSlice
@@ -189,6 +194,8 @@ def context_cmd(
                 base_ref=base,
                 head_ref=head,
                 uncommitted=uncommitted,
+                repo_config=repo_cfg,
+                eidos_dir=eidos_dir,
             )
         except GitResolutionError as exc:
             if json_output:
@@ -200,7 +207,7 @@ def context_cmd(
         combined = list(dict.fromkeys([*(normalized_files or []), *diff_files]))
         if not combined and not component and not task:
             if json_output:
-                empty_slice = TieredContextSlice(tier=tier, query=diff_label)
+                empty_slice = TieredContextSlice(tier=eff_tier, query=diff_label)
                 typer.echo(empty_slice.to_json())
             else:
                 typer.echo(f"No changed files detected ({diff_label}).")
@@ -212,8 +219,8 @@ def context_cmd(
         files=normalized_files,
         component=component,
         task=task,
-        tier=tier,
-        use_semantic=semantic,
+        tier=eff_tier,
+        use_semantic=eff_semantic,
     )
 
     if json_output:

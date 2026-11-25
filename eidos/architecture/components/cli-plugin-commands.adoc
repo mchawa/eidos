@@ -13,14 +13,14 @@ source_path: src/eidos/cli/plugin_commands.py
 Implements the `eidos plugin` subcommand group (`install`, `uninstall`, `update`, `validate`, `version`, `info`) for distributing and validating the Eidos Agent Plugin across supported AI coding harnesses.
 
 == Key Responsibilities & Collaborators
-* **Plugin Lifecycle Dispatch & Truthful Sync Reporting**: Delegates multi-harness skill and hook installation, manifest-tracked uninstallation, and version checks (including `status == "modified"` badges and `--force` reconciliation hints when non-force upgrades skipped edited `SKILL.md` files) to `CMP-PLUGIN-INSTALLER`, and `agentskills.io` Agent Skills and `hooks.json` package validation to `CMP-HOOK-MANAGER`.
+* **Plugin Lifecycle Dispatch & Truthful Sync Reporting**: Delegates multi-harness skill and hook installation, manifest-tracked uninstallation, and version checks (including `status == "modified"` badges and `--force` reconciliation hints when non-force upgrades skipped edited `SKILL.md` files) to `CMP-PLUGIN-INSTALLER`, resolves optional `plugin.targets`, `plugin.launcher`, and `plugin.hooks.install` defaults from `eidos/eidos.yaml` via `resolve_param_from_config` (explicit CLI arguments and flags always take precedence), and delegates `agentskills.io` Agent Skills and `hooks.json` package validation to `CMP-HOOK-MANAGER`.
 
 == Public Surface
 * `plugin_app: typer.Typer`
-* `plugin_install(target: PluginInstallTarget, project_dir: Path | None, force: bool, launcher: str, hooks: bool) -> None`
+* `plugin_install(target: PluginInstallTarget | None, project_dir: Path | None, force: bool, launcher: str, hooks: bool) -> None`
 * `plugin_uninstall(target: PluginInstallTarget, project_dir: Path | None) -> None`
-* `plugin_update(target: PluginInstallTarget, project_dir: Path | None, launcher: str) -> None`
+* `plugin_update(target: PluginInstallTarget | None, project_dir: Path | None, launcher: str) -> None`
 * `plugin_validate(...)`, `plugin_version(...)`, `plugin_info(...)`
 
 == Design Constraints & Operational Notes
-* **Explicit Target Selection, Opt-In `--hooks` on Install, & Overwrite Guard**: Requires an explicit `<TARGET>` (`antigravity`, `claude`, `cursor`, `aider`, `cline`, `kilocode`, `open-code`, `codex`, `copilot`, or `all`) on `install`, `uninstall`, and `update` with `force=False` by default, refusing to overwrite modified user files unless `--force` is specified. `eidos plugin install` defaults to `hooks=False` (installing native `Stop` hooks only when `--hooks` is passed), while `eidos plugin update` updates the current installed state (preserving each target's recorded hook setting in `.eidos-manifest.json`).
+* **Optional `[TARGET]` on Install/Update, Required `<TARGET>` on Uninstall, & Dual `--hooks/--no-hooks`**: `eidos plugin install` and `eidos plugin update` accept an optional `[TARGET]` (`antigravity`, `claude`, `cursor`, `aider`, `cline`, `kilocode`, `open-code`, `codex`, `copilot`, or `all`), falling back to concrete `plugin.targets` configured in `eidos/eidos.yaml` when omitted and exiting with code `2` when neither `[TARGET]` nor `plugin.targets` is configured. `eidos plugin uninstall <TARGET>` keeps `<TARGET>` strictly required for safety. `eidos plugin install` exposes `--hooks/--no-hooks` backed by `plugin.hooks.install` (default `false`, preserving `force=False` overwrite guards), while `eidos plugin update` preserves each target's recorded hook setting in `.eidos-manifest.json`.

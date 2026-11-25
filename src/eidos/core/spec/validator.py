@@ -39,6 +39,14 @@ from eidos.core.spec.models import (
 from eidos.core.spec.parser import YamlError, safe_load_yaml
 from eidos.core.spec.surface_validator import PublicSurfaceValidator
 from eidos.core.workspace.assets import get_v1_schemas_dir
+from eidos.core.workspace.config import (
+    CONFIG_FILENAME,
+    DriftChecksConfig,
+    EidosConfig,
+    find_config_file,
+    load_repo_config_with_errors,
+    validate_config_file,
+)
 from eidos.core.workspace.project import (
     expand_brace_globs,
     resolve_spec_and_repo_roots,
@@ -205,7 +213,27 @@ class SpecValidator:
                             doc.errors.append(msg)
         return doc.errors
 
-    def validate_directory(self, root_dir: Path, *, check_import_boundaries: bool = True) -> ValidationReport:
+    @staticmethod
+    def _forward_report_as_warnings(src_report: ValidationReport, dst_report: ValidationReport) -> None:
+        """Route errors and warnings from a scratch ValidationReport exclusively into dst_report.warnings."""
+        for msgs in src_report.schema_errors.values():
+            for msg in msgs:
+                if msg not in dst_report.warnings:
+                    dst_report.warnings.append(msg)
+        for ref in src_report.broken_references:
+            if ref not in dst_report.warnings:
+                dst_report.warnings.append(ref)
+        for warn in src_report.warnings:
+            if warn not in dst_report.warnings:
+                dst_report.warnings.append(warn)
+
+    def validate_directory(
+        self,
+        root_dir: Path,
+        *,
+        check_import_boundaries: bool = True,
+        repo_config: EidosConfig | None = None,
+    ) -> ValidationReport:
         """Scan a directory for .adoc files, parse, and validate each against its schema."""
         report = ValidationReport()
         adoc_files = sorted(root_dir.rglob("*.adoc"))
@@ -220,6 +248,24 @@ class SpecValidator:
         eidos_cache_root = spec_root
         resolved_repo_root = repo_root
         db_path = eidos_cache_root / ".cache" / "index.db"
+
+        if repo_config is None:
+            cfg, config_errors = load_repo_config_with_errors(eidos_dir=spec_root, repo_root=resolved_repo_root)
+        else:
+            cfg = repo_config
+            cfg_file = find_config_file(eidos_dir=spec_root, repo_root=resolved_repo_root)
+            config_errors = validate_config_file(cfg_file, repo_root=resolved_repo_root) if cfg_file is not None else []
+        if config_errors:
+            cfg_err_key = self._schema_error_key(
+                spec_root / CONFIG_FILENAME,
+                root_dir=root_dir,
+                repo_root=resolved_repo_root,
+            )
+            cfg_bucket = report.schema_errors.setdefault(cfg_err_key, [])
+            for err_msg in config_errors:
+                if err_msg not in cfg_bucket:
+                    cfg_bucket.append(err_msg)
+        checks = cfg.drift.checks
 
         cached_rows: dict[str, sqlite3.Row] = {}
         if eidos_cache_root.exists():
@@ -373,14 +419,15 @@ class SpecValidator:
 
         # Batch embedded Mermaid diagram syntax validation (CMP-MERMAID-VALIDATOR), skipping historical applied/rejected SpecDeltas
         mermaid_pairs: list[tuple[SpecDocument, Any]] = []
-        for doc in report.documents:
-            if doc.doc_type == "delta/mutation" and (doc.model.status or "").lower() in ("applied", "rejected"):
-                continue
-            if doc.body and "mermaid" in doc.body.lower():
-                from eidos.core.spec.mermaid_validator import extract_mermaid_blocks
+        if checks.mermaid != "off":
+            for doc in report.documents:
+                if doc.doc_type == "delta/mutation" and (doc.model.status or "").lower() in ("applied", "rejected"):
+                    continue
+                if doc.body and "mermaid" in doc.body.lower():
+                    from eidos.core.spec.mermaid_validator import extract_mermaid_blocks
 
-                for blk in extract_mermaid_blocks(doc.body):
-                    mermaid_pairs.append((doc, blk))
+                    for blk in extract_mermaid_blocks(doc.body):
+                        mermaid_pairs.append((doc, blk))
         if mermaid_pairs:
             from eidos.core.index.storage import (
                 load_mermaid_validation_cache,
@@ -407,17 +454,27 @@ class SpecValidator:
                 if not m_res.is_valid:
                     line_no = resolve_adoc_line_offset(doc.file_path, m_res.block.body_line)
                     msg = f"Mermaid syntax error in [{m_res.block.header_kind}] block at line {line_no}: {m_res.error_message}"
-                    if msg not in doc.errors:
-                        doc.errors.append(msg)
                     err_key = self._schema_error_key(doc.file_path, root_dir=root_dir, repo_root=resolved_repo_root)
-                    bucket = report.schema_errors.setdefault(err_key, [])
-                    if msg not in bucket:
-                        bucket.append(msg)
+                    if checks.mermaid == "warn":
+                        warn_msg = f"{err_key}: {msg}"
+                        if warn_msg not in report.warnings:
+                            report.warnings.append(warn_msg)
+                    else:
+                        if msg not in doc.errors:
+                            doc.errors.append(msg)
+                        bucket = report.schema_errors.setdefault(err_key, [])
+                        if msg not in bucket:
+                            bucket.append(msg)
 
         # Cross-reference validation
-        self._validate_cross_references(report, root_dir, fast_pathed_applied_deltas=fast_pathed_applied_deltas)
+        self._validate_cross_references(
+            report,
+            root_dir,
+            fast_pathed_applied_deltas=fast_pathed_applied_deltas,
+            checks=checks,
+        )
 
-        if check_import_boundaries and resolved_root == spec_root:
+        if check_import_boundaries and resolved_root == spec_root and checks.import_boundaries != "off":
             violations, _shrink = evaluate_import_boundaries(
                 spec_root,
                 repo_root=resolved_repo_root,
@@ -441,12 +498,16 @@ class SpecValidator:
                 msg = (
                     f"Import boundary violation [{v['rule']}]: {v['source']} -> {v['target']} ({limit_str}){ev_sample}"
                 )
-                bucket = report.schema_errors.setdefault(spec_key, [])
-                if msg not in bucket:
-                    bucket.append(msg)
-                target_doc = doc_by_key.get(spec_key)
-                if target_doc is not None and msg not in target_doc.errors:
-                    target_doc.errors.append(msg)
+                if checks.import_boundaries == "warn":
+                    if msg not in report.warnings:
+                        report.warnings.append(msg)
+                else:
+                    bucket = report.schema_errors.setdefault(spec_key, [])
+                    if msg not in bucket:
+                        bucket.append(msg)
+                    target_doc = doc_by_key.get(spec_key)
+                    if target_doc is not None and msg not in target_doc.errors:
+                        target_doc.errors.append(msg)
 
         return report
 
@@ -455,8 +516,11 @@ class SpecValidator:
         report: ValidationReport,
         root_dir: Path,
         fast_pathed_applied_deltas: set[str] | None = None,
+        *,
+        checks: DriftChecksConfig | None = None,
     ):
         """Ensure all relative file links in YAML frontmatters and entity ID cross-references resolve."""
+        eff_checks = checks or DriftChecksConfig()
         # 1. Index all document IDs across the specification catalog and detect duplicate IDs
         report.entity_index = {}
         for doc in report.documents:
@@ -562,10 +626,17 @@ class SpecValidator:
             self._check_dict_references(doc.frontmatter, doc.file_path, root_dir, report, doc_type=doc.doc_type)
 
             # 3. Check semantic entity ID cross-references
-            self._validate_semantic_references(doc, catalog_ids, report, root_dir, entity_types)
+            self._validate_semantic_references(
+                doc,
+                catalog_ids,
+                report,
+                root_dir,
+                entity_types,
+                deprecated_severity=eff_checks.deprecated_references,
+            )
 
         # 4. Check source/contract file paths on disk and CLI contract command parity
-        self._validate_source_and_contract_paths(report, root_dir)
+        self._validate_source_and_contract_paths(report, root_dir, checks=eff_checks)
 
         # 5. Check design/system W3C DTCG token manifests and acyclic DS-* inheritance
         self._validate_design_systems(report, root_dir)
@@ -580,12 +651,24 @@ class SpecValidator:
         report: ValidationReport,
         root_dir: Path,
         entity_types: dict[str, str] | None = None,
+        *,
+        deprecated_severity: str = "warn",
     ):
         """Validate semantic entity ID references via schema-driven x-eidos-ref annotations."""
         fm = doc.frontmatter or {}
         schema = self.resolve_schema(doc)
         if schema:
-            self._validate_schema_references(schema, fm, "", doc, catalog_ids, report, entity_types, root_dir=root_dir)
+            self._validate_schema_references(
+                schema,
+                fm,
+                "",
+                doc,
+                catalog_ids,
+                report,
+                entity_types,
+                root_dir=root_dir,
+                deprecated_severity=deprecated_severity,
+            )
         self._validate_architectural_invariants(doc, fm, report, root_dir=root_dir)
 
     def _validate_schema_references(
@@ -598,6 +681,8 @@ class SpecValidator:
         report: ValidationReport,
         entity_types: dict[str, str] | None = None,
         root_dir: Path | None = None,
+        *,
+        deprecated_severity: str = "warn",
     ) -> None:
         """Recursively walk schema and frontmatter to enforce x-eidos-ref reference rules."""
         if value is None or not isinstance(schema_node, dict):
@@ -612,7 +697,15 @@ class SpecValidator:
                 if isinstance(resolved_def, dict):
                     merged_node = {**resolved_def, **{k: v for k, v in schema_node.items() if k != "$ref"}}
                     self._validate_schema_references(
-                        merged_node, value, field_path, doc, catalog_ids, report, entity_types, root_dir=root_dir
+                        merged_node,
+                        value,
+                        field_path,
+                        doc,
+                        catalog_ids,
+                        report,
+                        entity_types,
+                        root_dir=root_dir,
+                        deprecated_severity=deprecated_severity,
                     )
             return
 
@@ -620,13 +713,29 @@ class SpecValidator:
         if isinstance(ref_meta, dict):
             if isinstance(value, str):
                 self._check_eidos_ref(
-                    ref_meta, value, field_path, doc, catalog_ids, report, entity_types, root_dir=root_dir
+                    ref_meta,
+                    value,
+                    field_path,
+                    doc,
+                    catalog_ids,
+                    report,
+                    entity_types,
+                    root_dir=root_dir,
+                    deprecated_severity=deprecated_severity,
                 )
             elif isinstance(value, list):
                 for item in value:
                     if isinstance(item, str):
                         self._check_eidos_ref(
-                            ref_meta, item, field_path, doc, catalog_ids, report, entity_types, root_dir=root_dir
+                            ref_meta,
+                            item,
+                            field_path,
+                            doc,
+                            catalog_ids,
+                            report,
+                            entity_types,
+                            root_dir=root_dir,
+                            deprecated_severity=deprecated_severity,
                         )
 
         if isinstance(value, str):
@@ -642,6 +751,7 @@ class SpecValidator:
                             report,
                             entity_types,
                             root_dir=root_dir,
+                            deprecated_severity=deprecated_severity,
                         )
         elif isinstance(value, dict):
             props = schema_node.get("properties")
@@ -658,6 +768,7 @@ class SpecValidator:
                             report,
                             entity_types,
                             root_dir=root_dir,
+                            deprecated_severity=deprecated_severity,
                         )
             for combiner in ("oneOf", "anyOf", "allOf"):
                 for branch in schema_node.get(combiner, []) or []:
@@ -672,6 +783,7 @@ class SpecValidator:
                                 report,
                                 entity_types,
                                 root_dir=root_dir,
+                                deprecated_severity=deprecated_severity,
                             )
                         elif isinstance(branch.get("properties"), dict):
                             for prop_key, prop_val in value.items():
@@ -686,13 +798,22 @@ class SpecValidator:
                                         report,
                                         entity_types,
                                         root_dir=root_dir,
+                                        deprecated_severity=deprecated_severity,
                                     )
         elif isinstance(value, list):
             items_schema = schema_node.get("items")
             if isinstance(items_schema, dict):
                 for item in value:
                     self._validate_schema_references(
-                        items_schema, item, field_path, doc, catalog_ids, report, entity_types, root_dir=root_dir
+                        items_schema,
+                        item,
+                        field_path,
+                        doc,
+                        catalog_ids,
+                        report,
+                        entity_types,
+                        root_dir=root_dir,
+                        deprecated_severity=deprecated_severity,
                     )
             for combiner in ("oneOf", "anyOf", "allOf"):
                 for branch in schema_node.get(combiner, []) or []:
@@ -706,6 +827,7 @@ class SpecValidator:
                             report,
                             entity_types,
                             root_dir=root_dir,
+                            deprecated_severity=deprecated_severity,
                         )
 
     def _check_eidos_ref(
@@ -718,6 +840,8 @@ class SpecValidator:
         report: ValidationReport,
         entity_types: dict[str, str] | None = None,
         root_dir: Path | None = None,
+        *,
+        deprecated_severity: str = "warn",
     ) -> None:
         """Check a single string reference against x-eidos-ref metadata."""
         val = raw_val.strip()
@@ -746,7 +870,14 @@ class SpecValidator:
                                 f"{label} '{val}' in {field_path} has type '{actual_type}', expected {expected_types}"
                             )
                         elif ref_doc is not None:
-                            self._warn_if_deprecated_dependency(doc, ref_doc, val, field_path, report)
+                            self._warn_if_deprecated_dependency(
+                                doc,
+                                ref_doc,
+                                val,
+                                field_path,
+                                report,
+                                severity=deprecated_severity,
+                            )
                         break
             return
 
@@ -837,7 +968,14 @@ class SpecValidator:
 
         target_doc = report.entity_index.get(val)
         if target_doc is not None:
-            self._warn_if_deprecated_dependency(doc, target_doc, val, field_path, report)
+            self._warn_if_deprecated_dependency(
+                doc,
+                target_doc,
+                val,
+                field_path,
+                report,
+                severity=deprecated_severity,
+            )
 
     @staticmethod
     def _warn_if_deprecated_dependency(
@@ -846,8 +984,12 @@ class SpecValidator:
         ref_val: str,
         field_path: str,
         report: ValidationReport,
+        *,
+        severity: str = "warn",
     ) -> None:
-        """Emit a non-blocking warning when an active living spec references a deprecated or retired entity."""
+        """Report when an active living spec references a deprecated or retired entity according to severity."""
+        if severity == "off":
+            return
         if doc.doc_type in ("delta/mutation", "product/exploration", "agent/memory"):
             return
         if str(doc.model.status or "").strip().lower() != "active":
@@ -856,6 +998,14 @@ class SpecValidator:
         if target_status not in ("deprecated", "retired"):
             return
         target_label = target_doc.doc_id or ref_val
+        if severity == "error":
+            err = (
+                f"Deprecated dependency violation in {doc.file_path.name}: "
+                f"active {doc.doc_type} '{doc.doc_id}' references {target_status} entity '{target_label}' in '{field_path}'"
+            )
+            if err not in report.broken_references:
+                report.broken_references.append(err)
+            return
         warn = (
             f"Deprecated dependency warning in {doc.file_path.name}: "
             f"active {doc.doc_type} '{doc.doc_id}' references {target_status} entity '{target_label}' in '{field_path}'"
@@ -1161,8 +1311,15 @@ class SpecValidator:
         stripped_source = re.sub(r"(?:^|\s)(?://|#)[^\r\n]*", " ", stripped_source)
         return bool(re.search(rf"\b{re.escape(leaf_sym)}\b", stripped_source))
 
-    def _validate_source_and_contract_paths(self, report: ValidationReport, root_dir: Path) -> None:
+    def _validate_source_and_contract_paths(
+        self,
+        report: ValidationReport,
+        root_dir: Path,
+        *,
+        checks: DriftChecksConfig | None = None,
+    ) -> None:
         """Verify container and component source_path, contract specification_file, and invariant test_binding references when source/test trees exist on disk."""
+        eff_checks = checks or DriftChecksConfig()
         spec_root, repo_root = resolve_spec_and_repo_roots(root_dir)
 
         candidate_paths: list[str] = []
@@ -1269,6 +1426,31 @@ class SpecValidator:
         if ps_db_path.is_file():
             surface_validator.hydrate_persistent_cache(ps_db_path)
         repo_symbol_acc = surface_validator._new_repo_symbol_accumulator()
+
+        def _run_surface_check(target_doc: SpecDocument) -> None:
+            if eff_checks.public_surface == "off":
+                return
+            if eff_checks.public_surface == "warn":
+                scratch = ValidationReport()
+                surface_validator._verify_entity_public_surface(
+                    target_doc, repo_root, root_dir, scratch, repo_symbol_acc=repo_symbol_acc
+                )
+                self._forward_report_as_warnings(scratch, report)
+                return
+            surface_validator._verify_entity_public_surface(
+                target_doc, repo_root, root_dir, report, repo_symbol_acc=repo_symbol_acc
+            )
+
+        def _run_contract_parity(proto: str, target_doc: SpecDocument, target_path: Path | list[Path]) -> None:
+            if eff_checks.contract_parity == "off":
+                return
+            if eff_checks.contract_parity == "warn":
+                scratch = ValidationReport()
+                self._verify_contract_protocol(proto, target_doc, target_path, scratch)
+                self._forward_report_as_warnings(scratch, report)
+                return
+            self._verify_contract_protocol(proto, target_doc, target_path, report)
+
         for doc in report.documents:
             model = doc.model
             status = str(model.status or "active").strip().lower()
@@ -1289,9 +1471,7 @@ class SpecValidator:
                         )
                 if not missing_sp:
                     active_arch_docs.append(doc)
-                    surface_validator._verify_entity_public_surface(
-                        doc, repo_root, root_dir, report, repo_symbol_acc=repo_symbol_acc
-                    )
+                    _run_surface_check(doc)
             elif doc.doc_type == "tech/component":
                 missing_sp = False
                 for raw_sp in model.source_paths():
@@ -1306,9 +1486,7 @@ class SpecValidator:
                         )
                 if not missing_sp:
                     active_arch_docs.append(doc)
-                    surface_validator._verify_entity_public_surface(
-                        doc, repo_root, root_dir, report, repo_symbol_acc=repo_symbol_acc
-                    )
+                    _run_surface_check(doc)
             elif doc.doc_type == "tech/contract":
                 sf = model.specification_file
                 if (
@@ -1329,7 +1507,7 @@ class SpecValidator:
                             target_arg: Path | list[Path] = (
                                 resolved_targets[0] if len(resolved_targets) == 1 else resolved_targets
                             )
-                            self._verify_contract_protocol(protocol, doc, target_arg, report)
+                            _run_contract_parity(protocol, doc, target_arg)
                     else:
                         resolved_sf = self._resolve_source_path(repo_root, root_dir, sf)
                         if resolved_sf is None:
@@ -1338,12 +1516,15 @@ class SpecValidator:
                                 f"Contract '{doc.doc_id}' references '{sf}' which does not exist on disk"
                             )
                         else:
-                            self._verify_contract_protocol(protocol, doc, resolved_sf, report)
+                            _run_contract_parity(protocol, doc, resolved_sf)
 
         if active_arch_docs:
             active_cmp_docs = [d for d in active_arch_docs if d.doc_type == "tech/component"]
             surface_validator.check_overlapping_component_source_paths(active_cmp_docs, repo_root, root_dir, report)
-            surface_validator._verify_prose_symbol_drift(active_arch_docs, repo_root, root_dir, report, repo_symbol_acc)
+            if eff_checks.public_surface != "off":
+                surface_validator._verify_prose_symbol_drift(
+                    active_arch_docs, repo_root, root_dir, report, repo_symbol_acc
+                )
         if ps_spec_root.is_dir():
             surface_validator.flush_persistent_cache(ps_db_path)
 

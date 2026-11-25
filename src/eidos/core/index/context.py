@@ -72,6 +72,7 @@ from eidos.core.index.fts_query import (
 )
 from eidos.core.index.storage import CONFIDENCE_RANK, EDGE_PROVENANCE_PRECEDENCE, provenance_to_confidence
 from eidos.core.index.traversal import resolve_symbol_or_path_in_db
+from eidos.core.workspace.config import load_repo_config_with_errors
 
 
 def get_context_slice(
@@ -80,7 +81,7 @@ def get_context_slice(
     task: str | None = None,
     eidos_dir: Path | None = None,
     repo_root: Path | None = None,
-    tier: str = "guardrails",
+    tier: str | None = None,
 ) -> ArchitecturalContextSlice:
     """Extract an architectural subgraph context slice tailored for an AI agent's current task."""
     from eidos.core.index.graph_index import get_architectural_index
@@ -88,12 +89,15 @@ def get_context_slice(
     root = (repo_root or Path.cwd()).resolve()
     target_eidos = (eidos_dir or (root / "eidos")).resolve()
 
+    repo_cfg, _ = load_repo_config_with_errors(eidos_dir=target_eidos, repo_root=root)
+    effective_tier = tier if tier is not None else repo_cfg.context.default_tier
     index = get_architectural_index(eidos_dir=target_eidos, repo_root=root)
     return index.get_tiered_context_slice(
         files=files,
         component=component,
         task=task,
-        tier=tier,
+        tier=effective_tier,
+        use_semantic=repo_cfg.context.semantic.enabled,
     )
 
 
@@ -102,12 +106,19 @@ def build_tiered_context_slice(
     files: list[str] | str | None = None,
     component: str | None = None,
     task: str | None = None,
-    tier: str = "guardrails",
-    use_semantic: bool = True,
+    tier: str | None = None,
+    use_semantic: bool | None = None,
 ) -> TieredContextSlice:
     """Extract a token-budgeted architectural context slice using hybrid indexed retrieval."""
     t0 = time.perf_counter()
     index._ensure_synced()
+
+    repo_cfg, _ = load_repo_config_with_errors(
+        eidos_dir=getattr(index, "eidos_dir", None),
+        repo_root=getattr(index, "root", None),
+    )
+    tier = tier if tier is not None else repo_cfg.context.default_tier
+    use_semantic = use_semantic if use_semantic is not None else repo_cfg.context.semantic.enabled
 
     matched_components: dict[str, dict[str, Any]] = {}
     matched_contracts: dict[str, dict[str, Any]] = {}
@@ -1304,6 +1315,8 @@ def build_tiered_context_slice(
         use_semantic=use_semantic,
         eidos_dir=getattr(index, "eidos_dir", None),
         db_path=getattr(index, "db_path", None),
+        tier_caps=repo_cfg.memory.tier_caps.as_dict(),
+        commit_drift_threshold=repo_cfg.memory.commit_drift_threshold,
     )
 
     slice_obj = TieredContextSlice(
@@ -1325,6 +1338,7 @@ def build_tiered_context_slice(
         direct_cap_ids=set(direct_cap_ids),
         direct_inv_ids=set(direct_inv_ids),
         direct_pol_ids=set(direct_pol_ids),
+        tier_budgets=repo_cfg.context.budgets.as_dict(),
     )
     slice_obj.query_latency_ms = (time.perf_counter() - t0) * 1000
     return slice_obj

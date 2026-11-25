@@ -24,6 +24,7 @@ from eidos.cli._shared import (
     PANEL_SPECS,
     console,
 )
+from eidos.cli.config_commands import config_app
 from eidos.cli.delta_commands import delta_app
 from eidos.cli.index_commands import index_app
 from eidos.cli.memory_commands import memory_app
@@ -37,6 +38,7 @@ app = typer.Typer(
     add_completion=False,
 )
 
+app.add_typer(config_app, name="config", rich_help_panel=PANEL_SETUP)
 app.add_typer(spec_app, name="spec", rich_help_panel=PANEL_SPECS)
 app.add_typer(delta_app, name="delta", rich_help_panel=PANEL_SPECS)
 app.add_typer(index_app, name="index", rich_help_panel=PANEL_KNOWLEDGE)

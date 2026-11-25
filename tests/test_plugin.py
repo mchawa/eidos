@@ -2790,11 +2790,13 @@ def test_opt_in_hooks_flag_and_doctor_hook_health_reporting(tmp_path):
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path, check=True)
 
-    # --no-hooks is not a valid option on install, and --hooks is not accepted on update
-    assert (
-        runner.invoke(app, ["plugin", "install", "cursor", "--no-hooks", "--project-dir", str(tmp_path)]).exit_code != 0
-    )
+    # --hooks/--no-hooks is supported on install (DLT-2026-178), while --hooks is not accepted on update
     assert runner.invoke(app, ["plugin", "update", "cursor", "--hooks", "--project-dir", str(tmp_path)]).exit_code != 0
+    res_explicit_no_hooks = runner.invoke(
+        app, ["plugin", "install", "cursor", "--no-hooks", "--project-dir", str(tmp_path)]
+    )
+    assert res_explicit_no_hooks.exit_code == 0
+    assert not (tmp_path / ".cursor" / "hooks.json").exists()
 
     # 1. Default install without --hooks: hooks=False -> PASS with (hooks: disabled)
     res_no_hooks = runner.invoke(app, ["plugin", "install", "cursor", "--project-dir", str(tmp_path)])

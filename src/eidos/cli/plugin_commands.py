@@ -7,7 +7,8 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from eidos.cli._shared import console
+from eidos.cli._shared import console, load_cli_repo_config, resolve_cli_eidos_dir, resolve_param_from_config
+from eidos.core.workspace.config import EidosConfig
 from eidos.plugin.installer import (
     PluginInstallTarget,
     install_plugin,
@@ -28,14 +29,42 @@ plugin_app = typer.Typer(
 )
 
 
+def _load_plugin_repo_config(project_dir: Path | None) -> EidosConfig:
+    if project_dir is not None:
+        base = project_dir.resolve()
+        cfg_eidos = base if base.name == "eidos" else (base / "eidos")
+        cfg_root = cfg_eidos.parent
+    else:
+        cfg_eidos = resolve_cli_eidos_dir(None).resolve()
+        cfg_root = cfg_eidos.parent if cfg_eidos.name == "eidos" else Path.cwd().resolve()
+    return load_cli_repo_config(cfg_eidos, repo_root=cfg_root)
+
+
+def _resolve_plugin_targets(
+    target: PluginInstallTarget | None,
+    repo_cfg: EidosConfig,
+    command_label: str,
+) -> tuple[PluginInstallTarget | list[PluginInstallTarget], str]:
+    if target is not None:
+        return target, target.value
+    if repo_cfg.plugin.targets:
+        resolved = [PluginInstallTarget(t) for t in repo_cfg.plugin.targets]
+        return resolved, ", ".join(repo_cfg.plugin.targets)
+    console.print(
+        f"[bold red]Error:[/bold red] Missing argument 'TARGET' and no 'plugin.targets' configured in eidos/eidos.yaml. "
+        f"Pass a target (e.g. 'eidos plugin {command_label} cursor') or configure plugin.targets."
+    )
+    raise typer.Exit(code=2)
+
+
 @plugin_app.command("install")
 def plugin_install(
     target: Annotated[
-        PluginInstallTarget,
+        PluginInstallTarget | None,
         typer.Argument(
-            help="Installation target in project scope: antigravity, claude, cursor, aider, cline, kilocode, open-code, codex, copilot, all."
+            help="Installation target in project scope: antigravity, claude, cursor, aider, cline, kilocode, open-code, codex, copilot, all (defaults to plugin.targets in eidos/eidos.yaml)."
         ),
-    ],
+    ] = None,
     project_dir: Path | None = typer.Option(
         None,
         "--project-dir",
@@ -54,16 +83,19 @@ def plugin_install(
     ),
     hooks: bool = typer.Option(
         False,
-        "--hooks",
+        "--hooks/--no-hooks",
         help="Install native Stop lifecycle hook for hook-capable targets (antigravity, claude, cursor, cline, codex, copilot).",
     ),
 ):
     """Install Eidos Agent Skills and optional Stop hooks in project scope."""
-    resolved_target = target
-    resolved_launcher = launcher if isinstance(launcher, str) else "eidos"
-    resolved_hooks = hooks if isinstance(hooks, bool) else False
+    repo_cfg = _load_plugin_repo_config(project_dir)
+    resolved_target, target_label = _resolve_plugin_targets(target, repo_cfg, "install")
+    cli_launcher = launcher if isinstance(launcher, str) else "eidos"
+    cli_hooks = hooks if isinstance(hooks, bool) else False
+    resolved_launcher = str(resolve_param_from_config("launcher", cli_launcher, repo_cfg.plugin.launcher))
+    resolved_hooks = bool(resolve_param_from_config("hooks", cli_hooks, repo_cfg.plugin.hooks.install))
     console.print(
-        f"[bold cyan]Installing Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{resolved_target.value}[/bold green])...\n"
+        f"[bold cyan]Installing Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{target_label}[/bold green])...\n"
     )
 
     try:
@@ -187,11 +219,11 @@ def plugin_version(
 @plugin_app.command("update")
 def plugin_update(
     target: Annotated[
-        PluginInstallTarget,
+        PluginInstallTarget | None,
         typer.Argument(
-            help="Target to update in project scope: antigravity, claude, cursor, aider, cline, kilocode, open-code, codex, copilot, all."
+            help="Target to update in project scope: antigravity, claude, cursor, aider, cline, kilocode, open-code, codex, copilot, all (defaults to plugin.targets in eidos/eidos.yaml)."
         ),
-    ],
+    ] = None,
     project_dir: Path | None = typer.Option(
         None,
         "--project-dir",
@@ -205,10 +237,12 @@ def plugin_update(
     ),
 ):
     """Update project-scoped Agent Plugin to the latest bundled version."""
-    resolved_target = target
-    resolved_launcher = launcher if isinstance(launcher, str) else "eidos"
+    repo_cfg = _load_plugin_repo_config(project_dir)
+    resolved_target, target_label = _resolve_plugin_targets(target, repo_cfg, "update")
+    cli_launcher = launcher if isinstance(launcher, str) else "eidos"
+    resolved_launcher = str(resolve_param_from_config("launcher", cli_launcher, repo_cfg.plugin.launcher))
     console.print(
-        f"[bold cyan]Updating Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{resolved_target.value}[/bold green])...\n"
+        f"[bold cyan]Updating Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{target_label}[/bold green])...\n"
     )
 
     try:

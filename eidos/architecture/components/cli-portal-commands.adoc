@@ -13,7 +13,7 @@ source_path: src/eidos/cli/portal_commands.py
 Implements the `eidos portal` subcommand group (`serve`, `build`) for launching the interactive local Living Architecture Web Portal or compiling a self-contained static site bundle.
 
 == Key Responsibilities & Collaborators
-* **Portal Server & Builder Dispatch**: Resolves the `eidos/` directory via `CMP-CLI-APP` (`resolve_cli_eidos_dir`) and delegates live HTTP/SSE serving (`eidos portal serve`) to `CMP-PORTAL-SERVER` and chunked or `--single-file` static compilation (`eidos portal build`) to `CMP-PORTAL-BUILDER`.
+* **Portal Server & Builder Dispatch**: Resolves the `eidos/` directory via `CMP-CLI-APP` (`resolve_cli_eidos_dir`), loads optional `eidos/eidos.yaml` defaults for `portal.serve.{host,port,open_browser}` (exposing `--open/--no-open` on `eidos portal serve`) and `portal.build.{out_dir,single_file}` (exposing `--single-file/--no-single-file` on `eidos portal build`) via `resolve_param_from_config` so explicit CLI options always override config values, and delegates live HTTP/SSE serving (`eidos portal serve`) to `CMP-PORTAL-SERVER` and chunked or `--single-file` static compilation (`eidos portal build`) to `CMP-PORTAL-BUILDER`.
 
 == Public Surface
 * `portal_app: typer.Typer`

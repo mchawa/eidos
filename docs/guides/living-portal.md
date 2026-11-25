@@ -30,10 +30,13 @@ Any specification document rendered through the portal's AsciiDoc reader (across
 
 ## Local Interactive Development
 
-To inspect your architecture locally with real-time Server-Sent Events (`GET /api/events` streaming live updates across `eidos/`, `src/`, and `tests/`, `GET /api/drift` uncommitted drift summaries, and same-origin loopback `Host` header isolation):
+To inspect your architecture locally with real-time Server-Sent Events (`GET /api/events` streaming live updates across `eidos/`—including `eidos/eidos.yaml`—, `src/`, and `tests/`, `GET /api/drift` uncommitted drift summaries, and same-origin loopback `Host` header isolation):
 
 ```bash
 eidos portal serve --path eidos --port 8080
+# Override portal.serve.open_browser from eidos/eidos.yaml on a single run:
+eidos portal serve --open
+eidos portal serve --no-open
 ```
 
 Open `http://localhost:8080` in your web browser. Any changes made to `eidos/`, `src/`, or `tests/` immediately update the live drift status badge and catalog views without manual page refreshes.
@@ -50,6 +53,25 @@ eidos portal build --path eidos --out public
 
 # Optional standalone single-file export (inlines all spec bodies for file:// archives):
 eidos portal build --path eidos --out public --single-file
+
+# Explicitly disable portal.build.single_file: true configured in eidos/eidos.yaml:
+eidos portal build --path eidos --no-single-file
+```
+
+### Repository Defaults (`eidos/eidos.yaml`)
+
+You can commit team defaults for both `eidos portal serve` and `eidos portal build` inside optional `eidos/eidos.yaml` (explicit CLI flags always override config values):
+
+```yaml
+version: 1
+portal:
+  serve:
+    host: 127.0.0.1
+    port: 3000
+    open_browser: false
+  build:
+    out_dir: site       # validated strictly inside repository root
+    single_file: false
 ```
 
 This creates a self-contained bundle with **zero external CDN dependencies**, **zero Node.js runtime requirement (`INV-PORTAL-ZERO-NODE-DEP`)**, **strict Mermaid (`securityLevel: "strict"`) and DOMPurify (`SANITIZE_DOM`) XSS protection (`INV-PORTAL-XSS-AND-SERVER-ISOLATION`)**, and **lazy per-entity spec chunking**:

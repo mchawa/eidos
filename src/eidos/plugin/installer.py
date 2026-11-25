@@ -1029,8 +1029,29 @@ def _raise_batch_errors(errors: list[tuple[str, Exception]]) -> None:
     raise RuntimeError(summary)
 
 
+def _normalize_install_targets(
+    target: PluginInstallTarget | Any,
+) -> tuple[list[PluginInstallTarget], bool]:
+    """Expand a single target or target sequence into deduplicated concrete targets and batch_mode flag."""
+    if isinstance(target, PluginInstallTarget):
+        if target == PluginInstallTarget.ALL:
+            return _all_concrete_targets(), True
+        return [target], False
+    expanded: list[PluginInstallTarget] = []
+    has_all = False
+    for raw_t in target:
+        t = raw_t if isinstance(raw_t, PluginInstallTarget) else PluginInstallTarget(str(raw_t).strip().lower())
+        if t == PluginInstallTarget.ALL:
+            has_all = True
+            expanded.extend(_all_concrete_targets())
+        else:
+            expanded.append(t)
+    deduped = list(dict.fromkeys(expanded))
+    return deduped, (has_all or len(deduped) > 1)
+
+
 def install_plugin(
-    target: PluginInstallTarget,
+    target: PluginInstallTarget | list[PluginInstallTarget] | tuple[PluginInstallTarget, ...],
     project_dir: Path | None = None,
     force: bool = False,
     launcher: str = "eidos",
@@ -1046,10 +1067,8 @@ def install_plugin(
     root = _resolve_plugin_project_root(project_dir)
     overwrite_blocks = force if force_blocks is None else force_blocks
     results: list[InstallResult] = []
-    batch_mode = target == PluginInstallTarget.ALL
+    targets_to_run, batch_mode = _normalize_install_targets(target)
     errors: list[tuple[str, Exception]] = []
-
-    targets_to_run = _all_concrete_targets() if batch_mode else [target]
 
     for t in targets_to_run:
         adapter = TARGET_ADAPTERS.get(t)
@@ -1111,7 +1130,7 @@ def _resolve_saved_hook_preference(root: Path, target_name: str) -> bool:
 
 
 def update_plugin(
-    target: PluginInstallTarget,
+    target: PluginInstallTarget | list[PluginInstallTarget] | tuple[PluginInstallTarget, ...],
     project_dir: Path | None = None,
     launcher: str = "eidos",
 ) -> tuple[str | None, str, list[InstallResult]]:
@@ -1124,8 +1143,7 @@ def update_plugin(
     bundled_version = get_bundled_plugin_version()
     root = _resolve_plugin_project_root(project_dir)
     source_dir = locate_plugin_bundle()
-    batch_mode = target == PluginInstallTarget.ALL
-    targets_to_run = _all_concrete_targets() if batch_mode else [target]
+    targets_to_run, batch_mode = _normalize_install_targets(target)
     results: list[InstallResult] = []
     errors: list[tuple[str, Exception]] = []
 

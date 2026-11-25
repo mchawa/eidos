@@ -1,0 +1,348 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: EidosRepositoryConfigV1
+description: "Optional project-scoped repository configuration (eidos/eidos.yaml) for Eidos engine and workflow settings. Living specifications under eidos/*.adoc remain the single source of architectural truth."
+type: object
+additionalProperties: false
+
+$defs:
+  non_empty_string:
+    type: string
+    minLength: 1
+    pattern: "\\S"
+    description: "Non-empty string containing at least one non-whitespace character."
+
+  positive_int:
+    type: integer
+    minimum: 1
+    description: "Positive integer (>= 1)."
+
+  glob_list:
+    type: array
+    items:
+      $ref: "#/$defs/non_empty_string"
+    description: "List of repository-relative POSIX path or glob patterns."
+
+  check_severity:
+    type: string
+    enum:
+      - error
+      - warn
+      - off
+    description: "Check enforcement severity: 'error' (blocking), 'warn' (advisory warning), or 'off' (skipped)."
+
+  tier_cap_pair:
+    type: array
+    prefixItems:
+      - type: integer
+        minimum: 0
+      - type: integer
+        minimum: 0
+    items: false
+    minItems: 2
+    maxItems: 2
+    description: "Two-element non-negative integer pair [max_anchored, max_global] capping attached team memories per context tier."
+
+  plugin_target:
+    type: string
+    enum:
+      - antigravity
+      - claude
+      - cursor
+      - aider
+      - cline
+      - kilocode
+      - open-code
+      - codex
+      - copilot
+    description: "Concrete canonical agent plugin installation target slug."
+
+properties:
+  version:
+    type: integer
+    const: 1
+    default: 1
+    description: "Configuration schema version discriminator (must be 1)."
+
+  workspace:
+    type: object
+    additionalProperties: false
+    description: "Repository file discovery, exclusion, test classification, and monorepo sub-project boundaries."
+    properties:
+      exclude:
+        $ref: "#/$defs/glob_list"
+        default: []
+        description: "Repository-relative path or glob patterns excluded from file discovery, index sync, and drift analysis."
+      tests:
+        type: object
+        additionalProperties: false
+        description: "Override patterns extending or narrowing polyglot test file classification."
+        properties:
+          include:
+            $ref: "#/$defs/glob_list"
+            default: []
+            description: "Additional repository-relative glob patterns classified as automated test files."
+          exclude:
+            $ref: "#/$defs/glob_list"
+            default: []
+            description: "Repository-relative glob patterns excluded from automated test file classification."
+      subprojects_exclude:
+        $ref: "#/$defs/glob_list"
+        default: []
+        description: "Repository-relative path or glob patterns excluded from nested sub-project eidos/ root discovery (e.g. fixture or example directories)."
+
+  drift:
+    type: object
+    additionalProperties: false
+    description: "Default settings for drift detection and specification validation gates."
+    properties:
+      base_ref:
+        anyOf:
+          - $ref: "#/$defs/non_empty_string"
+          - type: "null"
+        default: null
+        description: "Preferred base Git reference prepended ahead of the default origin/main fallback chain."
+      strict:
+        type: boolean
+        default: false
+        description: "Treat body-only code changes as drift unless accompanied by a 1-hop spec, active SpecDelta, or test update."
+      warn_only:
+        type: boolean
+        default: false
+        description: "Do not exit with code 1 on drift or validation failures."
+      fail_on_warnings:
+        type: boolean
+        default: false
+        description: "Escalate advisory validation warnings (and ready-to-apply open SpecDeltas on drift) to exit code 1."
+      ignore_paths:
+        $ref: "#/$defs/glob_list"
+        default: []
+        description: "Repository-relative glob patterns suppressed from code_files drift checks (never suppresses living specs, deltas, memories, tests, or onboarding files)."
+      checks:
+        type: object
+        additionalProperties: false
+        description: "Per-check enforcement severities for specification validation and drift gates."
+        properties:
+          mermaid:
+            $ref: "#/$defs/check_severity"
+            default: error
+            description: "Severity for embedded Mermaid diagram syntax validation."
+          import_boundaries:
+            $ref: "#/$defs/check_severity"
+            default: error
+            description: "Severity for architectural import boundary violation checks."
+          public_surface:
+            $ref: "#/$defs/check_severity"
+            default: error
+            description: "Severity for == Public Surface AST symbol parity checks."
+          contract_parity:
+            $ref: "#/$defs/check_severity"
+            default: error
+            description: "Severity for bidirectional interface contract protocol parity checks."
+          deprecated_references:
+            $ref: "#/$defs/check_severity"
+            default: warn
+            description: "Severity for active specifications referencing deprecated or retired entities."
+
+  context:
+    type: object
+    additionalProperties: false
+    description: "Tiered context slicing budgets, repo-map limits, and optional local semantic embedding settings."
+    properties:
+      default_tier:
+        type: string
+        enum:
+          - anchor
+          - guardrails
+          - deep
+        default: guardrails
+        description: "Default verbosity tier for context slicing ('anchor', 'guardrails', or 'deep')."
+      budgets:
+        type: object
+        additionalProperties: false
+        description: "Maximum estimated token budgets per context slice tier."
+        properties:
+          anchor:
+            $ref: "#/$defs/positive_int"
+            default: 300
+            description: "Maximum estimated tokens for the 'anchor' tier."
+          guardrails:
+            $ref: "#/$defs/positive_int"
+            default: 1000
+            description: "Maximum estimated tokens for the 'guardrails' tier."
+          deep:
+            $ref: "#/$defs/positive_int"
+            default: 2500
+            description: "Maximum estimated tokens for the 'deep' tier."
+      repo_map_max_tokens:
+        $ref: "#/$defs/positive_int"
+        default: 1500
+        description: "Default maximum token budget for structural repo-map generation."
+      semantic:
+        type: object
+        additionalProperties: false
+        description: "Settings for optional local ONNX semantic embedding indexing and retrieval."
+        properties:
+          enabled:
+            type: boolean
+            default: true
+            description: "Enable or disable semantic embedding auto-refresh and hybrid retrieval."
+          variant:
+            type: string
+            enum:
+              - quantized
+              - fp32
+              - fp16
+            default: quantized
+            description: "Default ONNX model precision variant ('quantized', 'fp32', or 'fp16')."
+          model_mirror_url:
+            anyOf:
+              - type: string
+                pattern: "^https?://\\S+$"
+              - type: "null"
+            default: null
+            description: "Optional HTTP(S) mirror base URL for downloading pinned SHA-256 ONNX model artifacts."
+
+  memory:
+    type: object
+    additionalProperties: false
+    description: "Freshness thresholds, tier attachment caps, and default TTL for shared team operational memories."
+    properties:
+      commit_drift_threshold:
+        $ref: "#/$defs/positive_int"
+        default: 5
+        description: "Number of commits touching a memory's anchored target paths before freshness transitions to stale."
+      tier_caps:
+        type: object
+        additionalProperties: false
+        description: "Per-tier [max_anchored, max_global] memory attachment caps during context slicing."
+        properties:
+          anchor:
+            $ref: "#/$defs/tier_cap_pair"
+            default: [2, 0]
+            description: "Memory cap pair [max_anchored, max_global] for the 'anchor' tier."
+          guardrails:
+            $ref: "#/$defs/tier_cap_pair"
+            default: [3, 2]
+            description: "Memory cap pair [max_anchored, max_global] for the 'guardrails' tier."
+          deep:
+            $ref: "#/$defs/tier_cap_pair"
+            default: [5, 3]
+            description: "Memory cap pair [max_anchored, max_global] for the 'deep' tier."
+      default_expiry_days:
+        anyOf:
+          - $ref: "#/$defs/positive_int"
+          - type: "null"
+        default: null
+        description: "Optional default expiration window in days for newly added memories (pass '--expires none' to opt out)."
+
+  lifecycle:
+    type: object
+    additionalProperties: false
+    description: "SpecDelta and Exploration archival retention defaults."
+    properties:
+      archive:
+        type: object
+        additionalProperties: false
+        description: "Default options for archiving terminal SpecDeltas and Explorations."
+        properties:
+          keep_recent:
+            type: integer
+            minimum: 0
+            default: 15
+            description: "Number of most recent terminal SpecDeltas and Explorations retained in hot directories."
+          include_explorations:
+            type: boolean
+            default: true
+            description: "Also archive concluded Explorations when archiving SpecDeltas."
+
+  plugin:
+    type: object
+    additionalProperties: false
+    description: "Default Agent Skills targets, launcher, update checks, and Stop hook runtime settings."
+    properties:
+      targets:
+        type: array
+        items:
+          $ref: "#/$defs/plugin_target"
+        uniqueItems: true
+        default: []
+        description: "Default concrete Agent Plugin targets used by plugin install/update when TARGET is omitted."
+      launcher:
+        type: string
+        enum:
+          - eidos
+          - uvx
+        default: eidos
+        description: "Default hook command launcher ('eidos' or 'uvx')."
+      updates_check:
+        type: boolean
+        default: true
+        description: "Allow non-blocking PyPI CLI update checks in doctor diagnostics."
+      hooks:
+        type: object
+        additionalProperties: false
+        description: "Agent Stop hook installation default and runtime enforcement settings."
+        properties:
+          install:
+            type: boolean
+            default: false
+            description: "Default value for installing native Stop hooks during plugin install."
+          enabled:
+            type: boolean
+            default: true
+            description: "Runtime kill-switch enabling or disabling Stop hook drift evaluation."
+          strict:
+            type:
+              - boolean
+              - "null"
+            default: null
+            description: "Optional strict override for Stop hook drift checks (inherits drift.strict when null)."
+          fail_on_warnings:
+            type:
+              - boolean
+              - "null"
+            default: null
+            description: "Optional fail_on_warnings override for Stop hook checks (inherits drift.fail_on_warnings when null)."
+          baseline_ttl_seconds:
+            type: number
+            exclusiveMinimum: 0
+            default: 86400
+            description: "Expiration window in seconds for cached Stop hook session baselines."
+
+  portal:
+    type: object
+    additionalProperties: false
+    description: "Defaults for the Living Web Portal preview server and static site builder."
+    properties:
+      serve:
+        type: object
+        additionalProperties: false
+        description: "Default options for serving the interactive Living Web Portal."
+        properties:
+          host:
+            $ref: "#/$defs/non_empty_string"
+            default: "127.0.0.1"
+            description: "Default host interface to bind the portal preview server."
+          port:
+            type: integer
+            minimum: 1
+            maximum: 65535
+            default: 3000
+            description: "Default TCP port for the portal preview server."
+          open_browser:
+            type: boolean
+            default: false
+            description: "Automatically open the portal in the default web browser on serve."
+      build:
+        type: object
+        additionalProperties: false
+        description: "Default options for compiling the static Living Web Portal bundle."
+        properties:
+          out_dir:
+            $ref: "#/$defs/non_empty_string"
+            default: "site"
+            description: "Default repository-relative output directory for the static portal build (must stay strictly inside repository root)."
+          single_file:
+            type: boolean
+            default: false
+            description: "Default to inlining all portal assets into a single standalone index.html file."

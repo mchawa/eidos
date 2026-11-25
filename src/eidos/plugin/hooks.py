@@ -14,6 +14,7 @@ from typing import Any
 
 import orjson
 
+from eidos.core.workspace.config import CONFIG_FILENAME, EidosConfig, load_repo_config_with_errors
 from eidos.core.workspace.project import find_repo_root
 from eidos.vcs.diff import classify_changed_files
 from eidos.vcs.drift import detect_drift
@@ -268,6 +269,9 @@ def capture_session_baseline(payload: dict[str, Any], workspace_root: Path) -> d
     if roots is None:
         return _allow_response(client)
     resolved_root, eidos_dir = roots
+    cfg, _ = load_repo_config_with_errors(eidos_dir=eidos_dir, repo_root=resolved_root)
+    if not cfg.plugin.hooks.enabled:
+        return _allow_response(client)
 
     dirty_map = _snapshot_dirty_worktree(resolved_root)
     if dirty_map is None:
@@ -276,7 +280,7 @@ def capture_session_baseline(payload: dict[str, Any], workspace_root: Path) -> d
     baseline_dir = eidos_dir / ".cache" / "hook_baselines"
     with contextlib.suppress(OSError):
         baseline_dir.mkdir(parents=True, exist_ok=True)
-        _prune_stale_baselines(baseline_dir)
+        _prune_stale_baselines(baseline_dir, max_age_seconds=cfg.plugin.hooks.baseline_ttl_seconds)
         baseline_file = baseline_dir / _session_baseline_filename(payload)
         data = {
             "timestamp": time.time(),
@@ -311,13 +315,50 @@ def _memory_files_require_validation(
     return False
 
 
+def _config_file_changed_and_invalid(
+    changed_paths: list[str],
+    resolved_root: Path,
+    eidos_dir: Path,
+    cfg_errors: list[str],
+) -> bool:
+    """Return True when <eidos_dir>/eidos.yaml was edited and fails validation (prevents silent short-circuiting)."""
+    if not cfg_errors:
+        return False
+    cfg_abs = (eidos_dir / CONFIG_FILENAME).resolve()
+    try:
+        expected_rel = cfg_abs.relative_to(resolved_root.resolve()).as_posix().lower()
+    except ValueError:
+        expected_rel = f"{eidos_dir.name}/{CONFIG_FILENAME}".lower()
+    for raw_p in changed_paths:
+        norm = raw_p.replace("\\", "/").lstrip("./")
+        if norm.lower() == expected_rel:
+            return True
+        with contextlib.suppress(OSError):
+            cand = Path(norm)
+            resolved = cand.resolve() if cand.is_absolute() else (resolved_root / cand).resolve()
+            if resolved == cfg_abs:
+                return True
+    return False
+
+
 def _zero_governed_changes_since_baseline(
     payload: dict[str, Any],
     resolved_root: Path,
     eidos_dir: Path,
     current_dirty: dict[str, str] | None,
+    *,
+    repo_config: EidosConfig | None = None,
+    config_errors: list[str] | None = None,
 ) -> bool:
     """Return True if explicit payload metadata or an active session baseline proves zero governed files changed."""
+    if repo_config is None or config_errors is None:
+        loaded_cfg, loaded_errs = load_repo_config_with_errors(eidos_dir=eidos_dir, repo_root=resolved_root)
+        cfg = repo_config if repo_config is not None else loaded_cfg
+        cfg_errs = config_errors if config_errors is not None else loaded_errs
+    else:
+        cfg = repo_config
+        cfg_errs = config_errors
+
     for explicit_key in ("modified_files", "editedFiles"):
         explicit_val = payload.get(explicit_key)
         if isinstance(explicit_val, list):
@@ -326,7 +367,9 @@ def _zero_governed_changes_since_baseline(
             str_paths = [str(p) for p in explicit_val if isinstance(p, str) and p.strip()]
             if not str_paths:
                 return True
-            cls_exp = classify_changed_files(str_paths, repo_root=resolved_root, eidos_dir=eidos_dir)
+            if _config_file_changed_and_invalid(str_paths, resolved_root, eidos_dir, cfg_errs):
+                return False
+            cls_exp = classify_changed_files(str_paths, repo_root=resolved_root, eidos_dir=eidos_dir, repo_config=cfg)
             if (
                 cls_exp.code_files
                 or cls_exp.spec_files
@@ -341,7 +384,7 @@ def _zero_governed_changes_since_baseline(
     if not baseline_dir.is_dir() or current_dirty is None:
         return False
 
-    _prune_stale_baselines(baseline_dir)
+    _prune_stale_baselines(baseline_dir, max_age_seconds=cfg.plugin.hooks.baseline_ttl_seconds)
     baseline_file = baseline_dir / _session_baseline_filename(payload)
     if not baseline_file.is_file():
         return False
@@ -361,7 +404,9 @@ def _zero_governed_changes_since_baseline(
     )
     if not changed_paths:
         return True
-    cls = classify_changed_files(changed_paths, repo_root=resolved_root, eidos_dir=eidos_dir)
+    if _config_file_changed_and_invalid(changed_paths, resolved_root, eidos_dir, cfg_errs):
+        return False
+    cls = classify_changed_files(changed_paths, repo_root=resolved_root, eidos_dir=eidos_dir, repo_config=cfg)
     if cls.code_files or cls.spec_files or cls.delta_files or cls.test_files or cls.onboarding_files:
         return False
     return not _memory_files_require_validation(cls.memory_files, resolved_root, eidos_dir)
@@ -400,8 +445,19 @@ def handle_stop_hook(payload: dict[str, Any], workspace_root: Path, event: str |
         return _allow_response(client)
     resolved_root, eidos_dir = roots
 
+    cfg, cfg_errors = load_repo_config_with_errors(eidos_dir=eidos_dir, repo_root=resolved_root)
+    if not cfg.plugin.hooks.enabled:
+        return _allow_response(client)
+
     current_dirty = _snapshot_dirty_worktree(resolved_root)
-    if _zero_governed_changes_since_baseline(payload, resolved_root, eidos_dir, current_dirty):
+    if _zero_governed_changes_since_baseline(
+        payload,
+        resolved_root,
+        eidos_dir,
+        current_dirty,
+        repo_config=cfg,
+        config_errors=cfg_errors,
+    ):
         return _allow_response(client)
 
     cline_marker_path: Path | None = None
@@ -424,9 +480,22 @@ def handle_stop_hook(payload: dict[str, Any], workspace_root: Path, event: str |
                     cline_marker_path.unlink()
 
     try:
-        drift_res = detect_drift(repo_root=resolved_root, eidos_dir=eidos_dir, uncommitted=True)
+        eff_strict = cfg.effective_hook_strict()
+        eff_fail_on_warnings = cfg.effective_hook_fail_on_warnings()
+        drift_res = detect_drift(
+            repo_root=resolved_root,
+            eidos_dir=eidos_dir,
+            uncommitted=True,
+            strict=eff_strict,
+        )
+        has_warning_failure = eff_fail_on_warnings and (
+            bool(drift_res.validation_warnings) or bool(drift_res.ready_to_apply_deltas)
+        )
         has_non_code_failure = (
-            not drift_res.validation_passed or bool(drift_res.uncovered_invariants) or bool(drift_res.orphan_invariants)
+            not drift_res.validation_passed
+            or bool(drift_res.uncovered_invariants)
+            or bool(drift_res.orphan_invariants)
+            or has_warning_failure
         )
         if drift_res.drift_detected or has_non_code_failure:
             cause_parts: list[str] = []
@@ -442,6 +511,17 @@ def handle_stop_hook(payload: dict[str, Any], workspace_root: Path, event: str |
                 err_lines = "\n".join(f"  - {ve}" for ve in drift_res.validation_errors[:5])
                 cause_parts.append(
                     f"Specification validation failed ({len(drift_res.validation_errors)} error(s)):\n{err_lines}"
+                )
+            if has_warning_failure:
+                warn_items = list(drift_res.validation_warnings[:5])
+                if drift_res.ready_to_apply_deltas and len(warn_items) < 5:
+                    for item in drift_res.ready_to_apply_deltas[: 5 - len(warn_items)]:
+                        warn_items.append(
+                            f"SpecDelta '{item.get('id')}' is ready to apply (run `eidos delta apply {item.get('id')}`)."
+                        )
+                warn_lines = "\n".join(f"  - {w}" for w in warn_items)
+                cause_parts.append(
+                    f"Advisory validation warnings promoted to blocking (fail_on_warnings=true):\n{warn_lines}"
                 )
             if drift_res.uncovered_invariants or drift_res.orphan_invariants:
                 cause_parts.append(

@@ -67,12 +67,15 @@ from eidos.core.index.storage import (
 from eidos.core.index.storage import (
     build_spec_path_resolver as build_spec_path_resolver,
 )
+from eidos.core.workspace.config import EidosConfig, find_config_file, load_repo_config_with_errors
 from eidos.core.workspace.project import (
     STANDARD_EXCLUDED_DIRS,
+    _is_dir_excluded_by_patterns,
     _is_test_dir_segment,
     discover_nested_subproject_roots,
     extract_entity_paths,
     is_dotnet_bin_dir,
+    is_excluded_by_config,
     is_polyglot_test_file,
 )
 
@@ -118,6 +121,62 @@ def _json_dumps(obj: Any) -> str:
     return orjson.dumps(obj, default=str, option=orjson.OPT_NON_STR_KEYS).decode("utf-8")
 
 
+def _compute_repo_config_sha256(eidos_dir: Path, repo_root: Path) -> str:
+    """Return SHA-256 hex digest of optional <eidos_dir>/eidos.yaml, or empty string when absent."""
+    cfg_path = find_config_file(eidos_dir=eidos_dir, repo_root=repo_root)
+    if cfg_path is None:
+        return ""
+    try:
+        return hashlib.sha256(cfg_path.read_bytes()).hexdigest()
+    except OSError:
+        return ""
+
+
+def _extract_test_include_targets(
+    root: Path,
+    patterns: tuple[str, ...],
+    nested_dir_strs: set[str],
+    ws_exclude: tuple[str, ...],
+) -> tuple[list[str], list[str]]:
+    """Resolve literal root directories and files referenced by workspace.tests.include globs."""
+    dirs: list[str] = []
+    files: list[str] = []
+    root_str = str(root)
+    for raw_pat in patterns:
+        pat = raw_pat.strip().replace("\\", "/")
+        while pat.startswith("./"):
+            pat = pat[2:]
+        pat = pat.strip("/")
+        if not pat:
+            continue
+        if any(ch in pat for ch in "*?["):
+            prefix_parts: list[str] = []
+            for part in pat.split("/"):
+                if any(ch in part for ch in "*?["):
+                    break
+                if part:
+                    prefix_parts.append(part)
+            prefix = "/".join(prefix_parts)
+            if not prefix:
+                continue
+            if ws_exclude and _is_dir_excluded_by_patterns(prefix, ws_exclude):
+                continue
+            full_p = os.path.normpath(os.path.join(root_str, prefix))
+            if full_p not in nested_dir_strs and os.path.isdir(full_p):
+                dirs.append(full_p)
+        else:
+            if ws_exclude and is_excluded_by_config(pat, ws_exclude):
+                continue
+            full_p = os.path.normpath(os.path.join(root_str, pat))
+            if full_p in nested_dir_strs:
+                continue
+            if os.path.isdir(full_p):
+                dirs.append(full_p)
+            elif os.path.isfile(full_p):
+                files.append(full_p)
+    return dirs, files
+
+
 def _is_governed_source_file(path_str: str) -> bool:
     """Return True if ``path_str`` has a governed source/text extension and is not a lockfile or archive."""
     slash = path_str.rfind("/")
@@ -157,9 +216,17 @@ def reconcile_code_ownership(
     ast_idx: Any,
     resolver: _CodeOwnershipResolver,
     processed: set[str],
+    *,
+    repo_config: EidosConfig | None = None,
 ) -> None:
     """Recursively index every container package directory and re-attribute files whose owners changed."""
-    nested_roots = set(discover_nested_subproject_roots(index.root))
+    cfg = (
+        repo_config
+        if repo_config is not None
+        else load_repo_config_with_errors(eidos_dir=index.eidos_dir, repo_root=index.root)[0]
+    )
+    ws_exclude = cfg.workspace.exclude
+    nested_roots = set(discover_nested_subproject_roots(index.root, repo_config=cfg))
     nested_prefixes: tuple[str, ...] = tuple(
         f"{nr.relative_to(index.root).as_posix().strip('/')}/" for nr in nested_roots if nr.is_relative_to(index.root)
     )
@@ -169,15 +236,33 @@ def reconcile_code_ownership(
         abs_pkg = (index.root / pkg).resolve()
         if not abs_pkg.is_dir() or abs_pkg in nested_roots:
             continue
+        if ws_exclude:
+            try:
+                rel_pkg = abs_pkg.relative_to(index.root).as_posix()
+            except ValueError:
+                rel_pkg = pkg
+            if _is_dir_excluded_by_patterns(rel_pkg, ws_exclude):
+                continue
         for dirpath, dirnames, filenames in os.walk(str(abs_pkg)):
-            dirnames[:] = sorted(
-                d
-                for d in dirnames
-                if d not in STANDARD_EXCLUDED_DIRS
-                and not d.startswith(".")
-                and (Path(dirpath) / d).resolve() not in nested_roots
-                and not is_dotnet_bin_dir(Path(dirpath) / d)
-            )
+            next_dirs: list[str] = []
+            for d in sorted(dirnames):
+                child = Path(dirpath) / d
+                if (
+                    d in STANDARD_EXCLUDED_DIRS
+                    or d.startswith(".")
+                    or child.resolve() in nested_roots
+                    or is_dotnet_bin_dir(child)
+                ):
+                    continue
+                if ws_exclude:
+                    try:
+                        rel_dir = child.relative_to(index.root).as_posix()
+                    except ValueError:
+                        rel_dir = d
+                    if _is_dir_excluded_by_patterns(rel_dir, ws_exclude):
+                        continue
+                next_dirs.append(d)
+            dirnames[:] = next_dirs
             for fn in sorted(filenames):
                 p_file = Path(dirpath) / fn
                 if not _is_governed_source_file(fn):
@@ -187,6 +272,8 @@ def reconcile_code_ownership(
                 except ValueError:
                     continue
                 if nested_prefixes and rel_code.startswith(nested_prefixes):
+                    continue
+                if ws_exclude and is_excluded_by_config(rel_code, ws_exclude):
                     continue
                 candidates.setdefault(rel_code, p_file)
 
@@ -202,15 +289,66 @@ def reconcile_code_ownership(
     for rel_code in sorted(set(manifest) | resolver.declared_files() | spec_files):
         if nested_prefixes and rel_code.startswith(nested_prefixes):
             continue
+        if ws_exclude and is_excluded_by_config(rel_code, ws_exclude):
+            continue
         if rel_code not in candidates:
             abs_known = (index.root / rel_code).resolve()
             if abs_known.is_file() and _is_governed_source_file(abs_known.name):
                 candidates[rel_code] = abs_known
 
+    # Bidirectional reclassification: demote code/test rows back to code/source when workspace.tests config excludes them.
+    existing_tests = [
+        r["rel_path"]
+        for r in conn.execute("SELECT rel_path FROM indexed_files WHERE doc_type = 'code/test';").fetchall()
+    ]
+    for rel_test in existing_tests:
+        if rel_test in processed:
+            continue
+        if nested_prefixes and rel_test.startswith(nested_prefixes):
+            continue
+        if ws_exclude and is_excluded_by_config(rel_test, ws_exclude):
+            continue
+        if not is_polyglot_test_file(
+            rel_test,
+            repo_root=index.root,
+            eidos_dir=index.eidos_dir,
+            package_paths=pkg_dirs,
+            repo_config=cfg,
+        ):
+            store_code_symbols(conn, rel_test, [], [])
+            conn.execute("DELETE FROM test_binding_cache WHERE file_path = ?;", (rel_test,))
+            conn.execute(
+                "DELETE FROM edges WHERE rel_type = 'asserts' AND (source_id = ? OR source_id LIKE ?);",
+                (rel_test, f"{rel_test}::%"),
+            )
+            abs_test = (index.root / rel_test).resolve()
+            if abs_test.is_file() and _is_governed_source_file(abs_test.name):
+                stat = abs_test.stat()
+                raw_bytes = abs_test.read_bytes()
+                index_source_file(
+                    conn,
+                    ast_idx,
+                    abs_test,
+                    rel_test,
+                    stat.st_mtime,
+                    hashlib.sha256(raw_bytes).hexdigest(),
+                    resolver,
+                    raw_bytes=raw_bytes,
+                )
+                processed.add(rel_test)
+            else:
+                conn.execute("DELETE FROM indexed_files WHERE rel_path = ?;", (rel_test,))
+
     for rel_code, p_file in sorted(candidates.items()):
         if rel_code in processed:
             continue
-        if is_polyglot_test_file(rel_code, repo_root=index.root, package_paths=pkg_dirs):
+        if is_polyglot_test_file(
+            rel_code,
+            repo_root=index.root,
+            eidos_dir=index.eidos_dir,
+            package_paths=pkg_dirs,
+            repo_config=cfg,
+        ):
             if rel_code in manifest:
                 store_code_symbols(conn, rel_code, [], [])
                 conn.execute("DELETE FROM symbol_mappings WHERE symbol = ? AND kind = 'source_path';", (rel_code,))
@@ -227,6 +365,7 @@ def reconcile_code_ownership(
                 index_test_bindings(
                     conn, ast_idx, p_file, rel_code, sha=t_sha, raw_bytes=raw_bytes, mtime_ns=stat.st_mtime_ns
                 )
+                processed.add(rel_code)
             continue
         owners = resolver.owners(rel_code)
         if rel_code in manifest and manifest[rel_code] == (owners[0] if owners else "source"):
@@ -256,6 +395,8 @@ def _discover_sibling_test_dirs(
     root: Path,
     candidate_dirs: list[Path],
     nested_dir_strs: set[str],
+    *,
+    ws_exclude: tuple[str, ...] = (),
 ) -> list[str]:
     """Discover root and sibling test directories (e.g. ``*.Tests``, ``*.UnitTests``) near tracked package roots."""
     resolved_root = root.resolve()
@@ -284,6 +425,13 @@ def _discover_sibling_test_dirs(
                 norm_dir = os.path.normpath(entry.path)
                 if norm_dir in nested_dir_strs or norm_dir in seen_dirs:
                     continue
+                if ws_exclude:
+                    try:
+                        rel_entry = Path(norm_dir).resolve().relative_to(resolved_root).as_posix()
+                    except ValueError:
+                        rel_entry = entry.name
+                    if _is_dir_excluded_by_patterns(rel_entry, ws_exclude):
+                        continue
                 if _is_test_dir_segment(entry.name, allow_root_names=True):
                     seen_dirs.add(norm_dir)
                     discovered.append(norm_dir)
@@ -305,10 +453,13 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
         deleted = [Path(rel) for rel in db_files]
         return len(deleted) > 0, [], deleted
 
+    cfg, _ = load_repo_config_with_errors(eidos_dir=index.eidos_dir, repo_root=index.root)
+    ws_exclude = cfg.workspace.exclude
+
     root_str = str(index.root)
     root_prefix = root_str if root_str.endswith(("/", "\\")) else root_str + os.sep
     root_len = len(root_prefix)
-    nested_roots = set(discover_nested_subproject_roots(index.root))
+    nested_roots = set(discover_nested_subproject_roots(index.root, repo_config=cfg))
     nested_dir_strs = {os.path.normpath(str(nr)) for nr in nested_roots}
     nested_prefixes: tuple[str, ...] = tuple(
         f"{nr.relative_to(index.root).as_posix().strip('/')}/" for nr in nested_roots if nr.is_relative_to(index.root)
@@ -375,7 +526,18 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
     for std_dir in ("src", "tests", "test"):
         cand = os.path.normpath(os.path.join(root_str, std_dir))
         if os.path.isdir(cand) and cand not in nested_dir_strs:
+            if ws_exclude and _is_dir_excluded_by_patterns(std_dir, ws_exclude):
+                continue
             tracked_code_dirs.add(cand)
+
+    inc_dirs, inc_files = _extract_test_include_targets(
+        index.root,
+        cfg.workspace.tests.include,
+        nested_dir_strs,
+        ws_exclude,
+    )
+    tracked_code_dirs.update(inc_dirs)
+    explicit_code_files.extend(inc_files)
 
     package_paths: set[str] = set()
     cursor.execute(
@@ -399,6 +561,8 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
             if full_pp in nested_dir_strs:
                 continue
             if os.path.isdir(full_pp):
+                if ws_exclude and _is_dir_excluded_by_patterns(_rel_path(full_pp), ws_exclude):
+                    continue
                 tracked_code_dirs.add(full_pp)
             else:
                 explicit_code_files.append(full_pp)
@@ -407,6 +571,7 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
         index.root,
         [Path(d) for d in sorted(tracked_code_dirs)],
         nested_dir_strs,
+        ws_exclude=ws_exclude,
     ):
         tracked_code_dirs.add(sibling_test_dir)
 
@@ -431,6 +596,10 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
     def _scan_code_dir(dir_path: str) -> None:
         if os.path.normpath(dir_path) in nested_dir_strs:
             return
+        if ws_exclude:
+            rel_d = _rel_path(dir_path)
+            if rel_d and rel_d != "." and _is_dir_excluded_by_patterns(rel_d, ws_exclude):
+                return
         try:
             with os.scandir(dir_path) as it:
                 for entry in it:
@@ -441,6 +610,8 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
                         if entry.is_dir(follow_symlinks=False):
                             if os.path.normpath(entry.path) in nested_dir_strs or is_dotnet_bin_dir(Path(entry.path)):
                                 continue
+                            if ws_exclude and _is_dir_excluded_by_patterns(_rel_path(entry.path), ws_exclude):
+                                continue
                             _scan_code_dir(entry.path)
                             continue
                     except OSError:
@@ -450,6 +621,8 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
                     full_file = entry.path
                     rel_code = _rel_path(full_file)
                     if nested_prefixes and rel_code.startswith(nested_prefixes):
+                        continue
+                    if ws_exclude and is_excluded_by_config(rel_code, ws_exclude):
                         continue
                     if rel_code in disk_files:
                         continue
@@ -470,6 +643,8 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
         rel_code = _rel_path(full_pp)
         if nested_prefixes and rel_code.startswith(nested_prefixes):
             continue
+        if ws_exclude and is_excluded_by_config(rel_code, ws_exclude):
+            continue
         if rel_code in disk_files:
             continue
         if not _is_covered_by_top_code_dirs(full_pp) and _is_governed_source_file(full_pp) and os.path.isfile(full_pp):
@@ -484,6 +659,8 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
         if nested_prefixes and rel_tracked.startswith(nested_prefixes):
             continue
         if not rel_tracked.endswith(".adoc") and rel_tracked not in disk_files:
+            if ws_exclude and is_excluded_by_config(rel_tracked, ws_exclude):
+                continue
             abs_tracked = os.path.normpath(os.path.join(root_str, rel_tracked))
             if _is_covered_by_top_code_dirs(abs_tracked):
                 continue
@@ -513,7 +690,14 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
         if ti_row is None or ti_row[0] != "1":
             has_tests = cursor.execute("SELECT 1 FROM indexed_files WHERE doc_type = 'code/test' LIMIT 1;").fetchone()
             needs_test_imports = has_tests is not None
-    is_dirty = len(to_update) > 0 or len(deleted) > 0 or needs_test_imports
+
+    current_cfg_sha = _compute_repo_config_sha256(index.eidos_dir, index.root)
+    cfg_meta_row = cursor.execute("SELECT value FROM metadata WHERE key = 'repo_config_sha256';").fetchone()
+    stored_cfg_sha = str(cfg_meta_row[0]) if cfg_meta_row is not None else None
+    config_changed = (stored_cfg_sha is None and current_cfg_sha != "") or (
+        stored_cfg_sha is not None and stored_cfg_sha != current_cfg_sha
+    )
+    is_dirty = len(to_update) > 0 or len(deleted) > 0 or needs_test_imports or config_changed
     return is_dirty, to_update, deleted
 
 
@@ -531,6 +715,7 @@ def sync_index(
     stats = IndexSyncStats()
     conn = index._get_connection()
     lock_db = _resolve_conn_db_path(conn, getattr(index, "db_path", None))
+    cfg, _ = load_repo_config_with_errors(eidos_dir=index.eidos_dir, repo_root=index.root)
 
     spec_updates: list[Path] = []
     with _advisory_db_lock(lock_db, non_blocking=True) as got_immediate_lock:
@@ -545,9 +730,10 @@ def sync_index(
                 strict=strict,
                 contended=contended,
                 _pre_data_version=_pre_data_version,
+                repo_config=cfg,
             )
 
-    if auto_semantic and spec_updates:
+    if auto_semantic and cfg.context.semantic.enabled and spec_updates:
         from eidos.core.index.semantic import _trigger_auto_semantic_refresh
 
         _trigger_auto_semantic_refresh(conn, index.eidos_dir, index.db_path)
@@ -567,9 +753,23 @@ def _sync_index_locked(
     strict: bool = False,
     contended: bool = False,
     _pre_data_version: int | None = None,
+    repo_config: EidosConfig | None = None,
 ) -> list[Path]:
     """Execute one serialized sync pass while holding ``index.db.lock``."""
-    # imported at top-level from fts_query
+    cfg = (
+        repo_config
+        if repo_config is not None
+        else load_repo_config_with_errors(eidos_dir=index.eidos_dir, repo_root=index.root)[0]
+    )
+    ws_exclude = cfg.workspace.exclude
+    current_cfg_sha = _compute_repo_config_sha256(index.eidos_dir, index.root)
+    cfg_meta_row = conn.execute("SELECT value FROM metadata WHERE key = 'repo_config_sha256';").fetchone()
+    stored_cfg_sha = str(cfg_meta_row[0]) if cfg_meta_row is not None else None
+    config_changed = (
+        force
+        or (stored_cfg_sha is None and current_cfg_sha != "")
+        or (stored_cfg_sha is not None and stored_cfg_sha != current_cfg_sha)
+    )
 
     if force:
         with _immediate_write_transaction(conn):
@@ -1038,6 +1238,8 @@ def _sync_index_locked(
         resolver = _CodeOwnershipResolver(conn)
         pkg_dirs = resolver.package_dirs()
         processed_code: set[str] = set()
+        if config_changed:
+            conn.execute("DELETE FROM test_binding_cache;")
         for p in code_updates:
             if not p.is_file():
                 continue
@@ -1051,7 +1253,13 @@ def _sync_index_locked(
             raw_bytes = p.read_bytes()
             sha = hashlib.sha256(raw_bytes).hexdigest()
 
-            is_test = is_polyglot_test_file(rel_p, repo_root=index.root, package_paths=pkg_dirs)
+            is_test = is_polyglot_test_file(
+                rel_p,
+                repo_root=index.root,
+                eidos_dir=index.eidos_dir,
+                package_paths=pkg_dirs,
+                repo_config=cfg,
+            )
 
             existing = conn.execute("SELECT 1 FROM indexed_files WHERE rel_path = ?", (rel_p,)).fetchone()
             if existing:
@@ -1070,16 +1278,17 @@ def _sync_index_locked(
                     (rel_p, mtime, sha),
                 )
             else:
+                conn.execute("DELETE FROM test_binding_cache WHERE file_path = ?;", (rel_p,))
                 index_source_file(conn, ast_idx, p, rel_p, mtime, sha, resolver, raw_bytes=raw_bytes)
                 processed_code.add(rel_p)
 
-        if force or spec_updates or specs_deleted:
-            reconcile_code_ownership(index, conn, ast_idx, resolver, processed_code)
+        if force or spec_updates or specs_deleted or config_changed:
+            reconcile_code_ownership(index, conn, ast_idx, resolver, processed_code, repo_config=cfg)
 
-        if force or spec_updates or specs_deleted or processed_code or code_deleted:
+        if force or spec_updates or specs_deleted or processed_code or code_deleted or config_changed:
             _derive_ast_import_edges(conn, resolver, repo_root=index.root)
 
-        if force or spec_updates or specs_deleted or processed_code or code_deleted:
+        if force or spec_updates or specs_deleted or processed_code or code_deleted or config_changed:
             conn.execute("DELETE FROM symbol_mappings WHERE kind = 'inferred_path';")
             conn.execute(
                 """
@@ -1136,9 +1345,9 @@ def _sync_index_locked(
                             (pat, ds_id),
                         )
 
-        if force or spec_updates or specs_deleted or processed_code or code_deleted:
+        if force or spec_updates or specs_deleted or processed_code or code_deleted or config_changed:
             fts_target_ids: set[str] | None = None
-            if not (force or specs_deleted or code_deleted or any_doc_id_renamed):
+            if not (force or specs_deleted or code_deleted or any_doc_id_renamed or config_changed):
                 fts_target_ids = set(updated_spec_doc_ids)
                 if processed_code:
                     ph_code = ",".join("?" for _ in processed_code)
@@ -1198,7 +1407,7 @@ def _sync_index_locked(
                         needs_unindexed_test_scan = True
                         break
 
-        nested_roots = set(discover_nested_subproject_roots(index.root))
+        nested_roots = set(discover_nested_subproject_roots(index.root, repo_config=cfg))
         nested_dir_strs = {os.path.normpath(str(nr)) for nr in nested_roots}
         nested_prefixes: tuple[str, ...] = tuple(
             f"{nr.relative_to(index.root).as_posix().strip('/')}/"
@@ -1207,28 +1416,78 @@ def _sync_index_locked(
         )
         candidate_test_files: dict[str, Path] = {}
         pkg_abs_dirs = [(index.root / pd).resolve() for pd in sorted(pkg_dirs)]
-        sibling_test_dirs = _discover_sibling_test_dirs(index.root, pkg_abs_dirs, nested_dir_strs)
+        sibling_test_dirs = _discover_sibling_test_dirs(
+            index.root,
+            pkg_abs_dirs,
+            nested_dir_strs,
+            ws_exclude=ws_exclude,
+        )
+        inc_test_dirs, inc_test_files = _extract_test_include_targets(
+            index.root,
+            cfg.workspace.tests.include,
+            nested_dir_strs,
+            ws_exclude,
+        )
         test_scan_roots: list[Path] = []
         seen_scan_roots: set[Path] = set()
         for cand_root in [
             *(index.root / std for std in ("tests", "test", *sorted(pkg_dirs))),
             *(Path(sd) for sd in sibling_test_dirs),
+            *(Path(id_) for id_ in inc_test_dirs),
         ]:
             res_cand = cand_root.resolve()
             if res_cand not in seen_scan_roots and res_cand.is_dir() and res_cand not in nested_roots:
+                if ws_exclude:
+                    try:
+                        rel_cand = res_cand.relative_to(index.root.resolve()).as_posix()
+                    except ValueError:
+                        rel_cand = ""
+                    if rel_cand and _is_dir_excluded_by_patterns(rel_cand, ws_exclude):
+                        continue
                 seen_scan_roots.add(res_cand)
                 test_scan_roots.append(res_cand)
 
+        for inc_f in inc_test_files:
+            tp = Path(inc_f)
+            if tp.suffix in _CODE_EXTS and tp.is_file():
+                try:
+                    rel_t = str(tp.relative_to(index.root)).replace("\\", "/")
+                except ValueError:
+                    rel_t = str(tp).replace("\\", "/")
+                if nested_prefixes and rel_t.startswith(nested_prefixes):
+                    continue
+                if ws_exclude and is_excluded_by_config(rel_t, ws_exclude):
+                    continue
+                if is_polyglot_test_file(
+                    rel_t,
+                    repo_root=index.root,
+                    eidos_dir=index.eidos_dir,
+                    package_paths=pkg_dirs,
+                    repo_config=cfg,
+                ):
+                    candidate_test_files.setdefault(rel_t, tp)
+
         for tests_dir in test_scan_roots:
             for dirpath, dirnames, filenames in os.walk(str(tests_dir)):
-                dirnames[:] = [
-                    d
-                    for d in dirnames
-                    if d not in STANDARD_EXCLUDED_DIRS
-                    and not d.startswith(".")
-                    and (Path(dirpath) / d).resolve() not in nested_roots
-                    and not is_dotnet_bin_dir(Path(dirpath) / d)
-                ]
+                next_tdirs: list[str] = []
+                for d in dirnames:
+                    child = Path(dirpath) / d
+                    if (
+                        d in STANDARD_EXCLUDED_DIRS
+                        or d.startswith(".")
+                        or child.resolve() in nested_roots
+                        or is_dotnet_bin_dir(child)
+                    ):
+                        continue
+                    if ws_exclude:
+                        try:
+                            rel_td = child.relative_to(index.root).as_posix()
+                        except ValueError:
+                            rel_td = d
+                        if _is_dir_excluded_by_patterns(rel_td, ws_exclude):
+                            continue
+                    next_tdirs.append(d)
+                dirnames[:] = next_tdirs
                 for fn in filenames:
                     tp = Path(dirpath) / fn
                     if tp.suffix not in _CODE_EXTS:
@@ -1239,7 +1498,15 @@ def _sync_index_locked(
                         rel_t = str(tp).replace("\\", "/")
                     if nested_prefixes and rel_t.startswith(nested_prefixes):
                         continue
-                    if is_polyglot_test_file(rel_t, repo_root=index.root, package_paths=pkg_dirs):
+                    if ws_exclude and is_excluded_by_config(rel_t, ws_exclude):
+                        continue
+                    if is_polyglot_test_file(
+                        rel_t,
+                        repo_root=index.root,
+                        eidos_dir=index.eidos_dir,
+                        package_paths=pkg_dirs,
+                        repo_config=cfg,
+                    ):
                         candidate_test_files.setdefault(rel_t, tp)
 
         for (tb_sym,) in conn.execute(
@@ -1255,6 +1522,8 @@ def _sync_index_locked(
                     rel_tb = str(abs_tb).replace("\\", "/")
                 if nested_prefixes and rel_tb.startswith(nested_prefixes):
                     continue
+                if ws_exclude and is_excluded_by_config(rel_tb, ws_exclude):
+                    continue
                 candidate_test_files.setdefault(rel_tb, abs_tb)
 
         for rel_t, tp in sorted(candidate_test_files.items()):
@@ -1268,6 +1537,7 @@ def _sync_index_locked(
                 or cached_entry["doc_type"] != "code/test"
                 or abs(stat.st_mtime - cached_entry["mtime"]) > 1e-7
                 or force
+                or config_changed
                 or needs_unindexed_test_scan
                 or needs_test_import_backfill
             ):
@@ -1288,6 +1558,10 @@ def _sync_index_locked(
                 )
 
         conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('test_imports_indexed', '1');")
+        conn.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('repo_config_sha256', ?);",
+            (current_cfg_sha,),
+        )
 
         conn.execute(
             """
@@ -1343,7 +1617,7 @@ def _sync_index_locked(
                OR entity_id NOT IN (SELECT entity_id FROM specs_fts);
             """
         )
-        if specs_deleted or code_deleted:
+        if specs_deleted or code_deleted or config_changed:
             conn.execute("DELETE FROM memory_freshness_cache;")
         else:
             conn.execute(

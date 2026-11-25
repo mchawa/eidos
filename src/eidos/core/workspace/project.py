@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from eidos.core.spec.parser import _NON_ROOT_SPEC_SUBDIRS, parse_spec_file
+from eidos.core.workspace.config import DEFAULT_CONFIG, EidosConfig, load_repo_config_with_errors
 
 STANDARD_EXCLUDED_DIRS = {
     ".git",
@@ -152,22 +153,26 @@ _POLYGLOT_TEST_CODE_EXTS = frozenset(
 )
 
 
+_DEFAULT_BASE_REF_CANDIDATES: tuple[str, ...] = (
+    "origin/main",
+    "main",
+    "origin/master",
+    "master",
+    "HEAD~1",
+)
+
+
 @dataclass(frozen=True)
 class ProjectConfig:
-    """Resolved project layout and metadata derived from Git and eidos/system.adoc."""
+    """Resolved project layout and metadata derived from Git, eidos/system.adoc, and optional eidos/eidos.yaml."""
 
     repo_root: Path
     eidos_dir: Path
     cache_dir: Path
     system_id: str | None
     system_title: str
-    base_ref_candidates: tuple[str, ...] = (
-        "origin/main",
-        "main",
-        "origin/master",
-        "master",
-        "HEAD~1",
-    )
+    base_ref_candidates: tuple[str, ...] = _DEFAULT_BASE_REF_CANDIDATES
+    repo_config: EidosConfig = DEFAULT_CONFIG
 
 
 _AGENT_BUNDLE_SUBDIRS = frozenset(
@@ -197,7 +202,7 @@ _GIT_TRACKED_EXCLUDED_DIRS = frozenset(
         ".nox",
     }
 )
-_SUBPROJECT_ROOTS_CACHE: dict[Path, tuple[tuple[tuple[str, int], ...], list[Path]]] = {}
+_SUBPROJECT_ROOTS_CACHE: dict[Path, tuple[tuple[tuple[tuple[str, int], ...], tuple[str, ...]], list[Path]]] = {}
 
 
 def clear_subproject_roots_cache() -> None:
@@ -312,13 +317,66 @@ def _list_gitignored_dirs(root: Path) -> set[Path]:
     return set()
 
 
-def discover_nested_subproject_roots(repo_root: Path) -> list[Path]:
+def _is_dir_excluded_by_patterns(rel_dir: str, patterns: tuple[str, ...] | Iterable[str]) -> bool:
+    """Return True if a directory and its descendants are excluded by glob/prefix patterns."""
+    pat_list = tuple(patterns)
+    if not pat_list:
+        return False
+    norm = normalize_rel_path(rel_dir)
+    if not norm:
+        return False
+    probe = f"{norm}/__eidos_dir_probe__"
+    return any(match_path_pattern(norm, pat) > 0 and match_path_pattern(probe, pat) > 0 for pat in pat_list)
+
+
+def is_excluded_by_config(
+    rel_path: str | Path,
+    config_or_patterns: EidosConfig | Iterable[str] | None = None,
+    *,
+    repo_root: Path | None = None,
+    eidos_dir: Path | None = None,
+) -> bool:
+    """Return True if ``rel_path`` matches any configured ``workspace.exclude`` (or explicit) glob pattern."""
+    patterns: tuple[str, ...]
+    if config_or_patterns is None:
+        if eidos_dir is None and repo_root is None:
+            return False
+        cfg, _ = load_repo_config_with_errors(eidos_dir=eidos_dir, repo_root=repo_root)
+        patterns = cfg.workspace.exclude
+    elif isinstance(config_or_patterns, EidosConfig):
+        patterns = config_or_patterns.workspace.exclude
+    else:
+        patterns = tuple(str(p).strip() for p in config_or_patterns if str(p).strip())
+
+    if not patterns:
+        return False
+
+    raw_p = Path(rel_path)
+    if raw_p.is_absolute() and repo_root is not None:
+        try:
+            norm = raw_p.resolve().relative_to(repo_root.resolve()).as_posix()
+        except ValueError:
+            norm = str(rel_path).replace("\\", "/")
+    else:
+        norm = normalize_rel_path(str(rel_path))
+    if not norm:
+        return False
+    return any(match_path_pattern(norm, pat) > 0 for pat in patterns)
+
+
+def discover_nested_subproject_roots(
+    repo_root: Path,
+    *,
+    repo_config: EidosConfig | None = None,
+) -> list[Path]:
     """Return resolved child directories under repo_root that contain their own independent eidos/ specification root."""
     root = repo_root.resolve()
     if not root.is_dir():
         return []
+    cfg = repo_config if repo_config is not None else load_repo_config_with_errors(repo_root=root)[0]
+    sub_excl = cfg.workspace.subprojects_exclude
     skip_dirs = STANDARD_EXCLUDED_DIRS | {"eidos", "assets", "docs", "tests", "test", "__tests__"}
-    sig = _subproject_cache_signature(root, skip_dirs)
+    sig = (_subproject_cache_signature(root, skip_dirs), sub_excl)
     cached = _SUBPROJECT_ROOTS_CACHE.get(root)
     if cached is not None and cached[0] == sig and all((p / "eidos").is_dir() for p in cached[1]):
         return list(cached[1])
@@ -328,16 +386,28 @@ def discover_nested_subproject_roots(repo_root: Path) -> list[Path]:
     for dirpath, dirnames, _filenames in os.walk(root):
         cur = Path(dirpath)
         if cur != root:
+            rel_cur = cur.relative_to(root).as_posix()
+            if sub_excl and (
+                is_excluded_by_config(rel_cur, sub_excl) or is_excluded_by_config(f"{rel_cur}/eidos", sub_excl)
+            ):
+                if _is_dir_excluded_by_patterns(rel_cur, sub_excl):
+                    dirnames[:] = []
+                continue
             eidos_cand = cur / "eidos"
             if _has_eidos_markers(eidos_cand) and not _is_inside_plugin_or_assets(eidos_cand, repo_root=root):
                 nested.append(cur.resolve())
                 dirnames[:] = []
                 continue
-        dirnames[:] = [
-            d
-            for d in dirnames
-            if d not in skip_dirs and not d.startswith(".") and (cur / d).resolve() not in ignored_dirs
-        ]
+        next_dirs: list[str] = []
+        for d in dirnames:
+            if d in skip_dirs or d.startswith(".") or (cur / d).resolve() in ignored_dirs:
+                continue
+            if sub_excl:
+                rel_child = (cur / d).relative_to(root).as_posix()
+                if _is_dir_excluded_by_patterns(rel_child, sub_excl):
+                    continue
+            next_dirs.append(d)
+        dirnames[:] = next_dirs
     result = sorted(nested)
     _SUBPROJECT_ROOTS_CACHE[root] = (sig, result)
     return list(result)
@@ -500,7 +570,7 @@ def load_project(
     eidos_dir: Path | None = None,
     repo_root: Path | None = None,
 ) -> ProjectConfig:
-    """Resolve project root, eidos directory, cache directory, and system metadata."""
+    """Resolve project root, eidos directory, cache directory, repo configuration, and system metadata."""
     if repo_root is not None:
         root = Path(repo_root).resolve()
         resolved_eidos = (Path(eidos_dir) if eidos_dir is not None else (root / "eidos")).resolve()
@@ -529,12 +599,21 @@ def load_project(
         except OSError:
             pass
 
+    repo_cfg, _ = load_repo_config_with_errors(eidos_dir=resolved_eidos, repo_root=root)
+    base_candidates = (
+        tuple(dict.fromkeys([repo_cfg.drift.base_ref, *_DEFAULT_BASE_REF_CANDIDATES]))
+        if repo_cfg.drift.base_ref
+        else _DEFAULT_BASE_REF_CANDIDATES
+    )
+
     return ProjectConfig(
         repo_root=root,
         eidos_dir=resolved_eidos,
         cache_dir=cache_dir,
         system_id=system_id,
         system_title=system_title,
+        base_ref_candidates=base_candidates,
+        repo_config=repo_cfg,
     )
 
 
@@ -586,12 +665,20 @@ def _has_excluded_dir_part(rel_path: str, excluded: set[str] | frozenset[str] = 
     return any(part in excluded for part in parts[:-1])
 
 
-def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[str]:
-    """List repository files respecting .gitignore, .gitattributes generated/vendored attributes, and nested sub-project boundaries."""
+def get_tracked_files(
+    repo_root: Path,
+    include_untracked: bool = True,
+    *,
+    eidos_dir: Path | None = None,
+    repo_config: EidosConfig | None = None,
+) -> list[str]:
+    """List repository files respecting .gitignore, .gitattributes generated/vendored attributes, workspace.exclude, and nested sub-project boundaries."""
     root = repo_root.resolve()
     if not root.exists():
         return []
-    nested_roots = discover_nested_subproject_roots(root)
+    cfg = repo_config if repo_config is not None else load_repo_config_with_errors(eidos_dir=eidos_dir, repo_root=root)[0]
+    ws_exclude = cfg.workspace.exclude
+    nested_roots = discover_nested_subproject_roots(root, repo_config=cfg)
     nested_prefixes: tuple[str, ...] = tuple(
         f"{nr.relative_to(root).as_posix().strip('/')}/" for nr in nested_roots if nr.is_relative_to(root)
     )
@@ -613,6 +700,8 @@ def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[s
                     norm_item = item.replace("\\", "/")
                     if nested_prefixes and norm_item.startswith(nested_prefixes):
                         continue
+                    if ws_exclude and is_excluded_by_config(norm_item, ws_exclude):
+                        continue
                     if (root / item).is_file():
                         files.add(norm_item)
 
@@ -631,6 +720,8 @@ def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[s
                             norm_item = item.replace("\\", "/")
                             if nested_prefixes and norm_item.startswith(nested_prefixes):
                                 continue
+                            if ws_exclude and is_excluded_by_config(norm_item, ws_exclude):
+                                continue
                             if (root / item).is_file():
                                 files.add(norm_item)
 
@@ -646,19 +737,33 @@ def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[s
     collected: list[str] = []
     nested_set = set(nested_roots)
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [
-            d
-            for d in dirnames
-            if d not in STANDARD_EXCLUDED_DIRS
-            and not d.startswith(".")
-            and (Path(dirpath) / d).resolve() not in nested_set
-            and not is_dotnet_bin_dir(Path(dirpath) / d)
-        ]
+        cur = Path(dirpath)
+        next_dirs: list[str] = []
+        for d in dirnames:
+            child = cur / d
+            if (
+                d in STANDARD_EXCLUDED_DIRS
+                or d.startswith(".")
+                or child.resolve() in nested_set
+                or is_dotnet_bin_dir(child)
+            ):
+                continue
+            if ws_exclude:
+                try:
+                    rel_child = child.relative_to(root).as_posix()
+                except ValueError:
+                    rel_child = d
+                if _is_dir_excluded_by_patterns(rel_child, ws_exclude):
+                    continue
+            next_dirs.append(d)
+        dirnames[:] = next_dirs
         for fn in filenames:
-            full = Path(dirpath) / fn
+            full = cur / fn
             try:
                 rel = str(full.relative_to(root)).replace("\\", "/")
                 if nested_prefixes and rel.startswith(nested_prefixes):
+                    continue
+                if ws_exclude and is_excluded_by_config(rel, ws_exclude):
                     continue
                 collected.append(rel)
             except ValueError:
@@ -670,6 +775,9 @@ def is_polyglot_test_file(
     path: Path | str,
     repo_root: Path | None = None,
     package_paths: Iterable[str] | None = None,
+    *,
+    eidos_dir: Path | None = None,
+    repo_config: EidosConfig | None = None,
 ) -> bool:
     """Determine whether a file path corresponds to an automated test file across polyglot languages."""
     p = Path(path)
@@ -689,6 +797,20 @@ def is_polyglot_test_file(
             rel_path = p
     else:
         rel_path = p
+
+    if repo_config is not None:
+        eff_cfg = repo_config
+    elif eidos_dir is not None or repo_root is not None:
+        eff_cfg, _ = load_repo_config_with_errors(eidos_dir=eidos_dir, repo_root=repo_root)
+    else:
+        eff_cfg = DEFAULT_CONFIG
+
+    if not rel_path.is_absolute():
+        norm_rel = normalize_rel_path(str(rel_path))
+        if eff_cfg.workspace.tests.exclude and is_excluded_by_config(norm_rel, eff_cfg.workspace.tests.exclude):
+            return False
+        if eff_cfg.workspace.tests.include and is_excluded_by_config(norm_rel, eff_cfg.workspace.tests.include):
+            return True
 
     if rel_path.is_absolute():
         parent_names = [parent.name.lower() for parent in rel_path.parents[:2]]

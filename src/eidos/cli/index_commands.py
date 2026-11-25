@@ -7,7 +7,7 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from eidos.cli._shared import console, resolve_cli_eidos_dir
+from eidos.cli._shared import console, load_cli_repo_config, resolve_cli_eidos_dir, resolve_param_from_config
 from eidos.core.index.graph_index import get_architectural_index
 from eidos.core.index.storage import normalize_confidence_level, provenance_to_confidence
 
@@ -113,10 +113,10 @@ def index_sync_cmd(
         "-f",
         help="Force complete rebuild of the index from scratch.",
     ),
-    no_semantic: bool = typer.Option(
-        False,
-        "--no-semantic",
-        help="Skip Harrier ONNX semantic embedding synchronization when provisioned.",
+    semantic: bool = typer.Option(
+        True,
+        "--semantic/--no-semantic",
+        help="Enable or disable Harrier ONNX semantic embedding synchronization when provisioned.",
     ),
     path: Path | None = typer.Option(
         None,
@@ -132,6 +132,8 @@ def index_sync_cmd(
 ):
     """Synchronize the architectural index with specifications on disk."""
     eidos_dir = resolve_cli_eidos_dir(path)
+    repo_cfg = load_cli_repo_config(eidos_dir, json_output=json_output)
+    eff_semantic = bool(resolve_param_from_config("semantic", semantic, repo_cfg.context.semantic.enabled))
     idx = get_architectural_index(eidos_dir=eidos_dir)
     from eidos.core.index.semantic import _semantic_cli_progress
 
@@ -151,7 +153,7 @@ def index_sync_cmd(
                 )
 
         sem_payload: dict[str, object]
-        if no_semantic:
+        if not eff_semantic:
             sem_payload = {"status": "skipped", "reason": "disabled_by_flag"}
         else:
             sem_payload = {"status": "skipped", "reason": "not_ready_or_up_to_date"}
@@ -185,7 +187,7 @@ def index_sync_cmd(
                     "pruned_deleted": stats.pruned_deleted,
                     "total_specs_scanned": stats.total_specs_scanned,
                     "duplicate_id_collisions": list(stats.duplicate_id_collisions),
-                    "semantic_enabled": not no_semantic,
+                    "semantic_enabled": eff_semantic,
                     "semantic": sem_payload,
                 }
             )
@@ -222,8 +224,10 @@ def index_search_cmd(
 ):
     """Execute BM25 ranked full-text search (FTS5) with optional Harrier Hybrid RRF across specifications, capabilities, and invariants."""
     eidos_dir = resolve_cli_eidos_dir(path)
+    repo_cfg = load_cli_repo_config(eidos_dir, json_output=json_output)
+    eff_semantic = bool(resolve_param_from_config("semantic", semantic, repo_cfg.context.semantic.enabled))
     idx = get_architectural_index(eidos_dir=eidos_dir)
-    results = idx.query_fts(query, limit=limit, use_semantic=semantic)
+    results = idx.query_fts(query, limit=limit, use_semantic=eff_semantic)
 
     if json_output:
         typer.echo(
@@ -370,12 +374,14 @@ def index_repo_map_cmd(
 ):
     """Generate a token-budgeted structural repo map outline for AI coding agents."""
     eidos_dir = resolve_cli_eidos_dir(path)
+    repo_cfg = load_cli_repo_config(eidos_dir, json_output=json_output)
+    eff_max_tokens = int(resolve_param_from_config("max_tokens", max_tokens, repo_cfg.context.repo_map_max_tokens))
     idx = get_architectural_index(eidos_dir=eidos_dir)
-    repo_map = idx.get_repo_map(max_tokens=max_tokens)
+    repo_map = idx.get_repo_map(max_tokens=eff_max_tokens)
 
     if json_output:
         console.print_json(
-            data={"repo_map": repo_map, "max_tokens": max_tokens, "estimated_tokens": len(repo_map) // 4}
+            data={"repo_map": repo_map, "max_tokens": eff_max_tokens, "estimated_tokens": len(repo_map) // 4}
         )
     else:
         console.print(repo_map)
@@ -469,6 +475,8 @@ def index_semantic_cmd(
 ):
     """Manage and inspect the optional Harrier-OSS-v1-0.6B ONNX semantic embedding index (status, setup, sync)."""
     eidos_dir = resolve_cli_eidos_dir(path)
+    repo_cfg = load_cli_repo_config(eidos_dir, json_output=json_output)
+    eff_model = str(resolve_param_from_config("model", model, repo_cfg.context.semantic.variant))
     idx = get_architectural_index(eidos_dir=eidos_dir)
     act = (action or "status").strip().lower()
 
@@ -509,7 +517,7 @@ def index_semantic_cmd(
 
         try:
             with _semantic_cli_progress(console=console, mode="setup", enabled=not json_output):
-                res = idx.setup_semantic(variant=model, force=force)
+                res = idx.setup_semantic(variant=eff_model, force=force)
         except Exception as exc:
             if json_output:
                 console.print_json(data={"error": str(exc)})
