@@ -638,6 +638,87 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             }
         )
 
+    # 5b. Team Operational Memory (agent/memory, MEM-*) — strictly non-blocking dedicated audit channel
+    raw_memories = specs_by_type.get("agent/memory", [])
+    memories: list[dict[str, Any]] = []
+    memory_audit: dict[str, Any] = {
+        "total": 0,
+        "active": 0,
+        "draft": 0,
+        "promoted": 0,
+        "archived": 0,
+        "fresh": 0,
+        "stale": 0,
+        "expired": 0,
+        "unverifiable": 0,
+        "stale_memories": [],
+        "expired_memories": [],
+        "unverifiable_memories": [],
+        "duplicate_pairs": [],
+        "spec_overlaps": [],
+    }
+    if raw_memories:
+        import logging
+
+        from eidos.core.lifecycle.memory_engine import audit_memories, list_memories
+
+        try:
+            mem_body_by_id = {str(m.get("id") or ""): str(m.get("body") or "") for m in raw_memories if m.get("id")}
+            listed_memories = list_memories(eidos_path, include_archived=True, include_freshness=True)
+            for entry in listed_memories:
+                mid = str(entry.get("id") or "")
+                rel_p = _to_repo_rel_posix(entry.get("relative_path") or entry.get("path") or "", repo_root_resolved)
+                targets = entry.get("targets") if isinstance(entry.get("targets"), dict) else {}
+                raw_ent = targets.get("entities")
+                raw_pth = targets.get("paths")
+                memories.append(
+                    {
+                        "id": mid,
+                        "title": str(entry.get("title") or mid),
+                        "category": str(entry.get("category") or "feedback"),
+                        "status": str(entry.get("status") or "active"),
+                        "summary": str(entry.get("summary") or ""),
+                        "targets": {
+                            "entities": [str(e) for e in raw_ent if isinstance(e, str)]
+                            if isinstance(raw_ent, list)
+                            else [],
+                            "paths": [str(p) for p in raw_pth if isinstance(p, str)]
+                            if isinstance(raw_pth, list)
+                            else [],
+                        },
+                        "verified_at": str(entry.get("verified_at") or ""),
+                        "verified_commit": entry.get("verified_commit"),
+                        "expires_at": entry.get("expires_at"),
+                        "promoted_to": entry.get("promoted_to"),
+                        "freshness": str(entry.get("freshness") or "fresh"),
+                        "freshness_reason": str(entry.get("freshness_reason") or ""),
+                        "is_archived": bool(entry.get("is_archived")),
+                        "path": rel_p,
+                        "relative_path": rel_p,
+                        "body": mem_body_by_id.get(mid, ""),
+                    }
+                )
+            raw_audit = audit_memories(
+                eidos_path,
+                check_overlaps=True,
+                use_semantic=False,
+                entries=listed_memories,
+                conn=conn,
+            )
+            for list_key in ("stale_memories", "expired_memories", "unverifiable_memories"):
+                norm_items: list[dict[str, Any]] = []
+                for item in raw_audit.get(list_key) or []:
+                    if not isinstance(item, dict):
+                        continue
+                    item_copy = dict(item)
+                    if item_copy.get("relative_path"):
+                        item_copy["relative_path"] = _to_repo_rel_posix(item_copy["relative_path"], repo_root_resolved)
+                    norm_items.append(item_copy)
+                raw_audit[list_key] = norm_items
+            memory_audit = raw_audit
+        except Exception as exc:  # pragma: no cover - defensive portal isolation
+            logging.getLogger("eidos.portal").warning("Skipping malformed team memory audit in portal payload: %s", exc)
+
     # 6. Dynamic Mermaid Diagrams
     ext_systems = (
         arch_doc.get("frontmatter", {}).get("c4_context", {}).get("external_systems", []) if arch_doc else []
@@ -674,6 +755,8 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         "clients_count": len(clients),
         "flows_count": len(flows),
         "explorations_count": len(explorations),
+        "memories_count": len(memories),
+        "active_memories_count": int(memory_audit.get("active", 0)),
         "decisions_count": len(all_decisions),
     }
 
@@ -731,6 +814,8 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         "clients": clients,
         "flows": flows,
         "explorations": explorations,
+        "memories": memories,
+        "memory_audit": memory_audit,
         "diagrams": {
             "c4_context": c4_context_mermaid,
             "c4_containers": c4_containers_mermaid,

@@ -4,7 +4,7 @@ id: CAP-AGENT-001
 title: "Universal Agent Adapter & Context Slicing Engine"
 domain: DOM-AGENT-INTELLIGENCE
 status: active
-version: "1.17.0"
+version: "1.19.0"
 
 business:
   personas:
@@ -25,6 +25,7 @@ technical:
     - "CMP-CLI-CONTEXT-COMMAND"
     - "CMP-CLI-DOCTOR-HOOKS"
     - "CMP-CLI-INDEX-COMMANDS"
+    - "CMP-CLI-MEMORY-COMMANDS"
     - "CMP-GRAPH-TRAVERSAL-ENGINE"
     - "CMP-HOOK-MANAGER"
     - "CMP-PLUGIN-INSTALLER"
@@ -84,6 +85,12 @@ technical:
     - id: INV-SEMANTIC-COMPLETE-RRF-GATE
       rule: "sync_spec_embeddings must track completion via metadata['semantic_sync_complete'] (0 during batch encoding, 1 only after all batches and orphan pruning commit), is_semantic_index_complete(conn) must return False on empty, interrupted, or partial spec_embeddings coverage, and execute_fts_query must gate Hybrid RRF on is_semantic_index_complete(conn) so interrupted semantic syncs fall back deterministically to FTS5 BM25."
       test_binding: "tests/test_graph_index.py::test_partial_semantic_embeddings_fall_back_to_bm25"
+    - id: INV-CONTEXT-TEAM-MEMORY-ATTACHMENT
+      rule: "CMP-TIERED-CONTEXT-COMPRESSOR must attach active team operational memories (agent/memory, MEM-*) via a secondary budgeted pass (anchored by entity ID, file/glob path, or secondary agent/memory FTS query plus tier-capped untargeted global memories: anchor <=2/0, guardrails <=3/2, deep <=5/3) without displacing primary TASK_SLICE_ENTITY_TYPES entities, preserve honest empty slices by omitting untargeted globals when zero entities or anchored memories match, omit the memories key when empty, and run Stage 0 memory-first pruning in _enforce_token_budget before evicting architectural invariants, decisions, or capabilities."
+      test_binding: "tests/test_context.py::test_context_secondary_team_memory_attachment_and_budget_precedence"
+    - id: INV-MEMORY-CLI-AND-SKILL-PARITY
+      rule: "The eidos memory CLI command group (CMP-CLI-MEMORY-COMMANDS: add, list, search, show, verify, archive, audit, promote) must support both Rich and --json outputs, keep eidos memory audit strictly non-blocking (exit code 0 even with stale, expired, duplicate, or overlapping memories), reject personal category 'user' and unknown promotion targets with exit code 1, and stay in strict CLI parity with the dedicated 5th bundled eidos-memory skill (<= 450 words) and root AGENTS.md trigger."
+      test_binding: "tests/test_memory.py::test_memory_cli_subcommands_and_nonblocking_audit"
 ---
 = Capability: Universal Agent Adapter & Context Slicing Layer
 :toc: left
@@ -98,13 +105,13 @@ In strict adherence to *POL-004*, Eidos never initiates AI/LLM calls itself. Ins
 
 == Key Responsibilities
 * **Deterministic Substrate for Coding Agents**: Exposing machine-readable JSON envelopes across CLI inspection commands (`eidos context`, `eidos index`, `eidos drift`).
-* **Tiered Context Slicing (`CMP-TIERED-CONTEXT-COMPRESSOR`, `CMP-CLI-CONTEXT-COMMAND`, `INV-AGENT-CONTEXT-SLICING`, `INV-CONTEXT-GIT-DIFF-SLICING`)**: Extracting token-efficient architectural subgraphs across exact file paths, comma-separated file lists, quoted `--file` glob patterns (including `{a,b}` brace globs and planned non-existent files under existing or indexed parent directories), working-tree or branch changes (`--uncommitted`, `--base`, `--head`), entity IDs, and task prompts.
+* **Tiered Context Slicing (`CMP-TIERED-CONTEXT-COMPRESSOR`, `CMP-CLI-CONTEXT-COMMAND`, `INV-AGENT-CONTEXT-SLICING`, `INV-CONTEXT-GIT-DIFF-SLICING`, `INV-CONTEXT-TEAM-MEMORY-ATTACHMENT`)**: Extracting token-efficient architectural subgraphs across exact file paths, comma-separated file lists, quoted `--file` glob patterns (including `{a,b}` brace globs and planned non-existent files under existing or indexed parent directories), working-tree or branch changes (`--uncommitted`, `--base`, `--head`), entity IDs, and task prompts, attaching optional secondary budgeted team operational memories (`MEM-*`) with computed freshness and Stage 0 memory-first pruning.
 * **Hybrid Lexical-Relational Retrieval**: Combining FTS5 BM25 search with graph-neighborhood traversals to resolve engineering prompts to architectural entities.
 * **Architectural Blast-Radius Analysis**: Confidence-filtered recursive CTE impact mapping (`eidos index blast-radius --min-confidence <inferred|derived|observed>`) allowing agents to distinguish directly observed spec facts and derived AST/HTTP couplings from inferred hits before proposing code changes.
 * **Turn-Scoped Stateless 1-Turn Stop / PreToolUse Lifecycle Hook**: Unified `Stop` / `PreToolUse` hook (`eidos hook`) honoring both snake_case `stop_hook_active` and camelCase `stopHookActive` retry markers, gating Cline premature completion on `attempt_completion`, short-circuiting zero-edit Q&A turns via session baselines (`eidos/.cache/hook_baselines/`), and verifying specification schemas, cross-references, invariant test bindings, and spec-to-code synchronization via `detect_drift`.
 * **Non-Destructive Plugin Ecosystem Management (`CMP-PLUGIN-INSTALLER`, `CMP-HOOK-MANAGER`, `INV-PLUGIN-INSTALL-TRUTHFULNESS`)**: Installing and removing Agent Skills (`agentskills.io`) via `eidos plugin` across all 9 supported coding harnesses (`.agents/skills/` for Antigravity, Cursor, GitHub Copilot, OpenAI Codex, Cline, Kilo Code, and OpenCode; `.claude/skills/` for Claude Code; `.aider/skills/` for Aider) with opt-in `--hooks` native `Stop` / `PreToolUse` hook wiring managed by `CMP-HOOK-MANAGER` (`.agents/hooks.json`, `.claude/settings.json`, `.cursor/hooks.json`, `.clinerules/hooks/PreToolUse`, `.github/hooks/hooks.json`, `.codex/hooks.json`, disabled by default and preserved on `eidos plugin update`), truthful `modified` status reporting when locally edited skills are skipped, comment-preserving `.aider.conf.yml` editing, self-hosted `.agents/skills` symlink tolerance, and clean target pruning on `uninstall`.
 * **Canonical `AGENTS.md` Bridge & Doctor Integrity (`INV-PLUGIN-MANAGED-BLOCK-SAFETY`, `INV-DOCTOR-ONBOARDING-INTEGRITY`)**: Every install target projects one marker-delimited, hash-stamped Eidos block into the repository's root `AGENTS.md`, verified continuously by `eidos doctor` whenever Agent Skills or `.eidos-manifest.json` are present.
-* **Self-Contained, Guarded Skills & SpecDelta Reconciliation (`INV-PLUGIN-SKILL-SIZE-CEILING`, `INV-PLUGIN-SKILL-CLI-PARITY`, `INV-PLUGIN-SKILL-DELTA-RECONCILIATION`)**: The 4 bundled skills stay complete in their `SKILL.md` files with trigger-focused descriptions, no-growth word ceilings, test-enforced CLI parity, bottom-up `eidos context -f` reconciliation of `Implementation Plan` files against 1-hop ownership and `design/*` rules (with inline `UNMODIFIED`-avoidance annotations, `INV-*` test pairing, and compliant `DLT-2026-015` templates), and mandatory autonomous pre-presentation 5-Dimension SpecDelta self-review.
+* **Self-Contained, Guarded Skills & SpecDelta Reconciliation (`INV-PLUGIN-SKILL-SIZE-CEILING`, `INV-PLUGIN-SKILL-CLI-PARITY`, `INV-PLUGIN-SKILL-DELTA-RECONCILIATION`, `INV-MEMORY-CLI-AND-SKILL-PARITY`)**: The 5 bundled skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`, `eidos-memory`) stay complete in their `SKILL.md` files with trigger-focused descriptions, no-growth word ceilings (including `eidos-memory <= 450` words), test-enforced CLI parity, bottom-up `eidos context -f` reconciliation of `Implementation Plan` files against 1-hop ownership and `design/*` rules (with inline `UNMODIFIED`-avoidance annotations, `INV-*` test pairing, and compliant `DLT-2026-015` templates), and mandatory autonomous pre-presentation 5-Dimension SpecDelta self-review.
 
 == Tiered Context Slicing Architecture
 
@@ -113,9 +120,9 @@ Eidos implements a three-tier context compression model:
 [cols="1,2,3", options="header"]
 |===
 | Tier | Approximate Size | Contents Included
-| `anchor` | ~140 tokens | Owning container (`CNT-*`) and internal component (`CMP-*`), runtime, `source_path`, bound domain, compact `DEC-*` architectural decisions (`title`, `decision`, and rejected option names), and direct interface contract (`CTR-*`) signatures.
-| `guardrails` | ~300–900 tokens | Everything in `anchor`, plus structured epistemic `provenance_tags` (`observed`, `derived`, `inferred`), bounded `DEC-*` rationale and `rejected_alternatives`, component `domain_path` and bound `design` (`CLT-*`/`DS-*`) pointers, domain capabilities (`CAP-*` with `file_path`, `personas`, `policies`, and `experience` bindings), active invariants (`INV-*`) with `test_binding`, and governing policies (`POL-*` with `category` and `file_path`).
-| `deep` | ~500–1,500 tokens | Comprehensive architectural audit slice: C4 Level 3 internal building blocks, full contract schemas, full policy texts, full `DEC-*` trade-off records, and downstream dependents.
+| `anchor` | ~140 tokens | Owning container (`CNT-*`) and internal component (`CMP-*`), runtime, `source_path`, bound domain, compact `DEC-*` architectural decisions (`title`, `decision`, and rejected option names), direct interface contract (`CTR-*`) signatures, and up to 2 anchored `MEM-*` summaries (0 globals).
+| `guardrails` | ~300–900 tokens | Everything in `anchor`, plus structured epistemic `provenance_tags` (`observed`, `derived`, `inferred`), bounded `DEC-*` rationale and `rejected_alternatives`, component `domain_path` and bound `design` (`CLT-*`/`DS-*`) pointers, domain capabilities (`CAP-*` with `file_path`, `personas`, `policies`, and `experience` bindings), active invariants (`INV-*`) with `test_binding`, governing policies (`POL-*` with `category` and `file_path`), and up to 3 anchored + 2 global `MEM-*` entries with non-fresh diagnostics.
+| `deep` | ~500–1,500 tokens | Comprehensive architectural audit slice: C4 Level 3 internal building blocks, full contract schemas, full policy texts, full `DEC-*` trade-off records, downstream dependents, and up to 5 anchored + 3 global `MEM-*` entries with extracted `guidance` and `why` sections.
 |===
 
 == Hybrid Retrieval & Freshness Invariant

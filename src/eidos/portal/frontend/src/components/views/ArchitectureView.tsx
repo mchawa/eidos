@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
 import { AsciiDocRenderer } from "@/components/ui/AsciiDocRenderer";
+import { EntityMemoriesStrip } from "@/components/ui/EntityMemoriesStrip";
 import { requestSpecNavigation } from "@/lib/specNav";
 import {
   applyC4BlastRadiusEdges,
@@ -700,6 +701,7 @@ export function ArchitectureView({
   const closeC4Inspector = () => {
     setInspectorOpen(false);
     setExpandedSubSpecIds({});
+    onClearSelectedComponent?.();
   };
 
   const decorateC4Nodes = React.useCallback(() => {
@@ -1818,6 +1820,11 @@ export function ArchitectureView({
                         {focusedSub.responsibility}
                       </p>
                     )}
+                    <EntityMemoriesStrip
+                      entityId={focusedSub.id}
+                      memories={data.memories}
+                      onBeforeNavigate={closeC4Inspector}
+                    />
                     {hasFocusedBody && (
                       <div className="space-y-2">
                         <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
@@ -1967,11 +1974,25 @@ export function ArchitectureView({
                           ))}
                         </div>
                       )}
+                      <EntityMemoriesStrip
+                        entityId={sub.id}
+                        memories={data.memories}
+                        onBeforeNavigate={closeC4Inspector}
+                        compact
+                        headingLevel="h5"
+                      />
                     </div>
                     );
                   })}
                 </div>
               </div>
+
+              {/* Container Team Memories */}
+              <EntityMemoriesStrip
+                entityId={inspectedComponent.id}
+                memories={data.memories}
+                onBeforeNavigate={closeC4Inspector}
+              />
 
               {/* Container Rules */}
               {inspectedComponent.invariants && inspectedComponent.invariants.length > 0 && (

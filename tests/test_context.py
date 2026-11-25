@@ -876,9 +876,10 @@ def test_consolidated_entity_prefix_registry_and_excluded_dirs() -> None:  # eid
     for d in ("vendor", "third_party", "target", "node_modules", ".venv", ".eidos"):
         assert d in STANDARD_EXCLUDED_DIRS
 
-    assert len(ENTITY_PREFIX_REGISTRY) == 18
-    assert len(TYPE_TO_SCHEMA_NAME) == 16
+    assert len(ENTITY_PREFIX_REGISTRY) == 19
+    assert len(TYPE_TO_SCHEMA_NAME) == 17
     assert DOC_TYPE_TO_PREFIX["tech/component"] == "CMP-"
+    assert DOC_TYPE_TO_PREFIX["agent/memory"] == "MEM-"
     assert VALID_SPEC_TYPES["ui-component"] == "design/ui-component"
     assert "INV-" in ENTITY_ID_PREFIXES
     assert resolve_entity_prefix_meta("DLT-2026-001") is None
@@ -1393,3 +1394,397 @@ def test_context_guardrail_retains_invariants_within_budget_headroom(tmp_path):
     )
     assert [i["id"] for i in syn.invariants[:3]] == ["RULE-CORE-01", "RULE-CORE-02", "RULE-CORE-03"]
     assert {"CMP-PRIMARY", "CNT-PRIMARY"} <= {c["id"] for c in syn.components}
+
+
+def test_context_secondary_team_memory_attachment_and_budget_precedence(tmp_path) -> None:
+    """Verify INV-CONTEXT-TEAM-MEMORY-ATTACHMENT: secondary budgeted MEM-* attachment across anchor/guardrails/deep, FTS non-eviction, global caps, honest empty slices, and Stage 0 memory-first pruning."""
+    import subprocess
+    from pathlib import Path
+
+    from eidos.core.index.context_memories import extract_memory_sections
+    from eidos.core.index.context_models import TIER_TOKEN_BUDGETS, TieredContextSlice
+    from eidos.core.index.graph_index import ArchitecturalIndex
+    from eidos.core.lifecycle.initializer import init_repository
+
+    # Direct extract_memory_sections checks
+    assert extract_memory_sections("") == {}
+    assert extract_memory_sections("Just plain prose without headings.") == {}
+    sec = extract_memory_sections(
+        "---\nid: MEM-X\n---\n= Title\n\n== Guidance\nRun via uv.\n\n== Rationale\nLocked deps.\n"
+    )
+    assert sec == {"guidance": "Run via uv.", "why": "Locked deps."}
+
+    def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=False)
+
+    repo = tmp_path / "ctx_mem_repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.email", "test@eidos.dev")
+    _git(repo, "config", "user.name", "Test")
+
+    init_repository(repo, title="Payments Repo")
+    eidos_dir = repo / "eidos"
+    (eidos_dir / "domains" / "payments" / "capabilities").mkdir(parents=True, exist_ok=True)
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True, exist_ok=True)
+    (eidos_dir / "architecture" / "components").mkdir(parents=True, exist_ok=True)
+    (eidos_dir / "policies").mkdir(parents=True, exist_ok=True)
+    (eidos_dir / "memory" / "archive").mkdir(parents=True, exist_ok=True)
+
+    (eidos_dir / "domains" / "payments" / "domain.adoc").write_text(
+        "---\ntype: product/domain\nid: DOM-PAY\ntitle: Payments\nstatus: active\n---\n= Payments\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "policies" / "pol-pay.adoc").write_text(
+        "---\ntype: product/policy\nid: POL-PAY-001\ntitle: Ledger Integrity\nstatus: active\ncategory: reliability\nseverity: blocking\n---\n= Ledger Integrity\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "cnt-pay.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-PAY\n"
+        "title: Payments Engine\n"
+        "status: active\n"
+        "domain: DOM-PAY\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "source_path: src/pay\n"
+        "---\n= Payments Engine\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "cmp-ledger.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-PAY-LEDGER\ntitle: LedgerWriter\ncontainer: CNT-PAY\nstatus: active\nsource_path: src/pay/ledger.py\n---\n= LedgerWriter\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "cmp-webhook.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-PAY-WEBHOOK\ntitle: WebhookProcessor\ncontainer: CNT-PAY\nstatus: active\nsource_path: src/pay/webhook.py\n---\n= WebhookProcessor\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "domains" / "payments" / "capabilities" / "cap-pay.adoc").write_text(
+        "---\n"
+        "type: product/capability\n"
+        "id: CAP-PAY-001\n"
+        "title: Payment Idempotency & Webhook Processing\n"
+        "domain: DOM-PAY\n"
+        "status: active\n"
+        "business:\n"
+        "  policies:\n"
+        "    - POL-PAY-001\n"
+        "technical:\n"
+        "  containers:\n"
+        "    - CNT-PAY\n"
+        "  components:\n"
+        "    - CMP-PAY-LEDGER\n"
+        "    - CMP-PAY-WEBHOOK\n"
+        "  invariants:\n"
+        "    - id: INV-PAY-IDEMPOTENCY\n"  # eidos:fixture
+        '      rule: "Webhook idempotency retries must never double-charge."\n'
+        "---\n= Payment Idempotency\n",
+        encoding="utf-8",
+    )
+
+    (repo / "src" / "pay").mkdir(parents=True, exist_ok=True)
+    (repo / "src" / "pay" / "ledger.py").write_text("def write_entry():\n    return True\n", encoding="utf-8")
+    (repo / "src" / "pay" / "webhook.py").write_text("def handle_webhook():\n    return True\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "base")
+    head_sha = _git(repo, "rev-parse", "HEAD").stdout.strip()
+
+    idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=repo, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=True, auto_semantic=False)
+
+        # 1. Zero memories -> memories key omitted from JSON and section omitted from Markdown (0-token overhead)
+        sl_empty_mem = idx.get_tiered_context_slice(files=["src/pay/ledger.py"], tier="guardrails", use_semantic=False)
+        assert sl_empty_mem.memories == []
+        assert "memories" not in sl_empty_mem.to_dict()
+        assert "Team Operational Memories" not in sl_empty_mem.to_markdown()
+
+        # 2. Populate anchored, brace-glob, stale, task-FTS, 6 global (1 expired), and archived memories
+        (eidos_dir / "memory" / "mem-ledger-exact-1111.adoc").write_text(
+            "---\n"
+            "type: agent/memory\n"
+            "id: MEM-LEDGER-EXACT-1111\n"
+            'title: "Ledger serializable transactions"\n'
+            "category: feedback\n"
+            "status: active\n"
+            'summary: "Always wrap ledger inserts in SERIALIZABLE transactions."\n'
+            "targets:\n"
+            "  entities: [CMP-PAY-LEDGER]\n"
+            "  paths: [src/pay/ledger.py]\n"
+            'verified_at: "2026-11-24"\n'
+            f'verified_commit: "{head_sha}"\n'
+            "---\n"
+            "= Memory: Ledger serializable transactions\n\n"
+            "== Guidance\nOpen an explicit SERIALIZABLE block before mutating ledger rows.\n\n"
+            "== Why\nConcurrent retries previously caused phantom balance drift.\n",
+            encoding="utf-8",
+        )
+        (eidos_dir / "memory" / "mem-glob-brace-2222.adoc").write_text(
+            "---\n"
+            "type: agent/memory\n"
+            "id: MEM-GLOB-BRACE-2222\n"
+            'title: "Payments module uses decimal math"\n'
+            "category: feedback\n"
+            "status: active\n"
+            'summary: "Never use float arithmetic in ledger or webhook modules."\n'
+            "targets:\n"
+            '  paths: ["src/pay/{ledger,webhook}.py"]\n'
+            'verified_at: "2026-11-24"\n'
+            f'verified_commit: "{head_sha}"\n'
+            "---\n= Decimal Math\n",
+            encoding="utf-8",
+        )
+        (eidos_dir / "memory" / "mem-stale-path-3333.adoc").write_text(
+            "---\n"
+            "type: agent/memory\n"
+            "id: MEM-STALE-PATH-3333\n"
+            'title: "Legacy CSV reconciliation script"\n'
+            "category: project\n"
+            "status: active\n"
+            'summary: "Legacy reconciliation hook runs nightly."\n'
+            "targets:\n"
+            "  entities: [CMP-PAY-LEDGER]\n"
+            "  paths: [src/pay/deleted_legacy.py]\n"
+            'verified_at: "2026-10-10"\n'
+            f'verified_commit: "{head_sha}"\n'
+            "---\n= Legacy CSV\n",
+            encoding="utf-8",
+        )
+        (eidos_dir / "memory" / "mem-task-only-4444.adoc").write_text(
+            "---\n"
+            "type: agent/memory\n"
+            "id: MEM-TASK-ONLY-4444\n"
+            'title: "Deadletter exponential backoff"\n'
+            "category: reference\n"
+            "status: active\n"
+            'summary: "Webhook deadletter retries use jittered exponential backoff."\n'
+            "targets:\n"
+            "  entities: [CMP-PAY-WEBHOOK]\n"
+            'verified_at: "2026-11-24"\n'
+            "---\n= Deadletter Backoff\n",
+            encoding="utf-8",
+        )
+        # 6 untargeted globals (1 expired so fresh globals win the cap)
+        for i in range(1, 6):
+            (eidos_dir / "memory" / f"mem-global-fresh-{i:02d}aa.adoc").write_text(
+                "---\n"
+                "type: agent/memory\n"
+                f"id: MEM-GLOBAL-FRESH-{i:02d}AA\n"
+                f'title: "Global rule {i}"\n'
+                "category: feedback\n"
+                "status: active\n"
+                f'summary: "Global team convention #{i}."\n'
+                f'verified_at: "2026-11-{10 + i:02d}"\n'
+                "---\n= Global\n",
+                encoding="utf-8",
+            )
+        (eidos_dir / "memory" / "mem-global-expired-06aa.adoc").write_text(
+            "---\n"
+            "type: agent/memory\n"
+            "id: MEM-GLOBAL-EXPIRED-06AA\n"
+            'title: "Expired freeze"\n'
+            "category: project\n"
+            "status: active\n"
+            'summary: "Temporary release freeze."\n'
+            'verified_at: "2025-01-01"\n'
+            'expires_at: "2025-02-01"\n'
+            "---\n= Expired\n",
+            encoding="utf-8",
+        )
+        # Archived-path memory (even with status: active) must never attach
+        (eidos_dir / "memory" / "archive" / "mem-arch-active-9999.adoc").write_text(
+            "---\n"
+            "type: agent/memory\n"
+            "id: MEM-ARCH-ACTIVE-9999\n"
+            'title: "Archived stray"\n'
+            "category: feedback\n"
+            "status: active\n"
+            'summary: "Must not attach from archive directory."\n'
+            "targets:\n"
+            "  entities: [CMP-PAY-LEDGER]\n"
+            'verified_at: "2026-11-24"\n'
+            "---\n= Archived Stray\n",
+            encoding="utf-8",
+        )
+
+        idx.sync(force=False, auto_semantic=False)
+
+        # 3. Anchor tier: <=2 anchored, 0 globals, minimal JSON keys, within 300-token budget
+        sl_anchor = idx.get_tiered_context_slice(files=["src/pay/ledger.py"], tier="anchor", use_semantic=False)
+        d_anchor = sl_anchor.to_dict()
+        assert sl_anchor.token_estimate <= TIER_TOKEN_BUDGETS["anchor"]
+        assert 1 <= len(d_anchor.get("memories", [])) <= 2
+        assert all(not m["id"].startswith("MEM-GLOBAL-") for m in d_anchor["memories"])
+        assert all(m["id"] != "MEM-ARCH-ACTIVE-9999" for m in d_anchor["memories"])
+        assert set(d_anchor["memories"][0].keys()) == {"id", "category", "summary", "freshness"}
+
+        # 4. Guardrails tier: <=3 anchored + <=2 fresh globals (expired excluded), stale reason included
+        sl_guard = idx.get_tiered_context_slice(files=["src/pay/ledger.py"], tier="guardrails", use_semantic=False)
+        d_guard = sl_guard.to_dict()
+        md_guard = sl_guard.to_markdown()
+        assert sl_guard.token_estimate <= TIER_TOKEN_BUDGETS["guardrails"]
+        guard_mems = d_guard["memories"]
+        guard_ids = [m["id"] for m in guard_mems]
+        assert "MEM-LEDGER-EXACT-1111" in guard_ids
+        assert "MEM-GLOB-BRACE-2222" in guard_ids
+        assert "MEM-STALE-PATH-3333" in guard_ids
+        assert "MEM-ARCH-ACTIVE-9999" not in guard_ids
+        assert "MEM-GLOBAL-EXPIRED-06AA" not in guard_ids
+        global_in_guard = [m for m in guard_mems if m["id"].startswith("MEM-GLOBAL-")]
+        assert len(global_in_guard) == 2
+        stale_entry = next(m for m in guard_mems if m["id"] == "MEM-STALE-PATH-3333")
+        assert stale_entry["freshness"] == "stale"
+        assert "missing target path" in stale_entry["freshness_reason"]
+        assert "Team Operational Memories" in md_guard
+        assert "*Freshness:*" in md_guard
+
+        # 5. Deep tier: <=5 anchored + <=3 globals, includes extracted guidance & why sections
+        sl_deep = idx.get_tiered_context_slice(files=["src/pay/ledger.py"], tier="deep", use_semantic=False)
+        d_deep = sl_deep.to_dict()
+        md_deep = sl_deep.to_markdown()
+        assert sl_deep.token_estimate <= TIER_TOKEN_BUDGETS["deep"]
+        deep_mems = d_deep["memories"]
+        assert len([m for m in deep_mems if m["id"].startswith("MEM-GLOBAL-")]) == 3
+        exact_deep = next(m for m in deep_mems if m["id"] == "MEM-LEDGER-EXACT-1111")
+        assert "SERIALIZABLE" in exact_deep["guidance"]
+        assert "phantom balance drift" in exact_deep["why"]
+        assert "*Guidance:*" in md_deep and "*Why:*" in md_deep
+
+        # 6. Component query (-c) and Task query (-t) secondary FTS without displacing primary entities
+        sl_comp = idx.get_tiered_context_slice(component="CMP-PAY-LEDGER", tier="guardrails", use_semantic=False)
+        assert "MEM-LEDGER-EXACT-1111" in [m["id"] for m in sl_comp.memories]
+
+        sl_task = idx.get_tiered_context_slice(
+            task="webhook idempotency deadletter exponential backoff",
+            tier="guardrails",
+            use_semantic=False,
+        )
+        assert any(c["id"] in ("CNT-PAY", "CMP-PAY-WEBHOOK") for c in sl_task.components)
+        assert any(i["id"] == "INV-PAY-IDEMPOTENCY" for i in sl_task.invariants)  # eidos:fixture
+        assert "MEM-TASK-ONLY-4444" in [m["id"] for m in sl_task.memories]
+
+        # 7. Honest Empty Slice: unmatched explicit query returns zero globals & omits memories key
+        sl_none = idx.get_tiered_context_slice(
+            task="quantum_nonexistent_xyzzy_99999",
+            tier="guardrails",
+            use_semantic=False,
+        )
+        assert sl_none.components == []
+        assert sl_none.memories == []
+        assert "memories" not in sl_none.to_dict()
+    finally:
+        idx.close()
+
+    # 8. Stage 0 memory-first pruning precedence (guardrails & anchor):
+    #    Memories yield (globals -> compact -> anchored tail) BEFORE any architectural invariant is evicted.
+    heavy_invs = [
+        {
+            "id": f"RULE-PAY-{i:02d}",
+            "rule": f"Critical payment ledger invariant {i} enforcing idempotent settlement semantics.",
+            "has_test_coverage": True,
+            "test_binding": f"tests/test_pay.py::test_rule_{i}",
+        }
+        for i in range(1, 6)
+    ]
+    base_kwargs = dict(
+        query={"files": ["src/pay/ledger.py"]},
+        components=[
+            {
+                "id": "CMP-PAY-LEDGER",
+                "title": "LedgerWriter",
+                "type": "tech/component",
+                "container": "CNT-PAY",
+                "source_path": ["src/pay/ledger.py"],
+                "file_path": "eidos/architecture/components/cmp-ledger.adoc",
+            },
+            {
+                "id": "CNT-PAY",
+                "title": "Payments Engine",
+                "type": "tech/container",
+                "runtime": "Python 3.12",
+                "source_path": "src/pay",
+                "file_path": "eidos/architecture/containers/cnt-pay.adoc",
+                "decisions": [
+                    {
+                        "id": "DEC-PAY-SERIAL",
+                        "title": "Serializable Ledger Isolation",
+                        "decision": "Enforce serializable transactions for every balance mutation. " * 3,
+                        "rationale": "Prevents double-spend anomalies under concurrent webhooks. " * 3,
+                    }
+                ],
+            },
+        ],
+        capabilities=[
+            {
+                "id": "CAP-PAY-001",
+                "title": "Payment Idempotency",
+                "domain": "DOM-PAY",
+                "file_path": "eidos/domains/payments/capabilities/cap-pay.adoc",
+            }
+        ],
+        invariants=heavy_invs,
+        policies=[
+            {
+                "id": "POL-PAY-001",
+                "title": "Ledger Integrity",
+                "category": "reliability",
+                "severity": "blocking",
+                "file_path": "eidos/policies/pol-pay.adoc",
+            }
+        ],
+        matched_reasons={"CMP-PAY-LEDGER": ["Source file match"]},
+    )
+    baseline_no_mem = TieredContextSlice(
+        tier="guardrails", **{k: list(v) if isinstance(v, list) else dict(v) for k, v in base_kwargs.items()}
+    )
+    baseline_no_mem._enforce_token_budget(primary_cids={"CMP-PAY-LEDGER", "CNT-PAY"})
+    baseline_inv_ids = [i["id"] for i in baseline_no_mem.invariants]
+
+    bloated_memories = [
+        {
+            "id": f"MEM-ANCHOR-{i}",
+            "category": "feedback",
+            "summary": ("Anchored memory operational warning detail " * 5).strip(),
+            "freshness": "stale",
+            "freshness_reason": "8 commits modified src/pay/ledger.py since deadbee",
+            "file_path": f"eidos/memory/mem-anchor-{i}.adoc",
+            "match_scope": "anchored",
+        }
+        for i in range(1, 5)
+    ] + [
+        {
+            "id": f"MEM-GLOB-{i}",
+            "category": "project",
+            "summary": ("Global repo convention explanation prose " * 5).strip(),
+            "freshness": "fresh",
+            "freshness_reason": "no path anchors",
+            "file_path": f"eidos/memory/mem-glob-{i}.adoc",
+            "match_scope": "global",
+        }
+        for i in range(1, 4)
+    ]
+    with_mems = TieredContextSlice(
+        tier="guardrails",
+        memories=list(bloated_memories),
+        **{k: list(v) if isinstance(v, list) else dict(v) for k, v in base_kwargs.items()},
+    )
+    with_mems._enforce_token_budget(primary_cids={"CMP-PAY-LEDGER", "CNT-PAY"})
+    assert with_mems.token_estimate <= TIER_TOKEN_BUDGETS["guardrails"]
+    assert len(with_mems.to_json()) // 4 <= TIER_TOKEN_BUDGETS["guardrails"]
+    assert [i["id"] for i in with_mems.invariants] == baseline_inv_ids, (
+        "Stage 0 must prune memories before evicting any architectural invariant"
+    )
+    assert all(m.get("match_scope") != "global" for m in with_mems.memories)
+
+    # Anchor tier Stage 0 pruning drops memories before dropping primary component
+    anchor_bloated = TieredContextSlice(
+        tier="anchor",
+        memories=list(bloated_memories[:3]),
+        **{k: list(v) if isinstance(v, list) else dict(v) for k, v in base_kwargs.items()},
+    )
+    anchor_bloated._enforce_token_budget(primary_cids={"CMP-PAY-LEDGER"})
+    assert anchor_bloated.token_estimate <= TIER_TOKEN_BUDGETS["anchor"]
+    assert len(anchor_bloated.to_json()) // 4 <= TIER_TOKEN_BUDGETS["anchor"]
+    assert any(c["id"] == "CMP-PAY-LEDGER" for c in anchor_bloated.components)
+    assert len(anchor_bloated.memories) < 3

@@ -172,7 +172,10 @@ class SpecValidator:
                 doc.errors.append(no_schema_msg)
             return doc.errors
 
-        validator = jsonschema.Draft202012Validator(schema)
+        validator = jsonschema.Draft202012Validator(
+            schema,
+            format_checker=jsonschema.Draft202012Validator.FORMAT_CHECKER,
+        )
         errors = []
         for err in validator.iter_errors(doc.frontmatter):
             loc = ".".join(str(p) for p in err.absolute_path)
@@ -845,7 +848,7 @@ class SpecValidator:
         report: ValidationReport,
     ) -> None:
         """Emit a non-blocking warning when an active living spec references a deprecated or retired entity."""
-        if doc.doc_type in ("delta/mutation", "product/exploration"):
+        if doc.doc_type in ("delta/mutation", "product/exploration", "agent/memory"):
             return
         if str(doc.model.status or "").strip().lower() != "active":
             return
@@ -979,6 +982,17 @@ class SpecValidator:
                     f"INV-DESIGN-SCREEN-CLIENT-OWNERSHIP violation: Screen manifest '{doc.doc_id}' must reside "
                     f"under 'eidos/design/clients/<client>/screens/<screen>.adoc'."
                 )
+        elif dtype == "agent/memory" and doc.file_path.suffix == ".adoc" and root_dir is not None:
+            spec_root, _ = resolve_spec_and_repo_roots(root_dir, doc.file_path)
+            res_doc = doc.file_path.resolve()
+            res_spec_root = spec_root.resolve()
+            if res_doc.is_relative_to(res_spec_root):
+                rel_to_spec = tuple(p.lower() for p in res_doc.relative_to(res_spec_root).parts)
+                if not rel_to_spec or rel_to_spec[0] != "memory":
+                    _record_err(
+                        f"Team memory '{doc.doc_id}' (agent/memory) must reside under 'eidos/memory/' "
+                        f"(or 'eidos/memory/archive/')."
+                    )
 
     def _check_dict_references(
         self,
@@ -989,9 +1003,14 @@ class SpecValidator:
         doc_type: str | None = None,
     ):
         """Recursively check string fields ending in .adoc to verify they exist."""
-        if doc_type is None and isinstance(val, dict) and str(val.get("type") or "").strip() == "delta/mutation":
-            doc_type = "delta/mutation"
-        is_delta = doc_type == "delta/mutation"
+        if doc_type is None and isinstance(val, dict):
+            raw_type = str(val.get("type") or "").strip()
+            if raw_type in ("delta/mutation", "agent/memory"):
+                doc_type = raw_type
+        eff_doc_type = doc_type if doc_type is not None else ""
+        if eff_doc_type == "agent/memory":
+            return
+        is_delta = eff_doc_type == "delta/mutation"
         if isinstance(val, dict):
             delta_status = str(val.get("status") or "").strip().lower() if is_delta else ""
             for k, v in val.items():
@@ -1011,15 +1030,17 @@ class SpecValidator:
                                         if op not in ("modify", "deprecate"):
                                             continue
                                         self._check_dict_references(
-                                            mv, source_file, root_dir, report, doc_type=doc_type
+                                            mv, source_file, root_dir, report, doc_type=eff_doc_type
                                         )
                                 else:
-                                    self._check_dict_references(mut, source_file, root_dir, report, doc_type=doc_type)
+                                    self._check_dict_references(
+                                        mut, source_file, root_dir, report, doc_type=eff_doc_type
+                                    )
                         continue
-                self._check_dict_references(v, source_file, root_dir, report, doc_type=doc_type)
+                self._check_dict_references(v, source_file, root_dir, report, doc_type=eff_doc_type)
         elif isinstance(val, list):
             for item in val:
-                self._check_dict_references(item, source_file, root_dir, report, doc_type=doc_type)
+                self._check_dict_references(item, source_file, root_dir, report, doc_type=eff_doc_type)
         elif isinstance(val, str) and val.endswith(".adoc"):
             spec_root, repo_root = resolve_spec_and_repo_roots(root_dir, source_file)
             ref_path_from_repo = repo_root / val

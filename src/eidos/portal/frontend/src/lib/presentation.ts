@@ -40,10 +40,17 @@ const ACRONYMS: Record<string, string> = {
 };
 
 const ENTITY_PREFIX_RE =
-  /^(?:SYS|DOM|CAP|POL|PER|INV|DEC|CNT|CMP|CTR|DS|CLT|SCR|UIC|FLOW|DLT|EXP)-/i;
+  /^(?:SYS|ARCH|DOM|CAP|POL|PER|INV|DEC|CNT|CMP|CTR|DS|CLT|SCR|UIC|FLOW|DLT|EXP|MEM)-/i;
 
 const RAW_ENTITY_ID_RE =
-  /^(?:SYS|DOM|CAP|POL|PER|INV|DEC|CNT|CMP|CTR|DS|CLT|SCR|UIC|FLOW|DLT|EXP)-[A-Z0-9_-]+$/i;
+  /^(?:SYS|ARCH|DOM|CAP|POL|PER|INV|DEC|CNT|CMP|CTR|DS|CLT|SCR|UIC|FLOW|DLT|EXP|MEM)-[A-Z0-9_-]+$/i;
+
+const EMBEDDED_ENTITY_ID_RE =
+  /\b(?:SYS|ARCH|DOM|CAP|POL|PER|INV|DEC|CNT|CMP|CTR|DS|CLT|SCR|UIC|FLOW|DLT|EXP|MEM)-[A-Z0-9_-]+\b/gi;
+
+const EMBEDDED_ADOC_PATH_RE = /(?:\.?\/)?[A-Za-z0-9_.*{}\[\],/-]+\.adoc\b/gi;
+const EMBEDDED_TEST_PATH_RE = /(?:[A-Za-z0-9_.-]+\/)*tests\/[^\s,;)]+/gi;
+const EMBEDDED_SRC_PATH_RE = /(?:src|lib|app|packages)\/[^\s,;)]+\.[A-Za-z0-9]+/gi;
 
 export function looksLikeRawEntityId(value?: string | null): boolean {
   const trimmed = String(value || "").trim();
@@ -94,6 +101,7 @@ const TAB_LABELS: Record<string, string> = {
   architecture: "Architecture",
   deltas: "Changes",
   explorations: "Explorations",
+  memory: "Team Memory",
   catalog: "Catalog",
   design: "Design Systems",
 };
@@ -120,6 +128,7 @@ const SPEC_TYPE_LABELS: Record<string, string> = {
   "design/ui-component": "UI Component",
   "design/flow": "User Flow",
   "delta/mutation": "Change Proposal",
+  "agent/memory": "Team Memory",
 };
 
 export function formatSpecType(specType?: string | null): string {
@@ -200,6 +209,11 @@ const STATUS_LABELS: Record<string, string> = {
   planned: "Planned",
   deprecated: "Deprecated",
   retired: "Retired",
+  promoted: "Promoted",
+  fresh: "Fresh",
+  stale: "Stale",
+  expired: "Expired",
+  unverifiable: "Unverifiable",
 };
 
 export function formatStatus(raw?: string | null): string {
@@ -253,7 +267,95 @@ const COMMAND_CATEGORY_LABELS: Record<string, string> = {
   capabilities: "Capability",
   personas: "Persona",
   explorations: "Exploration",
+  memories: "Team Memory",
 };
+
+const MEMORY_CATEGORY_LABELS: Record<string, string> = {
+  feedback: "Feedback",
+  project: "Project Context",
+  reference: "Reference",
+};
+
+export function formatMemoryCategory(category?: string | null): string {
+  const key = String(category || "").trim().toLowerCase();
+  return MEMORY_CATEGORY_LABELS[key] || humanizeToken(category) || "Feedback";
+}
+
+const MEMORY_FRESHNESS_LABELS: Record<string, string> = {
+  fresh: "Fresh",
+  stale: "Needs Verification",
+  expired: "Expired",
+  unverifiable: "History Unavailable",
+  archived: "Archived",
+};
+
+export function formatMemoryFreshness(freshness?: string | null): string {
+  const key = String(freshness || "").trim().toLowerCase();
+  return MEMORY_FRESHNESS_LABELS[key] || humanizeToken(freshness) || "Fresh";
+}
+
+/** Sanitize prose snippets (summaries, titles, diagnostics) so raw IDs, .adoc paths, backticks, and test paths never leak. */
+export function formatHumanProse(
+  text?: string | null,
+  index?: Map<string, string>
+): string {
+  const raw = String(text || "").replace(/\\/g, "/").trim();
+  if (!raw) return "";
+  return raw
+    .replace(/`/g, "")
+    .replace(EMBEDDED_ADOC_PATH_RE, (match) => {
+      if (/[*{}[\]]/.test(match)) return "specification files";
+      return resolveEntityTitle(match, index) || humanizeToken(match) || "specification";
+    })
+    .replace(EMBEDDED_ENTITY_ID_RE, (match) => resolveEntityTitle(match, index) || humanizeToken(match))
+    .replace(EMBEDDED_TEST_PATH_RE, "test suite files");
+}
+
+/** Humanize raw freshness diagnostic reasons so canonical IDs, YAML keys, and raw paths never leak in visible UI. */
+export function formatMemoryFreshnessReason(
+  reason?: string | null,
+  index?: Map<string, string>
+): string {
+  const prose = formatHumanProse(reason, index);
+  if (!prose) return "";
+  return prose
+    .replace(/\bverified_commit\b/g, "last verified revision")
+    .replace(/\bentity ID\(s\)/gi, "linked specifications")
+    .replace(/\bTTL\b/g, "expiration window")
+    .replace(EMBEDDED_SRC_PATH_RE, "source files");
+}
+
+/** Humanize a target path or glob pattern for display inside MemoryView's Anchored Scope panel. */
+export function formatMemoryScopePath(
+  rawPath?: string | null,
+  index?: Map<string, string>
+): string {
+  const norm = String(rawPath || "").replace(/\\/g, "/").replace(/^\.\//, "").trim();
+  if (!norm) return "";
+  if (/\.adoc$/i.test(norm)) {
+    if (/[*{}[\]]/.test(norm)) {
+      const parent = norm.split("/").slice(0, -1).pop() || "";
+      return parent ? `${humanizeToken(parent)} specifications` : "Specification files";
+    }
+    return resolveEntityTitle(norm, index) || humanizeToken(norm) || "Specification";
+  }
+  if (/(?:^|\/)tests\//i.test(norm)) {
+    return "Test suite scope";
+  }
+  const cleanSegments = norm
+    .replace(/\*+/g, "")
+    .split("/")
+    .filter((seg) => seg && seg !== "." && !seg.startsWith("{"));
+  if (cleanSegments.length === 0) return "Repository scope";
+  const last = cleanSegments[cleanSegments.length - 1];
+  const baseNoExt = last.replace(/\.[A-Za-z0-9]+$/, "");
+  const label = humanizeToken(baseNoExt || last);
+  if (cleanSegments.length >= 2) {
+    const parentLabel = humanizeToken(cleanSegments[cleanSegments.length - 2]);
+    return parentLabel && parentLabel !== label ? `${parentLabel} · ${label}` : label || "Repository scope";
+  }
+  return label || "Repository scope";
+}
 
 export function formatCommandCategory(category?: string | null): string {
   const key = String(category || "").trim().toLowerCase();
@@ -386,6 +488,9 @@ export function buildEntityLabelIndex(data?: PortalData | null): Map<string, str
   }
   for (const exp of data.explorations || []) {
     registerLabel(map, exp.id, exp.title, exp.path);
+  }
+  for (const mem of data.memories || []) {
+    registerLabel(map, mem.id, mem.title, mem.relative_path || mem.path);
   }
   for (const list of Object.values(data.deltas || {})) {
     if (!Array.isArray(list)) continue;

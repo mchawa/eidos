@@ -121,18 +121,18 @@ Before concluding **any** task or presenting your final response, complete both 
 eidos drift --uncommitted --json
 ```
 
-* **`eidos drift`** runs `eidos validate` internally (v1 JSON Schemas, `x-eidos-ref` links, `source_path`/`specification_file` paths, `import_boundaries` / `import_boundary` couplings, `== Public Surface` AST symbols, and **bidirectional multi-protocol contract parity** across all canonical `tech/contract` protocols) plus Git diff ownership mapping, workflow mode verification, substantive spec diff checks, `stale_removed_symbol` rejection, `--strict` body-level drift, and polyglot `INV-*` `test_binding` verification. (Use `eidos validate eidos --json` only outside a Git repo.)
-* **If `is_clean: false` or `drift_detected: true`**: Follow `remediation_suggestions`, `boundary_violations` (remove forbidden cross-boundary imports/HTTP calls or adjust `ratchet_baseline` via a SpecDelta), and `validation_errors` in the JSON output and re-run until exit code is `0` (`ratchet_shrink_candidates` are non-blocking tightening hints).
+* **`eidos drift`** runs `eidos validate` internally (v1 schemas, `x-eidos-ref`, `source_path`/`specification_file`, `import_boundaries`, `== Public Surface`, and **bidirectional contract parity** across all canonical `tech/contract` protocols) plus Git diff ownership, workflow mode, substantive diff, `stale_removed_symbol`, `--strict` body drift, and polyglot `INV-*` `test_binding` checks. (Use `eidos validate eidos --json` outside Git.)
+* **If `is_clean: false` or `drift_detected: true`**: Follow `remediation_suggestions`, `boundary_violations` (remove forbidden imports/HTTP calls or adjust `ratchet_baseline` via SpecDelta), and `validation_errors` until exit code is `0` (`ratchet_shrink_candidates` are non-blocking hints).
 
 ### Stage 2: Mandatory Post-Implementation Adversarial Diff Review
 
-**Before responding**, inspect your actual diff as an adversarial reviewer — do not rely on memory of what you intended to write:
+**Before responding**, inspect your actual diff adversarially—never rely on memory:
 
 ```bash
 git diff
 ```
 
-If your harness supports subagents, you may delegate this read-only audit of `git diff` + the `eidos context --json` slice to a fresh-context reviewer subagent on multi-file edits to avoid author bias; **when subagents are unavailable (or on focused edits), execute every check below directly**:
+If subagents are available on multi-file edits, you may delegate this read-only audit of `git diff` + `eidos context --json` to a fresh-context reviewer; **otherwise execute every check directly**:
 
 1. **Requirements Completeness**: Verify every explicit and implicit requirement is met with zero `TODO`s, stubs, or partial paths.
 2. **Adversarial Code & Heuristic Falsification**: Actively try to break at least 2 assumptions in your diff:
@@ -143,7 +143,7 @@ If your harness supports subagents, you may delegate this read-only audit of `gi
 4. **Invariant & Test Rigor (`INV-*`)**: Ensure tests assert real behavior and edge cases (hermetic fixtures for ordering/logic; catalog-agnostic smoke checks on live specs) and bind every `INV-*` (`test_binding: file::func`).
 5. **Decisions & Multi-Layer Co-Evolution (`DEC-*`, `DOM-*`, `PER-*`, `POL-*`, `design/*`)**: Record non-obvious trade-offs under `decisions:` and co-evolve any affected domain terms, personas, policies, or UI/design specs.
 
-**Autonomous Remediation Rule**: Fix **every** defect, edge case, or missing test found immediately, then re-run `git diff` checks, tests, and `eidos drift --uncommitted --json` before responding. Briefly report gate status (`clean`) and key edge cases verified.
+**Autonomous Remediation Rule**: Fix every defect, edge case, or missing test immediately, then re-run tests and `eidos drift --uncommitted --json` before responding. Report gate status (`clean`) and key verified edge cases.
 
 ---
 
@@ -166,6 +166,7 @@ eidos/
 │   └── flows/                           # User Interaction Flows (FLOW-*)
 ├── personas/                            # Actor Personas (PER-*)
 ├── policies/                            # System-wide Governance & NFR Policies (POL-*)
+├── memory/                              # Shared Team Operational Memories (MEM-*)
 ├── explorations/                        # Technical Spikes & Feasibility Discovery (EXP-*)
 └── deltas/                              # SpecDelta Mutations (DLT-*)
 ```
@@ -174,3 +175,4 @@ Load the companion skill matching your task:
 * **`eidos-spec`**: YAML schemas and scaffolding (`eidos spec create/schema/list/show/delete`) for `DOM-*`, `CAP-*`, `PER-*`, `SYS-*`, `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DEC-*`, `DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`, `POL-*`, and polyglot `INV-*` test bindings.
 * **`eidos-plan`**: Technical spikes (`EXP-*`), SpecDelta lifecycle (`eidos delta create/verify/audit/apply/changelog`), declarative `expect:` post-conditions, and 5-dimension Staff Architectural Reviews.
 * **`eidos-ops`**: Greenfield initialization (`eidos init`), 8-phase brownfield codebase extraction, and Living Web Portal operations (`eidos portal serve/build`).
+* **`eidos-memory`**: Shared team operational memories (`eidos/memory/mem-*.adoc`) — proactive capture, disclosure, freshness reconciliation, and promotion (`eidos memory add/list/search/show/verify/archive/audit/promote`).

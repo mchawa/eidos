@@ -4,7 +4,7 @@ id: CAP-EXP-001
 title: "Interactive Living Web Portal & Visual Documentation Engine"
 domain: DOM-EXPERIENCE-PORTAL
 status: active
-version: "1.5.0"
+version: "1.6.0"
 
 business:
   personas:
@@ -29,6 +29,7 @@ experience:
     - "eidos/design/clients/web-portal/screens/portal-architecture.adoc"
     - "eidos/design/clients/web-portal/screens/portal-deltas.adoc"
     - "eidos/design/clients/web-portal/screens/portal-explorations.adoc"
+    - "eidos/design/clients/web-portal/screens/portal-memory.adoc"
     - "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
   flows:
     - "eidos/design/clients/web-portal/flows/spec-exploration.adoc"
@@ -80,6 +81,9 @@ technical:
     - id: INV-PORTAL-C4-FULLPAGE-AND-CONNECTION-HIGHLIGHT
       rule: "ArchitectureView must provide an in-place full-page zoomed C4 diagram stage (#btnC4FullPage, z-[45], 25%–400% zoom, readable >= 1.0x initial scale) and underscore-safe client-side SVG highlighting of any component's incoming and outgoing connections (#c4HighlightSelect, #btnC4FocusMode, data-c4-highlight, data-c4-edge-state) under Mermaid securityLevel 'strict' with clean style restoration and mutual exclusion with blast-radius highlighting."
       test_binding: "tests/test_portal.py::test_portal_c4_fullpage_and_connection_highlighting"
+    - id: INV-PORTAL-TEAM-MEMORY-SURFACE
+      rule: "The Living Web Portal must export Git-native team memories (memories[] with repo-relative paths and computed freshness) and dedicated non-blocking memory_audit hygiene diagnostics in get_portal_data() without mutating validation.warnings or validation.is_clean, deduplicate memory bodies across chunked and --single-file static exports, and expose SCR-PORTAL-MEMORY (#/memory), HomeView memory health summaries, and inline C4/Domain cross-links under INV-PORTAL-HUMAN-READABLE-UI."
+      test_binding: "tests/test_portal.py::test_portal_team_memory_payload_crosslinks_and_empty_state"
 ---
 = Capability: Interactive Living Web Portal & Visual Documentation Engine
 :toc: left
@@ -96,5 +100,6 @@ Technical specifications and architecture models are often trapped in raw text f
 * Same-origin loopback `Host` header isolation and real-time Server-Sent Events (`GET /api/events`) streaming live workspace and uncommitted drift (`/api/drift`) updates across `eidos/`, `src/`, and `tests/`.
 * Interactive SpecDelta Kanban dashboard and Chronological Timeline tracking proposed, in-review, and applied mutations.
 * Full-text fuzzy search (`⌘K`), real-time category filtering, and inline validation diagnostics (including non-blocking amber advisory validation `warnings` badges and collapsible diagnostics lists) across all catalog entities.
+* **Team Operational Memory View & Inline Entity Cross-Links (`SCR-PORTAL-MEMORY`, `INV-PORTAL-TEAM-MEMORY-SURFACE`)**: Surfaces Git-native team memories (`agent/memory`, `MEM-*`) with category/freshness filters, non-blocking `memory_audit` hygiene highlights (separate from `validation.warnings`), zero-memory onboarding guidance, `HomeView` memory health summary, and inline active memory cross-links inside C4 container/component and Domain/Capability inspection drawers.
 * **Human-First, Slug-Free Presentation (`INV-PORTAL-HUMAN-READABLE-UI`)**: Renders human-readable titles, humanized statuses/types/states, plain-language copy, and clean Mermaid diagram labels across every view, navigation chrome, command palette, specification reader, and diagram while keeping canonical IDs strictly internal for routing, DOM/Mermaid click binding, and search indexing.
 

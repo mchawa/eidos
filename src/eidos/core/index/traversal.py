@@ -188,13 +188,23 @@ def execute_k_hop_traversal(
             FROM edges e
             JOIN graph_walk gw ON (e.source_id = gw.node_id OR e.target_id = gw.node_id)
             JOIN entities cur_ent ON cur_ent.id = gw.node_id
+            JOIN entities next_ent ON next_ent.id = CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END
             WHERE gw.depth < ?
               AND e.provenance IN ({prov_ph})
               AND (
                   gw.depth = 0
                   OR cur_ent.type NOT IN (
                       'product/domain', 'design/system', 'product/persona',
-                      'delta/mutation', 'tech/architecture', 'product/system', 'product/exploration'
+                      'delta/mutation', 'tech/architecture', 'product/system', 'product/exploration',
+                      'agent/memory'
+                  )
+              )
+              AND (
+                  next_ent.type != 'agent/memory'
+                  OR (
+                      gw.depth = 0
+                      AND next_ent.status = 'active'
+                      AND ('/' || REPLACE(next_ent.file_path, '\\', '/')) NOT LIKE '%/memory/archive/%'
                   )
               )
               AND CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END NOT LIKE 'DLT-%'
@@ -264,7 +274,8 @@ def execute_incoming_references(
         FROM edges e
         JOIN entities ent ON ent.id = e.source_id
         WHERE e.target_id = ?
-          AND e.rel_type NOT IN ('contains_container', 'describes_system')
+          AND e.rel_type NOT IN ('contains_container', 'describes_system', 'anchors_entity', 'promoted_to')
+          AND ent.type != 'agent/memory'
         ORDER BY ent.type, e.source_id;
         """,
         (target,),
@@ -471,7 +482,7 @@ def query_spec_catalog_in_db(
         """
         SELECT id, type, file_path, data_json
         FROM entities
-        WHERE type NOT IN ('invariant', 'delta/mutation')
+        WHERE type NOT IN ('invariant', 'delta/mutation', 'agent/memory')
         ORDER BY file_path, id;
         """
     ).fetchall()
@@ -933,6 +944,61 @@ def compute_governance_health(
     warnings = getattr(validation_report, "warnings", None) or []
     error_count = sum(len(v) for v in schema_errs.values()) + len(broken_refs)
 
+    # 3. Non-blocking team operational memory audit summary (strictly isolated from validation)
+    from eidos.core.index.context_memories import resolve_memory_freshness_batch
+
+    mem_rows = conn.execute(
+        "SELECT id, status, file_path, data_json FROM entities WHERE type = 'agent/memory' ORDER BY id ASC;"
+    ).fetchall()
+    mem_total = len(mem_rows)
+    mem_active_batch: list[tuple[str, dict[str, Any]]] = []
+    mem_draft = 0
+    mem_promoted = 0
+    mem_archived = 0
+    for mr in mem_rows:
+        m_status = str(mr["status"] or "active").strip().lower()
+        m_fp = str(mr["file_path"] or "").replace("\\", "/")
+        is_arch = "/memory/archive/" in f"/{m_fp.lstrip('/')}"
+        if m_status == "promoted":
+            mem_promoted += 1
+        elif m_status == "draft":
+            mem_draft += 1
+        elif m_status == "archived" or is_arch:
+            mem_archived += 1
+        else:
+            m_data: dict[str, Any] = {}
+            if mr["data_json"]:
+                try:
+                    parsed_m = orjson.loads(mr["data_json"])
+                    if isinstance(parsed_m, dict):
+                        m_data = parsed_m
+                except (TypeError, ValueError):
+                    pass
+            mem_active_batch.append((str(mr["id"]), m_data))
+
+    mem_fresh = 0
+    mem_stale = 0
+    mem_expired = 0
+    mem_unverifiable = 0
+    if mem_active_batch:
+        catalog_ids = {str(r[0]) for r in conn.execute("SELECT id FROM entities;").fetchall()}
+        freshness_map = resolve_memory_freshness_batch(
+            root_res,
+            mem_active_batch,
+            catalog_ids,
+            conn=conn,
+        )
+        for mid, _ in mem_active_batch:
+            verdict = freshness_map.get(mid, ("fresh", ""))[0]
+            if verdict == "stale":
+                mem_stale += 1
+            elif verdict == "expired":
+                mem_expired += 1
+            elif verdict == "unverifiable":
+                mem_unverifiable += 1
+            else:
+                mem_fresh += 1
+
     return {
         "source_ownership": {
             "total_code_files": total_code_files,
@@ -969,5 +1035,16 @@ def compute_governance_health(
         "ratchet_debt": {
             "entry_count": ratchet_entries,
             "total_max_imports": ratchet_max_imports,
+        },
+        "memory_audit": {
+            "total": mem_total,
+            "active": len(mem_active_batch),
+            "draft": mem_draft,
+            "promoted": mem_promoted,
+            "archived": mem_archived,
+            "fresh": mem_fresh,
+            "stale": mem_stale,
+            "expired": mem_expired,
+            "unverifiable": mem_unverifiable,
         },
     }

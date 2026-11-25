@@ -14,6 +14,8 @@ export interface SpecOverview {
   clients_count: number;
   flows_count: number;
   explorations_count: number;
+  memories_count?: number;
+  active_memories_count?: number;
   domains_count?: number;
   capabilities_count?: number;
   policies_count?: number;
@@ -375,6 +377,68 @@ export interface SpecExploration {
   path?: string;
 }
 
+export interface PortalMemory {
+  id: string;
+  title: string;
+  category: "feedback" | "project" | "reference" | string;
+  status: "draft" | "active" | "promoted" | "archived" | string;
+  summary: string;
+  targets?: {
+    entities?: string[];
+    paths?: string[];
+  };
+  verified_at?: string;
+  verified_commit?: string | null;
+  expires_at?: string | null;
+  promoted_to?: string | null;
+  freshness: "fresh" | "stale" | "expired" | "unverifiable" | "archived" | string;
+  freshness_reason?: string;
+  is_archived?: boolean;
+  path?: string;
+  relative_path?: string;
+  body?: string;
+}
+
+export interface PortalMemoryAuditItem {
+  id: string;
+  title: string;
+  reason: string;
+  relative_path?: string;
+}
+
+export interface PortalMemoryDuplicatePair {
+  memory_a: string;
+  memory_b: string;
+  score: number;
+  method?: string;
+}
+
+export interface PortalMemorySpecOverlap {
+  memory_id: string;
+  spec_id: string;
+  spec_type?: string;
+  spec_title?: string;
+  score: number;
+  method?: string;
+}
+
+export interface PortalMemoryAudit {
+  total: number;
+  active: number;
+  draft: number;
+  promoted: number;
+  archived: number;
+  fresh: number;
+  stale: number;
+  expired: number;
+  unverifiable: number;
+  stale_memories: PortalMemoryAuditItem[];
+  expired_memories: PortalMemoryAuditItem[];
+  unverifiable_memories: PortalMemoryAuditItem[];
+  duplicate_pairs: PortalMemoryDuplicatePair[];
+  spec_overlaps: PortalMemorySpecOverlap[];
+}
+
 export interface SpecItem {
   id: string;
   title: string;
@@ -488,6 +552,8 @@ export interface PortalData {
   flows: SpecFlow[];
   screens: SpecScreen[];
   explorations: SpecExploration[];
+  memories?: PortalMemory[];
+  memory_audit?: PortalMemoryAudit;
   diagrams: {
     c4_context: string;
     c4_containers: string;

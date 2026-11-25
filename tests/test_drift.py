@@ -5489,3 +5489,95 @@ def test_ts_and_js_exported_variable_public_surface_drift(tmp_path: Path, monkey
         result = runner.invoke(app, ["drift", "--uncommitted", "--json"])
         assert result.exit_code != 0
         assert "MISSING_DATA" in result.stdout
+
+
+def test_agent_memory_classification_drift_and_stop_hook_isolation(tmp_path):
+    """Verify INV-DRIFT-MEMORY-FILE-ISOLATION: eidos/memory/** isolates into memory_files without
+    misclassifying domains/memory/, preserves Stop hook zero-edit Q&A short-circuit, and never masks code drift."""
+    import subprocess
+
+    from eidos.plugin.hooks import capture_session_baseline, handle_stop_hook
+    from eidos.vcs.diff import classify_changed_files
+    from eidos.vcs.drift import detect_drift
+
+    repo = tmp_path / "repo"
+    (repo / "src" / "app").mkdir(parents=True)
+    (repo / "src" / "app" / "core.py").write_text("def run():\n    return 1\n", encoding="utf-8")
+    (repo / "eidos" / "architecture" / "containers").mkdir(parents=True)
+    (repo / "eidos" / "domains" / "core").mkdir(parents=True)
+    (repo / "eidos" / "system.adoc").write_text(
+        "---\ntype: product/system\nid: SYS-MEM-DRIFT\ntitle: Mem Drift Demo\nstatus: active\narchetypes: [library]\n---\n= System\n",
+        encoding="utf-8",
+    )
+    (repo / "eidos" / "domains" / "core" / "domain.adoc").write_text(
+        "---\ntype: product/domain\nid: DOM-CORE\ntitle: Core\nstatus: active\nclassification: core\n---\n= Domain\n",
+        encoding="utf-8",
+    )
+    (repo / "eidos" / "architecture" / "containers" / "app.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-APP\ntitle: App\nstatus: active\ncontainer_type: library\nruntime: Python\nsource_path: src/app\ndomain: DOM-CORE\n---\n= App\n\n== Public Surface\n* `run`\n",
+        encoding="utf-8",
+    )
+
+    for args in (
+        ["init", "-q", "-b", "main"],
+        ["config", "user.email", "dev@eidos.dev"],
+        ["config", "user.name", "Dev"],
+        ["add", "-A"],
+        ["commit", "-qm", "init"],
+    ):
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+
+    # 1. Path classification: top-level eidos/memory/** -> memory_files; eidos/domains/memory/ -> spec_files
+    cls = classify_changed_files(
+        [
+            "eidos/memory/mem-real-sqlite-a3f9.adoc",
+            "eidos/memory/archive/mem-old-1122.adoc",
+            "eidos/domains/memory/domain.adoc",
+        ],
+        repo_root=repo,
+        eidos_dir=repo / "eidos",
+    )
+    assert cls.memory_files == [
+        "eidos/memory/mem-real-sqlite-a3f9.adoc",
+        "eidos/memory/archive/mem-old-1122.adoc",
+    ]
+    assert cls.spec_files == ["eidos/domains/memory/domain.adoc"]
+    assert cls.delta_files == []
+
+    # 2. Memory-only edit during a Q&A session preserves Stop hook short-circuit and clean drift
+    session_payload = {"session_id": "qa-mem-turn", "hook_event_name": "SessionStart", "cwd": str(repo)}
+    capture_session_baseline(session_payload, repo)
+
+    (repo / "eidos" / "memory").mkdir(parents=True)
+    (repo / "eidos" / "memory" / "mem-real-sqlite-a3f9.adoc").write_text(
+        "---\n"
+        "type: agent/memory\n"
+        "id: MEM-REAL-SQLITE-A3F9\n"
+        "title: Never mock SQLite\n"
+        "category: feedback\n"
+        "status: active\n"
+        "summary: Use tmp_path SQLite DBs in integration tests.\n"
+        "targets:\n"
+        "  entities: [CMP-REMOVED]\n"
+        "  paths: [eidos/architecture/components/removed.adoc]\n"
+        "verified_at: '2026-11-24'\n"
+        "---\n= Memory: Never mock SQLite\n\n== Guidance\nUse tmp_path.\n",
+        encoding="utf-8",
+    )
+
+    stop_payload = {"session_id": "qa-mem-turn", "hook_event_name": "Stop", "cwd": str(repo), "stop_hook_active": False}
+    assert handle_stop_hook(stop_payload, repo) == {}
+
+    drift_mem_only = detect_drift(repo, repo / "eidos", uncommitted=True)
+    assert drift_mem_only.is_clean is True
+    assert drift_mem_only.drift_detected is False
+    assert drift_mem_only.validation_warnings == []
+
+    # 3. Structural code addition + memory edit (no CNT-APP update) must still detect drift (no false-clean masking)
+    (repo / "src" / "app" / "core.py").write_text(
+        "def run():\n    return 1\n\ndef new_public_api():\n    return 2\n",
+        encoding="utf-8",
+    )
+    drift_code_plus_mem = detect_drift(repo, repo / "eidos", uncommitted=True)
+    assert drift_code_plus_mem.drift_detected is True
+    assert drift_code_plus_mem.is_clean is False

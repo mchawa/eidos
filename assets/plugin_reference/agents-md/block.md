@@ -6,9 +6,10 @@ This repository is governed by Eidos living specifications in `eidos/`: C4 archi
 - Before editing a file, run `eidos context -f <file> --json` to see its owning component, domain (`DOM-*`), capabilities (`CAP-*`), personas (`PER-*`), policies (`POL-*`), design (`DS-*`, `CLT-*`), invariants (`INV-*`), decisions (`DEC-*`), and contracts (`CTR-*`)—co-evolve every affected layer (trust its output directly without re-reading summarized `.adoc` files).
 - For discovery, prefer `eidos index find-symbol`, `eidos index search`, and `eidos index blast-radius` over raw grep, and pass the returned `location.file` and `line_start`..`line_end` to `read_file` instead of reading full files.
 - Bind every invariant to a test (`test_binding: path::func`) that mentions its `INV-*` ID.
+- When corrected on a repo workflow/gotcha, save shared team memory via `eidos memory add` and note the `MEM-*` file in your reply (never personal prefs).
 - Before finishing, run `eidos drift --uncommitted --json` and an adversarial `git diff` review (probing heuristic false positives, sibling callers, and edge cases; fix every finding before responding).
 
-Load the Eidos skills for detailed workflows: `eidos` (core workflow), `eidos-spec` (authoring specs), `eidos-plan` (SpecDeltas, explorations, reviews), and `eidos-ops` (setup, brownfield extraction, portal). Installed at:
+Load the Eidos skills for detailed workflows: `eidos` (core workflow), `eidos-spec` (authoring specs), `eidos-plan` (SpecDeltas, explorations, reviews), `eidos-ops` (setup, brownfield extraction, portal), and `eidos-memory` (shared team operational memory). Installed at:
 
 {{skill_locations}}
 

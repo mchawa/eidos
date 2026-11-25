@@ -1,6 +1,6 @@
 # AI Agent Integration
 
-Eidos is **agent-agnostic** and **model-agnostic**. It provides 4 cohesive **Agent Skills** conforming to **[agentskills.io](https://agentskills.io)** across 9 supported AI coding assistants (**Google Antigravity**, **Claude Code**, **Cursor**, **Aider**, **Cline**, **Kilo Code**, **OpenCode**, **GitHub Copilot**, and **OpenAI Codex**) and an opt-in turn-scoped `Stop` / `PreToolUse` lifecycle hook (`--hooks`) for the 6 hook-capable clients (**Google Antigravity**, **Claude Code**, **Cursor**, **Cline**, **GitHub Copilot**, and **OpenAI Codex**)—so agents can understand, query, and mutate your living specifications safely.
+Eidos is **agent-agnostic** and **model-agnostic**. It provides 5 cohesive **Agent Skills** conforming to **[agentskills.io](https://agentskills.io)** across 9 supported AI coding assistants (**Google Antigravity**, **Claude Code**, **Cursor**, **Aider**, **Cline**, **Kilo Code**, **OpenCode**, **GitHub Copilot**, and **OpenAI Codex**) and an opt-in turn-scoped `Stop` / `PreToolUse` lifecycle hook (`--hooks`) for the 6 hook-capable clients (**Google Antigravity**, **Claude Code**, **Cursor**, **Cline**, **GitHub Copilot**, and **OpenAI Codex**)—so agents can understand, query, and mutate your living specifications safely.
 
 ```
                     ┌─────────────────────────────────────────┐
@@ -68,15 +68,15 @@ eidos plugin install aider
 | Target Argument | Target Path / Config | Opt-In `--hooks` Config | Description |
 | :--- | :--- | :--- | :--- |
 | `all` | All 9 environments below | All 6 hook files below | Installs Agent Skills and configs for all 9 assistants (plus native `Stop` / `PreToolUse` hooks for the 6 hook-capable assistants when `--hooks` is passed) |
-| `antigravity` | `.agents/skills/`, `AGENTS.md` | `.agents/hooks.json` (`SessionStart` + `Stop`) | Installs 4 Eidos Agent Skills into `.agents/skills/`, updates `AGENTS.md`, and wires `.agents/hooks.json` when `--hooks` is passed |
-| `claude` | `.claude/skills/`, `CLAUDE.md`, `AGENTS.md` | `.claude/settings.json` (`SessionStart` + `Stop`) | Installs 4 Claude Code skills, imports `AGENTS.md` from `CLAUDE.md`, and wires `SessionStart` + `Stop` when `--hooks` is passed |
-| `cursor` | `.agents/skills/`, `AGENTS.md` | `.cursor/hooks.json` (`sessionStart` + `stop`, `loop_limit: 1`) | Installs 4 Eidos Agent Skills into `.agents/skills/`, updates `AGENTS.md`, and wires `.cursor/hooks.json` when `--hooks` is passed |
-| `cline` | `.agents/skills/`, `AGENTS.md` | `.clinerules/hooks/PreToolUse` (`attempt_completion`) + `TaskStart` | Installs 4 Eidos Agent Skills into `.agents/skills/`, updates `AGENTS.md`, and wires executable `.clinerules/hooks/PreToolUse` + `TaskStart` when `--hooks` is passed |
-| `copilot` | `.agents/skills/`, `AGENTS.md` | `.github/hooks/hooks.json` (`sessionStart` + `agentStop`) | Installs 4 Eidos Agent Skills into `.agents/skills/`, updates `AGENTS.md`, and wires `.github/hooks/hooks.json` when `--hooks` is passed |
-| `codex` | `.agents/skills/`, `AGENTS.md` | `.codex/hooks.json` (`SessionStart` + `Stop`) | Installs 4 Eidos Agent Skills into `.agents/skills/`, updates `AGENTS.md`, and wires `.codex/hooks.json` when `--hooks` is passed |
-| `kilocode` | `.agents/skills/`, `AGENTS.md` | _N/A_ | Installs 4 Eidos Agent Skills into `.agents/skills/` and updates `AGENTS.md` |
-| `open-code` | `.agents/skills/`, `AGENTS.md` | _N/A_ | Installs 4 Eidos Agent Skills into `.agents/skills/` and updates `AGENTS.md` |
-| `aider` | `.aider/skills/`, `.aider.conf.yml`, `AGENTS.md` | _N/A_ | Installs 4 Eidos Agent Skills into `.aider/skills/`, updates `AGENTS.md`, and appends `AGENTS.md` to `read:` in `.aider.conf.yml` |
+| `antigravity` | `.agents/skills/`, `AGENTS.md` | `.agents/hooks.json` (`SessionStart` + `Stop`) | Installs 5 Eidos Agent Skills into `.agents/skills/`, updates `AGENTS.md`, and wires `.agents/hooks.json` when `--hooks` is passed |
+| `claude` | `.claude/skills/`, `CLAUDE.md`, `AGENTS.md` | `.claude/settings.json` (`SessionStart` + `Stop`) | Installs 5 Claude Code skills, imports `AGENTS.md` from `CLAUDE.md`, and wires `SessionStart` + `Stop` when `--hooks` is passed |
+| `cursor` | `.agents/skills/`, `AGENTS.md` | `.cursor/hooks.json` (`sessionStart` + `stop`, `loop_limit: 1`) | Installs 5 Eidos Agent Skills into `.agents/skills/`, updates `AGENTS.md`, and wires `.cursor/hooks.json` when `--hooks` is passed |
+| `cline` | `.agents/skills/`, `AGENTS.md` | `.clinerules/hooks/PreToolUse` (`attempt_completion`) + `TaskStart` | Installs 5 Eidos Agent Skills into `.agents/skills/`, updates `AGENTS.md`, and wires executable `.clinerules/hooks/PreToolUse` + `TaskStart` when `--hooks` is passed |
+| `copilot` | `.agents/skills/`, `AGENTS.md` | `.github/hooks/hooks.json` (`sessionStart` + `agentStop`) | Installs 5 Eidos Agent Skills into `.agents/skills/`, updates `AGENTS.md`, and wires `.github/hooks/hooks.json` when `--hooks` is passed |
+| `codex` | `.agents/skills/`, `AGENTS.md` | `.codex/hooks.json` (`SessionStart` + `Stop`) | Installs 5 Eidos Agent Skills into `.agents/skills/`, updates `AGENTS.md`, and wires `.codex/hooks.json` when `--hooks` is passed |
+| `kilocode` | `.agents/skills/`, `AGENTS.md` | _N/A_ | Installs 5 Eidos Agent Skills into `.agents/skills/` and updates `AGENTS.md` |
+| `open-code` | `.agents/skills/`, `AGENTS.md` | _N/A_ | Installs 5 Eidos Agent Skills into `.agents/skills/` and updates `AGENTS.md` |
+| `aider` | `.aider/skills/`, `.aider.conf.yml`, `AGENTS.md` | _N/A_ | Installs 5 Eidos Agent Skills into `.aider/skills/`, updates `AGENTS.md`, and appends `AGENTS.md` to `read:` in `.aider.conf.yml` |
 
 ### The Root `AGENTS.md` Block
 
@@ -134,13 +134,14 @@ Select your AI coding assistant below for step-by-step setup instructions and co
         ├── eidos/SKILL.md            # Master orchestrator, context slicing & continuous drift detection
         ├── eidos-spec/SKILL.md       # Product, Arc42/C4 architecture, design systems & invariants (NO ADRs)
         ├── eidos-plan/SKILL.md       # Technical spikes (EXP-*), SpecDeltas (DLT-*) & Staff Architect review
-        └── eidos-ops/SKILL.md        # Greenfield init, brownfield extraction & Living Web Portal
+        ├── eidos-ops/SKILL.md        # Greenfield init, brownfield extraction & Living Web Portal
+        └── eidos-memory/SKILL.md     # Git-native team operational memory (eidos/memory/mem-*.adoc)
     ```
 
     ### 2. How Antigravity Uses Eidos
 
-    * **Master Engineering Skill**: Antigravity indexes `.agents/skills/eidos/SKILL.md` to guide agent decision-making, strictly enforcing the 8 Constitutional Guardrails (Single Source of Truth, Zero ADRs, Dual Workflow Mode Selection, Mandatory Invariant-Test Traceability, CLI-First Discovery & Determinism, Subagent Context Propagation, Zero Unreconciled Drift, and Mandatory Autonomous Pre-Completion Review) alongside `eidos context`, `eidos index`, and `eidos drift`.
-    * **Workflow-Aligned Agent Skills**: Antigravity agents invoke `eidos-spec` to author or inspect living specs, schemas (`eidos spec schema`), and invariants, `eidos-plan` for explorations, SpecDeltas, and Staff reviews, and `eidos-ops` for repository initialization, brownfield extraction, and Web Portal operations.
+    * **Master Engineering Skill**: Antigravity indexes `.agents/skills/eidos/SKILL.md` to guide agent decision-making, strictly enforcing the 8 Constitutional Guardrails (Single Source of Truth, Zero ADRs, Dual Workflow Mode Selection, Mandatory Invariant-Test Traceability, CLI-First Discovery & Determinism, Subagent Context Propagation, Zero Unreconciled Drift, and Mandatory Autonomous Pre-Completion Review) alongside `eidos context`, `eidos index`, `eidos memory`, and `eidos drift`.
+    * **Workflow-Aligned Agent Skills**: Antigravity agents invoke `eidos-spec` to author or inspect living specs, schemas (`eidos spec schema`), and invariants, `eidos-plan` for explorations, SpecDeltas, and Staff reviews, `eidos-ops` for repository initialization, brownfield extraction, and Web Portal operations, and `eidos-memory` for shared team operational memories (`eidos memory`).
     * **Stateless Stop Hook**: When installed with `--hooks`, `eidos-drift-gate` (`eidos hook` in `.agents/hooks.json`) runs at task completion (`Stop`) to verify AsciiDoc schemas, invariant test bindings, and spec-to-code synchronization.
     * **Root `AGENTS.md`**: The shared Eidos block in the repository's root `AGENTS.md` is loaded as a project rule and lists `.agents/skills/` as the skill location.
 
@@ -151,7 +152,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     ### Claude Code (CLI)
 
     Claude Code natively discovers project-scoped skills and lifecycle hooks inside `.claude/`:
-    1. **Skills (`.claude/skills/*/SKILL.md`)**: Domain expertise and orchestration workflows automatically discovered via progressive disclosure and directly invokable as `/eidos`, `/eidos-spec`, `/eidos-plan`, and `/eidos-ops`.
+    1. **Skills (`.claude/skills/*/SKILL.md`)**: Domain expertise and orchestration workflows automatically discovered via progressive disclosure and directly invokable as `/eidos`, `/eidos-spec`, `/eidos-plan`, `/eidos-ops`, and `/eidos-memory`.
     2. **Hooks (`.claude/settings.json`)**: Deterministic `Stop` lifecycle hook (`eidos hook`) that checks specification validity, invariant test bindings, and spec-to-code drift when Claude finishes a turn.
 
     #### 1. Automatic Installation
@@ -164,7 +165,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     ```
 
     This automatically:
-    - Installs all 4 cohesive Eidos skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`) into `.claude/skills/<skill-name>/SKILL.md` so they are immediately discovered by Claude Code on startup.
+    - Installs all 5 cohesive Eidos skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`, `eidos-memory`) into `.claude/skills/<skill-name>/SKILL.md` so they are immediately discovered by Claude Code on startup.
     - When `--hooks` is passed, non-destructively registers the Eidos `SessionStart` baseline and `Stop` drift hooks (`eidos hook`, or `uvx --from eidos-ai==<ver> eidos hook` when `--launcher uvx` is passed) under `hooks.SessionStart` and `hooks.Stop` in `.claude/settings.json` while preserving your existing settings and custom hooks.
     - Tracks managed skill files in `.claude/.eidos-manifest.json` for clean updates and uninstallation (`eidos plugin uninstall claude`).
     - Writes the shared Eidos block into the root `AGENTS.md` and a one-line import block into the root `CLAUDE.md` so Claude Code loads it as project memory (skipped if your `CLAUDE.md` already imports `@AGENTS.md`):
@@ -189,7 +190,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     ```
 
     This automatically:
-    - Installs all 4 Eidos Agent Skills into `.agents/skills/`.
+    - Installs all 5 Eidos Agent Skills into `.agents/skills/`.
     - Writes the shared Eidos block into the root `AGENTS.md` (see [The Root `AGENTS.md` Block](#the-root-agentsmd-block)), which Cursor Composer and Chat agents load as project instructions.
     - When `--hooks` is passed, non-destructively registers the Eidos `sessionStart` baseline and `stop` (`loop_limit: 1`) hooks in `.cursor/hooks.json`.
 
@@ -205,7 +206,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     ```
 
     This automatically:
-    - Installs all 4 Eidos Agent Skills into `.agents/skills/`.
+    - Installs all 5 Eidos Agent Skills into `.agents/skills/`.
     - Writes the shared Eidos block into the root `AGENTS.md`, which GitHub Copilot loads natively. Your own Copilot instruction files are never touched.
     - When `--hooks` is passed, non-destructively registers the Eidos `sessionStart` baseline and `agentStop` hooks in `.github/hooks/hooks.json`.
 
@@ -224,7 +225,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     ```
 
     This automatically:
-    - Installs all 4 Eidos Agent Skills into `.agents/skills/`.
+    - Installs all 5 Eidos Agent Skills into `.agents/skills/`.
     - Writes the shared Eidos block into the root `AGENTS.md`, which Codex loads as project instructions.
     - When `--hooks` is passed, non-destructively registers the Eidos `SessionStart` baseline and `Stop` hooks in `.codex/hooks.json`.
 
@@ -258,6 +259,8 @@ AI agents execute Eidos CLI commands directly from terminal / subshell tools. Al
 | `eidos index blast-radius` | `<symbol>`, `--depth 2`, `--json` | Computes transitive dependency and governance blast radius for a symbol or spec path. |
 | `eidos index status` | `--json` | Reports index health, cache size, AST telemetry, entity/edge counts, and auto-sync freshness. |
 | `eidos index sync` | `--force` | Incrementally synchronizes or force-rebuilds the architectural knowledge graph. |
+| `eidos memory add` | `--title`, `--category`, `--summary`, `--entity`, `--file`, `--json` | Creates a schema-validated Git-native team memory (`MEM-*`) under `eidos/memory/`. |
+| `eidos memory audit` | `--json` | Runs a non-blocking audit across freshness, duplicates, and formal spec overlaps. |
 | `eidos drift` | `--uncommitted`, `--base <ref>`, `--json` | Inspects spec-to-code drift, boundary-aware spec anchoring, and polyglot `INV-*` test bindings. |
 | `eidos validate` | `[PATH]`, `--json` | Validates all living specifications against their bundled v1 JSON Schemas, `x-eidos-ref` links, and bidirectional contract parity. |
 | `eidos doctor` | `--path <path>`, `--json` | Runs workspace health diagnostics across CLI binary, root `AGENTS.md`, living specs, index, and agent plugin hooks. |
@@ -276,7 +279,7 @@ AI agents execute Eidos CLI commands directly from terminal / subshell tools. Al
 | `eidos delta apply` | `<id>`, `--verify/--no-verify`, `--json` | Verifies declared mutations by default (`--verify`), validates the SpecDelta, and reconciles it in-place (`status: applied`). |
 | `eidos delta archive` | `--keep-recent <n>`, `--dry-run`, `--json` | Partitions and slims older terminal SpecDeltas and Explorations into `archive/` subdirectories. |
 | `eidos delta changelog` | `--stdout`, `--output <file>` | Compiles Keep a Changelog release notes from Git tags and applied SpecDeltas. |
-| `eidos init` | `[PATH]`, `--title <title>`, `--force` | Bootstraps a repository with the 11-directory Eidos specification skeleton, `eidos/.gitignore`, and `eidos/system.adoc`. |
+| `eidos init` | `[PATH]`, `--title <title>`, `--force` | Bootstraps a repository with the 12-directory Eidos specification skeleton (including `memory/`), `eidos/.gitignore`, and `eidos/system.adoc`. |
 
 ---
 
@@ -415,12 +418,13 @@ How `eidos hook` works:
 
 ## Bundled Skills for AI Agents
 
-When using any of the 9 supported agent clients (Google Antigravity, Claude Code, Cursor, Aider, Cline, Kilo Code, OpenCode, OpenAI Codex, or GitHub Copilot), 4 cohesive workflow skills are available:
+When using any of the 9 supported agent clients (Google Antigravity, Claude Code, Cursor, Aider, Cline, Kilo Code, OpenCode, OpenAI Codex, or GitHub Copilot), 5 cohesive workflow skills are available:
 
 * **`eidos`**: Master workflow orchestrator (Direct vs. Planned Mode), token-efficient architectural context slicing (`eidos context`), and continuous spec-to-code drift detection (`eidos drift`).
 * **`eidos-spec`**: Unified authoring reference for Product domains (`DOM-*`), capabilities (`CAP-*`), personas (`PER-*`), Arc42/C4 architecture (`CNT-*`, standalone `CMP-*`, `CTR-*`, embedded `decisions:`), Multi-Design Systems (`DS-*`, W3C Design Tokens, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`), and system policies/invariants (`POL-*`, `INV-*` with polyglot `file::func` test bindings).
 * **`eidos-plan`**: Technical feasibility spikes (`EXP-*`), the SpecDelta mutation lifecycle (`DLT-*`, `create`, `verify`, `audit`, `apply`, `changelog`), and 5-dimension Staff Systems Architect reviews.
 * **`eidos-ops`**: Greenfield repository initialization (`eidos init`), systematic reverse-engineering of brownfield codebases into living specifications, and Living Web Portal operations (`eidos portal serve`, `eidos portal build`).
+* **`eidos-memory`**: Shared Git-native team operational memory (`eidos/memory/mem-*.adoc`) — automatic capture with explicit disclosure, freshness verification, non-blocking audits, and promotion into formal `DEC-*`/`INV-*`/`POL-*` specs (`eidos memory`).
 
 ---
 

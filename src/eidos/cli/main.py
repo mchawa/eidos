@@ -26,6 +26,7 @@ from eidos.cli._shared import (
 )
 from eidos.cli.delta_commands import delta_app
 from eidos.cli.index_commands import index_app
+from eidos.cli.memory_commands import memory_app
 from eidos.cli.plugin_commands import plugin_app
 from eidos.cli.portal_commands import portal_app
 from eidos.cli.spec_commands import spec_app
@@ -39,6 +40,7 @@ app = typer.Typer(
 app.add_typer(spec_app, name="spec", rich_help_panel=PANEL_SPECS)
 app.add_typer(delta_app, name="delta", rich_help_panel=PANEL_SPECS)
 app.add_typer(index_app, name="index", rich_help_panel=PANEL_KNOWLEDGE)
+app.add_typer(memory_app, name="memory", rich_help_panel=PANEL_KNOWLEDGE)
 app.add_typer(portal_app, name="portal", rich_help_panel=PANEL_PORTAL)
 app.add_typer(plugin_app, name="plugin", rich_help_panel=PANEL_PLUGINS)
 

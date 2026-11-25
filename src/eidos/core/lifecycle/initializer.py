@@ -125,6 +125,7 @@ def init_repository(
         eidos_dir / "personas",
         eidos_dir / "deltas",
         eidos_dir / "explorations",
+        eidos_dir / "memory",
         eidos_dir / "design" / "clients",
         eidos_dir / "design" / "flows",
         eidos_dir / "design" / "systems" / "core" / "components",

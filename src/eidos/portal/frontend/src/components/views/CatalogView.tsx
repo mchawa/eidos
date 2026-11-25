@@ -14,6 +14,7 @@ import {
   Palette,
   ShieldCheck,
   Lightbulb,
+  Brain,
   ListTree,
   Table as TableIcon,
   Box,
@@ -136,6 +137,15 @@ const SPEC_CATEGORIES: SpecCategoryDefinition[] = [
     color: "text-purple-500",
     badgeBg: "bg-purple-500/10 text-purple-500 border-purple-500/20",
     types: ["delta/mutation"],
+  },
+  {
+    id: "memory",
+    name: "Team Memory",
+    description: "Shared operational notes, lessons, and project context",
+    icon: Brain,
+    color: "text-teal-500",
+    badgeBg: "bg-teal-500/10 text-teal-500 border-teal-500/20",
+    types: ["agent/memory"],
   },
 ];
 
@@ -475,6 +485,33 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
             badge: "Archived",
             icon: GitBranch,
             specs: archived,
+          });
+        }
+      } else if (cat.id === "memory") {
+        const isArchMem = (s: SpecItem) =>
+          Boolean(
+            (s.path && s.path.replace(/\\/g, "/").includes("memory/archive/")) ||
+              s.frontmatter?.status?.toLowerCase() === "archived" ||
+              s.frontmatter?.status?.toLowerCase() === "promoted"
+          );
+        const archivedMems = catSpecs.filter((s) => isArchMem(s));
+        const activeMems = catSpecs.filter((s) => !isArchMem(s));
+        if (activeMems.length > 0) {
+          subgroups.push({
+            id: "subgroup-memory-active",
+            name: `Active Team Notes (${activeMems.length})`,
+            badge: "Active",
+            icon: Brain,
+            specs: activeMems,
+          });
+        }
+        if (archivedMems.length > 0) {
+          subgroups.push({
+            id: "subgroup-memory-archived",
+            name: `Archived & Promoted Notes (${archivedMems.length})`,
+            badge: "Archived",
+            icon: Brain,
+            specs: archivedMems,
           });
         }
       }

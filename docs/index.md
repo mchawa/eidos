@@ -48,19 +48,20 @@ Modern software development often suffers from two major problems:
 * **Embedded SQLite + FTS5 + AST Knowledge Graph**: Auto-synchronizes in `<5ms` (`eidos/.cache/index.db`) to serve token-budgeted 3-tier context slices (`eidos context`), structural repo maps (`eidos index repo-map`), symbol resolution (`eidos index find-symbol`), and recursive blast-radius analysis.
 * **Bidirectional Polyglot Invariant-Test Traceability (`POL-002`)**: Every capability and policy enforces invariants (`INV-*`, `POL-*`) statically verified against automated tests across Python, TypeScript/JS, Go, Rust, Java, and Kotlin via `eidos drift`.
 * **Multi-Design Systems & W3C Tokens**: White-label and multi-brand design systems (`DS-*`), official W3C DTCG tokens, UI component contracts (`UIC-*`), client manifests (`CLT-*`), screen state machines (`SCR-*`), and interaction flows (`FLOW-*`).
-* **Agent-Agnostic Plugin, 4 Cohesive Skills & Stateless Stop Hook**: Equips AI agents (Google Antigravity, Claude Code, Cursor, GitHub Copilot, Aider, Cline, Kilo Code, OpenCode, Codex) with 4 Discovery-First workflow skills, dynamic schema introspection (`eidos spec schema`), and an opt-in stateless 1-turn `Stop` drift gate (`eidos hook`).
-* **Interactive Air-Gapped Living Portal**: Generates a self-contained static visual C4 architecture explorer with URL hash deep-linking (`#/...`), a full-page zoomed C4 diagram stage, interactive component-and-connection SVG highlighting, client-side Blast Radius simulation, uncramped container/component Full Specification reading, a Governance Health Scorecard, first-class Contract (`CTR-*`) inspection, and SpecDelta Kanban/Timeline views directly from your specs with zero Node.js runtime dependencies.
+* **Git-Native Team Operational Memory (`MEM-*`)**: Captures shared repository gotchas, workflow conventions, and environment notes in Git (`eidos/memory/`, `type: agent/memory`) via `eidos memory`, automatically attaches anchored notes to `eidos context` slices with Git-verified freshness (`fresh`/`stale`/`expired`), runs non-blocking duplicate/spec-overlap audits, and promotes durable rules into `DEC-*`/`INV-*`/`POL-*` specs.
+* **Agent-Agnostic Plugin, 5 Cohesive Skills & Stateless Stop Hook**: Equips AI agents (Google Antigravity, Claude Code, Cursor, GitHub Copilot, Aider, Cline, Kilo Code, OpenCode, Codex) with 5 Discovery-First workflow skills (including `eidos-memory`), dynamic schema introspection (`eidos spec schema`), and an opt-in stateless 1-turn `Stop` drift gate (`eidos hook`).
+* **Interactive Air-Gapped Living Portal**: Generates a self-contained static visual C4 architecture explorer with URL hash deep-linking (`#/...`), a full-page zoomed C4 diagram stage, interactive component-and-connection SVG highlighting, client-side Blast Radius simulation, uncramped container/component Full Specification reading, a Governance Health Scorecard, first-class Contract (`CTR-*`) inspection, a dedicated **Team Memory** view (`#/memory`) with freshness filters and inline entity cross-links, and SpecDelta Kanban/Timeline views directly from your specs with zero Node.js runtime dependencies.
 
 ---
 
 ## How Eidos Works in 4 Steps
 
-1. **Slice Context (`eidos context`)**: Before touching code, engineers or AI agents query the embedded SQLite knowledge graph for a token-budgeted slice (`anchor`, `guardrails`, or `deep`) containing the owning `CNT-*`/`CMP-*`, contracts (`CTR-*`), active invariants (`INV-*`), and historical decisions (`DEC-*`).
+1. **Slice Context (`eidos context`)**: Before touching code, engineers or AI agents query the embedded SQLite knowledge graph for a token-budgeted slice (`anchor`, `guardrails`, or `deep`) containing the owning `CNT-*`/`CMP-*`, contracts (`CTR-*`), active invariants (`INV-*`), historical decisions (`DEC-*`), and anchored team memories (`MEM-*`).
 2. **Choose Workflow Mode (Direct vs. Planned)**:
    * **Direct Mode**: Co-evolve code, tests, and `.adoc` specifications in-place for localized fixes and single-container enhancements.
    * **Planned Mode**: Scaffold a declarative **SpecDelta (`DLT-*`)** (or run a hypothesis-driven **Exploration (`EXP-*`)** spike) for cross-container features or breaking contract changes.
 3. **Implement & Bind Invariants**: Write implementation code in `src/` and bind every new or modified invariant (`INV-*`) to an automated test via `test_binding: path/to/test_file::test_function`.
-4. **Verify Zero Drift (`eidos validate && eidos drift`)**: Eidos validates all 16 JSON Schemas, checks `x-eidos-ref` graph integrity, verifies substantive spec updates across 1-hop component neighborhoods, and confirms polyglot `INV-*` test coverage.
+4. **Verify Zero Drift (`eidos validate && eidos drift`)**: Eidos validates all 17 JSON Schemas, checks `x-eidos-ref` graph integrity, verifies substantive spec updates across 1-hop component neighborhoods, and confirms polyglot `INV-*` test coverage.
 
 ---
 
@@ -102,6 +103,6 @@ eidos doctor
 * **[Core Concepts](concepts/living-specs.md)**: Learn about Living Specs, Embedded Decisions (`DEC-*`), SpecDeltas, Invariants, and Dual Workflows.
 * **[Explorations & Spikes](concepts/explorations.md)**: Hypothesis-driven technical discovery and prototype spikes (`EXP-*`).
 * **[Multi-Design Systems](concepts/design.md)**: Multi-brand design systems, W3C tokens, and UI component contracts.
-* **[Schema Glossary](concepts/schema-glossary.md)**: Comprehensive reference for all 16 living specification schemas.
+* **[Schema Glossary](concepts/schema-glossary.md)**: Comprehensive reference for all 17 living specification schemas.
 * **[CLI Reference](guides/cli.md)**: Explore the complete command-line interface.
 

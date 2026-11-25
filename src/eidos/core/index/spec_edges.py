@@ -58,7 +58,8 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                       'asserts', 'contains_container', 'describes_system',
                       'graduated_from', 'graduated_to', 'implemented_by',
                       'styled_by', 'styles_container', 'extends',
-                      'serves_persona', 'delivered_by', 'has_screen', 'has_flow', 'uses_screen'
+                      'serves_persona', 'delivered_by', 'has_screen', 'has_flow', 'uses_screen',
+                      'anchors_entity', 'promoted_to'
                   );
                 """,
                 tuple(chunk),
@@ -72,7 +73,8 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                   AND rel_type IN (
                       'contains_container', 'describes_system', 'graduated_from', 'graduated_to',
                       'implemented_by', 'styled_by', 'styles_container', 'extends',
-                      'serves_persona', 'delivered_by', 'has_screen', 'has_flow', 'uses_screen'
+                      'serves_persona', 'delivered_by', 'has_screen', 'has_flow', 'uses_screen',
+                      'anchors_entity', 'promoted_to'
                   );
                 """,
                 tuple(chunk),
@@ -367,6 +369,34 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                     elif not str(target_val).startswith("DLT-"):
                         t_set = archived_delta_targets.setdefault(doc_id, set())
                         t_set.add(target_val)
+
+        if doc_type == "agent/memory":
+            mem_targets = fm.get("targets")
+            if isinstance(mem_targets, dict):
+                raw_mem_entities = mem_targets.get("entities")
+                for ent_ref in raw_mem_entities if isinstance(raw_mem_entities, list) else []:
+                    ent_id = _resolve_ref(ent_ref)
+                    if ent_id:
+                        upsert_edge(
+                            conn,
+                            doc_id,
+                            ent_id,
+                            "anchors_entity",
+                            "declared_spec",
+                            f"{spec_fp}:targets.entities",
+                        )
+            promoted_ref = fm.get("promoted_to")
+            if isinstance(promoted_ref, str) and promoted_ref.strip():
+                prom_id = _resolve_ref(promoted_ref)
+                if prom_id:
+                    upsert_edge(
+                        conn,
+                        doc_id,
+                        prom_id,
+                        "promoted_to",
+                        "declared_spec",
+                        f"{spec_fp}:promoted_to",
+                    )
 
         for inv in invariants:
             iid = inv.get("id") if isinstance(inv, dict) else None

@@ -21,6 +21,21 @@ from eidos.core.index.context_globs import (
 from eidos.core.index.context_globs import (
     split_brace_aware_csv as split_brace_aware_csv,
 )
+from eidos.core.index.context_memories import (
+    DEFAULT_MEMORY_COMMIT_DRIFT_THRESHOLD as DEFAULT_MEMORY_COMMIT_DRIFT_THRESHOLD,
+)
+from eidos.core.index.context_memories import (
+    attach_context_memories as attach_context_memories,
+)
+from eidos.core.index.context_memories import (
+    evaluate_memory_freshness as evaluate_memory_freshness,
+)
+from eidos.core.index.context_memories import (
+    extract_memory_sections as extract_memory_sections,
+)
+from eidos.core.index.context_memories import (
+    resolve_memory_freshness_batch as resolve_memory_freshness_batch,
+)
 from eidos.core.index.context_models import (
     STOP_WORDS as STOP_WORDS,
 )
@@ -99,6 +114,7 @@ def build_tiered_context_slice(
     expanded_cnt_ids: list[str] = []
     direct_cap_ids: list[str] = []
     expanded_cap_ids: list[str] = []
+    direct_anchor_ids: set[str] = set()
 
     def _add_reason(eid: str, reason: str) -> None:
         bucket = matched_reasons.setdefault(eid, [])
@@ -167,6 +183,8 @@ def build_tiered_context_slice(
         expand_cap_components: bool = False,
     ) -> None:
         ranks = hit_ranks or {}
+        if eid:
+            direct_anchor_ids.add(eid)
         if etype in ("tech/container", "tech/component"):
             matched_components[eid] = data
             if eid not in direct_cnt_ids:
@@ -1201,6 +1219,31 @@ def build_tiered_context_slice(
         if cid not in provenance_tags:
             _record_prov(cid, "declared_spec", str(comp_entry.get("file_path") or cid))
 
+    all_matched_entity_ids = (
+        set(matched_components.keys())
+        | set(matched_contracts.keys())
+        | set(matched_capabilities.keys())
+        | set(matched_invariants.keys())
+        | set(matched_policies.keys())
+        | {str(d) for d in domains if d}
+        | comp_domain_ids
+    )
+    attached_memories = attach_context_memories(
+        conn,
+        index.root,
+        tier=tier,
+        clean_files=clean_files,
+        requested_files=requested_files,
+        direct_entity_ids=direct_anchor_ids,
+        expanded_entity_ids=all_matched_entity_ids - direct_anchor_ids,
+        task=task,
+        has_explicit_query=has_explicit_query,
+        has_architectural_matches=bool(sorted_comps or sorted_ctrs or sorted_caps or ordered_invs or sorted_pols),
+        use_semantic=use_semantic,
+        eidos_dir=getattr(index, "eidos_dir", None),
+        db_path=getattr(index, "db_path", None),
+    )
+
     slice_obj = TieredContextSlice(
         tier=tier,
         query={"files": requested_files, "component": component, "task": task},
@@ -1209,6 +1252,7 @@ def build_tiered_context_slice(
         capabilities=sorted_caps,
         invariants=ordered_invs,
         policies=sorted_pols,
+        memories=attached_memories,
         matched_reasons=matched_reasons,
         provenance_tags=provenance_tags,
         query_latency_ms=0.0,

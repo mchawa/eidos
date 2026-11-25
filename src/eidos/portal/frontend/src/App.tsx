@@ -7,6 +7,7 @@ import { CatalogView } from "@/components/views/CatalogView";
 import { BusinessView } from "@/components/views/BusinessView";
 import { DesignView } from "@/components/views/DesignView";
 import { ExplorationsView } from "@/components/views/ExplorationsView";
+import { MemoryView } from "@/components/views/MemoryView";
 import { CommandDialog, type CommandItem } from "@/components/ui/command";
 import type { PortalData, SpecDriftStatus } from "@/types";
 import { SPEC_NAV_EVENT, resolveSpecTarget, type SpecNavDetail } from "@/lib/specNav";
@@ -17,6 +18,9 @@ import {
   formatContainerType,
   formatDisplayTitle,
   formatFlowType,
+  formatHumanProse,
+  formatMemoryCategory,
+  formatMemoryFreshness,
   formatProtocol,
   formatSpecType,
   formatStatus,
@@ -33,6 +37,7 @@ const VALID_TABS = new Set<TabKey>([
   "architecture",
   "deltas",
   "explorations",
+  "memory",
   "catalog",
 ]);
 
@@ -134,6 +139,7 @@ function hydratePortalData(raw: PortalData): PortalData {
     personas: withBody(raw.personas || []),
     policies: withBody(raw.policies || []),
     explorations: withBody(raw.explorations || []),
+    memories: withBody(raw.memories || []),
     clients: withBody(raw.clients || []),
     screens: withBody(raw.screens || []),
     flows: withBody(raw.flows || []),
@@ -174,6 +180,7 @@ export function App() {
   const [selectedDelta, setSelectedDelta] = React.useState<{ id: string; nonce: number } | null>(null);
   const [selectedComponent, setSelectedComponent] = React.useState<{ id: string; nonce: number } | null>(null);
   const [selectedExploration, setSelectedExploration] = React.useState<{ id: string; nonce: number } | null>(null);
+  const [selectedMemory, setSelectedMemory] = React.useState<{ id: string; nonce: number } | null>(null);
   const [selectedBusiness, setSelectedBusiness] = React.useState<{ id: string; nonce: number } | null>(null);
   const [selectedDesign, setSelectedDesign] = React.useState<{ id: string; nonce: number } | null>(null);
   const [liveSyncActive, setLiveSyncActive] = React.useState<boolean>(!isStaticBundle);
@@ -187,17 +194,39 @@ export function App() {
     }
   }, []);
 
+  const clearOtherSelections = React.useCallback(() => {
+    setFocusSpec(null);
+    setSelectedDelta(null);
+    setSelectedComponent(null);
+    setSelectedExploration(null);
+    setSelectedMemory(null);
+    setSelectedBusiness(null);
+    setSelectedDesign(null);
+  }, []);
+
   const routeToEntity = React.useCallback(
     (rawId: string, preferredTab?: TabKey) => {
       const id = rawId.trim();
       if (!id) return;
       const nonce = Date.now();
       const upper = id.toUpperCase();
+      clearOtherSelections();
 
       if (preferredTab === "catalog") {
         setFocusSpec({ id, nonce });
         setActiveTab("catalog", id);
         return;
+      }
+
+      if (upper.startsWith("DEC-")) {
+        const matchedDec = (data?.decisions || []).find(
+          (d) => d.id && d.id.toUpperCase() === upper
+        );
+        const ownerId = matchedDec?.source_id || matchedDec?.source_entity;
+        if (ownerId && ownerId.toUpperCase() !== upper) {
+          routeToEntity(ownerId);
+          return;
+        }
       }
 
       if (upper.startsWith("CNT-") || upper.startsWith("CMP-") || upper.startsWith("CTR-")) {
@@ -209,6 +238,9 @@ export function App() {
       } else if (upper.startsWith("EXP-")) {
         setSelectedExploration({ id, nonce });
         setActiveTab("explorations", id);
+      } else if (upper.startsWith("MEM-")) {
+        setSelectedMemory({ id, nonce });
+        setActiveTab("memory", id);
       } else if (
         upper.startsWith("DOM-") ||
         upper.startsWith("CAP-") ||
@@ -232,7 +264,7 @@ export function App() {
         setActiveTab("catalog", id);
       }
     },
-    [setActiveTab]
+    [clearOtherSelections, data?.decisions, setActiveTab]
   );
 
   // Sync URL hash (#/<tab>/<entity-id>) on initial load and hashchange (DEC-PORTAL-HASH-ROUTING)
@@ -249,6 +281,8 @@ export function App() {
           setSelectedDelta({ id: parsed.entityId, nonce });
         } else if (parsed.tab === "explorations") {
           setSelectedExploration({ id: parsed.entityId, nonce });
+        } else if (parsed.tab === "memory") {
+          setSelectedMemory({ id: parsed.entityId, nonce });
         } else if (parsed.tab === "business") {
           setSelectedBusiness({ id: parsed.entityId, nonce });
         } else if (parsed.tab === "design") {
@@ -294,6 +328,7 @@ export function App() {
       selectedDelta?.id ||
       selectedComponent?.id ||
       selectedExploration?.id ||
+      selectedMemory?.id ||
       selectedBusiness?.id ||
       selectedDesign?.id;
     if (!activeEntityId) return;
@@ -324,6 +359,7 @@ export function App() {
     selectedDelta?.id,
     selectedComponent?.id,
     selectedExploration?.id,
+    selectedMemory?.id,
     selectedBusiness?.id,
     selectedDesign?.id,
   ]);
@@ -431,13 +467,16 @@ export function App() {
         routeToEntity(spec.id, preferredTab);
         return;
       }
-      // Also support direct entity IDs (INV-*, CMP-*, DEC-*) that may be embedded inside a parent spec
+      // Also support direct entity IDs (INV-*, CMP-*, DEC-*, MEM-*) that may be embedded inside a parent spec
       const trimmed = (target || "").trim();
+      const upperTarget = trimmed.toUpperCase();
       if (
-        trimmed.startsWith("INV-") ||
-        trimmed.startsWith("CMP-") ||
-        trimmed.startsWith("CTR-") ||
-        trimmed.startsWith("CNT-")
+        upperTarget.startsWith("INV-") ||
+        upperTarget.startsWith("CMP-") ||
+        upperTarget.startsWith("CTR-") ||
+        upperTarget.startsWith("CNT-") ||
+        upperTarget.startsWith("DEC-") ||
+        upperTarget.startsWith("MEM-")
       ) {
         routeToEntity(trimmed, preferredTab);
         return;
@@ -630,6 +669,30 @@ export function App() {
       });
     });
 
+    // Team Operational Memories (MEM-*)
+    (data.memories || []).forEach((mem) => {
+      seenIds.add(mem.id);
+      const targetsText = [
+        ...(mem.targets?.entities || []),
+        ...(mem.targets?.paths || []),
+      ].join(" ");
+      const memStateLabel =
+        mem.status === "promoted"
+          ? "Promoted"
+          : mem.status === "draft"
+          ? "Draft"
+          : formatMemoryFreshness(mem.freshness);
+      const cleanSummary = mem.summary ? formatHumanProse(mem.summary, labelIndex).slice(0, 80) : "";
+      items.push({
+        id: mem.id,
+        title: formatHumanProse(formatDisplayTitle(mem.title, mem.id), labelIndex),
+        subtitle: `${formatMemoryCategory(mem.category)} • ${memStateLabel}${cleanSummary ? ` • ${cleanSummary}` : ""}`,
+        searchText: `${mem.id} ${mem.title} ${mem.category} ${mem.status} ${mem.freshness} ${mem.summary || ""} ${targetsText} ${extractHeadings(mem.body)}`.toLowerCase(),
+        category: "memories",
+        raw: mem,
+      });
+    });
+
     // Design entities (DS-*, CLT-*, UIC-*, SCR-*, FLOW-*)
     [
       ...(data.design_systems || []),
@@ -689,6 +752,9 @@ export function App() {
     } else if (item.category === "explorations") {
       setSelectedExploration({ id: item.id, nonce });
       setActiveTab("explorations", item.id);
+    } else if (item.category === "memories") {
+      setSelectedMemory({ id: item.id, nonce });
+      setActiveTab("memory", item.id);
     } else if (item.category === "design") {
       setSelectedDesign({ id: item.id, nonce });
       setActiveTab("design", item.id);
@@ -733,6 +799,10 @@ export function App() {
         totalSpecs={data.overview.total_specs}
         deltasCount={data.overview.deltas_count}
         explorationsCount={data.explorations?.length || data.overview.explorations_count || 0}
+        memoriesCount={data.memories?.length || data.overview.memories_count || 0}
+        memoryAttentionCount={
+          (data.memory_audit?.stale || 0) + (data.memory_audit?.expired || 0)
+        }
       />
 
       {/* Main Content Area */}
@@ -831,6 +901,21 @@ export function App() {
                 onNavigateDelta={(deltaId) => {
                   setSelectedDelta({ id: deltaId, nonce: Date.now() });
                   setActiveTab("deltas", deltaId);
+                }}
+              />
+            )}
+            {activeTab === "memory" && (
+              <MemoryView
+                data={data}
+                initialSelectedId={selectedMemory?.id}
+                initialSelectedNonce={selectedMemory?.nonce}
+                onSelectMemory={(id) => {
+                  setSelectedMemory(id ? { id, nonce: Date.now() } : null);
+                  setActiveTab("memory", id || undefined);
+                }}
+                onClearSelected={() => {
+                  setSelectedMemory(null);
+                  setActiveTab("memory");
                 }}
               />
             )}

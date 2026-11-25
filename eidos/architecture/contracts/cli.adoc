@@ -3,7 +3,7 @@ type: tech/contract
 id: CTR-EIDOS-CLI
 title: "Eidos Command-Line Interface Contract"
 status: active
-version: "1.8.0"
+version: "1.9.0"
 protocol: "cli_args"
 container: "CNT-EIDOS-CLI"
 specification_file: "src/eidos/cli/main.py"
@@ -33,7 +33,7 @@ Validates all specification documents under `PATH` (defaults to `./eidos`) again
   - `1`: One or more validation errors, broken cross-references, or warnings under `--fail-on-warnings` found.
 
 === `eidos context [--file PATH] [--component ID] [--task PROMPT] [--uncommitted] [--base REF] [--head REF] [--tier TIER] [--semantic/--no-semantic] [--json] [--path PATH]`
-Extracts a compact, token-efficient architectural subgraph context slice (C4 components, bound contracts, domain capabilities, active invariants, governing policies, and structured epistemic `provenance_tags` on `guardrails` and `deep` tiers).
+Extracts a compact, token-efficient architectural subgraph context slice (C4 components, bound contracts, domain capabilities, active invariants, governing policies, structured epistemic `provenance_tags` on `guardrails` and `deep` tiers, and optional secondary budgeted team operational `memories` (`MEM-*`) with computed freshness when active memories match).
 * **Options**:
   - `--file, -f`: Target source file path(s), comma-separated paths, or quoted glob patterns including `{a,b}` brace globs (e.g. `'apps/*/Dockerfile'`, `'src/**/*.{ts,tsx}'`).
   - `--component, -c`: Target component identifier (e.g. `CMP-EIDOS-CLI`).
@@ -52,7 +52,7 @@ Extracts a compact, token-efficient architectural subgraph context slice (C4 com
 === `eidos index`
 Manages the embedded SQLite architectural knowledge graph and FTS5 hybrid search index (`eidos/.cache/index.db`).
 * **Sub-commands**:
-  - `status [--path <path>] [--json]`: Displays index health, `SCHEMA_VERSION` (`2.22.0`), `edge_counts_by_provenance`, AST parser engine telemetry (`ast-grep` vs `python-ast`), symbol breakdown by syntax kind, test invariant assertion metrics, cache file size, and continuous code-aware dirty status. Supports `--json` for programmatic agent consumption.
+  - `status [--path <path>] [--json]`: Displays index health, `SCHEMA_VERSION` (`2.23.0`), `edge_counts_by_provenance`, AST parser engine telemetry (`ast-grep` vs `python-ast`), symbol breakdown by syntax kind, test invariant assertion metrics, cache file size, and continuous code-aware dirty status. Supports `--json` for programmatic agent consumption.
   - `sync [--path <path>] [--force] [--no-semantic] [--json]`: Synchronizes or rebuilds the knowledge graph index, optionally skipping Harrier ONNX embedding generation (`--no-semantic`) or emitting machine-readable JSON telemetry (`--json`).
   - `search <query> [--limit <n>] [--semantic/--no-semantic] [--path <path>] [--json]`: Performs BM25 full-text search with optional Harrier Hybrid RRF fusion across titles, requirements, and invariants, tagging each match with epistemic `provenance` (`fts_bm25`, `semantic_rrf`, `hybrid_rrf`) and `confidence` (`observed` for `fts_bm25`, `inferred` for `semantic_rrf` / `hybrid_rrf`).
   - `blast-radius <symbol_or_path> [--depth <n>] [--min-confidence <level>] [--path <path>] [--json]`: Computes the transitive dependency and governance blast radius for a canonical entity ID, AST code symbol, specification file path, or source file path, filtering traversal edges by `--min-confidence` (`inferred` default, `derived`, or `observed`) and reporting `query`, `resolved_entities`, `entity_id`, `min_confidence`, and `neighbors` (with `provenance`, `confidence`, `via_rel_type`, and `evidence`) in `--json` output.
@@ -60,6 +60,18 @@ Manages the embedded SQLite architectural knowledge graph and FTS5 hybrid search
   - `find-symbol <query> [--limit <n>] [--json] [--path <path>]`: Locates code symbols (including class methods, `http_endpoint` / `http_request` symbols, and automated test symbols) across polyglot AST source files and links them to associated living component specifications. Each `--json` match carries `provenance`, `confidence`, `file_path` (the owning *specification* path), and a `location` object (`file`, `line_start`, `line_end`, `signature`, `parent_symbol`) pointing at the source definition, or `null` for non-AST matches.
   - `semantic [action] [--model <variant>] [--force] [--path <path>] [--json]`: Manages and inspects the optional SHA-256 verified Harrier-OSS-v1-0.6B ONNX semantic embedding index (`status`, `setup`, or `sync`).
   - `health [--path <path>] [--json]`: Displays a deterministic architecture governance health scorecard quantifying source file ownership coverage (and unowned files), active `CNT-*`/`CMP-*` `== Public Surface` coverage, verified `CTR-*` `specification_file` coverage, active `CAP-*` bound-invariant coverage, validation warning counts, and `ratchet_baseline` import debt in Rich table or `--json` format.
+
+=== `eidos memory`
+Manages Git-native team operational memories (`type: agent/memory`, `MEM-*`) stored under `eidos/memory/` and `eidos/memory/archive/`.
+* **Sub-commands**:
+  - `add --title <title> --summary <summary> [--category <feedback|project|reference>] [--guidance <text>] [--why <text>] [--entity <id>] [--file <path_or_glob>] [--expires <YYYY-MM-DD>] [--status <active|draft>] [--semantic/--no-semantic] [--path <path>] [--json]`: Creates a collision-resistant, AsciiDoc-sanitized, schema-validated `MEM-*` file stamped with `verified_at` and current Git `verified_commit`, emitting non-blocking duplicate and spec-overlap hints.
+  - `list [--category <cat>] [--status <status>] [--entity <id>] [--include-archived] [--path <path>] [--json]`: Lists team operational memories with computed freshness status (`fresh`, `stale`, `expired`, `unverifiable`) in Rich tabular or `--json` format.
+  - `search <query> [--limit <n>] [--semantic/--no-semantic] [--path <path>] [--json]`: Searches active team memories via FTS5 BM25 and optional Harrier Hybrid RRF fusion.
+  - `show <id_or_path> [--path <path>] [--json]`: Displays full frontmatter metadata, computed freshness diagnostics, and sanitized AsciiDoc body of an active or archived memory.
+  - `verify <id_or_path> [--expires <YYYY-MM-DD>] [--clear-expires] [--path <path>] [--json]`: Re-stamps `verified_at` and `verified_commit` on a memory after verifying it against live code.
+  - `archive <id_or_path> [--reason <text>] [--path <path>] [--json]`: Transitions a memory to `status: archived` and moves it into `eidos/memory/archive/`.
+  - `audit [--check-overlaps/--no-check-overlaps] [--semantic/--no-semantic] [--path <path>] [--json]`: Runs a strictly non-blocking (exit code `0`) audit reporting freshness totals, stale/expired/unverifiable entries, duplicate pairs, and formal spec overlaps.
+  - `promote <id_or_path> --to <decision|invariant|policy> --spec-id <spec_id> [--archive/--no-archive] [--path <path>] [--json]`: Verifies that `<spec_id>` exists in the living catalog (standalone `POL-*`, child `INV-*`, or embedded `DEC-*`), sets `status: promoted` and `promoted_to: <spec_id>`, and moves the memory to `eidos/memory/archive/` by default.
 
 === `eidos portal`
 Manages the interactive Living Web Portal and documentation site export.
@@ -73,7 +85,7 @@ Manages the interactive Living Web Portal and documentation site export.
 === `eidos plugin`
 Manages, validates, installs, updates, and uninstalls Eidos Agent Skills and lifecycle hooks across supported AI agent environments (Antigravity, Claude Code, Cursor, Aider, Cline, Kilo Code, OpenCode, OpenAI Codex, and GitHub Copilot, plus `all`).
 * **Sub-commands**:
-  - `install <TARGET> [--project-dir <path>] [--force/--no-force] [--launcher <launcher>] [--hooks]`: Installs the 4 Eidos Agent Skills across `.agents/skills/` (Antigravity, Cursor, GitHub Copilot, OpenAI Codex, Cline, Kilo Code, OpenCode), `.claude/skills/` (Claude Code project-native skills), and `.aider/skills/` (Aider), projects the canonical root `AGENTS.md` block (plus `CLAUDE.md` `@AGENTS.md` import for Claude Code and comment-preserving `.aider.conf.yml` `read:` entry for Aider), and when `--hooks` is passed (disabled by default) wires each hook-capable target's native `Stop` / `PreToolUse` (`attempt_completion`) lifecycle hook (`.agents/hooks.json`, `.claude/settings.json`, `.cursor/hooks.json`, `.clinerules/hooks/PreToolUse`, `.github/hooks/hooks.json`, `.codex/hooks.json`).
+  - `install <TARGET> [--project-dir <path>] [--force/--no-force] [--launcher <launcher>] [--hooks]`: Installs the 5 Eidos Agent Skills across `.agents/skills/` (Antigravity, Cursor, GitHub Copilot, OpenAI Codex, Cline, Kilo Code, OpenCode), `.claude/skills/` (Claude Code project-native skills), and `.aider/skills/` (Aider), projects the canonical root `AGENTS.md` block (plus `CLAUDE.md` `@AGENTS.md` import for Claude Code and comment-preserving `.aider.conf.yml` `read:` entry for Aider), and when `--hooks` is passed (disabled by default) wires each hook-capable target's native `Stop` / `PreToolUse` (`attempt_completion`) lifecycle hook (`.agents/hooks.json`, `.claude/settings.json`, `.cursor/hooks.json`, `.clinerules/hooks/PreToolUse`, `.github/hooks/hooks.json`, `.codex/hooks.json`).
   - `uninstall <TARGET> [--project-dir <path>]`: Uninstalls and cleans up the plugin, managed `AGENTS.md` / `CLAUDE.md` / `.aider.conf.yml` target entries, and tool hook configurations from project scope.
   - `version [--project-dir <path>]`: Displays and compares bundled vs installed plugin version and reports SemVer sync status (`up_to_date`, `outdated`, or `modified` when non-force installs skipped edited skills).
   - `update <TARGET> [--project-dir <path>] [--launcher <launcher>]`: Updates project-scoped plugin to the latest bundled version and syncs configurations (preserving each target's recorded `hooks` setting in `.eidos-manifest.json`).
@@ -81,13 +93,13 @@ Manages, validates, installs, updates, and uninstalls Eidos Agent Skills and lif
   - `info [PATH]`: Displays Agent Skills package metadata, skills, and lifecycle hooks.
 
 === `eidos spec`
-Manages the living specification catalog (15 declarative specification & discovery blueprint types, excluding `delta/mutation`) and dynamic v1 schema introspection across all 16 bundled schemas: listing, authoring, inspecting, and deleting specifications.
+Manages the living specification catalog (15 declarative specification & discovery blueprint types, excluding `delta/mutation` and `agent/memory`) and dynamic v1 schema introspection across all 17 bundled schemas: listing, authoring, inspecting, and deleting specifications.
 * **Sub-commands**:
   - `list [--path <path>] [--type <type>] [--status <status>] [--include-archived] [--json]`: Lists all living specifications across the 15 living specification types (excluding SpecDeltas and excluding `archive/` subdirectories by default unless `--include-archived` is passed) in tabular or JSON format. Rejects `--type delta` with an error directing the caller to `eidos delta list`.
   - `show <id_or_path> [--path <path>]`: Displays detailed frontmatter metadata and preview of a living specification document (rejecting `delta/mutation` targets and directing the caller to `eidos delta show`).
-  - `create <type> <id> --title <title> [--client <client>] [--path <path>]`: Scaffolds a minimal, schema-valid draft blueprint (`status: draft`, or `status: proposed` for `exploration`) across all 15 living specification types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`), requiring `--client` (`-c`) for `screen` blueprints (`eidos/design/clients/<client>/screens/<screen>.adoc`), auto-resolving parent references from existing catalog specs for other types (or omitting optional references), and rejecting `delta/mutation` (directing to `eidos delta create`).
+  - `create <type> <id> --title <title> [--client <client>] [--path <path>]`: Scaffolds a minimal, schema-valid draft blueprint (`status: draft`, or `status: proposed` for `exploration`) across all 15 living specification types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`), requiring `--client` (`-c`) for `screen` blueprints (`eidos/design/clients/<client>/screens/<screen>.adoc`), auto-resolving parent references from existing catalog specs for other types (or omitting optional references), and rejecting `delta/mutation` (directing to `eidos delta create`) and `agent/memory` (directing to `eidos memory add`).
   - `delete <id_or_path> [--path <path>] [--force]`: Safely deletes a living specification document with cross-reference safety checks (rejecting `delta/mutation` targets and directing to `eidos delta delete`).
-  - `schema [type] [--json]`: Dynamically loads and inspects bundled v1 YAML frontmatter schemas from `assets/schemas/v1/` across all 16 specification types, displaying required/optional keys, nested constraints, and schema-synthesized YAML frontmatter templates in Rich tabular or `--json` format.
+  - `schema [type] [--json]`: Dynamically loads and inspects bundled v1 YAML frontmatter schemas from `assets/schemas/v1/` across all 17 specification types, displaying required/optional keys, nested constraints, and schema-synthesized YAML frontmatter templates in Rich tabular or `--json` format.
   - `discover [--path <path>] [--json]`: Deterministically scans a polyglot repository's workspace manifests (`.csproj`/`.fsproj`, `pyproject.toml`, `package.json`, `go.mod`, `Cargo.toml`, `pom.xml`, `build.gradle`), schema-first interface schemas (OpenAPI, AsyncAPI, Protobuf, GraphQL, OpenRPC), code-first modern REST controller/router roots (`rest_http` with `route_count`, honoring `DEC-CORE-MODERN-REST-PARITY-ONLY`), and test directories to propose `CNT-*` containers, `CTR-*` contracts, `already_mapped` ownership status, and unmapped `source_path` gaps in Rich tabular or `--json` format.
 
 === `eidos delta`
@@ -153,7 +165,7 @@ Executes the session-baseline-aware CLI-native agent lifecycle `Stop` / `PreTool
 Every operation has a single canonical command path without top-level shortcuts or intra-group duplicate aliases. Commands are semantically organized into six functional panels in CLI help output (`eidos --help`):
 1. **Setup & Workspace**: `info`, `doctor`, `init`
 2. **Governance & Verification**: `validate`, `drift`
-3. **Knowledge Graph & AI Context**: `context`, `index`
+3. **Knowledge Graph & AI Context**: `context`, `index`, `memory`
 4. **Living Catalog & Mutations**: `spec`, `delta`
 5. **Living Web Portal**: `portal`
 6. **Agent Ecosystem & Plugins**: `plugin`, `hook`

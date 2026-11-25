@@ -19,13 +19,14 @@ Eidos takes an opinionated approach built on **Spec-Driven Development**, **Doma
 
 * **Living Architecture in Git (DDD + Arc42/C4 + Kanban)**: Codifies bounded domains (`DOM-*`), capabilities (`CAP-*`), C4 architecture (`CNT-*`, `CMP-*`, `CTR-*`), and in-place design decisions (`DEC-*`) as AsciiDoc with YAML frontmatter, tracking architectural transitions via **SpecDeltas (`DLT-*`)** across a Kanban lifecycle.
 * **Local SQLite + AST + Hybrid Semantic Knowledge Graph**: Indexes code symbols, spec hierarchies, and `x-eidos-ref` links locally (`eidos/.cache/index.db`)—combining SQLite FTS5 BM25 search, recursive graph traversal, and optional local ONNX semantic embeddings (Hybrid RRF) to serve token-budgeted context slices (`eidos context`), structural repo maps, and transitive blast-radius queries (`eidos index blast-radius`) offline with no API keys.
+* **Git-Native Team Operational Memory (`MEM-*`)**: Captures shared repository gotchas, workflow conventions, and environment notes in Git (`eidos/memory/`, `type: agent/memory`) via `eidos memory`, automatically surfaces anchored memories in `eidos context` with Git-verified freshness (`fresh`/`stale`/`expired`), runs non-blocking duplicate and spec-overlap audits, and promotes durable rules into formal `DEC-*`/`INV-*`/`POL-*` specs.
 * **Test-Bound Invariants (TDD + `eidos drift`)**: Binds capability and policy invariants (`INV-*`) directly to automated tests (`file::func`) across Python, TypeScript/JS, Go, Rust, Java, and Kotlin, checking for spec-to-code drift in CI or via an agent `Stop` hook.
-* **Static C4 Architecture & Kanban Portal**: Generates a self-contained web viewer (`eidos portal serve`) to browse containers, components, contracts, blast radius, and the SpecDelta Kanban board—[View Eidos's Portal](https://mchawa.github.io/eidos/portal/)
+* **Static C4 Architecture, Kanban & Team Memory Portal**: Generates a self-contained web viewer (`eidos portal serve`) to browse containers, components, contracts, blast radius, the SpecDelta Kanban board, and Team Memory freshness—[View Eidos's Portal](https://mchawa.github.io/eidos/portal/)
 
 ```text
                     ┌───────────────────────────────────┐
                     │   Living Specifications (eidos/)  │
-                    │  CNT-* │ CMP-* │ CTR-* │ CAP/INV  │
+                    │  CNT-* │ CMP-* │ CAP/INV │ MEM-*  │
                     └─────────────────┬─────────────────┘
                                       │
                       ┌───────────────┴───────────────┐
@@ -74,8 +75,12 @@ eidos index sync
 eidos index repo-map --max-tokens 1500
 eidos index find-symbol "ArchitecturalIndex" --json
 
-# Extract a token-budgeted architectural context slice for a file or task
+# Extract a token-budgeted architectural context slice (with anchored team memories)
 eidos context -t "authentication and drift detection"
+
+# Record a shared team operational memory and audit freshness/overlaps
+eidos memory add --title "Use isolated test database" --category feedback --summary "Point integration tests at the ephemeral test container, never shared staging." --file "tests/**"
+eidos memory audit
 
 # Inspect v1 YAML frontmatter schema constraints & templates for any spec type
 eidos spec schema capability
@@ -86,10 +91,10 @@ eidos validate eidos
 # Verify zero drift between code, tests, and living specs
 eidos drift
 
-# Launch interactive C4 architecture portal
+# Launch interactive C4 architecture & Team Memory portal
 eidos portal serve --path eidos --port 8080
 
-# Install AI agent plugin (4 skills for Antigravity, Claude, Cursor, Copilot, Aider, Cline, Kilo Code, OpenCode, Codex)
+# Install AI agent plugin (5 skills for Antigravity, Claude, Cursor, Copilot, Aider, Cline, Kilo Code, OpenCode, Codex)
 eidos plugin install all
 ```
 
@@ -146,8 +151,8 @@ eidos/
 │   └── vcs/                       # Git spec-to-code drift detection, AST symbol diffing & invariant verification
 │
 ├── assets/                        # [BUNDLED SCHEMAS, SKILLS & PORTAL ASSETS]
-│   ├── schemas/v1/                # 16 canonical JSON/YAML schemas + shared `common/defs.yaml`
-│   ├── plugin_reference/          # Canonical `agentskills.io` 4 workflow skills & reference `hooks.json`
+│   ├── schemas/v1/                # 17 canonical JSON/YAML schemas + shared `common/defs.yaml`
+│   ├── plugin_reference/          # Canonical `agentskills.io` 5 workflow skills & reference `hooks.json`
 │   └── portal/                    # Pre-compiled air-gapped portal SPA (`bundle.html.gz`)
 │
 ├── eidos/                         # [THE LIVING SPECIFICATION / DOGFOODED CATALOG]
@@ -157,6 +162,7 @@ eidos/
 │   ├── domains/                   # Bounded contexts (DOM-*) & capabilities with test-bound invariants (CAP-*, INV-*)
 │   ├── architecture/              # Arc42/C4 architecture (ARCH-*), containers (CNT-*), components (CMP-*), contracts (CTR-*)
 │   ├── design/                    # Multi-Design Systems (DS-*), W3C tokens, UI components (UIC-*), clients (CLT-*), screens (SCR-*), flows (FLOW-*)
+│   ├── memory/                    # Shared team operational memories (MEM-*) & archive/
 │   ├── explorations/              # Hypothesis-driven technical spikes (EXP-*) & archive/
 │   └── deltas/                    # Active and recent SpecDelta mutations (DLT-*) & archive/
 │
@@ -173,6 +179,7 @@ eidos/
 | **Scope** | Coding loop only (Aider, Claude Code) or monolithic bot (Devin) | Full SDLC: Exploration → Product Baseline → SpecDelta → Code → CI |
 | **Specifications** | Ephemeral Jira tickets, stale Confluence/Notion pages | Versioned YAML frontmatter + AsciiDoc living in Git |
 | **Change Management** | Narrative RFC essays that rot in archive folders | Declarative `SpecDelta` mutations applied automatically upon merge |
+| **Agent Memory** | Local per-developer notes that silently drift and stay siloed | Git-native team memories (`MEM-*`) with Git-verified freshness, surfaced in `eidos context` & promoted to specs |
 | **Agent Support** | Vendor-locked to a single proprietary LLM | Agent-agnostic via `agentskills.io` CLI-first Agent Skills across 9 coding clients |
 | **VCS Support** | Tied to a single SaaS platform or closed web UI | 100% Git-native local repository engine |
 

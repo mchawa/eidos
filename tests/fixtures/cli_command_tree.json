@@ -13,6 +13,7 @@
       "spec",
       "delta",
       "index",
+      "memory",
       "portal",
       "plugin"
     ],
@@ -2250,6 +2251,781 @@
     "path": [
       "index",
       "health"
+    ]
+  },
+  {
+    "help": "Manage Git-native team operational memories under eidos/memory/ (add, list, search, show, verify, archive, audit, promote).",
+    "hidden": false,
+    "order": [
+      "add",
+      "list",
+      "search",
+      "show",
+      "verify",
+      "archive",
+      "audit",
+      "promote"
+    ],
+    "panel": "Knowledge Graph & AI Context",
+    "params": [],
+    "path": [
+      "memory"
+    ]
+  },
+  {
+    "help": "Create a schema-validated team operational memory under eidos/memory/.",
+    "hidden": false,
+    "order": [],
+    "panel": null,
+    "params": [
+      {
+        "default": "None",
+        "envvar": "None",
+        "help": "Concise human-readable memory title.",
+        "kind": "TyperOption",
+        "name": "title",
+        "opts": [
+          "--title",
+          "-t"
+        ],
+        "panel": null,
+        "required": true,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "feedback",
+        "envvar": "None",
+        "help": "Team memory category: feedback, project, or reference (never personal user preferences).",
+        "kind": "TyperOption",
+        "name": "category",
+        "opts": [
+          "--category",
+          "-c"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "None",
+        "envvar": "None",
+        "help": "Single-line operational takeaway (<= 220 chars).",
+        "kind": "TyperOption",
+        "name": "summary",
+        "opts": [
+          "--summary",
+          "-s"
+        ],
+        "panel": null,
+        "required": true,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "",
+        "envvar": "None",
+        "help": "Actionable engineering guidance body.",
+        "kind": "TyperOption",
+        "name": "guidance",
+        "opts": [
+          "--guidance",
+          "-g"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "",
+        "envvar": "None",
+        "help": "Rationale or incident context explaining why this rule exists.",
+        "kind": "TyperOption",
+        "name": "why",
+        "opts": [
+          "--why",
+          "-w"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "[]",
+        "envvar": "None",
+        "help": "Target Eidos entity ID(s) to anchor this memory (repeatable, e.g. -e CMP-ORDER-STORE).",
+        "kind": "TyperOption",
+        "name": "entity",
+        "opts": [
+          "--entity",
+          "-e"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "[]",
+        "envvar": "None",
+        "help": "Target repository file path(s) or glob pattern(s) (repeatable, e.g. -f src/core/storage.py).",
+        "kind": "TyperOption",
+        "name": "file",
+        "opts": [
+          "--file",
+          "-f"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "None",
+        "envvar": "None",
+        "help": "Optional ISO expiration date YYYY-MM-DD for time-bounded project notes.",
+        "kind": "TyperOption",
+        "name": "expires",
+        "opts": [
+          "--expires"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "active",
+        "envvar": "None",
+        "help": "Initial status: active (default) or draft.",
+        "kind": "TyperOption",
+        "name": "status",
+        "opts": [
+          "--status"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "True",
+        "envvar": "None",
+        "help": "Use pre-computed Harrier embeddings for overlap detection when available.",
+        "kind": "TyperOption",
+        "name": "semantic",
+        "opts": [
+          "--semantic"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [
+          "--no-semantic"
+        ],
+        "type": "BOOL"
+      },
+      {
+        "default": "eidos",
+        "envvar": "None",
+        "help": "Path to eidos specifications directory.",
+        "kind": "TyperOption",
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "default": "False",
+        "envvar": "None",
+        "help": "Output created memory metadata as JSON.",
+        "kind": "TyperOption",
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "BOOL"
+      }
+    ],
+    "path": [
+      "memory",
+      "add"
+    ]
+  },
+  {
+    "help": "List team operational memories with computed freshness status.",
+    "hidden": false,
+    "order": [],
+    "panel": null,
+    "params": [
+      {
+        "default": "None",
+        "envvar": "None",
+        "help": "Filter by category (feedback, project, reference).",
+        "kind": "TyperOption",
+        "name": "category",
+        "opts": [
+          "--category",
+          "-c"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "None",
+        "envvar": "None",
+        "help": "Filter by status (draft, active, promoted, archived).",
+        "kind": "TyperOption",
+        "name": "status",
+        "opts": [
+          "--status",
+          "-s"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "None",
+        "envvar": "None",
+        "help": "Filter by anchored entity ID.",
+        "kind": "TyperOption",
+        "name": "entity",
+        "opts": [
+          "--entity",
+          "-e"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "False",
+        "envvar": "None",
+        "help": "Include archived and promoted memories under eidos/memory/archive/.",
+        "kind": "TyperOption",
+        "name": "include_archived",
+        "opts": [
+          "--include-archived"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "BOOL"
+      },
+      {
+        "default": "eidos",
+        "envvar": "None",
+        "help": "Path to eidos specifications directory.",
+        "kind": "TyperOption",
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "default": "False",
+        "envvar": "None",
+        "help": "Output memories as JSON.",
+        "kind": "TyperOption",
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "BOOL"
+      }
+    ],
+    "path": [
+      "memory",
+      "list"
+    ]
+  },
+  {
+    "help": "Search active team memories via BM25 and optional Harrier Hybrid RRF.",
+    "hidden": false,
+    "order": [],
+    "panel": null,
+    "params": [
+      {
+        "default": "None",
+        "envvar": "None",
+        "help": "Search keywords or phrase across active team memories.",
+        "kind": "TyperArgument",
+        "name": "query",
+        "opts": [
+          "query"
+        ],
+        "panel": null,
+        "required": true,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "10",
+        "envvar": "None",
+        "help": "Maximum number of results to return.",
+        "kind": "TyperOption",
+        "name": "limit",
+        "opts": [
+          "--limit",
+          "-l"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "INT"
+      },
+      {
+        "default": "True",
+        "envvar": "None",
+        "help": "Enable opt-in Harrier Hybrid RRF fusion when spec_embeddings are complete.",
+        "kind": "TyperOption",
+        "name": "semantic",
+        "opts": [
+          "--semantic"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [
+          "--no-semantic"
+        ],
+        "type": "BOOL"
+      },
+      {
+        "default": "eidos",
+        "envvar": "None",
+        "help": "Path to eidos specifications directory.",
+        "kind": "TyperOption",
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "default": "False",
+        "envvar": "None",
+        "help": "Output search results as JSON.",
+        "kind": "TyperOption",
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "BOOL"
+      }
+    ],
+    "path": [
+      "memory",
+      "search"
+    ]
+  },
+  {
+    "help": "Display frontmatter metadata, freshness diagnostics, and body of a team memory.",
+    "hidden": false,
+    "order": [],
+    "panel": null,
+    "params": [
+      {
+        "default": "None",
+        "envvar": "None",
+        "help": "Memory ID (MEM-*), unambiguous prefix, or path.",
+        "kind": "TyperArgument",
+        "name": "id_or_path",
+        "opts": [
+          "id_or_path"
+        ],
+        "panel": null,
+        "required": true,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "eidos",
+        "envvar": "None",
+        "help": "Path to eidos specifications directory.",
+        "kind": "TyperOption",
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "default": "False",
+        "envvar": "None",
+        "help": "Output full memory details as JSON.",
+        "kind": "TyperOption",
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "BOOL"
+      }
+    ],
+    "path": [
+      "memory",
+      "show"
+    ]
+  },
+  {
+    "help": "Re-stamp verified_at and verified_commit on a memory after checking live code.",
+    "hidden": false,
+    "order": [],
+    "panel": null,
+    "params": [
+      {
+        "default": "None",
+        "envvar": "None",
+        "help": "Memory ID (MEM-*), unambiguous prefix, or path.",
+        "kind": "TyperArgument",
+        "name": "id_or_path",
+        "opts": [
+          "id_or_path"
+        ],
+        "panel": null,
+        "required": true,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "None",
+        "envvar": "None",
+        "help": "Update optional ISO expiration date YYYY-MM-DD.",
+        "kind": "TyperOption",
+        "name": "expires",
+        "opts": [
+          "--expires"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "False",
+        "envvar": "None",
+        "help": "Remove existing expires_at TTL.",
+        "kind": "TyperOption",
+        "name": "clear_expires",
+        "opts": [
+          "--clear-expires"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "BOOL"
+      },
+      {
+        "default": "eidos",
+        "envvar": "None",
+        "help": "Path to eidos specifications directory.",
+        "kind": "TyperOption",
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "default": "False",
+        "envvar": "None",
+        "help": "Output updated verification result as JSON.",
+        "kind": "TyperOption",
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "BOOL"
+      }
+    ],
+    "path": [
+      "memory",
+      "verify"
+    ]
+  },
+  {
+    "help": "Retire a team memory (status: archived) and move it under eidos/memory/archive/.",
+    "hidden": false,
+    "order": [],
+    "panel": null,
+    "params": [
+      {
+        "default": "None",
+        "envvar": "None",
+        "help": "Memory ID (MEM-*), unambiguous prefix, or path.",
+        "kind": "TyperArgument",
+        "name": "id_or_path",
+        "opts": [
+          "id_or_path"
+        ],
+        "panel": null,
+        "required": true,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "None",
+        "envvar": "None",
+        "help": "Optional archival rationale appended to body.",
+        "kind": "TyperOption",
+        "name": "reason",
+        "opts": [
+          "--reason",
+          "-r"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "eidos",
+        "envvar": "None",
+        "help": "Path to eidos specifications directory.",
+        "kind": "TyperOption",
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "default": "False",
+        "envvar": "None",
+        "help": "Output archive result as JSON.",
+        "kind": "TyperOption",
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "BOOL"
+      }
+    ],
+    "path": [
+      "memory",
+      "archive"
+    ]
+  },
+  {
+    "help": "Audit team memories for staleness, expiry, duplicates, and spec overlap (strictly non-blocking, exit 0).",
+    "hidden": false,
+    "order": [],
+    "panel": null,
+    "params": [
+      {
+        "default": "True",
+        "envvar": "None",
+        "help": "Detect duplicate memory pairs and formal spec overlaps.",
+        "kind": "TyperOption",
+        "name": "check_overlaps",
+        "opts": [
+          "--check-overlaps"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [
+          "--no-check-overlaps"
+        ],
+        "type": "BOOL"
+      },
+      {
+        "default": "False",
+        "envvar": "None",
+        "help": "Use pre-computed Harrier embeddings for overlap analysis when available.",
+        "kind": "TyperOption",
+        "name": "semantic",
+        "opts": [
+          "--semantic"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [
+          "--no-semantic"
+        ],
+        "type": "BOOL"
+      },
+      {
+        "default": "eidos",
+        "envvar": "None",
+        "help": "Path to eidos specifications directory.",
+        "kind": "TyperOption",
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "default": "False",
+        "envvar": "None",
+        "help": "Output non-blocking memory audit report as JSON.",
+        "kind": "TyperOption",
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "BOOL"
+      }
+    ],
+    "path": [
+      "memory",
+      "audit"
+    ]
+  },
+  {
+    "help": "Graduate a team memory into a verified formal DEC-*, INV-*, or POL-* specification.",
+    "hidden": false,
+    "order": [],
+    "panel": null,
+    "params": [
+      {
+        "default": "None",
+        "envvar": "None",
+        "help": "Memory ID (MEM-*), unambiguous prefix, or path.",
+        "kind": "TyperArgument",
+        "name": "id_or_path",
+        "opts": [
+          "id_or_path"
+        ],
+        "panel": null,
+        "required": true,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "None",
+        "envvar": "None",
+        "help": "Target formal specification kind: decision, invariant, or policy.",
+        "kind": "TyperOption",
+        "name": "to",
+        "opts": [
+          "--to"
+        ],
+        "panel": null,
+        "required": true,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "None",
+        "envvar": "None",
+        "help": "Verified target specification ID (DEC-*, INV-*, or POL-*).",
+        "kind": "TyperOption",
+        "name": "spec_id",
+        "opts": [
+          "--spec-id"
+        ],
+        "panel": null,
+        "required": true,
+        "secondary": [],
+        "type": "STRING"
+      },
+      {
+        "default": "True",
+        "envvar": "None",
+        "help": "Move the promoted memory into eidos/memory/archive/ (default: --archive).",
+        "kind": "TyperOption",
+        "name": "archive",
+        "opts": [
+          "--archive"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [
+          "--no-archive"
+        ],
+        "type": "BOOL"
+      },
+      {
+        "default": "eidos",
+        "envvar": "None",
+        "help": "Path to eidos specifications directory.",
+        "kind": "TyperOption",
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "default": "False",
+        "envvar": "None",
+        "help": "Output promotion result as JSON.",
+        "kind": "TyperOption",
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "panel": null,
+        "required": false,
+        "secondary": [],
+        "type": "BOOL"
+      }
+    ],
+    "path": [
+      "memory",
+      "promote"
     ]
   },
   {

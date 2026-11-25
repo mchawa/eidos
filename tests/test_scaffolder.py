@@ -466,7 +466,7 @@ def test_cli_spec_lifecycle_tools(tmp_path):
 
 
 def test_all_skills_in_bundle():
-    """Verify that the plugin contains the 4 cohesive workflow skills (CAP-AGENT-001, DLT-2026-037)."""
+    """Verify that the plugin contains the 5 cohesive workflow skills (CAP-AGENT-001, DLT-2026-171)."""
     from eidos.plugin.installer import locate_plugin_bundle
     from eidos.plugin.validator import validate_plugin_package
 
@@ -479,9 +479,10 @@ def test_all_skills_in_bundle():
         "eidos-spec",
         "eidos-plan",
         "eidos-ops",
+        "eidos-memory",
     }
     assert expected_skills == set(report.skills)
-    assert len(report.skills) == 4
+    assert len(report.skills) == 5
 
 
 def test_self_contained_eidos_gitignore(tmp_path):
@@ -527,6 +528,7 @@ def test_init_repository_programmatic(tmp_path):
         eidos_dir / "personas" / ".gitkeep",
         eidos_dir / "deltas" / ".gitkeep",
         eidos_dir / "explorations" / ".gitkeep",
+        eidos_dir / "memory" / ".gitkeep",
         eidos_dir / "design" / "clients" / ".gitkeep",
         eidos_dir / "design" / "flows" / ".gitkeep",
         eidos_dir / "design" / "systems" / "core" / "components" / ".gitkeep",
@@ -1848,14 +1850,14 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
 
 
 def test_spec_schema_introspection_loads_from_assets_and_synthesizes_valid_examples(tmp_path):
-    """Verify get_spec_schema_info and 'eidos spec schema' dynamically load all 16 v1 schemas from assets/schemas/v1/."""
+    """Verify get_spec_schema_info and 'eidos spec schema' dynamically load all 17 v1 schemas from assets/schemas/v1/."""
     import orjson
 
     from eidos.core.lifecycle.scaffolder import get_spec_schema_info
 
     all_schemas = get_spec_schema_info()
     assert isinstance(all_schemas, list)
-    assert len(all_schemas) == 16
+    assert len(all_schemas) == 17
 
     validator = SpecValidator()
     seen_types = set()
@@ -1892,7 +1894,7 @@ def test_spec_schema_introspection_loads_from_assets_and_synthesizes_valid_examp
     res_all_json = runner.invoke(app, ["spec", "schema", "--json"])
     assert res_all_json.exit_code == 0
     payload_all = orjson.loads(res_all_json.stdout)
-    assert payload_all["count"] == 16
+    assert payload_all["count"] == 17
 
     res_cap_json = runner.invoke(app, ["spec", "schema", "capability", "--json"])
     assert res_cap_json.exit_code == 0

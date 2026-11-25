@@ -178,9 +178,9 @@ Options:
 * `-b, --base REF`: Slice deduplicated architectural context for files changed relative to a base Git reference (e.g. `origin/main`).
 * `--head REF`: Head Git reference when slicing with `--base` (default: `HEAD`).
 * `-T, --tier [anchor|guardrails|deep]`: Context compression budget (default: `guardrails`).
-  * `anchor`: Container/component metadata, direct contract signatures, and 1-line `DEC-*` summaries (`<= 300 tokens`).
-  * `guardrails`: Adds structured epistemic `provenance_tags`, domain capabilities, active invariants with `test_binding`, policies, and full `DEC-*` rationale (`<= 1,000 tokens`).
-  * `deep`: Adds standalone C4 component details, contract schemas, and downstream dependents with `provenance_tags` (`<= 2,500 tokens`).
+  * `anchor`: Container/component metadata, direct contract signatures, 1-line `DEC-*` summaries, and up to 2 anchored `MEM-*` team memory summaries (`<= 300 tokens`).
+  * `guardrails`: Adds structured epistemic `provenance_tags`, domain capabilities, active invariants with `test_binding`, policies, full `DEC-*` rationale, and up to 3 anchored + 2 global `MEM-*` memories with non-fresh diagnostics (`<= 1,000 tokens`).
+  * `deep`: Adds standalone C4 component details, contract schemas, downstream dependents with `provenance_tags`, and up to 5 anchored + 3 global `MEM-*` memories with extracted `guidance` and `why` sections (`<= 2,500 tokens`).
 * `--semantic / --no-semantic`: Enable or disable opt-in Harrier Hybrid RRF semantic fusion when `spec_embeddings` synchronization is complete (`semantic_sync_complete = 1`; partial/interrupted syncs deterministically fall back to FTS5 BM25) (default: `--semantic`).
 * `--json`: Output context slice as machine-readable JSON instead of Markdown.
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
@@ -193,7 +193,7 @@ Manage and query the embedded SQLite architectural knowledge graph and FTS5 lexi
 The index initializes automatically on first use and lazily resynchronizes before every query via sub-5ms `mtime_ns` and `SHA-256` dirty checking, guaranteeing zero drift.
 
 #### `eidos index status`
-Display database cache size, schema version (`2.22.0`), clean/drift synchronization state across specs and code, check latency, entity/edge counts, `edge_counts_by_provenance` (`declared_spec`, `ast_import`, `ast_http`, `ast_symbol`, `inferred_ownership`), active AST parser engine (`ast-grep`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
+Display database cache size, schema version (`2.23.0`), clean/drift synchronization state across specs and code, check latency, entity/edge counts, `edge_counts_by_provenance` (`declared_spec`, `ast_import`, `ast_http`, `ast_symbol`, `inferred_ownership`), active AST parser engine (`ast-grep`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
 
 ```bash
 # Display rich visual status and AST telemetry:
@@ -334,6 +334,45 @@ eidos index health --json
 Options:
 * `--json`: Output governance health scorecard metrics as machine-readable JSON.
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
+
+---
+
+### `eidos memory`
+Manage Git-native team operational memories (`type: agent/memory`, `MEM-*`) stored as one `.adoc` file per entry under `eidos/memory/` and `eidos/memory/archive/`. Memories capture shared repository lessons (never personal preferences), attach automatically to `eidos context` via a secondary budgeted pass, and never block `eidos validate` or `eidos drift`.
+
+```bash
+# Save a team operational memory anchored to a component and path glob
+eidos memory add --title "Use pnpm in portal frontend" --category feedback \
+  --summary "Run pnpm inside src/eidos/portal/frontend; npm fails on devEngines." \
+  --guidance "Use pnpm exec vitest and pnpm build inside src/eidos/portal/frontend." \
+  --why "package.json devEngines pins pnpm 12." \
+  --entity CMP-PORTAL-FRONTEND --file "src/eidos/portal/frontend/**" --json
+
+# List, search, and inspect team memories
+eidos memory list --json
+eidos memory search "pnpm frontend" --json
+eidos memory show MEM-USE-PNPM-IN-PORTAL-FRONTEND-A1B2
+
+# Re-verify freshness against current Git HEAD or archive a retired note
+eidos memory verify MEM-USE-PNPM-IN-PORTAL-FRONTEND-A1B2
+eidos memory archive MEM-USE-PNPM-IN-PORTAL-FRONTEND-A1B2 --reason "Migrated build toolchain"
+
+# Run a strictly non-blocking staleness, expiry, duplicate, and spec-overlap audit (always exit 0)
+eidos memory audit --json
+
+# Graduate a proven memory into a formal DEC-*, INV-*, or POL-* living specification
+eidos memory promote MEM-USE-PNPM-IN-PORTAL-FRONTEND-A1B2 --to decision --spec-id DEC-PORTAL-PNPM
+```
+
+Sub-commands:
+* `add`: Create a collision-resistant, AsciiDoc-sanitized, schema-validated `MEM-*` memory (`--title`, `--summary`, `--category [feedback|project|reference]`, `--guidance`, `--why`, `--entity`, `--file`, `--expires YYYY-MM-DD`, `--status [active|draft]`, `--semantic/--no-semantic`, `--path`, `--json`).
+* `list`: List team memories with computed freshness (`--category`, `--status`, `--entity`, `--include-archived`, `--path`, `--json`).
+* `search <QUERY>`: Search active team memories via BM25 and optional Harrier Hybrid RRF (`--limit`, `--semantic/--no-semantic`, `--path`, `--json`).
+* `show <ID_OR_PATH>`: Display full frontmatter, freshness diagnostics, and body of an active or archived memory (`--path`, `--json`).
+* `verify <ID_OR_PATH>`: Refresh `verified_at` and `verified_commit` to current Git `HEAD` (`--expires`, `--clear-expires`, `--path`, `--json`).
+* `archive <ID_OR_PATH>`: Set `status: archived` and move the file into `eidos/memory/archive/` (`--reason`, `--path`, `--json`).
+* `audit`: Report non-blocking freshness, duplicate pairs, and formal spec overlaps with exit code `0` (`--check-overlaps/--no-check-overlaps`, `--semantic/--no-semantic`, `--path`, `--json`).
+* `promote <ID_OR_PATH>`: Verify target `DEC-*`, `INV-*`, or `POL-*`, set `status: promoted` and `promoted_to`, and archive (`--to [decision|invariant|policy]`, `--spec-id`, `--archive/--no-archive`, `--path`, `--json`).
 
 ---
 

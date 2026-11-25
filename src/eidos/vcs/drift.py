@@ -352,7 +352,7 @@ def detect_drift(
                     doc, _, _ = get_cached_spec_document(delta_file)
                     if doc is not None:
                         model = doc.model
-                if model is None:
+                if model is None or (model.type and model.type != "delta/mutation"):
                     continue
                 status = str(model.status or "proposed").strip().lower()
                 if status in ("rejected", "deprecated", "superseded", "archived"):

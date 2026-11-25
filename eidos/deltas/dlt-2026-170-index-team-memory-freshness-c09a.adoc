@@ -1,0 +1,244 @@
+---
+type: delta/mutation
+id: DLT-2026-170-INDEX-TEAM-MEMORY-FRESHNESS-C09A
+title: "Index Team Memory, Freshness Cache & Context Attachment (Phase 2)"
+status: proposed
+graduated_from: EXP-2026-012
+vcs:
+  branch: main
+  base_commit: b9f03f93280614f7e564d1cb9db004d1afa6dc5c
+intent:
+  kind: feature
+  motivation: >
+    Graduate Phase 2 of EXP-2026-012 by indexing team-scoped agent/memory (MEM-*) specifications into the
+    unified SQLite knowledge graph (SCHEMA_VERSION 2.23.0, 15 tables), materializing anchors_entity and
+    promoted_to graph edges, scoping specs_fts (and therefore spec_embeddings) to active non-archived memories,
+    adding a stateless HEAD-keyed memory_freshness_cache with rebase/shallow-clone/0-commit-safe deterministic
+    freshness evaluation, and attaching relevant memories to TieredContextSlice (eidos context) via a secondary
+    budgeted pass with Stage 0 memory-first pruning so memories never displace primary architectural entities.
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+    details: >
+      Record DEC-INDEX-MEMORY-FRESHNESS-AND-SECONDARY-SLICING in CNT-EIDOS-INDEX.decisions, register
+      context_memories.py under CMP-TIERED-CONTEXT-COMPRESSOR, and bump the SQLite knowledge graph description
+      from 14-table SCHEMA_VERSION 2.22.0 to 15-table SCHEMA_VERSION 2.23.0 with memory_freshness_cache.
+    expect:
+      frontmatter:
+        decisions.id:
+          - "DEC-INDEX-MEMORY-FRESHNESS-AND-SECONDARY-SLICING"
+      body:
+        contains:
+          - "context_memories.py"
+          - "memory_freshness_cache"
+          - "15-table"
+          - "2.23.0"
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    details: >
+      Bump SCHEMA_VERSION to 2.23.0 (15 tables), add memory_freshness_cache to _MANAGED_TABLES and
+      _CACHE_SCHEMA_DDL, and expose non-blocking load_memory_freshness_cache / save_memory_freshness_cache
+      helpers in src/eidos/core/index/storage.py.
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/core/index/storage.py"
+          - "src/eidos/core/index/graph_index.py"
+      body:
+        contains:
+          - "2.23.0"
+          - "15-table"
+          - "memory_freshness_cache"
+          - "load_memory_freshness_cache"
+          - "save_memory_freshness_cache"
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    details: >
+      Project active non-archived agent/memory documents (title, summary, body, category, target anchors) into
+      specs_fts while keeping archived/promoted/draft memories in entities only, materialize anchors_entity and
+      promoted_to edges in spec_edges.py (preserving promoted_to edges targeting embedded DEC-* IDs), and evict
+      memory_freshness_cache entries on memory updates, deletions, or force rebuilds.
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/core/index/sync.py"
+          - "src/eidos/core/index/code_graph.py"
+          - "src/eidos/core/index/spec_edges.py"
+      body:
+        contains:
+          - "agent/memory"
+          - "anchors_entity"
+          - "promoted_to"
+          - "memory_freshness_cache"
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+    details: >
+      Exclude agent/memory from query_spec_catalog_in_db (keeping the 15-type living specification catalog
+      consistent with CMP-LIFECYCLE-SCAFFOLDER) and add agent/memory (MEM-*) to execute_k_hop_traversal's
+      hop >= 2 hub-stop filter so multi-anchored memories never bridge unrelated sibling entities.
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/traversal.py"
+      body:
+        contains:
+          - "MEM-*"
+          - "agent/memory"
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+    details: >
+      Add src/eidos/core/index/context_memories.py to source_path and implement HEAD-keyed deterministic
+      freshness evaluation, secondary budgeted team memory attachment (anchor <=2/0, guardrails <=3/2,
+      deep <=5/3) with honest empty slice preservation, conditional memories projection, and Stage 0
+      memory-first token-budget pruning in TieredContextSlice.
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/core/index/context.py"
+          - "src/eidos/core/index/context_globs.py"
+          - "src/eidos/core/index/context_models.py"
+          - "src/eidos/core/index/context_memories.py"
+      body:
+        contains:
+          - "context_memories.py"
+          - "attach_context_memories"
+          - "evaluate_memory_freshness"
+          - "resolve_memory_freshness_batch"
+          - "Stage 0"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: >
+      Bump CTR-EIDOS-CLI to 1.8.1, update eidos index status SCHEMA_VERSION to 2.23.0, document optional
+      secondary team memories attachment on eidos context, and sync eidos spec bundled schema count to 17.
+    expect:
+      body:
+        contains:
+          - "2.23.0"
+          - "memories"
+          - "17 bundled schemas"
+  - operation: modify
+    target: CAP-AGENT-001
+    details: >
+      Bump CAP-AGENT-001 to 1.18.0, add INV-CONTEXT-TEAM-MEMORY-ATTACHMENT governing secondary budgeted memory
+      attachment and Stage 0 pruning precedence, and document optional MEM-* team memories in the tier table.
+    expect:
+      frontmatter:
+        technical.invariants.id:
+          - "INV-CONTEXT-TEAM-MEMORY-ATTACHMENT"
+      body:
+        contains:
+          - "MEM-*"
+          - "INV-CONTEXT-TEAM-MEMORY-ATTACHMENT"
+  - operation: add
+    target: INV-CONTEXT-TEAM-MEMORY-ATTACHMENT
+    details: >
+      Bind INV-CONTEXT-TEAM-MEMORY-ATTACHMENT to
+      tests/test_context.py::test_context_secondary_team_memory_attachment_and_budget_precedence.
+    expect:
+      frontmatter:
+        rule: "Stage 0"
+        test_binding: "tests/test_context.py::test_context_secondary_team_memory_attachment_and_budget_precedence"
+  - operation: modify
+    target: CAP-AGENT-002
+    details: >
+      Bump CAP-AGENT-002 to 1.10.0, add INV-INDEX-MEMORY-GRAPH-AND-FRESHNESS-CACHE governing agent/memory
+      graph indexing, active-only specs_fts projection, anchors_entity/promoted_to edges, and HEAD-keyed
+      memory_freshness_cache, and update SCHEMA_VERSION to 2.23.0.
+    expect:
+      frontmatter:
+        version: "1.10.0"
+        technical.invariants.id:
+          - "INV-INDEX-MEMORY-GRAPH-AND-FRESHNESS-CACHE"
+      body:
+        contains:
+          - "2.23.0"
+          - "memory_freshness_cache"
+  - operation: add
+    target: INV-INDEX-MEMORY-GRAPH-AND-FRESHNESS-CACHE
+    details: >
+      Bind INV-INDEX-MEMORY-GRAPH-AND-FRESHNESS-CACHE to
+      tests/test_graph_index.py::test_agent_memory_indexing_edges_and_freshness_cache.
+    expect:
+      frontmatter:
+        rule: "memory_freshness_cache"
+        test_binding: "tests/test_graph_index.py::test_agent_memory_indexing_edges_and_freshness_cache"
+  - operation: modify
+    target: CAP-PROD-001
+    details: >
+      Synchronize unified SQLite cache description in CAP-PROD-001 to SCHEMA_VERSION 2.23.0 and
+      load_memory_freshness_cache.
+    expect:
+      body:
+        contains:
+          - "2.23.0"
+          - "load_memory_freshness_cache"
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: >
+      Update docs/concepts/how-eidos-works.md and docs/concepts/architectural-index.md for 15-table
+      SCHEMA_VERSION 2.23.0, memory_freshness_cache, and context_memories.py.
+    expect:
+      frontmatter:
+        source_path: "docs/concepts"
+      body:
+        contains:
+          - "15-table"
+          - "2.23.0"
+          - "memory_freshness_cache"
+          - "context_memories.py"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: >
+      Update docs/guides/cli.md for SCHEMA_VERSION 2.23.0 and optional secondary MEM-* attachment on
+      eidos context.
+    expect:
+      frontmatter:
+        source_path: "docs/guides"
+      body:
+        contains:
+          - "2.23.0"
+---
+= SpecDelta: Index Team Memory, Freshness Cache & Context Attachment (Phase 2)
+:toc: left
+
+== Problem Statement
+
+Phase 1 (`DLT-2026-169-ADD-AGENT-MEMORY-SCHEMA-D36A`) introduced the canonical `agent/memory` (`MEM-*`) v1 schema, validation exemptions, and drift isolation. However, the embedded SQLite knowledge graph (`CNT-EIDOS-INDEX`) does not yet project `agent/memory` documents selectively into `specs_fts` (active-only) or materialize `anchors_entity` / `promoted_to` edges, does not persist a `HEAD`-keyed `memory_freshness_cache` to avoid linear `git rev-list` latency (`608 ms` at `N = 100` in `EXP-2026-012` Spike 2), and `CMP-TIERED-CONTEXT-COMPRESSOR` (`eidos context`) does not yet attach relevant team operational memories to `TieredContextSlice` with Stage 0 memory-first budget pruning.
+
+== Proposed Specification Changes
+
+* **SQLite Schema & Non-Blocking Freshness Cache (`CNT-EIDOS-INDEX`, `CMP-GRAPH-STORAGE`)**:
+  ** Bump `SCHEMA_VERSION` from `"2.22.0"` to `"2.23.0"` (15 managed tables) adding `memory_freshness_cache (memory_id TEXT PRIMARY KEY, head_sha TEXT NOT NULL, mem_sha256 TEXT NOT NULL, freshness TEXT NOT NULL, reason TEXT NOT NULL, checked_at TEXT NOT NULL)`.
+  ** Expose non-blocking `load_memory_freshness_cache` (`allow_ddl=False`) and `save_memory_freshness_cache` (`_advisory_db_lock(..., non_blocking=True)`) helpers in `src/eidos/core/index/storage.py`.
+  ** Record `DEC-INDEX-MEMORY-FRESHNESS-AND-SECONDARY-SLICING` (`graduated_from: EXP-2026-012`) in `CNT-EIDOS-INDEX.decisions`.
+* **Incremental Indexing & Graph Edges (`CMP-INCREMENTAL-SYNC-ENGINE`, `CAP-AGENT-002`)**:
+  ** Keep all `agent/memory` files in `entities` (active, draft, promoted, archived) for audit and portal visibility, while inserting ONLY `status == "active"` non-archived (`eidos/memory/archive/` excluded) entries into `specs_fts` (which automatically scopes `spec_embeddings` in `CMP-SEMANTIC-EMBEDDING-ENGINE` — unchanged; no edits needed in `semantic.py` or `fts_query.py`).
+  ** Materialize `anchors_entity` (`targets.entities`) and `promoted_to` (`promoted_to`) edges in `spec_edges.py` while retaining `promoted_to` edges targeting embedded `DEC-*` IDs during orphan pruning.
+  ** Evict `memory_freshness_cache` rows on memory update, deletion, spec/code deletion, or `sync --force`.
+  ** Add `INV-INDEX-MEMORY-GRAPH-AND-FRESHNESS-CACHE` on `CAP-AGENT-002`.
+* **Secondary Budgeted Context Attachment & Stage 0 Pruning (`CMP-TIERED-CONTEXT-COMPRESSOR`, `CAP-AGENT-001`, `CTR-EIDOS-CLI`)**:
+  ** Add cohesive leaf module `src/eidos/core/index/context_memories.py` owned by `CMP-TIERED-CONTEXT-COMPRESSOR` implementing `evaluate_memory_freshness`, `resolve_memory_freshness_batch`, `extract_memory_sections`, and `attach_context_memories`.
+  ** Match active memories by anchored entity ID (`targets.entities`), normalized file/brace-glob path (`targets.paths` via `match_path_pattern`), and bounded secondary `execute_fts_query(..., include_types=("agent/memory",))` without displacing `TASK_SLICE_ENTITY_TYPES`, plus tier-capped untargeted global memories (`anchor: <=2/0`, `guardrails: <=3/2`, `deep: <=5/3`).
+  ** Preserve Honest Empty Slices (never attach untargeted global memories when an explicit query matches zero architectural entities and zero anchored/task memories) and omit `memories` from `to_dict()` / `to_markdown()` when empty (0-token overhead when unused).
+  ** Run Stage 0 memory-first pruning in `TieredContextSlice._enforce_token_budget` (drop global memories -> compact memories -> pop tail anchored memories) before any architectural entity compression or eviction.
+  ** Add `INV-CONTEXT-TEAM-MEMORY-ATTACHMENT` on `CAP-AGENT-001` and bump `CTR-EIDOS-CLI` to `1.8.1`.
+* **Documentation Sync (`CMP-DOCS-CORE-CONCEPTS`, `CMP-DOCS-USER-GUIDES`, `CAP-PROD-001`)**:
+  ** Sync `docs/concepts/how-eidos-works.md`, `docs/concepts/architectural-index.md`, and `docs/guides/cli.md` to 15 tables, `SCHEMA_VERSION` `2.23.0`, `memory_freshness_cache`, `context_memories.py`, and optional `memories` on `eidos context` (`CNT-EIDOS-DOCS` parent unchanged; `CMP-FTS-QUERY-ENGINE` and `CMP-SEMANTIC-EMBEDDING-ENGINE` unchanged).
+
+== Implementation Plan
+
+1. **Index Storage, Sync & Traversal (`CMP-GRAPH-STORAGE`, `CMP-INCREMENTAL-SYNC-ENGINE`, `CMP-GRAPH-TRAVERSAL-ENGINE`)**:
+   * Edit `src/eidos/core/index/storage.py`: bump `SCHEMA_VERSION = "2.23.0"`, register `memory_freshness_cache`, add `load_memory_freshness_cache` and `save_memory_freshness_cache`.
+   * Edit `src/eidos/core/index/spec_edges.py`: materialize `anchors_entity` and `promoted_to` edges and include both in incremental edge eviction clauses.
+   * Edit `src/eidos/core/index/sync.py`: index `agent/memory` `summary`, `category`, and target anchors into `specs_fts` for active non-archived memories only; preserve `promoted_to` edges targeting embedded `DEC-*`; evict `memory_freshness_cache` on updates/deletions/force rebuild.
+   * Edit `src/eidos/core/index/traversal.py`: exclude `agent/memory` from `query_spec_catalog_in_db` and add `agent/memory` to `execute_k_hop_traversal`'s hop >= 2 hub-stop filter.
+2. **Freshness Evaluator & Secondary Context Attachment (`CMP-TIERED-CONTEXT-COMPRESSOR`)**:
+   * Create `src/eidos/core/index/context_memories.py` with `DEFAULT_MEMORY_COMMIT_DRIFT_THRESHOLD`, `extract_memory_sections`, `evaluate_memory_freshness`, `resolve_memory_freshness_batch`, and `attach_context_memories`.
+   * Edit `src/eidos/core/index/context_models.py`: add `ArchitecturalContextSlice.memories`, `TieredContextSlice._compact_memories`, `_project_memory`, conditional `to_dict`/`to_markdown` rendering, `_state_signature` & `_item_md_and_json_upper_bounds` updates, and Stage 0 memory-first budget pruning in `_enforce_token_budget`.
+   * Edit `src/eidos/core/index/context.py`: wire `attach_context_memories(...)` into `build_tiered_context_slice` before `_enforce_token_budget`.
+3. **Co-Evolve Living Specifications & Documentation**:
+   * Update `eidos/architecture/containers/index.adoc`, `eidos/architecture/components/graph-storage.adoc`, `eidos/architecture/components/incremental-sync-engine.adoc`, `eidos/architecture/components/graph-traversal-engine.adoc`, `eidos/architecture/components/tiered-context-compressor.adoc`, `eidos/architecture/contracts/cli.adoc`, `eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc`, `eidos/domains/agent-intelligence/capabilities/cap-agent-002.adoc`, `eidos/domains/spec-engine/capabilities/living-spec-engine.adoc`, `eidos/architecture/components/docs-core-concepts.adoc`, and `eidos/architecture/components/docs-user-guides.adoc` (plus append `DLT-2026-170-INDEX-TEAM-MEMORY-FRESHNESS-C09A` to `eidos/explorations/exp-2026-012.adoc`).
+   * Update `docs/concepts/how-eidos-works.md`, `docs/concepts/architectural-index.md`, and `docs/guides/cli.md`.
+4. **Tests & Verification (`POL-002`, `POL-005`)**:
+   * Update `2.22.0 -> 2.23.0` assertions in `tests/test_graph_index.py` and add `tests/test_graph_index.py::test_agent_memory_indexing_edges_and_freshness_cache` (`INV-INDEX-MEMORY-GRAPH-AND-FRESHNESS-CACHE`).
+   * Add `tests/test_context.py::test_context_secondary_team_memory_attachment_and_budget_precedence` (`INV-CONTEXT-TEAM-MEMORY-ATTACHMENT`).
+   * Verify `>90%` per-file statement coverage across all 6 touched Python modules, `ruff check`, `vitest run tests/asciidoc.test.ts`, `eidos delta verify/apply/audit`, and `eidos drift --uncommitted --json`.

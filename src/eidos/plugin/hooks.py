@@ -287,6 +287,30 @@ def capture_session_baseline(payload: dict[str, Any], workspace_root: Path) -> d
     return _allow_response(client)
 
 
+def _memory_files_require_validation(
+    memory_files: list[str],
+    resolved_root: Path,
+    eidos_dir: Path,
+) -> bool:
+    """Return True if any changed memory file was deleted or fails single-file schema validation."""
+    if not memory_files:
+        return False
+    from eidos.core.spec.parser import parse_spec_file
+    from eidos.core.spec.validator import SpecValidator
+
+    validator = SpecValidator()
+    for raw_path in memory_files:
+        norm_p = Path(raw_path.replace("\\", "/"))
+        abs_p = norm_p if norm_p.is_absolute() else (resolved_root / norm_p)
+        if not abs_p.is_file():
+            # Deleted memory may break DEC-*.graduated_from references — do not short-circuit.
+            return True
+        doc = parse_spec_file(abs_p)
+        if not doc.is_valid or validator.validate_document(doc, root_dir=eidos_dir, check_mermaid=False):
+            return True
+    return False
+
+
 def _zero_governed_changes_since_baseline(
     payload: dict[str, Any],
     resolved_root: Path,
@@ -303,13 +327,15 @@ def _zero_governed_changes_since_baseline(
             if not str_paths:
                 return True
             cls_exp = classify_changed_files(str_paths, repo_root=resolved_root, eidos_dir=eidos_dir)
-            return not (
+            if (
                 cls_exp.code_files
                 or cls_exp.spec_files
                 or cls_exp.delta_files
                 or cls_exp.test_files
                 or cls_exp.onboarding_files
-            )
+            ):
+                return False
+            return not _memory_files_require_validation(cls_exp.memory_files, resolved_root, eidos_dir)
 
     baseline_dir = eidos_dir / ".cache" / "hook_baselines"
     if not baseline_dir.is_dir() or current_dirty is None:
@@ -336,7 +362,9 @@ def _zero_governed_changes_since_baseline(
     if not changed_paths:
         return True
     cls = classify_changed_files(changed_paths, repo_root=resolved_root, eidos_dir=eidos_dir)
-    return not (cls.code_files or cls.spec_files or cls.delta_files or cls.test_files or cls.onboarding_files)
+    if cls.code_files or cls.spec_files or cls.delta_files or cls.test_files or cls.onboarding_files:
+        return False
+    return not _memory_files_require_validation(cls.memory_files, resolved_root, eidos_dir)
 
 
 def find_workspace_root(payload: dict[str, Any] | None = None) -> Path:

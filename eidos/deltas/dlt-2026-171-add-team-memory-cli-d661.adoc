@@ -1,0 +1,220 @@
+---
+type: delta/mutation
+id: DLT-2026-171-ADD-TEAM-MEMORY-CLI-D661
+title: "Add Team Memory CLI, Sanitizer, Dedup & eidos-memory Skill (Phase 3)"
+status: applied
+graduated_from: EXP-2026-012
+vcs:
+  branch: main
+  base_commit: b9f03f93280614f7e564d1cb9db004d1afa6dc5c
+intent:
+  kind: feature
+  motivation: >
+    Graduate Phase 3 of EXP-2026-012 by delivering the deterministic team memory lifecycle engine
+    (CMP-MEMORY-ENGINE: collision-resistant MEM-* IDs, zero-warning AsciiDoc body sanitizer, calibrated
+    BM25 and pre-computed Harrier overlap detection, standalone/embedded promotion target resolution, and
+    non-blocking memory auditing), mounting the 8-subcommand 'eidos memory' CLI group (CMP-CLI-MEMORY-COMMANDS:
+    add, list, search, show, verify, archive, audit, promote) under CTR-EIDOS-CLI 1.9.0, and shipping the
+    dedicated 5th bundled Agent Skill ('eidos-memory', <= 450 words) plus concise AGENTS.md trigger while
+    keeping all 4 existing skills within their original no-growth word ceilings.
+mutations:
+  - operation: add
+    target: CMP-MEMORY-ENGINE
+    details: >
+      Introduce standalone C4 Level 3 component CMP-MEMORY-ENGINE (src/eidos/core/lifecycle/memory_engine.py)
+      under CNT-EIDOS-CORE owning team memory CRUD, collision-resistant MEM-* ID generation, zero-warning
+      AsciiDoc sanitization, BM25/pre-computed-Harrier overlap detection, promotion target resolution, and
+      non-blocking audit reporting.
+    expect:
+      frontmatter:
+        container: "CNT-EIDOS-CORE"
+        source_path: "src/eidos/core/lifecycle/memory_engine.py"
+      body:
+        contains:
+          - "sanitize_memory_asciidoc_body"
+          - "add_memory"
+          - "audit_memories"
+          - "promote_memory"
+  - operation: add
+    target: CMP-CLI-MEMORY-COMMANDS
+    details: >
+      Introduce standalone C4 Level 3 component CMP-CLI-MEMORY-COMMANDS (src/eidos/cli/memory_commands.py)
+      under CNT-EIDOS-CLI exposing the 8-subcommand 'eidos memory' Typer group (add, list, search, show,
+      verify, archive, audit, promote) with Rich and --json outputs.
+    expect:
+      frontmatter:
+        container: "CNT-EIDOS-CLI"
+        source_path: "src/eidos/cli/memory_commands.py"
+      body:
+        contains:
+          - "memory_app"
+          - "eidos memory"
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: >
+      Record DEC-CORE-MEMORY-ENGINE-SANITIZER-AND-OVERLAP in CNT-EIDOS-CORE.decisions and document
+      memory_engine.py under the lifecycle subpackage.
+    expect:
+      frontmatter:
+        decisions.id:
+          - "DEC-CORE-MEMORY-ENGINE-SANITIZER-AND-OVERLAP"
+      body:
+        contains:
+          - "memory_engine.py"
+  - operation: modify
+    target: CNT-EIDOS-CLI
+    details: >
+      Document the 'eidos memory' command group in CNT-EIDOS-CLI's architectural boundary.
+    expect:
+      body:
+        contains:
+          - "eidos memory"
+  - operation: modify
+    target: CMP-CLI-APP
+    details: >
+      Mount memory_app ('memory') on the Knowledge Graph & AI Context help panel in src/eidos/cli/main.py
+      and sync bundled schema count in CMP-CLI-APP prose from 16 to 17.
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/cli/main.py"
+          - "src/eidos/cli/_shared.py"
+      body:
+        contains:
+          - "17 loaded v1 schemas"
+          - "`memory`"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: >
+      Bump CTR-EIDOS-CLI to 1.9.0, specify the 8 'eidos memory' subcommands (add, list, search, show, verify,
+      archive, audit, promote), register 'memory' in Panel 3, and update bundled Agent Skills count from 4 to 5.
+    expect:
+      frontmatter:
+        version: "1.9.0"
+      body:
+        contains:
+          - "=== `eidos memory`"
+          - "5 Eidos Agent Skills"
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: >
+      Record DEC-PLUGIN-DEDICATED-MEMORY-SKILL in CNT-EIDOS-PLUGIN.decisions and update bundled workflow
+      skills references from 4 to 5 (adding eidos-memory).
+    expect:
+      frontmatter:
+        decisions.id:
+          - "DEC-PLUGIN-DEDICATED-MEMORY-SKILL"
+      body:
+        contains:
+          - "eidos-memory"
+          - "5 bundled"
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    details: >
+      Add 'eidos-memory' to ACTIVE_EIDOS_SKILLS in src/eidos/plugin/installer.py and update
+      CMP-PLUGIN-INSTALLER to document the 5 bundled workflow skills.
+    expect:
+      body:
+        contains:
+          - "5 workflow skills"
+          - "eidos-memory"
+  - operation: modify
+    target: CAP-PROD-001
+    details: >
+      Bump CAP-PROD-001 to 1.22.0, add CMP-MEMORY-ENGINE to technical.components, and add
+      INV-MEMORY-LIFECYCLE-AND-SANITIZER.
+    expect:
+      frontmatter:
+        version: "1.22.0"
+        technical.components:
+          - "CMP-MEMORY-ENGINE"
+        technical.invariants.id:
+          - "INV-MEMORY-LIFECYCLE-AND-SANITIZER"
+      body:
+        contains:
+          - "CMP-MEMORY-ENGINE"
+          - "INV-MEMORY-LIFECYCLE-AND-SANITIZER"
+  - operation: add
+    target: INV-MEMORY-LIFECYCLE-AND-SANITIZER
+    details: >
+      Bind INV-MEMORY-LIFECYCLE-AND-SANITIZER to
+      tests/test_memory.py::test_memory_lifecycle_sanitizer_overlap_and_promotion.
+    expect:
+      frontmatter:
+        rule: "sanitize_memory_asciidoc_body"
+        test_binding: "tests/test_memory.py::test_memory_lifecycle_sanitizer_overlap_and_promotion"
+  - operation: modify
+    target: CAP-AGENT-001
+    details: >
+      Bump CAP-AGENT-001 to 1.19.0, add CMP-CLI-MEMORY-COMMANDS to technical.components, add
+      INV-MEMORY-CLI-AND-SKILL-PARITY, and update bundled skills count from 4 to 5.
+    expect:
+      frontmatter:
+        version: "1.19.0"
+        technical.components:
+          - "CMP-CLI-MEMORY-COMMANDS"
+        technical.invariants.id:
+          - "INV-MEMORY-CLI-AND-SKILL-PARITY"
+      body:
+        contains:
+          - "5 bundled skills"
+          - "eidos-memory"
+  - operation: add
+    target: INV-MEMORY-CLI-AND-SKILL-PARITY
+    details: >
+      Bind INV-MEMORY-CLI-AND-SKILL-PARITY to
+      tests/test_memory.py::test_memory_cli_subcommands_and_nonblocking_audit.
+    expect:
+      frontmatter:
+        rule: "eidos memory"
+        test_binding: "tests/test_memory.py::test_memory_cli_subcommands_and_nonblocking_audit"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: >
+      Update docs/guides/cli.md (eidos memory command reference) and docs/guides/agent-plugin.md (5 bundled
+      skills including eidos-memory and eidos memory commands) and sync CMP-DOCS-USER-GUIDES prose.
+    expect:
+      frontmatter:
+        source_path: "docs/guides"
+      body:
+        contains:
+          - "eidos memory"
+          - "eidos-memory"
+          - "5 bundled workflow skills"
+---
+= SpecDelta: Add Team Memory CLI, Sanitizer, Dedup & eidos-memory Skill (Phase 3)
+:toc: left
+
+== Problem Statement
+
+Phases 1 and 2 (`DLT-2026-169`, `DLT-2026-170`) established the `agent/memory` (`MEM-*`) schema, validation/drift isolation, unified SQLite indexing, `HEAD`-keyed `memory_freshness_cache`, and secondary `eidos context` attachment. However, developers and AI coding agents have no CLI workflow to create, list, search, inspect, re-verify, archive, audit, or promote team memories—nor a bundled skill instructing agents when to save automatically, disclose the `MEM-*` file in their replies, avoid personal preferences, and promote proven lessons into formal specs.
+
+== Proposed Specification Changes
+
+* **Team Memory Lifecycle Engine (`CMP-MEMORY-ENGINE`, `CNT-EIDOS-CORE`, `CAP-PROD-001`)**:
+  ** Add `src/eidos/core/lifecycle/memory_engine.py` under new disjoint component `CMP-MEMORY-ENGINE`.
+  ** Implement word-boundary collision-resistant `generate_memory_id` (`MEM-<SLUG>-<4HEX>` with on-disk re-roll across active and archive dirs), zero-warning `sanitize_memory_asciidoc_body` (Markdown code fences, `include::` neutralization, `---` dividers, ATX/AsciiDoc heading demotion, safe nested bullet normalization), calibrated overlap detection (`detect_memory_overlaps`: BM25 `13.5`/`26.0` and pre-computed `spec_embeddings` Harrier `0.56`/`0.59` without ever re-embedding the corpus on the fly), standalone + embedded `DEC-*`/`INV-*`/`POL-*` `resolve_promotion_target`, and CRUD/audit functions (`add_memory`, `list_memories`, `search_memories`, `show_memory`, `verify_memory`, `archive_memory`, `promote_memory`, `audit_memories`).
+  ** Record `DEC-CORE-MEMORY-ENGINE-SANITIZER-AND-OVERLAP` in `CNT-EIDOS-CORE` and bind `INV-MEMORY-LIFECYCLE-AND-SANITIZER` on `CAP-PROD-001`.
+* **Team Memory CLI (`CMP-CLI-MEMORY-COMMANDS`, `CMP-CLI-APP`, `CNT-EIDOS-CLI`, `CTR-EIDOS-CLI`)**:
+  ** Add `src/eidos/cli/memory_commands.py` (`memory_app`) and mount under `PANEL_KNOWLEDGE` in `src/eidos/cli/main.py`.
+  ** Expose 8 subcommands: `add`, `list`, `search`, `show`, `verify`, `archive`, `audit` (strictly non-blocking exit code `0`), and `promote`, all supporting Rich tables/panels and `--json`.
+  ** Bump `CTR-EIDOS-CLI` to `1.9.0`.
+* **5th Bundled Agent Skill & `AGENTS.md` Trigger (`CNT-EIDOS-PLUGIN`, `CMP-PLUGIN-INSTALLER`, `CAP-AGENT-001`)**:
+  ** Add `assets/plugin_reference/skills/eidos-memory/SKILL.md` (`<= 450`-word ceiling), register `"eidos-memory"` in `ACTIVE_EIDOS_SKILLS` (`src/eidos/plugin/installer.py`), add a 1-line `eidos-memory` companion pointer in `assets/plugin_reference/skills/eidos/SKILL.md` (tightening filler words to stay `<= 2,050` words), and add the concise team-memory capture/disclosure trigger to `assets/plugin_reference/agents-md/block.md` (`<= 250` template / `<= 320` rendered words).
+  ** Record `DEC-PLUGIN-DEDICATED-MEMORY-SKILL` in `CNT-EIDOS-PLUGIN` and bind `INV-MEMORY-CLI-AND-SKILL-PARITY` on `CAP-AGENT-001`.
+* **Documentation Sync (`CMP-DOCS-USER-GUIDES`, `CNT-EIDOS-DOCS` parent unchanged)**:
+  ** Document `eidos memory` in `docs/guides/cli.md` and the 5th `eidos-memory` skill across `docs/guides/agent-plugin.md` and `assets/plugin_reference/README.md`.
+
+== Implementation Plan
+
+1. **Core Memory Engine (`CMP-MEMORY-ENGINE`)**:
+   * Create `src/eidos/core/lifecycle/memory_engine.py`.
+2. **CLI Presentation (`CMP-CLI-MEMORY-COMMANDS`, `CMP-CLI-APP`)**:
+   * Create `src/eidos/cli/memory_commands.py` and mount `memory_app` in `src/eidos/cli/main.py`.
+3. **5th Agent Skill & Plugin Installer (`CMP-PLUGIN-INSTALLER`, `CNT-EIDOS-PLUGIN`)**:
+   * Create `assets/plugin_reference/skills/eidos-memory/SKILL.md`, update `assets/plugin_reference/skills/eidos/SKILL.md`, `assets/plugin_reference/agents-md/block.md`, `assets/plugin_reference/README.md`, `src/eidos/plugin/installer.py`, and sync root `AGENTS.md`.
+4. **Co-Evolve Living Specs & Documentation**:
+   * Create `eidos/architecture/components/memory-engine.adoc` and `eidos/architecture/components/cli-memory-commands.adoc`; update `CNT-EIDOS-CORE`, `CNT-EIDOS-CLI`, `CMP-CLI-APP`, `CTR-EIDOS-CLI`, `CNT-EIDOS-PLUGIN`, `CMP-PLUGIN-INSTALLER`, `CAP-PROD-001`, `CAP-AGENT-001`, `CMP-DOCS-USER-GUIDES`, `EXP-2026-012`, `docs/guides/cli.md`, and `docs/guides/agent-plugin.md`.
+5. **Tests & Verification (`POL-002`, `POL-005`)**:
+   * Create `tests/test_memory.py` (`test_memory_lifecycle_sanitizer_overlap_and_promotion`, `test_memory_cli_subcommands_and_nonblocking_audit`), update 5-skill assertions and `_SKILL_WORD_CEILINGS["eidos-memory"] = 450` in `tests/test_plugin.py` and `tests/test_docs_sync.py`.
+   * Verify `>90%` per-file statement coverage on `memory_engine.py`, `memory_commands.py`, `main.py`, and `installer.py`, `ruff check`, `vitest run tests/asciidoc.test.ts`, `eidos delta verify/apply/audit`, and `eidos drift --uncommitted --json`.

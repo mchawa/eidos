@@ -581,6 +581,7 @@ def _sync_index_locked(
             conn.execute("DELETE FROM code_symbols;")
             conn.execute("DELETE FROM specs_fts;")
             conn.execute("DELETE FROM file_tokens_fts;")
+            conn.execute("DELETE FROM memory_freshness_cache;")
             # Content-addressed caches (spec_validation_cache, test_binding_cache, spec_embeddings)
             # are intentionally preserved across force rebuilds; orphaned spec_embeddings rows are
             # pruned after entity reconciliation.
@@ -640,6 +641,7 @@ def _sync_index_locked(
                         (doc_id, d_rel),
                     )
                     conn.execute("DELETE FROM code_symbols WHERE entity_id = ?", (doc_id,))
+                    conn.execute("DELETE FROM memory_freshness_cache WHERE memory_id = ?;", (doc_id,))
                     surviving_rows = conn.execute(
                         "SELECT rel_path FROM indexed_files WHERE doc_id = ? AND rel_path != ? ORDER BY rel_path;",
                         (doc_id, d_rel),
@@ -730,6 +732,7 @@ def _sync_index_locked(
                             "DELETE FROM entities WHERE (id = ? AND file_path = ?) OR (file_path = ? AND type = 'invariant');",
                             (old_doc_id, rel_p, rel_p),
                         )
+                        conn.execute("DELETE FROM memory_freshness_cache WHERE memory_id = ?;", (old_doc_id,))
                         if old_doc_id != new_doc_id:
                             any_doc_id_renamed = True
                             conn.execute("DELETE FROM code_symbols WHERE entity_id = ?;", (old_doc_id,))
@@ -768,6 +771,7 @@ def _sync_index_locked(
                             "DELETE FROM entities WHERE (id = ? AND file_path = ?) OR (file_path = ? AND type = 'invariant');",
                             (new_doc_id, rel_p, rel_p),
                         )
+                        conn.execute("DELETE FROM memory_freshness_cache WHERE memory_id = ?;", (new_doc_id,))
 
         fresh_base_symbols: dict[str, str] = {}
         for p, rel_p, mtime, sha, doc in parsed_specs:
@@ -938,6 +942,10 @@ def _sync_index_locked(
             jtbd_parts: list[str] = []
             if doc_type == "product/policy":
                 jtbd_parts.extend(inv.rule for inv in model.invariants if inv.rule)
+            if doc_type == "agent/memory":
+                mem_summary = str(fm.get("summary") or "").strip()
+                if mem_summary:
+                    jtbd_parts.append(mem_summary)
             if model.intent and model.intent.motivation:
                 jtbd_parts.append(model.intent.motivation)
             jtbd_or_rule = " ".join(jtbd_parts)
@@ -961,16 +969,45 @@ def _sync_index_locked(
                             decision_texts.append(str(aval).strip())
             if decision_texts:
                 body_clean = f"{body_clean} " + re.sub(r"[{}\[\]=:#*`]", " ", " ".join(decision_texts))
+            mem_keyword_parts: list[str] = []
+            if doc_type == "agent/memory":
+                mem_cat = str(fm.get("category") or "").strip()
+                if mem_cat:
+                    mem_keyword_parts.append(mem_cat)
+                mem_targets = fm.get("targets") if isinstance(fm.get("targets"), dict) else {}
+                raw_ent_t = mem_targets.get("entities")
+                for ent_t in raw_ent_t if isinstance(raw_ent_t, list) else []:
+                    if isinstance(ent_t, str) and ent_t.strip():
+                        mem_keyword_parts.append(ent_t.strip())
+                raw_path_t = mem_targets.get("paths")
+                for path_t in raw_path_t if isinstance(raw_path_t, list) else []:
+                    if isinstance(path_t, str) and path_t.strip():
+                        mem_keyword_parts.append(path_t.strip())
             spec_synonyms = expand_architectural_synonyms(f"{title or ''} {jtbd_or_rule or ''}")
             keywords = " ".join(
-                x for x in [doc_id, doc_type, domain, container_type, source_path, *decision_ids, spec_synonyms] if x
+                x
+                for x in [
+                    doc_id,
+                    doc_type,
+                    domain,
+                    container_type,
+                    source_path,
+                    *decision_ids,
+                    *mem_keyword_parts,
+                    spec_synonyms,
+                ]
+                if x
             )
             symbols = ""
             decompounded = compound_identifier_subtokens(f"{title or ''} {jtbd_or_rule or ''} {body_clean}")
             if decompounded:
                 symbols = decompounded.strip()
-            is_archived_delta = doc_type == "delta/mutation" and "/deltas/archive/" in f"/{rel_p.lstrip('/')}"
-            if not is_archived_delta:
+            norm_rel_slash = f"/{rel_p.lstrip('/')}"
+            is_archived_delta = doc_type == "delta/mutation" and "/deltas/archive/" in norm_rel_slash
+            is_inactive_memory = doc_type == "agent/memory" and (
+                str(status).strip().lower() != "active" or "/memory/archive/" in norm_rel_slash
+            )
+            if not is_archived_delta and not is_inactive_memory:
                 fresh_base_symbols[doc_id] = symbols
                 conn.execute(
                     """
@@ -1271,7 +1308,7 @@ def _sync_index_locked(
             """
             DELETE FROM edges
             WHERE target_id NOT IN (SELECT id FROM entities)
-              AND rel_type != 'consumes_api';
+              AND rel_type NOT IN ('consumes_api', 'promoted_to');
             """
         )
         conn.execute(
@@ -1306,6 +1343,12 @@ def _sync_index_locked(
                OR entity_id NOT IN (SELECT entity_id FROM specs_fts);
             """
         )
+        if specs_deleted or code_deleted:
+            conn.execute("DELETE FROM memory_freshness_cache;")
+        else:
+            conn.execute(
+                "DELETE FROM memory_freshness_cache WHERE memory_id NOT IN (SELECT id FROM entities WHERE type = 'agent/memory');"
+            )
         prune_stale_test_binding_edges(conn)
         _reconcile_invariant_coverage(index, conn, ast_idx)
 

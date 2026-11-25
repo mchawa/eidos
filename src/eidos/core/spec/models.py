@@ -23,6 +23,7 @@ ENTITY_PREFIX_REGISTRY: dict[str, tuple[str, str, str | None]] = {
     "SCR-": ("screen", "design/screen", "design/screen.schema.yaml"),
     "CLT-": ("client", "design/client", "design/client.schema.yaml"),
     "FLOW-": ("flow", "design/flow", "design/flow.schema.yaml"),
+    "MEM-": ("memory", "agent/memory", "agent/memory.schema.yaml"),
     "INV-": ("invariant", "invariant", None),
     "DEC-": ("decision", "decision", None),
 }
@@ -80,6 +81,15 @@ def infer_entity_type_from_path(rel_path: str | Path) -> tuple[str, str, str] | 
     def _prefixed(pfx: str, token: str) -> tuple[str, str, str]:
         return pfx, ENTITY_PREFIX_REGISTRY[pfx][1], token if token.startswith(pfx) else f"{pfx}{token}"
 
+    parent_parts = norm_parts[:-1]
+    if parent_parts and (
+        parent_parts[0] == "memory"
+        or (
+            parent_parts[0] != "domains"
+            and any(parent_parts[i] == "memory" and parent_parts[i - 1] == "eidos" for i in range(1, len(parent_parts)))
+        )
+    ):
+        return _prefixed("MEM-", stem_upper)
     if "design" in norm_parts and "systems" in norm_parts and "components" in norm_parts:
         return _prefixed("UIC-", stem_upper)
     if "design" in norm_parts and "systems" in norm_parts:

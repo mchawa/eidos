@@ -2,7 +2,7 @@
 
 Every specification document in an Eidos repository is an **AsciiDoc (`.adoc`)** file containing structured **YAML frontmatter**. Frontmatter syntax and cross-references are strictly validated against canonical schemas bundled with the Eidos engine (`assets/schemas/v1/`).
 
-This glossary details all **16 document schemas** (plus shared `$defs` in `common/defs.yaml`), their ID conventions, directory locations, required fields, and architectural intent.
+This glossary details all **17 document schemas** (plus shared `$defs` in `common/defs.yaml`), their ID conventions, directory locations, required fields, and architectural intent.
 
 ---
 
@@ -26,9 +26,10 @@ This glossary details all **16 document schemas** (plus shared `$defs` in `commo
 | `design/client` | `CLT-*` | `design/clients/<client>/client.adoc` | `design/client.schema.yaml` | Client application platform, runtime surface, design system binding, and owned screens. |
 | `design/flow` | `FLOW-*` | `design/clients/<client>/flows/*.adoc` | `design/flow.schema.yaml` | Interaction user journeys and cross-client flows with visual Mermaid diagrams. |
 | `delta/mutation` | `DLT-*` | `deltas/dlt-*.adoc` (`archive/`) | `delta/delta.schema.yaml` | Planned Mode semantic mutations, `expect:` post-conditions (including dot-paths), blast radius, and tombstones. |
+| `agent/memory` | `MEM-*` | `memory/mem-*.adoc` (`archive/`) | `agent/memory.schema.yaml` | Git-native, team-scoped advisory engineering memory (`feedback`, `project`, `reference`) shared across coding agents. |
 
 > [!NOTE]
-> **Shared Definitions (`assets/schemas/v1/common/defs.yaml`) & CLI Schema Introspection**: Reusable definitions for `#/$defs/non_empty_string` (`minLength: 1`, `pattern: "\\S"`, forbidding blank or whitespace-only prose/identifiers/paths), `#/$defs/decision` (`DEC-*`), `#/$defs/invariant` (`INV-*` with `test_binding`), `#/$defs/lifecycle_status`, `#/$defs/delta_status`, `#/$defs/exploration_status`, `#/$defs/code_paths` (`minItems: 1` non-whitespace paths or `{a,b}` brace globs), `#/$defs/boundary_entity_ref`, `#/$defs/container_import_boundary`, `#/$defs/component_import_boundary`, `#/$defs/contracts_block`, `#/$defs/external_design_references`, and `x-eidos-ref` entity references are automatically injected across schemas by `SpecValidator`. Each specification's JSON Schema path is automatically derived from `type`. Run `eidos spec schema [type] [--json]` at any time to inspect required/optional keys, nested sub-schemas, and valid YAML frontmatter templates.
+> **Shared Definitions (`assets/schemas/v1/common/defs.yaml`) & CLI Schema Introspection**: Reusable definitions for `#/$defs/non_empty_string` (`minLength: 1`, `pattern: "\\S"`, forbidding blank or whitespace-only prose/identifiers/paths), `#/$defs/decision` (`DEC-*`, with optional `graduated_from` accepting `EXP-*`, `DLT-*`, or `MEM-*`), `#/$defs/invariant` (`INV-*` with `test_binding`), `#/$defs/lifecycle_status`, `#/$defs/delta_status`, `#/$defs/exploration_status`, `#/$defs/memory_status`, `#/$defs/code_paths` (`minItems: 1` non-whitespace paths or `{a,b}` brace globs), `#/$defs/boundary_entity_ref`, `#/$defs/container_import_boundary`, `#/$defs/component_import_boundary`, `#/$defs/contracts_block`, `#/$defs/external_design_references`, and `x-eidos-ref` entity references are automatically injected across schemas by `SpecValidator`. Each specification's JSON Schema path is automatically derived from `type`. Run `eidos spec schema [type] [--json]` at any time to inspect required/optional keys, nested sub-schemas, and valid YAML frontmatter templates.
 
 ---
 
@@ -456,6 +457,37 @@ mutations:
     expect:
       body:
         contains: "eidos drift"
+---
+```
+
+---
+
+## 5. Agent Operational Memory Layer
+
+### `agent/memory`
+* **Schema**: `schemas/v1/agent/memory.schema.yaml`
+* **ID Convention**: `MEM-<SLUG>-<4HEX>` (e.g., `MEM-REAL-SQLITE-TESTS-A3F9`)
+* **Location**: `eidos/memory/mem-*.adoc` (or `eidos/memory/archive/mem-*.adoc` after archiving or promotion)
+* **Required Properties**: `type`, `id`, `title`, `category`, `status`, `summary`, `verified_at`
+* **Intent**: Git-native, team-scoped advisory engineering memory (`feedback`, `project`, or `reference`; personal `user` preferences are excluded). Captures recurring engineering corrections and toolchain quirks, time-bounded project context (`expires_at`), and external operational pointers optionally anchored via `targets: { entities, paths }`. Advisory target staleness is isolated from blocking `SpecValidator` `broken_references` and `ValidationReport.warnings`, and top-level `eidos/memory/**` edits are isolated into `ChangedFilesClassification.memory_files`.
+
+```yaml
+---
+type: agent/memory
+id: MEM-REAL-SQLITE-TESTS-A3F9
+title: "Never mock SQLite in index integration tests"
+category: feedback # feedback | project | reference
+status: active # draft | active | promoted | archived
+summary: "Always use tmp_path SQLite DBs; mocked cursors mask FTS5 trigger bugs."
+targets:
+  entities:
+    - CMP-GRAPH-STORAGE
+  paths:
+    - tests/test_graph_index.py
+verified_at: "2026-11-24"
+verified_commit: "4f8c21a"
+expires_at: null
+promoted_to: null
 ---
 ```
 

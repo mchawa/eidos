@@ -1,0 +1,213 @@
+---
+type: delta/mutation
+id: DLT-2026-169-ADD-AGENT-MEMORY-SCHEMA-D36A
+title: "Add Agent Memory Schema, Validation & Drift Isolation (Phase 1)"
+status: applied
+graduated_from: EXP-2026-012
+vcs:
+  branch: main
+  base_commit: b9f03f93280614f7e564d1cb9db004d1afa6dc5c
+intent:
+  kind: feature
+  motivation: >
+    Graduate Phase 1 of EXP-2026-012 by establishing the canonical 17th Eidos v1 schema (agent/memory, MEM-*)
+    and template under assets/schemas/v1/agent/, extending defs.yaml decision.graduated_from to accept MEM-*,
+    registering MEM- in DomainModels and AssetLocator, rejecting direct memory creation in LifecycleScaffolder
+    in favor of Phase 3's eidos memory add, isolating advisory memory target references from blocking
+    SpecValidator broken_references and ValidationReport.warnings (--fail-on-warnings safe), and splitting
+    eidos/memory/** into ChangedFilesClassification.memory_files so memory edits neither mask structural code
+    drift nor defeat CMP-HOOK-RUNNER's zero-edit Q&A Stop hook short-circuit.
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: >
+      Introduce assets/schemas/v1/agent/memory.schema.yaml and memory.template.adoc (16 -> 17 canonical v1
+      schemas), extend assets/schemas/v1/common/defs.yaml decision.graduated_from to accept MEM-*, and record
+      DEC-CORE-AGENT-MEMORY-SCHEMA-ISOLATION in CNT-EIDOS-CORE.decisions.
+    expect:
+      frontmatter:
+        decisions.id:
+          - "DEC-CORE-AGENT-MEMORY-SCHEMA-ISOLATION"
+      body:
+        contains:
+          - "agent/memory"
+  - operation: modify
+    target: CMP-DOMAIN-MODELS
+    details: >
+      Register 'MEM-': ('memory', 'agent/memory', 'agent/memory.schema.yaml') in ENTITY_PREFIX_REGISTRY
+      and map canonical eidos/memory/ parent paths to MEM- in infer_entity_type_from_path (17 v1 document types).
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/spec/models.py"
+      body:
+        contains:
+          - "17 v1 document types"
+          - "agent/memory"
+  - operation: modify
+    target: CMP-ASSET-LOCATOR
+    details: >
+      Register 'agent/memory' and 'memory' template mappings to 'agent/memory.template.adoc' in
+      _TEMPLATE_PATHS_BY_TYPE inside src/eidos/core/workspace/assets.py.
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/workspace/assets.py"
+      body:
+        contains:
+          - "agent/memory"
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: >
+      Validate all 17 living specification types including agent/memory schema conformance while exempting
+      agent/memory targets and promoted_to from _check_dict_references broken_references and exempting
+      agent/memory from _warn_if_deprecated_dependency so memory staleness never enters ValidationReport.warnings.
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/core/spec/validator.py"
+          - "src/eidos/core/spec/design_validation.py"
+      body:
+        contains:
+          - "17 living specification types"
+          - "agent/memory"
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+    details: >
+      Reject 'memory' and 'agent/memory' in create_spec with an explicit ValueError redirecting to
+      'eidos memory add' (mirroring delta/mutation) while keeping get_spec_schema_info aligned across all 17
+      v1 schemas.
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/core/lifecycle/scaffolder.py"
+          - "src/eidos/core/lifecycle/catalog.py"
+      body:
+        contains:
+          - "agent/memory"
+          - "eidos memory add"
+  - operation: modify
+    target: CMP-GIT-DIFF-INSPECTOR
+    details: >
+      Add ChangedFilesClassification.memory_files and route eidos/memory/** files there in
+      classify_changed_files instead of spec_files so memory edits neither pollute structural drift coverage
+      nor break CMP-HOOK-RUNNER's zero-edit Q&A Stop hook short-circuit.
+    expect:
+      frontmatter:
+        source_path: "src/eidos/vcs/diff.py"
+      body:
+        contains:
+          - "memory_files"
+          - "eidos/memory/"
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: >
+      Update docs/concepts/schema-glossary.md to document the 17th canonical v1 schema (agent/memory, MEM-*)
+      and update CMP-DOCS-CORE-CONCEPTS references from 16 to 17 schemas.
+    expect:
+      frontmatter:
+        source_path: "docs/concepts"
+      body:
+        contains:
+          - "17-schema"
+          - "agent/memory"
+  - operation: modify
+    target: CAP-PROD-001
+    details: >
+      Bump CAP-PROD-001 to 1.21.0, update INV-SPEC-VALIDATION and INV-DOCS-SYNCHRONIZATION from 16 to 17
+      schemas, and add INV-AGENT-MEMORY-SCHEMA-ISOLATION.
+    expect:
+      frontmatter:
+        technical.invariants.id:
+          - "INV-AGENT-MEMORY-SCHEMA-ISOLATION"
+      body:
+        contains:
+          - "17 specification schemas"
+          - "INV-AGENT-MEMORY-SCHEMA-ISOLATION"
+  - operation: modify
+    target: INV-SPEC-VALIDATION
+    details: "Update canonical schema count from 16 to 17 living specification types (including agent/memory)."
+    expect:
+      frontmatter:
+        rule: "17 living specification types"
+  - operation: modify
+    target: INV-DOCS-SYNCHRONIZATION
+    details: "Update canonical schema count from 16 to 17 living specification schemas in docs/ and test_docs_sync.py."
+    expect:
+      frontmatter:
+        rule: "17 living specification schemas"
+  - operation: add
+    target: INV-AGENT-MEMORY-SCHEMA-ISOLATION
+    details: >
+      Enforce agent/memory Draft 2020-12 validation (team categories feedback|project|reference, required
+      promoted_to when status == promoted), defs.yaml decision.graduated_from MEM-* acceptance, create_spec
+      memory rejection, and non-blocking exemption of agent/memory targets/promoted_to from SpecValidator
+      broken_references and ValidationReport.warnings.
+    expect:
+      frontmatter:
+        rule: "agent/memory"
+        test_binding: "tests/test_validator.py::test_agent_memory_schema_defs_and_nonblocking_isolation"
+  - operation: modify
+    target: CAP-VCS-001
+    details: >
+      Bump CAP-VCS-001 to 1.15.0 and add INV-DRIFT-MEMORY-FILE-ISOLATION governing ChangedFilesClassification.memory_files,
+      non-masking drift isolation, and Stop hook zero-edit Q&A preservation.
+    expect:
+      frontmatter:
+        version: "1.15.0"
+        technical.invariants.id:
+          - "INV-DRIFT-MEMORY-FILE-ISOLATION"
+      body:
+        contains:
+          - "INV-DRIFT-MEMORY-FILE-ISOLATION"
+  - operation: add
+    target: INV-DRIFT-MEMORY-FILE-ISOLATION
+    details: >
+      Bind INV-DRIFT-MEMORY-FILE-ISOLATION to tests/test_drift.py::test_agent_memory_classification_drift_and_stop_hook_isolation.
+    expect:
+      frontmatter:
+        rule: "memory_files"
+        test_binding: "tests/test_drift.py::test_agent_memory_classification_drift_and_stop_hook_isolation"
+---
+= SpecDelta: Add Agent Memory Schema, Validation & Drift Isolation (Phase 1)
+:toc: left
+
+== Problem Statement
+
+`EXP-2026-012` validated a Git-native, team-scoped auto-memory architecture (`type: agent/memory`, stored as one `.adoc` file per memory under `eidos/memory/`). Before building indexing, CLI commands, skills, or Portal screens in Phases 2–4, Spike 1 empirically proved three foundational engine gaps that must be closed first:
+
+1. **Missing Canonical Schema & Registry Entry**: `agent/memory` (`MEM-*`) is unregistered in `assets/schemas/v1/`, `ENTITY_PREFIX_REGISTRY`, `infer_entity_type_from_path`, and `_TEMPLATE_PATHS_BY_TYPE`, and `assets/schemas/v1/common/defs.yaml` (`decision.graduated_from`) currently rejects `MEM-*`.
+2. **Blocking Validator Leakage**: `SpecValidator._check_dict_references()` recursively flags any missing `.adoc` path in frontmatter as a blocking `broken_references` error (failing CI if a memory's `targets.paths` points to a deleted `.adoc` file), and `_warn_if_deprecated_dependency()` would emit `ValidationReport.warnings` (breaking `--fail-on-warnings` under `INV-VALIDATION-WARNINGS-PORTAL-AND-CI-ESCALATION`).
+3. **Drift & `Stop` Hook Classification Leakage**: `classify_changed_files()` currently routes every non-delta `eidos/*.adoc` file into `classification.spec_files`, polluting `DriftCheckResult` and defeating `CMP-HOOK-RUNNER`'s zero-edit Q&A short-circuit (`INV-AGENT-DRIFT-HOOK`) whenever an agent saves a team memory without editing code.
+
+== Proposed Specification Changes
+
+* **`CNT-EIDOS-CORE` (`eidos/architecture/containers/core.adoc`)**: Add `assets/schemas/v1/agent/memory.schema.yaml` + `memory.template.adoc`, extend `assets/schemas/v1/common/defs.yaml` (`decision.graduated_from` accepting `MEM-*`), and record `DEC-CORE-AGENT-MEMORY-SCHEMA-ISOLATION` (`graduated_from: EXP-2026-012`) documenting why team memories exclude personal `user` preferences, isolate staleness from `ValidationReport.warnings`, and reject `eidos spec create memory`.
+* **`CMP-DOMAIN-MODELS` (`eidos/architecture/components/domain-models.adoc`)**: Register `"MEM-": ("memory", "agent/memory", "agent/memory.schema.yaml")` in `ENTITY_PREFIX_REGISTRY` (17 v1 document types) and resolve `eidos/memory/**` via parent-first `infer_entity_type_from_path`.
+* **`CMP-ASSET-LOCATOR` (`eidos/architecture/components/asset-locator.adoc`)**: Register `agent/memory` and `memory` template paths (`agent/memory.template.adoc`) in `_TEMPLATE_PATHS_BY_TYPE`.
+* **`CMP-SPEC-VALIDATOR` (`eidos/architecture/components/spec-validator.adoc`)**: Validate all 17 living specification types while exempting `agent/memory` `targets` and `promoted_to` from `_check_dict_references()` and exempting `agent/memory` from `_warn_if_deprecated_dependency()`.
+* **`CMP-LIFECYCLE-SCAFFOLDER` (`eidos/architecture/components/lifecycle-scaffolder.adoc`)**: Reject `memory` / `agent/memory` in `create_spec()` with a `ValueError` pointing callers to `eidos memory add` (mirroring `delta/mutation`), while exposing all 17 schemas in `get_spec_schema_info()`.
+* **`CMP-GIT-DIFF-INSPECTOR` (`eidos/architecture/components/git-diff-inspector.adoc`)**: Add `ChangedFilesClassification.memory_files` and route `eidos/memory/**` files into `memory_files` (excluded from `spec_files` and `delta_files`, and excluded from `total_changed` governance triggers that gate `CMP-HOOK-RUNNER`).
+* **`CMP-DOCS-CORE-CONCEPTS` (`eidos/architecture/components/docs-core-concepts.adoc`)**: Document `agent/memory` (`MEM-*`) in `docs/concepts/schema-glossary.md` (17-schema glossary).
+* **`CAP-PROD-001` (`1.21.0`)**: Update `INV-SPEC-VALIDATION` and `INV-DOCS-SYNCHRONIZATION` to 17 schemas and add `INV-AGENT-MEMORY-SCHEMA-ISOLATION`.
+* **`CAP-VCS-001` (`1.15.0`)**: Add `INV-DRIFT-MEMORY-FILE-ISOLATION`.
+
+== Implementation Plan
+
+1. **Canonical `agent/memory` Schema, Template & Shared `$defs` (`CNT-EIDOS-CORE`)**:
+   * Create `assets/schemas/v1/agent/memory.schema.yaml` enforcing closed Draft 2020-12 root properties (`additionalProperties: false`), `type: const "agent/memory"`, `id: ^MEM-[A-Z0-9_-]+$`, `category: enum [feedback, project, reference]` (excluding personal `user`), `status: { $ref: "#/$defs/memory_status" }` (`draft`, `active`, `promoted`, `archived` — 4-state workflow enum satisfying `test_strict_schemas_reject_unknown_fields_and_enforce_enums_and_patterns`), `summary` (`non_empty_string`, `maxLength: 220`), optional advisory `targets: { entities, paths }` (without hard `x-eidos-ref`), required ISO `verified_at`, nullable `verified_commit`, nullable `expires_at`, nullable `promoted_to`, and conditional `if/then` requiring `promoted_to` when `status == promoted`.
+   * Create `assets/schemas/v1/agent/memory.template.adoc` with `= Memory: {heading}`, `:toc: left`, `== Guidance`, and `== Why`.
+   * Update `assets/schemas/v1/common/defs.yaml` to add `#/$defs/memory_status` (`draft`, `active`, `promoted`, `archived`) alongside `lifecycle_status`/`delta_status`/`exploration_status` and extend `decision.graduated_from` to accept `MEM-*` alongside `EXP-*` and `DLT-*` (`pattern` and `x-eidos-ref`).
+2. **Core Registry, Asset Template, Validator Exemptions & Scaffolder Guard (`CMP-DOMAIN-MODELS`, `CMP-ASSET-LOCATOR`, `CMP-SPEC-VALIDATOR`, `CMP-LIFECYCLE-SCAFFOLDER`)**:
+   * Update `src/eidos/core/spec/models.py` (`CMP-DOMAIN-MODELS`) to add `"MEM-"` to `ENTITY_PREFIX_REGISTRY` and map `"memory"` directory paths to `MEM-` in `infer_entity_type_from_path`.
+   * Update `src/eidos/core/workspace/assets.py` (`CMP-ASSET-LOCATOR`) to register `"agent/memory"` and `"memory"` in `_TEMPLATE_PATHS_BY_TYPE`.
+   * Update `src/eidos/core/spec/validator.py` (`CMP-SPEC-VALIDATOR`) so `_check_dict_references()` skips `targets` and `promoted_to` on `agent/memory` documents and `_warn_if_deprecated_dependency()` returns early for `agent/memory`, keeping broken/stale memory anchors out of both `broken_references` and `ValidationReport.warnings`.
+   * Update `src/eidos/core/lifecycle/scaffolder.py` (`CMP-LIFECYCLE-SCAFFOLDER`) so `create_spec()` rejects `"memory"` / `"agent/memory"` with `ValueError("Team memories (MEM-*) cannot be created via 'eidos spec create'. Use 'eidos memory add' instead.")`, and verify `_scan_live_specs_by_id()` excludes `"memory"` alongside `"deltas"`/`"archive"`.
+3. **VCS Classification & Stop-Hook Q&A Isolation (`CMP-GIT-DIFF-INSPECTOR`; `CNT-EIDOS-VCS`, `CMP-DRIFT-DETECTOR`, `CMP-HOOK-RUNNER` unchanged — covered via `CMP-GIT-DIFF-INSPECTOR` / no code edits)**:
+   * Update `src/eidos/vcs/diff.py` (`CMP-GIT-DIFF-INSPECTOR`) to add `memory_files: list[str] = field(default_factory=list)` on `ChangedFilesClassification` and classify `eidos/memory/**` files into `classification.memory_files` instead of `classification.spec_files` (leaving `src/eidos/vcs/drift.py` and `src/eidos/plugin/hooks.py` untouched so `CMP-HOOK-RUNNER`'s `_zero_governed_changes_since_baseline()` short-circuits cleanly on memory-only edits).
+4. **Documentation Sync (`CMP-DOCS-CORE-CONCEPTS`; `CNT-EIDOS-DOCS` covered via `CMP-DOCS-CORE-CONCEPTS`)**:
+   * Update `docs/concepts/schema-glossary.md` to document `agent/memory` (`MEM-*`) with a schema-valid YAML frontmatter example and update the schema count from 16 to 17 (`POL-003-CONTINUOUS-DOCUMENTATION-SYNC`, `INV-DOCS-SYNCHRONIZATION`).
+5. **Living Spec Co-Evolution & Test Bindings (`POL-002`, `POL-005 >90%` per-file statement coverage)**:
+   * Update `eidos/architecture/containers/core.adoc`, `eidos/architecture/components/domain-models.adoc`, `eidos/architecture/components/asset-locator.adoc`, `eidos/architecture/components/spec-validator.adoc`, `eidos/architecture/components/lifecycle-scaffolder.adoc`, `eidos/architecture/components/git-diff-inspector.adoc`, `eidos/architecture/components/docs-core-concepts.adoc`, `eidos/domains/spec-engine/capabilities/living-spec-engine.adoc`, and `eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc`.
+   * Update schema-count assertions (`16 -> 17`) in `tests/test_validator.py`, `tests/test_scaffolder.py`, and `tests/test_docs_sync.py`.
+   * Add `tests/test_validator.py::test_agent_memory_schema_defs_and_nonblocking_isolation` referencing `INV-AGENT-MEMORY-SCHEMA-ISOLATION` (verifying Draft 2020-12 positive/negative cases, `graduated_from: MEM-*`, `create_spec("memory", ...)` rejection, and zero `broken_references`/`ValidationReport.warnings` on deleted `.adoc` targets and deprecated entities under `--fail-on-warnings`).
+   * Add `tests/test_drift.py::test_agent_memory_classification_drift_and_stop_hook_isolation` referencing `INV-DRIFT-MEMORY-FILE-ISOLATION` (verifying `ChangedFilesClassification.memory_files`, non-masking of structural code drift when a memory file is edited alongside code, and zero-edit `Stop` hook Q&A short-circuit on memory-only edits).
+   * Verify full `pytest` suite (`POL-005` per-file >90% coverage), `eidos delta verify DLT-2026-169 --json`, `eidos delta apply DLT-2026-169`, `eidos delta audit DLT-2026-169 --strict --json`, `eidos drift --uncommitted --json`, and `pnpm exec vitest run tests/asciidoc.test.ts` (`INV-ASCIIDOC-ZERO-WARNING-HYGIENE`).

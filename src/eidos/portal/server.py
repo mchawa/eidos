@@ -192,6 +192,23 @@ def _compute_eidos_mtime_snapshot_timed(eidos_dir: Path) -> tuple[tuple[int, int
                 if st.st_mtime_ns > max_mtime:
                     max_mtime = st.st_mtime_ns
                 total_size += st.st_size
+    git_dir = repo_root / ".git"
+    if git_dir.is_dir():
+        head_file = git_dir / "HEAD"
+        if head_file.is_file():
+            with contextlib.suppress(OSError):
+                st_h = head_file.stat(follow_symlinks=False)
+                if st_h.st_mtime_ns > max_mtime:
+                    max_mtime = st_h.st_mtime_ns
+                head_txt = head_file.read_text(encoding="utf-8", errors="ignore").strip()
+                if head_txt.startswith("ref:"):
+                    ref_p = git_dir / head_txt[4:].strip()
+                    for git_meta in (ref_p, git_dir / "packed-refs"):
+                        if git_meta.is_file():
+                            st_r = git_meta.stat(follow_symlinks=False)
+                            if st_r.st_mtime_ns > max_mtime:
+                                max_mtime = st_r.st_mtime_ns
+                            total_size += st_r.st_size
     return ((count, max_mtime, total_size), time.perf_counter() - t0)
 
 

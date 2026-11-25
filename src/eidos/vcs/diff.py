@@ -38,6 +38,7 @@ class ChangedFilesClassification:
     code_files: list[str] = field(default_factory=list)
     spec_files: list[str] = field(default_factory=list)
     delta_files: list[str] = field(default_factory=list)
+    memory_files: list[str] = field(default_factory=list)
     test_files: list[str] = field(default_factory=list)
     doc_files: list[str] = field(default_factory=list)
     other_files: list[str] = field(default_factory=list)
@@ -709,7 +710,8 @@ def classify_changed_files(
     candidate_code_paths: list[str] = []
     parsed_files: list[tuple[str, Path, Path, list[str], bool, list[str], bool, bool]] = []
     for f_str in files:
-        f = Path(f_str)
+        norm_f_str = f_str.replace("\\", "/")
+        f = Path(norm_f_str)
         if f.is_absolute():
             try:
                 rel_f = f.resolve().relative_to(effective_root)
@@ -748,8 +750,10 @@ def classify_changed_files(
             continue
 
         if is_in_eidos and sfx in {".adoc", ".json", ".yaml", ".yml"}:
-            if "deltas" in sub_parts:
+            if sub_parts and sub_parts[0] == "deltas":
                 classification.delta_files.append(f_str)
+            elif sub_parts and sub_parts[0] == "memory":
+                classification.memory_files.append(f_str)
             else:
                 classification.spec_files.append(f_str)
             continue

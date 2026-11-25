@@ -362,8 +362,9 @@ class AuditEngine:
                 src = r.get("source_id", "")
                 if (
                     src == delta_id
-                    or src.startswith(("DLT-", "EXP-"))
-                    or r.get("type") == "product/exploration"
+                    or src.startswith(("DLT-", "EXP-", "MEM-"))
+                    or r.get("type") in ("product/exploration", "agent/memory")
+                    or r.get("rel_type") in ("anchors_entity", "promoted_to")
                     or src in targets
                 ):
                     # Deltas, explorations, and co-removed targets are not living spec violations

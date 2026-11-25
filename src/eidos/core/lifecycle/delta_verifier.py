@@ -1121,7 +1121,13 @@ def detect_delta_conflicts(
 
         spec_root, repo_root = resolve_spec_and_repo_roots(eidos_dir)
         idx = get_architectural_index(repo_root=repo_root, eidos_dir=spec_root)
-        excluded_neighbor_types = {"delta/mutation", "product/exploration", "product/policy", "product/persona"}
+        excluded_neighbor_types = {
+            "delta/mutation",
+            "product/exploration",
+            "product/policy",
+            "product/persona",
+            "agent/memory",
+        }
         for rec in active_records:
             t_ids = sorted(rec["targets"].keys())
             if not t_ids:

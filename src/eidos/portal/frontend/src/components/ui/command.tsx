@@ -13,6 +13,7 @@ import {
   FileCode,
   Sparkles,
   Palette,
+  Brain,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCommandCategory } from "@/lib/presentation";
@@ -34,7 +35,8 @@ export interface CommandItem {
     | "domains"
     | "capabilities"
     | "personas"
-    | "explorations";
+    | "explorations"
+    | "memories";
   raw: any;
 }
 
@@ -101,6 +103,9 @@ export function CommandDialog({
           prev === 0 ? Math.max(0, filteredItems.length - 1) : prev - 1
         );
       } else if (e.key === "Enter") {
+        if (e.isComposing || e.keyCode === 229) {
+          return;
+        }
         e.preventDefault();
         if (filteredItems[selectedIndex]) {
           onSelect(filteredItems[selectedIndex]);
@@ -139,6 +144,8 @@ export function CommandDialog({
         return <UserCheck className="h-4 w-4 text-pink-400" />;
       case "explorations":
         return <Lightbulb className="h-4 w-4 text-amber-400" />;
+      case "memories":
+        return <Brain className="h-4 w-4 text-teal-400" />;
       default:
         return <FileText className="h-4 w-4 text-muted-foreground" />;
     }

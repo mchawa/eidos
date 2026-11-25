@@ -1380,7 +1380,7 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
     db_path = eidos_dir / ".cache" / "index.db"
     with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
-        assert ver == SCHEMA_VERSION == "2.22.0"
+        assert ver == SCHEMA_VERSION == "2.23.0"
         val_rows_before = conn.execute("SELECT COUNT(*) FROM spec_validation_cache;").fetchone()[0]
         assert val_rows_before == 1
 
@@ -2430,7 +2430,7 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
     from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 
-    assert SCHEMA_VERSION == "2.22.0"
+    assert SCHEMA_VERSION == "2.23.0"
     assert set(AstGrepIndexer.LANGUAGE_MAP.keys()) | {".proto", ".adoc"} <= _FILE_QUERY_EXTS
 
     # 1. Verify _ENTITY_ID_TOKEN_RE recognizes SYS-*, ARCH-*, PER-*, and underscore IDs
@@ -2605,7 +2605,7 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
     from eidos.portal.generator import get_portal_data
 
-    assert SCHEMA_VERSION == "2.22.0"
+    assert SCHEMA_VERSION == "2.23.0"
     assert _build_spec_catalog_with_invariants(tmp_path / "nonexistent_eidos") == ({}, {})
 
     init_repository(tmp_path, title="dlt-104-repo")
@@ -2741,7 +2741,7 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
         conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '2.11.0');")
         conn.commit()
         ensure_cache_schema(conn)
-        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.22.0"
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.23.0"
 
         idx.sync(force=True)
 
@@ -4214,7 +4214,7 @@ def test_epistemic_provenance_tags_and_confidence_filtering(tmp_path: Path) -> N
     from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 
-    assert SCHEMA_VERSION == "2.22.0"
+    assert SCHEMA_VERSION == "2.23.0"
     assert provenance_to_confidence("declared_spec") == "observed"
     assert provenance_to_confidence("ast_symbol") == "observed"
     assert provenance_to_confidence("ast_import") == "derived"
@@ -4395,7 +4395,7 @@ def test_epistemic_provenance_tags_and_confidence_filtering(tmp_path: Path) -> N
         st_res = cli.invoke(app, ["index", "status", "--path", str(eidos_dir), "--json"])
         assert st_res.exit_code == 0
         st_data = orjson.loads(st_res.stdout)
-        assert st_data["schema_version"] == "2.22.0"
+        assert st_data["schema_version"] == "2.23.0"
         assert st_data["edge_counts_by_provenance"]["declared_spec"] >= 1
         assert st_data["edge_counts_by_provenance"]["ast_http"] >= 1
         st_rich = cli.invoke(app, ["index", "status", "--path", str(eidos_dir)])
@@ -4856,4 +4856,475 @@ def test_index_governance_health_excludes_generated_files_and_splits_surface(tmp
         idx.close()
         import eidos.core.index.graph_index as gi
 
+        gi._INDEX_INSTANCES.pop(eidos_dir.resolve(), None)
+
+
+def test_agent_memory_indexing_edges_and_freshness_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify INV-INDEX-MEMORY-GRAPH-AND-FRESHNESS-CACHE: agent/memory SQLite indexing, active-only specs_fts, anchors_entity/promoted_to edges, non-blocking memory_freshness_cache, and all 8 Git freshness edge cases."""
+    import fcntl
+    import subprocess
+    from datetime import date, timedelta
+
+    import eidos.core.index.context_memories as cm
+    import eidos.core.index.graph_index as gi
+    from eidos.core.index.context_memories import (
+        DEFAULT_MEMORY_COMMIT_DRIFT_THRESHOLD,
+        _resolve_git_head_sha,
+        evaluate_memory_freshness,
+        resolve_memory_freshness_batch,
+    )
+    from eidos.core.index.storage import (
+        _MANAGED_TABLES,
+        SCHEMA_VERSION,
+        _db_lock_path,
+        load_memory_freshness_cache,
+        save_memory_freshness_cache,
+    )
+    from eidos.core.lifecycle.initializer import init_repository
+
+    assert SCHEMA_VERSION == "2.23.0"
+    assert len(_MANAGED_TABLES) == 15
+    assert "memory_freshness_cache" in _MANAGED_TABLES
+
+    def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=False)
+
+    repo = tmp_path / "mem_repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.email", "test@eidos.dev")
+    _git(repo, "config", "user.name", "Test")
+
+    init_repository(repo, title="Memory Index Repo")
+    eidos_dir = repo / "eidos"
+    (eidos_dir / "domains" / "core").mkdir(parents=True, exist_ok=True)
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True, exist_ok=True)
+    (eidos_dir / "architecture" / "components").mkdir(parents=True, exist_ok=True)
+    (eidos_dir / "policies").mkdir(parents=True, exist_ok=True)
+    (eidos_dir / "memory" / "archive").mkdir(parents=True, exist_ok=True)
+
+    (eidos_dir / "domains" / "core" / "domain.adoc").write_text(
+        "---\ntype: product/domain\nid: DOM-MEM\ntitle: Memory Domain\nstatus: active\n---\n= Memory Domain\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "policies" / "pol-mem.adoc").write_text(
+        "---\ntype: product/policy\nid: POL-MEM-GOV\ntitle: Memory Gov\nstatus: active\ncategory: governance\nseverity: blocking\n---\n= Memory Gov\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "cnt-mem.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-MEM\n"
+        "title: Memory Container\n"
+        "status: active\n"
+        "domain: DOM-MEM\n"
+        "container_type: library\n"
+        "runtime: Python 3.12\n"
+        "source_path: src/mem\n"
+        "decisions:\n"
+        "  - id: DEC-MEM-EMBEDDED\n"
+        "    title: Embedded Decision\n"
+        "    decision: Keep storage stateless.\n"
+        "    rationale: Fast rebuilds.\n"
+        "---\n= Memory Container\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "cmp-a.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-MEM-A\ntitle: Comp A\ncontainer: CNT-MEM\nstatus: active\nsource_path: src/mem/a.py\n---\n= Comp A\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "cmp-b.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-MEM-B\ntitle: Comp B\ncontainer: CNT-MEM\nstatus: active\nsource_path: src/mem/b.py\n---\n= Comp B\n",
+        encoding="utf-8",
+    )
+
+    (repo / "src" / "mem").mkdir(parents=True, exist_ok=True)
+    (repo / "src" / "mem" / "a.py").write_text("v = 0\n", encoding="utf-8")
+    (repo / "src" / "mem" / "b.py").write_text("x = 0\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "initial")
+    c0 = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    assert _resolve_git_head_sha(repo) == c0
+
+    # Write 4 memories: active, archived-in-archive/, promoted (to embedded DEC-*), and draft
+    active_mem = eidos_dir / "memory" / "mem-active-anchor-11aa.adoc"
+    active_mem.write_text(
+        "---\n"
+        "type: agent/memory\n"
+        "id: MEM-ACTIVE-ANCHOR-11AA\n"
+        'title: "Use real SQLite tmp_path DBs"\n'
+        "category: feedback\n"
+        "status: active\n"
+        'summary: "Always use tmp_path SQLite DBs when testing storage."\n'
+        "targets:\n"
+        "  entities:\n"
+        "    - CMP-MEM-A\n"
+        "  paths:\n"
+        "    - src/mem/b.py\n"
+        'verified_at: "2026-11-24"\n'
+        f'verified_commit: "{c0}"\n'
+        "---\n"
+        "= Memory: Use real SQLite tmp_path DBs\n\n"
+        "== Guidance\nUse tmp_path.\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "memory" / "archive" / "mem-archived-22bb.adoc").write_text(
+        "---\n"
+        "type: agent/memory\n"
+        "id: MEM-ARCHIVED-22BB\n"
+        'title: "Archived note"\n'
+        "category: project\n"
+        "status: archived\n"
+        'summary: "Old archived operational detail."\n'
+        "targets:\n"
+        "  entities:\n"
+        "    - CMP-MEM-B\n"
+        'verified_at: "2026-10-01"\n'
+        "---\n= Archived\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "memory" / "mem-promoted-33cc.adoc").write_text(
+        "---\n"
+        "type: agent/memory\n"
+        "id: MEM-PROMOTED-33CC\n"
+        'title: "Promoted decision note"\n'
+        "category: feedback\n"
+        "status: promoted\n"
+        'summary: "Graduated into DEC-MEM-EMBEDDED."\n'
+        "promoted_to: DEC-MEM-EMBEDDED\n"
+        'verified_at: "2026-11-20"\n'
+        "---\n= Promoted\n",
+        encoding="utf-8",
+    )
+    draft_mem = eidos_dir / "memory" / "mem-draft-44dd.adoc"
+    draft_mem.write_text(
+        "---\n"
+        "type: agent/memory\n"
+        "id: MEM-DRAFT-44DD\n"
+        'title: "Draft team note"\n'
+        "category: reference\n"
+        "status: draft\n"
+        'summary: "Unpublished draft note."\n'
+        'verified_at: "2026-11-24"\n'
+        "---\n= Draft\n",
+        encoding="utf-8",
+    )
+
+    db_path = eidos_dir / ".cache" / "index.db"
+    idx = ArchitecturalIndex(db_path=db_path, repo_root=repo, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=True, auto_semantic=False)
+        conn = idx._get_connection()
+
+        # 1. All 4 agent/memory docs exist in entities, while ONLY active non-archived enters specs_fts
+        ent_ids = {r["id"] for r in conn.execute("SELECT id FROM entities WHERE type = 'agent/memory';").fetchall()}
+        assert ent_ids == {
+            "MEM-ACTIVE-ANCHOR-11AA",
+            "MEM-ARCHIVED-22BB",
+            "MEM-PROMOTED-33CC",
+            "MEM-DRAFT-44DD",
+        }
+        fts_mem_ids = {
+            r[0]
+            for r in conn.execute(
+                "SELECT f.entity_id FROM specs_fts f JOIN entities e ON e.id = f.entity_id WHERE e.type = 'agent/memory';"
+            ).fetchall()
+        }
+        assert fts_mem_ids == {"MEM-ACTIVE-ANCHOR-11AA"}
+
+        # 2. anchors_entity and promoted_to (including embedded DEC-* target) materialized in edges
+        edge_set = {
+            (r["source_id"], r["target_id"], r["rel_type"])
+            for r in conn.execute(
+                "SELECT source_id, target_id, rel_type FROM edges WHERE rel_type IN ('anchors_entity', 'promoted_to');"
+            ).fetchall()
+        }
+        assert ("MEM-ACTIVE-ANCHOR-11AA", "CMP-MEM-A", "anchors_entity") in edge_set
+        assert ("MEM-ARCHIVED-22BB", "CMP-MEM-B", "anchors_entity") in edge_set
+        assert ("MEM-PROMOTED-33CC", "DEC-MEM-EMBEDDED", "promoted_to") in edge_set
+
+        # 2b. get_spec_catalog() excludes agent/memory (matching 15-type catalog parity), and k-hop traversal stops at MEM-* hub nodes
+        specs_by_id, _ = idx.get_spec_catalog()
+        assert not any(k.startswith("MEM-") for k in specs_by_id)
+        # Verify MEM-* appears at depth 1 for CMP-MEM-A without bridging through MEM-* to unrelated entities at depth 2
+        walk_mem = {n["id"]: n for n in idx.get_k_hop_neighborhood("CMP-MEM-A", max_depth=2)}
+        assert "MEM-ACTIVE-ANCHOR-11AA" in walk_mem and walk_mem["MEM-ACTIVE-ANCHOR-11AA"]["depth"] == 1
+
+        # 3. Direct storage helpers: load/save/delete + missing DB + contended non-blocking skip
+        assert load_memory_freshness_cache(tmp_path / "missing.db") == {}
+        save_memory_freshness_cache(db_path, [])  # no-op
+        save_memory_freshness_cache(
+            db_path,
+            [("MEM-ACTIVE-ANCHOR-11AA", c0, "abc123", "fresh", "0 commit(s)", "2026-11-24")],
+        )
+        loaded = load_memory_freshness_cache(db_path)
+        assert loaded["MEM-ACTIVE-ANCHOR-11AA"] == (c0, "abc123", "fresh", "0 commit(s)", "2026-11-24")
+
+        # Contended lock causes save_memory_freshness_cache to skip without blocking
+        lock_fp = _db_lock_path(db_path)
+        lock_fp.parent.mkdir(parents=True, exist_ok=True)
+        with lock_fp.open("a+b") as lf:
+            fcntl.flock(lf.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            try:
+                save_memory_freshness_cache(
+                    db_path,
+                    [("MEM-CONTENDED", c0, "zzz", "fresh", "skipped", "2026-11-24")],
+                )
+            finally:
+                fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+        assert "MEM-CONTENDED" not in load_memory_freshness_cache(db_path)
+
+        save_memory_freshness_cache(db_path, [], deleted_keys=["MEM-ACTIVE-ANCHOR-11AA"])
+        assert "MEM-ACTIVE-ANCHOR-11AA" not in load_memory_freshness_cache(db_path)
+
+        # 4. Incremental edit updates anchors_entity edge and evicts memory_freshness_cache
+        save_memory_freshness_cache(
+            db_path,
+            [("MEM-ACTIVE-ANCHOR-11AA", c0, "oldsha", "fresh", "cached", "2026-11-24")],
+        )
+        active_mem.write_text(
+            active_mem.read_text(encoding="utf-8").replace("CMP-MEM-A", "CMP-MEM-B"),
+            encoding="utf-8",
+        )
+        idx.sync(force=False, auto_semantic=False)
+        edges_after_edit = {
+            (r["source_id"], r["target_id"], r["rel_type"])
+            for r in conn.execute(
+                "SELECT source_id, target_id, rel_type FROM edges WHERE rel_type = 'anchors_entity';"
+            ).fetchall()
+        }
+        assert ("MEM-ACTIVE-ANCHOR-11AA", "CMP-MEM-B", "anchors_entity") in edges_after_edit
+        assert ("MEM-ACTIVE-ANCHOR-11AA", "CMP-MEM-A", "anchors_entity") not in edges_after_edit
+        assert "MEM-ACTIVE-ANCHOR-11AA" not in load_memory_freshness_cache(db_path)
+
+        # Deleting a memory file evicts entities + memory_freshness_cache; force=True clears cache
+        save_memory_freshness_cache(
+            db_path,
+            [("MEM-DRAFT-44DD", c0, "draftsha", "fresh", "cached", "2026-11-24")],
+        )
+        draft_mem.unlink()
+        idx.sync(force=False, auto_semantic=False)
+        assert conn.execute("SELECT 1 FROM entities WHERE id = 'MEM-DRAFT-44DD';").fetchone() is None
+        assert "MEM-DRAFT-44DD" not in load_memory_freshness_cache(db_path)
+
+        save_memory_freshness_cache(
+            db_path,
+            [("MEM-ACTIVE-ANCHOR-11AA", c0, "forcesha", "fresh", "cached", "2026-11-24")],
+        )
+        idx.sync(force=True, auto_semantic=False)
+        assert load_memory_freshness_cache(db_path) == {}
+
+        # 5. Exercise all 8 Git freshness edge cases + cache hit/invalidation
+        today = date(2026, 11, 24)
+        for i in range(1, DEFAULT_MEMORY_COMMIT_DRIFT_THRESHOLD + 2):
+            (repo / "src" / "mem" / "a.py").write_text(f"v = {i}\n", encoding="utf-8")
+            _git(repo, "add", "src/mem/a.py")
+            _git(repo, "commit", "-m", f"modify a {i}")
+
+        # Orphaned branch commit (squash-merge / rebase simulation)
+        _git(repo, "checkout", "-b", "temp-squash")
+        (repo / "src" / "mem" / "b.py").write_text("x = 1\n", encoding="utf-8")
+        _git(repo, "add", "src/mem/b.py")
+        _git(repo, "commit", "-m", "squashed commit")
+        orphan_sha = _git(repo, "rev-parse", "HEAD").stdout.strip()
+        _git(repo, "checkout", "main")
+        _git(repo, "branch", "-D", "temp-squash")
+
+        # Shallow clone (--depth 1) cutting off c0
+        shallow_repo = tmp_path / "shallow_repo"
+        subprocess.run(
+            ["git", "clone", "--depth", "1", f"file://{repo}", str(shallow_repo)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        # 0-commit repo
+        zero_repo = tmp_path / "zero_repo"
+        zero_repo.mkdir()
+        _git(zero_repo, "init", "-b", "main")
+        (zero_repo / "src" / "mem").mkdir(parents=True)
+        (zero_repo / "src" / "mem" / "b.py").write_text("x = 0\n", encoding="utf-8")
+
+        catalog_ids = {"CMP-MEM-A", "CMP-MEM-B"}
+        cases = [
+            (
+                repo,
+                {
+                    "targets": {"entities": ["CMP-MEM-B"], "paths": ["src/mem/b.py"]},
+                    "verified_commit": c0,
+                    "verified_at": "2026-11-24",
+                },
+                "fresh",
+            ),
+            (
+                repo,
+                {
+                    "targets": {"entities": ["CMP-MEM-B"], "paths": ["src/mem/b*.py"]},
+                    "verified_commit": c0,
+                    "verified_at": "2026-11-24",
+                },
+                "fresh",
+            ),
+            (
+                repo,
+                {
+                    "targets": {"entities": ["CMP-MEM-B"], "paths": ["src/mem/missing.py"]},
+                    "verified_commit": c0,
+                    "verified_at": "2026-11-24",
+                },
+                "stale",
+            ),
+            (
+                repo,
+                {
+                    "targets": {"entities": ["CMP-MEM-B"], "paths": ["src/mem/nonexistent_*.py"]},
+                    "verified_commit": c0,
+                    "verified_at": "2026-11-24",
+                },
+                "stale",
+            ),
+            (
+                repo,
+                {
+                    "targets": {"entities": ["CMP-MEM-B"], "paths": ["../escape.py"]},
+                    "verified_commit": c0,
+                    "verified_at": "2026-11-24",
+                },
+                "stale",
+            ),
+            (
+                repo,
+                {
+                    "targets": {"entities": ["CMP-MISSING"], "paths": ["src/mem/b.py"]},
+                    "verified_commit": c0,
+                    "verified_at": "2026-11-24",
+                },
+                "stale",
+            ),
+            (
+                repo,
+                {
+                    "targets": {"entities": ["CMP-MEM-A"], "paths": ["src/mem/a.py"]},
+                    "verified_commit": c0,
+                    "verified_at": "2026-11-24",
+                },
+                "stale",
+            ),
+            (
+                repo,
+                {
+                    "targets": {"entities": ["CMP-MEM-B"], "paths": ["src/mem/b.py"]},
+                    "verified_commit": c0,
+                    "verified_at": "2026-11-01",
+                    "expires_at": (today - timedelta(days=1)).isoformat(),
+                },
+                "expired",
+            ),
+            (
+                repo,
+                {
+                    "targets": {"entities": ["CMP-MEM-B"], "paths": ["src/mem/b.py"]},
+                    "verified_commit": orphan_sha,
+                    "verified_at": "2026-11-24",
+                },
+                "unverifiable",
+            ),
+            (
+                shallow_repo,
+                {
+                    "targets": {"entities": ["CMP-MEM-B"], "paths": ["src/mem/b.py"]},
+                    "verified_commit": c0,
+                    "verified_at": "2026-11-24",
+                },
+                "unverifiable",
+            ),
+            (
+                zero_repo,
+                {
+                    "targets": {"entities": ["CMP-MEM-B"], "paths": ["src/mem/b.py"]},
+                    "verified_commit": None,
+                    "verified_at": "2026-11-24",
+                },
+                "unverifiable",
+            ),
+            (
+                repo,
+                {
+                    "targets": {"entities": ["CMP-MEM-B"], "paths": ["src/mem/b.py"]},
+                    "verified_commit": None,
+                    "verified_at": "2026-11-24",
+                },
+                "unverifiable",
+            ),
+            (
+                repo,
+                {"targets": {"entities": ["CMP-MEM-B"]}, "verified_at": "2026-11-24"},
+                "fresh",
+            ),
+        ]
+        for target_repo, mem_fm, expected in cases:
+            actual, _reason = evaluate_memory_freshness(target_repo, mem_fm, catalog_ids, today=today)
+            assert actual == expected, f"Expected {expected}, got {actual} for {mem_fm}"
+
+        # 6. Batch resolution populates cache, hits cache with 0 git calls, and invalidates on date/sha/HEAD change
+        assert resolve_memory_freshness_batch(repo, [], catalog_ids, today=today) == {}
+        fm_cached = {
+            "targets": {"entities": ["CMP-MEM-B"], "paths": ["src/mem/b.py"]},
+            "verified_commit": c0,
+            "verified_at": "2026-11-24",
+            "status": "active",
+        }
+        res_cold = resolve_memory_freshness_batch(
+            repo,
+            [("MEM-ACTIVE-ANCHOR-11AA", fm_cached)],
+            catalog_ids,
+            conn=conn,
+            db_path=db_path,
+            today=today,
+        )
+        assert res_cold["MEM-ACTIVE-ANCHOR-11AA"][0] == "fresh"
+        assert "MEM-ACTIVE-ANCHOR-11AA" in load_memory_freshness_cache(db_path)
+
+        # Verify warm hit skips git subprocesses completely (via db_path loader too)
+        git_calls = 0
+        orig_run_git = cm._run_git
+
+        def _counting_git(r: Path, *args: str) -> subprocess.CompletedProcess[str]:
+            nonlocal git_calls
+            git_calls += 1
+            return orig_run_git(r, *args)
+
+        monkeypatch.setattr(cm, "_run_git", _counting_git)
+        res_warm = resolve_memory_freshness_batch(
+            repo,
+            [("MEM-ACTIVE-ANCHOR-11AA", fm_cached)],
+            catalog_ids,
+            conn=None,
+            db_path=db_path,
+            today=today,
+        )
+        assert res_warm["MEM-ACTIVE-ANCHOR-11AA"][0] == "fresh"
+        assert git_calls == 0
+
+        # Date rollover invalidates cache and triggers live re-evaluation
+        res_next_day = resolve_memory_freshness_batch(
+            repo,
+            [("MEM-ACTIVE-ANCHOR-11AA", fm_cached)],
+            catalog_ids,
+            conn=conn,
+            db_path=db_path,
+            today=today + timedelta(days=1),
+        )
+        assert res_next_day["MEM-ACTIVE-ANCHOR-11AA"][0] == "fresh"
+        assert git_calls >= 1
+
+        # Verify detached HEAD & packed-refs fast path in _resolve_git_head_sha
+        head_main = _git(repo, "rev-parse", "HEAD").stdout.strip()
+        _git(repo, "pack-refs", "--all")
+        assert _resolve_git_head_sha(repo) == head_main
+        _git(repo, "checkout", "--detach", head_main)
+        assert _resolve_git_head_sha(repo) == head_main
+    finally:
+        idx.close()
         gi._INDEX_INSTANCES.pop(eidos_dir.resolve(), None)

@@ -2987,3 +2987,261 @@ def test_portal_c4_fullpage_and_connection_highlighting() -> None:
         "z-[45]",
     ):
         assert token in bundle_html
+
+
+def test_portal_team_memory_payload_crosslinks_and_empty_state(tmp_path: Path) -> None:
+    """Verify INV-PORTAL-TEAM-MEMORY-SURFACE: get_portal_data() emits memories[] (repo-relative paths
+    and computed freshness) and isolated non-blocking memory_audit diagnostics for both empty and populated
+    catalogs without mutating validation.warnings/is_clean, deduplicates memory bodies across chunked and
+    --single-file static exports, exposes live /api/data & /api/overview memory fields, and compiles
+    SCR-PORTAL-MEMORY (#/memory), HomeView summary, and inline C4/Domain cross-links into bundle.html.gz."""
+    import subprocess
+    import threading
+    import urllib.request
+    from http.server import HTTPServer
+
+    import orjson
+
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.memory_engine import add_memory, archive_memory, promote_memory
+    from eidos.portal.assets import get_portal_html_template
+    from eidos.portal.builder import build_static_portal
+    from eidos.portal.generator import get_portal_data
+    from eidos.portal.server import EidosPortalHandler
+
+    repo = tmp_path / "portal-memory-repo"
+    init_repository(repo, title="Portal Memory Repo")
+    eidos_dir = repo / "eidos"
+
+    (repo / "src").mkdir(parents=True, exist_ok=True)
+    (repo / "src" / "auth.py").write_text("def verify_token() -> bool:\n    return True\n", encoding="utf-8")
+    (repo / "tests").mkdir(parents=True, exist_ok=True)
+    (repo / "tests" / "test_auth.py").write_text(
+        "def test_verify_token() -> None:\n    assert True\n", encoding="utf-8"
+    )
+
+    (eidos_dir / "domains" / "core").mkdir(parents=True, exist_ok=True)
+    (eidos_dir / "domains" / "core" / "domain.adoc").write_text(
+        "---\n"
+        "type: product/domain\n"
+        "id: DOM-CORE\n"
+        "title: Core Platform Domain\n"
+        "classification: core\n"
+        "status: active\n"
+        "---\n"
+        "= Domain: Core Platform\n\n== Domain Vision\nCore platform rules.\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "domains" / "core" / "capabilities").mkdir(parents=True, exist_ok=True)
+    (eidos_dir / "domains" / "core" / "capabilities" / "auth.adoc").write_text(
+        "---\n"
+        "type: product/capability\n"
+        "id: CAP-AUTH\n"
+        "title: Token Authentication\n"
+        "domain: DOM-CORE\n"
+        "status: active\n"
+        "technical:\n"
+        "  containers:\n"
+        "    - CNT-API\n"
+        "  components:\n"
+        "    - CMP-AUTH\n"
+        "---\n"
+        "= Capability: Token Authentication\n",
+        encoding="utf-8",
+    )
+    inv_pfx = "INV"
+    (eidos_dir / "policies" / "pol-sec.adoc").write_text(
+        "---\n"
+        "type: product/policy\n"
+        "id: POL-SEC\n"
+        "title: Security Baseline Policy\n"
+        "category: security\n"
+        "severity: blocking\n"
+        "status: active\n"
+        "invariants:\n"
+        f"  - id: {inv_pfx}-SEC-BASELINE\n"
+        "    rule: All tokens must be signed.\n"
+        "    test_binding: tests/test_auth.py::test_verify_token\n"
+        "---\n"
+        "= Policy: Security Baseline\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "api.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-API\n"
+        "title: API Service\n"
+        "status: active\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "source_path: src\n"
+        "domain: DOM-CORE\n"
+        "---\n"
+        "= Container: API Service\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "auth.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-AUTH\n"
+        "title: Auth Verifier\n"
+        "container: CNT-API\n"
+        "status: active\n"
+        "source_path: src/auth.py\n"
+        "---\n"
+        "= Component: Auth Verifier\n\n== Responsibility\nVerifies tokens.\n\n== Public Surface\n* `verify_token()`\n",
+        encoding="utf-8",
+    )
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "dev@example.com"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Dev"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo, check=True, capture_output=True)
+
+    # 1. Empty state (N = 0): zero memories, zero warnings, clean audit counters
+    empty_data = get_portal_data(eidos_dir)
+    assert empty_data["memories"] == []
+    assert empty_data["overview"]["memories_count"] == 0
+    assert empty_data["overview"]["active_memories_count"] == 0
+    assert empty_data["memory_audit"]["total"] == 0
+    assert empty_data["memory_audit"]["active"] == 0
+    assert empty_data["validation"]["is_clean"] is True
+    assert empty_data["validation"]["warnings"] == []
+
+    # 2. Populate fresh, stale, expired, promoted, and archived team memories
+    m_fresh = add_memory(
+        eidos_dir,
+        title="Use real token verifier in auth integration tests",
+        category="feedback",
+        summary="Run real token verification against temporary keys rather than mocking.",
+        guidance="Call verify_token with ephemeral test keys.",
+        why="Mocks hid signature expiry parsing regressions.",
+        entities=["CNT-API", "CMP-AUTH", "DOM-CORE", "CAP-AUTH"],
+        paths=["src/auth.py"],
+    )
+    m_stale = add_memory(
+        eidos_dir,
+        title="Legacy cache warmup workaround",
+        category="feedback",
+        summary="Legacy cache module requires pre-warming before request burst.",
+        guidance="Warm cache before tests.",
+        entities=["CMP-NONEXISTENT-TARGET"],
+        paths=["src/deleted_cache.py"],
+    )
+    m_expired = add_memory(
+        eidos_dir,
+        title="Temporary auth migration freeze",
+        category="project",
+        summary="Hold schema refactors while auth tokens migrate.",
+        guidance="Coordinate schema edits with platform team.",
+        expires_at="2020-01-01",
+    )
+    m_promoted = add_memory(
+        eidos_dir,
+        title="Enforce strict token signing baseline",
+        category="feedback",
+        summary="All tokens must satisfy the security baseline policy.",
+        guidance="Verify against POL-SEC rules.",
+    )
+    promote_memory(eidos_dir, m_promoted["id"], to_kind="policy", spec_id="POL-SEC", archive=True)
+
+    m_archived = add_memory(
+        eidos_dir,
+        title="Old staging endpoint pointer",
+        category="reference",
+        summary="Legacy staging dashboard URL retired after migration.",
+        guidance="Retired pointer.",
+    )
+    archive_memory(eidos_dir, m_archived["id"])
+
+    # 3. Portal payload exports memories & non-blocking memory_audit without mutating validation.warnings
+    pdata = get_portal_data(eidos_dir)
+    assert pdata["validation"]["is_clean"] is True
+    assert pdata["validation"]["warnings"] == []
+    assert pdata["validation"]["warning_count"] == 0
+
+    mems_by_id = {m["id"]: m for m in pdata["memories"]}
+    assert len(mems_by_id) == 5
+    assert pdata["overview"]["memories_count"] == 5
+    assert pdata["overview"]["active_memories_count"] == 3
+
+    for m in pdata["memories"]:
+        assert not m["path"].startswith("/")
+        assert not m["relative_path"].startswith("/")
+        assert str(tmp_path) not in m["path"]
+
+    assert mems_by_id[m_fresh["id"]]["freshness"] == "fresh"
+    assert set(mems_by_id[m_fresh["id"]]["targets"]["entities"]) == {"CNT-API", "CMP-AUTH", "DOM-CORE", "CAP-AUTH"}
+    assert mems_by_id[m_stale["id"]]["freshness"] == "stale"
+    assert mems_by_id[m_expired["id"]]["freshness"] == "expired"
+    assert mems_by_id[m_promoted["id"]]["status"] == "promoted"
+    assert mems_by_id[m_promoted["id"]]["promoted_to"] == "POL-SEC"
+    assert mems_by_id[m_promoted["id"]]["is_archived"] is True
+    assert mems_by_id[m_archived["id"]]["is_archived"] is True
+
+    audit = pdata["memory_audit"]
+    assert audit["total"] == 5
+    assert audit["active"] == 3
+    assert audit["fresh"] == 1
+    assert audit["stale"] == 1
+    assert audit["expired"] == 1
+    assert audit["promoted"] == 1
+    assert audit["archived"] == 1
+    assert any(item["id"] == m_stale["id"] for item in audit["stale_memories"])
+    assert any(item["id"] == m_expired["id"] for item in audit["expired_memories"])
+
+    # 4. Static exports (chunked default + --single-file) deduplicate memories[].body and emit lazy chunks
+    out_chunked = tmp_path / "portal-chunked"
+    build_static_portal(eidos_dir, out_chunked, single_file=False)
+    chunked_data = orjson.loads((out_chunked / "data.json").read_bytes())
+    assert len(chunked_data["memories"]) == 5
+    for m in chunked_data["memories"]:
+        assert "body" not in m
+    chunk_file = out_chunked / "specs" / f"{m_fresh['id']}.json"
+    assert chunk_file.exists()
+    chunk_json = orjson.loads(chunk_file.read_bytes())
+    assert "ephemeral test keys" in chunk_json["body"]
+
+    out_single = tmp_path / "portal-single"
+    build_static_portal(eidos_dir, out_single, single_file=True)
+    single_html = (out_single / "index.html").read_text(encoding="utf-8")
+    assert '"memory_audit":' in single_html
+    assert m_fresh["id"] in single_html
+
+    # 5. Live portal server /api/data & /api/overview expose memories and memory_audit
+    EidosPortalHandler.eidos_dir = eidos_dir
+    EidosPortalHandler._cache_key = None
+    EidosPortalHandler._cached_portal_data = None
+    EidosPortalHandler._cached_portal_json_bytes = None
+    EidosPortalHandler._cached_portal_gzip_bytes = None
+    httpd = HTTPServer(("127.0.0.1", 0), EidosPortalHandler)
+    port = httpd.server_address[1]
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/data", timeout=5) as resp:
+            api_data = orjson.loads(resp.read())
+        assert len(api_data["memories"]) == 5
+        assert api_data["memory_audit"]["stale"] == 1
+        assert api_data["validation"]["warnings"] == []
+
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/overview", timeout=5) as resp:
+            api_overview = orjson.loads(resp.read())
+        assert api_overview["memories_count"] == 5
+        assert api_overview["active_memories_count"] == 3
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+    # 6. Compiled air-gapped portal bundle contains MemoryView, HomeView summary, and inline cross-links
+    bundle_html = get_portal_html_template()
+    for marker in (
+        "teamMemoryView",
+        "teamMemorySummaryCard",
+        "memoryEmptyState",
+        "data-entity-memories-strip",
+        "Team Operational Memory",
+        "tab-memory",
+    ):
+        assert marker in bundle_html

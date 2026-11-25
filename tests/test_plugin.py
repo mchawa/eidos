@@ -47,8 +47,8 @@ def test_bundled_plugin_conformance():
     assert report.is_valid, f"Skill package validation failed: {report.errors}"
     assert report.plugin_name == "eidos-agent-skills"
     assert report.plugin_version == get_bundled_plugin_version()
-    assert set(report.skills) == {"eidos", "eidos-spec", "eidos-plan", "eidos-ops"}
-    assert len(report.skills) == 4
+    assert set(report.skills) == {"eidos", "eidos-spec", "eidos-plan", "eidos-ops", "eidos-memory"}
+    assert len(report.skills) == 5
     assert len(report.mcp_servers) == 0
 
 
@@ -60,7 +60,7 @@ def test_repo_plugin_conformance():
     report = validate_plugin_package(plugin_dir)
     assert report.is_valid, f"Repo skill package validation failed: {report.errors}"
     assert len(report.errors) == 0
-    assert len(report.skills) == 4
+    assert len(report.skills) == 5
 
 
 def test_plugin_install_to_project_scope(tmp_path):
@@ -200,7 +200,8 @@ def test_plugin_install_to_claude_plugin(tmp_path):
     assert (tmp_path / ".claude" / "skills" / "eidos-spec" / "SKILL.md").exists()
     assert (tmp_path / ".claude" / "skills" / "eidos-plan" / "SKILL.md").exists()
     assert (tmp_path / ".claude" / "skills" / "eidos-ops" / "SKILL.md").exists()
-    assert len([d for d in (tmp_path / ".claude" / "skills").iterdir() if d.is_dir()]) == 4
+    assert (tmp_path / ".claude" / "skills" / "eidos-memory" / "SKILL.md").exists()
+    assert len([d for d in (tmp_path / ".claude" / "skills").iterdir() if d.is_dir()]) == 5
 
     # Verify .claude/.eidos-manifest.json tracks skills and target hook intent, but NOT settings.json
     manifest_file = tmp_path / ".claude" / ".eidos-manifest.json"
@@ -404,7 +405,7 @@ def test_plugin_install_and_uninstall_codex(tmp_path):
     assert not (agent_dir / "hooks.json").exists()
     assert (agent_dir / "skills" / "eidos" / "SKILL.md").exists()
     assert "targets=codex:.agents/skills" in (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
-    assert len([d for d in (agent_dir / "skills").iterdir() if d.is_dir()]) == 4
+    assert len([d for d in (agent_dir / "skills").iterdir() if d.is_dir()]) == 5
 
     # Opt-in hooks=True creates .codex/hooks.json
     install_plugin(target=PluginInstallTarget.CODEX, project_dir=tmp_path, force=True, hooks=True)
@@ -443,7 +444,7 @@ def test_plugin_install_and_uninstall_copilot(tmp_path):
     agent_dir = tmp_path / ".agents"
     assert not (agent_dir / "hooks.json").exists()
     assert (agent_dir / "skills" / "eidos" / "SKILL.md").exists()
-    assert len([d for d in (agent_dir / "skills").iterdir() if d.is_dir()]) == 4
+    assert len([d for d in (agent_dir / "skills").iterdir() if d.is_dir()]) == 5
 
     # Opt-in hooks=True creates .github/hooks/hooks.json
     install_plugin(target=PluginInstallTarget.COPILOT, project_dir=tmp_path, force=True, hooks=True)
@@ -2427,7 +2428,7 @@ _AGENTS_MD_TEMPLATE = Path(__file__).parent.parent / "assets" / "plugin_referenc
 
 # No-growth word ceilings (post-tightening size rounded up to the next 50; never above the pre-DLT-2026-121 size).
 # Raising a ceiling is a deliberate decision: edit this table in the same change that grows the skill.
-_SKILL_WORD_CEILINGS = {"eidos": 2050, "eidos-spec": 2250, "eidos-plan": 1650, "eidos-ops": 850}
+_SKILL_WORD_CEILINGS = {"eidos": 2050, "eidos-spec": 2250, "eidos-plan": 1650, "eidos-ops": 850, "eidos-memory": 450}
 
 
 def _skill_frontmatter_and_body(skill_md: Path) -> tuple[dict, str]:

@@ -18,6 +18,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
 import { AsciiDocRenderer } from "@/components/ui/AsciiDocRenderer";
+import { EntityMemoriesStrip } from "@/components/ui/EntityMemoriesStrip";
 import { hasSpecBodyOrChunk } from "@/lib/specChunks";
 import { requestSpecNavigation } from "@/lib/specNav";
 import {
@@ -972,6 +973,16 @@ export function BusinessView({
                   );
                 })()}
 
+                {/* Domain Team Memories */}
+                <EntityMemoriesStrip
+                  entityId={selectedEntity.item.id}
+                  memories={data.memories}
+                  onBeforeNavigate={() => {
+                    setSelectedEntity(null);
+                    onClearSelected?.();
+                  }}
+                />
+
                 {/* Full Document */}
                 {hasSpecBodyOrChunk(selectedEntity.item.id, selectedEntity.item.body) && (
                   <div className="space-y-2 pt-2">
@@ -1146,6 +1157,16 @@ export function BusinessView({
                     </div>
                   </div>
                 )}
+
+                {/* Capability Team Memories */}
+                <EntityMemoriesStrip
+                  entityId={selectedEntity.item.id}
+                  memories={data.memories}
+                  onBeforeNavigate={() => {
+                    setSelectedEntity(null);
+                    onClearSelected?.();
+                  }}
+                />
 
                 {/* Personas & Policies */}
                 <div className="space-y-3 pt-2 border-t border-border/60">

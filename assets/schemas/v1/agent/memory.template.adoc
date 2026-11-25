@@ -1,0 +1,8 @@
+= Memory: {heading}
+:toc: left
+
+== Guidance
+State the concrete team engineering practice, operational constraint, or reference pointer.
+
+== Why
+Explain the incident, root cause, or context so future agents and engineers know when the rule applies.

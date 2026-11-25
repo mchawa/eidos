@@ -57,6 +57,7 @@ _SPEC_SUBDIRS = frozenset(
         "deltas",
         "explorations",
         "design",
+        "memory",
     }
 )
 _REPO_MARKERS = (".git", "pyproject.toml", "package.json", "Cargo.toml", "go.mod")

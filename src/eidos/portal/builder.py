@@ -70,6 +70,7 @@ def _deduplicate_portal_payload(data: dict[str, Any]) -> dict[str, Any]:
         "personas",
         "policies",
         "explorations",
+        "memories",
         "clients",
         "flows",
         "ui_components",
@@ -172,13 +173,7 @@ def _build_chunked_bootstrap_payload(data: dict[str, Any], specs_dir: Path) -> d
         chunk_name = _spec_chunk_filename(spec_id, used_names)
         chunk_rel = f"specs/{chunk_name}"
         full_fm = raw_spec.get("frontmatter") if isinstance(raw_spec.get("frontmatter"), dict) else {}
-        chunk_payload = {
-            "id": spec_id,
-            "body": str(raw_spec.get("body") or ""),
-            "frontmatter": full_fm,
-        }
-        (specs_dir / chunk_name).write_bytes(orjson.dumps(chunk_payload))
-
+        raw_body = str(raw_spec.get("body") or "")
         slim_fm = {k: v for k, v in full_fm.items() if k not in _SLIM_FRONTMATTER_DROP_KEYS}
         if isinstance(slim_fm.get("steps"), list):
             slim_fm["steps"] = [
@@ -187,7 +182,14 @@ def _build_chunked_bootstrap_payload(data: dict[str, Any], specs_dir: Path) -> d
 
         spec_copy = dict(raw_spec)
         spec_copy["body"] = ""
-        spec_copy["body_chunk"] = chunk_rel
+        if raw_body:
+            chunk_payload = {
+                "id": spec_id,
+                "body": raw_body,
+                "frontmatter": full_fm,
+            }
+            (specs_dir / chunk_name).write_bytes(orjson.dumps(chunk_payload))
+            spec_copy["body_chunk"] = chunk_rel
         spec_copy["frontmatter"] = slim_fm
         slim_specs.append(spec_copy)
 

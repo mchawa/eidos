@@ -50,16 +50,18 @@ $defs:
               description: "Architectural or operational reason why this option was rejected."
       graduated_from:
         type: string
-        pattern: "^((EXP|DLT)-[A-Z0-9_-]+|.*\\.adoc)$"
-        description: "Optional Exploration (EXP-*) or SpecDelta (DLT-*) ID or relative path from which this decision graduated."
+        pattern: "^((EXP|DLT|MEM)-[A-Z0-9_-]+|.*\\.adoc)$"
+        description: "Optional Exploration (EXP-*), SpecDelta (DLT-*), or Team Memory (MEM-*) ID or relative path from which this decision graduated."
         x-eidos-ref:
           target_types:
             - product/exploration
             - delta/mutation
+            - agent/memory
           prefixes:
             - EXP-
             - DLT-
-          entity_label: exploration or delta
+            - MEM-
+          entity_label: exploration, delta, or memory
 
   invariant:
     type: object
@@ -107,6 +109,15 @@ $defs:
       - adopted
       - discarded
     description: "Canonical 4-state workflow status for technical explorations (EXP-*): proposed, in_progress, adopted, or discarded."
+
+  memory_status:
+    type: string
+    enum:
+      - draft
+      - active
+      - promoted
+      - archived
+    description: "Canonical 4-state workflow status for team auto-memory entries (MEM-*): draft, active, promoted, or archived."
 
   semver:
     type: string

@@ -14,7 +14,7 @@ Resolves packaged JSON/YAML specification schemas, AsciiDoc prose templates (`*.
 
 == Key Responsibilities & Collaborators
 * **Multi-Root Asset Discovery**: Probes ordered candidate asset directories (`_iter_assets_roots`) spanning wheel package data, repository ancestors, and `Path.cwd()` to locate verified Eidos asset trees (`schemas/`, `plugin_reference/`, `portal/`, `mermaid/`).
-* **Template, Schema & Mermaid Bundle Resolution**: Maps canonical and short specification types to their corresponding `.template.adoc` blueprints and v1 schema directories for `CMP-LIFECYCLE-SCAFFOLDER` and `CMP-SPEC-VALIDATOR`, and resolves `assets/mermaid/mermaid.min.js.gz` via `get_mermaid_bundle_path()` for `CMP-MERMAID-VALIDATOR`.
+* **Template, Schema & Mermaid Bundle Resolution**: Maps canonical and short specification types (including `agent/memory` / `memory` -> `agent/memory.template.adoc`) to their corresponding `.template.adoc` blueprints and v1 schema directories for `CMP-LIFECYCLE-SCAFFOLDER` and `CMP-SPEC-VALIDATOR`, and resolves `assets/mermaid/mermaid.min.js.gz` via `get_mermaid_bundle_path()` for `CMP-MERMAID-VALIDATOR`.
 
 == Public Surface
 * `get_assets_root() -> Path`, `get_assets_path(subpath: str) -> Path`

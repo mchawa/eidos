@@ -135,6 +135,7 @@ class ArchitecturalContextSlice:
     capabilities: list[dict[str, Any]] = field(default_factory=list)
     invariants: list[dict[str, Any]] = field(default_factory=list)
     policies: list[dict[str, Any]] = field(default_factory=list)
+    memories: list[dict[str, Any]] = field(default_factory=list)
     matched_reasons: dict[str, list[str]] = field(default_factory=dict)
     provenance_tags: dict[str, dict[str, str]] = field(default_factory=dict)
     tier: str = "guardrails"  # "anchor" | "guardrails" | "deep"
@@ -160,6 +161,7 @@ class ArchitecturalContextSlice:
         compact_primary_decisions = bool(getattr(self, "_compact_primary_decisions", False))
         compact_metadata = bool(getattr(self, "_compact_metadata", False))
         drop_anchor_decisions = bool(getattr(self, "_drop_anchor_decisions", False))
+        compact_memories = bool(getattr(self, "_compact_memories", False))
         lines = [
             f"# 🧭 Eidos Architectural Context Slice ({self.tier.upper()} Tier)",
             "",
@@ -397,6 +399,30 @@ class ArchitecturalContextSlice:
                 lines.append(f"- **`{pid}`** ({title}){sev_suffix}")
             lines.append("")
 
+        # 6. Team Operational Memories (secondary budgeted attachment, omitted when empty)
+        if self.memories:
+            lines.append(f"## 🧠 Team Operational Memories ({len(self.memories)})")
+            for mem in self.memories:
+                mid = mem.get("id", "")
+                mcat = mem.get("category", "feedback")
+                mfresh = mem.get("freshness", "fresh")
+                msum = str(mem.get("summary", "") or "")
+                if compact_memories:
+                    msum = _clip_text(msum, 120)
+                lines.append(f"- **`{mid}`** ({mcat}, `{mfresh}`): {msum}")
+                if self.tier in ("guardrails", "deep") and not compact_memories:
+                    mreason = str(mem.get("freshness_reason") or "").strip()
+                    if mfresh != "fresh" and mreason:
+                        lines.append(f"  - *Freshness:* {mreason}")
+                    if self.tier == "deep":
+                        mguid = str(mem.get("guidance") or "").strip()
+                        if mguid:
+                            lines.append(f"  - *Guidance:* {_clip_text(mguid, 300) if compact_prose else mguid}")
+                        mwhy = str(mem.get("why") or "").strip()
+                        if mwhy:
+                            lines.append(f"  - *Why:* {_clip_text(mwhy, 200) if compact_prose else mwhy}")
+            lines.append("")
+
         lines.append(
             f"> Context Slice generated in {self.query_latency_ms:.2f}ms | Estimated Tokens: ~{self.token_estimate}"
         )
@@ -426,6 +452,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
     _compact_prose: bool = False
     _compact_metadata: bool = False
     _drop_anchor_decisions: bool = False
+    _compact_memories: bool = False
 
     @staticmethod
     def _clip(text: str, limit: int) -> str:
@@ -722,6 +749,32 @@ class TieredContextSlice(ArchitecturalContextSlice):
             out["file_path"] = pol["file_path"]
         return out
 
+    def _project_memory(self, mem: dict[str, Any]) -> dict[str, Any]:
+        summary = str(mem.get("summary") or "")
+        freshness = str(mem.get("freshness") or "fresh")
+        out: dict[str, Any] = {
+            "id": mem.get("id", ""),
+            "category": mem.get("category", "feedback"),
+            "summary": self._clip(summary, 120) if self._compact_memories else summary,
+            "freshness": freshness,
+        }
+        if self.tier in ("guardrails", "deep") and not self._compact_memories:
+            reason = str(mem.get("freshness_reason") or "").strip()
+            if freshness != "fresh" and reason:
+                out["freshness_reason"] = reason
+            if mem.get("file_path") and not self._compact_metadata:
+                out["file_path"] = mem["file_path"]
+            if self.tier == "deep":
+                if mem.get("verified_at"):
+                    out["verified_at"] = mem["verified_at"]
+                if mem.get("guidance"):
+                    raw_g = str(mem["guidance"])
+                    out["guidance"] = self._clip(raw_g, 300) if self._compact_prose else raw_g
+                if mem.get("why"):
+                    raw_w = str(mem["why"])
+                    out["why"] = self._clip(raw_w, 200) if self._compact_prose else raw_w
+        return out
+
     def _compress_verbose_fields_in_place(self, primary_cids: set[str]) -> bool:
         """Progressively compress verbose prose fields (invariant rules and primary tail decision narratives)
         and, on later calls, secondary governance/design metadata before dropping invariants or policies.
@@ -785,6 +838,8 @@ class TieredContextSlice(ArchitecturalContextSlice):
         }
         if self.tier in ("guardrails", "deep"):
             payload["provenance_tags"] = self._project_provenance_tags()
+        if self.memories:
+            payload["memories"] = [self._project_memory(m) for m in self.memories]
         payload["query_latency_ms"] = self.query_latency_ms
         payload["token_estimate"] = self.token_estimate
         return payload
@@ -833,11 +888,13 @@ class TieredContextSlice(ArchitecturalContextSlice):
             self._compact_prose,
             self._compact_metadata,
             self._drop_anchor_decisions,
+            self._compact_memories,
             len(self.components),
             len(self.contracts),
             len(self.capabilities),
             len(self.invariants),
             len(self.policies),
+            len(self.memories),
         )
 
     def _invalidate_budget_cache(self) -> None:
@@ -870,6 +927,10 @@ class TieredContextSlice(ArchitecturalContextSlice):
             proj_pol = self._project_policy(item)
             pol_ub = len(orjson.dumps(proj_pol, option=orjson.OPT_INDENT_2)) + 32
             return pol_ub, pol_ub
+        if lst is self.memories:
+            proj_mem = self._project_memory(item)
+            mem_ub = len(orjson.dumps(proj_mem, option=orjson.OPT_INDENT_2)) + 48
+            return mem_ub, mem_ub
         if lst is self.contracts:
             title_len = len(str(item.get("title", "") or cid))
             prot_len = len(str(item.get("protocol", "") or "standard"))
@@ -893,6 +954,9 @@ class TieredContextSlice(ArchitecturalContextSlice):
 
     def _pop_item(self, lst: list[dict[str, Any]], idx: int = -1) -> None:
         item = lst.pop(idx)
+        if lst is self.memories and not self.memories:
+            self._invalidate_budget_cache()
+            return
         if lst is self.components and (
             (len(self.components) == 4 and not self._compact_decisions)
             or (
@@ -956,7 +1020,8 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 return True
             md_tokens = self._estimate_text_tokens(md_text)
             self.__dict__["_md_tok_lb"] = md_tokens
-            if md_tokens > budget:
+            # Reserve 2 tokens headroom for post-enforcement query_latency_ms / token_estimate footer digits
+            if md_tokens + 2 > budget:
                 self.__dict__["_cached_sig"] = sig
                 self.__dict__["_cached_exceeds"] = True
                 return True
@@ -984,11 +1049,29 @@ class TieredContextSlice(ArchitecturalContextSlice):
         self._prune_matched_reasons()
         self._invalidate_budget_cache()
 
+        def _prune_memories_first() -> None:
+            # Stage 0: Secondary team memories always yield before any architectural entity or invariant.
+            if not self.memories or not self._exceeds_budget(budget):
+                return
+            for idx in range(len(self.memories) - 1, -1, -1):
+                if self.memories[idx].get("match_scope") == "global":
+                    self._pop_item(self.memories, idx)
+                    if not self._exceeds_budget(budget):
+                        return
+            if self.memories and not self._compact_memories and self._exceeds_budget(budget):
+                self._compact_memories = True
+                self._invalidate_budget_cache()
+                if not self._exceeds_budget(budget):
+                    return
+            while self.memories and self._exceeds_budget(budget):
+                self._pop_item(self.memories)
+
         if self.tier == "anchor":
             self.capabilities = []
             self.invariants = []
             self.policies = []
             self._invalidate_budget_cache()
+            _prune_memories_first()
             if self._exceeds_budget(budget) and primary_cids:
                 self.components = [c for c in self.components if c.get("id") in primary_cids] or self.components[:1]
                 self._invalidate_budget_cache()
@@ -1028,6 +1111,9 @@ class TieredContextSlice(ArchitecturalContextSlice):
                     self._pop_item(items, idx)
                     if not self._exceeds_budget(budget):
                         break
+
+        # Stage 0: Prune secondary team memories (globals -> compact -> anchored tail) before touching architectural entities.
+        _prune_memories_first()
 
         # Stage 1a: Progressively compress verbose prose fields (invariant rules and primary tail DEC-* narratives)
         # before evicting invariants, policies, or capabilities (deferring _compact_metadata to Stage 3).

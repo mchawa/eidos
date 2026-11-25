@@ -5,6 +5,7 @@ import {
   Network,
   GitBranch,
   Lightbulb,
+  Brain,
   Layers,
   Palette,
   ChevronLeft,
@@ -23,6 +24,7 @@ export type TabKey =
   | "architecture"
   | "deltas"
   | "explorations"
+  | "memory"
   | "catalog"
   | "design";
 
@@ -37,6 +39,8 @@ export interface NavigationRailProps {
   totalSpecs: number;
   deltasCount: number;
   explorationsCount?: number;
+  memoriesCount?: number;
+  memoryAttentionCount?: number;
 }
 
 export function NavigationRail({
@@ -50,9 +54,18 @@ export function NavigationRail({
   totalSpecs,
   deltasCount,
   explorationsCount = 0,
+  memoriesCount = 0,
+  memoryAttentionCount = 0,
 }: NavigationRailProps) {
-  // Navigation tabs conforming to Eidos IA
-  const tabs = [
+  // Navigation tabs conforming to living documentation IA
+  const tabs: Array<{
+    key: TabKey;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+    id: string;
+    badge?: string;
+    attentionCount?: number;
+  }> = [
     { key: "home", label: "Overview", icon: Home, id: "tab-home" },
     { key: "business", label: "Business & Domains", icon: Briefcase, id: "tab-business" },
     { key: "architecture", label: "Architecture", icon: Network, id: "tab-architecture" },
@@ -69,6 +82,14 @@ export function NavigationRail({
       icon: Lightbulb,
       id: "tab-explorations",
       badge: explorationsCount > 0 ? `${explorationsCount}` : undefined,
+    },
+    {
+      key: "memory",
+      label: "Team Memory",
+      icon: Brain,
+      id: "tab-memory",
+      badge: memoriesCount > 0 ? `${memoriesCount}` : undefined,
+      attentionCount: memoryAttentionCount > 0 ? memoryAttentionCount : undefined,
     },
     {
       key: "catalog",
@@ -139,7 +160,9 @@ export function NavigationRail({
         {/* Global Search Shortcut Button */}
         <div className={cn("transition-all", collapsed ? "p-2 flex justify-center" : "p-3")}>
           <button
+            type="button"
             onClick={onOpenCommand}
+            aria-label="Search documentation"
             className={cn(
               "flex items-center gap-2.5 rounded-xl border border-border/80 bg-muted/40 hover:bg-muted/80 text-muted-foreground transition-all cursor-pointer md-state-layer",
               collapsed
@@ -148,7 +171,7 @@ export function NavigationRail({
             )}
             title="Search documentation"
           >
-            <Search className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-foreground" />
+            <Search aria-hidden="true" className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-foreground" />
             {!collapsed && (
               <>
                 <span className="flex-1 truncate">Search documentation...</span>
@@ -162,6 +185,7 @@ export function NavigationRail({
 
         {/* Navigation Items (MD3 Navigation Rail / Tabs) */}
         <nav
+          aria-label="Primary"
           className={cn(
             "space-y-1.5 transition-all",
             collapsed ? "px-2 py-1 flex flex-col items-center" : "px-3 py-2"
@@ -170,12 +194,20 @@ export function NavigationRail({
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.key;
+            const attentionText =
+              tab.attentionCount && tab.attentionCount > 0
+                ? `${tab.attentionCount} ${tab.attentionCount === 1 ? "note needs" : "notes need"} review`
+                : "";
+            const navAriaLabel = attentionText ? `${tab.label} (${attentionText})` : tab.label;
             return (
               <div key={tab.key} className={cn("relative flex", collapsed ? "justify-center" : "w-full")}>
                 <div className={cn("relative", collapsed ? "inline-flex" : "w-full")}>
                   <button
                     id={tab.id}
-                    onClick={() => onTabChange(tab.key as TabKey)}
+                    type="button"
+                    aria-current={isActive ? "page" : undefined}
+                    aria-label={collapsed || attentionText ? navAriaLabel : undefined}
+                    onClick={() => onTabChange(tab.key)}
                     className={cn(
                       "cursor-pointer transition-all duration-150",
                       collapsed
@@ -185,12 +217,21 @@ export function NavigationRail({
                         ? "bg-primary text-primary-foreground md-elevation-1 font-semibold"
                         : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                     )}
-                    title={tab.label}
+                    title={navAriaLabel}
                   >
-                    <Icon className="h-4 w-4 shrink-0 transition-transform group-hover:scale-105" />
+                    <Icon aria-hidden="true" className="h-4 w-4 shrink-0 transition-transform group-hover:scale-105" />
                     {!collapsed && (
                       <>
                         <span className="flex-1 text-left truncate">{tab.label}</span>
+                        {attentionText && (
+                          <>
+                            <span
+                              className="h-2 w-2 rounded-full bg-amber-500 shrink-0"
+                              aria-hidden="true"
+                            />
+                            <span className="sr-only">{attentionText}</span>
+                          </>
+                        )}
                         {tab.badge && (
                           <span
                             className={cn(
@@ -207,9 +248,18 @@ export function NavigationRail({
                     )}
                   </button>
                   {collapsed && tab.badge && (
-                    <span className="pointer-events-none absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white font-mono text-[10px] font-bold flex items-center justify-center shadow-md ring-2 ring-card z-20">
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white font-mono text-[10px] font-bold flex items-center justify-center shadow-md ring-2 ring-card z-20"
+                    >
                       {tab.badge}
                     </span>
+                  )}
+                  {collapsed && attentionText && (
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ring-card z-20"
+                    />
                   )}
                 </div>
               </div>

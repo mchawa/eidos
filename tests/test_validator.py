@@ -13,7 +13,7 @@ def validator():
 
 
 def test_bundled_schemas_loaded(validator):
-    """Verify that all 16 core v1 schemas are preloaded under path-qualified keys."""
+    """Verify that all 17 core v1 schemas are preloaded under path-qualified keys."""
     expected_schemas = [
         "product/system.schema.yaml",
         "product/domain.schema.yaml",
@@ -31,6 +31,7 @@ def test_bundled_schemas_loaded(validator):
         "design/screen.schema.yaml",
         "design/client.schema.yaml",
         "design/flow.schema.yaml",
+        "agent/memory.schema.yaml",
     ]
     for schema_name in expected_schemas:
         assert schema_name in validator._schema_cache, f"Missing schema: {schema_name}"
@@ -1545,10 +1546,10 @@ def test_schema_cache_collision_free_and_functional_cli_parity(tmp_path: Path, v
     assert validator.resolve_schema(prod_doc)["title"] == "SystemSchema"
     assert validator.resolve_schema(ds_doc)["title"] == "DesignSystemSchema"
 
-    # 2. eidos info reports 16 loaded schemas
+    # 2. eidos info reports 17 loaded schemas
     res = CliRunner().invoke(app, ["info"])
     assert res.exit_code == 0
-    assert "16 loaded" in res.stdout
+    assert "17 loaded" in res.stdout
     assert "product/system.schema.yaml" in res.stdout
     assert "design/system.schema.yaml" in res.stdout
 
@@ -5449,12 +5450,12 @@ def test_safe_dump_yaml_fast_yaml_08_compatibility():
         safe_dump_yaml({"a": 1}, allow_unicode=True)
 
     schemas = get_spec_schema_info()
-    assert isinstance(schemas, list) and len(schemas) == 16
+    assert isinstance(schemas, list) and len(schemas) == 17
 
     runner = CliRunner()
     res_list = runner.invoke(app, ["spec", "schema"])
     assert res_list.exit_code == 0, res_list.output
-    assert "16 types" in res_list.output
+    assert "17 types" in res_list.output
 
     res_comp = runner.invoke(app, ["spec", "schema", "component", "--json"])
     assert res_comp.exit_code == 0, res_comp.output
@@ -6085,3 +6086,175 @@ def test_persistent_public_surface_symbol_cache_hit_invalidation_and_nonblocking
         finally:
             fcntl.flock(fd, fcntl.LOCK_UN)
             os.close(fd)
+
+
+def test_agent_memory_schema_defs_and_nonblocking_isolation(tmp_path):
+    """Verify INV-AGENT-MEMORY-SCHEMA-ISOLATION: agent/memory schema, defs.yaml graduated_from MEM-*,
+    AssetLocator template, create_spec redirect, parent-first path inference, and non-blocking target exemption."""
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.core.lifecycle.scaffolder import _scan_live_specs_by_id, create_spec
+    from eidos.core.spec.models import infer_entity_type_from_path
+    from eidos.core.spec.parser import parse_spec_file
+    from eidos.core.workspace.assets import get_spec_template_path, render_spec_template
+
+    # 1. Parent-first path inference must map top-level eidos/memory/ to MEM-* without colliding on domains/memory/
+    assert infer_entity_type_from_path("eidos/memory/mem-real-sqlite-a3f9.adoc") == (
+        "MEM-",
+        "agent/memory",
+        "MEM-REAL-SQLITE-A3F9",
+    )
+    assert infer_entity_type_from_path("eidos/memory/archive/mem-old-1122.adoc") == (
+        "MEM-",
+        "agent/memory",
+        "MEM-OLD-1122",
+    )
+    assert infer_entity_type_from_path("packages/api/eidos/memory/note-no-prefix.adoc") == (
+        "MEM-",
+        "agent/memory",
+        "MEM-NOTE-NO-PREFIX",
+    )
+    assert infer_entity_type_from_path("eidos/domains/memory/domain.adoc") == (
+        "DOM-",
+        "product/domain",
+        "DOM-MEMORY",
+    )
+
+    # 2. AssetLocator template resolution for agent/memory and memory aliases
+    assert get_spec_template_path("agent/memory").name == "memory.template.adoc"
+    assert get_spec_template_path("memory").name == "memory.template.adoc"
+    rendered_tpl = render_spec_template("agent/memory", heading="Real SQLite")
+    assert "= Memory: Real SQLite" in rendered_tpl
+    assert "== Guidance" in rendered_tpl and "== Why" in rendered_tpl
+
+    # 3. Build a temporary catalog exercising schema positive/negative cases, defs.yaml graduated_from: MEM-*,
+    #    broken targets.paths (.adoc), missing targets.entities, deprecated target entity, and --fail-on-warnings
+    eidos_dir = tmp_path / "eidos"
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True)
+    (eidos_dir / "domains" / "core").mkdir(parents=True)
+    (eidos_dir / "memory" / "archive").mkdir(parents=True)
+    (tmp_path / "src" / "app").mkdir(parents=True)
+    (tmp_path / "src" / "app" / "core.py").write_text("def run():\n    return 1\n", encoding="utf-8")
+
+    (eidos_dir / "system.adoc").write_text(
+        "---\ntype: product/system\nid: SYS-MEM-001\ntitle: Mem Demo\nstatus: active\narchetypes: [library]\n---\n= System: Mem Demo\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "domains" / "core" / "domain.adoc").write_text(
+        "---\ntype: product/domain\nid: DOM-CORE\ntitle: Core\nstatus: active\nclassification: core\n---\n= Domain: Core\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "legacy.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-LEGACY\n"
+        "title: Legacy Container\n"
+        "status: deprecated\n"
+        "container_type: library\n"
+        "runtime: Python\n"
+        "source_path: src/app\n"
+        "domain: DOM-CORE\n"
+        "---\n= Legacy\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "app.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-APP\n"
+        "title: App Container\n"
+        "status: active\n"
+        "container_type: library\n"
+        "runtime: Python\n"
+        "source_path: src/app\n"
+        "domain: DOM-CORE\n"
+        "decisions:\n"
+        "  - id: DEC-SQLITE-REAL\n"
+        "    title: Use real SQLite in tests\n"
+        "    decision: Always use tmp_path SQLite.\n"
+        "    rationale: Avoids mock FTS5 drift.\n"
+        "    graduated_from: MEM-REAL-SQLITE-A3F9\n"
+        "---\n= Container: App\n\n== Public Surface\n* `run`\n",
+        encoding="utf-8",
+    )
+    # Valid active memory with broken deleted .adoc target, missing entity ID, and deprecated entity ID
+    (eidos_dir / "memory" / "mem-real-sqlite-a3f9.adoc").write_text(
+        "---\n"
+        "type: agent/memory\n"
+        "id: MEM-REAL-SQLITE-A3F9\n"
+        "title: Never mock SQLite in index tests\n"
+        "category: feedback\n"
+        "status: active\n"
+        "summary: Use tmp_path SQLite DBs instead of mocking core.adoc\n"
+        "targets:\n"
+        "  entities:\n"
+        "    - CMP-REMOVED-COMPONENT\n"
+        "    - CNT-LEGACY\n"
+        "  paths:\n"
+        "    - eidos/architecture/components/removed.adoc\n"
+        "    - src/deleted_module.py\n"
+        "verified_at: '2026-11-24'\n"
+        "verified_commit: null\n"
+        "expires_at: null\n"
+        "promoted_to: null\n"
+        "---\n= Memory: Never mock SQLite\n\n== Guidance\nUse tmp_path.\n\n== Why\nMocking misses triggers.\n",
+        encoding="utf-8",
+    )
+    # Valid promoted archived memory referencing embedded DEC-*
+    (eidos_dir / "memory" / "archive" / "mem-promoted-9b12.adoc").write_text(
+        "---\n"
+        "type: agent/memory\n"
+        "id: MEM-PROMOTED-9B12\n"
+        "title: Promoted lesson\n"
+        "category: project\n"
+        "status: promoted\n"
+        "summary: Graduated into DEC-SQLITE-REAL.\n"
+        "verified_at: '2026-11-24'\n"
+        "expires_at: '2026-12-01'\n"
+        "promoted_to: DEC-SQLITE-REAL\n"
+        "---\n= Memory: Promoted\n\n== Guidance\nSee DEC-SQLITE-REAL.\n",
+        encoding="utf-8",
+    )
+
+    # create_spec must reject memory / agent/memory with redirect to eidos memory add
+    for bad_type in ("memory", "agent/memory"):
+        with pytest.raises(ValueError, match="eidos memory add"):
+            create_spec(eidos_dir, bad_type, "MEM-TEST-1111", "Should fail")
+
+    # _scan_live_specs_by_id must exclude top-level eidos/memory/
+    live_ids = _scan_live_specs_by_id(eidos_dir)
+    assert "MEM-REAL-SQLITE-A3F9" not in live_ids
+    assert "CNT-APP" in live_ids
+
+    # Full validation must pass cleanly with zero broken_references and zero ValidationReport.warnings
+    sv = SpecValidator()
+    report = sv.validate_directory(eidos_dir, check_import_boundaries=False)
+    assert report.is_clean, f"Errors: {report.schema_errors}, Broken: {report.broken_references}"
+    assert report.broken_references == []
+    assert report.warnings == []
+
+    # CLI 'eidos validate --fail-on-warnings' must exit 0 even with broken/deprecated memory targets
+    res_cli = CliRunner().invoke(app, ["validate", str(eidos_dir), "--fail-on-warnings", "--json"])
+    assert res_cli.exit_code == 0, res_cli.output
+
+    # 4. Negative schema enforcement checks: reject 'user' category, 'promoted' without promoted_to, >220 summary
+    bad_cases = [
+        (
+            "mem-bad-user.adoc",
+            "---\ntype: agent/memory\nid: MEM-BAD-USER-1111\ntitle: Style\ncategory: user\nstatus: active\nsummary: Short.\nverified_at: '2026-11-24'\n---\n= Bad\n",
+        ),
+        (
+            "mem-bad-promoted.adoc",
+            "---\ntype: agent/memory\nid: MEM-BAD-PROM-2222\ntitle: Promoted\ncategory: feedback\nstatus: promoted\nsummary: Missing target.\nverified_at: '2026-11-24'\npromoted_to: null\n---\n= Bad\n",
+        ),
+        (
+            "mem-bad-summary.adoc",
+            f"---\ntype: agent/memory\nid: MEM-BAD-SUM-3333\ntitle: Long\ncategory: reference\nstatus: draft\nsummary: '{'x' * 221}'\nverified_at: '2026-11-24'\n---\n= Bad\n",
+        ),
+    ]
+    for fname, content in bad_cases:
+        bad_p = tmp_path / fname
+        bad_p.write_text(content, encoding="utf-8")
+        doc = parse_spec_file(bad_p)
+        errs = sv.validate_document(doc, root_dir=eidos_dir)
+        assert not doc.is_valid and errs, f"Expected {fname} to fail agent/memory schema validation"

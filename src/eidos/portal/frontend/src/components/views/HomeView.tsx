@@ -8,6 +8,7 @@ import {
   GitPullRequest,
   ArrowRight,
   Lightbulb,
+  Brain,
   FileWarning,
   Link2Off,
   Activity,
@@ -247,8 +248,16 @@ export function HomeView({
           return (
             <Card
               key={idx}
-              className="cursor-pointer hover:border-primary/40 group transition-all"
+              role="button"
+              tabIndex={0}
+              className="cursor-pointer hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary group transition-all"
               onClick={() => onNavigateTab(m.tab)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onNavigateTab(m.tab);
+                }
+              }}
             >
               <CardContent className="p-5 flex items-center justify-between">
                 <div className="space-y-1">
@@ -345,6 +354,76 @@ export function HomeView({
                   {data.governance_health.ratchet_debt.entry_count === 1 ? "entry" : "entries"}
                 </p>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Team Operational Memory Summary Card */}
+      {data.memory_audit && (
+        <Card id="teamMemorySummaryCard" className="border-border/80">
+          <CardContent className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded-2xl flex items-center justify-center shrink-0 bg-teal-500/10 text-teal-500">
+                <Brain aria-hidden="true" className="h-5 w-5" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-sm font-bold text-foreground tracking-tight">
+                    Team Operational Memory
+                  </h2>
+                  {data.memory_audit.total === 0 ? (
+                    <Badge variant="outline">No Notes Recorded</Badge>
+                  ) : data.memory_audit.active === 0 ? (
+                    <Badge variant="outline">No Active Notes</Badge>
+                  ) : data.memory_audit.stale + data.memory_audit.expired > 0 ? (
+                    <Badge variant="warning">
+                      {data.memory_audit.stale + data.memory_audit.expired} Advisory{" "}
+                      {data.memory_audit.stale + data.memory_audit.expired === 1
+                        ? "Review"
+                        : "Reviews"}
+                    </Badge>
+                  ) : data.memory_audit.unverifiable > 0 &&
+                    data.memory_audit.fresh < data.memory_audit.active ? (
+                    <Badge variant="outline">Partially Verified</Badge>
+                  ) : (
+                    <Badge variant="success">All Active Notes Fresh</Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {data.memory_audit.total === 0
+                    ? "Git-tracked operational notes for teammates and assistants appear here without affecting formal validation."
+                    : `${data.memory_audit.active} active (${data.memory_audit.fresh} fresh, ${data.memory_audit.stale} needing verification, ${data.memory_audit.expired} expired${
+                        data.memory_audit.unverifiable > 0
+                          ? `, ${data.memory_audit.unverifiable} history unavailable`
+                          : ""
+                      })${
+                        data.memory_audit.draft > 0
+                          ? ` • ${data.memory_audit.draft} draft`
+                          : ""
+                      }${
+                        data.memory_audit.promoted > 0
+                          ? ` • ${data.memory_audit.promoted} promoted`
+                          : ""
+                      }${
+                        data.memory_audit.archived > 0
+                          ? ` • ${data.memory_audit.archived} archived`
+                          : ""
+                      }. Advisory diagnostics never block validation.`}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onNavigateTab("memory")}
+                className="text-xs gap-1.5"
+              >
+                <span>Open Team Memory</span>
+                <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" />
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -530,13 +609,14 @@ export function HomeView({
                 Documents Needing Attention ({invalidSpecs.length})
               </h4>
               {invalidSpecs.map((sp) => (
-                <div
+                <button
                   key={sp.id}
+                  type="button"
                   onClick={() => {
                     setDiagnosticsOpen(false);
                     onInspectSpec(sp);
                   }}
-                  className="p-3 rounded-xl border border-rose-500/30 bg-rose-500/5 cursor-pointer hover:bg-rose-500/10"
+                  className="w-full text-left p-3 rounded-xl border border-rose-500/30 bg-rose-500/5 cursor-pointer hover:bg-rose-500/10"
                 >
                   <div className="font-semibold text-rose-400">
                     {formatDisplayTitle(sp.title, sp.id)}
@@ -546,7 +626,7 @@ export function HomeView({
                       {e}
                     </p>
                   ))}
-                </div>
+                </button>
               ))}
             </div>
           )}

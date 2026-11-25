@@ -110,6 +110,8 @@ _TEMPLATE_PATHS_BY_TYPE: dict[str, str] = {
     "flow": "design/flow.template.adoc",
     "delta/mutation": "delta/delta.template.adoc",
     "delta": "delta/delta.template.adoc",
+    "agent/memory": "agent/memory.template.adoc",
+    "memory": "agent/memory.template.adoc",
 }
 
 

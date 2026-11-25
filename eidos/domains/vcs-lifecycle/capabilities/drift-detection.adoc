@@ -4,7 +4,7 @@ id: CAP-VCS-001
 title: "Git-Native Spec-to-Code Drift Detection"
 domain: DOM-VCS-LIFECYCLE
 status: active
-version: "1.14.0"
+version: "1.15.0"
 
 business:
   personas:
@@ -51,6 +51,9 @@ technical:
     - id: INV-DRIFT-IMPORT-BOUNDARY-RATCHET
       rule: "detect_drift and 'eidos drift' must enforce ARCH-*.import_boundaries (tier_rules, enforce_declared_containers, ratchet_baseline) and CNT-*/CMP-*.import_boundary (allow, deny) fail-closed across ast_import and ast_http code_couplings (even when declared_spec CTR-* edges exist and isolated strictly to the --head snapshot on commit-range runs), failing when forbidden couplings or observed_imports > ratchet_baseline[].max_imports occur while surfacing non-blocking ratchet_shrink_candidates when observed_imports < max_imports."
       test_binding: "tests/test_drift.py::test_executable_import_boundaries_and_ratchet_baseline"
+    - id: INV-DRIFT-MEMORY-FILE-ISOLATION
+      rule: "classify_changed_files must isolate top-level eidos/memory/** files into ChangedFilesClassification.memory_files (without misclassifying domains such as eidos/domains/memory/domain.adoc) so team memory edits neither pollute spec_files to mask structural code drift in detect_drift nor defeat CMP-HOOK-RUNNER's zero-edit Q&A Stop hook short-circuit on memory-only edits."
+      test_binding: "tests/test_drift.py::test_agent_memory_classification_drift_and_stop_hook_isolation"
 ---
 = Capability: Git-Native Spec-to-Code Drift Detection
 :toc: left
@@ -64,7 +67,7 @@ Ensures that source code and living specifications never diverge via a determini
 By leveraging the SQLite Knowledge Graph (`eidos/.cache/index.db`), drift detection maps code diffs directly to architectural components, reuses canonical `CMP-GRAPH-STORAGE` cache helpers (`get_cached_spec_document`, `load_test_binding_cache`, `save_test_binding_cache`) without redundant inline DDL, and traverses 1-hop relational neighborhoods to recommend exact specification targets.
 
 == Key Responsibilities
-* **Git Diff Inspection, Shallow-Clone Guards & Monorepo Sub-Project Isolation (`CMP-GIT-DIFF-INSPECTOR`, `INV-MONOREPO-SUBPROJECT-ISOLATION`, `INV-DRIFT-SHALLOW-AND-COMMIT-TREE-FIDELITY`)**: Inspecting working trees (`git status --porcelain=v1 -z`), staged changes, and branch heads for unmapped architectural modifications via direct canonical `eidos.vcs.diff` and `eidos.vcs.structural` submodule signatures (`merge_base=resolved_mb`), detecting shallow clones across standard checkouts and linked worktrees via `git rev-parse --is-shallow-repository`, evaluating `--base`/`--head` commit ranges from `--head`'s Git tree rather than dirty working-tree files, and scoping Git diffs strictly to the active sub-project root relative to `<git_root>`.
+* **Git Diff Inspection, Team Memory Isolation, Shallow-Clone Guards & Monorepo Sub-Project Isolation (`CMP-GIT-DIFF-INSPECTOR`, `INV-DRIFT-MEMORY-FILE-ISOLATION`, `INV-MONOREPO-SUBPROJECT-ISOLATION`, `INV-DRIFT-SHALLOW-AND-COMMIT-TREE-FIDELITY`)**: Inspecting working trees (`git status --porcelain=v1 -z`), staged changes, and branch heads for unmapped architectural modifications via direct canonical `eidos.vcs.diff` and `eidos.vcs.structural` submodule signatures (`merge_base=resolved_mb`), isolating top-level `eidos/memory/**` files into `ChangedFilesClassification.memory_files` (separate from `spec_files` and `delta_files`), detecting shallow clones across standard checkouts and linked worktrees via `git rev-parse --is-shallow-repository`, evaluating `--base`/`--head` commit ranges from `--head`'s Git tree rather than dirty working-tree files, and scoping Git diffs strictly to the active sub-project root relative to `<git_root>`.
 * **Decorator-Aware AST Structural Diffing (`CMP-AST-DIFF-CLASSIFIER`)**: Capturing enclosing `@decorator` and `#[attribute]` lines in `CodeSymbol.line_start`, prefixing normalized decorator/attribute annotations onto `CodeSymbol.signature`, normalizing C/C++ export macros (`*_API`, `*_EXPORT`), and distinguishing public C++ `static` class/struct methods from file-local `static` free functions in `AstGrepIndexer` (`SgRoot`) across all 17 supported languages so CLI route, lifecycle, and visibility changes are detected by `diff_public_symbols`.
 * **Graph-Powered Reverse Symbol Resolution**: Resolving all modified source code file paths (`structural_code_files` and `body_only_code_files`) to internal C4 components (`CMP-*`) and owning container IDs (`CNT-*`) in `touched_components` via sub-millisecond SQLite queries rather than linear disk crawls, with optional `--strict` enforcement requiring 1-hop spec or bound test co-evolution for `body_only_code_files`.
 * **1-Hop Neighborhood & `UIC-*` Invariant Verification (`CMP-INVARIANT-TRACEABILITY-VERIFIER`, `INV-DRIFT-UIC-AND-SKIPPED-TEST-GUARD`)**: Querying the knowledge graph during `eidos drift` to discover bound interface contracts (`CTR-*`), domain capabilities (`CAP-*`), and parent containers affected by code changes, scanning `eidos/design/` for `UIC-*` UI component invariants, and rejecting disabled `.skip`/`.todo`/`.fixme` tests as valid bindings.

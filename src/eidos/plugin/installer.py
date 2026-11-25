@@ -131,6 +131,7 @@ ACTIVE_EIDOS_SKILLS: frozenset[str] = frozenset(
         "eidos-spec",
         "eidos-plan",
         "eidos-ops",
+        "eidos-memory",
     }
 )
 
@@ -910,7 +911,7 @@ def _make_agents_skills_adapter(
         skills_subdir=".agents/skills",
         install_destination_subdir=".agents/skills",
         uninstall_destination_subdir=".agents/skills",
-        install_message=f"Installed 4 skills in .agents/skills/ and the root AGENTS.md block (read natively by {label}).",
+        install_message=f"Installed {len(ACTIVE_EIDOS_SKILLS)} skills in .agents/skills/ and the root AGENTS.md block (read natively by {label}).",
         uninstall_removed_message="Removed .agents/skills/.",
         uninstall_clean_message=f"No {label} configuration found (already removed).",
         prune_dirs=(".agents/skills", ".agents"),
@@ -939,7 +940,7 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
         name="claude",
         plugin_subdir=".claude",
         skills_subdir=".claude/skills",
-        install_message="Installed 4 Claude Code skills in .claude/skills/ and imported the root AGENTS.md block from CLAUDE.md.",
+        install_message=f"Installed {len(ACTIVE_EIDOS_SKILLS)} Claude Code skills in .claude/skills/ and imported the root AGENTS.md block from CLAUDE.md.",
         uninstall_removed_message="Removed Claude Code skills from .claude/skills/ and cleaned up .claude/settings.json.",
         uninstall_clean_message="No Claude Code configuration found (already removed).",
         prune_dirs=(".claude/skills", ".claude"),
@@ -954,7 +955,7 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
         skills_subdir=".aider/skills",
         install_destination_subdir=".aider.conf.yml",
         uninstall_destination_subdir=".aider.conf.yml",
-        install_message="Installed 4 skills into .aider/skills/, the root AGENTS.md block, and AGENTS.md under read: in .aider.conf.yml.",
+        install_message=f"Installed {len(ACTIVE_EIDOS_SKILLS)} skills into .aider/skills/, the root AGENTS.md block, and AGENTS.md under read: in .aider.conf.yml.",
         uninstall_removed_message="Removed .aider/skills/.",
         uninstall_clean_message="No Aider configuration found (already removed).",
         prune_dirs=(".aider/skills", ".aider"),

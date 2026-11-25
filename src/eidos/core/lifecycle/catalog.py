@@ -379,6 +379,12 @@ def find_references_to_spec(eidos_dir: Path, target_id: str, target_path: Path) 
         if resolved_p == target_resolved or resolved_p in seen_resolved:
             continue
         try:
+            rel_parts = resolved_p.relative_to(eidos_resolved).parts
+            if rel_parts and rel_parts[0].lower() == "memory":
+                continue
+        except ValueError:
+            pass
+        try:
             content = p.read_text(encoding="utf-8")
             if "deltas" in p.parts:
                 fm_dict, _, _ = extract_frontmatter(content)

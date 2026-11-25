@@ -43,10 +43,17 @@ def _scan_live_specs_by_id(eidos_dir: Path) -> dict[str, tuple[Path, str, dict[s
             continue
         with contextlib.suppress(ValueError):
             rel_parts = p.resolve().relative_to(resolved_root).parts
-            if any(part in (".cache", "deltas", "archive") for part in rel_parts):
+            if any(part in (".cache", "deltas", "archive") for part in rel_parts) or (
+                rel_parts and rel_parts[0].lower() == "memory"
+            ):
                 continue
         doc = parse_spec_file(p)
-        if doc.doc_id and doc.doc_type and doc.doc_id != "SYS-UNINITIALIZED" and doc.doc_type != "delta/mutation":
+        if (
+            doc.doc_id
+            and doc.doc_type
+            and doc.doc_id != "SYS-UNINITIALIZED"
+            and doc.doc_type not in ("delta/mutation", "agent/memory")
+        ):
             specs_by_id[doc.doc_id] = (p.resolve(), doc.doc_type, doc.frontmatter)
     return specs_by_id
 
@@ -67,6 +74,10 @@ def create_spec(
     if type_key in ("delta", "mutation", "delta/mutation"):
         raise ValueError(
             "SpecDeltas (DLT-*) cannot be created via 'eidos spec create'. Use 'eidos delta create' instead."
+        )
+    if type_key in ("memory", "agent/memory", "agent-memory", "agent\\memory"):
+        raise ValueError(
+            "Team memories (MEM-*) cannot be created via 'eidos spec create'. Use 'eidos memory add' instead."
         )
 
     key_aliases = {
@@ -367,6 +378,12 @@ def delete_spec(eidos_dir: Path, target: str, force: bool = False) -> tuple[bool
             f"Document '{doc_id}' is a SpecDelta (delta/mutation). Use 'eidos delta delete {target}' instead.",
             [],
         )
+    if doc.doc_type == "agent/memory":
+        return (
+            False,
+            f"Document '{doc_id}' is a team memory (agent/memory). Use 'eidos memory archive {target}' instead.",
+            [],
+        )
 
     references = find_references_to_spec(eidos_dir, doc_id, file_path)
     if references and not force:
@@ -398,6 +415,8 @@ def list_specs(
     type_filter_clean = type_filter.strip().lower().replace("_", "/") if type_filter else None
     if type_filter_clean in ("delta", "mutation", "delta/mutation"):
         raise ValueError("SpecDeltas (DLT-*) are managed via 'eidos delta'. Use 'eidos delta list' instead.")
+    if type_filter_clean in ("memory", "agent/memory", "agent-memory", "agent\\memory"):
+        raise ValueError("Team memories (MEM-*) are managed via 'eidos memory'. Use 'eidos memory list' instead.")
 
     if not eidos_dir.exists():
         return []
@@ -423,7 +442,7 @@ def list_specs(
     for ent in all_entities:
         doc_type = ent.get("type", "")
         eid = ent.get("id", "")
-        if doc_type in ("invariant", "delta/mutation"):
+        if doc_type in ("invariant", "delta/mutation", "agent/memory"):
             continue
 
         status = ent.get("status") or "active"
@@ -636,7 +655,7 @@ def _describe_property_schema(prop_schema: dict[str, Any], defs: dict[str, Any],
 def get_spec_schema_info(doc_type_key: str | None = None) -> dict[str, Any] | list[dict[str, Any]]:
     """Load and inspect bundled v1 YAML schemas directly from ``assets/schemas/v1/``.
 
-    If ``doc_type_key`` is None, returns a summary list across all 16 bundled schemas.
+    If ``doc_type_key`` is None, returns a summary list across all 17 bundled schemas.
     Otherwise resolves ``doc_type_key`` by short type alias (e.g. ``"capability"``, ``"container"``, ``"delta"``)
     or canonical type (e.g. ``"product/capability"``, ``"tech/container"``, ``"delta/mutation"``) and returns
     detailed property constraints and a schema-synthesized example YAML frontmatter block.

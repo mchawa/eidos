@@ -10,7 +10,9 @@ import { ArchitectureView } from "@/components/views/ArchitectureView";
 import { DesignView } from "@/components/views/DesignView";
 import { DeltasView } from "@/components/views/DeltasView";
 import { ExplorationsView } from "@/components/views/ExplorationsView";
+import { MemoryView } from "@/components/views/MemoryView";
 import { CatalogView } from "@/components/views/CatalogView";
+import { EntityMemoriesStrip } from "@/components/ui/EntityMemoriesStrip";
 import {
   EntityLabelProvider,
   buildEntityLabelIndex,
@@ -19,6 +21,9 @@ import {
   formatDeltaKind,
   formatDisplayTitle,
   formatFlowType,
+  formatMemoryCategory,
+  formatMemoryFreshness,
+  formatMemoryFreshnessReason,
   formatMutationOperation,
   formatProtocol,
   formatSeverity,
@@ -65,10 +70,10 @@ function extractUserFacingAttributes(html: string): string[] {
 }
 
 const RAW_ENTITY_ID_RE =
-  /\b(?:SYS|DOM|CAP|POL|PER|INV|DEC|CNT|CMP|CTR|DS|CLT|SCR|UIC|FLOW|DLT|EXP)-[A-Z0-9_-]+\b/i;
+  /\b(?:SYS|ARCH|DOM|CAP|POL|PER|INV|DEC|CNT|CMP|CTR|DS|CLT|SCR|UIC|FLOW|DLT|EXP|MEM)-[A-Z0-9_-]+\b/i;
 
 const RAW_SCHEMA_TYPE_RE =
-  /\b(?:product|tech|design|delta)\/(?:system|domain|capability|policy|persona|exploration|architecture|container|component|contract|ui-component|client|screen|flow|mutation)\b/i;
+  /\b(?:product|tech|design|delta|agent)\/(?:system|domain|capability|policy|persona|exploration|architecture|container|component|contract|ui-component|client|screen|flow|mutation|memory)\b/i;
 
 const BANNED_JARGON = [
   "DDD Strategic Layer",
@@ -94,6 +99,10 @@ function buildFixture(): PortalData {
       total_specs: 14,
       valid_specs: 13,
       is_clean: false,
+      flows_count: 1,
+      explorations_count: 1,
+      memories_count: 3,
+      active_memories_count: 2,
       domains_count: 1,
       capabilities_count: 1,
       policies_count: 1,
@@ -436,6 +445,107 @@ function buildFixture(): PortalData {
     edges: [
       { source: "CNT-ACME-WEB", target: "CNT-ACME-API", type: "depends_on" },
     ],
+    memories: [
+      {
+        id: "MEM-REAL-DB-TESTS-A1B2",
+        title: "Use real temporary storage in integration tests",
+        category: "feedback",
+        status: "active",
+        summary: "Always construct a real temporary database instead of mocking storage queries.",
+        targets: {
+          entities: ["CNT-ACME-WEB", "DOM-EXPERIENCE-WEB", "CAP-WEB-001"],
+          paths: ["src/acme/web/*.ts"],
+        },
+        verified_at: "2026-11-24",
+        verified_commit: "abc1234",
+        expires_at: null,
+        promoted_to: null,
+        freshness: "fresh",
+        freshness_reason: "0 commit(s) on target path(s) since abc1234",
+        is_archived: false,
+        path: "specs/memory/mem-real-db-tests-a1b2.adoc",
+        relative_path: "specs/memory/mem-real-db-tests-a1b2.adoc",
+        body: "== Guidance\nUse temporary databases.",
+      },
+      {
+        id: "MEM-RELEASE-FREEZE-C3D4",
+        title: "Checkout release window freeze",
+        category: "project",
+        status: "active",
+        summary: "Avoid breaking payment checkout contracts during the Q4 freeze.",
+        targets: {
+          entities: ["CNT-ACME-API"],
+          paths: ["specs/architecture/containers/web.adoc"],
+        },
+        verified_at: "2026-11-01",
+        verified_commit: "def5678",
+        expires_at: "2026-11-15",
+        promoted_to: null,
+        freshness: "stale",
+        freshness_reason:
+          "missing target entity ID(s): CMP-REMOVED-MODULE and specs/architecture/containers/web.adoc and tests/test_checkout.py",
+        is_archived: false,
+        path: "specs/memory/mem-release-freeze-c3d4.adoc",
+        relative_path: "specs/memory/mem-release-freeze-c3d4.adoc",
+        body: "== Guidance\nCoordinate freezes before merging.",
+      },
+      {
+        id: "MEM-PROMOTED-NOTE-E5F6",
+        title: "Strict storage security guideline",
+        category: "feedback",
+        status: "promoted",
+        summary: "Promoted into formal governance policy.",
+        targets: { entities: [], paths: [] },
+        verified_at: "2026-10-15",
+        verified_commit: null,
+        expires_at: null,
+        promoted_to: "POL-ZERO-TRUST",
+        freshness: "archived",
+        freshness_reason: "",
+        is_archived: true,
+        path: "specs/memory/archive/mem-promoted-note-e5f6.adoc",
+        relative_path: "specs/memory/archive/mem-promoted-note-e5f6.adoc",
+        body: "== Guidance\nEnforced formally.",
+      },
+    ],
+    memory_audit: {
+      total: 3,
+      active: 2,
+      draft: 0,
+      promoted: 1,
+      archived: 1,
+      fresh: 1,
+      stale: 1,
+      expired: 0,
+      unverifiable: 0,
+      stale_memories: [
+        {
+          id: "MEM-RELEASE-FREEZE-C3D4",
+          title: "Checkout release window freeze",
+          reason: "missing target entity ID(s): CMP-REMOVED-MODULE",
+        },
+      ],
+      expired_memories: [],
+      unverifiable_memories: [],
+      duplicate_pairs: [
+        {
+          memory_a: "MEM-REAL-DB-TESTS-A1B2",
+          memory_b: "MEM-RELEASE-FREEZE-C3D4",
+          score: 0.62,
+          method: "bm25",
+        },
+      ],
+      spec_overlaps: [
+        {
+          memory_id: "MEM-REAL-DB-TESTS-A1B2",
+          spec_id: "POL-ZERO-TRUST",
+          spec_type: "product/policy",
+          spec_title: "Zero Trust Access Policy",
+          score: 0.64,
+          method: "bm25",
+        },
+      ],
+    },
     diagrams: {
       c4_context: 'graph TD\n  SYS["<b>Acme Commerce Platform</b><br/><i>Software System</i>"]',
       c4_containers: 'graph TD\n  CNT_ACME_WEB["<b>Acme Web Application</b><br/><i>Web App</i>"]',
@@ -449,7 +559,14 @@ function buildFixture(): PortalData {
 describe("INV-PORTAL-HUMAN-READABLE-UI: presentation formatters", () => {
   test("humanizes tokens, schema types, enums, statuses, tabs, and entity references", () => {
     expect(looksLikeRawEntityId("CNT-ACME-WEB")).toBe(true);
+    expect(looksLikeRawEntityId("MEM-REAL-DB-TESTS-A1B2")).toBe(true);
     expect(looksLikeRawEntityId("Acme Web Application")).toBe(false);
+
+    expect(formatTabLabel("memory")).toBe("Team Memory");
+    expect(formatSpecType("agent/memory")).toBe("Team Memory");
+    expect(formatMemoryCategory("project")).toBe("Project Context");
+    expect(formatMemoryFreshness("stale")).toBe("Needs Verification");
+    expect(formatCommandCategory("memories")).toBe("Team Memory");
 
     expect(humanizeToken("mobile_drawer_open")).toBe("Mobile Drawer Open");
     expect(humanizeToken("http_json")).toBe("HTTP JSON");
@@ -497,6 +614,20 @@ describe("INV-PORTAL-HUMAN-READABLE-UI: presentation formatters", () => {
       "Interactive Web Storefront"
     );
     expect(resolveEntityTitle("SCR-UNINDEXED-CHECKOUT", index)).toBe("Unindexed Checkout");
+    expect(resolveEntityTitle("MEM-REAL-DB-TESTS-A1B2", index)).toBe(
+      "Use real temporary storage in integration tests"
+    );
+    const cleanedReason = formatMemoryFreshnessReason(
+      "verified_commit abc1234 unreachable; missing target entity ID(s): ARCH-MISSING, CNT-ACME-WEB and eidos/memory/*.adoc and tests\\test_web.py; TTL expired",
+      index
+    );
+    expect(cleanedReason).not.toMatch(RAW_ENTITY_ID_RE);
+    expect(cleanedReason).not.toContain(".adoc");
+    expect(cleanedReason).not.toContain("tests/test_");
+    expect(cleanedReason).not.toContain("verified_commit");
+    expect(cleanedReason).not.toContain("TTL");
+    expect(cleanedReason).toContain("Acme Web Application");
+    expect(cleanedReason).toContain("last verified revision");
   });
 });
 
@@ -536,6 +667,8 @@ describe("INV-PORTAL-HUMAN-READABLE-UI: slug-free and jargon-free SSR across all
           totalSpecs: data.overview.total_specs,
           deltasCount: data.overview.deltas_count,
           explorationsCount: data.explorations?.length,
+          memoriesCount: data.memories?.length,
+          memoryAttentionCount: 1,
         }),
       },
       {
@@ -580,6 +713,30 @@ describe("INV-PORTAL-HUMAN-READABLE-UI: slug-free and jargon-free SSR across all
       {
         name: "ExplorationsView",
         element: React.createElement(ExplorationsView, { data }),
+      },
+      {
+        name: "MemoryView (populated)",
+        element: React.createElement(MemoryView, { data }),
+      },
+      {
+        name: "MemoryView (open detail sheet)",
+        element: React.createElement(MemoryView, {
+          data,
+          initialSelectedId: "MEM-RELEASE-FREEZE-C3D4",
+        }),
+      },
+      {
+        name: "MemoryView (empty)",
+        element: React.createElement(MemoryView, {
+          data: { ...data, memories: [], memory_audit: { ...data.memory_audit!, total: 0, active: 0, fresh: 0, stale: 0, duplicate_pairs: [], spec_overlaps: [] } },
+        }),
+      },
+      {
+        name: "EntityMemoriesStrip",
+        element: React.createElement(EntityMemoriesStrip, {
+          entityId: "CNT-ACME-WEB",
+          memories: data.memories,
+        }),
       },
       {
         name: "CatalogView",
@@ -631,11 +788,25 @@ describe("INV-PORTAL-HUMAN-READABLE-UI: slug-free and jargon-free SSR across all
     expect(archHtml).toContain("HTTP JSON");
 
     const catalogHtml = renderToStaticMarkup(
-      React.createElement(EntityLabelProvider, { data }, surfaces[9].element)
+      React.createElement(EntityLabelProvider, { data }, surfaces[surfaces.length - 1].element)
     );
     expect(catalogHtml).toContain("Category");
     expect(catalogHtml).toContain("Needs Attention");
     expect(catalogHtml).toContain("UI Component");
     expect(catalogHtml).not.toContain("uppercase font-mono");
+
+    const memoryHtml = renderToStaticMarkup(
+      React.createElement(EntityLabelProvider, { data }, surfaces[9].element)
+    );
+    expect(memoryHtml).toContain("Team Operational Memory");
+    expect(memoryHtml).toContain("Use real temporary storage in integration tests");
+    expect(memoryHtml).toContain("Needs Verification");
+    expect(memoryHtml).toContain("Acme Web Application");
+
+    const emptyMemoryHtml = renderToStaticMarkup(
+      React.createElement(EntityLabelProvider, { data }, surfaces[11].element)
+    );
+    expect(emptyMemoryHtml).toContain("No Team Memories Recorded Yet");
+    expect(emptyMemoryHtml).toContain("eidos memory add");
   });
 });

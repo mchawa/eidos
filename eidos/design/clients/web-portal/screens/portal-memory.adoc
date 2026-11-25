@@ -1,0 +1,33 @@
+---
+type: design/screen
+id: SCR-PORTAL-MEMORY
+title: "Team Operational Memory View"
+route: "/memory"
+status: active
+
+slots:
+  memory_toolbar: "UIC-PORTAL-SHELL"
+  memory_audit_highlights: "UIC-PORTAL-SHELL"
+  memory_grid: "UIC-PORTAL-SHELL"
+  memory_detail_drawer: "UIC-PORTAL-SHELL"
+
+states:
+  - name: "empty"
+    description: "Clean onboarding state displayed when no team memories exist yet, presenting a generic eidos memory add quickstart command."
+  - name: "active"
+    description: "Filterable grid of Git-native team operational memories with category/freshness/status filters, advisory hygiene highlights, resolved target entity cross-links, and full AsciiDoc note inspection."
+  - name: "filtered_empty"
+    description: "Empty filter match state when search or filter criteria match zero team memories."
+---
+= Screen: Team Operational Memory View
+:toc: left
+
+== 1. View Purpose & Advisory Visibility
+The **Team Operational Memory** View (`SCR-PORTAL-MEMORY`) surfaces shared engineering notes stored in Git (`eidos/memory/mem-*.adoc`) alongside deterministic, strictly non-blocking freshness and hygiene diagnostics (`memory_audit`) while honoring human-first presentation (`INV-PORTAL-HUMAN-READABLE-UI`):
+
+* **Category & Freshness Filtering**: Filter notes by category (`Feedback`, `Project Context`, `Reference`) and freshness/lifecycle state (`Fresh`, `Needs Verification`, `Expired`, `History Unavailable`, `Promoted`, `Archived`) plus instant full-text search across titles, summaries, and resolved targets.
+* **Non-Blocking Hygiene Highlights**: Highlights potential duplicate notes and overlaps with formal policies or verified rules without polluting blocking specification validation warnings (`validation.warnings`).
+* **Resolved Entity Cross-Links**: Clicking any anchored container, component, domain, capability, or promoted specification chip navigates directly to the linked living specification; conversely, Architecture and Business drawers surface inline active team memories anchored to the inspected entity.
+* **Full Operational Note Drawer & Reader Escalation**: Opens any team memory in a detail drawer rendering sanitized AsciiDoc (`AsciiDocRenderer`, DOMPurify `SANITIZE_DOM: true`) with one-click `"Open in Full Reader"` escalation into `SpecReader`.
+* **Zero-Memory Onboarding Empty State**: When no team memories exist, renders a clean, minimal quickstart banner showing how to capture the repository's first team memory via `eidos memory add`.
+

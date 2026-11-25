@@ -11,12 +11,12 @@ from eidos.core.spec.parser import safe_load_yaml
 
 
 def test_documentation_and_schemas_in_sync():
-    """Verify INV-DOCS-SYNCHRONIZATION, INV-POL-003-CONTINUOUS-DOCUMENTATION-SYNC, and POL-003: All 16 living specification schemas and CLI commands are accurately documented."""
+    """Verify INV-DOCS-SYNCHRONIZATION, INV-POL-003-CONTINUOUS-DOCUMENTATION-SYNC, and POL-003: All 17 living specification schemas and CLI commands are accurately documented."""
     repo_root = Path(__file__).parent.parent
 
     # 1. Verify all canonical v1 schemas are represented in docs/concepts/schema-glossary.md
     schema_files = sorted(glob.glob(str(repo_root / "assets/schemas/v1/**/*.schema.yaml"), recursive=True))
-    assert len(schema_files) == 16, f"Expected 16 canonical schemas, found {len(schema_files)}"
+    assert len(schema_files) == 17, f"Expected 17 canonical schemas, found {len(schema_files)}"
 
     glossary_path = repo_root / "docs/concepts/schema-glossary.md"
     assert glossary_path.exists(), "Schema glossary docs/concepts/schema-glossary.md is missing"
@@ -100,13 +100,13 @@ def test_documentation_and_schemas_in_sync():
         assert cont_id, f"Container file {cont_file} missing id: frontmatter"
         assert cont_id in sys_arch_text, f"Container '{cont_id}' not registered in {sys_arch_path}"
 
-    # 4. Verify all 4 consolidated skills are documented in docs/guides/agent-plugin.md
+    # 4. Verify all 5 consolidated skills are documented in docs/guides/agent-plugin.md
     agent_plugin_doc = repo_root / "docs/guides/agent-plugin.md"
     assert agent_plugin_doc.exists(), "agent-plugin.md guide missing"
     agent_plugin_text = agent_plugin_doc.read_text(encoding="utf-8")
     skills_dir = repo_root / "assets/plugin_reference/skills"
     bundled_skills = [d.name for d in skills_dir.iterdir() if d.is_dir()]
-    assert len(bundled_skills) == 4, f"Expected 4 skills, found {len(bundled_skills)}"
+    assert len(bundled_skills) == 5, f"Expected 5 skills, found {len(bundled_skills)}"
     for skill_name in bundled_skills:
         assert f"`{skill_name}`" in agent_plugin_text, f"Skill '{skill_name}' missing in {agent_plugin_doc}"
 

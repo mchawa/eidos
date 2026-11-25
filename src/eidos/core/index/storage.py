@@ -23,8 +23,8 @@ import orjson
 if TYPE_CHECKING:
     from eidos.core.spec.models import SpecDocument
 
-# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-158).
-SCHEMA_VERSION = "2.22.0"
+# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-170).
+SCHEMA_VERSION = "2.23.0"
 
 # In-process parsed SpecDocument cache keyed by resolved Path -> (mtime_ns, st_size, sha256, SpecDocument)
 _PARSED_SPEC_MEM_CACHE: dict[Path, tuple[int, int, str, SpecDocument]] = {}
@@ -41,6 +41,7 @@ _MANAGED_TABLES = (
     "test_binding_cache",
     "public_surface_cache",
     "mermaid_validation_cache",
+    "memory_freshness_cache",
     "spec_embeddings",
     "specs_fts",
     "file_tokens_fts",
@@ -90,6 +91,15 @@ CREATE TABLE IF NOT EXISTS mermaid_validation_cache (
     engine_version TEXT NOT NULL,
     is_valid INTEGER NOT NULL,
     error_message TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS memory_freshness_cache (
+    memory_id TEXT PRIMARY KEY,
+    head_sha TEXT NOT NULL,
+    mem_sha256 TEXT NOT NULL,
+    freshness TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    checked_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS spec_embeddings (
@@ -709,6 +719,8 @@ def save_spec_validation_cache(
     """Opportunistically upsert and prune ``spec_validation_cache`` entries without blocking on contended locks."""
     if not to_upsert and not deleted_keys:
         return
+    if db_path is None or str(db_path) == ":memory:" or Path(db_path).name == ":memory:":
+        return
     with contextlib.suppress(OSError, sqlite3.Error), _advisory_db_lock(db_path, non_blocking=True) as acquired:
         if not acquired:
             return
@@ -753,6 +765,8 @@ def save_test_binding_cache(
 ) -> None:
     """Opportunistically upsert and prune ``test_binding_cache`` entries without blocking on contended locks."""
     if not to_upsert and not deleted_keys:
+        return
+    if db_path is None or str(db_path) == ":memory:" or Path(db_path).name == ":memory:":
         return
     with contextlib.suppress(OSError, sqlite3.Error), _advisory_db_lock(db_path, non_blocking=True) as acquired:
         if not acquired:
@@ -820,6 +834,8 @@ def save_public_surface_cache(
     """Opportunistically upsert and prune ``public_surface_cache`` entries without blocking on contended locks."""
     if not to_upsert and not deleted_keys:
         return
+    if db_path is None or str(db_path) == ":memory:" or Path(db_path).name == ":memory:":
+        return
     with contextlib.suppress(OSError, sqlite3.Error), _advisory_db_lock(db_path, non_blocking=True) as acquired:
         if not acquired:
             return
@@ -838,6 +854,63 @@ def save_public_surface_cache(
                     INSERT OR REPLACE INTO public_surface_cache
                     (file_path, mtime_ns, st_size, extractor_version, payload_json)
                     VALUES (?, ?, ?, ?, ?);
+                    """,
+                    to_upsert,
+                )
+
+
+def load_memory_freshness_cache(
+    db_path: Path,
+) -> dict[str, tuple[str, str, str, str, str]]:
+    """Load cached HEAD-keyed team memory freshness verdicts from ``db_path`` without blocking on DDL locks."""
+    cached_rows: dict[str, tuple[str, str, str, str, str]] = {}
+    if db_path is None or str(db_path) == ":memory:" or Path(db_path).name == ":memory:":
+        return cached_rows
+    with (
+        contextlib.suppress(OSError, sqlite3.Error),
+        contextlib.closing(open_cache_connection(db_path, allow_ddl=False, sqlite_timeout=0.5)) as conn,
+    ):
+        for row in conn.execute(
+            "SELECT memory_id, head_sha, mem_sha256, freshness, reason, checked_at FROM memory_freshness_cache;"
+        ):
+            cached_rows[str(row["memory_id"])] = (
+                str(row["head_sha"]),
+                str(row["mem_sha256"]),
+                str(row["freshness"]),
+                str(row["reason"]),
+                str(row["checked_at"]),
+            )
+    return cached_rows
+
+
+def save_memory_freshness_cache(
+    db_path: Path,
+    to_upsert: list[tuple[str, str, str, str, str, str]],
+    deleted_keys: list[str] | None = None,
+) -> None:
+    """Opportunistically upsert and prune ``memory_freshness_cache`` entries without blocking on contended locks."""
+    if not to_upsert and not deleted_keys:
+        return
+    if db_path is None or str(db_path) == ":memory:" or Path(db_path).name == ":memory:":
+        return
+    with contextlib.suppress(OSError, sqlite3.Error), _advisory_db_lock(db_path, non_blocking=True) as acquired:
+        if not acquired:
+            return
+        with (
+            contextlib.closing(open_cache_connection(db_path, sqlite_timeout=0.5)) as conn,
+            _immediate_write_transaction(conn),
+        ):
+            if deleted_keys:
+                conn.executemany(
+                    "DELETE FROM memory_freshness_cache WHERE memory_id = ?;",
+                    [(k,) for k in deleted_keys],
+                )
+            if to_upsert:
+                conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO memory_freshness_cache
+                    (memory_id, head_sha, mem_sha256, freshness, reason, checked_at)
+                    VALUES (?, ?, ?, ?, ?, ?);
                     """,
                     to_upsert,
                 )

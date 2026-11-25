@@ -1,0 +1,160 @@
+---
+type: delta/mutation
+id: DLT-2026-172-ADD-TEAM-MEMORY-LIVING-62DE
+title: Add Team Memory Living Web Portal Surface (Phase 4)
+status: applied
+graduated_from: EXP-2026-012
+vcs:
+  branch: main
+  base_commit: b9f03f93280614f7e564d1cb9db004d1afa6dc5c
+intent:
+  kind: feature
+  motivation: >
+    Expose Git-native team operational memories (`agent/memory`, `MEM-*`) and their
+    deterministic, strictly non-blocking freshness and hygiene diagnostics (`memory_audit`)
+    inside the Living Web Portal (`CLT-WEB-PORTAL`, `CNT-EIDOS-PORTAL`)—completing Phase 4
+    of adopted exploration `EXP-2026-012` with human-first presentation
+    (`INV-PORTAL-HUMAN-READABLE-UI`), C4/Domain inline cross-links, static payload
+    deduplication (`DEC-PORTAL-PAYLOAD-DEDUP-AND-CLIENT-BFS`), and clean zero-memory
+    empty-state ergonomics without polluting `validation.warnings`.
+mutations:
+  - operation: add
+    target: SCR-PORTAL-MEMORY
+    details: >
+      Create screen specification `eidos/design/clients/web-portal/screens/portal-memory.adoc`
+      (`route: "/memory"`) documenting category/freshness/status filters, non-blocking audit
+      highlights, resolved target entity cross-links, AsciiDoc detail inspection, and the
+      zero-memory CLI quickstart empty state.
+    expect:
+      frontmatter:
+        type: "design/screen"
+        id: "SCR-PORTAL-MEMORY"
+        route: "/memory"
+        status: "active"
+  - operation: modify
+    target: CLT-WEB-PORTAL
+    details: >
+      Register `eidos/design/clients/web-portal/screens/portal-memory.adoc` in
+      `CLT-WEB-PORTAL.screens` (`INV-DESIGN-SCREEN-CLIENT-OWNERSHIP`).
+    expect:
+      frontmatter:
+        screens:
+          - "eidos/design/clients/web-portal/screens/portal-memory.adoc"
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+    details: >
+      Record architectural decision `DEC-PORTAL-MEMORY-AUDIT-AND-CROSSLINKS` (graduated from
+      `EXP-2026-012`) documenting the isolated `memories[]` / `memory_audit` payload contract,
+      human-first cross-links across C4/Domain views, and zero leakage into `validation.warnings`.
+    expect:
+      frontmatter:
+        decisions.id:
+          - "DEC-PORTAL-MEMORY-AUDIT-AND-CROSSLINKS"
+      body:
+        contains:
+          - "memory_audit"
+          - "SCR-PORTAL-MEMORY"
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+    details: >
+      Synthesize all 17 living specification types including `memories[]` (with repo-relative
+      paths and computed freshness) and dedicated non-blocking `memory_audit` diagnostics via
+      `CMP-MEMORY-ENGINE` (`list_memories`, `audit_memories(use_semantic=False)`) in
+      `get_portal_data()`, keeping `validation.warnings` completely untouched.
+    expect:
+      body:
+        contains:
+          - "17 living specification types"
+          - "memory_audit"
+  - operation: modify
+    target: CMP-PORTAL-BUILDER
+    details: >
+      Include `memories` in `_deduplicate_portal_payload()` so multi-kilobyte `agent/memory`
+      AsciiDoc bodies live once in `data["specs"]` / lazy `./specs/<MEM-ID>.json` chunks and
+      hydrate cleanly on the client.
+    expect:
+      body:
+        contains:
+          - "memories"
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+    details: >
+      Add `MemoryView.tsx` (`SCR-PORTAL-MEMORY`), `EntityMemoriesStrip.tsx` inline cross-links
+      in `ArchitectureView.tsx` and `BusinessView.tsx`, Team Memory health summary in
+      `HomeView.tsx`, `#/memory` navigation tab and Command Palette indexing in
+      `NavigationRail.tsx` / `App.tsx`, Team Memory catalog category in `CatalogView.tsx`,
+      `MEM-*` / `agent/memory` humanization in `presentation.ts`, and rebuild the air-gapped
+      `assets/portal/bundle.html.gz` bundle.
+    expect:
+      body:
+        contains:
+          - "MemoryView.tsx"
+          - "memory_audit"
+  - operation: modify
+    target: CTR-EIDOS-PORTAL
+    details: >
+      Bump `CTR-EIDOS-PORTAL` to `v1.2.0` and document top-level `memories` and non-blocking
+      `memory_audit` fields on `GET /api/data` and memory counters in `GET /api/overview`.
+    expect:
+      frontmatter:
+        version: "1.2.0"
+      body:
+        contains:
+          - "memory_audit"
+  - operation: modify
+    target: CAP-EXP-001
+    details: >
+      Bump `CAP-EXP-001` to `v1.6.0`, add `eidos/design/clients/web-portal/screens/portal-memory.adoc`
+      to `experience.screens`, and bind `INV-PORTAL-TEAM-MEMORY-SURFACE` to
+      `tests/test_portal.py::test_portal_team_memory_payload_crosslinks_and_empty_state`.
+    expect:
+      frontmatter:
+        version: "1.6.0"
+        experience.screens:
+          - "eidos/design/clients/web-portal/screens/portal-memory.adoc"
+        technical.invariants.id:
+          - "INV-PORTAL-TEAM-MEMORY-SURFACE"
+  - operation: modify
+    target: CAP-PROD-001
+    details: >
+      Register `eidos/design/clients/web-portal/screens/portal-memory.adoc` in
+      `CAP-PROD-001.experience.screens`.
+    expect:
+      frontmatter:
+        experience.screens:
+          - "eidos/design/clients/web-portal/screens/portal-memory.adoc"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: >
+      Update `docs/guides/living-portal.md` to document all 17 specification schemas and 8
+      interactive portal views including Team Memory (`#/memory`), C4/Domain cross-links, and
+      non-blocking `memory_audit` health visibility.
+    expect:
+      body:
+        contains:
+          - "Team Memory"
+---
+= SpecDelta: Add Team Memory Living Web Portal Surface (Phase 4)
+:toc: left
+
+== Problem Statement
+Phases 1–3 of `EXP-2026-012` introduced Git-native team operational memory (`agent/memory`, `MEM-*`), unified SQLite indexing with `HEAD`-keyed freshness caching, secondary budgeted `eidos context` injection, and the `eidos memory` CLI + `eidos-memory` skill. Stakeholders browsing the Living Web Portal (`CLT-WEB-PORTAL`) still lack visual visibility into recorded team memories, freshness/staleness diagnostics, promotion history, and which architectural containers, components, domains, or capabilities carry operational notes.
+
+== Proposed Specification Changes
+1. **Portal Data & Static Export (`CMP-PORTAL-GENERATOR`, `CMP-PORTAL-BUILDER`, `CTR-EIDOS-PORTAL` `v1.2.0`)**:
+   * Synthesize `memories[]` (reusing `CMP-MEMORY-ENGINE.list_memories` with normalized repo-relative paths and attached bodies) and `memory_audit` (via `audit_memories(use_semantic=False)`) in `get_portal_data()`, plus `overview.memories_count` and `overview.active_memories_count`.
+   * Preserve strict isolation: stale, expired, unverifiable, or overlapping memories never mutate `validation.warnings`, `validation.warning_count`, or `validation.is_clean`.
+   * Deduplicate `memories[].body` in `_deduplicate_portal_payload()` so chunked (`./specs/<MEM-ID>.json`) and `--single-file` static portals keep payloads compact.
+2. **Living Web Portal UI (`SCR-PORTAL-MEMORY`, `CLT-WEB-PORTAL`, `CMP-PORTAL-ASSETS`, `CNT-EIDOS-PORTAL`)**:
+   * Add `MemoryView.tsx` (`#/memory`), accessible filter pills (category, freshness/lifecycle, search), non-blocking audit highlights (duplicates & formal spec overlaps), resolved entity cross-links, sanitized AsciiDoc inspection modal (`AsciiDocRenderer`), and a clean zero-memory empty state.
+   * Add `Team Memory` tab in `NavigationRail.tsx` (count badge shown only when `memoriesCount > 0`, amber indicator when stale/expired notes exist), Command Palette (`CMD+K`) indexing, `CatalogView.tsx` Team Memory category, `HomeView.tsx` Team Operational Memory health card, and `EntityMemoriesStrip.tsx` inline cross-links inside `ArchitectureView.tsx` (`#c4InspectorDrawer`) and `BusinessView.tsx` (Domain/Capability drawers).
+   * Extend `presentation.ts` to recognize `MEM-*` and `agent/memory` and sanitize freshness reasons so `INV-PORTAL-HUMAN-READABLE-UI` holds across all views.
+   * Record `DEC-PORTAL-MEMORY-AUDIT-AND-CROSSLINKS` on `CNT-EIDOS-PORTAL` and bind `INV-PORTAL-TEAM-MEMORY-SURFACE` on `CAP-EXP-001` (`v1.6.0`).
+3. **Documentation & Air-Gapped Bundle (`CMP-DOCS-USER-GUIDES`, `assets/portal/bundle.html.gz`)**:
+   * Rebuild `assets/portal/bundle.html.gz` (`pnpm build:assets`, verified via `build_assets.py --check`) and update `docs/guides/living-portal.md`.
+
+== Implementation Plan
+1. Update `src/eidos/portal/generator.py` and `src/eidos/portal/builder.py` to emit and deduplicate `memories[]` and `memory_audit`.
+2. Implement `MemoryView.tsx`, `EntityMemoriesStrip.tsx`, and updates to `types.ts`, `presentation.ts`, `command.tsx`, `NavigationRail.tsx`, `App.tsx`, `HomeView.tsx`, `ArchitectureView.tsx`, `BusinessView.tsx`, and `CatalogView.tsx`; add Vitest tests and rebuild `assets/portal/bundle.html.gz`.
+3. Co-evolve `SCR-PORTAL-MEMORY`, `CLT-WEB-PORTAL`, `CNT-EIDOS-PORTAL`, `CMP-PORTAL-GENERATOR`, `CMP-PORTAL-BUILDER`, `CMP-PORTAL-ASSETS`, `CTR-EIDOS-PORTAL`, `CAP-EXP-001`, `CAP-PROD-001`, `CMP-DOCS-USER-GUIDES`, `EXP-2026-012`, and `docs/guides/living-portal.md`.
+4. Add `tests/test_portal.py::test_portal_team_memory_payload_crosslinks_and_empty_state` bound to `INV-PORTAL-TEAM-MEMORY-SURFACE`, verify `>90%` per-file coverage, run Vitest, `build_assets.py --check`, `eidos delta verify/apply/audit`, `eidos drift --uncommitted --json`, and full `pytest`.

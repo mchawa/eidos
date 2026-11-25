@@ -1,0 +1,489 @@
+---
+type: product/exploration
+id: EXP-2026-012
+title: "Git-Native Team Auto-Memory Architecture"
+status: adopted
+decision:
+  outcome: adopted
+  resulting_deltas:
+    - DLT-2026-169-ADD-AGENT-MEMORY-SCHEMA-D36A
+    - DLT-2026-170-INDEX-TEAM-MEMORY-FRESHNESS-C09A
+    - DLT-2026-171-ADD-TEAM-MEMORY-CLI-D661
+    - DLT-2026-172-ADD-TEAM-MEMORY-LIVING-62DE
+---
+= Exploration: Git-Native Team Auto-Memory Architecture
+:toc: left
+:icons: font
+:sectnums:
+
+== Core Hypothesis
+
+Introducing a **Git-native, team-scoped auto-memory layer** (`type: agent/memory`, stored as one `.adoc` file per entry under `eidos/memory/` and indexed into the existing `eidos/.cache/index.db` knowledge graph)—surfaced automatically through existing `eidos context` slices and `eidos index search` without adding new lifecycle hooks or LLM calls (`POL-004-ZERO-AI-CALL-DEPENDENCY`)—will close the operational knowledge gap between ephemeral coding sessions and formal living specifications (`CNT-*`, `CMP-*`, `CTR-*`, `CAP-*`, `INV-*`, `DEC-*`, `POL-*`), while remaining:
+
+1. **Cross-Agent & Team-Portable (`POL-001-GIT-SOURCE-OF-TRUTH`)**: Engineering corrections, test/build quirks, active project constraints, and external references learned by one developer's agent (Claude Code, Antigravity, Cursor, Codex, Copilot, Cline, Aider, Kilo Code, OpenCode) are committed in Git and immediately available to every teammate and coding harness after `git pull`.
+2. **Token-Efficient & Graph-Anchored**: Rather than injecting a static, globally truncated `MEMORY.md` file on every session start, anchoring memories to Eidos entity IDs (`CNT-*`, `CMP-*`, `DOM-*`, `CAP-*`) and file path globs allows `CMP-TIERED-CONTEXT-COMPRESSOR` (`eidos context`) to attach only relevant memories via a separate budgeted pass that never displaces governing architectural entities.
+3. **Deterministically Staleness-Aware & Strictly Non-Blocking**: Stamping each memory with `verified_at`, optional `verified_commit`, and optional `expires_at` lets Eidos deterministically compute freshness (`fresh`, `stale`, `expired`, or `unverifiable`) via Git and AST signals in a dedicated `memory_audit` channel—surfaced in `eidos memory audit`, `eidos index health`, `eidos context`, and `CLT-WEB-PORTAL`—without ever triggering blocking `eidos validate`, `--fail-on-warnings`, or `eidos drift` failures when code evolves.
+4. **Graduated Governance Pipeline**: Repeated operational lessons captured as lightweight `MEM-*` notes can be promoted into formal `DEC-*`, `INV-*`, or `POL-*` living specifications (`status: promoted`, `promoted_to: <SPEC-ID>`, with optional `DEC-*.graduated_from: MEM-*`), turning ad-hoc session feedback into durable architecture over time.
+
+== Committed Design Decisions
+
+The following product and architectural constraints are locked as inputs to this exploration:
+
+* **Shared Repository Knowledge Only (`eidos/memory/`)**: Eidos owns shared **team** memory inside Git (`POL-001-GIT-SOURCE-OF-TRUTH`). Personal developer preferences (response style, seniority, local IDE habits) are intentionally excluded (no `user` category) so Eidos never collides with client-native personal memory such as Claude Code's private `~/.claude/projects/<repo>/memory/`.
+* **Schema Type, One-File-Per-Memory Layout & Collision-Resistant IDs**:
+  ** Canonical document type: `agent/memory` (`assets/schemas/v1/agent/memory.schema.yaml` and `memory.template.adoc`), expanding Eidos's canonical schema catalog from 16 to 17 schemas.
+  ** One AsciiDoc + YAML frontmatter file per memory under `eidos/memory/mem-*.adoc`, with retired and promoted entries moved to `eidos/memory/archive/` (matching `eidos/deltas/archive/` and `eidos/explorations/archive/`).
+  ** Collision-resistant IDs (`MEM-<SLUG>-<4HEX>`, word-boundary trimmed, with on-disk suffix re-roll matching `eidos delta create`) instead of sequential integers so concurrent teammate branches do not collide on merge.
+* **Automatic Capture with Explicit Disclosure**: Agent skills instruct coding agents to save high-signal team memories **automatically** via `eidos memory add` and explicitly note the created or updated `MEM-*` file in their response so developers can review, edit, or revert it in Git/PR diffs.
+* **Non-Blocking Validation, Dedicated Audit Channel & Drift Isolation**:
+  ** Structural YAML frontmatter schema violations in `eidos/memory/*.adoc` are validated by `CMP-SPEC-VALIDATOR`, and `eidos memory add` normalizes/validates generated AsciiDoc bodies to preserve `INV-ASCIIDOC-ZERO-WARNING-HYGIENE`.
+  ** Broken or renamed `targets` (deleted files, removed entity IDs), target commit drift, and expired `expires_at` timestamps are routed exclusively through a dedicated **`memory_audit` / `memory_warnings` channel**—never into `ValidationReport.warnings`—so repositories running `eidos validate --fail-on-warnings` or `eidos drift --fail-on-warnings` (`INV-VALIDATION-WARNINGS-PORTAL-AND-CI-ESCALATION`) never fail CI when a memory ages out.
+  ** `ChangedFilesClassification` (`src/eidos/vcs/diff.py`) isolates `eidos/memory/**` into its own `memory_files` bucket (separate from `spec_files` and `delta_files`), ensuring memory edits neither mask structural code drift in `CMP-DRIFT-DETECTOR` nor inadvertently break `CMP-HOOK-RUNNER`'s zero-edit Q&A short-circuit (`INV-AGENT-DRIFT-HOOK`) for existing `--hooks` users.
+* **Zero New Lifecycle Hooks in Phase 1**: Adding new hook behavior (`SessionStart` memory injection or `Stop` staleness nudges) in `CMP-HOOK-RUNNER` / `CMP-HOOK-MANAGER` / `assets/plugin_reference/hooks.json` is deferred. Discovery relies on `eidos context`, `eidos index search`, and `eidos memory` CLI commands driven by Eidos skills.
+* **Living Web Portal Visibility**: Team memories, computed freshness badges, target cross-links, and staleness/promotion health signals must be visible in `CLT-WEB-PORTAL` (`CNT-EIDOS-PORTAL`).
+
+== Questions & Spikes
+
+=== Open Questions Answered
+
+1. **Schema Namespace, `eidos spec create` Policy & Validator Channel Separation**: Resolved in Spike 1.
+2. **Rebase/Shallow-Clone-Safe Freshness & `< 4 ms` Context Latency**: Resolved in Spike 2.
+3. **Secondary Context Slicing Budget & Untargeted ("Global") Memory Sprawl**: Resolved in Spike 2.
+4. **Skill Word Ceilings (`INV-PLUGIN-SKILL-SIZE-CEILING`) & Auto-Capture Precision**: Resolved in Spike 4.
+5. **Duplicate Detection, Spec Overlap & Child-ID Promotion (`DEC-*`, `INV-*`)**: Resolved in Spike 3.
+6. **Portal Surface & Empty-State Ergonomics**: Resolved in Spike 4.
+
+=== Executed Spikes
+
+* `spike-schema-validation-and-drift-isolation`: Validated Draft 2020-12 `agent/memory` JSON Schema and `defs.yaml` `graduated_from: MEM-*` extension; audited live `SpecValidator`, `classify_changed_files`, `detect_drift`, `handle_stop_hook`, and `create_spec`.
+* `spike-index-freshness-and-context-budgeting`: Benchmarked unified `entities`/`edges`/`specs_fts` indexing plus a `HEAD`-keyed `memory_freshness_cache` table against isolated copies of Eidos's live `index.db` (`N = 5, 25, 100`), exercised 8 real Git freshness edge cases, and measured `TieredContextSlice` token budgets across all 3 tiers.
+* `spike-cli-dedup-audit-and-promotion`: Verified collision-resistant IDs, validated an AsciiDoc body sanitizer on 10 adversarial inputs against real `@asciidoctor/core` v3 `MemoryLogger`, verified standalone and embedded child-ID promotion resolution, and calibrated FTS5 BM25 + real Harrier-OSS-v1-0.6B INT8 ONNX thresholds on 20 labeled candidates.
+* `spike-portal-memory-surface-and-agent-compliance`: Audited exact word headroom across all 4 bundled skills and `agents-md/block.md`, executed a 10-scenario LLM skill-compliance trial on the draft `eidos-memory` skill, and measured Portal data payload growth (`N = 0, 5, 25, 100`) and entity cross-link resolution.
+
+=== Exit Criteria Status
+
+* **Max duration (`5_days`)**: Met (all 4 spikes completed).
+* **Schema & policy conformance**: Met (`7/7` Draft 2020-12 schema cases; `POL-001` & `POL-004` satisfied; `10/10` Asciidoctor zero-warning cases).
+* **Non-blocking & drift isolation verified**: Met (reproduced all 3 live leakage points and confirmed exact isolation fixes).
+* **Sub-5ms warm `eidos context` latency**: Met (`1.87 ms` median / `4.22 ms` p95 at `N = 100` via `HEAD`-keyed `memory_freshness_cache`, `326x` faster than live `git rev-list`).
+* **Skill ceiling & adoption verdict**: Met — **Recommend `adopted`** via a 4-phase SpecDelta (`DLT-*`) roadmap.
+
+== Findings & Learnings
+
+_Status: `adopted` — All 4 spikes executed against isolated prototypes and live read-only Eidos artifacts (zero mutations to `src/eidos/`); Phase 1 graduated to `DLT-2026-169-ADD-AGENT-MEMORY-SCHEMA-D36A`._
+
+Empirical execution across all four spikes established five decisive architectural findings:
+
+1. **Three Live Leakage Points Must Be Isolated Before Shipping (`Spike 1`)**:
+   * Running the current engine on a temporary repository containing `eidos/memory/mem-test-a1b2.adoc` empirically confirmed that (a) `classify_changed_files()` (`src/eidos/vcs/diff.py`) routes `eidos/memory/*.adoc` into `spec_files`, (b) `SpecValidator._check_dict_references()` emits a **blocking** `broken_references` error whenever `targets.paths` contains a deleted `.adoc` path, and (c) `handle_stop_hook()` **blocks a zero-code-edit Q&A turn (`decision: "block"`)** for existing `--hooks` users because `cls.spec_files` is non-empty.
+   * All three are cleanly prevented by adding `ChangedFilesClassification.memory_files`, exempting `agent/memory` `targets`/`promoted_to` in `_check_dict_references()` and `_warn_if_deprecated_dependency()`, routing staleness strictly to a dedicated `memory_audit` channel (never `ValidationReport.warnings`), and rejecting `eidos spec create memory` with a redirect to `eidos memory add` (mirroring `create_spec`'s existing `delta/mutation` guard in `src/eidos/core/lifecycle/scaffolder.py`).
+2. **`HEAD`-Keyed `memory_freshness_cache` Delivers `326x` Speedup and `8/8` Git Edge-Case Safety (`Spike 2`)**:
+   * Live per-memory `git rev-list` checks degrade linearly (`39.9 ms` at `N = 5`, `154.5 ms` at `N = 25`, **`607.9 ms` at `N = 100`**), breaking Eidos's `< 5 ms` context target.
+   * Caching freshness in a lightweight `HEAD`-keyed `memory_freshness_cache` table alongside unified `entities`/`edges`/`specs_fts` storage keeps warm anchored + secondary FTS5 retrieval at **`1.36–1.91 ms` median (`4.22 ms` p95 at `N = 100`)** with **`0%` eviction** of primary `TASK_SLICE_ENTITY_TYPES` entities.
+   * Checking `git merge-base --is-ancestor <verified_commit> HEAD` resolved **`8/8`** real Git edge cases accurately—gracefully classifying squash-merged/rebased SHAs, `--depth 1` shallow clones, and 0-commit repos as `unverifiable` instead of mass-flagging them `stale`.
+   * Secondary memory attachment stayed within `TIER_TOKEN_BUDGETS` across all 3 tiers (`anchor: 210/300 MD`, `guardrails: 776/1000 MD`, `deep: 1741/2500 MD` on `src/eidos/core/index/storage.py`).
+3. **Zero-Warning AsciiDoc Sanitization & Calibrated BM25 / Harrier Overlap Thresholds (`Spike 3`)**:
+   * Normalizing agent prose (Markdown headings, unclosed code fences, `---` dividers, nested `-`/`*` lists, `include::` directives, and skipped `====` headings) achieved **`0` warnings and `0` errors across `10/10` adversarial fixtures** in `@asciidoctor/core` v3 `MemoryLogger`.
+   * Re-embedding the full `149`-item governance corpus on CPU Harrier INT8 exceeded `180 s`, proving `eidos memory add` **must never re-embed specs on the fly**—it must read pre-computed `spec_embeddings` (encoding only `1` candidate query at **`343.1 ms` median**) when `is_semantic_index_complete(conn)` is `True`, and fall back instantaneously (`< 2 ms`) to FTS5 BM25 otherwise.
+   * On `20` labeled candidates, duplicate memory detection reached **`F1 = 1.000`** (`6/6 TP, 0 FP`) on both Harrier (`tau_dup_sem = 0.56`) and FTS5 BM25 (`tau_dup_bm25 = 13.5`); spec-overlap detection reached **`F1 = 0.9091`** (`Precision = 1.000`, `Recall = 0.8333`) on Harrier (`tau_spec_sem = 0.59`) vs. **`F1 = 0.8000`** on BM25 (`tau_spec_bm25 = 26.0`).
+   * Promotion target lookup resolved **`4/4`** cases (`POL-*`, embedded `INV-*`, embedded `DEC-*` with owning container, and negative rejection).
+4. **Dedicated 5th `eidos-memory` Skill Is Mandatory Under `INV-PLUGIN-SKILL-SIZE-CEILING` (`Spike 4`)**:
+   * Live measurement showed `assets/plugin_reference/skills/eidos/SKILL.md` sits at **`2,049 / 2,050` words (`1` word of headroom!)**, so inlining the `271`-word memory protocol overflows by `+270` words.
+   * Shipping **`eidos-memory` as a 5th bundled skill** (`271` words, proposed ceiling `450`), adding a concise `26`-word trigger to `agents-md/block.md` (`196 -> 222 / 250` template; `201 -> 227 / 320` rendered across all 9 harnesses), and tightening ~15 existing words in `eidos/SKILL.md` to host a 1-line companion pointer satisfies **every existing ceiling with zero regressions**.
+   * In a `10`-scenario LLM compliance trial on the draft `eidos-memory` skill, the agent achieved **`10/10` (`100%` precision, `100%` recall)** on save-vs-skip decisions, `100%` disclosure compliance, and revealed one helpful wording refinement: keep recurring toolchain/environment quirks (`pnpm` vs. `npm`) under `feedback` (no TTL) and reserve `project --expires` strictly for time-bounded operational context.
+5. **Minimal Portal Payload Overhead & Clean Empty-State Ergonomics (`Spike 4`)**:
+   * Adding top-level `memories[]` and `memory_audit` keys to `get_portal_data()` (`base: 3,152.7 KB`, `bundle.html.gz: 1,309.9 KB`) adds just **`+131 bytes` (`0.004%`) at `N = 0`**, **`+2.77 KB` (`0.088%`) at `N = 5`**, and **`+53.35 KB` (`1.692%`) at `N = 100`** while keeping `validation.warnings` completely untouched (`0` warnings) and resolving all 4 target entity classes (`CNT-*`, `CMP-*`, `DOM-*`, `CAP-*`) for inline cross-links.
+
+---
+
+== Detailed Spike Evidence
+
+=== Spike 1: Schema Validation, `defs.yaml` & Drift/Hook Isolation
+
+[cols="3,2,3", options="header"]
+|===
+| Prototype Check | Result | Finding & Required Implementation Action
+
+| Draft 2020-12 `agent/memory` JSON Schema (`7` cases)
+| `7/7` PASS
+| Accepts anchored `feedback`, zero-commit untargeted `project`, and `promoted` with `promoted_to: DEC-*`; rejects `category: user`, `promoted` without `promoted_to`, `summary > 220` chars, and non-ISO `verified_at`.
+
+| `defs.yaml` `decision.graduated_from` (`MEM-*`)
+| Current: FAIL / Extended: PASS
+| Extend pattern to `^((EXP\|DLT\|MEM)-[A-Z0-9_-]+\|.*\.adoc)$` and add `agent/memory` / `MEM-` to `x-eidos-ref`.
+
+| `classify_changed_files()` on `eidos/memory/*.adoc`
+| Leaked into `spec_files`
+| Add `ChangedFilesClassification.memory_files` in `src/eidos/vcs/diff.py`; route `sub_parts[0] == "memory"` there before `spec_files`.
+
+| `SpecValidator._check_dict_references()` on deleted `.adoc` in `targets.paths`
+| Blocking `broken_references`
+| Exempt `agent/memory` `targets` and `promoted_to` (matching `delta/mutation`'s `tombstone`/`expect` exemption) and exempt `agent/memory` in `_warn_if_deprecated_dependency()`.
+
+| `handle_stop_hook()` on memory-only Q&A turn
+| Blocked turn (`decision: block`)
+| Because `memory_files` is excluded from `spec_files`, `_zero_governed_changes_since_baseline()` preserves the Q&A short-circuit for `--hooks` users.
+
+| `create_spec("memory", ...)` policy (`scaffolder.py`)
+| Precedent verified
+| Reject `memory` / `agent/memory` in `create_spec()` directing callers to `eidos memory add` (exact same pattern as `delta/mutation` -> `eidos delta create`).
+|===
+
+=== Spike 2: Unified Graph Indexing, Git Freshness Edge Cases & Context Budgets
+
+==== Git Freshness Accuracy (`8/8` Scenarios Passed)
+
+[cols="3,2,4", options="header"]
+|===
+| Git Scenario | Freshness Status | Observed Diagnostic Reason
+
+| Untouched target (`0` commits since `verified_commit`)
+| `fresh`
+| `0 commit(s) on target path(s) since ba30b69`
+
+| Deleted file in `targets.paths`
+| `stale`
+| `missing target path(s): src/removed.py`
+
+| Removed entity ID in `targets.entities`
+| `stale`
+| `missing target entity ID(s): CMP-GONE`
+
+| `6` commits touching target (threshold `5`)
+| `stale`
+| `6 commits modified target path(s) since ba30b69 (threshold 5)`
+
+| `expires_at` in the past (`2026-11-23`)
+| `expired`
+| `expired on 2026-11-23 (today is 2026-11-24)`
+
+| Orphaned SHA (squash-merge or rebase)
+| `unverifiable`
+| `verified_commit 1b243a8 unreachable from HEAD (shallow clone, squash-merge, or rebase); last verified 2026-11-24`
+
+| Shallow clone (`git clone --depth 1`)
+| `unverifiable`
+| `verified_commit ba30b69 unreachable from HEAD (shallow clone, squash-merge, or rebase); last verified 2026-11-24`
+
+| Fresh 0-commit repo (`verified_commit: null`)
+| `unverifiable`
+| `no Git HEAD commit available (last verified 2026-11-24)`
+|===
+
+==== Storage & Query Latency Scaling (Temp Copies of Live `index.db`)
+
+[cols="1,1,2,2,2,1", options="header"]
+|===
+| Scale | Unified Insert (`entities`+`edges`+`FTS5`) | Cold Live `git rev-list` Freshness | Warm Cached Freshness + Secondary FTS5 (Median) | Warm Cached + Secondary FTS5 (p95) | Primary Slice Eviction
+
+| `N = 5`
+| `1.44 ms`
+| `39.87 ms`
+| `1.359 ms`
+| `5.783 ms`
+| `0%` (`False`)
+
+| `N = 25`
+| `1.40 ms`
+| `154.47 ms`
+| `1.911 ms`
+| `3.709 ms`
+| `0%` (`False`)
+
+| `N = 100`
+| `2.74 ms`
+| `607.88 ms`
+| `1.865 ms`
+| `4.220 ms`
+| `0%` (`False`)
+|===
+
+==== Context Slice Token Budgets (`src/eidos/core/index/storage.py`)
+
+[cols="1,1,1,1,2,2,1", options="header"]
+|===
+| Tier | Tier Budget | Base Slice | Attached (`Anchored`+`Global`) | Memory Overhead (MD / JSON) | Combined (MD / JSON) | Within Budget
+
+| `anchor`
+| `300`
+| `137`
+| `2` (`2` + `0`)
+| `+73` / `+100`
+| `210` / `237`
+| Yes
+
+| `guardrails`
+| `1,000`
+| `601`
+| `5` (`3` + `2`)
+| `+175` / `+257`
+| `776` / `858`
+| Yes
+
+| `deep`
+| `2,500`
+| `1,566`
+| `5` (`3` + `2`)
+| `+175` / `+471`
+| `1,741` / `2,037`
+| Yes
+|===
+
+_Budget Pruning Precedence Rule_: On dense components whose base slice already nears `TIER_TOKEN_BUDGETS[tier]`, `TieredContextSlice` prunes memory content **before** pruning architectural `INV-*`, `DEC-*`, `POL-*`, or `CTR-*` entries (drop untargeted global memories first -> strip `why`/`guidance` to 1-line `summary` -> drop tail anchored memories).
+
+=== Spike 3: Sanitizer, IDs, Promotion & Duplicate/Overlap Calibration
+
+* **Collision-Resistant IDs (`MEM-<SLUG>-<4HEX>`)**: Across `1,000` identical titles, a 4-hex suffix (`65,536` space) yielded `8` birthday-paradox collisions (`0.8%`), confirming `< 0.015%` collision probability across realistic concurrent teammate PRs; `eidos memory add` should trim slugs on word boundaries (`<= 36` chars) and re-roll the 4-hex suffix if a matching filename already exists on disk.
+* **AsciiDoc Body Sanitizer (`@asciidoctor/core` v3 `MemoryLogger`)**: **`10/10`** adversarial inputs (Markdown `#` headings, unclosed Python fences, closed Bash fences, YAML `---` dividers, nested `-`/`*` lists, `include::` directives, skipped `====` level headings, raw `<script>` tags, prose `|` pipes, and mixed CRLF/tabs) rendered with **`0` warnings and `0` errors**.
+* **Promotion Target Resolution**: **`4/4`** verified against live `index.db` (`POL-004-ZERO-AI-CALL-DEPENDENCY` -> `product/policy`, `INV-PLUGIN-SKILL-SIZE-CEILING` -> `invariant` in `agent-adapter.adoc`, `DEC-INDEX-HYBRID-SEMANTIC-RRF` -> `decision` owned by `CNT-EIDOS-INDEX`, `DEC-NONEXISTENT-999` -> cleanly rejected).
+
+==== Duplicate & Spec-Overlap Threshold Calibration (`N = 20` Labeled Candidates)
+
+[cols="2,2,1,1,1,2,2", options="header"]
+|===
+| Detection Task | Engine | Calibrated Threshold | Precision | Recall | F1 Score | Positive Range vs. Max Negative
+
+| Duplicate `MEM-*` (`6` pos / `14` neg)
+| Harrier INT8 ONNX (`343.1 ms` query)
+| `tau_dup_sem = 0.56`
+| `1.000`
+| `1.000`
+| `1.0000` (`6/6`)
+| `[0.5853, 0.6741]` vs. `0.5170`
+
+| Duplicate `MEM-*` (`6` pos / `14` neg)
+| FTS5 BM25 (`< 2 ms`)
+| `tau_dup_bm25 = 13.5`
+| `1.000`
+| `1.000`
+| `1.0000` (`6/6`)
+| `[15.07, 43.37]` vs. `11.64`
+
+| Spec Overlap `POL-*`/`INV-*` (`6` pos / `8` neg)
+| Harrier INT8 ONNX (`pre-computed`)
+| `tau_spec_sem = 0.59`
+| `1.000`
+| `0.833`
+| `0.9091` (`5/6`)
+| `[0.5518, 0.6825]` vs. `0.5844`
+
+| Spec Overlap `POL-*`/`INV-*` (`6` pos / `8` neg)
+| FTS5 BM25 (`< 2 ms`)
+| `tau_spec_bm25 = 26.0`
+| `1.000`
+| `0.667`
+| `0.8000` (`4/6`)
+| `[16.12, 58.62]` vs. `25.93`
+|===
+
+_Operational Rule_: When `is_semantic_index_complete(conn)` is `True` and `spec_embeddings` contains pre-computed vectors, `eidos memory add` embeds only the single candidate query (`~343 ms`) and applies `tau_dup_sem = 0.56` / `tau_spec_sem = 0.59`; otherwise it falls back deterministically to FTS5 BM25 (`tau_dup_bm25 = 13.5` / `tau_spec_bm25 = 26.0`) in `< 2 ms`. Full-corpus re-embedding during `add` is strictly forbidden (`> 180 s` for `149` specs on CPU).
+
+=== Spike 4: Skill Word Ceilings, Compliance Trial & Portal Payload
+
+==== Skill Word Ceilings (`INV-PLUGIN-SKILL-SIZE-CEILING`)
+
+[cols="2,1,1,1,3", options="header"]
+|===
+| Bundled Asset | Current Words | Ceiling | Headroom | Spike 4 Verdict
+
+| `eidos/SKILL.md`
+| `2,049`
+| `2,050`
+| `1`
+| Cannot inline `+271` words; tighten `~15` words to add 1-line `eidos-memory` companion pointer (stays `<= 2,050`).
+
+| `eidos-spec/SKILL.md`
+| `2,244`
+| `2,250`
+| `6`
+| Unchanged (`agent/memory` is created via `eidos memory add`, not `eidos spec create`).
+
+| `eidos-plan/SKILL.md`
+| `1,639`
+| `1,650`
+| `11`
+| Unchanged.
+
+| `eidos-ops/SKILL.md`
+| `846`
+| `850`
+| `4`
+| Unchanged.
+
+| `agents-md/block.md` (template / 9-target rendered)
+| `196` / `201`
+| `250` / `320`
+| `54` / `119`
+| Add 1 concise team-memory bullet (`222 / 250` template; `227 / 320` rendered — fits both ceilings cleanly).
+
+| **New `eidos-memory/SKILL.md`**
+| `271` (draft)
+| `450` (proposed)
+| `179`
+| Dedicated 5th skill loaded on demand; preserves progressive disclosure and zero ceiling inflation.
+|===
+
+==== Skill-Compliance Trial (`10` Scenarios)
+
+An isolated LLM evaluator applying the `271`-word `eidos-memory` draft across `10` mixed engineering scenarios achieved **`10/10` (`100%` precision, `100%` recall)**—saving all `5` team lessons (`S1` SQLite mock correction, `S3` `pnpm` toolchain constraint, `S4` v0.25.0 release freeze with `expires_at`, `S6` staging preview URL, `S10` `--no-semantic` CI flag) with `100%` disclosure compliance and skipping all `5` non-memory cases (`S2` personal reply style, `S5` code-derivable `SCHEMA_VERSION`, `S7` `POL-004` overlap, `S8` one-off typo, `S9` new container import boundary belonging in formal specs). The trial also surfaced one crisp prompt refinement: explicitly classify **recurring toolchain/environment quirks** (`S3`) under `feedback` (no TTL) and reserve `project --expires` for **time-bounded operational context** (`S4`).
+
+==== Portal Payload & Empty-State Overhead (`get_portal_data()`)
+
+Base live payload: `3,152.7 KB` (`assets/portal/bundle.html.gz`: `1,309.9 KB`, `validation.warnings`: `0`).
+
+[cols="1,2,2,2", options="header"]
+|===
+| Active Memories | Incremental Payload Bytes | % of Base Payload | `validation.warnings` Impact
+
+| `N = 0`
+| `+131 B` (`0.13 KB`)
+| `0.004%`
+| `0` (untouched)
+
+| `N = 5`
+| `+2,835 B` (`2.77 KB`)
+| `0.088%`
+| `0` (untouched)
+
+| `N = 25`
+| `+13,732 B` (`13.41 KB`)
+| `0.425%`
+| `0` (untouched)
+
+| `N = 100`
+| `+54,635 B` (`53.35 KB`)
+| `1.692%`
+| `0` (untouched)
+|===
+
+All four target entity classes (`CNT-*`, `CMP-*`, `DOM-*`, `CAP-*`) resolve cleanly in the live Portal payload for inline cross-linking on `ArchitectureView` and `BusinessView`. In `NavigationRail`, the `Memory` tab shows a count badge only when `memoriesCount > 0` (mirroring `Explorations`) and renders a minimal CLI quickstart empty state when `N = 0`.
+
+---
+
+== Proposed Architecture Blueprint
+
+=== Boundary Between Living Specifications and Team Memory
+
+[cols="2,1,3,2", options="header"]
+|===
+| Artifact Layer | Authoritative? | Purpose & Examples | Governance Gate
+
+| **Living Specs** (`CNT-*`, `CMP-*`, `CTR-*`, `CAP-*`, `INV-*`, `DEC-*`, `POL-*`)
+| Yes
+| System boundaries, public surfaces, contracts, test-bound invariants, enduring design decisions, blocking policies.
+| Blocks `eidos validate`, `--fail-on-warnings`, and `eidos drift`
+
+| **Team Auto-Memory** (`eidos/memory/mem-*.adoc`, `type: agent/memory`)
+| Advisory hint
+| Recurring operational/toolchain lessons (`feedback`), time-bounded repo context (`project`), external pointers (`reference`).
+| Schema-checked; staleness isolated to non-blocking `memory_audit` channel
+
+| **Client-Native Memory** (e.g., Claude Code `~/.claude/...`)
+| Personal only
+| Individual developer preferences, communication style, local role background.
+| Outside Eidos and Git
+|===
+
+=== Canonical `agent/memory` Schema & File Layout
+
+[source,text]
+----
+eidos/
+└── memory/
+    ├── mem-real-sqlite-tests-a3f9.adoc
+    ├── mem-v025-release-freeze-7c21.adoc
+    └── archive/
+        └── mem-legacy-parser-workaround-1b04.adoc
+----
+
+[source,yaml]
+----
+---
+type: agent/memory
+id: MEM-REAL-SQLITE-TESTS-A3F9
+title: "Never mock SQLite in index integration tests"
+category: feedback              # feedback | project | reference
+status: active                  # draft | active | promoted | archived (#/$defs/memory_status)
+summary: "Use tmp_path SQLite DBs in index tests; FTS5 trigger bugs do not reproduce with mocks."
+targets:                        # optional graph anchors (omit only for truly repo-wide memories)
+  entities:
+    - CMP-GRAPH-STORAGE
+    - CMP-INCREMENTAL-SYNC-ENGINE
+  paths:
+    - tests/test_index*.py
+verified_at: "2026-11-24"       # required ISO date auto-stamped on add/verify
+verified_commit: 4f8c21a        # optional/nullable Git SHA auto-stamped when HEAD exists
+expires_at: null                # optional YYYY-MM-DD TTL for time-bounded 'project' notes
+promoted_to: null               # required when status == promoted (DEC-*, INV-*, POL-*, etc.)
+---
+= Memory: Never mock SQLite in index integration tests
+:toc: left
+
+== Guidance
+Always construct a real temporary SQLite database via pytest's `tmp_path` fixture when testing `CMP-GRAPH-STORAGE` or FTS5 queries.
+
+== Why
+A mocked cursor masked a delete-trigger desynchronization bug in FTS5 shadow tables that only surfaced against real SQLite.
+----
+
+=== CLI Surface (`CTR-EIDOS-CLI`)
+
+[cols="2,4", options="header"]
+|===
+| Command | Deterministic Behavior (Zero LLM Calls)
+
+| `eidos memory add`
+| Generates word-boundary-trimmed `MEM-<SLUG>-<4HEX>` (re-rolling suffix on local collision), stamps `verified_at` and optional `verified_commit`, sanitizes AsciiDoc body (`INV-ASCIIDOC-ZERO-WARNING-HYGIENE`), runs calibrated duplicate (`tau_dup_sem = 0.56` / `tau_dup_bm25 = 13.5`) and spec-overlap (`tau_spec_sem = 0.59` / `tau_spec_bm25 = 26.0`) checks using pre-computed `spec_embeddings` or `< 2 ms` BM25 fallback, and syncs the index.
+
+| `eidos memory list`
+| Lists memories filterable by `--category`, `--status`, `--freshness` (`fresh`, `stale`, `expired`, `unverifiable`), `--entity`, `--path`, and `--include-archived`.
+
+| `eidos memory search "<query>"`
+| Hybrid BM25 + optional Harrier RRF search scoped to `agent/memory` entries (also searchable via `eidos index search`).
+
+| `eidos memory show <MEM-ID>`
+| Displays frontmatter, body, resolved target anchors, and live/cached freshness diagnostics.
+
+| `eidos memory verify <MEM-ID>`
+| Re-stamps `verified_at` and `verified_commit` to current `HEAD` (and optionally updates `expires_at`) after confirming the memory still holds.
+
+| `eidos memory archive <MEM-ID>`
+| Sets `status: archived` and moves the file to `eidos/memory/archive/`.
+
+| `eidos memory promote <MEM-ID> --to <decision\|invariant\|policy> [--spec-id <ID>]`
+| Validates standalone (`POL-*`) or embedded child (`DEC-*`, `INV-*`) `--spec-id` against the live index, records `status: promoted` + `promoted_to`, and moves the memory to `eidos/memory/archive/` without implicitly mutating formal specs.
+
+| `eidos memory audit [--json]`
+| Computes deterministic hygiene diagnostics in a dedicated `memory_audit` channel (separate from `ValidationReport.warnings`): missing target paths/entities, target commit drift (`>= 5` commits), expired TTLs, unverifiable history, near-duplicate memory pairs, and spec overlaps. Aggregated into `eidos index health`.
+|===
+
+---
+
+== Recommended Implementation Roadmap (Phased SpecDeltas)
+
+Because every exit criterion passed cleanly, **recommendation is `adopt`** across four focused, independently shippable SpecDeltas (`DLT-*`):
+
+1. **Phase 1 — Schema, Validation & Drift/Hook Isolation (`DOM-SPEC-ENGINE`, `DOM-VCS-LIFECYCLE`, `CNT-EIDOS-PLUGIN`)**:
+   * Add `assets/schemas/v1/agent/memory.schema.yaml` and `memory.template.adoc`; extend `assets/schemas/v1/common/defs.yaml` (`decision.graduated_from` accepting `MEM-*`).
+   * Register `MEM-` in `ENTITY_PREFIX_REGISTRY` and `infer_entity_type_from_path`; reject `memory` in `create_spec()`.
+   * Exempt `agent/memory` `targets`/`promoted_to` in `_check_dict_references()` and `_warn_if_deprecated_dependency()`.
+   * Add `ChangedFilesClassification.memory_files` in `src/eidos/vcs/diff.py` and verify zero-edit `Stop` hook isolation in `CMP-HOOK-RUNNER`.
+   * Update `CAP-PROD-001` (`INV-SPEC-VALIDATION` 16 -> 17 schemas) and bind tests (`POL-005 >90%` per-file coverage).
+2. **Phase 2 — Unified Knowledge Graph, `memory_freshness_cache` & Budgeted `eidos context` (`CNT-EIDOS-INDEX`)**:
+   * Bump `SCHEMA_VERSION` in `CMP-GRAPH-STORAGE` to add `HEAD`-keyed `memory_freshness_cache`.
+   * Index `eidos/memory/*.adoc` into `entities`, `edges` (`anchors_entity`, `promoted_to`), `specs_fts`, and `spec_embeddings` (`CMP-INCREMENTAL-SYNC-ENGINE`), keeping `agent/memory` excluded from `TASK_SLICE_ENTITY_TYPES` (`CMP-FTS-QUERY-ENGINE`).
+   * Implement secondary budgeted memory attachment (`anchor`, `guardrails`, `deep`) with memory-first pruning precedence and rebase/shallow-clone/0-commit `unverifiable` freshness handling in `CMP-TIERED-CONTEXT-COMPRESSOR`.
+3. **Phase 3 — `eidos memory` CLI, Audit, 5th `eidos-memory` Skill & Docs (`CNT-EIDOS-CLI`, `CNT-EIDOS-PLUGIN`, `CNT-EIDOS-DOCS`)**:
+   * Add `CMP-CLI-MEMORY-COMMANDS` (`add`, `list`, `search`, `show`, `verify`, `archive`, `audit`, `promote`), AsciiDoc body sanitizer, calibrated BM25 / pre-computed Harrier overlap detection, and `eidos index health` aggregation.
+   * Update `CTR-EIDOS-CLI` (SemVer minor bump) and `tests/fixtures/cli_command_tree.json`.
+   * Ship `assets/plugin_reference/skills/eidos-memory/SKILL.md` (ceiling `450`), tighten `~15` words in `eidos/SKILL.md` for the 1-line companion pointer, add the `26`-word trigger in `agents-md/block.md`, and update `CAP-AGENT-001` (`INV-PLUGIN-SKILL-SIZE-CEILING`, `INV-PLUGIN-SKILL-CLI-PARITY`).
+   * Synchronize `CNT-EIDOS-DOCS` (`docs/concepts/schema-glossary.md`, `architectural-index.md`, `how-eidos-works.md`, `docs/guides/cli.md`) under `INV-DOCS-SYNCHRONIZATION`.
+4. **Phase 4 — Living Web Portal Surface (`DOM-EXPERIENCE-PORTAL`, `CNT-EIDOS-PORTAL`, `CLT-WEB-PORTAL`)**:
+   * Emit `memories[]` and `memory_audit` in `CMP-PORTAL-GENERATOR` / `CMP-PORTAL-SERVER` (`CTR-EIDOS-PORTAL`).
+   * Implement `MemoryView.tsx` (`SCR-PORTAL-MEMORY`), `NavigationRail.tsx` tab + empty-state ergonomics, inline cross-links in `ArchitectureView.tsx` & `BusinessView.tsx`, and non-blocking health counters in `HomeView.tsx`; rebuild `assets/portal/bundle.html.gz`.
+   * Register `SCR-PORTAL-MEMORY` in `CLT-WEB-PORTAL`, `CAP-PROD-001`, and `CAP-EXP-001`.
+
+== Deferred Future Extensions
+
+* **Lifecycle Hook Integration (`CMP-HOOK-RUNNER`)**: Optional `SessionStart` global memory digest injection (for harnesses supporting context injection) and non-blocking `Stop` nudges when edited files invalidate anchored memories.
+* **Client Memory Import Utility**: Optional `eidos memory import --from claude` helper to selectively graduate team-relevant entries from a developer's local `~/.claude/projects/<repo>/memory/` folder into Git-tracked `eidos/memory/` files.

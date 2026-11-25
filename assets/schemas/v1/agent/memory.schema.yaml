@@ -1,0 +1,111 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: AgentMemorySchema
+description: "Defines Git-native, team-scoped advisory engineering memory entries (MEM-*) shared across coding agents."
+type: object
+additionalProperties: false
+required:
+  - type
+  - id
+  - title
+  - category
+  - status
+  - summary
+  - verified_at
+properties:
+  type:
+    type: string
+    const: "agent/memory"
+    description: "The fixed document type identifier. Must always be 'agent/memory'."
+  id:
+    type: string
+    pattern: "^MEM-[A-Z0-9_-]+$"
+    description: "Collision-resistant memory identifier following MEM-<SLUG>-<4HEX> (e.g. MEM-REAL-SQLITE-TESTS-A3F9)."
+  title:
+    $ref: "#/$defs/non_empty_string"
+    pattern: "^[^\\r\\n]*\\S[^\\r\\n]*$"
+    description: "Concise single-line human-readable title summarizing the shared team lesson, project constraint, or reference."
+  category:
+    type: string
+    enum:
+      - feedback
+      - project
+      - reference
+    description: "Team-scoped memory category: 'feedback' (recurring corrections/toolchain quirks), 'project' (time-bounded operational context), or 'reference' (external operational pointers). Personal 'user' preferences are excluded."
+  status:
+    $ref: "#/$defs/memory_status"
+  summary:
+    $ref: "#/$defs/non_empty_string"
+    maxLength: 220
+    pattern: "^[^\\r\\n]*\\S[^\\r\\n]*$"
+    description: "Compact single-line summary surfaced in token-budgeted eidos context slices and Portal cards."
+    examples:
+      - "Use real tmp_path SQLite databases in index integration tests."
+  targets:
+    type: object
+    additionalProperties: false
+    description: "Optional advisory graph anchors linking this memory to Eidos entity IDs and/or repository file globs. Broken targets emit non-blocking memory_audit diagnostics rather than blocking validation errors."
+    properties:
+      entities:
+        type: array
+        items:
+          type: string
+          pattern: "^[A-Z][A-Z0-9]*-[A-Z0-9_-]+$"
+        description: "Optional Eidos entity IDs anchored by this memory (advisory only; no hard x-eidos-ref gate)."
+      paths:
+        type: array
+        items:
+          $ref: "#/$defs/non_empty_string"
+          pattern: "^(?!/|\\\\|[A-Za-z]:)(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$))[^\\r\\n]*\\S[^\\r\\n]*$"
+        description: "Optional repo-relative file paths or glob patterns anchored by this memory."
+  verified_at:
+    type: string
+    format: date
+    pattern: "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$"
+    description: "ISO-8601 calendar date (YYYY-MM-DD) when this team memory was last verified."
+    examples:
+      - "2026-11-24"
+  verified_commit:
+    oneOf:
+      - type: "null"
+      - type: string
+        pattern: "^[0-9a-fA-F]{7,40}$"
+    description: "Optional Git commit SHA stamped at capture/verification (null in non-Git or zero-commit repositories)."
+  expires_at:
+    oneOf:
+      - type: "null"
+      - type: string
+        format: date
+        pattern: "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$"
+    description: "Optional ISO-8601 calendar expiration date (YYYY-MM-DD) for time-bounded 'project' notes."
+  promoted_to:
+    oneOf:
+      - type: "null"
+      - type: string
+        pattern: "^(DEC|INV|POL|CAP|CNT|CMP|CTR)-[A-Z0-9_-]+$"
+    description: "Optional formal living specification or child ID (DEC-*, INV-*, POL-*) into which this memory graduated."
+allOf:
+  - if:
+      properties:
+        status:
+          const: promoted
+      required:
+        - status
+    then:
+      properties:
+        promoted_to:
+          type: string
+          pattern: "^(DEC|INV|POL|CAP|CNT|CMP|CTR)-[A-Z0-9_-]+$"
+      required:
+        - promoted_to
+  - if:
+      properties:
+        status:
+          enum:
+            - draft
+            - active
+      required:
+        - status
+    then:
+      properties:
+        promoted_to:
+          type: "null"

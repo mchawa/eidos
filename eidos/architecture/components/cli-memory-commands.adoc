@@ -1,0 +1,25 @@
+---
+type: tech/component
+id: CMP-CLI-MEMORY-COMMANDS
+title: MemoryCommands
+container: CNT-EIDOS-CLI
+status: active
+source_path: src/eidos/cli/memory_commands.py
+---
+= Component: MemoryCommands
+:toc: left
+
+== Responsibility
+Implements the `eidos memory` subcommand group (`add`, `list`, `search`, `show`, `verify`, `archive`, `audit`, `promote`) as a thin Typer presentation adapter over `CMP-MEMORY-ENGINE` with Rich tables/panels and machine-readable `--json` outputs (`CTR-EIDOS-CLI`, `INV-MEMORY-CLI-AND-SKILL-PARITY`).
+
+== Key Responsibilities & Collaborators
+* **Team Memory CRUD & Lifecycle Presentation**: Routes workspace resolution through `resolve_cli_eidos_dir(path)` (`CMP-CLI-APP`) and delegates memory creation (`add`), filtered listing (`list`), BM25/Hybrid search (`search`), inspection (`show`), freshness re-verification (`verify`), archival (`archive`), non-blocking auditing (`audit`, always exit code `0`), and verified graduation (`promote`) to `CMP-MEMORY-ENGINE`.
+* **Consistent CLI Ergonomics**: Uses `--file`/`-f` for target file paths/globs and `--entity`/`-e` for target Eidos entity IDs while reserving `--path`/`-p` for the governing `eidos/` specifications directory across every subcommand.
+
+== Public Surface
+* `memory_app: typer.Typer`
+* `memory_add_cmd(...)`, `memory_list_cmd(...)`, `memory_search_cmd(...)`, `memory_show_cmd(...)`
+* `memory_verify_cmd(...)`, `memory_archive_cmd(...)`, `memory_audit_cmd(...)`, `memory_promote_cmd(...)`
+
+== Design Constraints & Operational Notes
+* **Strictly Non-Blocking Audit Exit Code**: `eidos memory audit` always returns exit code `0` even when stale, expired, duplicate, or overlapping memories exist so memory staleness never blocks CI pipelines.
