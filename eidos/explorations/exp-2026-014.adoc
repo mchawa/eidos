@@ -1,0 +1,97 @@
+---
+type: product/exploration
+id: EXP-2026-014
+title: "Git Co-Change Coupling in Context Slicing and Blast-Radius Analysis"
+status: proposed
+---
+= Exploration: Git Co-Change Coupling in Context Slicing and Blast-Radius Analysis
+:toc: left
+:icons: font
+:sectnums:
+
+== Core Hypothesis
+
+Indexing **deterministic Git co-change coupling** (historical file and component co-modification statistics extracted from local `git log` and stored incrementally in `eidos/.cache/index.db`) as an `inferred`-confidence signal (`provenance: "git_cochange"`) in `eidos index blast-radius` and `eidos context` will expose high-value **implicit cross-layer dependencies** that static AST imports (`ast_import`) and HTTP call extraction (`ast_http`) cannot observe—such as schema-to-scaffolder, backend-payload-to-frontend-types, CLI-to-contract/docs, and config-to-workflow pairs—while strictly preserving:
+
+1. **Zero-AI Determinism (`POL-ZERO-AI-CALL-DEPENDENCY`)**: Purely statistical, reproducible mining from local Git history with zero external services or LLM inference.
+2. **Epistemic Transparency (`CMP-GRAPH-STORAGE`, `CMP-GRAPH-TRAVERSAL-ENGINE`)**: Every co-change relationship carries `provenance = "git_cochange"` mapped to the lowest `inferred` tier in `PROVENANCE_TO_CONFIDENCE`, so `--min-confidence derived` / `--min-confidence observed` filters cleanly exclude historical heuristics when strict static edges are required.
+3. **Sub-5ms Warm Index & Guardrail Retention (`INV-AGENT-GRAPH-INDEX-FRESHNESS`, `INV-CONTEXT-GUARDRAIL-INVARIANT-RETENTION`)**: Incremental `HEAD`-keyed ingestion keeps warm sync overhead near zero, and co-change candidates never displace primary matched components, declared contracts, or capability `INV-*` guardrails under `anchor` or `guardrails` token budgets.
+4. **Boundary-Validator Isolation**: Co-change edges (`co_changed_with`) never enter `CMP-ARCHITECTURE-BOUNDARY-VALIDATOR` import-tier checks, preventing historical coupling from triggering false-positive architectural boundary violations.
+
+== Problem Statement & Blind Spots Today
+
+Today, `CNT-EIDOS-INDEX` builds architectural edges from four primary sources:
+
+* **Declared specification links** (`declared_spec`, confidence `observed`)
+* **AST static imports & symbol calls** (`ast_import` / `ast_symbol`, confidence `derived` / `observed`)
+* **Static HTTP client/route matching** (`ast_http`, confidence `derived`)
+* **Lexical / semantic retrieval** (`fts_bm25`, `semantic_rrf`, `hybrid_rrf`)
+
+In real polyglot repositories—including Eidos itself—critical couplings routinely cross language, serialization, or documentation boundaries with **zero static import edge**:
+
+* **Schema ↔ Runtime ↔ Docs**: Updating a v1 YAML schema (`assets/schemas/v1/...`) typically requires co-editing `CMP-LIFECYCLE-SCAFFOLDER`, `CMP-SPEC-VALIDATOR`, and `docs/concepts/schema-glossary.md`.
+* **Backend JSON Payload ↔ Frontend TypeScript Types**: Modifying serialized portal payloads (`CMP-PORTAL-GENERATOR`) requires matching updates in TypeScript portal views (`CMP-PORTAL-ASSETS`), despite zero Python-to-TypeScript import edge.
+* **Event / Message Bus / Queue Contracts**: Asynchronous publishers and consumers in separate containers share topic strings or schemas without importing each other.
+* **Polyglot Config & Build Scripts**: Changing `pyproject.toml`, `hatch_build.py`, or CI workflows often requires synchronized edits across multiple containers.
+
+Without historical co-change awareness, both coding agents calling `eidos context -f <file>` and engineers running `eidos index blast-radius <entity>` can miss recurring sibling change targets until late CI or PR review failures.
+
+== Proposed Architecture Sketch
+
+[mermaid]
+----
+flowchart LR
+    GitLog["git log --no-merges --name-only (bounded window)"] --> Filter["Noise Filter (skip commits > max_files, ignore caches/locks)"]
+    Filter --> Stats["Recency-Weighted Co-Change Aggregator"]
+    Stats --> DB["index.db: git_cochange_state + git_cochange_pairs + edges (co_changed_with, inferred)"]
+    DB --> Blast["CMP-GRAPH-TRAVERSAL-ENGINE: eidos index blast-radius (gated by --min-confidence)"]
+    DB --> Ctx["CMP-TIERED-CONTEXT-COMPRESSOR: eidos context (tail tie-break / capped co_changed hints)"]
+----
+
+=== Candidate Storage & Incremental Update Model
+
+* **State & Pair Tables (`CMP-GRAPH-STORAGE`)**:
+  ** `git_cochange_state(key PRIMARY KEY, value)` recording `last_head_sha`, `window_commits`, and `max_files_per_commit`.
+  ** `git_cochange_pairs(file_a, file_b, cochange_count, weighted_score, last_commit_ts, PRIMARY KEY (file_a, file_b))` plus per-file `git_file_commits(file_path PRIMARY KEY, commit_count, weighted_commits)`.
+  ** Projected component/container edges in `edges` (`rel_type = "co_changed_with"`, `provenance = "git_cochange"`, `evidence = "cochange:count=7,conf=0.78,lift=4.2"`) only for pairs passing support, confidence, and lift thresholds.
+* **Incremental Refresh (`CMP-INCREMENTAL-SYNC-ENGINE`)**:
+  ** When `HEAD == last_head_sha`, skip Git completely (`0 ms` overhead).
+  ** When `last_head_sha` is an ancestor of `HEAD` (`git merge-base --is-ancestor`), scan only `last_head_sha..HEAD` and merge deltas.
+  ** On rebase, force-push, or cold cache, rebuild over a bounded window (e.g., last `N = 500` non-merge commits or `180` days).
+  ** On shallow clones (`--depth 1`, `< 5` commits) or non-Git workspaces, record empty state cleanly without warnings or errors.
+
+=== Scoring & Anti-Noise Heuristics to Evaluate
+
+Raw co-change counts are easily corrupted by bulk formatting commits, dependency bumps, or global renames (such as a 91-file rename creating 4,095 pairs in a single commit). Spikes must calibrate:
+
+1. **Commit Size Cap (`max_files_per_commit`)**: Ignore commits touching more than `K` code/spec files (candidate sweep: `K in {15, 20, 30}`), plus lockfiles (`uv.lock`, `pnpm-lock.yaml`) and generated artifacts.
+2. **Directional Confidence & Lift**: Compute directional conditional probability `P(B | A) = weighted_cochange(A, B) / weighted_commits(A)` and normalized lift `P(B | A) / P(B)` alongside a minimum support floor (`min_support >= 3` commits) so ubiquitous hub files (e.g., `cli/main.py` or `README.md`) do not dominate every query.
+3. **Exponential Recency Decay**: Weight commits by `exp(-age_days / half_life_days)` (candidate sweep: `half_life in {60, 90, 180}` days) so obsolete pre-refactor pairings decay naturally.
+4. **File-to-Component Aggregation**: Map file-level pairs onto owning `CMP-*` / `CNT-*` entities via `code_symbols` (`owned_path`) while deduplicating pairs that already have an `ast_import`, `ast_http`, or `declared_spec` edge (preventing double-counting).
+
+== Open Questions & Planned Spikes
+
+=== Open Questions
+
+1. **Precision vs. Noise on Real Histories**: What `(max_files_per_commit, min_support, min_confidence, min_lift, half_life_days)` tuple maximizes Precision@5 and Recall@5 for *non-import* sibling predictions without surfacing noisy hub files?
+2. **File-Level vs. Component-Level Granularity**: Should `eidos context` surface co-change hints as component-level secondary entries, file-level sibling hints (`related_files`), or both?
+3. **Budget & Default-On Ergonomics (`eidos context`)**: Should co-change hints appear by default in `guardrails` / `deep` tiers (strictly capped and evicted in Stage 0 alongside untargeted memories so primary invariants are never displaced), or behind an opt-in `--include-cochange` flag?
+4. **Blast-Radius Graph Integration (`eidos index blast-radius`)**: Should `co_changed_with` edges participate in 1-hop blast-radius only (to avoid multi-hop transitive hairballs across 2–3 hops), and should `--min-confidence` default remain `inferred` or tighten for `co_changed_with`?
+5. **Sync Performance & Shallow-Clone Behavior**: What is the exact cold-build time (`N = 500` commits) and incremental refresh latency on both Eidos and large external monorepos (10k+ commits)?
+
+=== Planned Spikes
+
+* `spike-1-cochange-backtest-calibration`: Run a temporal walk-forward backtest on Eidos's Git history (predicting co-edited files/components in commit `t` using only history `< t`) comparing pure AST imports vs. AST + calibrated Git co-change coupling across candidate thresholds (`K`, `min_support`, `min_conf`, `half_life`), excluding commits already explained by `ast_import`.
+* `spike-2-incremental-sqlite-sync-benchmark`: Prototype `git log --no-merges --numstat`/`--name-only` ingestion into an isolated SQLite copy of `eidos/.cache/index.db`, benchmarking cold build (`N = 500`, `N = 2000`), incremental 1-commit update, clean `HEAD` short-circuit (`< 1 ms`), rebase fallback, shallow-clone (`--depth 1`), and non-Git directories.
+* `spike-3-context-budget-and-blast-radius-isolation`: Prototype `co_changed_with` projection in `blast-radius` (1-hop vs. k-hop, `--min-confidence` filtering) and secondary budgeted attachment in `CMP-TIERED-CONTEXT-COMPRESSOR`, verifying `0%` displacement of primary components/contracts/invariants and `0` leakage into `CMP-ARCHITECTURE-BOUNDARY-VALIDATOR`.
+
+== Exit Criteria
+
+* **Measurable Non-Import Recall Lift**: Walk-forward backtest demonstrates meaningful Recall@5 improvement on cross-layer commits without static import edges while maintaining Precision@5 `>= 0.50` (and zero hub-file flooding).
+* **Sync Latency Budget**: Clean `HEAD` check adds `< 1 ms` to `eidos index sync`; 500-commit cold build completes in `< 500 ms` on Eidos; incremental 1-commit update completes in `< 30 ms`.
+* **Zero Guardrail & Boundary Regressions**: `0%` eviction of primary entities/invariants in `eidos context` (`anchor` / `guardrails` / `deep`), strict `--min-confidence derived|observed` exclusion in `blast-radius`, and `0` cross-contamination into `CMP-ARCHITECTURE-BOUNDARY-VALIDATOR`.
+* **Decision Gate**: Clear `adopted` (with phased `DLT-*` plan), `pivoted`, or `discarded` verdict based on empirical Spike 1–3 evidence.
+
+== Investigation & Findings
+
+_Status: `proposed` — No spikes executed yet. Start with `spike-1-cochange-backtest-calibration` on read-only Git history before modifying `src/eidos/`._
