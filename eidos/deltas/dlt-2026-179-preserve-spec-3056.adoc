@@ -1,0 +1,128 @@
+---
+type: delta/mutation
+id: DLT-2026-179-PRESERVE-SPEC-3056
+title: Preserve Spec Embeddings Across Schema Version Migrations
+status: applied
+intent:
+  kind: enabler
+  motivation: Prevent unrelated SQLite knowledge-graph SCHEMA_VERSION bumps (such as adding new cache tables like public_surface_cache, mermaid_validation_cache, or memory_freshness_cache) from dropping expensive-to-recompute Harrier ONNX spec_embeddings rows (90-220s CPU rebuilds) while executing migrations atomically, strictly preserving INV-SEMANTIC-COMPLETE-RRF-GATE, and failing closed whenever the embedding schema, model format, or column layout changes or the database is corrupted.
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    details: Export EMBEDDING_SCHEMA_VERSION in src/eidos/core/index/storage.py, verify full spec_embeddings column schema (name, type, NOT NULL, PRIMARY KEY) via PRAGMA table_info, execute all schema migrations atomically inside _immediate_write_transaction using _CACHE_SCHEMA_STATEMENTS (never executescript), guard partial managed-table subsets and extra unmanaged tables cleanly, stamp metadata['embedding_schema_ver'] non-destructively on current-version databases when strictly absent, preserve spec_embeddings rows and normalized metadata['semantic_sync_complete'] across SCHEMA_VERSION migrations when embedding_schema_ver and schema match, and drop/recreate spec_embeddings (clearing semantic_sync_complete) on EMBEDDING_SCHEMA_VERSION mismatch, incompatible schema, unversioned legacy SCHEMA_VERSION migrations, or corruption recovery.
+    expect:
+      frontmatter:
+        status: active
+        source_path:
+          - src/eidos/core/index/storage.py
+          - src/eidos/core/index/graph_index.py
+      body:
+        contains:
+          - "EMBEDDING_SCHEMA_VERSION"
+          - "embedding_schema_ver"
+          - "semantic_sync_complete"
+          - "DEC-INDEX-PRESERVE-EMBEDDINGS-ON-SCHEMA-MIGRATION"
+  - operation: modify
+    target: CMP-SEMANTIC-EMBEDDING-ENGINE
+    details: Document the cross-component EMBEDDING_SCHEMA_VERSION bump contract under Design Constraints & Operational Notes in eidos/architecture/components/semantic-embedding-engine.adoc and add a maintainer guardrail comment above Harrier model/prompt/truncation constants in src/eidos/core/index/semantic.py without introducing storage->semantic imports.
+    expect:
+      frontmatter:
+        status: active
+        source_path: src/eidos/core/index/semantic.py
+      body:
+        contains:
+          - "EMBEDDING_SCHEMA_VERSION"
+          - "DEC-INDEX-PRESERVE-EMBEDDINGS-ON-SCHEMA-MIGRATION"
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+    details: Record DEC-INDEX-PRESERVE-EMBEDDINGS-ON-SCHEMA-MIGRATION in CNT-EIDOS-INDEX decisions (including exact EMBEDDING_SCHEMA_VERSION bump triggers and storage.py-only export boundary) and clarify under Quality Attributes that compatible spec_embeddings and semantic_sync_complete survive unrelated SCHEMA_VERSION upgrades atomically while still dropping on EMBEDDING_SCHEMA_VERSION bumps or corruption recovery.
+    expect:
+      frontmatter:
+        status: active
+        decisions.id:
+          - "DEC-INDEX-PRESERVE-EMBEDDINGS-ON-SCHEMA-MIGRATION"
+      body:
+        contains:
+          - "EMBEDDING_SCHEMA_VERSION"
+          - "DEC-INDEX-PRESERVE-EMBEDDINGS-ON-SCHEMA-MIGRATION"
+  - operation: modify
+    target: CAP-AST-CODE-GRAPH
+    details: Bump CAP-AST-CODE-GRAPH to 1.11.0 and add INV-INDEX-EMBEDDINGS-SCHEMA-PRESERVATION governing atomic guarded preservation and invalidation of spec_embeddings across SCHEMA_VERSION and EMBEDDING_SCHEMA_VERSION transitions.
+    expect:
+      frontmatter:
+        status: active
+        version: "1.11.0"
+        technical.invariants.id:
+          - "INV-INDEX-EMBEDDINGS-SCHEMA-PRESERVATION"
+      body:
+        contains:
+          - "INV-INDEX-EMBEDDINGS-SCHEMA-PRESERVATION"
+          - "EMBEDDING_SCHEMA_VERSION"
+  - operation: add
+    target: INV-INDEX-EMBEDDINGS-SCHEMA-PRESERVATION
+    details: Bind INV-INDEX-EMBEDDINGS-SCHEMA-PRESERVATION in CAP-AST-CODE-GRAPH to tests/test_graph_index.py::test_spec_embeddings_preserved_across_schema_migration_and_invalidated_on_embedding_version_bump.
+    expect:
+      frontmatter:
+        rule: "EMBEDDING_SCHEMA_VERSION"
+        test_binding: "tests/test_graph_index.py::test_spec_embeddings_preserved_across_schema_migration_and_invalidated_on_embedding_version_bump"
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: Update docs/concepts/how-eidos-works.md (storage.py row and metadata item), docs/concepts/architectural-index.md, and eidos/architecture/components/docs-core-concepts.adoc to document atomic guarded spec_embeddings preservation via EMBEDDING_SCHEMA_VERSION across SCHEMA_VERSION migrations (POL-CONTINUOUS-DOCUMENTATION-SYNC).
+    expect:
+      frontmatter:
+        status: active
+        source_path: docs/concepts
+      body:
+        contains:
+          - "EMBEDDING_SCHEMA_VERSION"
+vcs:
+  branch: main
+  base_commit: 63b0ed550bff0ce056d440caf67f1b0805f69dba
+---
+= SpecDelta: Preserve Spec Embeddings Across Schema Version Migrations
+:toc: left
+
+== Problem Statement
+Currently, `_apply_cache_schema_ddl()` in `src/eidos/core/index/storage.py` drops **every** table in `_MANAGED_TABLES` (including `spec_embeddings` and `metadata`) using non-transactional `with conn:` DDL and `conn.executescript(_CACHE_SCHEMA_DDL)` whenever `SCHEMA_VERSION` changes. Even though `sync_index(force=True)` and incremental cache-version keys (`test_binding_cache_ver`, `code_symbol_cache_ver`) intentionally preserve `spec_embeddings`, any unrelated `SCHEMA_VERSION` bump that adds a new cache table (such as `2.21.0` `public_surface_cache`, `2.22.0` `mermaid_validation_cache`, or `2.23.0` `memory_freshness_cache`) wipes all precomputed Harrier ONNX embeddings, forcing a 90–220 second CPU re-embedding rebuild on persistent workstations, CI caches, and remote devboxes.
+
+Naively excluding `spec_embeddings` from `DROP TABLE` during `SCHEMA_VERSION` migrations is unsafe without five explicit guards:
+1. **Atomic DDL Transactions**: Python `sqlite3`'s `with conn:` does not begin a transaction for DDL, and `conn.executescript()` implicitly commits outside transaction control—risking mid-migration data loss or torn WAL visibility for concurrent readers and background semantic workers holding `semantic_sync.lock`.
+2. **Complete State-Machine Coverage (Including Partial Tables & Extra Tables)**: Checking only `user_tables == set(_MANAGED_TABLES)` and `user_tables > set(_MANAGED_TABLES)` leaves a bypass when `user_tables < set(_MANAGED_TABLES)` (or when both missing managed tables and extra retired tables occur together), which would silently stamp the new `EMBEDDING_SCHEMA_VERSION` over mismatched `spec_embeddings`.
+3. **Full Schema & Embedding Contract Verification**: `query_semantic_embeddings()` checks only vector byte length (`len(blob)`), and `INSERT OR REPLACE` requires `PRIMARY KEY` on `entity_id`. Preserving `spec_embeddings` requires an independent `EMBEDDING_SCHEMA_VERSION`, full `PRAGMA table_info(spec_embeddings)` validation of `(name, type, notnull, pk)`, and a cross-component bump contract in `CMP-SEMANTIC-EMBEDDING-ENGINE`.
+4. **Completeness Gate Integrity (`INV-SEMANTIC-COMPLETE-RRF-GATE`)**: Dropping `metadata` without restoring a `.strip()`-normalized `metadata['semantic_sync_complete']` turns an interrupted partial sync marker (`'0'`) into `None`, allowing `is_semantic_index_complete(conn)`'s ratio fallback (`total_embeddable >= 10`, `missing <= 4`, `>= 85%`) to falsely treat an incomplete run as complete.
+5. **Fail-Closed Legacy & Corruption Boundaries**: Unversioned legacy `SCHEMA_VERSION` migrations (`embedding_schema_ver` missing or ancient `metadata` schema) and empty-string markers must fail closed, and genuine SQLite corruption (`SQLITE_CORRUPT` / `SQLITE_NOTADB`) must propagate untouched to `open_cache_connection`'s unlink-and-rebuild recovery.
+
+== Proposed Specification Changes
+1. **`CMP-GRAPH-STORAGE` (`src/eidos/core/index/storage.py`)**:
+   * Export `EMBEDDING_SCHEMA_VERSION: str = "1"` in `storage.py` (intentionally kept `storage.py`-only rather than re-exported on `ArchitecturalIndex`; `SCHEMA_VERSION` remains `"2.23.0"` because the 15-table DDL is unchanged), alongside internal constants `_EMBEDDING_SCHEMA_VERSION_KEY = "embedding_schema_ver"`, `_SEMANTIC_SYNC_COMPLETE_KEY = "semantic_sync_complete"`, `_SPEC_EMBEDDINGS_SCHEMA = (("entity_id", "TEXT", 0, 1), ("content_sha256", "TEXT", 1, 0), ("model_id", "TEXT", 1, 0), ("embedding", "BLOB", 1, 0))`, `_SPEC_EMBEDDINGS_DDL`, and `_CACHE_SCHEMA_STATEMENTS: tuple[str, ...]` (explicit per-statement tuple referencing `_SPEC_EMBEDDINGS_DDL`, with `_CACHE_SCHEMA_DDL` derived from it so comments with semicolons cannot split SQL).
+   * Add `_has_compatible_spec_embeddings_schema(conn)` validating `(name, type.upper(), int(notnull), int(pk))` in exact column order via `PRAGMA table_info(spec_embeddings)` without swallowing `sqlite3.DatabaseError` / corruption, `_read_metadata_value_safe(conn, key)` returning `None` strictly on non-corrupt missing-column/missing-table `sqlite3.OperationalError` (propagating `database is locked`, `database schema has changed`, and corruption), and `_normalize_semantic_sync_complete(raw)` (`.strip()`-normalizing to `'1'` only for `'1'`, `'0'` for `'0'` or any other non-empty marker, and `None` when absent/blank).
+   * Extend `_is_schema_current(conn)` to require `metadata['embedding_schema_ver'] == EMBEDDING_SCHEMA_VERSION` and `_has_compatible_spec_embeddings_schema(conn)`.
+   * Update `_apply_cache_schema_ddl(conn)` so **every** DDL and metadata mutation executes atomically inside a single `_immediate_write_transaction(conn)` using `conn.execute(...)` (never `conn.executescript(...)`):
+     ** **Path 1 — Exact 15 managed tables on current `SCHEMA_VERSION`**: Check `needs_tbc`, `needs_csc`, and `needs_emb` (`stored_emb_ver != EMBEDDING_SCHEMA_VERSION or not spec_embeddings_compatible`). When `needs_emb` is `True`: if `stored_emb_ver is None` (strict `is None`, never adopting `""`), `spec_embeddings_compatible` is `True`, and `EMBEDDING_SCHEMA_VERSION == _INITIAL_EMBEDDING_SCHEMA_VERSION` (`"1"`), stamp `metadata['embedding_schema_ver'] = EMBEDDING_SCHEMA_VERSION` non-destructively without touching `spec_embeddings` or `semantic_sync_complete`; otherwise `DROP TABLE IF EXISTS spec_embeddings`, `conn.execute(_SPEC_EMBEDDINGS_DDL)`, `DELETE FROM metadata WHERE key = 'semantic_sync_complete'`, and stamp `EMBEDDING_SCHEMA_VERSION` while keeping the other 14 tables intact.
+     ** **Path 2 — Fresh DB, `SCHEMA_VERSION` mismatch, extra unmanaged tables (`bool(user_tables - set(_MANAGED_TABLES))`), or partial managed-table subset (`user_tables < set(_MANAGED_TABLES)`)**: Compute `preserve_embeddings = (spec_embeddings_compatible and stored_emb_ver == EMBEDDING_SCHEMA_VERSION)` before DDL (failing closed whenever `embedding_schema_ver` is absent on a `SCHEMA_VERSION` mismatch or partial subset). On `full_rebuild` (`bool(user_tables) and (stored_version != SCHEMA_VERSION or bool(extra_tables))`), drop all managed + quoted extra tables **except** `spec_embeddings` iff `preserve_embeddings` is `True`. On partial subsets (`not full_rebuild`) when `not preserve_embeddings`, drop `spec_embeddings` if present and delete stale `metadata['semantic_sync_complete']` if `metadata` exists. Execute every statement in `_CACHE_SCHEMA_STATEMENTS`, stamp `schema_version`, `test_binding_cache_ver`, `code_symbol_cache_ver`, and `embedding_schema_ver`, and whenever `preserve_embeddings` is `True` write normalized `metadata['semantic_sync_complete']` (or clear blank markers on partial subsets).
+     ** **Corruption recovery (`open_cache_connection`)**: Unchanged—genuine `SQLITE_CORRUPT` / `SQLITE_NOTADB` still unlinks `index.db`, `-wal`, and `-shm` completely under `_advisory_db_lock`.
+   * Keep `storage.py` free of `semantic.py` imports; downstream orphan pruning in `CMP-INCREMENTAL-SYNC-ENGINE` (`src/eidos/core/index/sync.py`, no edits required) and `entities` joins in `CMP-SEMANTIC-EMBEDDING-ENGINE` remain unchanged.
+2. **`CMP-SEMANTIC-EMBEDDING-ENGINE` (`eidos/architecture/components/semantic-embedding-engine.adoc`, `src/eidos/core/index/semantic.py`)**:
+   * Document the `EMBEDDING_SCHEMA_VERSION` bump contract under `== Design Constraints & Operational Notes` and add a concise maintainer comment above `HARRIER_MODEL_ID` / `HARRIER_HF_REVISION` / `HARRIER_EMBEDDING_DIM` / `HARRIER_DOC_MAX_LENGTH` / `HARRIER_STS_INSTRUCTION` in `src/eidos/core/index/semantic.py` (comment-only edit in `semantic.py`, no runtime imports added) so future edits to embedding model, revision, truncation, prompt prefix, or document formatting bump `EMBEDDING_SCHEMA_VERSION` in `storage.py`.
+3. **`CNT-EIDOS-INDEX` (`eidos/architecture/containers/index.adoc`)**:
+   * Record `DEC-INDEX-PRESERVE-EMBEDDINGS-ON-SCHEMA-MIGRATION` in `decisions:` capturing the independent `EMBEDDING_SCHEMA_VERSION` (kept `storage.py`-only), exact bump triggers (`spec_embeddings` DDL, `HARRIER_MODEL_ID`, `HARRIER_HF_REVISION`, `HARRIER_EMBEDDING_DIM`, `HARRIER_DOC_MAX_LENGTH`, `HARRIER_STS_INSTRUCTION`, normalization/dtype, or breaking `specs_fts` text projection), atomic `_immediate_write_transaction` DDL, `PRAGMA table_info` schema verification, `semantic_sync_complete` preservation, and rejected alternatives (unconditional preservation without format versioning, splitting into a separate `embeddings.db` SQLite file with dual WAL/lockfiles, and continuing to wipe embeddings on every `SCHEMA_VERSION` bump).
+   * Clarify the `Stateless Derived Cache` note under `== Quality Attributes & Operational Policies`.
+4. **`CAP-AST-CODE-GRAPH` (`1.11.0`) & `INV-INDEX-EMBEDDINGS-SCHEMA-PRESERVATION`**:
+   * Add `INV-INDEX-EMBEDDINGS-SCHEMA-PRESERVATION` bound to `tests/test_graph_index.py::test_spec_embeddings_preserved_across_schema_migration_and_invalidated_on_embedding_version_bump` and reference it in `== 2. Key Responsibilities`.
+5. **`CMP-DOCS-CORE-CONCEPTS` (`docs/concepts/how-eidos-works.md`, `docs/concepts/architectural-index.md`)**:
+   * Update the `storage.py` table row and item 15 (`metadata`) in `docs/concepts/how-eidos-works.md`, the SQLite migration bullet in `docs/concepts/architectural-index.md`, and `eidos/architecture/components/docs-core-concepts.adoc` (`POL-CONTINUOUS-DOCUMENTATION-SYNC`, `CNT-EIDOS-DOCS` covered via `CMP-DOCS-CORE-CONCEPTS`).
+
+== Implementation Plan
+1. **Storage Atomic Migration Guards (`src/eidos/core/index/storage.py`) & Semantic Guardrail Comment (`src/eidos/core/index/semantic.py`)**: Implement `EMBEDDING_SCHEMA_VERSION`, `_SPEC_EMBEDDINGS_SCHEMA`, `_SPEC_EMBEDDINGS_DDL`, `_CACHE_SCHEMA_STATEMENTS`, `_has_compatible_spec_embeddings_schema()`, `_read_metadata_value_safe()`, `_normalize_semantic_sync_complete()`, updated `_is_schema_current()`, and atomic `_apply_cache_schema_ddl()` in `src/eidos/core/index/storage.py` (`CMP-GRAPH-STORAGE`, parent `CNT-EIDOS-INDEX`; `src/eidos/core/index/graph_index.py`, `src/eidos/core/index/sync.py`, and `CTR-EIDOS-CLI` require no edits). Add the maintainer bump-contract comment in `src/eidos/core/index/semantic.py` (`CMP-SEMANTIC-EMBEDDING-ENGINE`). Maintain strictly `> 90.0%` statement coverage on every modified Python module (`POL-STATEMENT-TEST-COVERAGE`).
+2. **Hermetic Migration, Rollback & Invariant Tests (`tests/test_graph_index.py`)**: Add `test_spec_embeddings_preserved_across_schema_migration_and_invalidated_on_embedding_version_bump` (paired with `INV-INDEX-EMBEDDINGS-SCHEMA-PRESERVATION` under `CAP-AST-CODE-GRAPH`) covering all critical transitions:
+   * One-time non-destructive `embedding_schema_ver` stamping on an existing current-`SCHEMA_VERSION` DB (strictly `is None`) without dropping `spec_embeddings` or `semantic_sync_complete`, while verifying empty-string `""` is rejected and fails closed.
+   * `SCHEMA_VERSION` mismatch (`2.22.0` -> `2.23.0`) with matching `embedding_schema_ver` preserves `spec_embeddings` rows and normalized `semantic_sync_complete` (`'1'`, `'0'`, and padded `' 0 '`); verify non-vacuously on a `>= 10`-spec catalog (`9/10` embedded) after `idx.sync(auto_semantic=False)` that preserved `'0'` keeps `is_semantic_index_complete(conn) is False` under `INV-SEMANTIC-COMPLETE-RRF-GATE` and deleting `semantic_sync_complete` flips it to `True`; also verify deleting a spec across a `SCHEMA_VERSION` bump prunes only the deleted orphan during `idx.sync(auto_semantic=False)`.
+   * `EMBEDDING_SCHEMA_VERSION` bump on same `SCHEMA_VERSION` drops and recreates only `spec_embeddings` and clears `semantic_sync_complete` while keeping the other 14 tables intact.
+   * `EMBEDDING_SCHEMA_VERSION` bump combined with `SCHEMA_VERSION` mismatch drops `spec_embeddings` cleanly.
+   * Incompatible `spec_embeddings` schema (`PRAGMA table_info`: missing `PRIMARY KEY` on `entity_id` or wrong column/type) drops and recreates `spec_embeddings` on both same-version and cross-version paths.
+   * Partial managed-table subset (`user_tables < set(_MANAGED_TABLES)` on current `SCHEMA_VERSION`, plus partial subset combined with an extra unmanaged table) drops mismatched/unversioned `spec_embeddings` and clears stale `semantic_sync_complete` instead of stamping over them.
+   * Unversioned legacy `SCHEMA_VERSION` mismatch (including ancient `metadata` lacking `(key, value)` columns) fails closed and rebuilds cleanly.
+   * Mid-migration exception atomicity check proving `_immediate_write_transaction` rolls back `DROP TABLE` cleanly without losing `spec_embeddings` or `metadata`.
+   * Genuine `SQLITE_CORRUPT` / `SQLITE_NOTADB` database corruption still unlinks and rebuilds `index.db*` cleanly, and `open_cache_connection(..., allow_ddl=False)` fails fast cleanly when `embedding_schema_ver` is missing or mismatched.
+3. **Living Specifications & Documentation Sync**: Update `eidos/architecture/components/graph-storage.adoc` (`CMP-GRAPH-STORAGE`), `eidos/architecture/components/semantic-embedding-engine.adoc` (`CMP-SEMANTIC-EMBEDDING-ENGINE`), `eidos/architecture/containers/index.adoc` (`CNT-EIDOS-INDEX`), `eidos/domains/agent-intelligence/capabilities/ast-code-graph.adoc` (`CAP-AST-CODE-GRAPH` `1.11.0`, `INV-INDEX-EMBEDDINGS-SCHEMA-PRESERVATION`), `eidos/architecture/components/docs-core-concepts.adoc` (`CMP-DOCS-CORE-CONCEPTS`), `docs/concepts/how-eidos-works.md`, and `docs/concepts/architectural-index.md` (`CNT-EIDOS-DOCS` covered via `CMP-DOCS-CORE-CONCEPTS`; verify `zensical build --strict` and `tests/test_docs_sync.py` under `POL-CONTINUOUS-DOCUMENTATION-SYNC`). Keep unrelated untracked `eidos/explorations/exp-2026-013.adoc` excluded from this change.
+4. **Verification & Application**: Run `uv run ruff check src/ tests/`, `uv run ruff format --check src/ tests/`, `uv run pytest tests/test_graph_index.py tests/test_index_lock_contention.py tests/test_delta_engine.py tests/test_dotnet_polyglot_fixes.py tests/test_context.py tests/test_docs_sync.py --cov=eidos.core.index.storage --cov=eidos.core.index.semantic --cov-report=term-missing`, `uv run zensical build --strict`, `uv run eidos delta verify DLT-2026-179 --json`, `uv run eidos delta apply DLT-2026-179`, `uv run eidos delta audit DLT-2026-179 --strict --json`, and `uv run eidos drift --uncommitted --json`.

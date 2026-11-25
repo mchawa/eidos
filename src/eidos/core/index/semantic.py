@@ -27,6 +27,11 @@ from typing import Any
 
 import orjson
 
+# NOTE (DEC-INDEX-PRESERVE-EMBEDDINGS-ON-SCHEMA-MIGRATION, DLT-2026-179):
+# spec_embeddings survives unrelated SQLite SCHEMA_VERSION bumps when EMBEDDING_SCHEMA_VERSION
+# in src/eidos/core/index/storage.py matches. Bump EMBEDDING_SCHEMA_VERSION whenever changing
+# HARRIER_MODEL_ID, HARRIER_HF_REVISION, HARRIER_EMBEDDING_DIM, HARRIER_DOC_MAX_LENGTH,
+# HARRIER_STS_INSTRUCTION, vector normalization/dtype, or format_spec_embedding_document().
 HARRIER_MODEL_ID = "onnx-community/harrier-oss-v1-0.6b-ONNX"
 HARRIER_HF_REVISION = "e4daffa011e666dcd2ff2a3c6c05084090ac314d"
 HARRIER_HF_BASE_URL = f"https://huggingface.co/{HARRIER_MODEL_ID}/resolve/{HARRIER_HF_REVISION}"
@@ -98,7 +103,11 @@ def format_spec_embedding_document(
     body_text: str = "",
     spec_symbols: str = "",
 ) -> str:
-    """Construct the deterministic unprefixed specification text used for content-addressed embedding."""
+    """Construct the deterministic unprefixed specification text used for content-addressed embedding.
+
+    Note: Changing this layout invalidates persisted vectors—bump ``EMBEDDING_SCHEMA_VERSION`` in
+    ``src/eidos/core/index/storage.py`` (``DEC-SEMANTIC-EMBEDDING-SCHEMA-BUMP-CONTRACT``).
+    """
     return (
         f"[{entity_id}] ({entity_type}) {title or entity_id}\n"
         f"Domain: {domain or ''} | Symbols: {spec_symbols or ''}\n"

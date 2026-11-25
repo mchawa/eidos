@@ -26,10 +26,31 @@ if TYPE_CHECKING:
 # Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-170).
 SCHEMA_VERSION = "2.23.0"
 
+# Independent embedding format version (DLT-2026-179, DEC-INDEX-PRESERVE-EMBEDDINGS-ON-SCHEMA-MIGRATION).
+# Bump whenever spec_embeddings DDL, Harrier model/revision/dim/truncation/prompt, normalization/dtype,
+# or breaking specs_fts text projection changes.
+EMBEDDING_SCHEMA_VERSION = "1"
+_INITIAL_EMBEDDING_SCHEMA_VERSION = "1"
+_EMBEDDING_SCHEMA_VERSION_KEY = "embedding_schema_ver"
+_SEMANTIC_SYNC_COMPLETE_KEY = "semantic_sync_complete"
+_SPEC_EMBEDDINGS_SCHEMA: tuple[tuple[str, str, int, int], ...] = (
+    ("entity_id", "TEXT", 0, 1),
+    ("content_sha256", "TEXT", 1, 0),
+    ("model_id", "TEXT", 1, 0),
+    ("embedding", "BLOB", 1, 0),
+)
+_SPEC_EMBEDDINGS_DDL = """CREATE TABLE IF NOT EXISTS spec_embeddings (
+    entity_id TEXT PRIMARY KEY,
+    content_sha256 TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    embedding BLOB NOT NULL
+);"""
+
 # In-process parsed SpecDocument cache keyed by resolved Path -> (mtime_ns, st_size, sha256, SpecDocument)
 _PARSED_SPEC_MEM_CACHE: dict[Path, tuple[int, int, str, SpecDocument]] = {}
 
-# Every table owned by the derived index cache (dropped and rebuilt on schema version mismatch).
+# Every table owned by the derived index cache (dropped and rebuilt on schema version mismatch,
+# except spec_embeddings when EMBEDDING_SCHEMA_VERSION and column schema match).
 _MANAGED_TABLES = (
     "code_symbols",
     "code_couplings",
@@ -48,68 +69,57 @@ _MANAGED_TABLES = (
     "metadata",
 )
 
-_CACHE_SCHEMA_DDL = """
-CREATE TABLE IF NOT EXISTS metadata (
+# Explicit per-statement DDL tuple executed atomically inside _immediate_write_transaction
+# (never conn.executescript, which implicitly commits outside transaction control).
+_CACHE_SCHEMA_STATEMENTS: tuple[str, ...] = (
+    """CREATE TABLE IF NOT EXISTS metadata (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS indexed_files (
+);""",
+    """CREATE TABLE IF NOT EXISTS indexed_files (
     rel_path TEXT PRIMARY KEY,
     mtime REAL NOT NULL,
     sha256 TEXT NOT NULL,
     doc_id TEXT,
     doc_type TEXT
-);
-
-CREATE TABLE IF NOT EXISTS spec_validation_cache (
+);""",
+    """CREATE TABLE IF NOT EXISTS spec_validation_cache (
     file_path TEXT PRIMARY KEY,
     mtime_ns INTEGER NOT NULL,
     sha256 TEXT NOT NULL,
     schema_hash TEXT NOT NULL,
     doc_json TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS test_binding_cache (
+);""",
+    """CREATE TABLE IF NOT EXISTS test_binding_cache (
     file_path TEXT PRIMARY KEY,
     mtime_ns INTEGER NOT NULL,
     sha256 TEXT NOT NULL,
     functions_json TEXT NOT NULL,
     file_tokens_json TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS public_surface_cache (
+);""",
+    """CREATE TABLE IF NOT EXISTS public_surface_cache (
     file_path TEXT PRIMARY KEY,
     mtime_ns INTEGER NOT NULL,
     st_size INTEGER NOT NULL,
     extractor_version TEXT NOT NULL,
     payload_json TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS mermaid_validation_cache (
+);""",
+    """CREATE TABLE IF NOT EXISTS mermaid_validation_cache (
     diagram_sha256 TEXT PRIMARY KEY,
     engine_version TEXT NOT NULL,
     is_valid INTEGER NOT NULL,
     error_message TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS memory_freshness_cache (
+);""",
+    """CREATE TABLE IF NOT EXISTS memory_freshness_cache (
     memory_id TEXT PRIMARY KEY,
     head_sha TEXT NOT NULL,
     mem_sha256 TEXT NOT NULL,
     freshness TEXT NOT NULL,
     reason TEXT NOT NULL,
     checked_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS spec_embeddings (
-    entity_id TEXT PRIMARY KEY,
-    content_sha256 TEXT NOT NULL,
-    model_id TEXT NOT NULL,
-    embedding BLOB NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS entities (
+);""",
+    _SPEC_EMBEDDINGS_DDL,
+    """CREATE TABLE IF NOT EXISTS entities (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL,
     title TEXT NOT NULL,
@@ -117,24 +127,22 @@ CREATE TABLE IF NOT EXISTS entities (
     domain TEXT,
     file_path TEXT NOT NULL,
     data_json TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type);
-CREATE INDEX IF NOT EXISTS idx_entities_domain ON entities(domain);
-
-CREATE TABLE IF NOT EXISTS edges (
+);""",
+    "CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type);",
+    "CREATE INDEX IF NOT EXISTS idx_entities_domain ON entities(domain);",
+    """CREATE TABLE IF NOT EXISTS edges (
     source_id TEXT NOT NULL,
     target_id TEXT NOT NULL,
     rel_type TEXT NOT NULL,
     provenance TEXT NOT NULL DEFAULT 'declared_spec',
     evidence TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (source_id, target_id, rel_type)
-);
-CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
-CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
-CREATE INDEX IF NOT EXISTS idx_edges_rel ON edges(rel_type);
-CREATE INDEX IF NOT EXISTS idx_edges_provenance ON edges(provenance);
-
-CREATE TABLE IF NOT EXISTS code_couplings (
+);""",
+    "CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);",
+    "CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);",
+    "CREATE INDEX IF NOT EXISTS idx_edges_rel ON edges(rel_type);",
+    "CREATE INDEX IF NOT EXISTS idx_edges_provenance ON edges(provenance);",
+    """CREATE TABLE IF NOT EXISTS code_couplings (
     source_entity_id TEXT NOT NULL,
     target_entity_id TEXT NOT NULL,
     source_cnt_id TEXT NOT NULL DEFAULT '',
@@ -144,21 +152,19 @@ CREATE TABLE IF NOT EXISTS code_couplings (
     line_start INTEGER NOT NULL DEFAULT 0,
     target_ref TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (source_entity_id, target_entity_id, provenance, src_file, line_start, target_ref)
-);
-CREATE INDEX IF NOT EXISTS idx_couplings_src ON code_couplings(source_entity_id);
-CREATE INDEX IF NOT EXISTS idx_couplings_dst ON code_couplings(target_entity_id);
-CREATE INDEX IF NOT EXISTS idx_couplings_cnt ON code_couplings(source_cnt_id, target_cnt_id);
-
-CREATE TABLE IF NOT EXISTS symbol_mappings (
+);""",
+    "CREATE INDEX IF NOT EXISTS idx_couplings_src ON code_couplings(source_entity_id);",
+    "CREATE INDEX IF NOT EXISTS idx_couplings_dst ON code_couplings(target_entity_id);",
+    "CREATE INDEX IF NOT EXISTS idx_couplings_cnt ON code_couplings(source_cnt_id, target_cnt_id);",
+    """CREATE TABLE IF NOT EXISTS symbol_mappings (
     symbol TEXT NOT NULL,
     entity_id TEXT NOT NULL,
     kind TEXT NOT NULL,
     PRIMARY KEY (symbol, entity_id, kind)
-);
-CREATE INDEX IF NOT EXISTS idx_symbols_symbol ON symbol_mappings(symbol);
-CREATE INDEX IF NOT EXISTS idx_symbols_entity ON symbol_mappings(entity_id);
-
--- AST symbol coordinates (DLT-2026-034), one row set per owning entity of the file ('is_primary' marks the
+);""",
+    "CREATE INDEX IF NOT EXISTS idx_symbols_symbol ON symbol_mappings(symbol);",
+    "CREATE INDEX IF NOT EXISTS idx_symbols_entity ON symbol_mappings(entity_id);",
+    """-- AST symbol coordinates (DLT-2026-034), one row set per owning entity of the file ('is_primary' marks the
 -- resolved primary owner; files declared by several entities keep rows for each). 'id' preserves AST order.
 CREATE TABLE IF NOT EXISTS code_symbols (
     id INTEGER PRIMARY KEY,
@@ -173,12 +179,11 @@ CREATE TABLE IF NOT EXISTS code_symbols (
     is_primary INTEGER NOT NULL DEFAULT 1,
     is_test INTEGER NOT NULL DEFAULT 0,
     UNIQUE (file_path, entity_id, kind, parent_symbol, symbol, line_start)
-);
-CREATE INDEX IF NOT EXISTS idx_code_symbols_symbol ON code_symbols(symbol);
-CREATE INDEX IF NOT EXISTS idx_code_symbols_file ON code_symbols(file_path);
-CREATE INDEX IF NOT EXISTS idx_code_symbols_entity ON code_symbols(entity_id, kind, symbol);
-
--- FTS5 full-text search table for BM25 ranking
+);""",
+    "CREATE INDEX IF NOT EXISTS idx_code_symbols_symbol ON code_symbols(symbol);",
+    "CREATE INDEX IF NOT EXISTS idx_code_symbols_file ON code_symbols(file_path);",
+    "CREATE INDEX IF NOT EXISTS idx_code_symbols_entity ON code_symbols(entity_id, kind, symbol);",
+    """-- FTS5 full-text search table for BM25 ranking
 CREATE VIRTUAL TABLE IF NOT EXISTS specs_fts USING fts5(
     entity_id UNINDEXED,
     title,
@@ -187,16 +192,17 @@ CREATE VIRTUAL TABLE IF NOT EXISTS specs_fts USING fts5(
     keywords,
     symbols,
     tokenize='porter unicode61'
-);
-
--- FTS5 inverted token table for O(1) governed file reference discovery (DLT-2026-107)
+);""",
+    """-- FTS5 inverted token table for O(1) governed file reference discovery (DLT-2026-107)
 CREATE VIRTUAL TABLE IF NOT EXISTS file_tokens_fts USING fts5(
     rel_path UNINDEXED,
     doc_type UNINDEXED,
     tokens,
     tokenize="unicode61 tokenchars '-_'"
-);
-"""
+);""",
+)
+
+_CACHE_SCHEMA_DDL = "\n\n".join(_CACHE_SCHEMA_STATEMENTS)
 
 
 _PROCESS_DB_LOCKS_GUARD = threading.Lock()
@@ -427,65 +433,145 @@ _TEST_BINDING_CACHE_VERSION = "2"
 _CODE_SYMBOL_CACHE_VERSION = "2"
 
 
+def _has_compatible_spec_embeddings_schema(conn: sqlite3.Connection) -> bool:
+    """Verify ``spec_embeddings`` matches canonical column names, types, NOT NULL, and PRIMARY KEY."""
+    rows = conn.execute("PRAGMA table_info(spec_embeddings);").fetchall()
+    observed = tuple((str(r[1]), str(r[2] or "").upper(), int(r[3]), int(r[5])) for r in rows)
+    return observed == _SPEC_EMBEDDINGS_SCHEMA
+
+
+def _read_metadata_value_safe(conn: sqlite3.Connection, key: str) -> str | None:
+    """Read a metadata value, failing closed on ancient missing-column/table schemas while propagating all other SQLite errors."""
+    try:
+        row = conn.execute("SELECT value FROM metadata WHERE key = ?;", (key,)).fetchone()
+    except sqlite3.OperationalError as exc:
+        err_msg = str(exc).lower()
+        if not _is_corrupt_database_error(exc) and ("no such column" in err_msg or "no such table" in err_msg):
+            return None
+        raise
+    return str(row[0]) if row and row[0] is not None else None
+
+
+def _normalize_semantic_sync_complete(raw: str | None) -> str | None:
+    """Normalize preserved ``semantic_sync_complete`` marker ('1' only for '1', failing closed to '0' otherwise)."""
+    if raw is None:
+        return None
+    cleaned = raw.strip()
+    if not cleaned:
+        return None
+    return "1" if cleaned == "1" else "0"
+
+
 def _is_schema_current(conn: sqlite3.Connection) -> bool:
     """Fast read-only check verifying ``conn`` already matches ``SCHEMA_VERSION`` and cache format versions with zero DDL statements."""
     existing_tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';")}
     user_tables = {t for t in existing_tables if not t.startswith(("sqlite_", "specs_fts_", "file_tokens_fts_"))}
     if user_tables == set(_MANAGED_TABLES) and "metadata" in existing_tables:
-        row = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()
-        if row and row[0] == SCHEMA_VERSION:
-            tbc_row = conn.execute("SELECT value FROM metadata WHERE key = 'test_binding_cache_ver';").fetchone()
-            csc_row = conn.execute("SELECT value FROM metadata WHERE key = 'code_symbol_cache_ver';").fetchone()
+        row = _read_metadata_value_safe(conn, "schema_version")
+        if row == SCHEMA_VERSION:
+            tbc_val = _read_metadata_value_safe(conn, "test_binding_cache_ver")
+            csc_val = _read_metadata_value_safe(conn, "code_symbol_cache_ver")
+            emb_val = _read_metadata_value_safe(conn, _EMBEDDING_SCHEMA_VERSION_KEY)
             if (
-                tbc_row
-                and tbc_row[0] == _TEST_BINDING_CACHE_VERSION
-                and csc_row
-                and csc_row[0] == _CODE_SYMBOL_CACHE_VERSION
+                tbc_val == _TEST_BINDING_CACHE_VERSION
+                and csc_val == _CODE_SYMBOL_CACHE_VERSION
+                and emb_val == EMBEDDING_SCHEMA_VERSION
+                and _has_compatible_spec_embeddings_schema(conn)
             ):
                 return True
     return False
 
 
 def _apply_cache_schema_ddl(conn: sqlite3.Connection) -> None:
-    """Initialize or migrate ``conn`` to ``SCHEMA_VERSION`` (caller holds advisory lock when file-backed)."""
-    existing_tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';")}
-    user_tables = {t for t in existing_tables if not t.startswith(("sqlite_", "specs_fts_", "file_tokens_fts_"))}
-    if user_tables == set(_MANAGED_TABLES) and "metadata" in existing_tables:
-        row = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()
-        if row and row[0] == SCHEMA_VERSION:
-            tbc_row = conn.execute("SELECT value FROM metadata WHERE key = 'test_binding_cache_ver';").fetchone()
-            csc_row = conn.execute("SELECT value FROM metadata WHERE key = 'code_symbol_cache_ver';").fetchone()
-            needs_tbc = not tbc_row or tbc_row[0] != _TEST_BINDING_CACHE_VERSION
-            needs_csc = not csc_row or csc_row[0] != _CODE_SYMBOL_CACHE_VERSION
-            if needs_tbc or needs_csc:
-                with _immediate_write_transaction(conn):
-                    if needs_tbc:
-                        conn.execute("DELETE FROM test_binding_cache;")
-                        conn.execute("UPDATE indexed_files SET mtime = -1.0 WHERE doc_type = 'code/test';")
-                        conn.execute(
-                            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('test_binding_cache_ver', ?);",
-                            (_TEST_BINDING_CACHE_VERSION,),
-                        )
-                    if needs_csc:
-                        conn.execute(
-                            "UPDATE indexed_files SET mtime = -1.0, sha256 = '' WHERE doc_type = 'code/source';"
-                        )
-                        conn.execute(
-                            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('code_symbol_cache_ver', ?);",
-                            (_CODE_SYMBOL_CACHE_VERSION,),
-                        )
+    """Initialize or migrate ``conn`` to ``SCHEMA_VERSION`` atomically (caller holds advisory lock when file-backed)."""
+    if _is_schema_current(conn):
+        return
+    managed_set = set(_MANAGED_TABLES)
+    with _immediate_write_transaction(conn):
+        existing_tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';")}
+        user_tables = {t for t in existing_tables if not t.startswith(("sqlite_", "specs_fts_", "file_tokens_fts_"))}
+        has_metadata = "metadata" in existing_tables
+        stored_version = _read_metadata_value_safe(conn, "schema_version") if has_metadata else None
+        stored_emb_ver = _read_metadata_value_safe(conn, _EMBEDDING_SCHEMA_VERSION_KEY) if has_metadata else None
+        preserved_sync_complete = (
+            _normalize_semantic_sync_complete(_read_metadata_value_safe(conn, _SEMANTIC_SYNC_COMPLETE_KEY))
+            if has_metadata
+            else None
+        )
+        has_spec_embeddings = "spec_embeddings" in existing_tables
+        spec_embeddings_compatible = has_spec_embeddings and _has_compatible_spec_embeddings_schema(conn)
+
+        # Path 1: All 15 managed tables present on current SCHEMA_VERSION (atomic in-place version maintenance)
+        if user_tables == managed_set and has_metadata and stored_version == SCHEMA_VERSION:
+            tbc_val = _read_metadata_value_safe(conn, "test_binding_cache_ver")
+            csc_val = _read_metadata_value_safe(conn, "code_symbol_cache_ver")
+            needs_tbc = tbc_val != _TEST_BINDING_CACHE_VERSION
+            needs_csc = csc_val != _CODE_SYMBOL_CACHE_VERSION
+            needs_emb = stored_emb_ver != EMBEDDING_SCHEMA_VERSION or not spec_embeddings_compatible
+            if needs_tbc:
+                conn.execute("DELETE FROM test_binding_cache;")
+                conn.execute("UPDATE indexed_files SET mtime = -1.0 WHERE doc_type = 'code/test';")
+                conn.execute(
+                    "INSERT OR REPLACE INTO metadata (key, value) VALUES ('test_binding_cache_ver', ?);",
+                    (_TEST_BINDING_CACHE_VERSION,),
+                )
+            if needs_csc:
+                conn.execute("UPDATE indexed_files SET mtime = -1.0, sha256 = '' WHERE doc_type = 'code/source';")
+                conn.execute(
+                    "INSERT OR REPLACE INTO metadata (key, value) VALUES ('code_symbol_cache_ver', ?);",
+                    (_CODE_SYMBOL_CACHE_VERSION,),
+                )
+            if needs_emb:
+                if (
+                    stored_emb_ver is None
+                    and spec_embeddings_compatible
+                    and EMBEDDING_SCHEMA_VERSION == _INITIAL_EMBEDDING_SCHEMA_VERSION
+                ):
+                    # One-time non-destructive adoption on an existing current-SCHEMA_VERSION v1 database
+                    conn.execute(
+                        "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?);",
+                        (_EMBEDDING_SCHEMA_VERSION_KEY, EMBEDDING_SCHEMA_VERSION),
+                    )
+                else:
+                    conn.execute("DROP TABLE IF EXISTS spec_embeddings;")
+                    conn.execute(_SPEC_EMBEDDINGS_DDL)
+                    conn.execute(
+                        "DELETE FROM metadata WHERE key = ?;",
+                        (_SEMANTIC_SYNC_COMPLETE_KEY,),
+                    )
+                    conn.execute(
+                        "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?);",
+                        (_EMBEDDING_SCHEMA_VERSION_KEY, EMBEDDING_SCHEMA_VERSION),
+                    )
             return
-    if user_tables:
-        stored_version = None
-        if "metadata" in existing_tables:
-            row = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()
-            stored_version = row[0] if row else None
-        if stored_version != SCHEMA_VERSION or user_tables > set(_MANAGED_TABLES):
-            with conn:
-                for table in (*_MANAGED_TABLES, *(user_tables - set(_MANAGED_TABLES))):
-                    conn.execute(f"DROP TABLE IF EXISTS {table};")
-    with conn:
-        conn.executescript(_CACHE_SCHEMA_DDL)
+
+        # Path 2: Fresh DB, SCHEMA_VERSION mismatch, extra unmanaged tables, or partial managed-table subset
+        extra_tables = user_tables - managed_set
+        full_rebuild = bool(user_tables) and (stored_version != SCHEMA_VERSION or bool(extra_tables))
+        preserve_embeddings = spec_embeddings_compatible and stored_emb_ver == EMBEDDING_SCHEMA_VERSION
+
+        if full_rebuild:
+            tables_to_drop = [
+                t
+                for t in (*_MANAGED_TABLES, *sorted(extra_tables))
+                if not (preserve_embeddings and t == "spec_embeddings")
+            ]
+            for table in tables_to_drop:
+                quoted = table.replace('"', '""')
+                conn.execute(f'DROP TABLE IF EXISTS "{quoted}";')
+        elif not preserve_embeddings:
+            # Partial managed-table subset on current SCHEMA_VERSION: fail closed on unverified/mismatched embeddings
+            if has_spec_embeddings:
+                conn.execute("DROP TABLE IF EXISTS spec_embeddings;")
+            if has_metadata:
+                conn.execute(
+                    "DELETE FROM metadata WHERE key = ?;",
+                    (_SEMANTIC_SYNC_COMPLETE_KEY,),
+                )
+
+        for stmt in _CACHE_SCHEMA_STATEMENTS:
+            conn.execute(stmt)
+
         conn.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?);",
             (SCHEMA_VERSION,),
@@ -498,6 +584,21 @@ def _apply_cache_schema_ddl(conn: sqlite3.Connection) -> None:
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('code_symbol_cache_ver', ?);",
             (_CODE_SYMBOL_CACHE_VERSION,),
         )
+        conn.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?);",
+            (_EMBEDDING_SCHEMA_VERSION_KEY, EMBEDDING_SCHEMA_VERSION),
+        )
+        if preserve_embeddings:
+            if preserved_sync_complete is not None:
+                conn.execute(
+                    "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?);",
+                    (_SEMANTIC_SYNC_COMPLETE_KEY, preserved_sync_complete),
+                )
+            elif not full_rebuild and has_metadata:
+                conn.execute(
+                    "DELETE FROM metadata WHERE key = ?;",
+                    (_SEMANTIC_SYNC_COMPLETE_KEY,),
+                )
 
 
 def ensure_cache_schema(conn: sqlite3.Connection, db_path: Path | None = None) -> None:

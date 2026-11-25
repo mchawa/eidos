@@ -5,6 +5,15 @@ title: SemanticEmbeddingEngine
 container: CNT-EIDOS-INDEX
 status: active
 source_path: src/eidos/core/index/semantic.py
+decisions:
+  - id: DEC-SEMANTIC-EMBEDDING-SCHEMA-BUMP-CONTRACT
+    title: "Bump EMBEDDING_SCHEMA_VERSION in storage.py on Any Harrier Vector-Space Change"
+    decision: "Any edit to HARRIER_MODEL_ID, HARRIER_HF_REVISION, HARRIER_EMBEDDING_DIM, HARRIER_DOC_MAX_LENGTH, HARRIER_STS_INSTRUCTION, vector normalization/dtype, or format_spec_embedding_document() MUST bump EMBEDDING_SCHEMA_VERSION in src/eidos/core/index/storage.py without importing semantic.py from storage.py."
+    rationale: "CMP-GRAPH-STORAGE preserves spec_embeddings across unrelated SQLite SCHEMA_VERSION bumps when EMBEDDING_SCHEMA_VERSION matches (DEC-INDEX-PRESERVE-EMBEDDINGS-ON-SCHEMA-MIGRATION); recording this contract directly on CMP-SEMANTIC-EMBEDDING-ENGINE ensures eidos context -f src/eidos/core/index/semantic.py --tier guardrails surfaces it before vector-space edits."
+    rejected_alternatives:
+      - option: "Document the bump contract only in AsciiDoc body prose or CNT-EIDOS-INDEX decisions"
+        reason_rejected: "Guardrails context slicing omits component body prose and compacts secondary container decisions, hiding the bump requirement when editing semantic.py."
+    graduated_from: DLT-2026-179-PRESERVE-SPEC-3056
 ---
 = Component: SemanticEmbeddingEngine
 :toc: left
@@ -26,4 +35,5 @@ Encapsulates the opt-in local Harrier-OSS-v1-0.6B ONNX semantic embedding engine
 
 == Design Constraints & Operational Notes
 * **100% Deterministic Fallback (`POL-ZERO-AI-CALL-DEPENDENCY`, `INV-AGENT-HYBRID-SEMANTIC-FALLBACK`)**: When `onnxruntime`/`tokenizers` are not installed or `spec_embeddings` is empty, all retrieval operations bypass `SemanticEmbeddingEngine` in `< 0.01 ms` and fall back deterministically to FTS5 BM25.
+* **Cross-Component `EMBEDDING_SCHEMA_VERSION` Bump Contract (`DEC-INDEX-PRESERVE-EMBEDDINGS-ON-SCHEMA-MIGRATION`, `INV-INDEX-EMBEDDINGS-SCHEMA-PRESERVATION`)**: Because `CMP-GRAPH-STORAGE` preserves `spec_embeddings` across unrelated `SCHEMA_VERSION` bumps whenever `EMBEDDING_SCHEMA_VERSION` in `src/eidos/core/index/storage.py` matches, any change to `HARRIER_MODEL_ID`, `HARRIER_HF_REVISION`, `HARRIER_EMBEDDING_DIM`, `HARRIER_DOC_MAX_LENGTH`, `HARRIER_STS_INSTRUCTION`, vector normalization/dtype, or `format_spec_embedding_document()` MUST bump `EMBEDDING_SCHEMA_VERSION` in `storage.py` so incompatible embeddings are dropped and rebuilt cleanly.
 

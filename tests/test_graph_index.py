@@ -5372,3 +5372,342 @@ def test_index_close_skips_active_foreign_thread_connection_safely(tmp_path):
     assert worker_results == [(1, True)]
     # Once the worker thread has exited, close() safely reaps its dead-thread connection
     idx.close()
+
+
+def test_spec_embeddings_preserved_across_schema_migration_and_invalidated_on_embedding_version_bump(
+    tmp_path, monkeypatch
+):
+    """Verify INV-INDEX-EMBEDDINGS-SCHEMA-PRESERVATION: atomic guarded spec_embeddings preservation and invalidation."""
+    from eidos.core.index import storage as storage_mod
+    from eidos.core.index.semantic import HARRIER_MODEL_ID, is_semantic_index_complete
+    from eidos.core.index.storage import (
+        EMBEDDING_SCHEMA_VERSION,
+        SCHEMA_VERSION,
+        _is_schema_current,
+        _normalize_semantic_sync_complete,
+        _read_metadata_value_safe,
+        ensure_cache_schema,
+        open_cache_connection,
+    )
+
+    repo = tmp_path / "emb_mig_repo"
+    eidos_dir = repo / "eidos"
+    cnt_dir = eidos_dir / "architecture" / "containers"
+    cnt_dir.mkdir(parents=True)
+    for i in range(10):
+        src_dir = repo / "src" / f"svc_{i:02d}"
+        src_dir.mkdir(parents=True)
+        (src_dir / "mod.py").write_text(f"def handler_{i:02d}():\n    return {i}\n", encoding="utf-8")
+        (cnt_dir / f"svc-{i:02d}.adoc").write_text(
+            f"""---
+type: tech/container
+id: CNT-ITEM-{i:02d}
+title: "Service Item {i:02d}"
+status: active
+container_type: "service"
+runtime: "Python 3.12"
+source_path: "src/svc_{i:02d}"
+---
+= Container: Service Item {i:02d}
+""",
+            encoding="utf-8",
+        )
+
+    db_path = eidos_dir / ".cache" / "index.db"
+    dummy_blob = b"\x00\x00\x80\x3f" * 4
+
+    def _seed_embeddings(conn: sqlite3.Connection, count: int = 9) -> None:
+        conn.executemany(
+            "INSERT OR REPLACE INTO spec_embeddings (entity_id, content_sha256, model_id, embedding) VALUES (?, ?, ?, ?);",
+            [(f"CNT-ITEM-{i:02d}", f"sha-{i:02d}", HARRIER_MODEL_ID, dummy_blob) for i in range(count)],
+        )
+
+    idx = ArchitecturalIndex(db_path=db_path, repo_root=repo, eidos_dir=eidos_dir)
+    try:
+        idx.sync(auto_semantic=False)
+        conn = idx._get_connection()
+
+        # 1. Fresh DB stamps EMBEDDING_SCHEMA_VERSION and passes _is_schema_current
+        assert (
+            conn.execute("SELECT value FROM metadata WHERE key = 'embedding_schema_ver';").fetchone()[0]
+            == EMBEDDING_SCHEMA_VERSION
+            == "1"
+        )
+        assert _is_schema_current(conn)
+
+        # 2. One-time non-destructive adoption on current SCHEMA_VERSION (strictly missing key)
+        _seed_embeddings(conn, count=9)
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('semantic_sync_complete', '0');")
+        conn.execute("DELETE FROM metadata WHERE key = 'embedding_schema_ver';")
+        conn.commit()
+        assert not _is_schema_current(conn)
+        with pytest.raises(sqlite3.OperationalError):
+            open_cache_connection(db_path, allow_ddl=False)
+
+        ensure_cache_schema(conn, db_path=db_path)
+        assert (
+            conn.execute("SELECT value FROM metadata WHERE key = 'embedding_schema_ver';").fetchone()[0]
+            == EMBEDDING_SCHEMA_VERSION
+        )
+        assert conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0] == 9
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'semantic_sync_complete';").fetchone()[0] == "0"
+
+        # 3. Empty string embedding_schema_ver ('') must NOT be adopted (fails closed on same SCHEMA_VERSION)
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('embedding_schema_ver', '');")
+        conn.commit()
+        ensure_cache_schema(conn, db_path=db_path)
+        assert conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0] == 0
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'semantic_sync_complete';").fetchone() is None
+        assert conn.execute("SELECT COUNT(*) FROM entities;").fetchone()[0] == 10  # other 14 tables untouched
+
+        # 3b. Missing embedding_schema_ver must NOT be adopted once EMBEDDING_SCHEMA_VERSION advances past "1"
+        _seed_embeddings(conn, count=4)
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('semantic_sync_complete', '1');")
+        conn.execute("DELETE FROM metadata WHERE key = 'embedding_schema_ver';")
+        conn.commit()
+        monkeypatch.setattr(storage_mod, "EMBEDDING_SCHEMA_VERSION", "2")
+        ensure_cache_schema(conn, db_path=db_path)
+        assert conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0] == 0
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'semantic_sync_complete';").fetchone() is None
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'embedding_schema_ver';").fetchone()[0] == "2"
+        monkeypatch.undo()
+        conn.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('embedding_schema_ver', ?);",
+            (EMBEDDING_SCHEMA_VERSION,),
+        )
+        conn.commit()
+
+        # 4. SCHEMA_VERSION mismatch preserves spec_embeddings & normalized semantic_sync_complete (' 0 ' -> '0')
+        #    Non-vacuously verifies INV-SEMANTIC-COMPLETE-RRF-GATE on 9/10 specs (90% >= 85%, missing=1 <= 4).
+        _seed_embeddings(conn, count=9)
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('semantic_sync_complete', ' 0 ');")
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '2.22.0');")
+        conn.commit()
+        ensure_cache_schema(conn, db_path=db_path)
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == SCHEMA_VERSION
+        assert conn.execute("SELECT COUNT(*) FROM entities;").fetchone()[0] == 0  # rebuilt clean
+        assert conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0] == 9  # preserved!
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'semantic_sync_complete';").fetchone()[0] == "0"
+
+        idx.sync(auto_semantic=False)
+        assert is_semantic_index_complete(conn) is False
+        # Prove non-vacuity: removing preserved '0' flips the >=10 ratio heuristic to True
+        conn.execute("DELETE FROM metadata WHERE key = 'semantic_sync_complete';")
+        conn.commit()
+        assert is_semantic_index_complete(conn) is True
+
+        # Verify normalization variants across SCHEMA_VERSION migration (' 1 ' -> '1', 'partial' -> '0', '  ' -> None)
+        assert _normalize_semantic_sync_complete(None) is None
+        assert _normalize_semantic_sync_complete("   ") is None
+        assert _normalize_semantic_sync_complete(" 1 ") == "1"
+        assert _normalize_semantic_sync_complete("partial") == "0"
+
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('semantic_sync_complete', ' 1 ');")
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '2.22.0');")
+        conn.commit()
+        ensure_cache_schema(conn, db_path=db_path)
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'semantic_sync_complete';").fetchone()[0] == "1"
+        assert conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0] == 9
+
+        # 5. EMBEDDING_SCHEMA_VERSION mismatch on same SCHEMA_VERSION drops only spec_embeddings
+        idx.sync(auto_semantic=False)
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('embedding_schema_ver', '0');")
+        conn.commit()
+        with pytest.raises(sqlite3.OperationalError):
+            open_cache_connection(db_path, allow_ddl=False)
+        ensure_cache_schema(conn, db_path=db_path)
+        assert conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0] == 0
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'semantic_sync_complete';").fetchone() is None
+        assert conn.execute("SELECT COUNT(*) FROM entities;").fetchone()[0] == 10
+
+        # 6. EMBEDDING_SCHEMA_VERSION mismatch + SCHEMA_VERSION mismatch drops spec_embeddings cleanly
+        _seed_embeddings(conn, count=9)
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('semantic_sync_complete', '1');")
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('embedding_schema_ver', '0');")
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '2.22.0');")
+        conn.commit()
+        ensure_cache_schema(conn, db_path=db_path)
+        assert conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0] == 0
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'semantic_sync_complete';").fetchone() is None
+
+        # 7. Incompatible spec_embeddings schema (missing PRIMARY KEY on same version, wrong type on cross version)
+        idx.sync(auto_semantic=False)
+        conn.execute("DROP TABLE spec_embeddings;")
+        conn.execute(
+            "CREATE TABLE spec_embeddings (entity_id TEXT, content_sha256 TEXT NOT NULL, model_id TEXT NOT NULL, embedding BLOB NOT NULL);"
+        )
+        _seed_embeddings(conn, count=3)
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('semantic_sync_complete', '1');")
+        conn.commit()
+        assert not _is_schema_current(conn)
+        ensure_cache_schema(conn, db_path=db_path)
+        assert conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0] == 0
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'semantic_sync_complete';").fetchone() is None
+        assert conn.execute("SELECT COUNT(*) FROM entities;").fetchone()[0] == 10
+        assert _is_schema_current(conn)
+
+        conn.execute("DROP TABLE spec_embeddings;")
+        conn.execute(
+            "CREATE TABLE spec_embeddings (entity_id TEXT PRIMARY KEY, content_sha256 TEXT NOT NULL, model_id TEXT NOT NULL, embedding TEXT NOT NULL);"
+        )
+        conn.execute("INSERT INTO spec_embeddings VALUES ('CNT-ITEM-00', 'sha-00', 'm', 'not-a-blob');")
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '2.22.0');")
+        conn.commit()
+        ensure_cache_schema(conn, db_path=db_path)
+        assert conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0] == 0
+        assert _is_schema_current(conn)
+
+        # 8. Partial managed-table subset (user_tables < _MANAGED_TABLES) + extra unmanaged table guards
+        idx.sync(auto_semantic=False)
+        _seed_embeddings(conn, count=4)
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('semantic_sync_complete', '1');")
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('embedding_schema_ver', '0');")
+        conn.execute("DROP TABLE memory_freshness_cache;")
+        conn.commit()
+        ensure_cache_schema(conn, db_path=db_path)
+        assert conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0] == 0
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'semantic_sync_complete';").fetchone() is None
+        assert _is_schema_current(conn)
+
+        # Partial subset with missing spec_embeddings still clears lingering semantic_sync_complete
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('semantic_sync_complete', '1');")
+        conn.execute("DROP TABLE spec_embeddings;")
+        conn.commit()
+        ensure_cache_schema(conn, db_path=db_path)
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'semantic_sync_complete';").fetchone() is None
+        assert _is_schema_current(conn)
+
+        # Partial subset with preserve_embeddings=True still normalizes malformed/blank semantic_sync_complete markers
+        _seed_embeddings(conn, count=4)
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('semantic_sync_complete', 'partial');")
+        conn.execute("DROP TABLE memory_freshness_cache;")
+        conn.commit()
+        ensure_cache_schema(conn, db_path=db_path)
+        assert conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0] == 4
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'semantic_sync_complete';").fetchone()[0] == "0"
+
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('semantic_sync_complete', '   ');")
+        conn.execute("DROP TABLE memory_freshness_cache;")
+        conn.commit()
+        ensure_cache_schema(conn, db_path=db_path)
+        assert conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0] == 4
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'semantic_sync_complete';").fetchone() is None
+
+        # Partial subset + extra unmanaged table simultaneously drops extra table while preserving valid spec_embeddings
+        _seed_embeddings(conn, count=5)
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('semantic_sync_complete', '1');")
+        conn.execute("DROP TABLE memory_freshness_cache;")
+        conn.execute('CREATE TABLE "legacy-extra" (x TEXT);')
+        conn.commit()
+        ensure_cache_schema(conn, db_path=db_path)
+        tables_now = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';")}
+        assert "legacy-extra" not in tables_now
+        assert "memory_freshness_cache" in tables_now
+        assert conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0] == 5
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'semantic_sync_complete';").fetchone()[0] == "1"
+
+        # 9. Unversioned legacy SCHEMA_VERSION mismatch & ancient metadata lacking (key, value) fail closed
+        conn.execute("DELETE FROM metadata WHERE key = 'embedding_schema_ver';")
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '2.22.0');")
+        conn.commit()
+        ensure_cache_schema(conn, db_path=db_path)
+        assert conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0] == 0
+
+        _seed_embeddings(conn, count=3)
+        conn.execute("DROP TABLE metadata;")
+        conn.execute("CREATE TABLE metadata (legacy_col TEXT);")
+        conn.commit()
+        ensure_cache_schema(conn, db_path=db_path)
+        assert conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0] == 0
+        assert _is_schema_current(conn)
+
+        # 10. Atomic rollback on mid-migration failure leaves spec_embeddings and metadata intact
+        idx.sync(auto_semantic=False)
+        _seed_embeddings(conn, count=6)
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('semantic_sync_complete', '1');")
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '2.22.0');")
+        conn.commit()
+        monkeypatch.setattr(
+            storage_mod,
+            "_CACHE_SCHEMA_STATEMENTS",
+            (*storage_mod._CACHE_SCHEMA_STATEMENTS, "CREATE TABLE INVALID SYNTAX ("),
+        )
+        with pytest.raises(sqlite3.OperationalError):
+            ensure_cache_schema(conn, db_path=db_path)
+        monkeypatch.undo()
+        assert conn.execute("SELECT COUNT(*) FROM entities;").fetchone()[0] == 10
+        assert conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0] == 6
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.22.0"
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'semantic_sync_complete';").fetchone()[0] == "1"
+
+        # 10b. TOCTOU safety: concurrent semantic worker committing semantic_sync_complete='0' right before
+        #      _immediate_write_transaction is observed inside BEGIN IMMEDIATE and never clobbered back to stale '1'
+        import contextlib as _ctxlib
+
+        orig_imm_tx = storage_mod._immediate_write_transaction
+        injected_race = {"done": False}
+
+        @_ctxlib.contextmanager
+        def _racy_imm_tx(c: sqlite3.Connection):
+            if not injected_race["done"]:
+                injected_race["done"] = True
+                peer = sqlite3.connect(str(db_path), timeout=5.0)
+                try:
+                    peer.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('semantic_sync_complete', '0');")
+                    peer.commit()
+                finally:
+                    peer.close()
+            with orig_imm_tx(c):
+                yield
+
+        monkeypatch.setattr(storage_mod, "_immediate_write_transaction", _racy_imm_tx)
+        storage_mod._apply_cache_schema_ddl(conn)
+        monkeypatch.undo()
+        assert injected_race["done"] is True
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == SCHEMA_VERSION
+        assert conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0] == 6
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'semantic_sync_complete';").fetchone()[0] == "0"
+        # Short-circuit check: re-invoking _apply_cache_schema_ddl on an already-current DB performs zero writes
+        storage_mod._apply_cache_schema_ddl(conn)
+
+        # 11. Post-migration orphan pruning deletes only removed specs across a SCHEMA_VERSION bump
+        (cnt_dir / "svc-00.adoc").unlink()
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '2.22.0');")
+        conn.commit()
+        ensure_cache_schema(conn, db_path=db_path)
+        assert conn.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0] == 6
+        idx.sync(auto_semantic=False)
+        remaining_ids = {r[0] for r in conn.execute("SELECT entity_id FROM spec_embeddings;").fetchall()}
+        assert remaining_ids == {f"CNT-ITEM-{i:02d}" for i in range(1, 6)}
+
+        # 12. _read_metadata_value_safe propagates transient/corrupt OperationalErrors (only missing column/table returns None)
+        class _RaisingConn:
+            def __init__(self, msg: str) -> None:
+                self._msg = msg
+
+            def execute(self, *_args, **_kwargs):
+                raise sqlite3.OperationalError(self._msg)
+
+        for err_text in (
+            "database disk image is malformed",
+            "database is locked",
+            "database schema has changed",
+        ):
+            with pytest.raises(sqlite3.OperationalError, match=err_text):
+                _read_metadata_value_safe(_RaisingConn(err_text), "schema_version")
+        assert _read_metadata_value_safe(_RaisingConn("no such column: key"), "schema_version") is None
+        assert _read_metadata_value_safe(_RaisingConn("no such table: metadata"), "schema_version") is None
+    finally:
+        idx.close()
+
+    # 13. Genuine SQLITE_NOTADB corruption still unlinks and rebuilds index.db cleanly
+    db_path.write_bytes(b"corrupted non-sqlite header bytes")
+    recovered = open_cache_connection(db_path)
+    try:
+        assert (
+            recovered.execute("SELECT value FROM metadata WHERE key = 'embedding_schema_ver';").fetchone()[0]
+            == EMBEDDING_SCHEMA_VERSION
+        )
+        assert recovered.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0] == 0
+    finally:
+        recovered.close()
