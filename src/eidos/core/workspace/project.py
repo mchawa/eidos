@@ -795,12 +795,26 @@ def extract_entity_paths(entity_data: dict[str, Any]) -> list[str]:
     return patterns
 
 
-def _normalize_rel_path(raw: str) -> str:
-    """Normalize a relative path or pattern without stripping leading dots from dotfiles."""
+def normalize_rel_path(
+    raw: str,
+    *,
+    strip_leading_slash: bool = True,
+    strip_trailing_slash: bool = True,
+) -> str:
+    """Normalize a relative POSIX path or pattern without stripping leading dots from dotfiles."""
     s = raw.strip().replace("\\", "/")
     while s.startswith("./"):
         s = s[2:]
-    return s.lstrip("/")
+    if strip_leading_slash:
+        s = s.lstrip("/")
+    if strip_trailing_slash:
+        s = s.rstrip("/")
+    return s
+
+
+def _normalize_rel_path(raw: str) -> str:
+    """Normalize a relative path or pattern preserving trailing directory slashes for glob matching."""
+    return normalize_rel_path(raw, strip_leading_slash=True, strip_trailing_slash=False)
 
 
 def _parse_first_brace_group(pat: str, start: int = 0) -> tuple[int, int, list[str]] | None:

@@ -1065,6 +1065,74 @@ def verify_delta_mutations(
     return is_verified, msg, report
 
 
+def is_delta_ready_to_apply(
+    eidos_dir: Path,
+    delta_id_or_path: str,
+    *,
+    delta_rel_path: str = "",
+    delta_status: str = "proposed",
+    schema_error_paths: list[str] | set[str] | tuple[str, ...] | None = None,
+    git_repo_root: Path | None = None,
+    snapshot_root: Path | None = None,
+    git_sub_prefix: str = "",
+) -> dict[str, Any] | None:
+    """Return ready-to-apply metadata when an open SpecDelta satisfies all apply_delta preconditions, else None.
+
+    Enforces active non-archived status, zero schema validation errors on the delta document,
+    non-empty mutations, and 100% verified mutation post-conditions.
+    """
+    from eidos.core.spec.validator import SpecValidator
+    from eidos.core.workspace.project import normalize_rel_path
+
+    norm_status = (delta_status or "proposed").strip().lower()
+    if norm_status not in ("proposed", "in_review", "approved"):
+        return None
+    check_rel = delta_rel_path or str(delta_id_or_path)
+    if "archive" in Path(check_rel).parts:
+        return None
+
+    if schema_error_paths is not None:
+        err_keys = {normalize_rel_path(str(k)).lower() for k in schema_error_paths}
+        cand_keys = {normalize_rel_path(check_rel).lower()}
+        if delta_id_or_path:
+            cand_keys.add(normalize_rel_path(str(delta_id_or_path)).lower())
+            p_cand = Path(str(delta_id_or_path))
+            if p_cand.is_absolute():
+                with contextlib.suppress(ValueError):
+                    cand_keys.add(
+                        normalize_rel_path(p_cand.resolve().relative_to(eidos_dir.resolve().parent).as_posix()).lower()
+                    )
+                with contextlib.suppress(ValueError):
+                    cand_keys.add(
+                        normalize_rel_path(p_cand.resolve().relative_to(eidos_dir.resolve()).as_posix()).lower()
+                    )
+        if cand_keys & err_keys:
+            return None
+
+    ok_ver, _, ver_rep = verify_delta_mutations(
+        eidos_dir,
+        delta_id_or_path,
+        git_repo_root=git_repo_root,
+        snapshot_root=snapshot_root,
+        git_sub_prefix=git_sub_prefix,
+    )
+    if not ok_ver or ver_rep is None or ver_rep.total_mutations <= 0 or not ver_rep.is_verified:
+        return None
+
+    if schema_error_paths is None and ver_rep.delta_file.is_file():
+        doc = parse_spec_file(ver_rep.delta_file)
+        if SpecValidator().validate_document(doc):
+            return None
+
+    return {
+        "id": ver_rep.delta_id or str(delta_id_or_path),
+        "path": delta_rel_path or str(ver_rep.delta_file),
+        "status": norm_status,
+        "verified_mutations": ver_rep.verified_count,
+        "total_mutations": ver_rep.total_mutations,
+    }
+
+
 def detect_delta_conflicts(
     eidos_dir: Path,
     *,

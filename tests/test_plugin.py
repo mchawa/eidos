@@ -3491,3 +3491,29 @@ def test_doctor_open_deltas_advisory_check(tmp_path, monkeypatch):
     assert res_table.exit_code == 0
     assert "Open SpecDeltas" in res_table.stdout
     assert "WARN" in res_table.stdout
+
+    # 4. Shared precondition helper: schema-invalid delta is excluded by BOTH `eidos doctor` and standalone `is_delta_ready_to_apply`
+    from eidos.core.lifecycle.delta_engine import is_delta_ready_to_apply
+    from eidos.core.workspace.project import normalize_rel_path
+
+    assert normalize_rel_path("././.github\\workflows\\ci.yml/") == ".github/workflows/ci.yml"
+    assert normalize_rel_path("/src/app/", strip_leading_slash=False, strip_trailing_slash=False) == "/src/app/"
+    assert is_delta_ready_to_apply(eidos_dir, str(dlt_path), delta_status="applied") is None
+    assert (
+        is_delta_ready_to_apply(
+            eidos_dir,
+            str(dlt_path),
+            delta_rel_path="eidos/deltas/archive/dlt.adoc",
+            delta_status="proposed",
+        )
+        is None
+    )
+    assert is_delta_ready_to_apply(eidos_dir, str(dlt_path), delta_status="proposed") is not None
+
+    dlt_path.write_text(dlt_txt.replace("kind: enabler", "kind: invalid_kind"), encoding="utf-8")
+    assert is_delta_ready_to_apply(eidos_dir, str(dlt_path), delta_status="proposed") is None
+    res_invalid = runner.invoke(app, ["doctor", "--path", str(eidos_dir), "--json"])
+    assert res_invalid.exit_code == 1
+    inv_data = orjson.loads(res_invalid.stdout)
+    assert inv_data["checks"]["open_deltas"]["ready_to_apply"] == []
+    assert inv_data["checks"]["open_deltas"]["status"] == "in_progress"

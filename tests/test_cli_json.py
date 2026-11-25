@@ -44,6 +44,7 @@ def test_cli_drift_json_output():
     assert "workflow_mode" in data
     assert "valid_specs" in data
     assert "total_specs" in data
+    assert isinstance(data["ready_to_apply_deltas"], list)
     assert isinstance(data["code_files"], list)
 
 

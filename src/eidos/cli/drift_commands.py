@@ -42,7 +42,7 @@ def drift_cmd(
     fail_on_warnings: bool = typer.Option(
         False,
         "--fail-on-warnings",
-        help="Exit with code 1 when advisory validation warnings are present (unless --warn-only is set).",
+        help="Exit with code 1 when advisory validation warnings or ready-to-apply open SpecDeltas are present (unless --warn-only is set).",
     ),
     strict: bool = typer.Option(
         False,
@@ -112,6 +112,7 @@ def drift_cmd(
             "trivially_covered_files": result.trivially_covered_files,
             "boundary_violations": result.boundary_violations,
             "ratchet_shrink_candidates": result.ratchet_shrink_candidates,
+            "ready_to_apply_deltas": result.ready_to_apply_deltas,
         }
         console.print_json(data=data)
     else:
@@ -212,10 +213,24 @@ def drift_cmd(
             for warn in result.validation_warnings:
                 console.print(f"  [yellow]•[/yellow] {warn}")
 
-        if result.is_clean and fail_on_warnings and result.validation_warnings:
+        if result.ready_to_apply_deltas:
+            console.print("\n[bold yellow]⚠ Open SpecDeltas Ready to Apply (Advisory):[/bold yellow]")
+            for rtd in result.ready_to_apply_deltas:
+                console.print(
+                    f"  [yellow]• {rtd['id']}[/yellow] ({rtd['path']}, status={rtd['status']}): "
+                    f"{rtd['verified_mutations']}/{rtd['total_mutations']} mutations verified — "
+                    f"run [bold green]eidos delta apply {rtd['id']}[/bold green]"
+                )
+
+        has_advisory_warnings = bool(result.validation_warnings or result.ready_to_apply_deltas)
+        if result.is_clean and fail_on_warnings and has_advisory_warnings:
+            parts: list[str] = []
+            if result.validation_warnings:
+                parts.append(f"{len(result.validation_warnings)} advisory validation warning(s)")
+            if result.ready_to_apply_deltas:
+                parts.append(f"{len(result.ready_to_apply_deltas)} ready-to-apply open SpecDelta(s)")
             console.print(
-                f"\n[bold red]✗ Verification Failed (--fail-on-warnings):[/bold red] "
-                f"{len(result.validation_warnings)} advisory validation warning(s) detected."
+                f"\n[bold red]✗ Verification Failed (--fail-on-warnings):[/bold red] {' and '.join(parts)} detected."
             )
         elif result.is_clean:
             console.print(
@@ -227,7 +242,8 @@ def drift_cmd(
         if not json_output:
             console.print(f"\n[dim]Saved markdown summary to: {markdown_out}[/dim]")
 
-    if (not result.is_clean or (fail_on_warnings and result.validation_warnings)) and not warn_only:
+    has_escalatable_advisories = bool(result.validation_warnings or result.ready_to_apply_deltas)
+    if (not result.is_clean or (fail_on_warnings and has_escalatable_advisories)) and not warn_only:
         raise typer.Exit(code=1)
 
 

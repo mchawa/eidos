@@ -43,11 +43,13 @@ def build_drift_remediation_and_summary(
     strict: bool = False,
     boundary_violations: list[dict[str, Any]] | None = None,
     ratchet_shrink_candidates: list[dict[str, Any]] | None = None,
+    ready_to_apply_deltas: list[dict[str, Any]] | None = None,
 ) -> tuple[list[str], str]:
     """Build actionable remediation suggestions and Markdown summary report for drift detection."""
     remediation: list[str] = []
     b_violations = list(boundary_violations or [])
     shrink_cands = list(ratchet_shrink_candidates or [])
+    ready_deltas = list(ready_to_apply_deltas or [])
     if base_direct_drift:
         target_list = uncovered_direct_components or comp_mappings
         structural_set = set(structural_code_files)
@@ -254,6 +256,16 @@ def build_drift_remediation_and_summary(
         summary_lines.append("### ⚠️ Specification Validation Warnings (Advisory):")
         for warn in validation_report.warnings:
             summary_lines.append(f"- {warn}")
+        summary_lines.append("")
+
+    if ready_deltas:
+        summary_lines.append("### 📋 Open SpecDeltas Ready to Apply (Advisory):")
+        for rtd in ready_deltas:
+            summary_lines.append(
+                f"- `{rtd['id']}` (`{rtd.get('path', '')}`, status `{rtd.get('status', 'proposed')}`): "
+                f"`{rtd.get('verified_mutations', 0)}/{rtd.get('total_mutations', 0)}` mutations verified — "
+                f"run `eidos delta apply {rtd['id']}`"
+            )
         summary_lines.append("")
 
     return remediation, "\n".join(summary_lines)

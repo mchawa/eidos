@@ -13,7 +13,7 @@ from rich.table import Table
 import eidos
 from eidos.cli._shared import PANEL_PLUGINS, PANEL_SETUP, console, has_eidos_markers, resolve_cli_eidos_dir
 from eidos.core.index.graph_index import get_architectural_index
-from eidos.core.lifecycle.delta_engine import list_deltas, verify_delta_mutations
+from eidos.core.lifecycle.delta_engine import is_delta_ready_to_apply, list_deltas
 from eidos.core.spec.validator import SpecValidator
 from eidos.core.workspace.project import find_git_root, find_repo_root, resolve_spec_and_repo_roots
 from eidos.plugin.hooks import execute_hook
@@ -76,8 +76,13 @@ def _check_onboarding_governance(plugin_root: Path) -> dict[str, Any]:
     }
 
 
-def _check_open_deltas(eidos_dir: Path, specs_exist: bool) -> dict[str, Any]:
-    """Detect open SpecDeltas whose mutations are already fully verified on disk (advisory, non-blocking)."""
+def _check_open_deltas(
+    eidos_dir: Path,
+    specs_exist: bool,
+    *,
+    schema_error_paths: list[str] | tuple[str, ...] | set[str] | None = None,
+) -> dict[str, Any]:
+    """Detect open SpecDeltas that satisfy all apply_delta preconditions on disk (advisory, non-blocking)."""
     if not specs_exist or not (eidos_dir / "deltas").is_dir():
         return {
             "ok": True,
@@ -93,9 +98,15 @@ def _check_open_deltas(eidos_dir: Path, specs_exist: bool) -> dict[str, Any]:
         delta_target = str(delta.get("path") or delta_id)
         if not delta_target:
             continue
-        is_ok, _, rep = verify_delta_mutations(eidos_dir, delta_target)
-        if is_ok and rep is not None and rep.total_mutations > 0 and rep.is_verified:
-            ready_to_apply.append(delta_id or Path(delta_target).stem)
+        ready_item = is_delta_ready_to_apply(
+            eidos_dir,
+            delta_target,
+            delta_rel_path=str(delta.get("relative_path") or ""),
+            delta_status=str(delta.get("status") or "proposed"),
+            schema_error_paths=schema_error_paths,
+        )
+        if ready_item is not None:
+            ready_to_apply.append(str(ready_item["id"]) or delta_id or Path(delta_target).stem)
     if ready_to_apply:
         sample = ", ".join(ready_to_apply[:3])
         suffix = f" (+{len(ready_to_apply) - 3} more)" if len(ready_to_apply) > 3 else ""
@@ -171,11 +182,13 @@ def doctor_cmd(
     specs_valid = False
     total_specs = 0
     valid_specs = 0
+    schema_error_paths: tuple[str, ...] | None = None
     if specs_exist:
         val_report = SpecValidator().validate_directory(eidos_dir)
         specs_valid = val_report.is_clean
         total_specs = val_report.total_docs
         valid_specs = val_report.valid_docs
+        schema_error_paths = tuple(val_report.schema_errors.keys())
 
     db_path = eidos_dir / ".cache" / "index.db"
     index_ok = False
@@ -203,7 +216,7 @@ def doctor_cmd(
         "hook_error" if (plugin_installed and plugin_up_to_date and not hooks_ok) else plugin_status.get("status")
     )
     agents_md_check = _check_onboarding_governance(plugin_root)
-    open_deltas_check = _check_open_deltas(eidos_dir, specs_exist)
+    open_deltas_check = _check_open_deltas(eidos_dir, specs_exist, schema_error_paths=schema_error_paths)
     cli_update = check_cli_update_status()
 
     checks = {

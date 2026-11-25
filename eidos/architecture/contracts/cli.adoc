@@ -3,7 +3,7 @@ type: tech/contract
 id: CTR-EIDOS-CLI
 title: "Eidos Command-Line Interface Contract"
 status: active
-version: "1.10.0"
+version: "1.11.0"
 protocol: "cli_args"
 container: "CNT-EIDOS-CLI"
 specification_file: "src/eidos/cli/main.py"
@@ -126,12 +126,12 @@ Detects spec-to-code drift, schema validity, executable `import_boundaries` and 
   - `--uncommitted, -u`: Analyze uncommitted working tree and staged changes instead of branch diff.
   - `--strict`: Enforce strict drift detection on behavioral (`body_only_code_files`) modifications, requiring a substantive 1-hop specification update, an active SpecDelta target, or a modified bound test file.
   - `--markdown, -m`: Path to write the markdown summary comment (e.g. for CI/CD reports).
-  - `--json`: Output raw JSON verification result, including `structural_code_files`, `body_only_code_files`, `trivially_covered_files`, `boundary_violations`, `ratchet_shrink_candidates`, and non-blocking `validation_warnings`.
-  - `--fail-on-warnings`: Exit with code `1` when advisory `validation_warnings` are non-empty (unless `--warn-only` is set).
+  - `--json`: Output raw JSON verification result, including `structural_code_files`, `body_only_code_files`, `trivially_covered_files`, `boundary_violations`, `ratchet_shrink_candidates`, non-blocking `validation_warnings`, and diff-scoped `ready_to_apply_deltas`.
+  - `--fail-on-warnings`: Exit with code `1` when advisory `validation_warnings` or `ready_to_apply_deltas` are non-empty (unless `--warn-only` is set).
   - `--warn-only`: Do not exit with code 1 on drift.
 * **Exit Codes**:
-  - `0`: Specifications and code are synchronized, all schemas valid, invariant tests green.
-  - `1`: Spec-to-code drift detected, shallow-clone history insufficient, or specification validation errors.
+  - `0`: Specifications and code are synchronized, all schemas valid, invariant tests green (advisory `validation_warnings` and `ready_to_apply_deltas` do not fail exit code `0` unless `--fail-on-warnings` is supplied).
+  - `1`: Spec-to-code drift detected, shallow-clone history insufficient, specification validation errors, or non-empty `validation_warnings` / `ready_to_apply_deltas` under `--fail-on-warnings` (without `--warn-only`).
 
 === `eidos init [PATH]`
 Bootstraps a repository with an Eidos living specification directory skeleton, a root `eidos/system.adoc`, `.gitkeep` files for empty directories, a self-contained `eidos/.gitignore`, and immediate schema validation. Note: `eidos init` initializes Eidos specifications and does not install plugins (plugins can be installed separately via `eidos plugin install`).

@@ -80,6 +80,9 @@ from eidos.core.lifecycle.delta_verifier import (
     detect_delta_conflicts as detect_delta_conflicts,
 )
 from eidos.core.lifecycle.delta_verifier import (
+    is_delta_ready_to_apply as is_delta_ready_to_apply,
+)
+from eidos.core.lifecycle.delta_verifier import (
     normalize_delta_mutation as normalize_delta_mutation,
 )
 from eidos.core.lifecycle.delta_verifier import (

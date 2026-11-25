@@ -1,0 +1,105 @@
+---
+type: delta/mutation
+id: DLT-2026-176-SURFACE-READY-TO-APPLY-AB5A
+title: Surface Ready-to-Apply SpecDeltas in Eidos Drift and Fail-On-Warnings
+status: applied
+intent:
+  kind: feature
+  motivation: Surface diff-touched and spec-overlapping open SpecDeltas (proposed/in_review/approved) whose declared mutations are already 100% verified on disk as advisory ready_to_apply_deltas in eidos drift (JSON, Rich terminal, and Markdown PR summaries) and escalate all ready_to_apply_deltas to exit code 1 under --fail-on-warnings so finished SpecDeltas are never merged or committed unapplied.
+mutations:
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    details: Detect diff-touched and spec-overlapping open SpecDeltas whose declared mutations are already verified on disk (ready_to_apply_deltas on DriftCheckResult) and render them in Markdown PR summaries via report.py.
+    expect:
+      frontmatter:
+        status: active
+      body:
+        contains:
+          - "ready_to_apply_deltas"
+  - operation: modify
+    target: CMP-CLI-DRIFT-COMMANDS
+    details: Expose ready_to_apply_deltas in eidos drift --json, render advisory notices in Rich output, and escalate all non-empty ready_to_apply_deltas alongside validation_warnings to exit code 1 when --fail-on-warnings is set without --warn-only.
+    expect:
+      frontmatter:
+        status: active
+      body:
+        contains:
+          - "ready_to_apply_deltas"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: Bump CTR-EIDOS-CLI to 1.11.0, document additive ready_to_apply_deltas field under eidos drift --json, and document --fail-on-warnings escalating both validation_warnings and ready_to_apply_deltas.
+    expect:
+      frontmatter:
+        version: "1.11.0"
+      body:
+        contains:
+          - "ready_to_apply_deltas"
+  - operation: modify
+    target: CAP-DRIFT-DETECTION
+    details: Add invariant INV-DRIFT-READY-TO-APPLY-DELTAS governing diff-scoped ready_to_apply_deltas detection and --fail-on-warnings escalation in eidos drift.
+    expect:
+      frontmatter:
+        status: active
+  - operation: add
+    target: INV-DRIFT-READY-TO-APPLY-DELTAS
+    details: Bind INV-DRIFT-READY-TO-APPLY-DELTAS to tests/test_drift.py::test_drift_ready_to_apply_deltas_and_fail_on_warnings.
+    expect:
+      frontmatter:
+        test_binding: "tests/test_drift.py::test_drift_ready_to_apply_deltas_and_fail_on_warnings"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: Document ready_to_apply_deltas and --fail-on-warnings escalation for eidos drift in docs/guides/cli.md and eidos/architecture/components/docs-user-guides.adoc.
+    expect:
+      frontmatter:
+        status: active
+      body:
+        contains:
+          - "ready_to_apply_deltas"
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+    details: Extract canonical is_delta_ready_to_apply helper in delta_verifier.py (re-exported by delta_engine.py) enforcing all apply_delta preconditions (active non-archived status, zero schema errors, non-empty verified mutations) for both eidos drift and eidos doctor.
+    expect:
+      frontmatter:
+        status: active
+      body:
+        contains:
+          - "is_delta_ready_to_apply"
+  - operation: modify
+    target: CMP-PROJECT-RESOLVER
+    details: Expose canonical dotfile-safe normalize_rel_path helper in src/eidos/core/workspace/project.py and reuse across drift, code_graph, and http_linker.
+    expect:
+      frontmatter:
+        status: active
+      body:
+        contains:
+          - "normalize_rel_path"
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+    details: Delegate open_deltas readiness checking in eidos doctor to CMP-DELTA-ENGINE is_delta_ready_to_apply with SpecValidator schema_errors exclusion.
+    expect:
+      frontmatter:
+        status: active
+      body:
+        contains:
+          - "is_delta_ready_to_apply"
+vcs:
+  branch: main
+  base_commit: cf9e05751c07dcaaf555054cde291947a4174be0
+---
+= SpecDelta: Surface Ready-to-Apply SpecDeltas in Eidos Drift and Fail-On-Warnings
+:toc: left
+
+== Problem Statement
+`eidos doctor` (`checks.open_deltas`) reports already-verified open SpecDeltas across the repository, but developers, AI coding agents, and CI pipelines execute `eidos drift`—not `eidos doctor`—at completion and merge time. As a result, finished Planned Mode SpecDeltas can be committed and merged at `status: proposed` (omitting them from `eidos delta changelog` and leaving stale active deltas in conflict checks) while `eidos drift --fail-on-warnings` exits `0`.
+
+== Proposed Specification Changes
+* **`CMP-DRIFT-DETECTOR`**: Add `DriftCheckResult.ready_to_apply_deltas`, verify diff-touched and spec-overlapping open non-archived SpecDeltas (`proposed` / `in_review` / `approved` with non-empty mutations) via the shared snapshot-aware verification helper without flipping `is_clean` or `drift_detected`, and emit an advisory section in `build_drift_remediation_and_summary` (`report.py`).
+* **`CMP-CLI-DRIFT-COMMANDS` & `CTR-EIDOS-CLI` (`1.11.0`)**: Emit `"ready_to_apply_deltas"` in `eidos drift --json`, display yellow advisory lines in Rich output, and escalate **all** non-empty `ready_to_apply_deltas` alongside `validation_warnings` to exit code `1` when `--fail-on-warnings` is supplied (unless `--warn-only` is set).
+* **`CAP-DRIFT-DETECTION` / `INV-DRIFT-READY-TO-APPLY-DELTAS`**: Bind the invariant to `tests/test_drift.py::test_drift_ready_to_apply_deltas_and_fail_on_warnings`.
+* **`CMP-DOCS-USER-GUIDES`**: Sync `docs/guides/cli.md` and `eidos/architecture/components/docs-user-guides.adoc`.
+
+== Implementation Plan
+1. Update `src/eidos/vcs/drift.py`, `src/eidos/vcs/report.py`, and `src/eidos/cli/drift_commands.py`.
+2. Co-evolve `drift-detector.adoc`, `cli-drift-commands.adoc`, `cli.adoc` (`1.11.0`), `drift-detection.adoc`, `docs-user-guides.adoc`, and `docs/guides/cli.md`.
+3. Add comprehensive tests in `tests/test_drift.py` (`test_drift_ready_to_apply_deltas_and_fail_on_warnings`) and update `tests/test_cli_json.py`.
+4. Verify with `ruff`, parallel `pytest --cov=src/eidos`, `eidos delta verify/apply DLT-2026-176`, and `eidos drift --uncommitted --fail-on-warnings --json`.

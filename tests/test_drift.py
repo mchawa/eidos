@@ -5581,3 +5581,164 @@ def test_agent_memory_classification_drift_and_stop_hook_isolation(tmp_path):
     drift_code_plus_mem = detect_drift(repo, repo / "eidos", uncommitted=True)
     assert drift_code_plus_mem.drift_detected is True
     assert drift_code_plus_mem.is_clean is False
+
+
+def test_drift_ready_to_apply_deltas_and_fail_on_warnings(tmp_path: Path):
+    """Verify INV-DRIFT-READY-TO-APPLY-DELTAS: diff-touched and spec-overlapping verified open SpecDeltas surface as ready_to_apply_deltas in eidos drift (JSON, Rich, Markdown) and escalate under --fail-on-warnings."""
+    import subprocess
+
+    from eidos.core.lifecycle.delta_engine import apply_delta, create_delta, set_delta_status
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
+
+    def _run_git(cwd: Path, *args: str) -> None:
+        subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+
+    repo = tmp_path / "ready_delta_drift"
+    repo.mkdir()
+    _run_git(repo, "init", "-b", "main")
+    _run_git(repo, "config", "user.email", "test@example.com")
+    _run_git(repo, "config", "user.name", "Test")
+
+    init_repository(repo, title="Ready Delta Test")
+    eidos_dir = repo / "eidos"
+    spec_a = create_spec(eidos_dir, "persona", "PER-ALPHA", title="Alpha Persona")
+    spec_b = create_spec(eidos_dir, "persona", "PER-BETA", title="Beta Persona")
+    _run_git(repo, "add", ".")
+    _run_git(repo, "commit", "-m", "init")
+
+    # Pre-existing unrelated verified open delta (must NOT be blamed when only PER-ALPHA changes)
+    unrelated_dlt = create_delta(eidos_dir, "DLT-2026-001", title="Unrelated Beta Update", kind="enabler")
+    unrelated_dlt.write_text(
+        unrelated_dlt.read_text(encoding="utf-8").replace(
+            "mutations: []",
+            'mutations:\n  - operation: modify\n    target: PER-BETA\n    details: Update beta.\n    expect:\n      body:\n        contains:\n          - "BETA_DONE"',
+        ),
+        encoding="utf-8",
+    )
+    spec_b.write_text(spec_b.read_text(encoding="utf-8") + "\nBETA_DONE\n", encoding="utf-8")
+    # Empty-mutation open delta (must NEVER be flagged as ready_to_apply)
+    create_delta(eidos_dir, "DLT-2026-002", title="Empty Draft Delta", kind="enabler")
+    _run_git(repo, "add", ".")
+    _run_git(repo, "commit", "-m", "preexisting open deltas")
+
+    # 1. Diff-touched open delta with UNFULFILLED mutation -> ready_to_apply_deltas == [] and --fail-on-warnings passes
+    dlt_alpha = create_delta(eidos_dir, "DLT-2026-010", title="Update Alpha Persona", kind="enabler")
+    dlt_alpha_id = dlt_alpha.stem.upper()
+    dlt_alpha.write_text(
+        dlt_alpha.read_text(encoding="utf-8").replace(
+            "mutations: []",
+            'mutations:\n  - operation: modify\n    target: PER-ALPHA\n    details: Update alpha.\n    expect:\n      body:\n        contains:\n          - "ALPHA_READY"',
+        ),
+        encoding="utf-8",
+    )
+    res_unfulfilled = runner.invoke(
+        app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--fail-on-warnings", "--json"]
+    )
+    assert res_unfulfilled.exit_code == 0, res_unfulfilled.output
+    data_unfulfilled = orjson.loads(res_unfulfilled.output)
+    assert data_unfulfilled["is_clean"] is True
+    assert data_unfulfilled["ready_to_apply_deltas"] == []
+
+    # 1b. Single-turn diff-touched case: open delta + target spec BOTH uncommitted together -> detected immediately
+    orig_spec_a = spec_a.read_text(encoding="utf-8")
+    spec_a.write_text(orig_spec_a + "\nALPHA_READY\n", encoding="utf-8")
+    res_single_turn = runner.invoke(
+        app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--fail-on-warnings", "--json"]
+    )
+    assert res_single_turn.exit_code == 1
+    assert [d["id"] for d in orjson.loads(res_single_turn.output)["ready_to_apply_deltas"]] == [dlt_alpha_id]
+
+    # 1c. Schema-invalid open delta with satisfied mutations must NOT be reported as ready_to_apply
+    orig_dlt_alpha = dlt_alpha.read_text(encoding="utf-8")
+    dlt_alpha.write_text(orig_dlt_alpha.replace("kind: enabler", "kind: invalid_kind"), encoding="utf-8")
+    res_invalid_dlt = runner.invoke(app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--json"])
+    assert res_invalid_dlt.exit_code == 1
+    inv_dlt_data = orjson.loads(res_invalid_dlt.output)
+    assert inv_dlt_data["is_clean"] is False
+    assert inv_dlt_data["ready_to_apply_deltas"] == []
+    dlt_alpha.write_text(orig_dlt_alpha, encoding="utf-8")
+    spec_a.write_text(orig_spec_a, encoding="utf-8")
+
+    # 2. Commit the unfulfilled delta, then fulfill ONLY PER-ALPHA in working tree (spec-overlapping multi-commit case)
+    _run_git(repo, "add", ".")
+    _run_git(repo, "commit", "-m", "propose DLT-2026-010")
+    spec_a.write_text(spec_a.read_text(encoding="utf-8") + "\nALPHA_READY\n", encoding="utf-8")
+
+    md_out = tmp_path / "drift_summary.md"
+    res_default_json = runner.invoke(
+        app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--markdown", str(md_out), "--json"]
+    )
+    assert res_default_json.exit_code == 0
+    data_ready = orjson.loads(res_default_json.output)
+    assert data_ready["is_clean"] is True
+    assert data_ready["drift_detected"] is False
+    assert [d["id"] for d in data_ready["ready_to_apply_deltas"]] == [dlt_alpha_id]
+    assert data_ready["ready_to_apply_deltas"][0]["verified_mutations"] == 1
+    assert data_ready["ready_to_apply_deltas"][0]["total_mutations"] == 1
+    assert "Open SpecDeltas Ready to Apply (Advisory)" in md_out.read_text(encoding="utf-8")
+    assert f"eidos delta apply {dlt_alpha_id}" in md_out.read_text(encoding="utf-8")
+
+    # 3. Escalate under --fail-on-warnings (both proposed and in_review escalate; --warn-only suppresses exit 1)
+    res_fail_rich = runner.invoke(app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--fail-on-warnings"])
+    assert res_fail_rich.exit_code == 1
+    assert "Open SpecDeltas Ready to Apply (Advisory)" in res_fail_rich.output
+    assert "1 ready-to-apply open SpecDelta(s)" in res_fail_rich.output
+
+    res_warn_only = runner.invoke(
+        app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--fail-on-warnings", "--warn-only"]
+    )
+    assert res_warn_only.exit_code == 0
+
+    # 3b. Combined --fail-on-warnings banner when BOTH validation_warnings and ready_to_apply_deltas are non-empty
+    import re
+
+    (repo / "src" / "svc").mkdir(parents=True, exist_ok=True)
+    dep_cnt = create_spec(eidos_dir, "container", "CNT-OLD-SVC", title="Old Service")
+    act_cmp = create_spec(eidos_dir, "component", "CMP-NEW-SVC", title="New Service")
+    dep_cnt.write_text(
+        "---\ntype: tech/container\nid: CNT-OLD-SVC\ntitle: Old Service\nstatus: deprecated\n"
+        "container_type: service\nruntime: Python\nsource_path: src/svc\n---\n= Old Service\n",
+        encoding="utf-8",
+    )
+    act_cmp.write_text(
+        "---\ntype: tech/component\nid: CMP-NEW-SVC\ntitle: New Service\nstatus: active\n"
+        "container: CNT-OLD-SVC\nsource_path: src/svc\n---\n= New Service\n",
+        encoding="utf-8",
+    )
+    res_combined = runner.invoke(app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--fail-on-warnings"])
+    assert res_combined.exit_code == 1
+    combined_flat = re.sub(r"\s+", " ", res_combined.output)
+    assert "advisory validation warning(s) and 1 ready-to-apply open SpecDelta(s)" in combined_flat, combined_flat
+    dep_cnt.unlink()
+    act_cmp.unlink()
+
+    ok_st, msg_st, _, _ = set_delta_status(eidos_dir, dlt_alpha_id, "in_review")
+    assert ok_st, msg_st
+    res_in_review_fail = runner.invoke(
+        app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--fail-on-warnings", "--json"]
+    )
+    assert res_in_review_fail.exit_code == 1
+    in_review_data = orjson.loads(res_in_review_fail.output)
+    assert in_review_data["ready_to_apply_deltas"][0]["status"] == "in_review"
+
+    # 4. Commit on a branch and verify --base main --head HEAD detects ready_to_apply_deltas in commit-range mode
+    _run_git(repo, "checkout", "-b", "feat/alpha")
+    _run_git(repo, "add", ".")
+    _run_git(repo, "commit", "-m", "fulfill alpha without apply")
+    res_branch_fail = runner.invoke(
+        app, ["drift", "--base", "main", "--head", "HEAD", "--path", str(eidos_dir), "--fail-on-warnings", "--json"]
+    )
+    assert res_branch_fail.exit_code == 1
+    assert [d["id"] for d in orjson.loads(res_branch_fail.output)["ready_to_apply_deltas"]] == [dlt_alpha_id]
+
+    # 5. Apply delta -> ready_to_apply_deltas clears and --fail-on-warnings exits 0
+    ok_app, msg_app, _ = apply_delta(eidos_dir, dlt_alpha_id)
+    assert ok_app, msg_app
+    _run_git(repo, "add", ".")
+    _run_git(repo, "commit", "-m", "apply DLT-2026-010")
+    res_applied = runner.invoke(
+        app, ["drift", "--base", "main", "--head", "HEAD", "--path", str(eidos_dir), "--fail-on-warnings", "--json"]
+    )
+    assert res_applied.exit_code == 0, res_applied.output
+    assert orjson.loads(res_applied.output)["ready_to_apply_deltas"] == []

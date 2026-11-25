@@ -110,6 +110,7 @@ class DriftCheckResult:
     trivially_covered_files: list[dict[str, Any]] = field(default_factory=list)
     boundary_violations: list[dict[str, Any]] = field(default_factory=list)
     ratchet_shrink_candidates: list[dict[str, Any]] = field(default_factory=list)
+    ready_to_apply_deltas: list[dict[str, Any]] = field(default_factory=list)
     remediation_suggestions: list[str] = field(default_factory=list)
     summary_markdown: str = ""
 
@@ -156,7 +157,8 @@ def detect_drift(
     """Run drift detection: evaluate spec-code synchronization, schema validation, and invariant check."""
     import eidos.core.index.graph_index as gi
     from eidos.core.index.ast_diff import STYLE_EXTS, classify_design_changes, has_structural_changes
-    from eidos.core.lifecycle.delta_engine import verify_delta_mutations
+    from eidos.core.lifecycle.delta_engine import is_delta_ready_to_apply, verify_delta_mutations
+    from eidos.core.workspace.project import normalize_rel_path
 
     root = repo_root.resolve()
     if eidos_dir is None:
@@ -329,6 +331,7 @@ def detect_drift(
         active_delta_files: list[str] = []
         pre_apply_delta_files: list[str] = []
         newly_applied_deltas: list[tuple[str, str, str | None]] = []
+        open_deltas_in_diff: list[tuple[str, str, str, str | None]] = []
         for df in classification.delta_files:
             try:
                 delta_rel = (
@@ -372,6 +375,12 @@ def detect_drift(
 
                 active_delta_files.append(df)
                 pre_apply_delta_files.append(df)
+                if (
+                    status in ("proposed", "in_review", "approved")
+                    and model.mutations
+                    and "archive" not in Path(delta_rel).parts
+                ):
+                    open_deltas_in_diff.append((delta_rel, doc_id_str or delta_rel, status, new_dc))
                 for m in model.mutations:
                     val = m.target
                     if not val:
@@ -673,8 +682,11 @@ def detect_drift(
         )
         boundary_drift = bool(boundary_violations)
 
-        applied_delta_drift = False
-        for df_rel, delta_id_str, new_dc_val in newly_applied_deltas:
+        def _verify_delta_in_eval(
+            df_rel: str,
+            delta_id_str: str,
+            new_dc_val: str | None,
+        ) -> tuple[bool, str, Any]:
             delta_eval_path = eval_root / df_rel
             temp_written = False
             try:
@@ -683,32 +695,148 @@ def detect_drift(
                     delta_eval_path.write_text(new_dc_val, encoding="utf-8")
                     temp_written = True
                 lookup_ref = str(delta_eval_path) if delta_eval_path.is_file() else delta_id_str
-                ok_ver, ver_msg, ver_rep = verify_delta_mutations(
+                return verify_delta_mutations(
                     eval_eidos,
                     lookup_ref,
                     git_repo_root=git_root,
                     snapshot_root=snap_root,
                     git_sub_prefix=git_sub_prefix,
                 )
-                if not ok_ver or (ver_rep is not None and not ver_rep.is_verified):
-                    err_bucket = validation_report.schema_errors.setdefault(df_rel, [])
-                    if ver_rep is not None:
-                        failed_muts = [m for m in ver_rep.mutations if not m.verified]
-                        if failed_muts:
-                            for fm_item in failed_muts:
-                                reason = fm_item.failure_reason or fm_item.details or fm_item.status
-                                err_bucket.append(
-                                    f"Unfulfilled SpecDelta mutation [{fm_item.action} {fm_item.target}] in '{ver_rep.delta_id}': {_remap_snapshot_str(reason, snap_root)}"
-                                )
-                        else:
-                            err_bucket.append(_remap_snapshot_str(ver_msg, snap_root))
-                    else:
-                        err_bucket.append(_remap_snapshot_str(ver_msg, snap_root))
-                    applied_delta_drift = True
             finally:
                 if temp_written:
                     with contextlib.suppress(OSError):
                         delta_eval_path.unlink(missing_ok=True)
+
+        applied_delta_drift = False
+        for df_rel, delta_id_str, new_dc_val in newly_applied_deltas:
+            ok_ver, ver_msg, ver_rep = _verify_delta_in_eval(df_rel, delta_id_str, new_dc_val)
+            if not ok_ver or (ver_rep is not None and not ver_rep.is_verified):
+                err_bucket = validation_report.schema_errors.setdefault(df_rel, [])
+                if ver_rep is not None:
+                    failed_muts = [m for m in ver_rep.mutations if not m.verified]
+                    if failed_muts:
+                        for fm_item in failed_muts:
+                            reason = fm_item.failure_reason or fm_item.details or fm_item.status
+                            err_bucket.append(
+                                f"Unfulfilled SpecDelta mutation [{fm_item.action} {fm_item.target}] in '{ver_rep.delta_id}': {_remap_snapshot_str(reason, snap_root)}"
+                            )
+                    else:
+                        err_bucket.append(_remap_snapshot_str(ver_msg, snap_root))
+                else:
+                    err_bucket.append(_remap_snapshot_str(ver_msg, snap_root))
+                applied_delta_drift = True
+
+        # Detect diff-touched and spec-overlapping open SpecDeltas already 100% verified on disk (advisory)
+        schema_error_paths = tuple(validation_report.schema_errors.keys())
+        candidate_open_deltas: list[tuple[str, str, str, str | None]] = []
+        seen_open_delta_keys: set[str] = set()
+        for df_rel, delta_id_str, delta_status, new_dc_val in open_deltas_in_diff:
+            norm_path_key = normalize_rel_path(df_rel).lower()
+            id_key = delta_id_str.strip().lower()
+            if norm_path_key in seen_open_delta_keys or (id_key and id_key in seen_open_delta_keys):
+                continue
+            seen_open_delta_keys.add(norm_path_key)
+            if id_key:
+                seen_open_delta_keys.add(id_key)
+            candidate_open_deltas.append((df_rel, delta_id_str, delta_status, new_dc_val))
+
+        if classification.spec_files and eval_eidos.exists():
+            pref_low = eidos_rel_prefix.lower().strip("/")
+            touched_spec_keys: set[str] = set()
+            for sf in classification.spec_files:
+                norm_sf = normalize_rel_path(str(sf)).lower()
+                if not norm_sf:
+                    continue
+                touched_spec_keys.add(norm_sf)
+                if pref_low and norm_sf.startswith(f"{pref_low}/"):
+                    touched_spec_keys.add(norm_sf[len(pref_low) + 1 :])
+                old_sc, new_sc = _fetch_versions(sf)
+                for raw_sc in (new_sc, old_sc):
+                    if not raw_sc:
+                        continue
+                    fm_sc, _, _ = extract_frontmatter(raw_sc)
+                    if not isinstance(fm_sc, dict):
+                        continue
+                    sc_id = str(fm_sc.get("id") or "").strip().lower()
+                    if sc_id:
+                        touched_spec_keys.add(sc_id)
+                    invs_raw = fm_sc.get("invariants")
+                    invs_sc = list(invs_raw) if isinstance(invs_raw, list) else []
+                    tech_sc = fm_sc.get("technical")
+                    if isinstance(tech_sc, dict) and isinstance(tech_sc.get("invariants"), list):
+                        invs_sc.extend(tech_sc["invariants"])
+                    for inv_item in invs_sc:
+                        if isinstance(inv_item, dict) and inv_item.get("id"):
+                            touched_spec_keys.add(str(inv_item["id"]).strip().lower())
+
+            for doc in validation_report.documents:
+                if doc.doc_type != "delta/mutation":
+                    continue
+                if "archive" in doc.file_path.parts:
+                    continue
+                d_status = str(doc.frontmatter.get("status") or "proposed").strip().lower()
+                if d_status not in ("proposed", "in_review", "approved"):
+                    continue
+                d_muts = doc.model.mutations if doc.model is not None else []
+                if not d_muts:
+                    continue
+                doc_fp = doc.file_path
+                if not doc_fp.is_absolute():
+                    d_rel = normalize_rel_path(doc_fp.as_posix())
+                else:
+                    resolved_fp = doc_fp.resolve()
+                    if resolved_fp.is_relative_to(eval_root):
+                        d_rel = resolved_fp.relative_to(eval_root).as_posix()
+                    elif resolved_fp.is_relative_to(root):
+                        d_rel = resolved_fp.relative_to(root).as_posix()
+                    else:
+                        d_rel = _remap_snapshot_str(str(doc_fp), snap_root).replace("\\", "/")
+                d_id = str(doc.doc_id or d_rel).strip()
+                norm_path_key = normalize_rel_path(d_rel).lower()
+                id_key = d_id.lower()
+                if norm_path_key in seen_open_delta_keys or (id_key and id_key in seen_open_delta_keys):
+                    continue
+                overlaps = False
+                for m in d_muts:
+                    t_norm = normalize_rel_path(str(m.target or "")).lower()
+                    if not t_norm:
+                        continue
+                    if t_norm in touched_spec_keys or (pref_low and f"{pref_low}/{t_norm}" in touched_spec_keys):
+                        overlaps = True
+                        break
+                if overlaps:
+                    seen_open_delta_keys.add(norm_path_key)
+                    if id_key:
+                        seen_open_delta_keys.add(id_key)
+                    candidate_open_deltas.append((d_rel, d_id, d_status, None))
+
+        ready_to_apply_deltas: list[dict[str, Any]] = []
+        for df_rel, delta_id_str, delta_status, new_dc_val in candidate_open_deltas:
+            delta_eval_path = eval_root / df_rel
+            temp_written = False
+            try:
+                if not delta_eval_path.is_file() and new_dc_val is not None and snap_root is not None:
+                    delta_eval_path.parent.mkdir(parents=True, exist_ok=True)
+                    delta_eval_path.write_text(new_dc_val, encoding="utf-8")
+                    temp_written = True
+                lookup_ref = str(delta_eval_path) if delta_eval_path.is_file() else delta_id_str
+                ready_item = is_delta_ready_to_apply(
+                    eval_eidos,
+                    lookup_ref,
+                    delta_rel_path=df_rel,
+                    delta_status=delta_status,
+                    schema_error_paths=schema_error_paths,
+                    git_repo_root=git_root,
+                    snapshot_root=snap_root,
+                    git_sub_prefix=git_sub_prefix,
+                )
+            finally:
+                if temp_written:
+                    with contextlib.suppress(OSError):
+                        delta_eval_path.unlink(missing_ok=True)
+            if ready_item is not None:
+                ready_to_apply_deltas.append(ready_item)
+        ready_to_apply_deltas.sort(key=lambda item: (str(item["id"]), str(item["path"])))
 
         onboarding_drift = _validate_onboarding_governance(
             onboarding_files=classification.onboarding_files,
@@ -785,6 +913,7 @@ def detect_drift(
             eidos_rel_prefix=eidos_rel_prefix,
             boundary_violations=boundary_violations,
             ratchet_shrink_candidates=ratchet_shrink_candidates,
+            ready_to_apply_deltas=ready_to_apply_deltas,
         )
 
         return DriftCheckResult(
@@ -803,6 +932,7 @@ def detect_drift(
             trivially_covered_files=trivial_records,
             boundary_violations=boundary_violations,
             ratchet_shrink_candidates=ratchet_shrink_candidates,
+            ready_to_apply_deltas=ready_to_apply_deltas,
             remediation_suggestions=remediation,
             summary_markdown=summary_markdown,
         )

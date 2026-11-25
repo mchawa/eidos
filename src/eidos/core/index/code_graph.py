@@ -36,10 +36,9 @@ def _json_dumps(data: Any) -> str:
 
 
 def _normalize_rel_path(path: str) -> str:
-    norm = path.strip().replace("\\", "/")
-    while norm.startswith("./"):
-        norm = norm[2:]
-    return norm.rstrip("/")
+    from eidos.core.workspace.project import normalize_rel_path
+
+    return normalize_rel_path(path, strip_leading_slash=False, strip_trailing_slash=True)
 
 
 def _upsert_file_tokens_fts(conn: sqlite3.Connection, rel_path: str, doc_type: str, text: str) -> None:

@@ -128,14 +128,14 @@ Options:
 * `--uncommitted, -u`: Analyze uncommitted working tree and staged changes instead of branch diff.
 * `--path, -p PATH`: Path to eidos specifications directory (defaults to `./eidos`).
 * `--markdown, -m FILE`: Path to write the markdown summary comment.
-* `--json`: Output raw JSON verification result (including `structural_code_files`, `body_only_code_files`, `trivially_covered_files`, `boundary_violations`, `ratchet_shrink_candidates`, and non-blocking `validation_warnings`).
+* `--json`: Output raw JSON verification result (including `structural_code_files`, `body_only_code_files`, `trivially_covered_files`, `boundary_violations`, `ratchet_shrink_candidates`, non-blocking `validation_warnings`, and diff-scoped `ready_to_apply_deltas`).
 * `--strict`: Treat body-only code changes as drift unless accompanied by a 1-hop spec, active SpecDelta, or test update.
-* `--fail-on-warnings`: Exit with code `1` when advisory `validation_warnings` are non-empty (unless `--warn-only` is set).
+* `--fail-on-warnings`: Exit with code `1` when advisory `validation_warnings` or `ready_to_apply_deltas` are non-empty (unless `--warn-only` is set).
 * `--warn-only`: Do not exit with code 1 when drift is detected.
 
 Exit Codes:
-* `0`: Specifications and code are synchronized, all schemas, import boundaries, and bindings valid, invariant tests green (advisory `ratchet_shrink_candidates` and `validation_warnings` do not fail exit code `0`).
-* `1`: Spec-to-code drift detected, architectural import `boundary_violations` detected, unowned structural code found, specification validation errors found, or uncovered/orphan invariants detected.
+* `0`: Specifications and code are synchronized, all schemas, import boundaries, and bindings valid, invariant tests green (advisory `ratchet_shrink_candidates`, `validation_warnings`, and `ready_to_apply_deltas` do not fail exit code `0` unless `--fail-on-warnings` is passed).
+* `1`: Spec-to-code drift detected, architectural import `boundary_violations` detected, unowned structural code found, specification validation errors found, uncovered/orphan invariants detected, or non-empty `validation_warnings` / `ready_to_apply_deltas` under `--fail-on-warnings` (without `--warn-only`).
 
 > [!IMPORTANT]
 > `eidos drift` **subsumes `eidos validate`**: it executes the entire `SpecValidator` suite internally as part of its gate, in addition to checking Git diffs, AST structural changes, and polyglot invariant test bindings.

@@ -20,10 +20,9 @@ from eidos.core.index.storage import (
 
 
 def _normalize_rel_path(raw: str) -> str:
-    clean = raw.replace("\\", "/").strip()
-    while clean.startswith("./"):
-        clean = clean[2:]
-    return clean
+    from eidos.core.workspace.project import normalize_rel_path
+
+    return normalize_rel_path(raw, strip_leading_slash=False, strip_trailing_slash=False)
 
 
 _HTTP_DOC_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"})
