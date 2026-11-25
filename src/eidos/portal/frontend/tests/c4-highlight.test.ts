@@ -67,6 +67,7 @@ vi.mock("@/lib/mermaid", () => ({
   getConfiguredMermaid: async () => ({
     render: async () => ({ svg: MOCK_SVG }),
   }),
+  renderMermaidSvg: async () => ({ svg: MOCK_SVG }),
   sanitizeMermaidCode: (src: string) => src,
 }));
 

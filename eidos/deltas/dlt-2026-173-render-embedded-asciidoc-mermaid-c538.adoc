@@ -1,0 +1,173 @@
+---
+type: delta/mutation
+id: DLT-2026-173-RENDER-EMBEDDED-ASCIIDOC-MERMAID-C538
+title: "Render Embedded AsciiDoc Mermaid Diagrams in Living Web Portal"
+status: applied
+intent:
+  kind: feature
+  motivation: "Living specifications in eidos/ already author and validate embedded [mermaid] and [source,mermaid] AsciiDoc blocks (via CMP-MERMAID-VALIDATOR and INV-MERMAID-SPEC-VALIDATION in eidos validate / eidos drift), including ARCH-EIDOS-001 (C4Context), FLOW-CLI-SERVE-AND-BROWSE (sequenceDiagram), and FLOW-PORTAL-EXPLORATION (flowchart LR). Yet in the Living Web Portal, AsciiDocRenderer (UIC-PORTAL-READER) never renders embedded Mermaid blocks as diagrams: @asciidoctor/core strips the unknown [mermaid] style completely into untagged <pre> code blocks and leaves [source,mermaid] as raw dark source text. Rendering embedded Mermaid blocks post-DOMPurify via AST-level slot extraction, React portals, and a unified serialized strict Mermaid v12 queue brings visual diagram rendering to every specification reader across all 8 portal views while preserving INV-PORTAL-XSS-AND-SERVER-ISOLATION, INV-PORTAL-AIR-GAPPED-BUNDLE, INV-PORTAL-READING-ERGONOMICS, and INV-PORTAL-HUMAN-READABLE-UI."
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+    details: "Record architectural decision DEC-PORTAL-DOCUMENT-MERMAID-RENDERING (with graduated_from: DLT-2026-173-RENDER-EMBEDDED-ASCIIDOC-MERMAID-C538 and rejected alternatives) in eidos/architecture/containers/portal.adoc governing Asciidoctor AST-level [mermaid]/[source,mermaid] extraction, CSPRNG per-parse nonced role tagging converted post-DOMPurify into deterministic .adoc-mermaid-slot placeholders, post-sanitization sibling React 19 createPortal mounting, unified serialized theme-reactive Mermaid v12 rendering across ArchitectureView and document diagrams under securityLevel: 'strict' and sanitizeMermaidCode(), and non-scroll-trapping modifier-wheel zoom."
+    expect:
+      frontmatter:
+        status: "active"
+        decisions.id:
+          - "DEC-PORTAL-DOCUMENT-MERMAID-RENDERING"
+      body:
+        contains:
+          - "DEC-PORTAL-DOCUMENT-MERMAID-RENDERING"
+          - "adoc-mermaid-slot"
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+    details: "Implement embedded AsciiDoc Mermaid diagram rendering across src/eidos/portal/frontend/src/lib/asciidoc.ts (Asciidoctor v4.1.1 doc.findBy + recursive table.rows.{head,body,foot} inner-document extraction of [mermaid] and [source,mermaid] blocks across ----/.... fences, case-insensitive styles, dlist/list/admonition/table nesting, and textOf-normalized .Title captions into RenderedAsciiDoc.mermaidBlocks with CSPRNG per-parse nonced role tagging, untouched DOMPurify SANITIZE_CONFIG, unconditional passthrough slot stripping, and deterministic .adoc-mermaid-slot placeholders), src/eidos/portal/frontend/src/lib/mermaid.ts (unified serialized promise-queued renderMermaidSvg enforcing sanitizeMermaidCode(), securityLevel: 'strict', empty-code rejection, theme-change-aware initialization synchronized with getConfiguredMermaid, unique SVG IDs, and orphan #d<id> error DOM cleanup), src/eidos/portal/frontend/src/lib/theme.ts (SSR-safe reactive useDarkMode hook observing document.documentElement class mutations), src/eidos/portal/frontend/src/components/views/ArchitectureView.tsx (route C4 diagram rendering through renderMermaidSvg so C4 and inspector document diagrams share one serialized Mermaid queue), src/eidos/portal/frontend/src/components/ui/MermaidDiagram.tsx (wheelZoom: 'always' | 'modifier' with [wheelZoom] effect deps, emptyBehavior: 'fallback' | 'error', hideErrorFallback, reactive useDarkMode fallback, autoFit containerWidth<=0 guard & [0.35, 1.0] clamp, comma/space viewBox parsing, always-mounted diagramRef, toolbar onMouseDown stopPropagation, ResizeObserver re-fit, and accessible aria-labels), src/eidos/portal/frontend/src/components/ui/DocumentMermaidBlock.tsx (interactive embedded diagram card with caption, View Source/View Diagram toggle, Copy button, modifier-wheel zoom, expand toggle, and single human-readable role='alert' error fallback with sanitized raw source), src/eidos/portal/frontend/src/components/ui/AsciiDocRenderer.tsx (sibling createPortal mounting outside onClick={handleClick} keyed on [isReady, renderedHtml, mermaidBlocks] with cleanup), and src/eidos/portal/frontend/src/theme/theme.css (.adoc-mermaid-slot typography/title CSS resets); rebuild assets/portal/bundle.html.gz within the 5 MiB uncompressed / 2 MiB gzip air-gapped budget. Update eidos/architecture/components/portal-assets.adoc (also updating stale Mermaid v11 prose references to Mermaid v12)."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path:
+          - "src/eidos/portal/assets.py"
+          - "src/eidos/portal/frontend/scripts/build_assets.py"
+          - "src/eidos/portal/frontend/scripts/hatch_build.py"
+          - "src/eidos/portal/frontend/src"
+      body:
+        contains:
+          - "DocumentMermaidBlock"
+          - "renderMermaidSvg"
+          - "mermaidBlocks"
+  - operation: modify
+    target: UIC-PORTAL-READER
+    details: "Update eidos/design/systems/core/components/portal-reader.adoc (Sections 4 and 5) to specify embedded [mermaid] and [source,mermaid] AsciiDoc diagram rendering inside UIC-PORTAL-READER: post-DOMPurify interactive SVG rendering, optional AsciiDoc caption headers, View Source / View Diagram and Copy controls, non-scroll-trapping modifier-wheel zoom (Ctrl/Cmd+wheel), reactive dark/light theme synchronization, accessible figure/alert semantics with human-readable error copy and sanitized raw-source fallback, and strict securityLevel isolation."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "Embedded Mermaid"
+          - "[source,mermaid]"
+          - "View Source"
+  - operation: modify
+    target: CAP-EXP-001
+    details: "Extend CAP-EXP-001 in eidos/domains/experience-portal/capabilities/living-web-portal.adoc with INV-PORTAL-DOCUMENT-MERMAID-RENDERING, bump version from 1.6.0 to 1.7.0, and document automatic interactive rendering of embedded AsciiDoc Mermaid diagrams across all 8 portal views."
+    expect:
+      frontmatter:
+        status: "active"
+        version: "1.7.0"
+        technical.invariants.id:
+          - "INV-PORTAL-DOCUMENT-MERMAID-RENDERING"
+      body:
+        contains:
+          - "INV-PORTAL-DOCUMENT-MERMAID-RENDERING"
+          - "embedded AsciiDoc Mermaid"
+  - operation: add
+    target: INV-PORTAL-DOCUMENT-MERMAID-RENDERING
+    details: "Bind INV-PORTAL-DOCUMENT-MERMAID-RENDERING under CAP-EXP-001 (technical.invariants) to tests/test_portal.py::test_portal_document_mermaid_rendering."
+    expect:
+      frontmatter:
+        rule: "post-DOMPurify"
+        test_binding: "tests/test_portal.py::test_portal_document_mermaid_rendering"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Update docs/guides/living-portal.md (INV-DOCS-SYNCHRONIZATION, POL-003-CONTINUOUS-DOCS-SYNC) and eidos/architecture/components/docs-user-guides.adoc to document automatic interactive rendering of embedded AsciiDoc Mermaid ([mermaid] and [source,mermaid]) diagram blocks across Living Web Portal specification readers."
+    expect:
+      frontmatter:
+        status: "active"
+        source_path: "docs/guides"
+      body:
+        contains:
+          - "embedded AsciiDoc Mermaid"
+          - "living-portal.md"
+vcs:
+  branch: main
+  base_commit: ad83a9265340378c88c9b4b97c58e6b3a1d06a09
+---
+= SpecDelta: Render Embedded AsciiDoc Mermaid Diagrams in Living Web Portal
+:toc: left
+
+== Problem Statement
+Living specifications under `eidos/` routinely author embedded Mermaid diagrams using standard AsciiDoc blocks (`[mermaid]` and `[source,mermaid]` delimited by `----` or `....` fences)—for example, `ARCH-EIDOS-001` (`eidos/architecture/system-architecture.adoc`, `C4Context`), `FLOW-CLI-SERVE-AND-BROWSE` (`eidos/design/flows/cli-serve-and-browse.adoc`, `sequenceDiagram`), and `FLOW-PORTAL-EXPLORATION` (`eidos/design/clients/web-portal/flows/spec-exploration.adoc`, `flowchart LR`). Since `DLT-2026-158` (`CMP-MERMAID-VALIDATOR`, `INV-MERMAID-SPEC-VALIDATION`), `eidos validate` and `eidos drift` validate every embedded Mermaid block via pinned Mermaid v12.1.0 `mermaid.parse()`.
+
+However, when stakeholders inspect any specification document through `AsciiDocRenderer` (`UIC-PORTAL-READER`, shared across all 8 portal views: `SpecReader` / `CatalogView`, `ArchitectureView` `#c4InspectorDrawer` and Contract Sheet, `BusinessView`, `DeltasView`, `DesignView`, `ExplorationsView`, `MemoryView`, and `HomeView`-launched specs), embedded Mermaid blocks never render as diagrams for three technical reasons:
+
+1. **Silent Style Stripping by `@asciidoctor/core` (`src/eidos/portal/frontend/src/lib/asciidoc.ts`)**: Without a diagram extension, `@asciidoctor/core` drops the unknown `[mermaid]` block style during HTML conversion—emitting an unmarked `<div class="listingblock"><pre>...</pre></div>` (for `----`) or `<div class="literalblock"><pre>...</pre></div>` (for `....`). Post-HTML DOM inspection therefore cannot distinguish `[mermaid]` blocks from ordinary untyped code blocks, while `[source,mermaid]` renders solely as a dark code snippet with a `MERMAID` copy bar.
+2. **Strict Post-Conversion HTML Sanitization (`INV-PORTAL-XSS-AND-SERVER-ISOLATION`)**: `SANITIZE_CONFIG` in `asciidoc.ts` intentionally forbids `<svg>`, `<style>`, and `<button>` tags (`SANITIZE_DOM: true`, `idprefix: "spec-"`). Mermaid SVGs therefore cannot be emitted into Asciidoctor HTML prior to `DOMPurify.sanitize()`; they must be mounted **after** HTML sanitization through Mermaid v12 with `securityLevel: "strict"` and `sanitizeMermaidCode()`.
+3. **Scroll-Trapping, Concurrency, Layout, and Theme Reactivity Gaps (`MermaidDiagram.tsx`, `ArchitectureView.tsx`, `mermaid.ts`)**: `MermaidDiagram` currently binds an unconditional non-passive `wheel` listener that hijacks page scrolling when nested inside prose documents, has unguarded negative zoom when `clientWidth <= 48`, exits silently on empty input, and unmounts `diagramRef` on error; `ArchitectureView.tsx` and `MermaidDiagram.tsx` invoke global `mermaid.initialize()` + `mermaid.render()` without a shared serialization queue or orphan `#d<id>` error cleanup; and `AsciiDocRenderer` receives no `darkMode` prop across `CatalogView`, `BusinessView`, `DeltasView`, `DesignView`, `ExplorationsView`, and `MemoryView`.
+
+== Proposed Specification Changes
+
+=== 1. Architectural Decision & Security Model (`CNT-EIDOS-PORTAL`)
+Graduate `DEC-PORTAL-DOCUMENT-MERMAID-RENDERING` (`graduated_from: DLT-2026-173-RENDER-EMBEDDED-ASCIIDOC-MERMAID-C538`) into `eidos/architecture/containers/portal.adoc` (`decisions:` block and `== Internal Structure & Key Mechanisms`; avoid backticked `()` external API calls in prose so `PublicSurfaceValidator` emits zero advisory warnings):
+
+* **Decision**: Detect `[mermaid]` and `[source,mermaid]` blocks directly on the `@asciidoctor/core` v4.1.1 AST inside `renderAsciiDoc()` using `doc.findBy(...)` plus explicit recursive traversal of `table.rows.{head,body,foot}` `cell.getInnerDocument()` inner documents (avoiding non-existent `getBodyRows` and `dlist.getBlocks()` tuple pitfalls), extract verbatim source via `block.getSource()` and plain-text captions via `textOf(String(block.getTitle()))` into `RenderedAsciiDoc.mermaidBlocks`, tag matched AST nodes with a CSPRNG per-parse nonced role so raw HTML passthroughs cannot spoof diagram slots, leave `DOMPurify.sanitize(..., SANITIZE_CONFIG)` (`SANITIZE_DOM: true`, `FORBID_TAGS` including `svg`/`style`/`button`) completely unchanged, strip untrusted `.adoc-mermaid-slot`/`[data-mermaid-index]`/`adoc-mermaid-*` markers unconditionally in `decorate()` and convert only nonce-matched blocks into deterministic `<div class="adoc-mermaid-slot" data-mermaid-index="N"></div>` placeholders, mount interactive `DocumentMermaidBlock` components post-sanitization via sibling React 19 `createPortal` calls outside `AsciiDocRenderer`'s `onClick={handleClick}` container, and route **both** embedded document diagrams and `ArchitectureView` C4 diagrams through one unified serialized, theme-reactive `renderMermaidSvg()` queue enforcing `securityLevel: "strict"` and `sanitizeMermaidCode()`.
+* **Rationale**: Reading the Asciidoctor AST handles `[mermaid]` (`----` / `....`), `[source,mermaid]`, case variants, `.Title` captions, nested `dlist`/list/admonition/example/table blocks, comments (`////`), and `[source,asciidoc]` examples accurately while preserving verbatim Mermaid syntax (`<br/>`, `<<interface>>`, `<1>`, `&`) before HTML escaping; CSPRNG per-parse nonced roles keep `renderAsciiDoc()` HTML deterministic while blocking passthrough spoofing; sibling `createPortal` preserves valid DOM nesting at arbitrary depth without leaking synthetic clicks into `AsciiDocRenderer.handleClick`; and routing all portal Mermaid callers (`DocumentMermaidBlock`, `MermaidDiagram`, `ArchitectureView`) through one serialized queue eliminates multi-diagram and theme-toggle global config/DOM race conditions with zero new npm dependencies (within the `5 MiB` uncompressed / `2 MiB` gzip bundle budget; currently `4.58 MiB` uncompressed with `425.6 KiB` headroom and `1.28 MiB` gzipped).
+* **Rejected Alternatives**:
+  * *Post-HTML DOM scanning for `code[data-lang="mermaid"]`*: Silently misses all `[mermaid]` blocks (`ARCH-EIDOS-001`, `FLOW-CLI-SERVE-AND-BROWSE`, `FLOW-PORTAL-EXPLORATION`) because `@asciidoctor/core` strips the `[mermaid]` style from emitted HTML.
+  * *Registering an Asciidoctor.js `Extensions` block/treeProcessor registry*: Introduces global extension registry state/lifecycle complexity and `safe: "secure"` coupling across parses without avoiding the post-DOMPurify mounting constraint.
+  * *Pre-parse regex extraction on raw AsciiDoc strings*: Misfires on `[source,asciidoc]` documentation examples, `////` comment blocks, and `++++` passthroughs, and cannot cleanly preserve nested block structures.
+  * *Relaxing `DOMPurify` `FORBID_TAGS` to allow `<svg>` / `<style>` before sanitization*: Weakens `INV-PORTAL-XSS-AND-SERVER-ISOLATION` and exposes raw-HTML SVG/XSS vectors from untrusted specification prose.
+  * *Splitting sanitized HTML strings around placeholders instead of `ReactDOM.createPortal`*: Produces malformed HTML whenever a Mermaid block is nested inside an admonition, example block, sidebar, `dlist`, or `a|` table cell.
+
+=== 2. Frontend Rendering Pipeline & Interactive Diagram Card (`CMP-PORTAL-ASSETS`)
+* **AST Mermaid Extraction & Anti-Spoofing Slots (`src/eidos/portal/frontend/src/lib/asciidoc.ts`)**:
+  * Export `AsciiDocMermaidBlock` (`{ index: number; code: string; title?: string }`) and extend `RenderedAsciiDoc` with `mermaidBlocks: AsciiDocMermaidBlock[]`.
+  * Before `doc.convert()`, walk the Asciidoctor v4.1.1 AST via a recursive helper using `d.findBy(...)` (which natively traverses sections, `ulist`/`olist`, `dlist` `[terms, dd]` tuples, admonitions, example blocks, and sidebars without crashing on `dlist.getBlocks()` tuple items) and recursing into `table.rows.{head,body,foot}` `cell.getInnerDocument()` inner documents to find every `listing` or `literal` block where `style.toLowerCase() === "mermaid"` or (`style.toLowerCase() === "source"` and `language.toLowerCase() === "mermaid"`).
+  * Capture verbatim `block.getSource()` and plain-text optional caption normalized via `textOf(String(block.getTitle()))` (stripping Asciidoctor HTML formatting/entities safely for JSX text rendering), and tag each matched block with a CSPRNG per-parse nonced role (`adoc-mermaid-m<nonce>-<index>`, using `crypto.getRandomValues` / `crypto.randomUUID` with safe fallback).
+  * Keep `SANITIZE_CONFIG` (`FORBID_TAGS`, `FORBID_ATTR`, `SANITIZE_DOM: true`) and `ASCIIDOC_ATTRIBUTES` (`idprefix: "spec-"`) strictly unchanged.
+  * In `decorate()`, unconditionally strip any untrusted `.adoc-mermaid-slot`, `[data-mermaid-index]`, and stray `adoc-mermaid-*` classes from passthrough HTML (even when `mermaidBlocks.length === 0`), skip `.adoc-code-bar` decoration on nonce-matched Mermaid blocks, and replace each nonce-matched block with a deterministic `<div class="adoc-mermaid-slot" data-mermaid-index="<index>"></div>` placeholder (leaving zero raw AsciiDoc/Mermaid markers outside `<pre>`/`<code>` for `INV-ASCIIDOC-ZERO-WARNING-HYGIENE`).
+* **Unified Serialized Strict Mermaid Renderer (`src/eidos/portal/frontend/src/lib/mermaid.ts` & `ArchitectureView.tsx`)**:
+  * Export `renderMermaidSvg(id: string, rawCode: string, dark: boolean): Promise<{ svg: string }>` backed by a single module-level promise queue so concurrent embedded document diagrams and `ArchitectureView` C4 diagrams never race on `mermaid.initialize()` or Mermaid v12 scratch DOM nodes.
+  * Enforce `sanitizeMermaidCode(rawCode)` and `securityLevel: "strict"`, reject empty/whitespace-only sanitized input with an explicit error, track `lastInitializedDark` (re-initializing only when the theme changes and keeping `getConfiguredMermaid(dark)` synchronized with that tracked state for backward-compatible callers), allocate collision-safe monotonic SVG element IDs (`eidos-mermaid-<sanitized>-<seq>`), and remove any orphan `#d<uniqueId>` temporary error nodes left in `document.body` on parse/render failure.
+  * Route `ArchitectureView.tsx`'s C4 diagram render call through `renderMermaidSvg("c4", safeSource || "graph TD\nSYS[System]", darkMode)` (preserving `#c4ActiveDiagram`, `#c4DiagramContainer`, `c4Highlight.ts`, and `data-c4-entity` hooks unchanged) while retaining existing `loadMermaid`, `sanitizeMermaidCode`, `buildMermaidConfig`, and `getConfiguredMermaid` exports.
+* **Reactive Dark/Light Theme Hook (`src/eidos/portal/frontend/src/lib/theme.ts`)**:
+  * Export SSR-safe `useDarkMode(explicitDarkMode?: boolean): boolean` reading `document.documentElement.classList.contains("dark")` and subscribing via `MutationObserver` (`attributes: true, attributeFilter: ["class"]`) when `explicitDarkMode` is omitted so toggling Light/Dark theme in `NavigationRail` automatically re-renders every visible embedded document diagram across all 8 portal views without prop-drilling.
+* **Hardened `MermaidDiagram`, `DocumentMermaidBlock`, `AsciiDocRenderer`, & Scoped CSS (`MermaidDiagram.tsx`, `DocumentMermaidBlock.tsx`, `AsciiDocRenderer.tsx`, `theme.css`)**:
+  * Harden `src/eidos/portal/frontend/src/components/ui/MermaidDiagram.tsx`:
+    * Add `wheelZoom?: "always" | "modifier"` (default `"always"` for standalone views; `"modifier"` calls `e.preventDefault()` only on `e.ctrlKey || e.metaKey`, with `[wheelZoom]` in the wheel effect dependencies and updated hint text), `emptyBehavior?: "fallback" | "error"` (default `"fallback"`), `hideErrorFallback?: boolean`, and `onRenderError?: (message: string | null) => void`.
+    * Guard `autoFit()` when `containerWidth <= 0 || containerHeight <= 0` (falling back to `zoom = 1.0, pan = { x: 0, y: 0 }`), clamp `optimalZoom` to `[0.35, 1.0]` (preventing negative/inverted SVGs in jsdom, narrow table cells, or opening `Sheet` animations), and parse `viewBox` with `split(/[\s,]+/)` + `Number.isFinite(...)`.
+    * Keep `<div ref={diagramRef} />` always mounted (hiding via CSS class when `error` is set and calling `diagramRef.current?.replaceChildren()` on error/empty) to eliminate the error-to-valid unmount race; handle empty/whitespace `code` under `emptyBehavior="error"` instead of returning early silently; add `onMouseDown={(e) => e.stopPropagation()}` on the zoom toolbar; add `aria-label` to toolbar buttons; attach an SSR-safe guarded `ResizeObserver` (no-op after manual user zoom/pan) to re-fit cleanly on sidebar collapse or 200ms `Sheet`/expand transitions; and use `useDarkMode(darkMode)` when `darkMode` prop is omitted.
+  * Create `src/eidos/portal/frontend/src/components/ui/DocumentMermaidBlock.tsx` (`role="figure"`, accessible `aria-label`, `data-document-mermaid="true"`):
+    * Header bar displaying the optional normalized AsciiDoc `.Title` caption (or plain human-readable `"Diagram"` per `INV-PORTAL-HUMAN-READABLE-UI`), a `View Source` / `View Diagram` toggle button, and a `Copy` (`Copied`) source button (without `.adoc-copy-btn` class collision).
+    * Renders `<MermaidDiagram wheelZoom="modifier" emptyBehavior="error" hideErrorFallback onRenderError={...} ... />` in diagram mode and a styled monospace `<pre>` block in source mode.
+    * On invalid or empty Mermaid syntax, renders a **single** accessible `role="alert"` inline banner with clean human-readable copy (`"Unable to render diagram."` — never leaking raw stack traces or Eidos entity IDs so `#c4InspectorDrawer`'s `RAW_ENTITY_ID_RE` stays green) paired with the sanitized `<pre>` Mermaid source, resetting error state cleanly whenever `code` or `isDark` changes.
+  * Update `src/eidos/portal/frontend/src/components/ui/AsciiDocRenderer.tsx`:
+    * Memoize `{ __html: renderedHtml }`; discover `.adoc-mermaid-slot[data-mermaid-index]` elements inside `bodyRef` via `React.useEffect` keyed on `[isReady, renderedHtml, mermaidBlocks]` (storing `{ html: renderedHtml, slots }` and clearing on cleanup so `chunkLoading` transitions never retain detached nodes and SSR `renderToStaticMarkup` remains warning-free).
+    * Look up `mermaidBlocks[slot.index]` at render time (handling spec switches with identical placeholder HTML) and render `createPortal(<DocumentMermaidBlock ... />, slot.container)` as **JSX siblings outside** `<div className="adoc-body prose-reading" onClick={handleClick} ... />` so synthetic clicks inside embedded diagrams never bubble into `AsciiDocRenderer.handleClick`.
+  * Update `src/eidos/portal/frontend/src/theme/theme.css` to add `.adoc-mermaid-slot` spacing and explicit CSS cascade resets (`overflow-wrap: normal; line-height: normal; letter-spacing: normal;` plus `.adoc-mermaid-slot svg .title` isolation from `.adoc-body .title`) so Mermaid v12 `<foreignObject>` labels and C4/SVG titles render cleanly in light and dark modes.
+  * Rebuild `assets/portal/bundle.html.gz` via `pnpm build:assets` and verify `<= 5 MiB` (`5,242,880` bytes) uncompressed (`scripts/build_assets.py --check`, `test_portal.py`) and `<= 2 MiB` (`2,048` KiB) gzipped (`tests/test_portal_spike.py`) with zero remote subresources (`INV-PORTAL-AIR-GAPPED-BUNDLE`).
+  * Update `eidos/architecture/components/portal-assets.adoc` (keeping Python `== Public Surface` exports unchanged, avoiding backticked `()` external API calls, and correcting the two stale `Mermaid v11` prose mentions on lines 17 and 30 to `Mermaid v12`).
+
+=== 3. Design System, Capability, Invariant & Documentation Co-Evolution
+* **`UIC-PORTAL-READER` (`eidos/design/systems/core/components/portal-reader.adoc`)**: Document **Embedded Mermaid Diagrams** (`[mermaid]` and `[source,mermaid]`) under `== 4. AsciiDoc Rendering (Asciidoctor.js)` and `== 5. Accessibility & Verification`—covering post-DOMPurify rendering, optional captions, `View Source` / `Copy` controls, non-scroll-trapping `Ctrl`/`Cmd`+wheel zoom, reactive dark/light theming, single `role="alert"` human-readable error fallback with preserved raw source, and `securityLevel: "strict"`.
+* **`CAP-EXP-001` (`eidos/domains/experience-portal/capabilities/living-web-portal.adoc`) & `INV-PORTAL-DOCUMENT-MERMAID-RENDERING`**: Bump `CAP-EXP-001` `version` from `1.6.0` to `1.7.0`, document embedded AsciiDoc Mermaid diagram rendering across all 8 portal views, and bind `INV-PORTAL-DOCUMENT-MERMAID-RENDERING` (`rule` explicitly requiring post-DOMPurify AST-extracted `[mermaid]`/`[source,mermaid]` rendering via serialized `securityLevel: "strict"` Mermaid v12) to `tests/test_portal.py::test_portal_document_mermaid_rendering`.
+* **`CMP-DOCS-USER-GUIDES` (`eidos/architecture/components/docs-user-guides.adoc`, `docs/guides/living-portal.md`)**: Document embedded AsciiDoc Mermaid diagram rendering inside `docs/guides/living-portal.md` (`POL-003-CONTINUOUS-DOCS-SYNC`, `INV-DOCS-SYNCHRONIZATION`; `CNT-EIDOS-DOCS` covered via `CMP-DOCS-USER-GUIDES`).
+
+== Implementation Plan
+0. **Pre-Implementation Sequencing & Baseline Hygiene**:
+   * Finalize/commit any pending uncommitted `EXP-2026-012` (`DLT-2026-169`–`DLT-2026-172`, including `DLT-2026-170`) changes on `main` (and reconcile overlap ordering with proposed `DLT-2026-120`), then refresh `DLT-2026-173`'s `vcs.base_commit` to the new `HEAD` so `eidos delta verify` compares cleanly against the pre-delta baseline.
+1. **AST Mermaid Extraction & Anti-Spoofing Slots (`CMP-PORTAL-ASSETS`)**:
+   * Update `src/eidos/portal/frontend/src/lib/asciidoc.ts` to add `AsciiDocMermaidBlock`, extend `RenderedAsciiDoc` with `mermaidBlocks`, extract `[mermaid]` and `[source,mermaid]` blocks (`----` and `....` fences, case-insensitive styles, `dlist`/list/admonition/example/sidebar nesting via `doc.findBy(...)`, and recursive `table.rows.{head,body,foot}` `cell.getInnerDocument()` traversal) directly from the Asciidoctor AST before `doc.convert()`, normalize optional captions via `textOf(String(block.getTitle()))`, tag matched blocks with CSPRNG per-parse nonced roles, keep `SANITIZE_CONFIG` (`SANITIZE_DOM: true`, `FORBID_TAGS`) and `idprefix: "spec-"` untouched, unconditionally strip spoofed passthrough `.adoc-mermaid-slot` / `[data-mermaid-index]` / `adoc-mermaid-*` markers in `decorate()`, and replace only nonce-matched blocks with deterministic `<div class="adoc-mermaid-slot" data-mermaid-index="N"></div>` placeholders.
+2. **Unified Serialized Strict Mermaid Queue & Reactive Theme Hook (`CMP-PORTAL-ASSETS`)**:
+   * Update `src/eidos/portal/frontend/src/lib/mermaid.ts` to export serialized promise-queued `renderMermaidSvg(id, rawCode, dark)` enforcing `sanitizeMermaidCode()`, `securityLevel: "strict"`, empty-input rejection, theme-change tracking synchronized with `getConfiguredMermaid`, collision-safe monotonic SVG IDs, and orphan `#d<id>` error DOM cleanup, while preserving `loadMermaid`, `sanitizeMermaidCode`, `buildMermaidConfig`, and `getConfiguredMermaid`.
+   * Update `src/eidos/portal/frontend/src/components/views/ArchitectureView.tsx` to route C4 diagram rendering through `renderMermaidSvg()` so C4 diagrams and inspector document diagrams share one serialized Mermaid queue and theme cache.
+   * Create `src/eidos/portal/frontend/src/lib/theme.ts` exporting SSR-safe `useDarkMode(explicitDarkMode?: boolean)` backed by `MutationObserver` on `document.documentElement` (`attributeFilter: ["class"]`).
+3. **Hardened `MermaidDiagram`, `DocumentMermaidBlock`, Sibling Portals & CSS Isolation (`CMP-PORTAL-ASSETS`)**:
+   * Update `src/eidos/portal/frontend/src/components/ui/MermaidDiagram.tsx` with `wheelZoom?: "always" | "modifier"` (only calling `e.preventDefault()` on `e.ctrlKey || e.metaKey` in `"modifier"` mode, with `[wheelZoom]` in effect deps), `emptyBehavior?: "fallback" | "error"` (handling empty/whitespace code instead of returning early), `hideErrorFallback?: boolean`, `onRenderError`, serialized `renderMermaidSvg` execution, reactive `useDarkMode(darkMode)` fallback, `autoFit()` `containerWidth/Height <= 0` guard + `[0.35, 1.0]` clamp + `/[\s,]+/` `viewBox` parsing, always-mounted `diagramRef` (hidden on error, cleared via `replaceChildren()`), toolbar `onMouseDown={(e) => e.stopPropagation()}`, guarded `ResizeObserver`, and accessible `aria-label`s.
+   * Create `src/eidos/portal/frontend/src/components/ui/DocumentMermaidBlock.tsx` rendering optional plain-text AsciiDoc `.Title` caption (or `"Diagram"`), `View Source` / `View Diagram` toggle, `Copy` button, embedded `<MermaidDiagram wheelZoom="modifier" emptyBehavior="error" hideErrorFallback />`, and a single accessible `role="alert"` human-readable error notice (`"Unable to render diagram."`, zero raw stack traces or Eidos IDs) paired with sanitized `<pre>` source code (resetting error state on `code`/`isDark` change).
+   * Update `src/eidos/portal/frontend/src/components/ui/AsciiDocRenderer.tsx` to memoize `{ __html: renderedHtml }`, discover `.adoc-mermaid-slot[data-mermaid-index]` elements via `useEffect` keyed on `[isReady, renderedHtml, mermaidBlocks]` with cleanup, look up `mermaidBlocks[slot.index]` at render time, and render `createPortal(<DocumentMermaidBlock ... />, slot.container)` as JSX siblings outside `<div className="adoc-body prose-reading" onClick={handleClick} ... />` without affecting SSR `renderToStaticMarkup`, `measure="prose" | "full"`, `data-spec-ref` links, or non-Mermaid code copy bars.
+   * Update `src/eidos/portal/frontend/src/theme/theme.css` with `.adoc-mermaid-slot` spacing, `overflow-wrap: normal; line-height: normal; letter-spacing: normal;` cascade resets, `.adoc-mermaid-slot svg .title` isolation, and light/dark embedded card styling.
+4. **Rebuild & Verify Air-Gapped Portal Bundle (`CMP-PORTAL-ASSETS`, `CNT-EIDOS-PORTAL`)**:
+   * Rebuild `assets/portal/bundle.html.gz` `(covered via CMP-PORTAL-ASSETS / parent CNT-EIDOS-PORTAL)` via `cd src/eidos/portal/frontend && pnpm build:assets` and verify bundle parity, `<= 5 MiB` (`5,242,880` bytes) uncompressed budget (`python3 scripts/build_assets.py --check`), `<= 2 MiB` (`2,048` KiB) gzipped budget (`tests/test_portal_spike.py`), and zero remote subresources (`INV-PORTAL-AIR-GAPPED-BUNDLE`).
+5. **Co-Evolve Living Specifications & User Documentation**:
+   * Update `eidos/architecture/containers/portal.adoc` (`CNT-EIDOS-PORTAL`) recording `DEC-PORTAL-DOCUMENT-MERMAID-RENDERING` (`graduated_from: DLT-2026-173-RENDER-EMBEDDED-ASCIIDOC-MERMAID-C538`, with 5 rejected alternatives) without backticked `()` external API calls.
+   * Update `eidos/architecture/components/portal-assets.adoc` (`CMP-PORTAL-ASSETS`, also updating stale `Mermaid v11` mentions to `Mermaid v12`).
+   * Update `eidos/design/systems/core/components/portal-reader.adoc` (`UIC-PORTAL-READER`).
+   * Update `eidos/domains/experience-portal/capabilities/living-web-portal.adoc` (`CAP-EXP-001`) bumping `version` to `1.7.0` and adding `INV-PORTAL-DOCUMENT-MERMAID-RENDERING`.
+   * Update `docs/guides/living-portal.md` and `eidos/architecture/components/docs-user-guides.adoc` (`CMP-DOCS-USER-GUIDES`; `CNT-EIDOS-DOCS` covered via `CMP-DOCS-USER-GUIDES`).
+6. **Automated Tests & Governance Verification (`INV-PORTAL-DOCUMENT-MERMAID-RENDERING`, `INV-ASCIIDOC-ZERO-WARNING-HYGIENE`, `INV-VALIDATION-WARNINGS-PORTAL-AND-CI-ESCALATION`, `POL-002-INVARIANT-TEST-ENFORCEMENT`, `POL-003-CONTINUOUS-DOCS-SYNC`, `POL-005-STATEMENT-TEST-COVERAGE`)**:
+   * Update `vi.mock("@/lib/mermaid", ...)` in `src/eidos/portal/frontend/tests/architecture-view.test.ts` and `src/eidos/portal/frontend/tests/c4-highlight.test.ts` `(covered via parent CNT-EIDOS-PORTAL)` to export `renderMermaidSvg` alongside `getConfiguredMermaid` and `sanitizeMermaidCode`, verifying `#c4InspectorDrawer` stays green (including `RAW_ENTITY_ID_RE` and SSR `renderToStaticMarkup`) when inspector prose embeds a `[mermaid]` block.
+   * Extend `src/eidos/portal/frontend/tests/asciidoc.test.ts` `(covered via parent CNT-EIDOS-PORTAL)` with Vitest + jsdom tests referencing `INV-PORTAL-DOCUMENT-MERMAID-RENDERING` covering:
+     * `[mermaid]` (`----` and `....`), `[source,mermaid]` (`----` and `....`), case-insensitive `[MERMAID]`, formatted HTML `.Title` captions normalized to plain text, nested `dlist`/`ulist`/admonition/example/`a|` table cells (including nested tables and `head`/`body`/`foot` rows), multiple Mermaid blocks in one document, verbatim special characters (`<br/>`, `<<interface>>`, `<1>`, `&`), non-matching `[source,asciidoc]` examples and `////` comment blocks, and unconditional raw-HTML passthrough slot spoofing rejection (both with and without real Mermaid blocks).
+     * `renderAsciiDoc()` extracting embedded Mermaid blocks from real living specs (`eidos/architecture/system-architecture.adoc`, `eidos/design/flows/cli-serve-and-browse.adoc`, `eidos/design/clients/web-portal/flows/spec-exploration.adoc`) and verifying each extracted diagram passes bundled `mermaid.parse()` with zero Asciidoctor `MemoryLogger` warnings (`INV-ASCIIDOC-ZERO-WARNING-HYGIENE`).
+     * `AsciiDocRenderer` sibling `createPortal` mounting: rendered SVG inside `.adoc-mermaid-slot` with non-negative zoom when `clientWidth === 0`, `View Source` / `View Diagram` toggle, `Copy` button without bubbling into `AsciiDocRenderer.handleClick`, `wheelZoom="modifier"` leaving plain wheel events unprevented while zooming on `Ctrl`/`Cmd`+wheel, reactive re-render on `document.documentElement.classList.toggle("dark")`, switching between identical-placeholder specs and `chunkLoading` transitions, error-to-valid recovery without lost `diagramRef`, and single human-readable `role="alert"` error fallback with raw source visibility on malformed or empty blocks.
+   * Add `tests/test_portal.py::test_portal_document_mermaid_rendering` referencing `INV-PORTAL-DOCUMENT-MERMAID-RENDERING` asserting source and compiled `PORTAL_HTML_TEMPLATE` support AST-level `[mermaid]`/`[source,mermaid]` extraction (`mermaidBlocks`, `adoc-mermaid-slot`), `DocumentMermaidBlock`, unified serialized `renderMermaidSvg` across `ArchitectureView` and document blocks under `securityLevel: "strict"`, preserved `DOMPurify` `SANITIZE_DOM: true` and `FORBID_TAGS` (`svg`), `wheelZoom` modifier mode, `View Source` toggle, `.adoc-mermaid-slot` CSS resets, and air-gapped `<= 5 MiB` budget, while maintaining `> 90.0%` per-file Python statement coverage (`POL-005-STATEMENT-TEST-COVERAGE`).
+   * Execute full verification gates: `cd src/eidos/portal/frontend && pnpm test`, `cd src/eidos/portal/frontend && pnpm build:assets && python3 scripts/build_assets.py --check`, `pytest tests/test_portal.py tests/test_portal_spike.py tests/test_docs_sync.py`, `zensical build --strict`, `eidos validate eidos --fail-on-warnings --json`, `eidos delta verify DLT-2026-173 --json`, `eidos delta apply DLT-2026-173`, `eidos delta audit DLT-2026-173 --strict --json`, and `eidos drift --uncommitted --json`.

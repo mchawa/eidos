@@ -1,12 +1,15 @@
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import {
   renderAsciiDocCached,
   slugify,
   extractAsciiDocOutline,
+  type AsciiDocMermaidBlock,
   type AsciiDocOutlineItem,
   type RenderedAsciiDoc,
 } from "@/lib/asciidoc";
+import { DocumentMermaidBlock } from "@/components/ui/DocumentMermaidBlock";
 import { requestSpecNavigation } from "@/lib/specNav";
 import { useResolvedSpecBody } from "@/lib/specChunks";
 import {
@@ -16,7 +19,7 @@ import {
 } from "@/lib/presentation";
 
 export { slugify, extractAsciiDocOutline };
-export type { AsciiDocOutlineItem };
+export type { AsciiDocMermaidBlock, AsciiDocOutlineItem };
 
 export interface AsciiDocRendererProps {
   content: string;
@@ -96,7 +99,12 @@ export function AsciiDocRenderer({
     bodyChunk
   );
   const labelIndex = useEntityLabels();
+  const bodyRef = React.useRef<HTMLDivElement>(null);
   const [state, setState] = React.useState<RenderState>({ status: "loading" });
+  const [mermaidSlotState, setMermaidSlotState] = React.useState<{
+    html: string;
+    slots: Array<{ index: number; container: HTMLDivElement }>;
+  }>({ html: "", slots: [] });
 
   React.useEffect(() => {
     let cancelled = false;
@@ -105,7 +113,7 @@ export function AsciiDocRenderer({
       return;
     }
     if (!resolvedContent) {
-      setState({ status: "ready", result: { html: "", outline: [] } });
+      setState({ status: "ready", result: { html: "", outline: [], mermaidBlocks: [] } });
       return;
     }
     setState((prev) => (prev.status === "ready" ? prev : { status: "loading" }));
@@ -142,6 +150,39 @@ export function AsciiDocRenderer({
     return tpl.innerHTML;
   }, [state, labelIndex]);
 
+  const htmlMarkup = React.useMemo(() => ({ __html: renderedHtml }), [renderedHtml]);
+  const isEmpty = state.status === "ready" && !state.result.html;
+  const isReady = state.status === "ready" && !isEmpty;
+  const mermaidBlocks = React.useMemo(
+    () => (state.status === "ready" ? state.result.mermaidBlocks : []),
+    [state]
+  );
+
+  React.useEffect(() => {
+    if (!isReady || !bodyRef.current || mermaidBlocks.length === 0) {
+      setMermaidSlotState({ html: "", slots: [] });
+      return;
+    }
+
+    const slots: Array<{ index: number; container: HTMLDivElement }> = [];
+    bodyRef.current
+      .querySelectorAll<HTMLDivElement>(".adoc-mermaid-slot[data-mermaid-index]")
+      .forEach((container) => {
+        const rawIdx = container.getAttribute("data-mermaid-index");
+        if (rawIdx === null || !/^\d+$/.test(rawIdx)) return;
+        const idx = Number.parseInt(rawIdx, 10);
+        if (idx >= 0 && idx < mermaidBlocks.length) {
+          slots.push({ index: idx, container });
+        }
+      });
+
+    setMermaidSlotState({ html: renderedHtml, slots });
+
+    return () => {
+      setMermaidSlotState({ html: "", slots: [] });
+    };
+  }, [isReady, renderedHtml, mermaidBlocks]);
+
   const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
 
@@ -175,8 +216,6 @@ export function AsciiDocRenderer({
   // Optimal reading typography & responsive measure (INV-PORTAL-READING-ERGONOMICS, DEC-PORTAL-UNCRAMPED-INSPECTOR-PROSE)
   const measureClass = measure === "full" ? "w-full" : "w-full max-w-4xl xl:max-w-5xl mx-auto";
 
-  const isEmpty = state.status === "ready" && !state.result.html;
-
   return (
     <div className={cn("space-y-3.5", className)}>
       <div className="p-5 sm:p-7 rounded-2xl bg-card border border-border/80 md-elevation-1 space-y-4 text-foreground/90 overflow-x-hidden">
@@ -192,12 +231,32 @@ export function AsciiDocRenderer({
           {isEmpty && (
             <p className="text-muted-foreground italic text-center py-8">No content available.</p>
           )}
-          {state.status === "ready" && !isEmpty && (
-            <div
-              className="adoc-body prose-reading"
-              onClick={handleClick}
-              dangerouslySetInnerHTML={{ __html: renderedHtml }}
-            />
+          {isReady && (
+            <>
+              <div
+                ref={bodyRef}
+                className="adoc-body prose-reading"
+                onClick={handleClick}
+                dangerouslySetInnerHTML={htmlMarkup}
+              />
+              {mermaidSlotState.html === renderedHtml &&
+                mermaidSlotState.slots.map((slot) => {
+                  const block = mermaidBlocks[slot.index];
+                  if (!block || !slot.container.parentNode) return null;
+                  const portalKey = `${specId ?? "doc"}-${slot.index}`;
+                  return createPortal(
+                    <DocumentMermaidBlock
+                      key={portalKey}
+                      code={block.code}
+                      title={block.title}
+                      index={block.index}
+                      specId={specId}
+                    />,
+                    slot.container,
+                    portalKey
+                  );
+                })}
+            </>
           )}
         </div>
       </div>

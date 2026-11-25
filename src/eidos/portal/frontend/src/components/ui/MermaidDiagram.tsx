@@ -1,7 +1,8 @@
 import * as React from "react";
 import { ZoomIn, ZoomOut, RotateCcw, Maximize2, Move, Expand, Shrink } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getConfiguredMermaid, sanitizeMermaidCode } from "@/lib/mermaid";
+import { renderMermaidSvg, sanitizeMermaidCode } from "@/lib/mermaid";
+import { useDarkMode } from "@/lib/theme";
 
 export interface MermaidDiagramProps {
   code: string;
@@ -11,7 +12,13 @@ export interface MermaidDiagramProps {
   minHeight?: string;
   expandedHeight?: string;
   showControls?: boolean;
+  wheelZoom?: "always" | "modifier";
+  emptyBehavior?: "fallback" | "error";
+  hideErrorFallback?: boolean;
+  onRenderError?: (message: string | null) => void;
 }
+
+const FALLBACK_DIAGRAM_SOURCE = "flowchart LR\n  Start --> End";
 
 export function MermaidDiagram({
   code,
@@ -21,10 +28,16 @@ export function MermaidDiagram({
   minHeight = "300px",
   expandedHeight = "540px",
   showControls = true,
+  wheelZoom = "always",
+  emptyBehavior = "fallback",
+  hideErrorFallback = false,
+  onRenderError,
 }: MermaidDiagramProps) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const diagramRef = React.useRef<HTMLDivElement>(null);
   const isDraggingRef = React.useRef<boolean>(false);
+  const userInteractedRef = React.useRef<boolean>(false);
+  const expandTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragStartRef = React.useRef<{ x: number; y: number; panX: number; panY: number }>({
     x: 0,
     y: 0,
@@ -32,12 +45,14 @@ export function MermaidDiagram({
     panY: 0,
   });
 
-  const [zoom, setZoom] = React.useState<number>(1.05);
+  const [zoom, setZoom] = React.useState<number>(1.0);
   const [pan, setPan] = React.useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isExpanded, setIsExpanded] = React.useState<boolean>(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const isDark = darkMode ?? (typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
+  const isDark = useDarkMode(darkMode);
+  const onRenderErrorRef = React.useRef(onRenderError);
+  onRenderErrorRef.current = onRenderError;
 
   // Helper to extract native SVG dimensions
   const getSvgDimensions = React.useCallback(() => {
@@ -50,8 +65,17 @@ export function MermaidDiagram({
 
     const viewBox = svgEl.getAttribute("viewBox");
     if (viewBox) {
-      const parts = viewBox.trim().split(/\s+/).map(Number);
-      if (parts.length >= 4 && parts[2] > 0 && parts[3] > 0) {
+      const parts = viewBox
+        .trim()
+        .split(/[\s,]+/)
+        .map(Number);
+      if (
+        parts.length >= 4 &&
+        Number.isFinite(parts[2]) &&
+        Number.isFinite(parts[3]) &&
+        parts[2] > 0 &&
+        parts[3] > 0
+      ) {
         width = parts[2];
         height = parts[3];
       }
@@ -59,9 +83,14 @@ export function MermaidDiagram({
     if (!width || !height) {
       try {
         const bbox = svgEl.getBBox();
-        width = bbox.width;
-        height = bbox.height;
+        if (Number.isFinite(bbox.width) && Number.isFinite(bbox.height) && bbox.width > 0 && bbox.height > 0) {
+          width = bbox.width;
+          height = bbox.height;
+        }
       } catch {
+        // Ignore getBBox failures on hidden/jsdom SVG elements
+      }
+      if (!width || !height) {
         width = svgEl.clientWidth || 800;
         height = svgEl.clientHeight || 300;
       }
@@ -69,7 +98,7 @@ export function MermaidDiagram({
     return { width, height };
   }, []);
 
-  // Auto-fit function that guarantees text is NEVER tiny or over-zoomed-out
+  // Auto-fit function that guarantees readable positive zoom even in narrow/opening containers
   const autoFit = React.useCallback(() => {
     if (!containerRef.current || !diagramRef.current) return;
     const svgEl = diagramRef.current.querySelector("svg");
@@ -77,7 +106,7 @@ export function MermaidDiagram({
 
     const { width: svgWidth, height: svgHeight } = getSvgDimensions();
     if (svgWidth <= 0 || svgHeight <= 0) {
-      setZoom(1.05);
+      setZoom(1.0);
       setPan({ x: 0, y: 0 });
       return;
     }
@@ -97,16 +126,17 @@ export function MermaidDiagram({
 
     const containerWidth = containerRef.current.clientWidth - 48;
     const containerHeight = containerRef.current.clientHeight - 48;
+    if (containerWidth <= 0 || containerHeight <= 0) {
+      setZoom(1.0);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
 
     const scaleX = containerWidth / svgWidth;
     const scaleY = containerHeight / svgHeight;
     const naturalFit = Math.min(scaleX, scaleY);
 
-    // Natural fit within container:
-    // 1. If naturalFit >= 1.0 (diagram is smaller than container), cap at 1.0 so it never blows up.
-    // 2. If naturalFit < 1.0 (diagram is wider/taller than container), scale to naturalFit so the
-    //    entire diagram (all nodes, steps, and arrows) fits 100% within the card without clipping!
-    const optimalZoom = Number(Math.min(1.0, naturalFit).toFixed(2));
+    const optimalZoom = Number(Math.max(0.35, Math.min(1.0, naturalFit)).toFixed(2));
 
     setZoom(optimalZoom);
     setPan({ x: 0, y: 0 });
@@ -117,12 +147,23 @@ export function MermaidDiagram({
 
   // Fit to screen explicitly (scales entire diagram to fit container regardless of size)
   const fitToScreen = () => {
+    userInteractedRef.current = false;
     if (!containerRef.current || !diagramRef.current) return;
     const { width: svgWidth, height: svgHeight } = getSvgDimensions();
-    if (svgWidth <= 0 || svgHeight <= 0) return;
+    if (svgWidth <= 0 || svgHeight <= 0) {
+      setZoom(1.0);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
 
     const containerWidth = containerRef.current.clientWidth - 48;
     const containerHeight = containerRef.current.clientHeight - 48;
+    if (containerWidth <= 0 || containerHeight <= 0) {
+      setZoom(1.0);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+
     const scaleX = containerWidth / svgWidth;
     const scaleY = containerHeight / svgHeight;
     const fitScale = Number(Math.min(scaleX, scaleY).toFixed(2));
@@ -131,26 +172,50 @@ export function MermaidDiagram({
     setPan({ x: 0, y: 0 });
   };
 
-  // Reset to 100% (1:1)
+  // Reset to 100% (1:1) — explicit user zoom choice, so ResizeObserver must not override it
   const resetTo100 = () => {
+    userInteractedRef.current = true;
     setZoom(1.0);
     setPan({ x: 0, y: 0 });
   };
 
-  // Render diagram ONLY when code, dark mode, or id changes
+  React.useEffect(() => {
+    return () => {
+      if (expandTimerRef.current !== null) {
+        clearTimeout(expandTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Render diagram through the unified serialized Mermaid queue when code, theme, or mode changes
   React.useEffect(() => {
     let isCancelled = false;
-    if (!code || !code.trim()) {
-      return;
+    userInteractedRef.current = false;
+
+    const safeCode = sanitizeMermaidCode(code);
+    if (!safeCode) {
+      if (emptyBehavior === "error") {
+        diagramRef.current?.replaceChildren();
+        const message = "Unable to render diagram.";
+        setError(message);
+        onRenderErrorRef.current?.(message);
+        return;
+      }
+      if (!code || !code.trim()) {
+        diagramRef.current?.replaceChildren();
+        setError(null);
+        onRenderErrorRef.current?.(null);
+        return;
+      }
     }
+
+    const sourceToRender = safeCode || FALLBACK_DIAGRAM_SOURCE;
 
     const renderCode = async () => {
       try {
         setError(null);
-        const mermaid = await getConfiguredMermaid(isDark);
-        const uniqueId = `mermaid-${id || "dia"}-${Math.random().toString(36).substring(2, 9)}`;
-        const safeCode = sanitizeMermaidCode(code);
-        const { svg } = await mermaid.render(uniqueId, safeCode || "flowchart LR\n  Start --> End");
+        onRenderErrorRef.current?.(null);
+        const { svg } = await renderMermaidSvg(id || "dia", sourceToRender, isDark);
         if (!isCancelled && diagramRef.current) {
           diagramRef.current.innerHTML = svg;
           const svgEl = diagramRef.current.querySelector("svg");
@@ -158,13 +223,18 @@ export function MermaidDiagram({
             svgEl.style.maxWidth = "none";
           }
           requestAnimationFrame(() => {
-            autoFitRef.current();
+            if (!isCancelled) {
+              autoFitRef.current();
+            }
           });
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (!isCancelled) {
+          diagramRef.current?.replaceChildren();
+          const message = String((err as Error)?.message || err || "Unable to render diagram.");
           console.warn("Mermaid render error:", err);
-          setError(String(err?.message || err));
+          setError(message);
+          onRenderErrorRef.current?.(message);
         }
       }
     };
@@ -174,7 +244,29 @@ export function MermaidDiagram({
     return () => {
       isCancelled = true;
     };
-  }, [code, isDark, id]);
+  }, [code, isDark, id, emptyBehavior]);
+
+  // Re-fit smoothly on sidebar collapse or 200ms Sheet / expand transitions unless user zoomed/panned
+  React.useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let rafId = 0;
+    const observer = new ResizeObserver(() => {
+      if (userInteractedRef.current) return;
+      if (el.clientWidth <= 0 || el.clientHeight <= 0) return;
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        if (!userInteractedRef.current && el.clientWidth > 0 && el.clientHeight > 0) {
+          autoFitRef.current();
+        }
+      });
+    });
+    observer.observe(el);
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      observer.disconnect();
+    };
+  }, []);
 
   // Drag & Pan Event Handlers
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -192,6 +284,9 @@ export function MermaidDiagram({
     if (!isDraggingRef.current) return;
     const dx = e.clientX - dragStartRef.current.x;
     const dy = e.clientY - dragStartRef.current.y;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+      userInteractedRef.current = true;
+    }
     setPan({
       x: dragStartRef.current.panX + dx,
       y: dragStartRef.current.panY + dy,
@@ -202,19 +297,30 @@ export function MermaidDiagram({
     isDraggingRef.current = false;
   };
 
-  // Attach native non-passive wheel listener so scrolling inside the diagram zooms without scrolling the page
+  // Attach native non-passive wheel listener; in "modifier" mode require Ctrl/Cmd so document scroll is never trapped
   React.useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const onNativeWheel = (e: WheelEvent) => {
+      if (wheelZoom === "modifier" && !(e.ctrlKey || e.metaKey)) {
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
+      userInteractedRef.current = true;
       const delta = e.deltaY < 0 ? 0.12 : -0.12;
       setZoom((prev) => Math.min(3.5, Math.max(0.35, Number((prev + delta).toFixed(2)))));
     };
     el.addEventListener("wheel", onNativeWheel, { passive: false });
     return () => el.removeEventListener("wheel", onNativeWheel);
-  }, []);
+  }, [wheelZoom]);
+
+  const wheelHintText =
+    wheelZoom === "modifier"
+      ? "Drag to pan • Ctrl/⌘ + scroll to zoom"
+      : "Drag to pan • Scroll to zoom";
+
+  const viewportHeight = isExpanded ? expandedHeight : minHeight;
 
   return (
     <div
@@ -223,98 +329,130 @@ export function MermaidDiagram({
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
-      style={{ minHeight: isExpanded ? expandedHeight : minHeight }}
+      style={{
+        height: error ? undefined : viewportHeight,
+        minHeight: viewportHeight,
+      }}
       className={cn(
-        "relative rounded-xl border border-border/70 bg-card/60 overflow-hidden overscroll-contain flex items-center justify-center p-4 select-none cursor-grab active:cursor-grabbing transition-all duration-200",
+        "relative rounded-xl border border-border/70 bg-card/60 overflow-hidden flex items-center justify-center p-4 select-none transition-all duration-200",
+        !error && "cursor-grab active:cursor-grabbing",
+        wheelZoom === "always" && "overscroll-contain",
         className
       )}
     >
       {/* Zoom / Pan Controls Toolbar */}
-      {showControls && (
-        <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1 bg-background/90 backdrop-blur-md border border-border/80 rounded-xl p-1 shadow-xs">
+      {showControls && !error && (
+        <div
+          onMouseDown={(e) => e.stopPropagation()}
+          className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1 bg-background/90 backdrop-blur-md border border-border/80 rounded-xl p-1 shadow-xs"
+        >
           <button
             type="button"
+            aria-label="Zoom out"
             onClick={(e) => {
               e.stopPropagation();
+              userInteractedRef.current = true;
               setZoom((prev) => Math.max(0.35, Number((prev - 0.15).toFixed(2))));
             }}
-            className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            className="min-h-6 min-w-6 inline-flex items-center justify-center p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
             title="Zoom Out (-15%)"
           >
-            <ZoomOut className="h-3.5 w-3.5" />
+            <ZoomOut className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
           <span className="text-[10px] font-mono text-foreground font-semibold px-1 select-none min-w-[36px] text-center">
             {Math.round(zoom * 100)}%
           </span>
           <button
             type="button"
+            aria-label="Zoom in"
             onClick={(e) => {
               e.stopPropagation();
+              userInteractedRef.current = true;
               setZoom((prev) => Math.min(3.5, Number((prev + 0.15).toFixed(2))));
             }}
-            className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            className="min-h-6 min-w-6 inline-flex items-center justify-center p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
             title="Zoom In (+15%)"
           >
-            <ZoomIn className="h-3.5 w-3.5" />
+            <ZoomIn className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
           <button
             type="button"
+            aria-label="Fit entire diagram to screen"
             onClick={(e) => {
               e.stopPropagation();
               fitToScreen();
             }}
-            className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+            className="min-h-6 min-w-6 inline-flex items-center justify-center p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-primary transition-colors cursor-pointer"
             title="Fit Entire Diagram to Screen"
           >
-            <Maximize2 className="h-3.5 w-3.5" />
+            <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
           <button
             type="button"
+            aria-label="Reset zoom to 100%"
             onClick={(e) => {
               e.stopPropagation();
               resetTo100();
             }}
-            className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            className="min-h-6 min-w-6 inline-flex items-center justify-center p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
             title="Reset to 100% (1:1 Natural Size)"
           >
-            <RotateCcw className="h-3 w-3" />
+            <RotateCcw className="h-3 w-3" aria-hidden="true" />
           </button>
           <button
             type="button"
+            aria-label={isExpanded ? "Collapse viewport height" : "Expand viewport height"}
             onClick={(e) => {
               e.stopPropagation();
+              userInteractedRef.current = false;
               setIsExpanded((prev) => !prev);
-              setTimeout(() => autoFitRef.current(), 150);
+              if (expandTimerRef.current !== null) {
+                clearTimeout(expandTimerRef.current);
+              }
+              expandTimerRef.current = setTimeout(() => {
+                expandTimerRef.current = null;
+                autoFitRef.current();
+              }, 220);
             }}
-            className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            className="min-h-6 min-w-6 inline-flex items-center justify-center p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
             title={isExpanded ? "Collapse Viewport Height" : "Expand Viewport Height"}
           >
-            {isExpanded ? <Shrink className="h-3.5 w-3.5" /> : <Expand className="h-3.5 w-3.5" />}
+            {isExpanded ? (
+              <Shrink className="h-3.5 w-3.5" aria-hidden="true" />
+            ) : (
+              <Expand className="h-3.5 w-3.5" aria-hidden="true" />
+            )}
           </button>
         </div>
       )}
 
       {/* Floating Pan & Wheel Zoom Hint */}
-      <div className="absolute bottom-2 left-2 z-10 pointer-events-none flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-background/80 backdrop-blur-xs border border-border/60 text-[9px] text-muted-foreground font-mono">
-        <Move className="h-2.5 w-2.5 text-primary" />
-        <span>Drag to pan • Scroll to zoom</span>
-      </div>
+      {!error && (
+        <div className="absolute bottom-2 left-2 z-10 pointer-events-none flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-background/80 backdrop-blur-xs border border-border/60 text-[9px] text-muted-foreground font-mono">
+          <Move className="h-2.5 w-2.5 text-primary" aria-hidden="true" />
+          <span>{wheelHintText}</span>
+        </div>
+      )}
 
-      {/* Diagram Canvas */}
-      {error ? (
+      {/* Inline error notice (suppressed when parent card renders its own error fallback) */}
+      {error && !hideErrorFallback && (
         <div role="alert" className="w-full p-4 text-center">
           <p className="text-xs text-destructive font-semibold">Unable to render diagram.</p>
         </div>
-      ) : (
-        <div
-          ref={diagramRef}
-          className="transition-transform duration-75 ease-out flex items-center justify-center shrink-0"
-          style={{
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-            transformOrigin: "center center",
-          }}
-        />
       )}
+
+      {/* Always-mounted Diagram Canvas to prevent error-to-valid unmount races */}
+      <div
+        ref={diagramRef}
+        className={cn(
+          "transition-transform duration-75 ease-out flex items-center justify-center shrink-0",
+          error && "hidden"
+        )}
+        style={{
+          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+          transformOrigin: "center center",
+        }}
+      />
     </div>
   );
 }

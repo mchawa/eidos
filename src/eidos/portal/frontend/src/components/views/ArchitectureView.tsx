@@ -1,5 +1,5 @@
 import * as React from "react";
-import { getConfiguredMermaid, sanitizeMermaidCode } from "@/lib/mermaid";
+import { renderMermaidSvg, sanitizeMermaidCode } from "@/lib/mermaid";
 import { hasSpecBodyOrChunk } from "@/lib/specChunks";
 import {
   ZoomIn,
@@ -889,10 +889,12 @@ export function ArchitectureView({
       if (!diagramRef.current) return;
       try {
         setDiagramError(null);
-        const mermaid = await getConfiguredMermaid(darkMode);
-        const uniqueId = `mermaid-${Date.now()}`;
         const safeSource = sanitizeMermaidCode(currentDiagramSource);
-        const { svg } = await mermaid.render(uniqueId, safeSource || "graph TD\nSYS[System]");
+        const { svg } = await renderMermaidSvg(
+          "c4",
+          safeSource || "graph TD\nSYS[System]",
+          darkMode
+        );
         if (!isCancelled && diagramRef.current) {
           diagramRef.current.innerHTML = svg;
           const svgEl = diagramRef.current.querySelector("svg");

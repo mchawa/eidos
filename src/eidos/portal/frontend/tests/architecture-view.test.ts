@@ -14,6 +14,12 @@ vi.mock("@/lib/mermaid", () => ({
   getConfiguredMermaid: async () => ({
     render: async () => ({ svg: '<svg viewBox="0 0 200 100"><g class="node"></g></svg>' }),
   }),
+  renderMermaidSvg: async (_id: string, rawCode: string) => {
+    if (rawCode.includes("INVALID_SYNTAX")) {
+      throw new Error("Syntax error in CMP-PAYMENT-ROUTER diagram");
+    }
+    return { svg: '<svg data-mock-mermaid="true" viewBox="0 0 200 100"><g class="node"></g></svg>' };
+  },
   sanitizeMermaidCode: (src: string) => src,
 }));
 
@@ -232,5 +238,78 @@ describe("INV-PORTAL-INSPECTOR-FULL-SPEC-READING: uncramped inspector prose & re
     } finally {
       window.removeEventListener(SPEC_NAV_EVENT, onNav);
     }
+  });
+
+  test("INV-PORTAL-DOCUMENT-MERMAID-RENDERING: #c4InspectorDrawer renders embedded [mermaid] blocks without leaking raw IDs and stays SSR-safe", async () => {
+    const ssrHtml = renderToStaticMarkup(
+      React.createElement(AsciiDocRenderer, {
+        specId: "CMP-PAYMENT-ROUTER",
+        content: [
+          "== Payment Flow",
+          "",
+          ".Gateway Failover",
+          "[mermaid]",
+          "----",
+          "flowchart LR",
+          "  Cart --> Gateway",
+          "----",
+          "",
+        ].join("\n"),
+      })
+    );
+    expect(ssrHtml).toContain("Loading document");
+
+    const data = buildPortalFixture();
+    data.components[0].internal_components![0].description = [
+      "== Routing Rules",
+      "Routes payment intents to active acquiring gateways with failover.",
+      "",
+      ".Gateway Failover",
+      "[mermaid]",
+      "----",
+      "flowchart LR",
+      "  Cart --> Gateway",
+      "----",
+      "",
+      ".Broken Preview",
+      "[mermaid]",
+      "----",
+      "INVALID_SYNTAX",
+      "----",
+      "",
+    ].join("\n");
+    const labelIndex = buildEntityLabelIndex(data);
+    mountedContainer = document.createElement("div");
+    document.body.appendChild(mountedContainer);
+    mountedRoot = createRoot(mountedContainer);
+
+    await React.act(async () => {
+      mountedRoot!.render(
+        React.createElement(
+          EntityLabelProvider,
+          { value: labelIndex },
+          React.createElement(ArchitectureView, {
+            data,
+            initialComponentId: "CMP-PAYMENT-ROUTER",
+            initialComponentNonce: 2,
+          })
+        )
+      );
+    });
+    await React.act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+
+    const drawer = document.getElementById("c4InspectorDrawer");
+    expect(drawer).not.toBeNull();
+    const figures = drawer!.querySelectorAll('[data-document-mermaid="true"]');
+    expect(figures).toHaveLength(2);
+    expect(figures[0].textContent).toContain("Gateway Failover");
+    expect(figures[0].querySelector('svg[data-mock-mermaid="true"]')).not.toBeNull();
+    // Invalid diagram renders single clean alert without leaking raw error text or Eidos IDs
+    const alerts = drawer!.querySelectorAll('[data-document-mermaid="true"] [role="alert"]');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].textContent).toContain("Unable to render diagram.");
+    expect(RAW_ENTITY_ID_RE.test(drawer!.textContent || "")).toBe(false);
   });
 });

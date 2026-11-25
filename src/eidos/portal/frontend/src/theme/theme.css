@@ -750,6 +750,95 @@ html, body {
   height: auto;
 }
 
+/* Embedded AsciiDoc Mermaid diagram slots (DEC-PORTAL-DOCUMENT-MERMAID-RENDERING) */
+.adoc-mermaid-slot,
+.adoc-body .adoc-mermaid-slot {
+  margin: 1.25rem 0;
+  overflow-wrap: normal;
+  word-break: normal;
+  line-height: normal;
+  letter-spacing: normal;
+  font-size: 0.875rem;
+  font-style: normal;
+  font-weight: 400;
+  text-align: left;
+}
+.adoc-mermaid-slot svg,
+.adoc-body .adoc-mermaid-slot svg {
+  max-width: none;
+  display: block;
+}
+.adoc-mermaid-slot svg .title,
+.adoc-body .adoc-mermaid-slot svg .title {
+  font-size: inherit;
+  font-weight: inherit;
+  color: inherit;
+  margin-bottom: 0;
+}
+.adoc-mermaid-slot svg strong,
+.adoc-body .adoc-mermaid-slot svg strong {
+  color: inherit;
+}
+.adoc-mermaid-slot svg :not(pre) > code,
+.adoc-body .adoc-mermaid-slot svg :not(pre) > code {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+.adoc-mermaid-slot svg ul,
+.adoc-mermaid-slot svg ol,
+.adoc-body .adoc-mermaid-slot svg ul,
+.adoc-body .adoc-mermaid-slot svg ol {
+  padding-left: 1.25em;
+  margin: 0;
+}
+.adoc-mermaid-slot svg h1,
+.adoc-mermaid-slot svg h2,
+.adoc-mermaid-slot svg h3,
+.adoc-mermaid-slot svg h4,
+.adoc-mermaid-slot svg h5,
+.adoc-body .adoc-mermaid-slot svg h1,
+.adoc-body .adoc-mermaid-slot svg h2,
+.adoc-body .adoc-mermaid-slot svg h3,
+.adoc-body .adoc-mermaid-slot svg h4,
+.adoc-body .adoc-mermaid-slot svg h5 {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: inherit;
+  font-weight: 700;
+  letter-spacing: normal;
+  line-height: normal;
+  text-transform: none;
+  color: inherit;
+}
+.adoc-mermaid-slot .adoc-mermaid-source-pre,
+.adoc-body .adoc-mermaid-slot .adoc-mermaid-source-pre {
+  margin: 0;
+  padding: 1rem;
+  overflow-x: auto;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  background: #09090b;
+  color: #f4f4f5;
+}
+.adoc-mermaid-slot .adoc-mermaid-source-pre code,
+.adoc-body .adoc-mermaid-slot .adoc-mermaid-source-pre code {
+  font-family: inherit;
+  font-size: inherit;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
 /* ============================================================================
  * C4 Diagram Connection Highlighting (DEC-PORTAL-C4-FULLPAGE-AND-CONNECTION-FOCUS)
  * ============================================================================ */

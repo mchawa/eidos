@@ -63,13 +63,14 @@ Specification bodies are rendered through Asciidoctor.js (`@asciidoctor/core`, `
 * **Callouts** (`<1>` markers in source blocks plus the matching callout list).
 * **Definition lists** (`term:: definition`) and nested/ordered lists.
 * **Multi-line tables** (`[cols=...]`, header rows, multi-paragraph cells) inside a horizontally scrollable wrapper.
+* **Embedded Mermaid Diagrams** (`[mermaid]` and `[source,mermaid]` blocks across `----` and `....` fences, including nested lists, admonitions, examples, sidebars, `dlist` definitions, and `a|` table cells): Extracted at the Asciidoctor AST level and mounted **post-DOMPurify** into deterministic `.adoc-mermaid-slot` placeholders as interactive Mermaid v12 SVG diagram cards (`DocumentMermaidBlock`, `securityLevel: "strict"` and `sanitizeMermaidCode`). Each card renders an optional plain-text AsciiDoc `.Title` caption header (defaulting to `"Diagram"`), `View Source` / `View Diagram` and `Copy` controls, pan/zoom/fit/expand controls with non-scroll-trapping modifier-wheel zoom (`Ctrl`/`Cmd`+wheel so vertical prose scrolling is never hijacked), and reactive light/dark theme synchronization.
 * **Cross references**: `xref:SPEC-ID[]`, `<<SPEC-ID>>`, and relative `link:path/spec.adoc[]` / `xref:path/spec.adoc[]` targets are resolved to in-portal spec navigation (the Catalog spec inspector) and never leave the single-page app; in-page `#anchor` links scroll smoothly.
 * `include::` is explicitly unsupported in the browser (no filesystem) and is left as inert text in secure mode; no living spec currently uses it.
 
-Passthrough HTML emitted by Asciidoctor is sanitized (no scripts, iframes, styles, or event handlers), and heading ids and the sticky outline come from the same Asciidoctor parse, so `Table of Contents` anchors always match rendered headings. Mermaid, Asciidoctor.js, and the Geist fonts are embedded in the portal bundle (INV-PORTAL-AIR-GAPPED-BUNDLE).
+Passthrough HTML emitted by Asciidoctor is sanitized (no scripts, iframes, styles, `<svg>`, or event handlers), untrusted passthrough slot markers are stripped unconditionally, and heading ids and the sticky outline come from the same Asciidoctor parse, so `Table of Contents` anchors always match rendered headings. Mermaid, Asciidoctor.js, and the Geist fonts are embedded in the portal bundle (INV-PORTAL-AIR-GAPPED-BUNDLE).
 
 == 5. Accessibility & Verification
-* **WCAG Conformance**: Level AA (`aria-role: article`).
-* **Keyboard Navigation**: Tab and Shift+Tab traverse section anchors and interactive code blocks; Enter navigates via sticky Table of Contents.
-* **Automated Verification**: Exercised by `tests/test_portal.py::test_portal_reading_ergonomics`.
+* **WCAG Conformance**: Level AA (`aria-role: article`; embedded Mermaid diagram cards expose `role="figure"` with accessible `aria-label` captions, labeled zoom/expand toolbar controls, and a single `role="alert"` human-readable error notice `"Unable to render diagram."` paired with sanitized raw-source fallback on invalid or empty diagrams).
+* **Keyboard Navigation**: Tab and Shift+Tab traverse section anchors, interactive code blocks, and embedded diagram controls (`View Source` / `View Diagram`, `Copy`, zoom, fit, reset, and expand); Enter navigates via sticky Table of Contents.
+* **Automated Verification**: Exercised by `tests/test_portal.py::test_portal_reading_ergonomics` and `tests/test_portal.py::test_portal_document_mermaid_rendering`.
 

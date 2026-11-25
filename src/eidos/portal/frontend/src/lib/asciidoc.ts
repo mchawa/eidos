@@ -21,9 +21,16 @@ export interface AsciiDocOutlineItem {
   level: 2 | 3;
 }
 
+export interface AsciiDocMermaidBlock {
+  index: number;
+  code: string;
+  title?: string;
+}
+
 export interface RenderedAsciiDoc {
   html: string;
   outline: AsciiDocOutlineItem[];
+  mermaidBlocks: AsciiDocMermaidBlock[];
   title?: string;
 }
 
@@ -69,6 +76,114 @@ interface SectionLike {
   getSections(): SectionLike[];
 }
 
+interface TableCellLike {
+  getInnerDocument?: () => DocumentLike | null | undefined;
+}
+
+interface TableRowsLike {
+  head?: TableCellLike[][];
+  body?: TableCellLike[][];
+  foot?: TableCellLike[][];
+}
+
+interface BlockLike {
+  getContext?: () => string | undefined;
+  getStyle?: () => string | null | undefined;
+  getAttribute?: (name: string | number) => unknown;
+  getSource?: () => string | undefined;
+  getTitle?: () => string | null | undefined;
+  addRole?: (role: string) => unknown;
+  rows?: TableRowsLike;
+}
+
+interface DocumentLike {
+  findBy: (filter: (block: BlockLike) => boolean) => BlockLike[];
+}
+
+const MERMAID_ROLE_CLASS_PREFIX = "adoc-mermaid-";
+let fallbackNonceCounter = 0;
+
+function generateMermaidSlotNonce(): string {
+  const cryptoObj = typeof globalThis !== "undefined" ? globalThis.crypto : undefined;
+  if (cryptoObj?.getRandomValues) {
+    const bytes = new Uint8Array(12);
+    cryptoObj.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  if (cryptoObj?.randomUUID) {
+    return cryptoObj.randomUUID().replace(/-/g, "");
+  }
+  fallbackNonceCounter += 1;
+  return `${Date.now().toString(36)}${fallbackNonceCounter.toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function isMermaidBlock(block: BlockLike): boolean {
+  const style = String(block.getStyle?.() ?? "").trim().toLowerCase();
+  if (style === "mermaid") return true;
+  if (style === "source") {
+    const rawLang = block.getAttribute?.("language") ?? block.getAttribute?.("2") ?? block.getAttribute?.(2);
+    const lang = String(rawLang ?? "").trim().toLowerCase();
+    return lang === "mermaid";
+  }
+  return false;
+}
+
+/**
+ * Walk the Asciidoctor AST (`doc.findBy` + recursive `table.rows.{head,body,foot}` inner-document
+ * traversal) to extract `[mermaid]` and `[source,mermaid]` blocks verbatim and tag them with a
+ * per-parse CSPRNG nonced role before HTML conversion.
+ */
+function extractMermaidBlocks(
+  rootDoc: DocumentLike,
+  rolePrefix: string,
+  out: AsciiDocMermaidBlock[],
+  seen: WeakSet<object> = new WeakSet(),
+): void {
+  const matches = rootDoc.findBy((block) => {
+    const ctx = String(block.getContext?.() ?? "").toLowerCase();
+    return ctx === "listing" || ctx === "literal" || ctx === "table";
+  });
+
+  for (const block of matches) {
+    if (!block || seen.has(block)) continue;
+    seen.add(block);
+
+    const ctx = String(block.getContext?.() ?? "").toLowerCase();
+    if (ctx === "table") {
+      const rowsObj = block.rows;
+      if (rowsObj) {
+        for (const section of ["head", "body", "foot"] as const) {
+          const rows = rowsObj[section];
+          if (!Array.isArray(rows)) continue;
+          for (const row of rows) {
+            if (!Array.isArray(row)) continue;
+            for (const cell of row) {
+              const innerDoc = cell?.getInnerDocument?.();
+              if (innerDoc && !seen.has(innerDoc)) {
+                seen.add(innerDoc);
+                extractMermaidBlocks(innerDoc, rolePrefix, out, seen);
+              }
+            }
+          }
+        }
+      }
+      continue;
+    }
+
+    if (!isMermaidBlock(block)) continue;
+
+    const index = out.length;
+    const code = String(block.getSource?.() ?? "");
+    const rawTitle = block.getTitle?.();
+    const normalizedTitle = rawTitle
+      ? textOf(DOMPurify.sanitize(String(rawTitle), SANITIZE_CONFIG))
+      : "";
+
+    out.push(normalizedTitle ? { index, code, title: normalizedTitle } : { index, code });
+    block.addRole?.(`${rolePrefix}${index}`);
+  }
+}
+
 function collectOutline(sections: SectionLike[], out: AsciiDocOutlineItem[]): void {
   for (const section of sections) {
     const level = section.getLevel();
@@ -80,9 +195,70 @@ function collectOutline(sections: SectionLike[], out: AsciiDocOutlineItem[]): vo
   }
 }
 
-function decorate(root: HTMLElement): void {
+function stripAndReplaceMermaidSlots(
+  root: HTMLElement,
+  rolePrefix: string,
+  mermaidBlockCount: number,
+): void {
+  const verifiedBlocks: Array<{ element: HTMLElement; index: number }> = [];
+  const claimedIndices = new Set<number>();
+
+  // Unconditionally inspect and strip spoofed or stray Mermaid slot markers from sanitized HTML,
+  // even when the document contains zero real AST-extracted Mermaid blocks.
+  root
+    .querySelectorAll<HTMLElement>(
+      ".adoc-mermaid-slot, [data-mermaid-index], [class*='adoc-mermaid-']",
+    )
+    .forEach((el) => {
+      if (
+        mermaidBlockCount > 0 &&
+        (el.classList.contains("listingblock") || el.classList.contains("literalblock"))
+      ) {
+        for (const cls of Array.from(el.classList)) {
+          if (!cls.startsWith(rolePrefix)) continue;
+          const suffix = cls.slice(rolePrefix.length);
+          if (!/^\d+$/.test(suffix)) continue;
+          const idx = Number.parseInt(suffix, 10);
+          if (idx >= 0 && idx < mermaidBlockCount && !claimedIndices.has(idx)) {
+            claimedIndices.add(idx);
+            verifiedBlocks.push({ element: el, index: idx });
+            break;
+          }
+        }
+      }
+
+      el.classList.remove("adoc-mermaid-slot");
+      el.removeAttribute("data-mermaid-index");
+      for (const cls of Array.from(el.classList)) {
+        if (cls.startsWith(MERMAID_ROLE_CLASS_PREFIX)) {
+          el.classList.remove(cls);
+        }
+      }
+      if (el.getAttribute("class") === "") {
+        el.removeAttribute("class");
+      }
+    });
+
+  // Replace only CSPRNG-nonce-matched AST blocks with deterministic empty slot placeholders.
+  for (const { element, index } of verifiedBlocks) {
+    if (!element.isConnected && element.parentNode === null) continue;
+    const slot = document.createElement("div");
+    slot.className = "adoc-mermaid-slot";
+    slot.setAttribute("data-mermaid-index", String(index));
+    if (element.id) {
+      slot.id = element.id;
+    }
+    element.replaceWith(slot);
+  }
+}
+
+function decorate(root: HTMLElement, mermaidRolePrefix: string, mermaidBlockCount: number): void {
   // Safety net: the reader owns the outline, never an embedded TOC.
   root.querySelector(":scope > #toc")?.remove();
+
+  // Strip untrusted passthrough markers unconditionally and convert only verified AST Mermaid blocks
+  // into deterministic placeholders before `.adoc-code-bar` decoration runs.
+  stripAndReplaceMermaidSlots(root, mermaidRolePrefix, mermaidBlockCount);
 
   // Document title + section headings: scroll margin and copyable anchor links.
   root.querySelectorAll<HTMLElement>("h1, h2, h3, h4").forEach((h) => {
@@ -181,7 +357,7 @@ function markSpecLink(a: HTMLAnchorElement, target: string): void {
   a.removeAttribute("target");
 }
 
-/** Convert an AsciiDoc specification body to sanitized, decorated HTML plus its heading outline. */
+/** Convert an AsciiDoc specification body to sanitized, decorated HTML plus its heading outline and embedded Mermaid blocks. */
 export async function renderAsciiDoc(content: string): Promise<RenderedAsciiDoc> {
   const doc = await load(content, {
     safe: "secure",
@@ -193,6 +369,11 @@ export async function renderAsciiDoc(content: string): Promise<RenderedAsciiDoc>
   collectOutline(doc.getSections() as unknown as SectionLike[], outline);
   const title = doc.getDocumentTitle?.() ? textOf(String(doc.getDocumentTitle())) : undefined;
 
+  const mermaidNonce = generateMermaidSlotNonce();
+  const mermaidRolePrefix = `${MERMAID_ROLE_CLASS_PREFIX}m${mermaidNonce}-`;
+  const mermaidBlocks: AsciiDocMermaidBlock[] = [];
+  extractMermaidBlocks(doc as unknown as DocumentLike, mermaidRolePrefix, mermaidBlocks);
+
   const rawHtml = await doc.convert();
   const clean = DOMPurify.sanitize(String(rawHtml), SANITIZE_CONFIG);
 
@@ -200,9 +381,9 @@ export async function renderAsciiDoc(content: string): Promise<RenderedAsciiDoc>
   tpl.innerHTML = clean;
   const wrapper = document.createElement("div");
   wrapper.append(tpl.content);
-  decorate(wrapper);
+  decorate(wrapper, mermaidRolePrefix, mermaidBlocks.length);
 
-  return { html: wrapper.innerHTML, outline, title };
+  return { html: wrapper.innerHTML, outline, mermaidBlocks, title };
 }
 
 const CACHE_LIMIT = 64;

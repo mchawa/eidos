@@ -3245,3 +3245,116 @@ def test_portal_team_memory_payload_crosslinks_and_empty_state(tmp_path: Path) -
         "tab-memory",
     ):
         assert marker in bundle_html
+
+
+def test_portal_document_mermaid_rendering() -> None:
+    """Verify INV-PORTAL-DOCUMENT-MERMAID-RENDERING: AsciiDocRenderer (UIC-PORTAL-READER) extracts
+    embedded [mermaid] and [source,mermaid] AsciiDoc blocks at the Asciidoctor AST level with
+    CSPRNG per-parse nonced anti-spoofing roles, preserves untouched DOMPurify SANITIZE_DOM=true and
+    FORBID_TAGS (svg/style/button), mounts interactive DocumentMermaidBlock cards post-DOMPurify via
+    sibling React portals and one serialized securityLevel='strict' renderMermaidSvg queue shared
+    with ArchitectureView, provides modifier-wheel zoom and View Source / Copy / role='alert'
+    fallbacks with .adoc-mermaid-slot CSS resets, and stays within the 5 MiB raw / 2 MiB gzip
+    air-gapped bundle budget."""
+    import gzip
+
+    from eidos.portal.assets import get_portal_html_template
+
+    frontend_src = Path(__file__).resolve().parent.parent / "src" / "eidos" / "portal" / "frontend" / "src"
+    asciidoc_src = (frontend_src / "lib" / "asciidoc.ts").read_text(encoding="utf-8")
+    mermaid_src = (frontend_src / "lib" / "mermaid.ts").read_text(encoding="utf-8")
+    theme_src = (frontend_src / "lib" / "theme.ts").read_text(encoding="utf-8")
+    arch_src = (frontend_src / "components" / "views" / "ArchitectureView.tsx").read_text(encoding="utf-8")
+    diagram_src = (frontend_src / "components" / "ui" / "MermaidDiagram.tsx").read_text(encoding="utf-8")
+    doc_mermaid_src = (frontend_src / "components" / "ui" / "DocumentMermaidBlock.tsx").read_text(encoding="utf-8")
+    renderer_src = (frontend_src / "components" / "ui" / "AsciiDocRenderer.tsx").read_text(encoding="utf-8")
+    css_src = (frontend_src / "theme" / "theme.css").read_text(encoding="utf-8")
+
+    # 1. AST extraction, CSPRNG nonced anti-spoofing slots, and untouched DOMPurify SANITIZE_CONFIG
+    for token in (
+        "AsciiDocMermaidBlock",
+        "mermaidBlocks",
+        "findBy",
+        "getInnerDocument",
+        "adoc-mermaid-slot",
+        "data-mermaid-index",
+        "getRandomValues",
+        "SANITIZE_DOM: true",
+        '"svg"',
+        '"style"',
+        '"button"',
+        'idprefix: "spec-"',
+    ):
+        assert token in asciidoc_src
+
+    # 2. Unified serialized strict Mermaid queue shared by ArchitectureView and MermaidDiagram
+    for token in (
+        "export function renderMermaidSvg",
+        'securityLevel: "strict"',
+        "sanitizeMermaidCode",
+        "lastInitializedDark",
+        "eidos-mermaid-",
+        "getConfiguredMermaid",
+    ):
+        assert token in mermaid_src
+    assert "renderMermaidSvg(" in arch_src
+    assert "renderMermaidSvg(" in diagram_src
+
+    # 3. Reactive SSR-safe dark mode hook and hardened MermaidDiagram modifier-wheel zoom
+    assert "export function useDarkMode" in theme_src
+    assert "MutationObserver" in theme_src
+    for token in (
+        'wheelZoom?: "always" | "modifier"',
+        'emptyBehavior?: "fallback" | "error"',
+        "hideErrorFallback",
+        "ResizeObserver",
+        "e.ctrlKey || e.metaKey",
+        "useDarkMode",
+    ):
+        assert token in diagram_src
+
+    # 4. DocumentMermaidBlock card & sibling createPortal mounting in AsciiDocRenderer
+    for token in (
+        'role="figure"',
+        'data-document-mermaid="true"',
+        'wheelZoom="modifier"',
+        'emptyBehavior="error"',
+        "hideErrorFallback",
+        "View Source",
+        "View Diagram",
+        'role="alert"',
+        "Unable to render diagram.",
+    ):
+        assert token in doc_mermaid_src
+    assert "adoc-copy-btn" not in doc_mermaid_src
+    assert "createPortal(" in renderer_src
+    assert "DocumentMermaidBlock" in renderer_src
+    assert ".adoc-mermaid-slot[data-mermaid-index]" in renderer_src
+
+    # 5. Scoped .adoc-mermaid-slot CSS typography & SVG title cascade resets
+    for rule in (
+        ".adoc-mermaid-slot",
+        "overflow-wrap: normal",
+        "line-height: normal",
+        "letter-spacing: normal",
+        ".adoc-mermaid-slot svg .title",
+    ):
+        assert rule in css_src
+
+    # 6. Compiled air-gapped portal bundle reflects embedded Mermaid rendering within budget
+    bundle_html = get_portal_html_template()
+    for marker in (
+        "adoc-mermaid-slot",
+        "data-mermaid-index",
+        "data-document-mermaid",
+        "View Source",
+        "View Diagram",
+        "Unable to render diagram.",
+        "Ctrl/",
+    ):
+        assert marker in bundle_html
+
+    raw_bytes = bundle_html.encode("utf-8")
+    gzip_bytes = gzip.compress(raw_bytes)
+    assert len(raw_bytes) <= 5 * 1024 * 1024, f"Raw bundle exceeds 5 MiB: {len(raw_bytes)}"
+    assert len(gzip_bytes) <= 2048 * 1024, f"Gzipped bundle exceeds 2 MiB: {len(gzip_bytes)}"

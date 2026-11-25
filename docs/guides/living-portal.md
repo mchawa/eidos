@@ -16,7 +16,15 @@ Structured around a responsive left sidebar and URL hash deep-linking (`#/<view>
 5. **SpecDeltas Pipeline (Kanban & Chronological Timeline)**: Interactive Kanban board and Chronological Timeline tracking semantic mutations across `proposed`, `in_review`, `approved`, `applied` (paginated with archived column support), and `rejected` states, with clickable target and blast-radius entity badges.
 6. **Technical Explorations**: Discovery spikes (`EXP-*`) tracking hypotheses, exit criteria, empirical findings, archived status filtering, and resulting SpecDeltas.
 7. **Team Operational Memory (`#/memory`, `INV-PORTAL-TEAM-MEMORY-SURFACE`)**: Git-native shared operational lessons, project context, and external references (`eidos/memory/mem-*.adoc`, `MEM-*`) with category (`Feedback`, `Project Context`, `Reference`) and freshness/lifecycle (`Fresh`, `Needs Verification`, `Expired`, `History Unavailable`, `Promoted`, `Archived`) filters, non-blocking `memory_audit` hygiene highlights (duplicate pairs & formal specification overlaps—strictly isolated from `validation.warnings`), resolved target entity cross-links, full sanitized AsciiDoc inspection, and a clean zero-memory `eidos memory add` quickstart empty state.
-8. **Specs Master Catalog**: Filterable repository inventory with pre-indexed instant full-text Spotlight search (`CMD+K` and `/` shortcut across all 17 spec types, `DEC-*` decisions, `MEM-*` notes, and section headings), AsciiDoc reader with dynamic Table of Contents (`INV-PORTAL-READING-ERGONOMICS`), and clickable relationship badges.
+8. **Specs Master Catalog**: Filterable repository inventory with pre-indexed instant full-text Spotlight search (`CMD+K` and `/` shortcut across all 17 spec types, `DEC-*` decisions, `MEM-*` notes, and section headings), AsciiDoc reader with dynamic Table of Contents (`INV-PORTAL-READING-ERGONOMICS`), automatic interactive rendering of embedded AsciiDoc Mermaid (`[mermaid]` and `[source,mermaid]`) diagram blocks (`INV-PORTAL-DOCUMENT-MERMAID-RENDERING`), and clickable relationship badges.
+
+### Embedded AsciiDoc Mermaid Diagrams (`INV-PORTAL-DOCUMENT-MERMAID-RENDERING`)
+
+Any specification document rendered through the portal's AsciiDoc reader (across `SpecReader` / Catalog, Architecture `#c4InspectorDrawer` and Contract sheets, Business, Design, SpecDeltas, Explorations, Team Memory, and Home-launched specs) automatically renders embedded `[mermaid]` and `[source,mermaid]` blocks (`----` or `....` fences, including nested lists, admonitions, examples, definition lists, and `a|` table cells) as interactive Mermaid v12 SVG diagrams post-DOMPurify under `securityLevel: "strict"`:
+
+* **Captions & Controls**: Optional AsciiDoc `.Title` captions appear in the card header alongside **View Source** / **View Diagram** and **Copy** buttons plus pan, fit, reset, and height-expand controls.
+* **Non-Scroll-Trapping Zoom**: Plain scrolling traverses the specification prose naturally; hold `Ctrl` / `Cmd` while scrolling to zoom an embedded diagram.
+* **Theme Sync & Safe Fallback**: Toggling Light/Dark mode automatically re-renders visible embedded diagrams; malformed or empty blocks display a clean inline alert banner with sanitized raw Mermaid source instead of breaking the document.
 
 ---
 
