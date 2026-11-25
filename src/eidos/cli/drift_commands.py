@@ -6,9 +6,11 @@ import typer
 from rich.markup import escape
 from rich.table import Table
 
-from eidos.cli._shared import PANEL_GOVERNANCE, console, resolve_cli_eidos_dir
-from eidos.core.workspace.project import find_repo_root, resolve_spec_and_repo_roots
+from eidos.cli._shared import PANEL_GOVERNANCE, console, resolve_cli_eidos_dir, resolve_param_from_config
+from eidos.core.workspace.config import load_repo_config_with_errors
+from eidos.core.workspace.project import find_git_root, find_repo_root, resolve_spec_and_repo_roots
 from eidos.vcs import GitResolutionError, detect_drift
+from eidos.vcs.snapshot import _load_head_commit_config
 
 
 def drift_cmd(
@@ -37,17 +39,17 @@ def drift_cmd(
     ),
     warn_only: bool = typer.Option(
         False,
-        "--warn-only",
+        "--warn-only/--no-warn-only",
         help="Do not exit with code 1 on drift or validation failures.",
     ),
     fail_on_warnings: bool = typer.Option(
         False,
-        "--fail-on-warnings",
+        "--fail-on-warnings/--no-fail-on-warnings",
         help="Exit with code 1 when advisory validation warnings or ready-to-apply open SpecDeltas are present (unless --warn-only is set).",
     ),
     strict: bool = typer.Option(
         False,
-        "--strict",
+        "--strict/--no-strict",
         help="Treat body-only code changes as drift unless accompanied by a 1-hop spec, active SpecDelta, or test update.",
     ),
     markdown_out: Path | None = typer.Option(
@@ -72,6 +74,24 @@ def drift_cmd(
     else:
         repo_root = find_repo_root(resolved_eidos.parent if resolved_eidos.parent.exists() else None)
 
+    git_root = find_git_root(repo_root)
+    eval_cfg_errors: list[str] = []
+    if uncommitted or git_root is None:
+        eval_cfg, eval_cfg_errors = load_repo_config_with_errors(eidos_dir=resolved_eidos, repo_root=repo_root)
+    else:
+        try:
+            eidos_rel_prefix = str(resolved_eidos.relative_to(repo_root.resolve())).replace("\\", "/").strip("/") or "eidos"
+        except ValueError:
+            eidos_rel_prefix = resolved_eidos.name or "eidos"
+        eval_cfg = _load_head_commit_config(git_root, repo_root.resolve(), eidos_rel_prefix, head)
+
+    cli_strict = resolve_param_from_config("strict", strict, None)
+    cfg_warn_only = False if eval_cfg_errors else eval_cfg.drift.warn_only
+    eff_warn_only = bool(resolve_param_from_config("warn_only", warn_only, cfg_warn_only))
+    eff_fail_on_warnings = bool(
+        resolve_param_from_config("fail_on_warnings", fail_on_warnings, eval_cfg.drift.fail_on_warnings)
+    )
+
     try:
         result = detect_drift(
             repo_root=repo_root,
@@ -79,14 +99,14 @@ def drift_cmd(
             head_ref=head,
             eidos_dir=eidos_dir,
             uncommitted=uncommitted,
-            strict=strict,
+            strict=cli_strict,
         )
     except GitResolutionError as err:
         if json_output:
             console.print_json(data={"error": str(err), "is_clean": False})
         else:
             console.print(f"[bold red]Git Resolution Error:[/bold red] {err}")
-        if not warn_only:
+        if not eff_warn_only:
             raise typer.Exit(code=1) from err
         return
 
@@ -246,7 +266,7 @@ def drift_cmd(
                 )
 
         has_advisory_warnings = bool(result.validation_warnings or result.ready_to_apply_deltas)
-        if result.is_clean and fail_on_warnings and has_advisory_warnings:
+        if result.is_clean and eff_fail_on_warnings and has_advisory_warnings:
             parts: list[str] = []
             if result.validation_warnings:
                 parts.append(f"{len(result.validation_warnings)} advisory validation warning(s)")
@@ -266,7 +286,7 @@ def drift_cmd(
             console.print(f"\n[dim]Saved markdown summary to: {markdown_out}[/dim]")
 
     has_escalatable_advisories = bool(result.validation_warnings or result.ready_to_apply_deltas)
-    if (not result.is_clean or (fail_on_warnings and has_escalatable_advisories)) and not warn_only:
+    if (not result.is_clean or (eff_fail_on_warnings and has_escalatable_advisories)) and not eff_warn_only:
         raise typer.Exit(code=1)
 
 

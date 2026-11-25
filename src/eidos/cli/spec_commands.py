@@ -7,7 +7,7 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from eidos.cli._shared import PANEL_GOVERNANCE, console, resolve_cli_eidos_dir
+from eidos.cli._shared import PANEL_GOVERNANCE, console, resolve_cli_eidos_dir, resolve_param_from_config
 from eidos.core.lifecycle.catalog import find_spec_by_id_or_path
 from eidos.core.lifecycle.scaffolder import (
     create_spec,
@@ -18,7 +18,8 @@ from eidos.core.lifecycle.scaffolder import (
 )
 from eidos.core.spec.parser import parse_spec_file
 from eidos.core.spec.validator import SpecValidator
-from eidos.core.workspace.project import find_repo_root
+from eidos.core.workspace.config import load_repo_config_with_errors
+from eidos.core.workspace.project import find_repo_root, resolve_spec_and_repo_roots
 
 spec_app = typer.Typer(
     name="spec",
@@ -34,7 +35,7 @@ def validate(
     ),
     fail_on_warnings: bool = typer.Option(
         False,
-        "--fail-on-warnings",
+        "--fail-on-warnings/--no-fail-on-warnings",
         help="Exit with code 1 when advisory validation warnings are present.",
     ),
     json_output: bool = typer.Option(
@@ -54,6 +55,12 @@ def validate(
             raise typer.Exit(code=1)
         console.print(f"[bold red]Error:[/bold red] Directory '{target_path}' not found.")
         raise typer.Exit(code=1)
+
+    spec_root, repo_root = resolve_spec_and_repo_roots(target_path)
+    repo_cfg, _ = load_repo_config_with_errors(eidos_dir=spec_root, repo_root=repo_root)
+    effective_fail_on_warnings = bool(
+        resolve_param_from_config("fail_on_warnings", fail_on_warnings, repo_cfg.drift.fail_on_warnings)
+    )
 
     if not json_output:
         console.print(f"[bold cyan]Validating specifications in:[/bold cyan] {target_path.resolve()}\n")
@@ -86,7 +93,7 @@ def validate(
             ],
         }
         typer.echo(orjson.dumps(payload, option=orjson.OPT_INDENT_2).decode("utf-8"))
-        if not report.is_clean or (fail_on_warnings and report.warnings):
+        if not report.is_clean or (effective_fail_on_warnings and report.warnings):
             raise typer.Exit(code=1)
         return
 
@@ -127,7 +134,7 @@ def validate(
         console.print(f"\n[bold red]Summary:[/bold red] {report.valid_docs}/{report.total_docs} valid documents.")
         raise typer.Exit(code=1)
 
-    if fail_on_warnings and report.warnings:
+    if effective_fail_on_warnings and report.warnings:
         console.print(
             f"\n[bold red]Failure (--fail-on-warnings):[/bold red] {len(report.warnings)} advisory validation warning(s) detected."
         )

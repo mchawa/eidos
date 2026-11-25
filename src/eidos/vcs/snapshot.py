@@ -66,6 +66,36 @@ def _materialize_head_snapshot(
     return tmp_dir
 
 
+def _load_head_commit_config(
+    git_root: Path,
+    repo_root: Path,
+    eidos_rel_prefix: str,
+    head_ref: str,
+) -> Any:
+    """Load optional <eidos_dir>/eidos.yaml strictly from head_ref via git show (zero working-tree leakage)."""
+    from eidos.core.workspace.config import CONFIG_FILENAME, DEFAULT_CONFIG, parse_config_yaml_text
+
+    sub_prefix = ""
+    if repo_root != git_root and repo_root.is_relative_to(git_root):
+        sub_prefix = str(repo_root.relative_to(git_root)).replace("\\", "/").strip("/")
+    clean_eidos_rel = eidos_rel_prefix.replace("\\", "/").strip("/")
+    parts = [p for p in (sub_prefix, clean_eidos_rel, CONFIG_FILENAME) if p]
+    obj_spec = f"{head_ref}:{'/'.join(parts)}"
+    try:
+        res = subprocess.run(
+            ["git", "show", obj_spec],
+            cwd=git_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        raw_text = res.stdout if res.returncode == 0 else ""
+    except OSError:
+        raw_text = ""
+    cfg, errs, _sources = parse_config_yaml_text(raw_text, repo_root=None)
+    return DEFAULT_CONFIG if errs else cfg
+
+
 def _remap_snapshot_str(text: str, snap_root: Path | None) -> str:
     """Replace any temporary snapshot directory prefix with clean repo-relative paths."""
     if snap_root is None or not text:
@@ -83,7 +113,7 @@ def _remap_snapshot_str(text: str, snap_root: Path | None) -> str:
 
 
 def _remap_validation_report(report: ValidationReport, snap_root: Path | None) -> None:
-    """Normalize schema_errors and broken_references in-place so snapshot paths report as repo-relative."""
+    """Normalize schema_errors, broken_references, and warnings in-place so snapshot paths report as repo-relative."""
     if snap_root is None:
         return
     remapped_errors: dict[str, list[str]] = {}
@@ -93,6 +123,7 @@ def _remap_validation_report(report: ValidationReport, snap_root: Path | None) -
         remapped_errors.setdefault(clean_key, []).extend(clean_msgs)
     report.schema_errors = remapped_errors
     report.broken_references = [_remap_snapshot_str(ref, snap_root) for ref in report.broken_references]
+    report.warnings = [_remap_snapshot_str(warn, snap_root) for warn in report.warnings]
 
 
 def _has_eidos_onboarding(eval_root: Path) -> bool:

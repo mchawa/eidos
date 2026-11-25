@@ -7,7 +7,7 @@ eidos [OPTIONS] COMMAND [ARGS]...
 ```
 
 Commands are semantically organized into six functional panels in CLI help output (`eidos --help`):
-1. **Setup & Workspace**: Environment information, versioning, workspace diagnostics, and repository bootstrapping.
+1. **Setup & Workspace**: Environment information, versioning, workspace diagnostics, repository bootstrapping, and optional repository configuration (`eidos config`).
 2. **Governance & Verification**: Schema validation and spec-to-code drift detection.
 3. **Knowledge Graph & AI Context**: Subgraph context extraction and SQLite/FTS5 knowledge graph maintenance.
 4. **Living Catalog & Mutations**: Specifications (`eidos spec`) and SpecDeltas (`eidos delta`).
@@ -39,7 +39,7 @@ eidos info
 ---
 
 ### `eidos doctor`
-Verify Eidos tool installation, non-blocking PyPI release update availability (`checks.cli_update`), root `AGENTS.md` managed-block integrity (`checks.agents_md`), non-blocking open SpecDelta verification readiness (`checks.open_deltas`), Git repository status, specification directory health, knowledge graph index freshness, and installed agent plugin currency and `Stop` / `PreToolUse` hook health (`hooks_ok`, `hooks_status`, `target_hooks`, `hook_errors`):
+Verify optional repository configuration (`checks.repo_config`), Eidos tool installation, non-blocking PyPI release update availability (`checks.cli_update`, honoring `plugin.updates_check`), root `AGENTS.md` managed-block integrity (`checks.agents_md`), non-blocking open SpecDelta verification readiness (`checks.open_deltas`), Git repository status, specification directory health, knowledge graph index freshness, and installed agent plugin currency, `Stop` / `PreToolUse` hook health (`hooks_ok`, `hooks_status`, `target_hooks`, `hook_errors`), and non-blocking advisories for missing concrete `plugin.targets`:
 
 ```bash
 eidos doctor
@@ -49,12 +49,12 @@ eidos doctor --json
 
 Options:
 * `--path, -p PATH`: Path to the project or specifications directory (default: current directory).
-* `--json`: Output diagnostic report in JSON format (including `checks.cli_update`, `checks.agents_md`, `checks.open_deltas`, and `checks.agent_plugin` with `hooks_ok`, `hooks_status`, `target_hooks`, and `hook_errors`).
+* `--json`: Output diagnostic report in JSON format (including `checks.repo_config`, `checks.cli_update`, `checks.agents_md`, `checks.open_deltas`, and `checks.agent_plugin` with `hooks_ok`, `hooks_status`, `target_hooks`, `hook_errors`, `configured_targets`, and `missing_configured_targets`).
 
 ---
 
 ### `eidos init`
-Initialize a Git repository (or an independent sub-project inside a monorepo) with an Eidos living specification skeleton, tracking empty directories with `.gitkeep` files, self-contained `eidos/.gitignore`, and immediate validation. Passing either `<repo>` or `<repo>/eidos` initializes `<repo>/eidos` directly without nesting `eidos/eidos`. Note that `eidos init` initializes specifications; agent plugins are installed separately via `eidos plugin install`.
+Initialize a Git repository (or an independent sub-project inside a monorepo) with an Eidos living specification skeleton, tracking empty directories with `.gitkeep` files, self-contained `eidos/.gitignore`, and immediate validation. Passing either `<repo>` or `<repo>/eidos` initializes `<repo>/eidos` directly without nesting `eidos/eidos`. Note that `eidos init` operates 100% zero-config and does not create `eidos/eidos.yaml` by default (preserving any pre-existing `eidos/eidos.yaml` untouched; optional config can be scaffolded via `eidos config init`, and agent plugins are installed separately via `eidos plugin install`).
 
 ```bash
 # Initialize living specification skeleton in current repository
@@ -77,25 +77,145 @@ Options:
 
 ---
 
+### `eidos config`
+Scaffold, inspect, and view the offline schema for the optional, project-scoped repository configuration file (`eidos/eidos.yaml`, or `<subproject>/eidos/eidos.yaml` in monorepos).
+
+Eidos works 100% zero-config when `eidos/eidos.yaml` is absent. When present, `eidos/eidos.yaml` configures operational engine defaults under deterministic precedence:
+
+```text
+CLI flags > EIDOS_* env vars > eidos/eidos.yaml > built-in defaults
+```
+
+```bash
+# Scaffold a commented, schema-validated starter eidos/eidos.yaml
+eidos config init
+eidos config init --force --json
+
+# Display active config file, effective resolved settings, and per-key source attribution (default | file | env)
+eidos config show
+eidos config show --json
+
+# Inspect all valid v1 config keys, defaults, and mapped EIDOS_* environment variables offline
+eidos config schema
+eidos config schema --json
+```
+
+Sub-commands:
+* `init [--force] [--path PATH] [--json]`: Scaffolds a commented starter `<eidos_dir>/eidos.yaml` (refusing to overwrite an existing file with exit code `1` unless `--force, -f` is passed).
+* `show [--path PATH] [--json]`: Displays the resolved config path (or `absent`), every effective value, and per-key provenance (`default`, `file`, or `env`), failing closed with exit code `1` on schema or `EIDOS_*` errors.
+* `schema [--json]`: Introspects the bundled `eidos-config.v1.schema.yaml` schema offline (all 7 sections, constraints, built-in defaults, and `EIDOS_*` environment variables).
+
+#### Optional `eidos/eidos.yaml` Reference
+Architectural and product truth always lives in `eidos/*.adoc`; `eidos/eidos.yaml` strictly governs operational engine and workflow knobs (no credentials or LLM provider settings) and validates fail-closed (`version: 1`, `additionalProperties: false`):
+
+```yaml
+version: 1
+
+workspace:
+  exclude: ["generated/**"]
+  tests:
+    include: ["qa/specs/**"]
+    exclude: ["tests/fixtures/**"]
+  subprojects_exclude: ["examples/fixtures/**"]
+
+drift:
+  base_ref: origin/main
+  strict: false
+  warn_only: false
+  fail_on_warnings: false
+  ignore_paths: ["scripts/dev/**"]   # suppresses code_files only; never specs, deltas, memories, or tests
+  checks:
+    mermaid: error                   # error | warn | off
+    import_boundaries: error
+    public_surface: error
+    contract_parity: error
+    deprecated_references: warn
+
+context:
+  default_tier: guardrails           # anchor | guardrails | deep
+  budgets:
+    anchor: 300
+    guardrails: 1000
+    deep: 2500
+  repo_map_max_tokens: 1500
+  semantic:
+    enabled: true
+    variant: quantized               # quantized | fp32 | fp16
+    # model_mirror_url: https://artifacts.internal/harrier   # HTTP(S) only; SHA-256 manifest enforced
+
+memory:
+  commit_drift_threshold: 5
+  tier_caps:
+    anchor: [2, 0]                   # [max_anchored, max_global]
+    guardrails: [3, 2]
+    deep: [5, 3]
+  # default_expiry_days: 90          # optional; override single entry with --expires none
+
+lifecycle:
+  archive:
+    keep_recent: 15
+    include_explorations: true
+
+plugin:
+  targets: ["claude", "cursor"]      # concrete targets only (excludes "all")
+  launcher: eidos                    # eidos | uvx
+  updates_check: true
+  hooks:
+    install: false                   # default for `eidos plugin install --hooks/--no-hooks`
+    enabled: true                    # runtime kill-switch in `eidos hook`
+    strict: null                     # null inherits drift.strict
+    fail_on_warnings: null           # null inherits drift.fail_on_warnings
+    baseline_ttl_seconds: 86400
+
+portal:
+  serve:
+    host: 127.0.0.1
+    port: 3000
+    open_browser: false
+  build:
+    out_dir: site                    # validated strictly inside repository root
+    single_file: false
+```
+
+#### Supported `EIDOS_*` Environment Variables
+Environment variables override `eidos/eidos.yaml` and are themselves overridden by explicit CLI flags (invalid non-empty values fail closed with exit code `1`; booleans accept `1/true/yes/on` vs `0/false/no/off`):
+
+| Environment Variable | Config Key | Type |
+| :--- | :--- | :--- |
+| `EIDOS_DRIFT_BASE_REF` | `drift.base_ref` | `string` |
+| `EIDOS_DRIFT_STRICT` | `drift.strict` | `boolean` |
+| `EIDOS_DRIFT_WARN_ONLY` | `drift.warn_only` | `boolean` |
+| `EIDOS_DRIFT_FAIL_ON_WARNINGS` | `drift.fail_on_warnings` | `boolean` |
+| `EIDOS_CONTEXT_TIER` | `context.default_tier` | `anchor \| guardrails \| deep` |
+| `EIDOS_SEMANTIC_ENABLED` | `context.semantic.enabled` | `boolean` |
+| `EIDOS_SEMANTIC_VARIANT` | `context.semantic.variant` | `quantized \| fp32 \| fp16` |
+| `EIDOS_SEMANTIC_MIRROR_URL` | `context.semantic.model_mirror_url` | `http(s) URL` |
+| `EIDOS_HOOKS_ENABLED` | `plugin.hooks.enabled` | `boolean` |
+| `EIDOS_NO_UPDATE_CHECK` | `plugin.updates_check` (`false`) | `boolean` |
+| `EIDOS_FORCE_UPDATE_CHECK` | `plugin.updates_check` (`true`, when `EIDOS_NO_UPDATE_CHECK` is unset) | `boolean` |
+
+---
+
 ## 2. Governance & Verification
 
 ### `eidos validate`
-Validate all AsciiDoc specification documents against their bundled v1 JSON/YAML schemas (including shared `$defs` for `DEC-*` and `INV-*`, the 17-value canonical `tech/contract` `protocol` enum + conditional `custom_protocol`, and closed `mutations[].expect` schemas), check `x-eidos-ref` cross-document graph integrity, validate embedded `[mermaid]` and `[source,mermaid]` diagram syntax in-process via `quickjs-ng` `mermaid.parse()` (cached in `mermaid_validation_cache`), verify on-disk existence of declared container package paths and contract specification files, and enforce bidirectional multi-protocol contract parity (`cli_args` across Python, Go `cobra`, Rust `clap`, Node/TS `commander`/`yargs`, and C# `System.CommandLine`; `openapi` including OpenAPI 3.1 `webhooks`; `rest_http`; `protobuf`; `graphql`; bidirectional `json_schema` with `$defs`/`definitions`; `python_protocol`; `asyncapi`; `json_rpc_stdio`; `code_interface`; `wsdl`; `avro`; `sql_ddl`; `trpc`; `websocket`; and `mcp`).
+Validate all AsciiDoc specification documents against their bundled v1 JSON/YAML schemas—plus automatic fail-closed validation of optional `eidos/eidos.yaml` (`schema_errors["eidos/eidos.yaml"]`) and configurable `drift.checks` severities—check `x-eidos-ref` cross-document graph integrity, validate embedded `[mermaid]` and `[source,mermaid]` diagram syntax in-process via `quickjs-ng` `mermaid.parse()` (cached in `mermaid_validation_cache`), verify on-disk existence of declared container package paths and contract specification files, and enforce bidirectional multi-protocol contract parity (`cli_args` across Python, Go `cobra`, Rust `clap`, Node/TS `commander`/`yargs`, and C# `System.CommandLine`; `openapi` including OpenAPI 3.1 `webhooks`; `rest_http`; `protobuf`; `graphql`; bidirectional `json_schema` with `$defs`/`definitions`; `python_protocol`; `asyncapi`; `json_rpc_stdio`; `code_interface`; `wsdl`; `avro`; `sql_ddl`; `trpc`; `websocket`; and `mcp`).
 
 ```bash
 eidos validate eidos
 eidos validate --json
 eidos validate --fail-on-warnings --json
+eidos validate --no-fail-on-warnings --json
 ```
 
 Options:
 * `PATH`: Positional path to the specification directory or file (default: `eidos`).
-* `--fail-on-warnings`: Exit with code `1` when advisory validation warnings are present (default `False`).
+* `--fail-on-warnings / --no-fail-on-warnings`: Escalate non-empty advisory validation warnings to exit code `1`, or explicitly disable `drift.fail_on_warnings: true` from `eidos/eidos.yaml` (built-in default: `False`).
 * `--json`: Output structured JSON validation report (including non-blocking advisory `warnings` and `warning_count`).
 
 Exit Codes:
-* `0`: All specifications conform to schema with zero broken cross-references or missing file bindings (advisory `warnings` do not fail exit code `0` unless `--fail-on-warnings` is passed).
-* `1`: Schema validation errors, broken cross-references, missing declared files, undocumented/stale contract operations, or advisory warnings under `--fail-on-warnings` detected.
+* `0`: All specifications (and optional `eidos/eidos.yaml`) conform to schema with zero broken cross-references or missing file bindings (advisory `warnings` do not fail exit code `0` unless effective `fail_on_warnings` is active).
+* `1`: Schema validation errors, invalid `eidos/eidos.yaml`, broken cross-references, missing declared files, undocumented/stale contract operations, or advisory warnings under `--fail-on-warnings` detected.
 
 > [!NOTE]
 > `eidos validate` is a static catalog linter (with schema-digest-keyed fast-path caching for historical `status: applied` SpecDeltas). It does not inspect Git diffs or scan the test suite for polyglot invariant coverage, making it sub-second fast for local specification authoring and TDD.
@@ -103,7 +223,7 @@ Exit Codes:
 ---
 
 ### `eidos drift`
-The primary Git-native verification gate. Detects spec-to-code drift between Git branches (using fail-closed 3-dot merge-base comparison) or uncommitted working-tree changes, validates schema conformance, enforces substantive spec diffs, and statically verifies polyglot invariant test bindings across both Planned Mode and Direct Mode:
+The primary Git-native verification gate. Detects spec-to-code drift between Git branches (using fail-closed 3-dot merge-base comparison, loading `eidos/eidos.yaml` strictly from `--head` on commit-range runs) or uncommitted working-tree changes, validates schema conformance, enforces substantive spec diffs, and statically verifies polyglot invariant test bindings across both Planned Mode and Direct Mode:
 
 ```bash
 # Compare current branch against base branch (3-dot merge-base diff):
@@ -118,24 +238,25 @@ eidos drift --base origin/main --markdown drift-report.md
 # Output structured JSON (includes touched_components, trivially_covered_files, remediation_suggestions):
 eidos drift --uncommitted --json
 
-# Run as non-blocking warning check:
+# Run as non-blocking warning check, or override eidos/eidos.yaml defaults on a single run:
 eidos drift --warn-only
+eidos drift --no-strict --no-warn-only --no-fail-on-warnings
 ```
 
 Options:
-* `--base, -b REF`: Base git reference to compare against (defaults to `origin/main` or `main`; fails closed if an explicit ref cannot be resolved).
-* `--head REF`: Head git reference (defaults to `HEAD`).
+* `--base, -b REF`: Base git reference to compare against (resolves default from `drift.base_ref` / `EIDOS_DRIFT_BASE_REF` ahead of `origin/main` or `main`; fails closed if an explicit ref cannot be resolved).
+* `--head REF`: Head git reference (defaults to `HEAD`; commit-range checks load specs and `eidos/eidos.yaml` strictly from `--head`).
 * `--uncommitted, -u`: Analyze uncommitted working tree and staged changes instead of branch diff.
 * `--path, -p PATH`: Path to eidos specifications directory (defaults to `./eidos`).
 * `--markdown, -m FILE`: Path to write the markdown summary comment.
 * `--json`: Output raw JSON verification result (including `structural_code_files`, `body_only_code_files`, `trivially_covered_files`, `boundary_violations`, `ratchet_shrink_candidates`, non-blocking `validation_warnings`, diff-scoped `ready_to_apply_deltas`, and advisory `untouched_consumers`).
-* `--strict`: Treat body-only code changes as drift unless accompanied by a 1-hop spec, active SpecDelta, or test update.
-* `--fail-on-warnings`: Exit with code `1` when advisory `validation_warnings` or `ready_to_apply_deltas` are non-empty (unless `--warn-only` is set); `ratchet_shrink_candidates` and `untouched_consumers` remain strictly non-blocking review advisories.
-* `--warn-only`: Do not exit with code 1 when drift is detected.
+* `--strict / --no-strict`: Treat body-only code changes as drift unless accompanied by a 1-hop spec, active SpecDelta, or test update (resolves default from `drift.strict` / `EIDOS_DRIFT_STRICT`).
+* `--fail-on-warnings / --no-fail-on-warnings`: Exit with code `1` when advisory `validation_warnings` or `ready_to_apply_deltas` are non-empty unless effective `warn_only` is active (resolves default from `drift.fail_on_warnings` / `EIDOS_DRIFT_FAIL_ON_WARNINGS`); `ratchet_shrink_candidates` and `untouched_consumers` remain strictly non-blocking review advisories.
+* `--warn-only / --no-warn-only`: Do not exit with code 1 when drift is detected (resolves default from `drift.warn_only` / `EIDOS_DRIFT_WARN_ONLY`).
 
 Exit Codes:
-* `0`: Specifications and code are synchronized, all schemas, import boundaries, and bindings valid, invariant tests green (advisory `ratchet_shrink_candidates`, `untouched_consumers`, `validation_warnings`, and `ready_to_apply_deltas` do not fail exit code `0`, though `validation_warnings` and `ready_to_apply_deltas` escalate when `--fail-on-warnings` is passed).
-* `1`: Spec-to-code drift detected, architectural import `boundary_violations` detected, unowned structural code found, specification validation errors found, uncovered/orphan invariants detected, or non-empty `validation_warnings` / `ready_to_apply_deltas` under `--fail-on-warnings` (without `--warn-only`).
+* `0`: Specifications and code are synchronized, all schemas, import boundaries, and bindings valid, invariant tests green (advisory `ratchet_shrink_candidates`, `untouched_consumers`, `validation_warnings`, and `ready_to_apply_deltas` do not fail exit code `0`, though `validation_warnings` and `ready_to_apply_deltas` escalate when effective `fail_on_warnings` is active).
+* `1`: Spec-to-code drift detected, architectural import `boundary_violations` detected, unowned structural code found, specification or `eidos/eidos.yaml` validation errors found, uncovered/orphan invariants detected, or non-empty `validation_warnings` / `ready_to_apply_deltas` under `--fail-on-warnings` (without `--warn-only`).
 
 > [!IMPORTANT]
 > `eidos drift` **subsumes `eidos validate`**: it executes the entire `SpecValidator` suite internally as part of its gate, in addition to checking Git diffs, AST structural changes, and polyglot invariant test bindings.
@@ -217,13 +338,16 @@ eidos index sync
 # Fast structural/AST sync skipping Harrier ONNX embedding generation
 eidos index sync --no-semantic --json
 
+# Force semantic sync even when context.semantic.enabled is false in eidos/eidos.yaml
+eidos index sync --semantic --json
+
 # Force complete rebuild from scratch
 eidos index sync --force
 ```
 
 Options:
 * `--force`: Force complete drop and rebuild of all tables and indexes.
-* `--no-semantic`: Skip Harrier ONNX semantic embedding synchronization when provisioned.
+* `--semantic / --no-semantic`: Enable or skip Harrier ONNX semantic embedding synchronization when provisioned (resolves default from `context.semantic.enabled` / `EIDOS_SEMANTIC_ENABLED`; built-in default: `--semantic`).
 * `--json`: Output synchronization metrics and semantic status as machine-readable JSON.
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
@@ -499,13 +623,15 @@ Launch the interactive Eidos Living Web Portal locally with live updates.
 
 ```bash
 eidos portal serve --path eidos --port 8080
+eidos portal serve --open
+eidos portal serve --no-open
 ```
 
 Options:
 * `--path, -p PATH`: Path to the specifications directory (default: `eidos`).
-* `--host, -h TEXT`: Bind host (default: `127.0.0.1`).
-* `--port INTEGER`: Port number (default: `3000`).
-* `--open`: Open portal in browser automatically.
+* `--host, -h TEXT`: Bind host (resolves default from `portal.serve.host`; built-in default: `127.0.0.1`).
+* `--port INTEGER`: Port number (resolves default from `portal.serve.port`; built-in default: `3000`).
+* `--open / --no-open`: Open portal in browser automatically or suppress browser auto-open (resolves default from `portal.serve.open_browser`; built-in default: `False`).
 
 #### `eidos portal build`
 Export the Eidos Living Web Portal as a self-contained, air-gapped static site (`index.html`, `./assets/*`, `data.json`, and local per-entity `specs/<id>.json` chunks by default, or a single self-contained `index.html` + `data.json` with `--single-file`) suitable for deployment on GitHub Pages, GitLab Pages, or static web servers.
@@ -513,12 +639,13 @@ Export the Eidos Living Web Portal as a self-contained, air-gapped static site (
 ```bash
 eidos portal build --path eidos --out public
 eidos portal build --path eidos --out public --single-file
+eidos portal build --path eidos --no-single-file
 ```
 
 Options:
 * `--path, -p PATH`: Path to the specifications directory (default: `eidos`).
-* `--out, -o PATH`: Destination directory for generated static assets (default: `./site`).
-* `--single-file`: Inline scripts, styles, and specification bodies directly into `index.html` and `data.json` instead of emitting `./assets/*` and lazy local `specs/<id>.json` chunks.
+* `--out, -o PATH`: Destination directory for generated static assets (resolves default from `portal.build.out_dir`; built-in default: `./site`).
+* `--single-file / --no-single-file`: Inline scripts, styles, and specification bodies directly into `index.html` and `data.json` instead of emitting `./assets/*` and lazy local `specs/<id>.json` chunks, or explicitly disable `portal.build.single_file: true` (built-in default: `False`).
 
 ---
 
@@ -533,6 +660,11 @@ eidos plugin install all
 
 # Install Agent Skills with native Stop / PreToolUse lifecycle hooks enabled
 eidos plugin install all --hooks
+
+# Omit [TARGET] when plugin.targets is configured in eidos/eidos.yaml:
+eidos plugin install
+eidos plugin install --no-hooks
+eidos plugin update
 
 # Or install for a specific target:
 eidos plugin install antigravity
@@ -561,22 +693,22 @@ eidos plugin info
 # Update installed skills to latest bundled engine version (preserves installed hook setting)
 eidos plugin update all
 
-# Uninstall skill files and agent hook configurations
+# Uninstall skill files and agent hook configurations (<TARGET> is always required)
 eidos plugin uninstall all
 ```
 
 Sub-commands:
-* `install <TARGET>`: Installs Agent Skills into `.agents/skills/`, `.claude/skills/`, or `.aider/skills/` and client harness locations via manifest-tracked `TargetAdapter` projections (`--project-dir, -p`, `--force/--no-force`, `--launcher [eidos|uvx]`, `--hooks`).
-* `uninstall <TARGET>`: Safely cleans up Eidos skill files and client hook configurations while preserving user-owned files (`--project-dir, -p`).
+* `install [TARGET]`: Installs Agent Skills into `.agents/skills/`, `.claude/skills/`, or `.aider/skills/` and client harness locations via manifest-tracked `TargetAdapter` projections (`[TARGET]` falls back to `plugin.targets` in `eidos/eidos.yaml`, exiting with code `2` if neither is provided; options: `--project-dir, -p`, `--force/--no-force`, `--launcher [eidos|uvx]`, `--hooks/--no-hooks` backed by `plugin.hooks.install`).
+* `uninstall <TARGET>`: Safely cleans up Eidos skill files and client hook configurations while preserving user-owned files (`<TARGET>` is strictly required for safety; `--project-dir, -p`).
 * `version`: Displays and compares bundled vs installed skills version (`--project-dir, -p`).
-* `update <TARGET>`: Updates project-scoped skills to the latest bundled version and preserves the current hook state (`--project-dir, -p`, `--launcher [eidos|uvx]`).
+* `update [TARGET]`: Updates project-scoped skills to the latest bundled version and preserves the current hook state (`[TARGET]` falls back to `plugin.targets` in `eidos/eidos.yaml`, exiting with code `2` if neither is provided; `--project-dir, -p`, `--launcher [eidos|uvx]`).
 * `validate`: Validates an Agent Skills bundle against `agentskills.io` frontmatter rules and SemVer 2.0.0 versioning.
 * `info`: Displays Agent Skills package metadata, skills, and lifecycle hooks.
 
 ---
 
 ### `eidos hook`
-Stateless session-baseline-aware CLI-native `Stop` / `PreToolUse` (`attempt_completion`) / `SessionStart` lifecycle hook handler invoked by AI coding agent harnesses to verify specification schemas, invariant test bindings, and spec-to-code synchronization:
+Stateless session-baseline-aware CLI-native `Stop` / `PreToolUse` (`attempt_completion`) / `SessionStart` lifecycle hook handler invoked by AI coding agent harnesses to verify specification schemas, invariant test bindings, and spec-to-code synchronization (honors `plugin.hooks.{enabled,strict,fail_on_warnings,baseline_ttl_seconds}` from `eidos/eidos.yaml` and `EIDOS_HOOKS_ENABLED`):
 
 ```bash
 eidos hook

@@ -337,13 +337,17 @@ def check_cli_update_status(
     current_version: str | None = None,
     pypi_url: str = PYPI_PACKAGE_JSON_URL,
     timeout: float = 2.0,
+    *,
+    allow_network: bool = True,
 ) -> dict[str, Any]:
     """Check PyPI for newer releases of eidos-ai using stdlib urllib.request and SemVer 2.0.0 comparison."""
     raw_ver = current_version if current_version is not None else getattr(eidos, "__version__", "0.2.0")
     installed_raw = str(raw_ver).strip() or "0.2.0"
     installed_semver = _to_comparable_semver(installed_raw)
 
-    if os.environ.get("EIDOS_NO_UPDATE_CHECK", "").strip().lower() in ("1", "true", "yes"):
+    no_update_env = os.environ.get("EIDOS_NO_UPDATE_CHECK", "").strip().lower() in ("1", "true", "yes", "on")
+    force_update_env = os.environ.get("EIDOS_FORCE_UPDATE_CHECK", "").strip().lower() in ("1", "true", "yes", "on")
+    if no_update_env or (not allow_network and not force_update_env):
         return {
             "ok": True,
             "status": "offline",
@@ -359,7 +363,7 @@ def check_cli_update_status(
         and urllib.request.urlopen is _DEFAULT_URLOPEN
         and current_version is None
         and pypi_url == PYPI_PACKAGE_JSON_URL
-        and not os.environ.get("EIDOS_FORCE_UPDATE_CHECK")
+        and not force_update_env
     ):
         return {
             "ok": True,

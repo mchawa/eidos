@@ -1043,9 +1043,12 @@ class TieredContextSlice(ArchitecturalContextSlice):
         direct_cap_ids: set[str] | None = None,
         direct_inv_ids: set[str] | None = None,
         direct_pol_ids: set[str] | None = None,
+        *,
+        tier_budgets: dict[str, int] | None = None,
     ) -> None:
         """Enforce rank-ordered token budget truncation for the requested tier across Markdown and JSON (DLT-2026-047)."""
-        budget = TIER_TOKEN_BUDGETS.get(self.tier, 1000)
+        effective_budgets = tier_budgets if tier_budgets is not None else TIER_TOKEN_BUDGETS
+        budget = effective_budgets.get(self.tier, TIER_TOKEN_BUDGETS.get(self.tier, 1000))
         self._prune_matched_reasons()
         self._invalidate_budget_cache()
 

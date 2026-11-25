@@ -4,7 +4,9 @@ from pathlib import Path
 
 import typer
 
-from eidos.cli._shared import console, resolve_cli_eidos_dir
+from eidos.cli._shared import console, load_cli_repo_config, resolve_cli_eidos_dir, resolve_param_from_config
+from eidos.core.workspace.config import find_config_file
+from eidos.core.workspace.project import resolve_spec_and_repo_roots
 from eidos.portal.builder import build_static_portal
 from eidos.portal.server import run_portal_server
 
@@ -36,7 +38,7 @@ def serve_cmd(
     ),
     open_browser: bool = typer.Option(
         False,
-        "--open",
+        "--open/--no-open",
         help="Automatically open the portal in your default web browser.",
     ),
 ):
@@ -46,7 +48,13 @@ def serve_cmd(
         console.print(f"[bold red]Error:[/bold red] Specifications directory '{target}' not found.")
         raise typer.Exit(code=1)
 
-    run_portal_server(eidos_dir=target, host=host, port=port, open_browser=open_browser)
+    spec_root, repo_root = resolve_spec_and_repo_roots(target)
+    repo_cfg = load_cli_repo_config(spec_root, repo_root=repo_root)
+    eff_host = str(resolve_param_from_config("host", host, repo_cfg.portal.serve.host))
+    eff_port = int(resolve_param_from_config("port", port, repo_cfg.portal.serve.port))
+    eff_open = bool(resolve_param_from_config("open_browser", open_browser, repo_cfg.portal.serve.open_browser))
+
+    run_portal_server(eidos_dir=target, host=eff_host, port=eff_port, open_browser=eff_open)
 
 
 @portal_app.command("build")
@@ -65,7 +73,7 @@ def build_site_cmd(
     ),
     single_file: bool = typer.Option(
         False,
-        "--single-file",
+        "--single-file/--no-single-file",
         help="Inline all JS, CSS, and spec bodies into a single standalone index.html file.",
     ),
 ):
@@ -75,9 +83,16 @@ def build_site_cmd(
         console.print(f"[bold red]Error:[/bold red] Specifications directory '{target}' not found.")
         raise typer.Exit(code=1)
 
-    generated_dir = build_static_portal(eidos_dir=target, output_dir=out_dir, single_file=single_file)
+    spec_root, repo_root = resolve_spec_and_repo_roots(target)
+    repo_cfg = load_cli_repo_config(spec_root, repo_root=repo_root)
+    cfg_exists = find_config_file(eidos_dir=spec_root, repo_root=repo_root) is not None
+    default_out = (repo_root / repo_cfg.portal.build.out_dir) if cfg_exists else out_dir
+    eff_out_dir = Path(resolve_param_from_config("out_dir", out_dir, default_out))
+    eff_single_file = bool(resolve_param_from_config("single_file", single_file, repo_cfg.portal.build.single_file))
+
+    generated_dir = build_static_portal(eidos_dir=target, output_dir=eff_out_dir, single_file=eff_single_file)
     console.print(f"[bold green]✓ Successfully generated static portal at:[/bold green] {generated_dir.resolve()}")
-    if single_file:
+    if eff_single_file:
         console.print("  Mode: single-file standalone HTML")
     console.print(f"  Entrypoint: {generated_dir / 'index.html'}")
     console.print(f"  Data payload: {generated_dir / 'data.json'}")

@@ -13,6 +13,7 @@ from eidos.core.index.storage import get_cached_spec_document
 from eidos.core.spec.boundary_validator import evaluate_import_boundaries
 from eidos.core.spec.parser import extract_frontmatter
 from eidos.core.spec.validator import SpecValidator, ValidationReport
+from eidos.core.workspace.config import DEFAULT_CONFIG, EidosConfig, load_repo_config_with_errors
 from eidos.core.workspace.project import find_git_root, is_generated_or_vendored
 from eidos.vcs.consumers import find_untouched_consumers
 from eidos.vcs.diff import (
@@ -43,6 +44,7 @@ from eidos.vcs.snapshot import (
     _has_eidos_onboarding as _has_eidos_onboarding,
 )
 from eidos.vcs.snapshot import (
+    _load_head_commit_config,
     _materialize_head_snapshot,
     _remap_snapshot_str,
     _remap_validation_report,
@@ -155,7 +157,8 @@ def detect_drift(
     head_ref: str = "HEAD",
     eidos_dir: Path | None = None,
     uncommitted: bool = False,
-    strict: bool = False,
+    strict: bool | None = None,
+    repo_config: EidosConfig | None = None,
 ) -> DriftCheckResult:
     """Run drift detection: evaluate spec-code synchronization, schema validation, and invariant check."""
     import eidos.core.index.graph_index as gi
@@ -177,52 +180,81 @@ def detect_drift(
         eidos_rel_prefix = target_eidos.name or "eidos"
     system_spec_paths = get_system_level_spec_paths(eidos_rel_prefix)
 
+    git_root: Path | None = find_git_root(root)
+    if repo_config is not None:
+        pre_config = repo_config
+    elif uncommitted or git_root is None:
+        pre_config, _ = load_repo_config_with_errors(eidos_dir=target_eidos, repo_root=root)
+    else:
+        pre_config = _load_head_commit_config(git_root, root, eidos_rel_prefix, head_ref)
+
     # Single-pass base Git reference and merge-base resolution (DLT-2026-052, DLT-2026-053)
     resolved_base_ref: str | None = None
     resolved_mb: str | None = None
     effective_uncommitted = uncommitted
     if not uncommitted:
-        resolved_base_ref, resolved_mb, fell_back = _resolve_base_and_merge_base(root, base_ref, head_ref)
+        resolved_base_ref, resolved_mb, fell_back = _resolve_base_and_merge_base(
+            root,
+            base_ref,
+            head_ref,
+            repo_config=pre_config,
+            eidos_dir=target_eidos,
+        )
         if fell_back:
             effective_uncommitted = True
 
     snap_tmpdir: tempfile.TemporaryDirectory[str] | None = None
     snap_root: Path | None = None
-    git_root: Path | None = None
     git_sub_prefix = ""
     eval_root = root
     eval_eidos = target_eidos
-    if not effective_uncommitted:
-        git_root = find_git_root(root)
-        if git_root is not None:
-            if root != git_root and root.is_relative_to(git_root):
-                git_sub_prefix = str(root.relative_to(git_root)).replace("\\", "/").strip("/")
-            snap_tmpdir = _materialize_head_snapshot(
-                git_root=git_root,
-                repo_root=root,
-                target_eidos=target_eidos,
-                eidos_rel_prefix=eidos_rel_prefix,
-                head_ref=head_ref,
-            )
-            if snap_tmpdir is not None:
-                snap_root = Path(snap_tmpdir.name).resolve()
-                eval_root = snap_root
-                eval_eidos = (snap_root / eidos_rel_prefix).resolve()
+    if not effective_uncommitted and git_root is not None:
+        if root != git_root and root.is_relative_to(git_root):
+            git_sub_prefix = str(root.relative_to(git_root)).replace("\\", "/").strip("/")
+        snap_tmpdir = _materialize_head_snapshot(
+            git_root=git_root,
+            repo_root=root,
+            target_eidos=target_eidos,
+            eidos_rel_prefix=eidos_rel_prefix,
+            head_ref=head_ref,
+        )
+        if snap_tmpdir is not None:
+            snap_root = Path(snap_tmpdir.name).resolve()
+            eval_root = snap_root
+            eval_eidos = (snap_root / eidos_rel_prefix).resolve()
+
+    if repo_config is not None:
+        eval_config = repo_config
+    else:
+        eval_config, _ = load_repo_config_with_errors(eidos_dir=eval_eidos, repo_root=eval_root)
+    effective_strict = strict if strict is not None else eval_config.drift.strict
 
     try:
-        changed_files = get_git_diff_files(
-            root,
-            base_ref=resolved_base_ref,
-            head_ref=head_ref,
-            uncommitted=effective_uncommitted,
-            merge_base=resolved_mb,
-        )
+        if eval_config != DEFAULT_CONFIG:
+            changed_files = get_git_diff_files(
+                root,
+                base_ref=resolved_base_ref,
+                head_ref=head_ref,
+                uncommitted=effective_uncommitted,
+                merge_base=resolved_mb,
+                repo_config=eval_config,
+                eidos_dir=eval_eidos,
+            )
+        else:
+            changed_files = get_git_diff_files(
+                root,
+                base_ref=resolved_base_ref,
+                head_ref=head_ref,
+                uncommitted=effective_uncommitted,
+                merge_base=resolved_mb,
+            )
         head_pkg_paths = _discover_container_package_paths(eval_eidos) if eval_eidos.exists() else None
         classification = classify_changed_files(
             changed_files,
             repo_root=root,
             eidos_dir=target_eidos,
             package_paths=head_pkg_paths,
+            repo_config=eval_config,
         )
 
         prefetched_versions: dict[str, tuple[str | None, str | None]] = {}
@@ -553,7 +585,7 @@ def detect_drift(
                         (cf, cid, spath)
                     )
 
-        if strict and body_only_code_files and not classification.test_files:
+        if effective_strict and body_only_code_files and not classification.test_files:
             for cf, cid, spath in body_comp_mappings:
                 allowed_paths, allowed_ids = _collect_1hop_spec_targets(
                     idx, cf, cid, spath, system_spec_paths=system_spec_paths
@@ -594,7 +626,7 @@ def detect_drift(
         mapped_files = {c for c, _, _ in all_comp_mappings}
         unmapped_candidates = (
             [*structural_code_files, *(body_only_code_files if not classification.test_files else ())]
-            if strict
+            if effective_strict
             else structural_code_files
         )
         unmapped_code_files = [cf for cf in unmapped_candidates if cf not in mapped_files]
@@ -665,27 +697,54 @@ def detect_drift(
 
         # 4. Specification Schema & Link Integrity Validation + Applied Delta Verification + Onboarding Governance
         validator = SpecValidator()
-        validation_report = validator.validate_directory(eval_eidos, check_import_boundaries=False)
+        validation_report = validator.validate_directory(
+            eval_eidos,
+            check_import_boundaries=False,
+            repo_config=repo_config,
+        )
         _remap_validation_report(validation_report, snap_root)
 
-        raw_boundary_violations, raw_shrink_candidates = (
-            evaluate_import_boundaries(
+        boundary_check_sev = eval_config.drift.checks.import_boundaries
+        if boundary_check_sev == "off" or not eval_eidos.exists():
+            boundary_violations = []
+            ratchet_shrink_candidates = []
+            boundary_drift = False
+        else:
+            raw_boundary_violations, raw_shrink_candidates = evaluate_import_boundaries(
                 eval_eidos,
                 repo_root=eval_root,
                 documents=validation_report.documents,
             )
-            if eval_eidos.exists()
-            else ([], [])
-        )
-        boundary_violations = _remap_boundary_records(
-            raw_boundary_violations,
-            lambda s: _remap_snapshot_str(s, snap_root),
-        )
-        ratchet_shrink_candidates = _remap_boundary_records(
-            raw_shrink_candidates,
-            lambda s: _remap_snapshot_str(s, snap_root),
-        )
-        boundary_drift = bool(boundary_violations)
+            remapped_boundary_violations = _remap_boundary_records(
+                raw_boundary_violations,
+                lambda s: _remap_snapshot_str(s, snap_root),
+            )
+            ratchet_shrink_candidates = _remap_boundary_records(
+                raw_shrink_candidates,
+                lambda s: _remap_snapshot_str(s, snap_root),
+            )
+            if boundary_check_sev == "warn":
+                for v in remapped_boundary_violations:
+                    ev_list = v.get("evidence") or []
+                    ev_sample = f" (e.g. {ev_list[0]})" if ev_list else ""
+                    max_imp = int(v.get("max_imports") or 0)
+                    obs_imp = int(v.get("observed_imports") or 0)
+                    limit_str = (
+                        f"observed {obs_imp} > ratchet max_imports {max_imp}"
+                        if max_imp > 0
+                        else f"{obs_imp} forbidden coupling(s)"
+                    )
+                    msg = (
+                        f"Import boundary violation [{v['rule']}]: {v['source']} -> {v['target']} "
+                        f"({limit_str}){ev_sample}"
+                    )
+                    if msg not in validation_report.warnings:
+                        validation_report.warnings.append(msg)
+                boundary_violations = []
+                boundary_drift = False
+            else:
+                boundary_violations = remapped_boundary_violations
+                boundary_drift = bool(boundary_violations)
 
         def _verify_delta_in_eval(
             df_rel: str,
@@ -852,7 +911,7 @@ def detect_drift(
             validation_report=validation_report,
         )
 
-        strict_body_changed = strict and bool(body_only_code_files) and not classification.test_files
+        strict_body_changed = effective_strict and bool(body_only_code_files) and not classification.test_files
         base_direct_drift = (
             (code_changed or strict_body_changed) and not specs_changed and not has_pre_apply_deltas
         ) or (not has_pre_apply_deltas and bool(uncovered_direct_components))
@@ -868,8 +927,17 @@ def detect_drift(
         )
 
         # 5. Invariant Traceability & Orphan Invariant Detection (DLT-2026-027, DLT-2026-068)
-        cached_tests = _load_or_update_test_binding_cache(eval_root, eidos_dir=eval_eidos)
-        invariants = extract_invariants_and_verify(eval_eidos, eval_root, cached_tests=cached_tests)
+        cached_tests = _load_or_update_test_binding_cache(
+            eval_root,
+            eidos_dir=eval_eidos,
+            repo_config=eval_config,
+        )
+        invariants = extract_invariants_and_verify(
+            eval_eidos,
+            eval_root,
+            cached_tests=cached_tests,
+            repo_config=eval_config,
+        )
         for inv in invariants:
             inv.spec_path = _remap_snapshot_str(inv.spec_path, snap_root)
         uncovered_invariants = [inv for inv in invariants if not inv.has_test_coverage]
@@ -878,6 +946,7 @@ def detect_drift(
             {inv.invariant_id for inv in invariants},
             eidos_dir=eval_eidos,
             cached_tests=cached_tests,
+            repo_config=eval_config,
         )
         orphan_invariants = [(oid, _remap_snapshot_str(loc, snap_root)) for oid, loc in raw_orphans]
 
@@ -913,7 +982,7 @@ def detect_drift(
             classification=classification,
             structural_code_files=structural_code_files,
             body_only_code_files=body_only_code_files,
-            strict=strict,
+            strict=effective_strict,
             comp_mappings=comp_mappings or body_comp_mappings,
             uncovered_direct_components=uncovered_direct_components,
             uncovered_components=uncovered_components,

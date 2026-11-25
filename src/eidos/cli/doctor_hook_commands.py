@@ -15,6 +15,7 @@ from eidos.cli._shared import PANEL_PLUGINS, PANEL_SETUP, console, has_eidos_mar
 from eidos.core.index.graph_index import get_architectural_index
 from eidos.core.lifecycle.delta_engine import is_delta_ready_to_apply, list_deltas
 from eidos.core.spec.validator import SpecValidator
+from eidos.core.workspace.config import CONFIG_FILENAME, find_config_file, load_repo_config_with_errors
 from eidos.core.workspace.project import find_git_root, find_repo_root, resolve_spec_and_repo_roots
 from eidos.plugin.hooks import execute_hook
 from eidos.plugin.managed_block import is_managed_block_opted_out, read_managed_block
@@ -178,6 +179,29 @@ def doctor_cmd(
     except OSError:
         git_ok = False
 
+    cfg_path = find_config_file(eidos_dir=eidos_dir, repo_root=repo_root)
+    repo_cfg, cfg_errors = load_repo_config_with_errors(eidos_dir=eidos_dir, repo_root=repo_root)
+    if cfg_errors:
+        cfg_status = "invalid"
+        cfg_ok = False
+        cfg_detail = "; ".join(cfg_errors)
+    elif cfg_path is not None:
+        cfg_status = "valid"
+        cfg_ok = True
+        rel_cfg = str(cfg_path.relative_to(repo_root)) if cfg_path.is_relative_to(repo_root) else str(cfg_path)
+        cfg_detail = f"Valid configuration ({rel_cfg})"
+    else:
+        cfg_status = "absent"
+        cfg_ok = True
+        cfg_detail = "Not configured (using built-in defaults; optional: run 'eidos config init')"
+    repo_config_check = {
+        "ok": cfg_ok,
+        "status": cfg_status,
+        "path": str(cfg_path) if cfg_path is not None else str(eidos_dir / CONFIG_FILENAME),
+        "errors": list(cfg_errors),
+        "detail": cfg_detail,
+    }
+
     specs_exist = has_eidos_markers(eidos_dir)
     specs_valid = False
     total_specs = 0
@@ -211,13 +235,19 @@ def doctor_cmd(
     target_hooks = plugin_status.get("target_hooks", {})
     hook_errors = list(plugin_status.get("hook_errors", []))
     skipped_files = list(plugin_status.get("skipped_files", []))
+    configured_targets = list(repo_cfg.plugin.targets)
+    missing_configured_targets = [t for t in configured_targets if t not in target_hooks]
     agent_plugin_ok = not plugin_installed or (plugin_up_to_date and hooks_ok)
     agent_plugin_status = (
         "hook_error" if (plugin_installed and plugin_up_to_date and not hooks_ok) else plugin_status.get("status")
     )
     agents_md_check = _check_onboarding_governance(plugin_root)
     open_deltas_check = _check_open_deltas(eidos_dir, specs_exist, schema_error_paths=schema_error_paths)
-    cli_update = check_cli_update_status()
+    cli_update = (
+        check_cli_update_status()
+        if repo_cfg.plugin.updates_check
+        else check_cli_update_status(allow_network=False)
+    )
 
     checks = {
         "cli_binary": {
@@ -238,6 +268,7 @@ def doctor_cmd(
             "ok": git_ok,
             "repo_root": str(repo_root),
         },
+        "repo_config": repo_config_check,
         "living_specs": {
             "ok": specs_exist and specs_valid,
             "exists": specs_exist,
@@ -262,6 +293,8 @@ def doctor_cmd(
             "hooks_status": hooks_status,
             "target_hooks": target_hooks,
             "hook_errors": hook_errors,
+            "configured_targets": configured_targets,
+            "missing_configured_targets": missing_configured_targets,
             "agents_md_ok": agents_md_check["agents_md_ok"],
         },
         "agents_md": agents_md_check,
@@ -270,6 +303,7 @@ def doctor_cmd(
     overall_ok = (
         cli_ok
         and git_ok
+        and checks["repo_config"]["ok"]
         and (not specs_exist or (specs_valid and index_ok))
         and checks["agent_plugin"]["ok"]
         and checks["agents_md"]["ok"]
@@ -306,6 +340,17 @@ def doctor_cmd(
         "[bold green]PASS[/bold green]" if git_ok else "[bold red]FAIL[/bold red]",
         str(repo_root),
     )
+    if cfg_status == "invalid":
+        cfg_badge = "[bold red]FAIL[/bold red]"
+    elif cfg_status == "valid":
+        cfg_badge = "[bold green]PASS[/bold green]"
+    else:
+        cfg_badge = "[dim]ABSENT[/dim]"
+    table.add_row(
+        "Repo Configuration",
+        cfg_badge,
+        cfg_detail,
+    )
     table.add_row(
         "Living Specifications",
         "[bold green]PASS[/bold green]"
@@ -330,11 +375,18 @@ def doctor_cmd(
             plugin_details = f"{base_plugin_detail} (hooks: {hooks_status})"
     else:
         plugin_details = "Optional: Run 'eidos plugin install <target>' to enable agent skills & hooks"
+    if missing_configured_targets:
+        plugin_details += (
+            f" — Advisory: configured target(s) not installed: {', '.join(missing_configured_targets)} "
+            "(run 'eidos plugin install')"
+        )
 
     if plugin_installed and not hooks_ok:
         plugin_badge = "[bold red]FAIL[/bold red]"
-    elif plugin_up_to_date:
+    elif plugin_up_to_date and not missing_configured_targets:
         plugin_badge = "[bold green]PASS[/bold green]"
+    elif missing_configured_targets:
+        plugin_badge = "[bold yellow]WARN[/bold yellow]"
     elif not plugin_installed:
         plugin_badge = "[dim]NOT INSTALLED[/dim]"
     else:

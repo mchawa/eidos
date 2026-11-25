@@ -876,11 +876,18 @@ def delta_archive_cmd(
     ),
 ):
     """Partition and slim older terminal SpecDeltas and Explorations into archive/ subdirectories."""
+    from eidos.cli._shared import load_cli_repo_config, resolve_param_from_config
+
     eidos_dir = resolve_cli_eidos_dir(path)
+    repo_cfg = load_cli_repo_config(eidos_dir, json_output=json_output)
+    eff_keep_recent = int(resolve_param_from_config("keep_recent", keep_recent, repo_cfg.lifecycle.archive.keep_recent))
+    eff_explorations = bool(
+        resolve_param_from_config("explorations", explorations, repo_cfg.lifecycle.archive.include_explorations)
+    )
     res = archive_deltas(
         eidos_dir=eidos_dir,
-        keep_recent=keep_recent,
-        include_explorations=explorations,
+        keep_recent=eff_keep_recent,
+        include_explorations=eff_explorations,
         dry_run=dry_run,
     )
     if json_output:

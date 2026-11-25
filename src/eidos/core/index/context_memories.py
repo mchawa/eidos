@@ -15,7 +15,12 @@ import orjson
 
 from eidos.core.index.context_globs import _GLOB_EXCLUDED_DIRS, _has_glob_magic, expand_brace_globs
 from eidos.core.index.fts_query import execute_fts_query
-from eidos.core.index.storage import load_memory_freshness_cache, save_memory_freshness_cache
+from eidos.core.index.storage import (
+    _resolve_conn_db_path,
+    load_memory_freshness_cache,
+    save_memory_freshness_cache,
+)
+from eidos.core.workspace.config import EidosConfig, load_repo_config_with_errors
 from eidos.core.workspace.project import match_path_pattern
 
 DEFAULT_MEMORY_COMMIT_DRIFT_THRESHOLD = 5
@@ -227,6 +232,25 @@ def _check_instant_freshness(
     return None
 
 
+def _resolve_memory_config(
+    repo_root: Path,
+    eidos_dir: Path | None = None,
+    *,
+    conn: sqlite3.Connection | None = None,
+    db_path: Path | None = None,
+) -> EidosConfig:
+    """Resolve optional repository configuration for memory freshness thresholds and context caps."""
+    effective_eidos = eidos_dir
+    if effective_eidos is None:
+        resolved_db = db_path
+        if resolved_db is None and conn is not None:
+            resolved_db = _resolve_conn_db_path(conn, None)
+        if resolved_db is not None and resolved_db.parent.name == ".cache":
+            effective_eidos = resolved_db.parent.parent
+    cfg, _ = load_repo_config_with_errors(eidos_dir=effective_eidos, repo_root=repo_root)
+    return cfg
+
+
 def evaluate_memory_freshness(
     repo_root: Path,
     frontmatter: dict[str, Any],
@@ -234,13 +258,19 @@ def evaluate_memory_freshness(
     *,
     today: date | None = None,
     head_sha: str | None = None,
-    commit_drift_threshold: int = DEFAULT_MEMORY_COMMIT_DRIFT_THRESHOLD,
+    commit_drift_threshold: int | None = None,
+    eidos_dir: Path | None = None,
 ) -> tuple[str, str]:
     """Deterministically evaluate freshness for a single ``agent/memory`` entry.
 
     Returns ``(freshness, reason)`` where ``freshness`` is one of
     ``'fresh'``, ``'stale'``, ``'expired'``, or ``'unverifiable'``.
     """
+    effective_threshold = (
+        commit_drift_threshold
+        if commit_drift_threshold is not None
+        else _resolve_memory_config(repo_root, eidos_dir).memory.commit_drift_threshold
+    )
     effective_today = today or date.today()
     instant = _check_instant_freshness(repo_root, frontmatter, catalog_ids, effective_today)
     if instant is not None:
@@ -272,10 +302,10 @@ def evaluate_memory_freshness(
     cnt_res = _run_git(repo_root, "rev-list", "--count", f"{v_commit}..HEAD", "--", *git_pathspecs)
     if cnt_res.returncode == 0 and cnt_res.stdout.strip().isdigit():
         n_commits = int(cnt_res.stdout.strip())
-        if n_commits >= commit_drift_threshold:
+        if n_commits >= effective_threshold:
             return (
                 "stale",
-                f"{n_commits} commits modified target path(s) since {v_commit[:7]} (threshold {commit_drift_threshold})",
+                f"{n_commits} commits modified target path(s) since {v_commit[:7]} (threshold {effective_threshold})",
             )
         return "fresh", f"{n_commits} commit(s) on target path(s) since {v_commit[:7]}"
 
@@ -290,12 +320,18 @@ def resolve_memory_freshness_batch(
     conn: sqlite3.Connection | None = None,
     db_path: Path | None = None,
     today: date | None = None,
-    commit_drift_threshold: int = DEFAULT_MEMORY_COMMIT_DRIFT_THRESHOLD,
+    commit_drift_threshold: int | None = None,
+    eidos_dir: Path | None = None,
 ) -> dict[str, tuple[str, str]]:
     """Resolve freshness verdicts for a batch of memories backed by ``memory_freshness_cache``."""
     if not memories:
         return {}
 
+    effective_threshold = (
+        commit_drift_threshold
+        if commit_drift_threshold is not None
+        else _resolve_memory_config(repo_root, eidos_dir, conn=conn, db_path=db_path).memory.commit_drift_threshold
+    )
     effective_today = today or date.today()
     today_iso = effective_today.isoformat()
     results: dict[str, tuple[str, str]] = {}
@@ -336,7 +372,7 @@ def resolve_memory_freshness_batch(
 
     to_upsert: list[tuple[str, str, str, str, str, str]] = []
     for mem_id, fm in need_git_check:
-        mem_sha = _compute_memory_digest(fm, commit_drift_threshold=commit_drift_threshold)
+        mem_sha = _compute_memory_digest(fm, commit_drift_threshold=effective_threshold)
         cached = cached_rows.get(mem_id)
         if (
             cached is not None
@@ -354,7 +390,8 @@ def resolve_memory_freshness_batch(
             catalog_ids,
             today=effective_today,
             head_sha=head_sha,
-            commit_drift_threshold=commit_drift_threshold,
+            commit_drift_threshold=effective_threshold,
+            eidos_dir=eidos_dir,
         )
         results[mem_id] = (freshness, reason)
         if freshness != "unverifiable":
@@ -395,6 +432,8 @@ def attach_context_memories(
     eidos_dir: Path | None = None,
     db_path: Path | None = None,
     today: date | None = None,
+    tier_caps: dict[str, tuple[int, int]] | None = None,
+    commit_drift_threshold: int | None = None,
 ) -> list[dict[str, Any]]:
     """Select, rank, and freshness-annotate active team operational memories for a context slice."""
     rows = conn.execute(
@@ -425,7 +464,17 @@ def attach_context_memories(
     if not active_by_id:
         return []
 
-    max_anchored, max_global = MEMORY_TIER_CAPS.get(tier, MEMORY_TIER_CAPS["guardrails"])
+    if tier_caps is None or commit_drift_threshold is None:
+        mem_cfg = _resolve_memory_config(repo_root, eidos_dir, conn=conn, db_path=db_path).memory
+        effective_caps = tier_caps if tier_caps is not None else mem_cfg.tier_caps.as_dict()
+        effective_threshold = (
+            commit_drift_threshold if commit_drift_threshold is not None else mem_cfg.commit_drift_threshold
+        )
+    else:
+        effective_caps = tier_caps
+        effective_threshold = commit_drift_threshold
+
+    max_anchored, max_global = effective_caps.get(tier, MEMORY_TIER_CAPS.get(tier, MEMORY_TIER_CAPS["guardrails"]))
     candidate_files = list(
         dict.fromkeys(
             f
@@ -516,6 +565,8 @@ def attach_context_memories(
         conn=conn,
         db_path=db_path,
         today=today,
+        commit_drift_threshold=effective_threshold,
+        eidos_dir=eidos_dir,
     )
 
     ranked_anchored = sorted(

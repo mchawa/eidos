@@ -104,7 +104,11 @@ def init_repository(
     created_files: list[Path] = []
 
     non_cache_entries = (
-        [p for p in eidos_dir.iterdir() if p.name not in (".cache", ".gitignore", ".DS_Store", "Thumbs.db")]
+        [
+            p
+            for p in eidos_dir.iterdir()
+            if p.name not in (".cache", ".gitignore", ".DS_Store", "Thumbs.db", "eidos.yaml")
+        ]
         if eidos_dir.exists()
         else []
     )

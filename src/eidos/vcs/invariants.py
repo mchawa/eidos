@@ -29,11 +29,14 @@ from eidos.core.index.storage import (
     load_test_binding_cache,
     save_test_binding_cache,
 )
+from eidos.core.workspace.config import EidosConfig, load_repo_config_with_errors
 from eidos.core.workspace.project import (
     STANDARD_EXCLUDED_DIRS,
+    _is_dir_excluded_by_patterns,
     discover_nested_subproject_roots,
     find_git_root,
     get_tracked_files,
+    is_excluded_by_config,
     is_polyglot_test_file,
 )
 
@@ -226,6 +229,8 @@ def _build_cached_test_file_entry(
 def _load_or_update_test_binding_cache(
     repo_root: Path,
     eidos_dir: Path | None = None,
+    *,
+    repo_config: EidosConfig | None = None,
 ) -> dict[str, _CachedTestFile]:
     """Stat polyglot test files and load or incrementally update test_binding_cache in eidos/.cache/index.db."""
     root = repo_root.resolve()
@@ -240,6 +245,13 @@ def _load_or_update_test_binding_cache(
         effective_eidos = eidos_dir.resolve()
     db_path = effective_eidos / ".cache" / "index.db"
 
+    cfg = (
+        repo_config
+        if repo_config is not None
+        else load_repo_config_with_errors(eidos_dir=effective_eidos, repo_root=root)[0]
+    )
+    ws_exclude = cfg.workspace.exclude
+
     cached_rows: dict[str, sqlite3.Row] = {}
     if effective_eidos.exists():
         cached_rows = load_test_binding_cache(db_path)
@@ -247,7 +259,7 @@ def _load_or_update_test_binding_cache(
     discovered: list[tuple[str, Path, int]] = []
     used_git_tracked = False
     if find_git_root(root) is not None:
-        tracked_rels = get_tracked_files(root)
+        tracked_rels = get_tracked_files(root, eidos_dir=effective_eidos, repo_config=cfg)
         if tracked_rels:
             used_git_tracked = True
             for rel in tracked_rels:
@@ -256,7 +268,12 @@ def _load_or_update_test_binding_cache(
                 if any(d in STANDARD_EXCLUDED_DIRS or d.startswith(".") for d in rel_parts[:-1]):
                     continue
                 file_path = root / rel_norm
-                if is_polyglot_test_file(Path(rel_norm), repo_root=root):
+                if is_polyglot_test_file(
+                    Path(rel_norm),
+                    repo_root=root,
+                    eidos_dir=effective_eidos,
+                    repo_config=cfg,
+                ):
                     try:
                         mtime_ns = file_path.stat().st_mtime_ns
                     except OSError:
@@ -264,19 +281,34 @@ def _load_or_update_test_binding_cache(
                     discovered.append((rel_norm, file_path, mtime_ns))
 
     if not used_git_tracked:
-        nested_roots = set(discover_nested_subproject_roots(root))
+        nested_roots = set(discover_nested_subproject_roots(root, repo_config=cfg))
         for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = [
-                d
-                for d in dirnames
-                if d not in STANDARD_EXCLUDED_DIRS
-                and not d.startswith(".")
-                and (Path(dirpath) / d).resolve() not in nested_roots
-            ]
+            cur = Path(dirpath)
+            next_dirs: list[str] = []
+            for d in dirnames:
+                child = cur / d
+                if d in STANDARD_EXCLUDED_DIRS or d.startswith(".") or child.resolve() in nested_roots:
+                    continue
+                if ws_exclude:
+                    try:
+                        rel_child = child.relative_to(root).as_posix()
+                    except ValueError:
+                        rel_child = d
+                    if _is_dir_excluded_by_patterns(rel_child, ws_exclude):
+                        continue
+                next_dirs.append(d)
+            dirnames[:] = next_dirs
             for fn in filenames:
-                file_path = Path(dirpath) / fn
+                file_path = cur / fn
                 rel = str(file_path.relative_to(root)).replace("\\", "/")
-                if is_polyglot_test_file(Path(rel), repo_root=root):
+                if ws_exclude and is_excluded_by_config(rel, ws_exclude):
+                    continue
+                if is_polyglot_test_file(
+                    Path(rel),
+                    repo_root=root,
+                    eidos_dir=effective_eidos,
+                    repo_config=cfg,
+                ):
                     try:
                         mtime_ns = file_path.stat().st_mtime_ns
                     except OSError:
@@ -505,6 +537,7 @@ def detect_orphan_invariants(
     eidos_dir: Path | None = None,
     *,
     cached_tests: dict[str, _CachedTestFile] | None = None,
+    repo_config: EidosConfig | None = None,
 ) -> list[tuple[str, str]]:
     """Find INV-* tokens referenced in tests that do not exist in any living specification."""
     from eidos.core.index.ast_indexer import get_ast_indexer
@@ -515,7 +548,11 @@ def detect_orphan_invariants(
 
     if all_tests_content is None:
         if cached_tests is None:
-            cached_tests = _load_or_update_test_binding_cache(repo_root, eidos_dir=eidos_dir)
+            cached_tests = _load_or_update_test_binding_cache(
+                repo_root,
+                eidos_dir=eidos_dir,
+                repo_config=repo_config,
+            )
         for tpath, entry in sorted(cached_tests.items()):
             qualified_invs_by_suffix: dict[str, set[str]] = {}
             for fname, fn_tokens in entry.functions.items():
@@ -581,12 +618,17 @@ def extract_invariants_and_verify(
     repo_root: Path,
     *,
     cached_tests: dict[str, _CachedTestFile] | None = None,
+    repo_config: EidosConfig | None = None,
 ) -> list[InvariantTrace]:
     """Extract all invariants declared in capabilities, policies, containers, and C4 components, and strictly verify static test bindings."""
     invariants: list[InvariantTrace] = []
 
     if cached_tests is None:
-        cached_tests = _load_or_update_test_binding_cache(repo_root, eidos_dir=eidos_dir)
+        cached_tests = _load_or_update_test_binding_cache(
+            repo_root,
+            eidos_dir=eidos_dir,
+            repo_config=repo_config,
+        )
 
     inv_to_test_funcs: dict[str, list[str]] = {}
     for entry in cached_tests.values():

@@ -1,0 +1,35 @@
+---
+type: tech/component
+id: CMP-REPO-CONFIG
+title: RepoConfig
+container: CNT-EIDOS-CORE
+status: active
+source_path: src/eidos/core/workspace/config.py
+---
+= Component: RepoConfig
+:toc: left
+
+== Responsibility
+Owns optional, project-scoped repository configuration (`<eidos_dir>/eidos.yaml`) under `CNT-EIDOS-CORE` (`DEC-CORE-REPO-CONFIG-YAML-BOUNDARY`), providing immutable typed `EidosConfig` dataclasses, fail-closed Draft 2020-12 JSON Schema validation against `assets/schemas/config/eidos-config.v1.schema.yaml`, path containment and HTTP(S)-only mirror URL enforcement, deterministic `EIDOS_*` environment variable precedence with per-key source attribution, starter file scaffolding, and offline schema introspection.
+
+== Key Responsibilities & Collaborators
+* **Project-Scoped Discovery & Zero-Config Defaults**: Locates `<eidos_dir>/eidos.yaml` strictly inside the active specification directory (`find_config_file`) with zero outer repository-root lookup and zero cross-subproject inheritance (`DEC-CORE-MONOREPO-ISOLATED-SUBPROJECTS`), returning immutable `DEFAULT_CONFIG` when absent.
+* **Fail-Closed Validation & Upgrade Hints**: Validates `eidos/eidos.yaml` against `assets/schemas/config/eidos-config.v1.schema.yaml` resolved via `CMP-ASSET-LOCATOR` (`get_config_schema_path`) and YAML parsing via `CMP-SPEC-PARSER` (`parse_yaml_strict`), enforcing `additionalProperties: false`, `version: 1` upgrade hints for newer schema versions or unrecognized keys, strict repo-root containment on `portal.build.out_dir` (rejecting `.`, absolute paths, `..`, and symlink escapes), and HTTP(S)-only non-credential URLs on `context.semantic.model_mirror_url`.
+* **Deterministic Precedence, Scaffolding & Introspection**: Resolves `EIDOS_*` environment variables (`EIDOS_DRIFT_BASE_REF`, `EIDOS_DRIFT_STRICT`, `EIDOS_DRIFT_WARN_ONLY`, `EIDOS_DRIFT_FAIL_ON_WARNINGS`, `EIDOS_CONTEXT_TIER`, `EIDOS_SEMANTIC_ENABLED`, `EIDOS_SEMANTIC_VARIANT`, `EIDOS_SEMANTIC_MIRROR_URL`, `EIDOS_HOOKS_ENABLED`, `EIDOS_NO_UPDATE_CHECK`, `EIDOS_FORCE_UPDATE_CHECK`) deterministically over `eidos/eidos.yaml` and built-in defaults (`load_repo_config`, `load_repo_config_with_errors`, `load_repo_config_with_sources`), scaffolds commented schema-validated starter configs (`init_config_file`), and serves offline schema metadata (`get_config_schema_info`) to `CMP-CLI-CONFIG-COMMANDS`.
+
+== Public Surface
+* `CONFIG_FILENAME`, `CONFIG_SCHEMA_VERSION`, `CONCRETE_PLUGIN_TARGETS`, `CHECK_SEVERITIES`, `CONTEXT_TIERS`, `SEMANTIC_VARIANTS`, `CONFIG_ENV_VARS`, `STARTER_CONFIG_YAML`, `DEFAULT_CONFIG`
+* `ConfigValidationError`
+* `EidosConfig`, `WorkspaceConfig`, `WorkspaceTestsConfig`, `DriftConfig`, `DriftChecksConfig`, `ContextConfig`, `ContextBudgetsConfig`, `SemanticConfig`, `MemoryConfig`, `MemoryTierCapsConfig`, `LifecycleConfig`, `LifecycleArchiveConfig`, `PluginConfig`, `PluginHooksConfig`, `PortalConfig`, `PortalServeConfig`, `PortalBuildConfig`
+* `find_config_file(eidos_dir: Path | None = None, *, repo_root: Path | None = None) -> Path | None`
+* `validate_config_data(data: Any, *, repo_root: Path | None = None) -> list[str]`, `validate_config_file(config_path: Path, *, repo_root: Path | None = None) -> list[str]`
+* `parse_config_yaml_text(raw_text: str, *, repo_root: Path | None = None, env: Mapping[str, str] | None = None) -> tuple[EidosConfig, list[str], dict[str, str]]`
+* `load_repo_config(eidos_dir: Path | None = None, *, repo_root: Path | None = None, env: Mapping[str, str] | None = None) -> EidosConfig`
+* `load_repo_config_with_errors(eidos_dir: Path | None = None, *, repo_root: Path | None = None, env: Mapping[str, str] | None = None) -> tuple[EidosConfig, list[str]]`
+* `load_repo_config_with_sources(eidos_dir: Path | None = None, *, repo_root: Path | None = None, env: Mapping[str, str] | None = None) -> tuple[EidosConfig, Path | None, dict[str, str]]`
+* `init_config_file(eidos_dir: Path, *, force: bool = False) -> Path`
+* `get_config_schema_info() -> dict[str, Any]`
+
+== Design Constraints & Operational Notes
+* **Acyclic Core Layering (`INV-CORE-MODULAR-COMPONENT-COHESION`)**: Imports only `CMP-ASSET-LOCATOR` and `CMP-SPEC-PARSER` (never `CMP-PROJECT-RESOLVER`, `CNT-EIDOS-INDEX`, `CNT-EIDOS-VCS`, or `CNT-EIDOS-CLI`).
+* **Architectural Truth Isolation (`DEC-CORE-REPO-CONFIG-YAML-BOUNDARY`)**: Governs operational engine knobs only; excludes credentials, LLM provider keys (`POL-ZERO-AI-CALL-DEPENDENCY`), and architectural declarations (`POL-GIT-SOURCE-OF-TRUTH`).

@@ -13,15 +13,15 @@ source_path: src/eidos/vcs/invariants.py
 Verifies static polyglot `INV-*` `test_binding` traceability (`POL-INVARIANT-TEST-ENFORCEMENT`) across `policies/`, `domains/`, `architecture/`, and `design/` (`UIC-*`) specifications (`extract_invariants_and_verify`), detects undeclared orphan invariant IDs in test suites (`detect_orphan_invariants`), and recommends candidate `INV-*` bindings for unbound tests (`recommend_invariants_for_unbound_tests`).
 
 == Key Responsibilities & Collaborators
-* **Static Multi-Root Invariant Verification (`invariants.py`, `DEC-VCS-STATIC-INVARIANT-TRACEABILITY`, `DEC-VCS-UNIFIED-TEST-BINDING-SEMANTICS`)**: Scans `policies/`, `domains/`, `architecture/`, and `design/` (`UIC-*`) roots to verify exact-bounded `INV-*` `test_binding` (`file::func` or `file::Class::method`) coverage against non-skipped polyglot test symbols backed by `test_binding_cache` in `CMP-GRAPH-STORAGE`, blanking commented-out code blocks and disabled preprocessor sections before token extraction.
-* **Orphan Detection & Unbound Test Recommendations**: Flags undeclared `INV-*` tokens in test suites (`detect_orphan_invariants`, excluding pure-numeric invoice identifiers and pre-apply SpecDelta invariants), reconstructs the living spec catalog (`get_living_specs_catalog`), and ranks candidate `INV-*` targets for unbound tests via `recommend_invariants_for_unbound_tests`.
+* **Static Multi-Root Invariant Verification & Config-Aware Test Discovery (`invariants.py`, `DEC-VCS-STATIC-INVARIANT-TRACEABILITY`, `DEC-VCS-UNIFIED-TEST-BINDING-SEMANTICS`)**: Scans `policies/`, `domains/`, `architecture/`, and `design/` (`UIC-*`) roots to verify exact-bounded `INV-*` `test_binding` (`file::func` or `file::Class::method`) coverage against non-skipped polyglot test symbols backed by `test_binding_cache` in `CMP-GRAPH-STORAGE`, honors `workspace.exclude` and `workspace.tests.{include,exclude}` from optional `<eidos_dir>/eidos.yaml` across both Git-tracked and non-Git `os.walk` test discovery in `_load_or_update_test_binding_cache` so test classification matches `CMP-GIT-DIFF-INSPECTOR`, and blanks commented-out code blocks and disabled preprocessor sections before token extraction.
+* **Orphan Detection & Unbound Test Recommendations**: Flags undeclared `INV-*` tokens in test suites (`detect_orphan_invariants`, honoring optional `repo_config` and excluding pure-numeric invoice identifiers and pre-apply SpecDelta invariants), reconstructs the living spec catalog (`get_living_specs_catalog`), and ranks candidate `INV-*` targets for unbound tests via `recommend_invariants_for_unbound_tests`.
 
 == Public Surface
 * `InvariantTrace`
-* `extract_invariants_and_verify(eidos_dir: Path, repo_root: Path, *, allow_pre_apply_delta_ids: bool = False) -> list[InvariantTrace]`
-* `detect_orphan_invariants(eidos_dir: Path, repo_root: Path, known_invariant_ids: set[str]) -> list[tuple[str, str]]`
-* `get_living_specs_catalog(eidos_dir: Path) -> list[dict[str, Any]]`
-* `recommend_invariants_for_unbound_tests(eidos_dir: Path, repo_root: Path, test_files: list[str], *, top_k: int = 3) -> dict[str, list[dict[str, Any]]]`
+* `extract_invariants_and_verify(eidos_dir: Path, repo_root: Path, *, cached_tests: dict[str, _CachedTestFile] | None = None, repo_config: EidosConfig | None = None) -> list[InvariantTrace]`
+* `detect_orphan_invariants(repo_root: Path, known_invariant_ids: set[str], all_tests_content: dict[str, str] | None = None, eidos_dir: Path | None = None, *, cached_tests: dict[str, _CachedTestFile] | None = None, repo_config: EidosConfig | None = None) -> list[tuple[str, str]]`
+* `get_living_specs_catalog(eidos_dir: Path, repo_root: Path | None = None) -> dict[str, list[dict]]`
+* `recommend_invariants_for_unbound_tests(index_or_repo_root: Any, unbound_tests: list[str | dict[str, Any]] | None = None, *, eidos_dir: Path | None = None, top_k: int = 3, use_semantic: bool = True) -> dict[str, list[dict[str, Any]]]`
 
 == Design Constraints & Operational Notes
 * **Static-Only Traceability (`POL-INVARIANT-TEST-ENFORCEMENT`, `DEC-VCS-STATIC-INVARIANT-TRACEABILITY`)**: Confirms test symbol existence and explicit `INV-*` token references without executing project test runners or inspecting AST assertion statements.

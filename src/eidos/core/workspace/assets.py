@@ -67,6 +67,11 @@ def get_v1_schemas_dir() -> Path:
     return get_assets_path("schemas/v1")
 
 
+def get_config_schema_path() -> Path:
+    """Return the path to the optional repository configuration schema (assets/schemas/config/eidos-config.v1.schema.yaml)."""
+    return get_assets_path("schemas/config/eidos-config.v1.schema.yaml")
+
+
 def get_plugin_reference_dir() -> Path:
     """Return the directory containing the canonical Eidos Agent Skills reference."""
     return get_assets_path("plugin_reference")

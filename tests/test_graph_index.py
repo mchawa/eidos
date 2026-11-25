@@ -3605,15 +3605,33 @@ def test_semantic_engine_setup_onnx_protobuf_and_auto_refresh_coverage(tmp_path:
         def __exit__(self, *args):
             return None
 
-    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=60: _FakeResp(b"artifact-bytes"))
+    import hashlib
+
+    from eidos.core.index.semantic import _METADATA_FILES, _VARIANT_FILES
+
+    fake_payload = b"artifact-bytes"
+    fake_sha = hashlib.sha256(fake_payload).hexdigest()
+
+    fake_manifest = {
+        fname: (len(fake_payload), fake_sha) for fname in (*_METADATA_FILES, *_VARIANT_FILES["quantized"])
+    }
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=60: _FakeResp(fake_payload))
     setup_dir = tmp_path / "setup_eidos"
     with _semantic_cli_progress(Console(quiet=True), mode="setup", enabled=True):
         res_dl = setup_semantic_model(
-            setup_dir, variant="quantized", force=False, base_url="https://mirror.example/harrier"
+            setup_dir,
+            variant="quantized",
+            force=False,
+            base_url="https://mirror.example/harrier",
+            expected_manifest=fake_manifest,
         )
     assert len(res_dl["downloaded"]) == 5 and res_dl["skipped"] == []
     res_skip = setup_semantic_model(
-        setup_dir, variant="quantized", force=False, base_url="https://mirror.example/harrier"
+        setup_dir,
+        variant="quantized",
+        force=False,
+        base_url="https://mirror.example/harrier",
+        expected_manifest=fake_manifest,
     )
     assert res_skip["downloaded"] == [] and len(res_skip["skipped"]) == 5
 

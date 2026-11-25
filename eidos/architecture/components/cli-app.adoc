@@ -15,13 +15,16 @@ source_path:
 Root Typer CLI application (`src/eidos/cli/main.py`) and shared workspace resolution helpers (`src/eidos/cli/_shared.py`) that mount all subcommand modules, handle `--version` / `eidos info` (reporting the 17 loaded v1 schemas, 9 supported AI coding harnesses, and `agentskills.io` Agent Skills standard), and resolve the governing `eidos/` specification directory.
 
 == Key Responsibilities & Collaborators
-* **Root Command Registration & Deterministic Ordering**: Mounts `init`, `validate`, `spec`, `delta`, `context`, `index`, `memory`, `drift`, `portal`, `plugin`, `doctor`, and `hook` onto the root `app` Typer instance in deterministic panel and help order (`CTR-EIDOS-CLI`).
+* **Root Command Registration & Deterministic Ordering**: Mounts `init`, `config` (`CMP-CLI-CONFIG-COMMANDS` under `PANEL_SETUP`), `validate`, `spec`, `delta`, `context`, `index`, `memory`, `drift`, `portal`, `plugin`, `doctor`, and `hook` onto the root `app` Typer instance in deterministic panel and help order (`CTR-EIDOS-CLI`).
 * **Shared Workspace & Sub-Project Resolution (`_shared.py`)**: Resolves `--path` arguments and auto-discovers the nearest governing sub-project `eidos/` specification directory (`resolve_cli_eidos_dir`, `has_eidos_markers`) walking upward from `CWD`, explicit `--path` (whether pointing to `<subproject>` or `<subproject>/eidos`), or target `hint_files` while ignoring cache-only `eidos/` directories.
+* **CLI-Over-Config Precedence & Structured Error Handling (`_shared.py`)**: Exposes `resolve_param_from_config` using active Typer/Click execution context (`ParameterSource.COMMANDLINE`, preserving `cli_value` when invoked programmatically without an active CLI context) and `load_cli_repo_config` to load optional `eidos/eidos.yaml` via `CMP-REPO-CONFIG` while translating `ConfigValidationError` into deterministic Rich or `--json` (`{"error": ..., "errors": [...]}`) exit code `1` responses for non-validator CLI commands.
 
 == Public Surface
 * `app: typer.Typer`, `main() -> None`
 * `info() -> None`, `version_callback(value: bool) -> None`
-* `resolve_cli_eidos_dir(target_path: Path | None = None, hint_files: Sequence[str | Path] | None = None) -> Path`, `has_eidos_markers(candidate: Path) -> bool`
+* `resolve_cli_eidos_dir(target_path: Path | None = None, hint_files: list[str] | None = None) -> Path`, `has_eidos_markers(cand: Path) -> bool`
+* `resolve_param_from_config(param_name: str, cli_value: Any, config_value: Any) -> Any`
+* `load_cli_repo_config(eidos_dir: Path, *, repo_root: Path | None = None, json_output: bool = False) -> EidosConfig`
 
 == Design Constraints & Operational Notes
 * **Thin Presentation Boundary**: Contains zero domain business logic; delegates all operations to `CNT-EIDOS-CORE`, `CNT-EIDOS-INDEX`, `CNT-EIDOS-VCS`, `CNT-EIDOS-PORTAL`, and `CNT-EIDOS-PLUGIN`.

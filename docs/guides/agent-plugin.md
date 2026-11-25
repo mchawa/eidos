@@ -50,6 +50,11 @@ eidos plugin install all
 # Opt in to native Stop / PreToolUse lifecycle hooks across hook-capable AI assistants:
 eidos plugin install all --hooks
 
+# Or omit [TARGET] when `plugin.targets` is configured in `eidos/eidos.yaml`:
+eidos plugin install
+eidos plugin install --no-hooks
+eidos plugin update
+
 # Targeted installation for a specific assistant:
 eidos plugin install antigravity
 eidos plugin install antigravity --hooks
@@ -62,6 +67,27 @@ eidos plugin install kilocode
 eidos plugin install open-code
 eidos plugin install aider
 ```
+
+### Repository Plugin & Hook Defaults (`eidos/eidos.yaml`)
+
+Teams can standardize agent harnesses, launcher mode, PyPI update checks, and hook behavior inside optional `eidos/eidos.yaml` (explicit CLI flags and `EIDOS_*` env vars always take precedence):
+
+```yaml
+version: 1
+plugin:
+  targets: ["claude", "cursor"]    # concrete targets only (excludes "all"); enables `eidos plugin install` / `update` without [TARGET]
+  launcher: eidos                  # eidos | uvx
+  updates_check: true              # set false to disable network PyPI checks in `eidos doctor`
+  hooks:
+    install: false                 # default for `eidos plugin install --hooks/--no-hooks`
+    enabled: true                  # runtime kill-switch in `eidos hook` (also `EIDOS_HOOKS_ENABLED`)
+    strict: null                   # null inherits `drift.strict`
+    fail_on_warnings: null         # null inherits `drift.fail_on_warnings`
+    baseline_ttl_seconds: 86400    # stale session baseline expiry in seconds
+```
+
+* `eidos plugin uninstall <TARGET>` always keeps `<TARGET>` required for safety.
+* `eidos doctor` validates `eidos/eidos.yaml` under `checks.repo_config` (failing closed on invalid files) and surfaces non-blocking advisories (`missing_configured_targets`) when concrete targets listed in `plugin.targets` are not installed yet.
 
 ### Installation Targets
 
@@ -263,7 +289,9 @@ AI agents execute Eidos CLI commands directly from terminal / subshell tools. Al
 | `eidos memory audit` | `--json` | Runs a non-blocking audit across freshness, duplicates, and formal spec overlaps. |
 | `eidos drift` | `--uncommitted`, `--base <ref>`, `--json` | Inspects spec-to-code drift, boundary-aware spec anchoring, and polyglot `INV-*` test bindings. |
 | `eidos validate` | `[PATH]`, `--json` | Validates all living specifications against their bundled v1 JSON Schemas, `x-eidos-ref` links, and bidirectional contract parity. |
-| `eidos doctor` | `--path <path>`, `--json` | Runs workspace health diagnostics across CLI binary, root `AGENTS.md`, living specs, index, and agent plugin hooks. |
+| `eidos doctor` | `--path <path>`, `--json` | Runs workspace health diagnostics across optional `eidos/eidos.yaml` (`checks.repo_config`), CLI binary, root `AGENTS.md`, living specs, index, and agent plugin hooks (with non-blocking advisories for missing configured `plugin.targets`). |
+| `eidos config show` | `--path <path>`, `--json` | Inspects effective repository configuration (`eidos/eidos.yaml` + `EIDOS_*` env vars) with per-key source attribution. |
+| `eidos config schema` | `--json` | Inspects all valid `eidos/eidos.yaml` v1 schema keys, defaults, and `EIDOS_*` env vars offline. |
 | `eidos info` | | Returns current engine version, loaded v1 schemas, and supported platforms. |
 | `eidos spec list` | `--type <type>`, `--status <status>`, `--include-archived`, `--json` | Lists living specifications across all 15 blueprint types. |
 | `eidos spec show` | `<id_or_path>` | Displays frontmatter metadata and preview of a specification document. |

@@ -885,17 +885,29 @@ def _is_cached_artifact_verified(
 
 def setup_semantic_model(
     eidos_dir: Path,
-    variant: str = "quantized",
+    variant: str | None = None,
     force: bool = False,
-    base_url: str = HARRIER_HF_BASE_URL,
+    base_url: str | None = None,
     expected_manifest: dict[str, tuple[int | None, str]] | None = None,
 ) -> dict[str, Any]:
     """Download Harrier-OSS-v1-0.6B ONNX artifacts into ``eidos/.cache/models/harrier-oss-v1-0.6b/``."""
-    norm_variant = (variant or "quantized").strip().lower()
+    from eidos.core.workspace.config import _validate_mirror_url, load_repo_config
+
+    repo_cfg = load_repo_config(eidos_dir=eidos_dir)
+    effective_variant = variant if variant is not None else repo_cfg.context.semantic.variant
+    norm_variant = (effective_variant or "quantized").strip().lower()
     if norm_variant not in _VARIANT_FILES:
         raise ValueError(
-            f"Unsupported Harrier ONNX variant '{variant}'. Supported variants: {', '.join(sorted(_VARIANT_FILES))}."
+            f"Unsupported Harrier ONNX variant '{effective_variant}'. Supported variants: {', '.join(sorted(_VARIANT_FILES))}."
         )
+    if base_url is not None:
+        url_err = _validate_mirror_url(base_url, field_label="base_url")
+        if url_err is not None:
+            raise ValueError(url_err)
+        effective_base_url = base_url.strip()
+    else:
+        effective_base_url = repo_cfg.context.semantic.model_mirror_url or HARRIER_HF_BASE_URL
+
     model_dir = resolve_semantic_model_dir(eidos_dir)
     (model_dir / "onnx").mkdir(parents=True, exist_ok=True)
     try:
@@ -911,9 +923,7 @@ def setup_semantic_model(
         pass
 
     manifest: dict[str, tuple[int | None, str]] = (
-        dict(expected_manifest)
-        if expected_manifest is not None
-        else (dict(HARRIER_ARTIFACT_MANIFEST) if base_url.rstrip("/") == HARRIER_HF_BASE_URL.rstrip("/") else {})
+        dict(expected_manifest) if expected_manifest is not None else dict(HARRIER_ARTIFACT_MANIFEST)
     )
     sidecar_path = model_dir / ".manifest.json"
     sidecar_records: dict[str, dict[str, Any]] = {}
@@ -941,7 +951,7 @@ def setup_semantic_model(
                 skipped.append(rel_path)
                 continue
 
-        url = f"{base_url.rstrip('/')}/{rel_path}"
+        url = f"{effective_base_url.rstrip('/')}/{rel_path}"
         tmp_dest = dest.with_suffix(dest.suffix + ".part")
         req = urllib.request.Request(url, headers={"User-Agent": "eidos-ai/semantic-setup"})
         hasher = hashlib.sha256()
