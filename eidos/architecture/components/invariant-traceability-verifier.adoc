@@ -10,7 +10,7 @@ source_path: src/eidos/vcs/invariants.py
 :toc: left
 
 == Responsibility
-Verifies static polyglot `INV-*` `test_binding` traceability (`POL-002`) across `policies/`, `domains/`, `architecture/`, and `design/` (`UIC-*`) specifications (`extract_invariants_and_verify`), detects undeclared orphan invariant IDs in test suites (`detect_orphan_invariants`), and recommends candidate `INV-*` bindings for unbound tests (`recommend_invariants_for_unbound_tests`).
+Verifies static polyglot `INV-*` `test_binding` traceability (`POL-INVARIANT-TEST-ENFORCEMENT`) across `policies/`, `domains/`, `architecture/`, and `design/` (`UIC-*`) specifications (`extract_invariants_and_verify`), detects undeclared orphan invariant IDs in test suites (`detect_orphan_invariants`), and recommends candidate `INV-*` bindings for unbound tests (`recommend_invariants_for_unbound_tests`).
 
 == Key Responsibilities & Collaborators
 * **Static Multi-Root Invariant Verification (`invariants.py`, `DEC-VCS-STATIC-INVARIANT-TRACEABILITY`, `DEC-VCS-UNIFIED-TEST-BINDING-SEMANTICS`)**: Scans `policies/`, `domains/`, `architecture/`, and `design/` (`UIC-*`) roots to verify exact-bounded `INV-*` `test_binding` (`file::func` or `file::Class::method`) coverage against non-skipped polyglot test symbols backed by `test_binding_cache` in `CMP-GRAPH-STORAGE`, blanking commented-out code blocks and disabled preprocessor sections before token extraction.
@@ -24,4 +24,4 @@ Verifies static polyglot `INV-*` `test_binding` traceability (`POL-002`) across 
 * `recommend_invariants_for_unbound_tests(eidos_dir: Path, repo_root: Path, test_files: list[str], *, top_k: int = 3) -> dict[str, list[dict[str, Any]]]`
 
 == Design Constraints & Operational Notes
-* **Static-Only Traceability (`POL-002`, `DEC-VCS-STATIC-INVARIANT-TRACEABILITY`)**: Confirms test symbol existence and explicit `INV-*` token references without executing project test runners or inspecting AST assertion statements.
+* **Static-Only Traceability (`POL-INVARIANT-TEST-ENFORCEMENT`, `DEC-VCS-STATIC-INVARIANT-TRACEABILITY`)**: Confirms test symbol existence and explicit `INV-*` token references without executing project test runners or inspecting AST assertion statements.

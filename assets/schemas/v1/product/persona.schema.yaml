@@ -38,6 +38,6 @@ properties:
       - "autonomous_agent"
   decisions:
     type: array
-    description: "In-place product and actor decisions recorded on this persona specification (POL-001)."
+    description: "In-place product and actor decisions recorded on this persona specification."
     items:
       $ref: "#/$defs/decision"

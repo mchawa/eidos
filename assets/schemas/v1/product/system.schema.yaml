@@ -17,7 +17,7 @@ properties:
   id:
     type: string
     pattern: "^SYS-[A-Z0-9_-]+$"
-    description: "Unique system identifier following the SYS-<NAME> convention (e.g. SYS-EIDOS-001)."
+    description: "Unique system identifier following the SYS-<NAME> convention (e.g. SYS-BILLING-PLATFORM)."
   title:
     $ref: "#/$defs/non_empty_string"
     description: "Full human-readable display title of the software product or platform."
@@ -37,6 +37,6 @@ properties:
       description: "A machine-readable slug identifying an architectural archetype or delivery surface."
   decisions:
     type: array
-    description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on the root system specification without standalone ADR files (POL-001)."
+    description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on the root system specification without standalone ADR files."
     items:
       $ref: "#/$defs/decision"

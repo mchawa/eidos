@@ -23,4 +23,4 @@ Provides the landing page (`docs/index.md`), installation instructions (`docs/ge
 * `docs/getting-started/quickstart.md`
 
 == Design Constraints & Operational Notes
-* **Live CLI & Schema Parity (`POL-003`, `INV-DOCS-SYNCHRONIZATION`)**: Every `eidos ...` command invocation and YAML frontmatter block is continuously verified against the live CLI command tree and v1 JSON Schemas.
+* **Live CLI & Schema Parity (`POL-CONTINUOUS-DOCUMENTATION-SYNC`, `INV-DOCS-SYNCHRONIZATION`)**: Every `eidos ...` command invocation and YAML frontmatter block is continuously verified against the live CLI command tree and v1 JSON Schemas.

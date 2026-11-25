@@ -568,7 +568,7 @@ def test_a9_audit_path_targets_explorations_rejected_deltas_and_tombstone_patter
 
 
 def test_dlt_2026_107_index_driven_spec_scoped_deletion_audit(tmp_path):
-    """DLT-2026-107: Verify file_tokens_fts index-driven discovery, unowned file exclusion (POL-001),
+    """DLT-2026-107: Verify file_tokens_fts index-driven discovery, unowned file exclusion (POL-GIT-SOURCE-OF-TRUTH),
     polyglot container source_path & contract specification_file governance, and dotted token matching."""
     import eidos.core.index.graph_index as gi
 

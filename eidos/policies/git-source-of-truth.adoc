@@ -1,12 +1,12 @@
 ---
 type: product/policy
-id: POL-001-GIT-SOURCE-OF-TRUTH
+id: POL-GIT-SOURCE-OF-TRUTH
 title: "Git Repository as the Single Source of Truth"
 status: active
 category: governance
 severity: blocking
 invariants:
-  - id: INV-POL-001-GIT-SOURCE-OF-TRUTH
+  - id: INV-POL-GIT-SOURCE-OF-TRUTH
     rule: "All product requirements, architectural contracts, invariants, and execution logs must reside inside the version-controlled Git repository. No external platform (Notion, Jira, Google Docs) holds authoritative state. While standalone chronological ADR files remain prohibited, enduring architectural trade-offs and rejected alternatives are recorded in-place within the 'decisions' frontmatter block of the owning system, architecture, container, or component living specification."
     test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
 ---

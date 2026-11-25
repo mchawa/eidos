@@ -1,10 +1,10 @@
-"""Tests verifying DLT-2026-021 & CAP-AGENT-002: Polyglot AST Code Graph & Structural Repo Map Intelligence.
+"""Tests verifying DLT-2026-021 & CAP-AST-CODE-GRAPH: Polyglot AST Code Graph & Structural Repo Map Intelligence.
 
 Enforces:
 - INV-INDEX-OPTIONAL-AST-FALLBACK
 - INV-INDEX-POLYGLOT-SYMBOL-PRECISION
 - INV-INDEX-AI-REPO-MAP-BUDGET
-- POL-004-ZERO-AI-CALL-DEPENDENCY
+- POL-ZERO-AI-CALL-DEPENDENCY
 """
 
 import sys

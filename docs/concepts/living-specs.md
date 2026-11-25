@@ -74,10 +74,10 @@ decisions:
   - id: DEC-INDEX-SQLITE-WAL
     title: "Use Embedded SQLite WAL + FTS5 Instead of External Vector DB"
     decision: "Store the architectural knowledge graph and lexical index in local SQLite3 with WAL mode and FTS5 BM25."
-    rationale: "Guarantees zero external runtime dependencies (Python stdlib), sub-2ms local queries, and 100% deterministic offline operation under POL-004."
+    rationale: "Guarantees zero external runtime dependencies (Python stdlib), sub-2ms local queries, and 100% deterministic offline operation under POL-ZERO-AI-CALL-DEPENDENCY."
     rejected_alternatives:
       - option: "ChromaDB / LanceDB Vector Store"
-        reason_rejected: "Requires embedding model weights or external API calls, violating POL-004 and bloating installation size."
+        reason_rejected: "Requires embedding model weights or external API calls, violating POL-ZERO-AI-CALL-DEPENDENCY and bloating installation size."
     graduated_from: EXP-2026-002
 ```
 

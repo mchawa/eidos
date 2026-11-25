@@ -34,7 +34,7 @@ eidos spec schema container --json
 #   system | architecture | domain | capability | persona | policy | exploration |
 #   container | component | contract | design-system | ui-component | client | screen | flow
 eidos spec create domain DOM-BILLING --title "Subscription & Usage Billing"
-eidos spec create capability CAP-BILL-001 --title "Metered Usage Aggregation"
+eidos spec create capability CAP-METERED-USAGE --title "Metered Usage Aggregation"
 eidos spec create container CNT-BILLING-WORKER --title "Billing Aggregation Worker"
 eidos spec create component CMP-USAGE-LEDGER --title "Double-Entry Usage Ledger"
 eidos spec create contract CTR-BILLING-API --title "Billing REST API"
@@ -106,7 +106,7 @@ Binds user value (`personas`, `policies`) to technical containers (`CNT-*`), com
 ```yaml
 ---
 type: product/capability
-id: CAP-BILL-001
+id: CAP-METERED-USAGE
 title: "Metered Usage Aggregation"
 domain: DOM-BILLING
 status: active # draft | planned | active | deprecated | retired
@@ -191,7 +191,7 @@ contracts:
   consumes: []
 
 decisions:
-  - id: DEC-BILL-001
+  - id: DEC-INVOICE-ADVISORY-LOCKS
     title: "Use PostgreSQL Advisory Locks for Invoice Finalization"
     decision: "Acquire transaction-scoped PostgreSQL advisory locks per customer account before finalizing monthly invoices."
     rationale: "Prevents concurrent worker processes from finalizing the same customer invoice without introducing an external Redis lock manager."

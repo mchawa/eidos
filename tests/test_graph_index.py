@@ -56,11 +56,11 @@ def test_spike_a_schema_initialization_and_sync(temp_index):
     assert fts_count >= 50
 
     # Verify C4 Level 1 (ARCH-*, SYS-*) and exploration (EXP-*) graph edges & k-hop neighborhood (DLT-2026-105)
-    arch_neighbors = temp_index.get_k_hop_neighborhood("ARCH-EIDOS-001", max_depth=2)
+    arch_neighbors = temp_index.get_k_hop_neighborhood("ARCH-EIDOS", max_depth=2)
     arch_hop1_ids = {n["id"] for n in arch_neighbors if n["depth"] == 1}
     arch_hop2_ids = {n["id"] for n in arch_neighbors if n["depth"] == 2}
     assert {
-        "SYS-EIDOS-001",
+        "SYS-EIDOS",
         "CNT-EIDOS-CORE",
         "CNT-EIDOS-INDEX",
         "PER-PRODUCT-LEAD",
@@ -70,7 +70,7 @@ def test_spike_a_schema_initialization_and_sync(temp_index):
     assert {"CMP-GRAPH-STORAGE", "CMP-INCREMENTAL-SYNC-ENGINE", "CTR-EIDOS-CLI", "DOM-SPEC-ENGINE"} <= arch_hop2_ids
 
     exp_neighbors = temp_index.get_k_hop_neighborhood("EXP-2026-004", max_depth=1)
-    assert "ARCH-EIDOS-001" in {n["id"] for n in exp_neighbors if n["depth"] == 1}
+    assert "ARCH-EIDOS" in {n["id"] for n in exp_neighbors if n["depth"] == 1}
 
 
 def test_spike_a_fts5_bm25_lexical_search(temp_index):
@@ -85,8 +85,8 @@ def test_spike_a_fts5_bm25_lexical_search(temp_index):
     assert len(matches) > 0
 
     matched_ids = [m["id"] for m in matches]
-    # CAP-VCS-001 or DOM-VCS-LIFECYCLE should be at the top
-    assert any("VCS" in mid for mid in matched_ids)
+    # CAP-DRIFT-DETECTION or DOM-VCS-LIFECYCLE should be at the top
+    assert any("VCS" in mid or "DRIFT" in mid for mid in matched_ids)
 
 
 def test_spike_a_recursive_cte_k_hop_traversal(temp_index):
@@ -3417,8 +3417,8 @@ def test_dlt_2026_114_blast_radius_symbol_and_path_resolution() -> None:
     # 3. Specification file path resolution (including exact vs suffix disambiguation on system.adoc)
     assert idx.resolve_blast_radius_targets("eidos/architecture/containers/vcs.adoc") == ["CNT-EIDOS-VCS"]
     assert idx.resolve_blast_radius_targets("architecture/containers/vcs.adoc") == ["CNT-EIDOS-VCS"]
-    assert idx.resolve_blast_radius_targets("system.adoc") == ["SYS-EIDOS-001"]
-    assert idx.resolve_blast_radius_targets("eidos/system.adoc") == ["SYS-EIDOS-001"]
+    assert idx.resolve_blast_radius_targets("system.adoc") == ["SYS-EIDOS"]
+    assert idx.resolve_blast_radius_targets("eidos/system.adoc") == ["SYS-EIDOS"]
 
     # Disjoint query engine files resolve cleanly to their single owning CMP-* seeds (DLT-2026-139)
     assert idx.resolve_blast_radius_targets("src/eidos/core/index/fts_query.py") == ["CMP-FTS-QUERY-ENGINE"]

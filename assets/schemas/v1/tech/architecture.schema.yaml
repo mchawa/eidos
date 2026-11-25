@@ -17,7 +17,7 @@ properties:
   id:
     type: string
     pattern: "^ARCH-[A-Z0-9_-]+$"
-    description: "Unique architecture document identifier (e.g. ARCH-EIDOS-001)."
+    description: "Unique architecture document identifier following the ARCH-<NAME> convention (e.g. ARCH-BILLING-PLATFORM)."
   title:
     $ref: "#/$defs/non_empty_string"
     description: "Human-readable title of the system architecture specification."
@@ -107,6 +107,6 @@ properties:
               description: "Architectural rationale for the temporary legacy coupling ceiling."
   decisions:
     type: array
-    description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on the global architecture specification without standalone ADR files (POL-001)."
+    description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on the global architecture specification without standalone ADR files."
     items:
       $ref: "#/$defs/decision"

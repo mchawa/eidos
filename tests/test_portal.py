@@ -167,7 +167,7 @@ def test_static_portal_builder(tmp_path: Path):
     index_html = index_file.read_text(encoding="utf-8")
     assert "<!DOCTYPE html>" in index_html
     assert "window.__EIDOS_DATA__ =" in index_html
-    assert "SYS-EIDOS-001" in index_html
+    assert "SYS-EIDOS" in index_html
     assert '<div id="root"></div>' in index_html
     assert len(index_file.read_bytes()) < 400 * 1024
     assert _remote_subresources(index_html) == []
@@ -191,7 +191,7 @@ def test_static_portal_builder(tmp_path: Path):
     assert not (single_dir / "specs").exists()
 
     json_data = orjson.loads(data_file.read_bytes())
-    assert json_data["overview"]["system_id"] == "SYS-EIDOS-001"
+    assert json_data["overview"]["system_id"] == "SYS-EIDOS"
     assert json_data["overview"]["clients_count"] >= 1
     assert json_data["overview"]["flows_count"] >= 2
     assert any(c["id"] == "CLT-WEB-PORTAL" for c in json_data["clients"])
@@ -223,7 +223,7 @@ def test_portal_http_server():
         assert res.status == 200
         assert "application/json" in res.headers.get("Content-Type", "")
         payload = orjson.loads(res.read())
-        assert payload["overview"]["system_id"] == "SYS-EIDOS-001"
+        assert payload["overview"]["system_id"] == "SYS-EIDOS"
 
     # 3. GET /api/overview
     with urllib.request.urlopen(f"{base_url}/api/overview") as res:
@@ -1785,9 +1785,9 @@ def test_portal_static_scalability_and_deep_linking(tmp_path: Path):
     chunked_index = (out_dir / "index.html").read_text(encoding="utf-8")
     assert len((out_dir / "index.html").read_bytes()) < 400 * 1024
     assert "specs/" in chunked_index
-    assert (out_dir / "specs" / "SYS-EIDOS-001.json").is_file()
-    sys_chunk = orjson.loads((out_dir / "specs" / "SYS-EIDOS-001.json").read_bytes())
-    assert sys_chunk["id"] == "SYS-EIDOS-001"
+    assert (out_dir / "specs" / "SYS-EIDOS.json").is_file()
+    sys_chunk = orjson.loads((out_dir / "specs" / "SYS-EIDOS.json").read_bytes())
+    assert sys_chunk["id"] == "SYS-EIDOS"
     assert len(sys_chunk["body"]) > 50
 
     from eidos.portal.builder import _serialize_script_json
@@ -2686,7 +2686,7 @@ def test_portal_human_readable_ui_and_slug_free_diagrams():
     data = get_portal_data(Path("eidos"))
     c4_context = data["diagrams"]["c4_context"]
     assert "SYS[" in c4_context
-    assert "SYS-EIDOS-001" not in c4_context
+    assert "SYS-EIDOS" not in c4_context
 
     c4_containers = data["diagrams"]["c4_containers"]
     assert "CNT_EIDOS_PORTAL[" in c4_containers

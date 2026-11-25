@@ -58,6 +58,12 @@ def _scan_live_specs_by_id(eidos_dir: Path) -> dict[str, tuple[Path, str, dict[s
     return specs_by_id
 
 
+def _strip_type_prefix(slug: str, prefix: str) -> str:
+    """Strip a redundant entity-type prefix from a filename slug unless the remaining stem is empty or purely numeric."""
+    stripped = slug.removeprefix(prefix)
+    return stripped if (stripped and not stripped.isdigit()) else slug
+
+
 def create_spec(
     eidos_dir: Path,
     doc_type_key: str,
@@ -195,7 +201,7 @@ def create_spec(
         else:
             domain_dirs = [d for d in eidos_dir.glob(f"domains/*{domain_slug}*") if d.is_dir()]
             dest_dir = domain_dirs[0] / "capabilities" if domain_dirs else exact_dom_dir / "capabilities"
-        dest_file = dest_dir / f"{slug}.adoc"
+        dest_file = dest_dir / f"{_strip_type_prefix(slug, 'cap-')}.adoc"
         fm = {
             "type": "product/capability",
             "id": doc_id,
@@ -225,7 +231,7 @@ def create_spec(
 
     elif canonical_key == "policy":
         dest_dir = eidos_dir / "policies"
-        dest_file = dest_dir / f"{slug}.adoc"
+        dest_file = dest_dir / f"{_strip_type_prefix(slug, 'pol-')}.adoc"
         inv_id = f"INV-{doc_id}"
         fm = {
             "type": "product/policy",
@@ -244,7 +250,7 @@ def create_spec(
 
     elif canonical_key == "contract":
         dest_dir = eidos_dir / "architecture" / "contracts"
-        dest_file = dest_dir / f"{slug}.adoc"
+        dest_file = dest_dir / f"{_strip_type_prefix(slug, 'ctr-')}.adoc"
         cnt_owner = _first_of_type("tech/container", f"CNT-{project_stem}")
         fm = {
             "type": "tech/contract",
@@ -258,7 +264,7 @@ def create_spec(
 
     elif canonical_key == "container":
         dest_dir = eidos_dir / "architecture" / "containers"
-        dest_file = dest_dir / f"{slug}.adoc"
+        dest_file = dest_dir / f"{_strip_type_prefix(slug, 'cnt-')}.adoc"
         fm = {
             "type": "tech/container",
             "id": doc_id,
@@ -287,7 +293,7 @@ def create_spec(
 
     elif canonical_key == "persona":
         dest_dir = eidos_dir / "personas"
-        dest_file = dest_dir / f"{slug}.adoc"
+        dest_file = dest_dir / f"{_strip_type_prefix(slug, 'per-')}.adoc"
         fm = {
             "type": "product/persona",
             "id": doc_id,
@@ -515,6 +521,15 @@ def _derive_short_type(canonical_type: str) -> str:
     return canonical_type.split("/")[-1]
 
 
+def _example_id_for_prefix(pfx: str) -> str:
+    """Return a schema-conforming example ID for a canonical entity prefix."""
+    if pfx in ("DLT-", "EXP-"):
+        return f"{pfx}2026-001"
+    if pfx == "MEM-":
+        return "MEM-EXAMPLE-A1B2"
+    return f"{pfx}EXAMPLE"
+
+
 def _synthesize_example_value(
     key: str,
     prop_schema: dict[str, Any],
@@ -540,7 +555,7 @@ def _synthesize_example_value(
     if isinstance(ref_meta, dict) and isinstance(ref_meta.get("prefixes"), list) and ref_meta["prefixes"]:
         first_pfx = str(ref_meta["prefixes"][0])
         chosen_pfx = "CNT-" if "CNT-" in ref_meta["prefixes"] else first_pfx
-        return f"{chosen_pfx}EXAMPLE-001"
+        return _example_id_for_prefix(chosen_pfx)
 
     prop_type = resolved.get("type")
     if not prop_type and "oneOf" in resolved:
@@ -552,7 +567,7 @@ def _synthesize_example_value(
         pattern = str(resolved.get("pattern") or "")
         pfx = _extract_id_prefix(pattern) or (id_prefix if key == "id" else "")
         if pfx:
-            return f"{pfx}EXAMPLE-001"
+            return _example_id_for_prefix(pfx)
         if key == "test_binding":
             return "tests/test_example.py::test_invariant"
         if key == "version":

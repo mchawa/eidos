@@ -106,7 +106,7 @@ describe("INV-PORTAL-READING-ERGONOMICS: Asciidoctor.js reader", () => {
       [
         "== Links",
         "",
-        "See xref:CNT-DEMO-CORE[the core], <<CAP-EXP-001>>, link:../personas/product-lead.adoc[Persona], ",
+        "See xref:CNT-DEMO-CORE[the core], <<CAP-DEMO-PORTAL>>, link:../personas/product-lead.adoc[Persona], ",
         "xref:containers/core.adoc[Core container], <<links>>, link://cdn.example.com/doc[ProtoRel] and https://example.com[Example].",
         "",
       ].join("\n"),
@@ -114,9 +114,9 @@ describe("INV-PORTAL-READING-ERGONOMICS: Asciidoctor.js reader", () => {
     const tpl = document.createElement("template");
     tpl.innerHTML = html;
     const refs = [...tpl.content.querySelectorAll("a[data-spec-ref]")].map((a) => a.getAttribute("data-spec-ref"));
-    expect(refs).toEqual(["CNT-DEMO-CORE", "CAP-EXP-001", "../personas/product-lead.adoc", "containers/core.html"]);
+    expect(refs).toEqual(["CNT-DEMO-CORE", "CAP-DEMO-PORTAL", "../personas/product-lead.adoc", "containers/core.html"]);
     // Unresolved <<ID>> is shown without brackets, and spec links never leave the SPA.
-    expect(tpl.content.querySelector('a[data-spec-ref="CAP-EXP-001"]')?.textContent).toBe("CAP-EXP-001");
+    expect(tpl.content.querySelector('a[data-spec-ref="CAP-DEMO-PORTAL"]')?.textContent).toBe("CAP-DEMO-PORTAL");
     for (const a of tpl.content.querySelectorAll("a[data-spec-ref]")) {
       expect(a.getAttribute("href")).toMatch(/^#spec\//);
       expect(a.hasAttribute("target")).toBe(false);
@@ -135,16 +135,16 @@ describe("INV-PORTAL-READING-ERGONOMICS: Asciidoctor.js reader", () => {
     const specs = [
       { id: "CNT-DEMO-CORE", path: "eidos/architecture/containers/core.adoc" },
       { id: "PER-PRODUCT-LEAD", path: "eidos/personas/product-lead.adoc" },
-      { id: "SYS-DEMO-001", path: "eidos/system.adoc" },
+      { id: "SYS-DEMO", path: "eidos/system.adoc" },
     ];
     expect(resolveSpecTarget(specs, "CNT-DEMO-CORE")?.id).toBe("CNT-DEMO-CORE");
     expect(resolveSpecTarget(specs, "#cnt-demo-core")?.id).toBe("CNT-DEMO-CORE");
     expect(resolveSpecTarget(specs, "../personas/product-lead.adoc")?.id).toBe("PER-PRODUCT-LEAD");
     expect(resolveSpecTarget(specs, "/work/repo/eidos/architecture/containers/core.adoc")?.id).toBe("CNT-DEMO-CORE");
     expect(resolveSpecTarget(specs, "containers/core.html")?.id).toBe("CNT-DEMO-CORE");
-    expect(resolveSpecTarget(specs, "../system.adoc#vision")?.id).toBe("SYS-DEMO-001");
+    expect(resolveSpecTarget(specs, "../system.adoc#vision")?.id).toBe("SYS-DEMO");
     expect(resolveSpecTarget(specs, "nope.adoc")).toBeUndefined();
-    expect(looksLikeSpecId("CAP-EXP-001")).toBe(true);
+    expect(looksLikeSpecId("CAP-DEMO-PORTAL")).toBe(true);
     expect(looksLikeSpecId("section-one")).toBe(true); // shape only; the renderer first checks in-page ids
     expect(isSpecDocumentPath("https://x.io/a.adoc")).toBe(false);
   });
@@ -918,7 +918,7 @@ describe("INV-PORTAL-DOCUMENT-MERMAID-RENDERING: AST Mermaid extraction, seriali
       if (src.includes("BROKEN_STANDALONE")) {
         throw new Error("Standalone parse failure");
       }
-      // Tall diagram matching real ARCH-EIDOS-001 C4Context dimensions (516 x 863)
+      // Tall diagram matching real ARCH-DEMO C4Context dimensions (516 x 863)
       return {
         svg: `<svg id="${uid}" viewBox="0 -70 516 863"><rect width="516" height="863" /></svg>`,
         diagramType: "c4",

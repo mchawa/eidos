@@ -1,6 +1,6 @@
 ---
 type: tech/architecture
-id: ARCH-EIDOS-001
+id: ARCH-EIDOS
 title: "Eidos Global Technical Architecture"
 status: active
 
@@ -34,7 +34,7 @@ decisions:
       - option: "Co-Located Component Specs Inside src/ Directories"
         reason_rejected: "Pollutes source code packages with documentation artifacts and complicates build packaging and ownership resolution."
       - option: "Standalone Chronological ADR Directory"
-        reason_rejected: "Decouples architectural rationale from the living components it governs, decaying into a write-only graveyard (POL-001)."
+        reason_rejected: "Decouples architectural rationale from the living components it governs, decaying into a write-only graveyard (POL-GIT-SOURCE-OF-TRUTH)."
     graduated_from: EXP-2026-004
   - id: DEC-ARCH-DEVCONTAINER-FEATURE
     title: "Distribute Eidos as an OCI Dev Container Feature Backed by System-Wide uv Tool Installation"
@@ -69,8 +69,8 @@ Eidos is an open, Git-native development AI ecosystem and orchestration framewor
 * **System Goals**: Refer to link:../system.adoc[Root System Specification].
 
 == 2. Constraints & Quality Invariants
-* link:../policies/POL-001-git-as-single-source-of-truth.adoc[POL-001: Git as Single Source of Truth]
-* link:../policies/POL-002-invariant-test-enforcement.adoc[POL-002: Mandatory Invariant Test Enforcement]
+* link:../policies/git-source-of-truth.adoc[POL-GIT-SOURCE-OF-TRUTH: Git as Single Source of Truth]
+* link:../policies/invariant-test-enforcement.adoc[POL-INVARIANT-TEST-ENFORCEMENT: Mandatory Invariant Test Enforcement]
 
 == 3. Context & Scope (C4 Model Level 1: System Context)
 
@@ -145,7 +145,7 @@ Internal component building blocks reside centrally in `eidos/architecture/compo
 Furthermore, interface ownership strictly distinguishes between deployment boundaries and in-memory linkage:
 * **Containers (`CNT-*`)** define **Boundary Protocol Contracts (`CTR-*`)**: Cross-process, network, or CLI protocols (CLI args, REST OpenAPI, gRPC).
 * **Components (`CMP-*`)** resolve **In-Process & Static HTTP Dependencies via AST**: Cross-component (`consumes_api`) and cross-container (`depends_on`) edges are automatically derived from source file imports and polyglot client-to-endpoint HTTP bindings (`ast_import` and `ast_http` with explicit epistemic `provenance`) during index synchronization.
-* **Executable Import Boundary Governance (`import_boundaries` / `tier_rules`)**: `ARCH-EIDOS-001` enforces static `import_boundaries.tier_rules` across `eidos validate` and `eidos drift` (`core` and `extensibility` forbid `presentation` couplings; `persistence` forbids both `presentation` and `extensibility` couplings) with zero `ratchet_baseline` debt across all 7 Eidos containers.
+* **Executable Import Boundary Governance (`import_boundaries` / `tier_rules`)**: `ARCH-EIDOS` enforces static `import_boundaries.tier_rules` across `eidos validate` and `eidos drift` (`core` and `extensibility` forbid `presentation` couplings; `persistence` forbids both `presentation` and `extensibility` couplings) with zero `ratchet_baseline` debt across all 7 Eidos containers.
 
 Container manifests interactively explorable in the Living Web Portal's Hierarchical C4 Explorer:
 * link:containers/core.adoc[`CNT-EIDOS-CORE` Container Specification (`CMP-SPEC-PARSER`, `CMP-SPEC-VALIDATOR`, `CMP-CONTRACT-PARITY-VALIDATOR`, `CMP-ARCHITECTURE-BOUNDARY-VALIDATOR`, ...)]

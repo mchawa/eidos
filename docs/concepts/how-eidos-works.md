@@ -1,6 +1,6 @@
 # How Eidos Works: Architecture & Engine Internals
 
-Eidos is not a passive documentation generator or an LLM wrapper—it is a **100% deterministic, Git-native software architecture and lifecycle engine (`POL-004`)**. Every query, schema validation, context slice, and drift check runs locally in milliseconds with zero external AI calls and zero background daemons.
+Eidos is not a passive documentation generator or an LLM wrapper—it is a **100% deterministic, Git-native software architecture and lifecycle engine (`POL-ZERO-AI-CALL-DEPENDENCY`)**. Every query, schema validation, context slice, and drift check runs locally in milliseconds with zero external AI calls and zero background daemons.
 
 This guide explains how Eidos works under the hood across its end-to-end execution loop and six core engine subsystems.
 

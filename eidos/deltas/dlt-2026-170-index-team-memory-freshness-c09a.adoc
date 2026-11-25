@@ -116,9 +116,9 @@ mutations:
           - "memories"
           - "17 bundled schemas"
   - operation: modify
-    target: CAP-AGENT-001
+    target: CAP-AGENT-ADAPTER
     details: >
-      Bump CAP-AGENT-001 to 1.18.0, add INV-CONTEXT-TEAM-MEMORY-ATTACHMENT governing secondary budgeted memory
+      Bump CAP-AGENT-ADAPTER to 1.18.0, add INV-CONTEXT-TEAM-MEMORY-ATTACHMENT governing secondary budgeted memory
       attachment and Stage 0 pruning precedence, and document optional MEM-* team memories in the tier table.
     expect:
       frontmatter:
@@ -138,9 +138,9 @@ mutations:
         rule: "Stage 0"
         test_binding: "tests/test_context.py::test_context_secondary_team_memory_attachment_and_budget_precedence"
   - operation: modify
-    target: CAP-AGENT-002
+    target: CAP-AST-CODE-GRAPH
     details: >
-      Bump CAP-AGENT-002 to 1.10.0, add INV-INDEX-MEMORY-GRAPH-AND-FRESHNESS-CACHE governing agent/memory
+      Bump CAP-AST-CODE-GRAPH to 1.10.0, add INV-INDEX-MEMORY-GRAPH-AND-FRESHNESS-CACHE governing agent/memory
       graph indexing, active-only specs_fts projection, anchors_entity/promoted_to edges, and HEAD-keyed
       memory_freshness_cache, and update SCHEMA_VERSION to 2.23.0.
     expect:
@@ -162,9 +162,9 @@ mutations:
         rule: "memory_freshness_cache"
         test_binding: "tests/test_graph_index.py::test_agent_memory_indexing_edges_and_freshness_cache"
   - operation: modify
-    target: CAP-PROD-001
+    target: CAP-LIVING-SPEC-ENGINE
     details: >
-      Synchronize unified SQLite cache description in CAP-PROD-001 to SCHEMA_VERSION 2.23.0 and
+      Synchronize unified SQLite cache description in CAP-LIVING-SPEC-ENGINE to SCHEMA_VERSION 2.23.0 and
       load_memory_freshness_cache.
     expect:
       body:
@@ -210,18 +210,18 @@ Phase 1 (`DLT-2026-169-ADD-AGENT-MEMORY-SCHEMA-D36A`) introduced the canonical `
   ** Bump `SCHEMA_VERSION` from `"2.22.0"` to `"2.23.0"` (15 managed tables) adding `memory_freshness_cache (memory_id TEXT PRIMARY KEY, head_sha TEXT NOT NULL, mem_sha256 TEXT NOT NULL, freshness TEXT NOT NULL, reason TEXT NOT NULL, checked_at TEXT NOT NULL)`.
   ** Expose non-blocking `load_memory_freshness_cache` (`allow_ddl=False`) and `save_memory_freshness_cache` (`_advisory_db_lock(..., non_blocking=True)`) helpers in `src/eidos/core/index/storage.py`.
   ** Record `DEC-INDEX-MEMORY-FRESHNESS-AND-SECONDARY-SLICING` (`graduated_from: EXP-2026-012`) in `CNT-EIDOS-INDEX.decisions`.
-* **Incremental Indexing & Graph Edges (`CMP-INCREMENTAL-SYNC-ENGINE`, `CAP-AGENT-002`)**:
+* **Incremental Indexing & Graph Edges (`CMP-INCREMENTAL-SYNC-ENGINE`, `CAP-AST-CODE-GRAPH`)**:
   ** Keep all `agent/memory` files in `entities` (active, draft, promoted, archived) for audit and portal visibility, while inserting ONLY `status == "active"` non-archived (`eidos/memory/archive/` excluded) entries into `specs_fts` (which automatically scopes `spec_embeddings` in `CMP-SEMANTIC-EMBEDDING-ENGINE` — unchanged; no edits needed in `semantic.py` or `fts_query.py`).
   ** Materialize `anchors_entity` (`targets.entities`) and `promoted_to` (`promoted_to`) edges in `spec_edges.py` while retaining `promoted_to` edges targeting embedded `DEC-*` IDs during orphan pruning.
   ** Evict `memory_freshness_cache` rows on memory update, deletion, spec/code deletion, or `sync --force`.
-  ** Add `INV-INDEX-MEMORY-GRAPH-AND-FRESHNESS-CACHE` on `CAP-AGENT-002`.
-* **Secondary Budgeted Context Attachment & Stage 0 Pruning (`CMP-TIERED-CONTEXT-COMPRESSOR`, `CAP-AGENT-001`, `CTR-EIDOS-CLI`)**:
+  ** Add `INV-INDEX-MEMORY-GRAPH-AND-FRESHNESS-CACHE` on `CAP-AST-CODE-GRAPH`.
+* **Secondary Budgeted Context Attachment & Stage 0 Pruning (`CMP-TIERED-CONTEXT-COMPRESSOR`, `CAP-AGENT-ADAPTER`, `CTR-EIDOS-CLI`)**:
   ** Add cohesive leaf module `src/eidos/core/index/context_memories.py` owned by `CMP-TIERED-CONTEXT-COMPRESSOR` implementing `evaluate_memory_freshness`, `resolve_memory_freshness_batch`, `extract_memory_sections`, and `attach_context_memories`.
   ** Match active memories by anchored entity ID (`targets.entities`), normalized file/brace-glob path (`targets.paths` via `match_path_pattern`), and bounded secondary `execute_fts_query(..., include_types=("agent/memory",))` without displacing `TASK_SLICE_ENTITY_TYPES`, plus tier-capped untargeted global memories (`anchor: <=2/0`, `guardrails: <=3/2`, `deep: <=5/3`).
   ** Preserve Honest Empty Slices (never attach untargeted global memories when an explicit query matches zero architectural entities and zero anchored/task memories) and omit `memories` from `to_dict()` / `to_markdown()` when empty (0-token overhead when unused).
   ** Run Stage 0 memory-first pruning in `TieredContextSlice._enforce_token_budget` (drop global memories -> compact memories -> pop tail anchored memories) before any architectural entity compression or eviction.
-  ** Add `INV-CONTEXT-TEAM-MEMORY-ATTACHMENT` on `CAP-AGENT-001` and bump `CTR-EIDOS-CLI` to `1.8.1`.
-* **Documentation Sync (`CMP-DOCS-CORE-CONCEPTS`, `CMP-DOCS-USER-GUIDES`, `CAP-PROD-001`)**:
+  ** Add `INV-CONTEXT-TEAM-MEMORY-ATTACHMENT` on `CAP-AGENT-ADAPTER` and bump `CTR-EIDOS-CLI` to `1.8.1`.
+* **Documentation Sync (`CMP-DOCS-CORE-CONCEPTS`, `CMP-DOCS-USER-GUIDES`, `CAP-LIVING-SPEC-ENGINE`)**:
   ** Sync `docs/concepts/how-eidos-works.md`, `docs/concepts/architectural-index.md`, and `docs/guides/cli.md` to 15 tables, `SCHEMA_VERSION` `2.23.0`, `memory_freshness_cache`, `context_memories.py`, and optional `memories` on `eidos context` (`CNT-EIDOS-DOCS` parent unchanged; `CMP-FTS-QUERY-ENGINE` and `CMP-SEMANTIC-EMBEDDING-ENGINE` unchanged).
 
 == Implementation Plan
@@ -236,7 +236,7 @@ Phase 1 (`DLT-2026-169-ADD-AGENT-MEMORY-SCHEMA-D36A`) introduced the canonical `
    * Edit `src/eidos/core/index/context_models.py`: add `ArchitecturalContextSlice.memories`, `TieredContextSlice._compact_memories`, `_project_memory`, conditional `to_dict`/`to_markdown` rendering, `_state_signature` & `_item_md_and_json_upper_bounds` updates, and Stage 0 memory-first budget pruning in `_enforce_token_budget`.
    * Edit `src/eidos/core/index/context.py`: wire `attach_context_memories(...)` into `build_tiered_context_slice` before `_enforce_token_budget`.
 3. **Co-Evolve Living Specifications & Documentation**:
-   * Update `eidos/architecture/containers/index.adoc`, `eidos/architecture/components/graph-storage.adoc`, `eidos/architecture/components/incremental-sync-engine.adoc`, `eidos/architecture/components/graph-traversal-engine.adoc`, `eidos/architecture/components/tiered-context-compressor.adoc`, `eidos/architecture/contracts/cli.adoc`, `eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc`, `eidos/domains/agent-intelligence/capabilities/cap-agent-002.adoc`, `eidos/domains/spec-engine/capabilities/living-spec-engine.adoc`, `eidos/architecture/components/docs-core-concepts.adoc`, and `eidos/architecture/components/docs-user-guides.adoc` (plus append `DLT-2026-170-INDEX-TEAM-MEMORY-FRESHNESS-C09A` to `eidos/explorations/exp-2026-012.adoc`).
+   * Update `eidos/architecture/containers/index.adoc`, `eidos/architecture/components/graph-storage.adoc`, `eidos/architecture/components/incremental-sync-engine.adoc`, `eidos/architecture/components/graph-traversal-engine.adoc`, `eidos/architecture/components/tiered-context-compressor.adoc`, `eidos/architecture/contracts/cli.adoc`, `eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc`, `eidos/domains/agent-intelligence/capabilities/ast-code-graph.adoc`, `eidos/domains/spec-engine/capabilities/living-spec-engine.adoc`, `eidos/architecture/components/docs-core-concepts.adoc`, and `eidos/architecture/components/docs-user-guides.adoc` (plus append `DLT-2026-170-INDEX-TEAM-MEMORY-FRESHNESS-C09A` to `eidos/explorations/exp-2026-012.adoc`).
    * Update `docs/concepts/how-eidos-works.md`, `docs/concepts/architectural-index.md`, and `docs/guides/cli.md`.
 4. **Tests & Verification (`POL-002`, `POL-005`)**:
    * Update `2.22.0 -> 2.23.0` assertions in `tests/test_graph_index.py` and add `tests/test_graph_index.py::test_agent_memory_indexing_edges_and_freshness_cache` (`INV-INDEX-MEMORY-GRAPH-AND-FRESHNESS-CACHE`).

@@ -1,4 +1,4 @@
-"""Tests verifying POL-004: Zero AI-Call Dependency (Deterministic Governance Substrate)."""
+"""Tests verifying POL-ZERO-AI-CALL-DEPENDENCY: Zero AI-Call Dependency (Deterministic Governance Substrate)."""
 
 import ast
 import re
@@ -41,7 +41,7 @@ def _extract_pep508_pkg_name(dep: str) -> str:
 
 
 def test_pyproject_contains_zero_ai_dependencies():
-    """Verify POL-004, INV-POL-004-ZERO-AI-CALL-DEPENDENCY, and INV-AGENT-ZERO-AI-DEPENDENCY: pyproject.toml does not require any AI/LLM SDK dependencies."""
+    """Verify POL-ZERO-AI-CALL-DEPENDENCY, INV-POL-ZERO-AI-CALL-DEPENDENCY, and INV-AGENT-ZERO-AI-DEPENDENCY: pyproject.toml does not require any AI/LLM SDK dependencies."""
     repo_root = Path(__file__).parent.parent
     pyproject_path = repo_root / "pyproject.toml"
     assert pyproject_path.exists(), "pyproject.toml not found"
@@ -53,7 +53,7 @@ def test_pyproject_contains_zero_ai_dependencies():
     for dep in runtime_deps:
         pkg_name = _extract_pep508_pkg_name(dep)
         assert pkg_name not in FORBIDDEN_AI_PACKAGES, (
-            f"Violation of POL-004: runtime dependency '{dep}' is an AI/LLM SDK."
+            f"Violation of POL-ZERO-AI-CALL-DEPENDENCY: runtime dependency '{dep}' is an AI/LLM SDK."
         )
 
     optional_deps = data.get("project", {}).get("optional-dependencies", {})
@@ -61,15 +61,15 @@ def test_pyproject_contains_zero_ai_dependencies():
         for dep in deps:
             pkg_name = _extract_pep508_pkg_name(dep)
             assert pkg_name not in FORBIDDEN_AI_PACKAGES, (
-                f"Violation of POL-004: optional dependency '{dep}' in group '{group}' is an AI/LLM SDK."
+                f"Violation of POL-ZERO-AI-CALL-DEPENDENCY: optional dependency '{dep}' in group '{group}' is an AI/LLM SDK."
             )
 
 
 def test_src_contains_zero_agent_runner_stubs():
-    """Verify POL-004: src/eidos/agent/base.py is decommissioned and no agent runner stubs exist."""
+    """Verify POL-ZERO-AI-CALL-DEPENDENCY: src/eidos/agent/base.py is decommissioned and no agent runner stubs exist."""
     repo_root = Path(__file__).parent.parent
     agent_base = repo_root / "src/eidos/agent/base.py"
-    assert not agent_base.exists(), "src/eidos/agent/base.py must not exist under POL-004"
+    assert not agent_base.exists(), "src/eidos/agent/base.py must not exist under POL-ZERO-AI-CALL-DEPENDENCY"
 
 
 def test_src_ast_contains_zero_ai_sdk_imports_or_endpoints():
@@ -98,18 +98,18 @@ def test_src_ast_contains_zero_ai_sdk_imports_or_endpoints():
             assert endpoint not in source, f"Forbidden LLM endpoint '{endpoint}' found in {py_file}"
 
 
-def test_pol_004_spec_is_valid():
-    """Verify POL-004 specification document parses and passes schema validation."""
+def test_pol_zero_ai_spec_is_valid():
+    """Verify POL-ZERO-AI-CALL-DEPENDENCY specification document parses and passes schema validation."""
     repo_root = Path(__file__).parent.parent
-    policy_path = repo_root / "eidos/policies/POL-004-zero-ai-call-dependency.adoc"
-    assert policy_path.exists(), "POL-004 policy document must exist"
+    policy_path = repo_root / "eidos/policies/zero-ai-call-dependency.adoc"
+    assert policy_path.exists(), "POL-ZERO-AI-CALL-DEPENDENCY policy document must exist"
 
     doc = parse_spec_file(policy_path)
-    assert doc.doc_id == "POL-004-ZERO-AI-CALL-DEPENDENCY"
+    assert doc.doc_id == "POL-ZERO-AI-CALL-DEPENDENCY"
     assert doc.doc_type == "product/policy"
     assert doc.frontmatter.get("category") == "architectural"
     assert doc.frontmatter.get("severity") == "blocking"
 
     validator = SpecValidator()
     errors = validator.validate_document(doc)
-    assert not errors, f"POL-004 document failed schema validation: {errors}"
+    assert not errors, f"POL-ZERO-AI-CALL-DEPENDENCY document failed schema validation: {errors}"

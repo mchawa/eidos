@@ -56,10 +56,10 @@ Output:
 ┃ Document ID            ┃ Type               ┃ Status ┃ Path                  ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━┩
 │ CNT-EIDOS-CORE         │ tech/container     │  PASS  │ eidos/architecture/c… │
-│ ARCH-EIDOS-001         │ tech/architecture  │  PASS  │ eidos/architecture/s… │
-│ CAP-PROD-001           │ product/capability │  PASS  │ eidos/domains/produc… │
-│ POL-001-GIT-SOURCE-OF… │ product/policy     │  PASS  │ eidos/policies/POL-0… │
-│ SYS-EIDOS-001          │ product/system     │  PASS  │ eidos/system.adoc     │
+│ ARCH-EIDOS             │ tech/architecture  │  PASS  │ eidos/architecture/s… │
+│ CAP-LIVING-SPEC-ENGINE │ product/capability │  PASS  │ eidos/domains/spec-e… │
+│ POL-GIT-SOURCE-OF-TRU… │ product/policy     │  PASS  │ eidos/policies/git-s… │
+│ SYS-EIDOS              │ product/system     │  PASS  │ eidos/system.adoc     │
 └────────────────────────┴────────────────────┴────────┴───────────────────────┘
 
 Success! All specification documents are valid.

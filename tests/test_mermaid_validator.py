@@ -166,7 +166,7 @@ def test_mermaid_spec_validation_and_cache_lifecycle(tmp_path: Path, monkeypatch
     # 3. Validate all 6 canonical Mermaid diagram types + invalid syntax via QuickJS mermaid.parse()
     #    If quickjs-ng is unavailable in a minimal/no-deps environment, inject a lightweight quickjs.Context
     #    stub so the full QuickJS worker, bytecode cache, corrupt-cache self-heal, and line-offset reporting
-    #    paths are still verified without skipping POL-005 coverage.
+    #    paths are still verified without skipping POL-STATEMENT-TEST-COVERAGE coverage.
     mv._shutdown_quickjs_worker()
     use_fake_quickjs = not mv._is_quickjs_available()
     with contextlib.ExitStack() as qjs_stack:

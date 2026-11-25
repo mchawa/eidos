@@ -1,12 +1,12 @@
 ---
 type: product/policy
-id: POL-003-CONTINUOUS-DOCUMENTATION-SYNC
+id: POL-CONTINUOUS-DOCUMENTATION-SYNC
 title: "Continuous Documentation Synchronization Policy"
 status: active
 category: governance
 severity: blocking
 invariants:
-  - id: INV-POL-003-CONTINUOUS-DOCUMENTATION-SYNC
+  - id: INV-POL-CONTINUOUS-DOCUMENTATION-SYNC
     rule: "All user documentation in docs/ and living specifications in eidos/ must remain continuously synchronized with source code, CLI commands, and schema definitions. Pull requests with outdated docs, missing schema definitions, or failing documentation builds are blocked from merging."
     test_binding: "tests/test_docs_sync.py::test_documentation_and_schemas_in_sync"
 ---

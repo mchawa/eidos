@@ -27,4 +27,4 @@ Extracts `[mermaid]` and `[source,mermaid]` blocks from AsciiDoc specification b
 * `validate_mermaid_blocks(blocks: Sequence[MermaidBlock], *, db_path: Path | None = None, cache_dir: Path | None = None, preloaded_cache: dict[str, tuple[bool, str]] | None = None) -> tuple[list[MermaidValidationResult], list[tuple[str, str, int, str]]]`
 
 == Design Constraints & Operational Notes
-* **Core-Tier Isolation (`ARCH-EIDOS-001`, `INV-CORE-MODULAR-COMPONENT-COHESION`)**: Depends solely on `CMP-ASSET-LOCATOR` and `CMP-GRAPH-STORAGE` with zero imports from `src/eidos/portal/`, zero Node.js, and zero headless browser dependencies (`POL-004`).
+* **Core-Tier Isolation (`ARCH-EIDOS`, `INV-CORE-MODULAR-COMPONENT-COHESION`)**: Depends solely on `CMP-ASSET-LOCATOR` and `CMP-GRAPH-STORAGE` with zero imports from `src/eidos/portal/`, zero Node.js, and zero headless browser dependencies (`POL-ZERO-AI-CALL-DEPENDENCY`).

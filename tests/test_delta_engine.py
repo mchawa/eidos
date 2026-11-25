@@ -1416,7 +1416,7 @@ def test_catalog_and_delta_engine_edge_cases(tmp_path):
 
     refs = find_references_to_spec(eidos_dir, "CNT-API", cnt_path)
     assert cap_path.resolve() in refs
-    assert find_spec_by_id_or_path(eidos_dir, "architecture/containers/cnt-api.adoc") == cnt_path.resolve()
+    assert find_spec_by_id_or_path(eidos_dir, "architecture/containers/api.adoc") == cnt_path.resolve()
 
     dlt_file = create_delta(eidos_dir, "DLT-2026-050", title="Deprecate API Cap")
     ok_bad, msg_bad, _, _ = set_delta_status(eidos_dir, "DLT-2026-050", "not_a_status")

@@ -1,6 +1,6 @@
 ---
 type: product/capability
-id: CAP-PROD-003
+id: CAP-EXPLORATION-DISCOVERY
 title: "Product Exploration & Hypothesis Spikes"
 domain: DOM-SPEC-ENGINE
 status: active
@@ -13,7 +13,7 @@ business:
     - eidos/personas/product-lead.adoc
     - eidos/personas/autonomous-agent.adoc
   policies:
-    - eidos/policies/POL-001-git-as-single-source-of-truth.adoc
+    - eidos/policies/git-source-of-truth.adoc
 
 technical:
   containers:

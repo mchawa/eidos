@@ -25,5 +25,5 @@ Encapsulates the opt-in local Harrier-OSS-v1-0.6B ONNX semantic embedding engine
 * `query_semantic_embeddings(conn: sqlite3.Connection, query_embedding: bytes | Sequence[float], top_k: int = 24, ...) -> list[dict[str, Any]]`, `fuse_hybrid_rrf(...) -> list[dict[str, Any]]`
 
 == Design Constraints & Operational Notes
-* **100% Deterministic Fallback (`POL-004`, `INV-AGENT-HYBRID-SEMANTIC-FALLBACK`)**: When `onnxruntime`/`tokenizers` are not installed or `spec_embeddings` is empty, all retrieval operations bypass `SemanticEmbeddingEngine` in `< 0.01 ms` and fall back deterministically to FTS5 BM25.
+* **100% Deterministic Fallback (`POL-ZERO-AI-CALL-DEPENDENCY`, `INV-AGENT-HYBRID-SEMANTIC-FALLBACK`)**: When `onnxruntime`/`tokenizers` are not installed or `spec_embeddings` is empty, all retrieval operations bypass `SemanticEmbeddingEngine` in `< 0.01 ms` and fall back deterministically to FTS5 BM25.
 

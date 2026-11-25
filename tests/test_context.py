@@ -31,25 +31,29 @@ def test_context_slice_by_file(tmp_path, monkeypatch):
 
     # Bound capabilities and invariants
     cap_ids = {c["id"] for c in res.capabilities}
-    assert "CAP-PROD-001" in cap_ids
+    assert cap_ids & {"CAP-LIVING-SPEC-ENGINE", "CAP-EXPLORATION-DISCOVERY", "CAP-SPEC-DELTA-MUTATIONS"}
     inv_ids = {i["id"] for i in res.invariants}
     assert inv_ids & {"INV-SPEC-VALIDATION", "INV-VALIDATION-WARNINGS-PORTAL-AND-CI-ESCALATION"}
     val_slice = get_context_slice(files=["src/eidos/core/spec/validator.py"])
+    assert "CAP-LIVING-SPEC-ENGINE" in {c["id"] for c in val_slice.capabilities}
     assert "INV-SPEC-VALIDATION" in {i["id"] for i in val_slice.invariants}
 
     # Governing policies
     policy_ids = {p["id"] for p in res.policies}
-    assert "POL-001-GIT-SOURCE-OF-TRUTH" in policy_ids
+    assert policy_ids & {"POL-GIT-SOURCE-OF-TRUTH", "POL-CONTINUOUS-DOCUMENTATION-SYNC"}
 
     # DLT-2026-125: guardrails/deep project domain_path, design, capability personas/policies/experience, and policy file_path
     proj = res.to_dict()
     cli_comp = proj["components"][0]
     assert cli_comp.get("domain_path", "").endswith("domain.adoc")
-    cap_prod = next(c for c in proj["capabilities"] if c["id"] == "CAP-PROD-001")
-    assert cap_prod.get("file_path", "").endswith(".adoc")
-    assert cap_prod.get("personas")
-    pol_entry = next(p for p in proj["policies"] if p["id"] == "POL-001-GIT-SOURCE-OF-TRUTH")
-    assert pol_entry.get("file_path", "").endswith("POL-001-git-as-single-source-of-truth.adoc")
+    cap_proj = proj["capabilities"][0]
+    assert cap_proj.get("file_path", "").endswith(".adoc")
+    assert cap_proj.get("personas")
+    val_proj = val_slice.to_dict()
+    assert any(c["id"] == "CAP-LIVING-SPEC-ENGINE" for c in val_proj["capabilities"])
+    pol_entry = proj["policies"][0]
+    assert pol_entry.get("file_path", "").startswith("eidos/policies/")
+    assert pol_entry.get("file_path", "").endswith(".adoc")
     assert pol_entry.get("category")
 
     portal_sl = get_context_slice(files=["src/eidos/portal/builder.py"], tier="guardrails")
@@ -67,7 +71,7 @@ def test_context_slice_by_file(tmp_path, monkeypatch):
     tok_sl = get_context_slice(files=["eidos/design/systems/core/tokens.json"], tier="guardrails")
     assert any(c["id"] == "CNT-EIDOS-PORTAL" for c in tok_sl.components)
     dom_file_sl = get_context_slice(files=["eidos/domains/experience-portal/domain.adoc"], tier="guardrails")
-    assert any(c["id"] == "CAP-EXP-001" for c in dom_file_sl.capabilities)
+    assert any(c["id"] == "CAP-LIVING-WEB-PORTAL" for c in dom_file_sl.capabilities)
 
     anchor_portal = get_context_slice(files=["src/eidos/portal/builder.py"], tier="anchor").to_dict()
     assert "domain_path" not in anchor_portal["components"][0]
@@ -295,7 +299,7 @@ def test_context_slice_by_task():
     res = get_context_slice(task="Detect and reconcile structural spec-to-code drift across Git diffs")
 
     cap_ids = {c["id"] for c in res.capabilities}
-    assert "CAP-VCS-001" in cap_ids
+    assert "CAP-DRIFT-DETECTION" in cap_ids
 
     inv_ids = {i["id"] for i in res.invariants}
     assert "INV-DRIFT-DETECTION-ACCURACY" in inv_ids
@@ -354,7 +358,7 @@ def test_cli_context_command():
     # 3. Task search with -t
     res_task = runner.invoke(app, ["context", "-t", "spec-to-code drift detection"])
     assert res_task.exit_code == 0
-    assert "CAP-VCS-001" in res_task.output
+    assert "CAP-DRIFT-DETECTION" in res_task.output
 
 
 def test_context_slice_substring_no_false_positive():
@@ -606,7 +610,7 @@ def test_inv_context_token_compression():
     assert ranked_sl.token_estimate <= TIER_TOKEN_BUDGETS["guardrails"]
     assert ranked_sl.invariants, "Expected direct invariant matches to survive guardrails token budget"
     assert ranked_sl.invariants[0]["id"] == "INV-HOOK-CLI-NATIVE"
-    assert any(c["id"] == "CAP-AGENT-001" for c in ranked_sl.capabilities)
+    assert any(c["id"] == "CAP-AGENT-ADAPTER" for c in ranked_sl.capabilities)
 
     repo_map_sl = get_context_slice(
         task="token compression for repository structural map",
@@ -617,7 +621,7 @@ def test_inv_context_token_compression():
         "INV-INDEX-AI-REPO-MAP-BUDGET",
         "INV-CONTEXT-TOKEN-COMPRESSION",
     ]
-    assert any(c["id"] == "CAP-AGENT-002" for c in repo_map_sl.capabilities)
+    assert any(c["id"] == "CAP-AST-CODE-GRAPH" for c in repo_map_sl.capabilities)
 
     # 5. Progressive prose compression compresses verbose rules/decisions before evicting direct invariants
     from eidos.core.index.graph_index import TieredContextSlice
@@ -843,7 +847,7 @@ def test_progressive_compression_stages_and_inline_component_context(tmp_path):
 def test_file_slice_compacts_before_eviction_and_respects_all_tier_budgets() -> None:  # eidos:fixture
     """Verify B1 (INV-AGENT-CONTEXT-SLICING): slicing a dogfooded file with verbose container/component prose
     compresses prose before evicting 1-hop capabilities/invariants, prioritizes capabilities binding the matched
-    inline component (CAP-AGENT-002 -> CMP-AST-SYMBOL-INDEXER), and stays within anchor/guardrails/deep budgets
+    inline component (CAP-AST-CODE-GRAPH -> CMP-AST-SYMBOL-INDEXER), and stays within anchor/guardrails/deep budgets
     in both Markdown and JSON."""
     for tier, budget in [("anchor", 300), ("guardrails", 1000), ("deep", 2500)]:
         sl = get_context_slice(files=["src/eidos/core/index/ast_indexer.py"], tier=tier)
@@ -856,7 +860,7 @@ def test_file_slice_compacts_before_eviction_and_respects_all_tier_budgets() -> 
         if tier in ("guardrails", "deep"):
             cap_ids = [c["id"] for c in sl.capabilities]
             inv_ids = [i["id"] for i in sl.invariants]
-            assert "CAP-AGENT-002" in cap_ids
+            assert "CAP-AST-CODE-GRAPH" in cap_ids
             assert any("INDEX" in iid for iid in inv_ids)
 
 
@@ -1113,7 +1117,10 @@ def test_context_guardrail_retains_invariants_within_budget_headroom(tmp_path):
     assert len(cli_slice.to_json()) // 4 <= TIER_TOKEN_BUDGETS["guardrails"]
     assert {"CMP-CLI-APP", "CNT-EIDOS-CLI"} <= {c["id"] for c in cli_slice.components}
     assert any(c["id"] == "CTR-EIDOS-CLI" for c in cli_slice.contracts)
-    assert any(c["id"] == "CAP-PROD-001" for c in cli_slice.capabilities)
+    assert any(
+        c["id"] in {"CAP-LIVING-SPEC-ENGINE", "CAP-EXPLORATION-DISCOVERY", "CAP-SPEC-DELTA-MUTATIONS"}
+        for c in cli_slice.capabilities
+    )
     assert len(cli_slice.invariants) >= 3, (
         f"Expected >= 3 retained capability invariants on guardrails slice, got {[i['id'] for i in cli_slice.invariants]}"
     )

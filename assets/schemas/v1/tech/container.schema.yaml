@@ -51,6 +51,6 @@ properties:
       $ref: "#/$defs/invariant"
   decisions:
     type: array
-    description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on this C4 Level 2 container specification without standalone ADR files (POL-001)."
+    description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on this C4 Level 2 container specification without standalone ADR files."
     items:
       $ref: "#/$defs/decision"

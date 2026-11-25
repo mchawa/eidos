@@ -57,7 +57,7 @@ properties:
     $ref: "#/$defs/semver"
   decisions:
     type: array
-    description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on this contract specification (POL-001)."
+    description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on this contract specification."
     items:
       $ref: "#/$defs/decision"
 if:

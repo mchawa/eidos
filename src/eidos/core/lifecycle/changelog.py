@@ -1,4 +1,4 @@
-"""Zero-dependency automated changelog generator powered by applied SpecDeltas and Git tags (INV-DELTA-CHANGELOG-GENERATION, POL-004)."""
+"""Zero-dependency automated changelog generator powered by applied SpecDeltas and Git tags."""
 
 from __future__ import annotations
 

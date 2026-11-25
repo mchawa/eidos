@@ -303,7 +303,7 @@ def spec_create_cmd(
     ),
     doc_id: str = typer.Argument(
         ...,
-        help="Unique specification identifier (e.g. CAP-AUTH-001, POL-003, CTR-PAYMENT-API, EXP-CACHE-001).",
+        help="Unique specification identifier (e.g. CAP-USER-AUTH, POL-ZERO-AI, CTR-PAYMENT-API, EXP-2026-001).",
     ),
     title: str = typer.Option(
         ...,

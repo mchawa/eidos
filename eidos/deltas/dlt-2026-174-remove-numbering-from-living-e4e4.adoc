@@ -1,0 +1,444 @@
+---
+type: delta/mutation
+id: DLT-2026-174-REMOVE-NUMBERING-FROM-LIVING-E4E4
+title: Remove Numbering from Living Specification IDs and Align Semantic Naming Conventions
+status: proposed
+intent:
+  kind: enabler
+  motivation: Eliminate arbitrary numeric IDs and numbered filenames across living specifications (SYS-*, ARCH-*, CAP-*, POL-*, and policy INV-*/DEC-*) in favor of descriptive semantic names, while aligning v1 schema descriptions, scaffolder filename/example synthesis, CLI help, bundled skills, tests, and docs (keeping chronological EXP-2026-* and DLT-2026-* numbering intact).
+mutations:
+  - operation: modify
+    target: SYS-EIDOS
+    details: Rename root system ID from SYS-EIDOS-001 to SYS-EIDOS in eidos/system.adoc and update policy references.
+    expect:
+      frontmatter:
+        id: SYS-EIDOS
+        status: active
+  - operation: modify
+    target: ARCH-EIDOS
+    details: Rename global architecture ID from ARCH-EIDOS-001 to ARCH-EIDOS in eidos/architecture/system-architecture.adoc and update policy links and references.
+    expect:
+      frontmatter:
+        id: ARCH-EIDOS
+        status: active
+      body:
+        contains:
+          - "ARCH-EIDOS"
+          - "git-source-of-truth.adoc"
+          - "invariant-test-enforcement.adoc"
+        not_contains:
+          - "ARCH-EIDOS-001"
+          - "POL-001"
+          - "POL-002"
+  - operation: remove
+    target: CAP-AGENT-001
+    details: Replaced by semantic ID CAP-AGENT-ADAPTER in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc.
+  - operation: add
+    target: CAP-AGENT-ADAPTER
+    details: Rename CAP-AGENT-001 to CAP-AGENT-ADAPTER in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc and update policy paths/references.
+    expect:
+      frontmatter:
+        id: CAP-AGENT-ADAPTER
+        status: active
+      body:
+        not_contains:
+          - "POL-004"
+  - operation: remove
+    target: CAP-AGENT-002
+    details: Replaced by semantic ID CAP-AST-CODE-GRAPH and filename eidos/domains/agent-intelligence/capabilities/ast-code-graph.adoc.
+  - operation: add
+    target: CAP-AST-CODE-GRAPH
+    details: Rename CAP-AGENT-002 (cap-agent-002.adoc) to CAP-AST-CODE-GRAPH (ast-code-graph.adoc) and update policy paths/references.
+    expect:
+      frontmatter:
+        id: CAP-AST-CODE-GRAPH
+        status: active
+      body:
+        not_contains:
+          - "POL-004"
+  - operation: remove
+    target: CAP-EXP-001
+    details: Replaced by semantic ID CAP-LIVING-WEB-PORTAL in eidos/domains/experience-portal/capabilities/living-web-portal.adoc.
+  - operation: add
+    target: CAP-LIVING-WEB-PORTAL
+    details: Rename CAP-EXP-001 to CAP-LIVING-WEB-PORTAL in eidos/domains/experience-portal/capabilities/living-web-portal.adoc and update policy paths.
+    expect:
+      frontmatter:
+        id: CAP-LIVING-WEB-PORTAL
+        status: active
+  - operation: remove
+    target: CAP-EXP-002
+    details: Replaced by semantic ID CAP-MULTI-DESIGN-SYSTEMS in eidos/domains/experience-portal/capabilities/multi-design-systems.adoc.
+  - operation: add
+    target: CAP-MULTI-DESIGN-SYSTEMS
+    details: Rename CAP-EXP-002 to CAP-MULTI-DESIGN-SYSTEMS in eidos/domains/experience-portal/capabilities/multi-design-systems.adoc and update policy paths.
+    expect:
+      frontmatter:
+        id: CAP-MULTI-DESIGN-SYSTEMS
+        status: active
+  - operation: remove
+    target: CAP-PROD-001
+    details: Replaced by semantic ID CAP-LIVING-SPEC-ENGINE in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc.
+  - operation: add
+    target: CAP-LIVING-SPEC-ENGINE
+    details: Rename CAP-PROD-001 to CAP-LIVING-SPEC-ENGINE in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc and update policy paths.
+    expect:
+      frontmatter:
+        id: CAP-LIVING-SPEC-ENGINE
+        status: active
+  - operation: remove
+    target: CAP-PROD-002
+    details: Replaced by semantic ID CAP-SPEC-DELTA-MUTATIONS in eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc.
+  - operation: add
+    target: CAP-SPEC-DELTA-MUTATIONS
+    details: Rename CAP-PROD-002 to CAP-SPEC-DELTA-MUTATIONS in eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc and update policy paths.
+    expect:
+      frontmatter:
+        id: CAP-SPEC-DELTA-MUTATIONS
+        status: active
+  - operation: remove
+    target: CAP-PROD-003
+    details: Replaced by semantic ID CAP-EXPLORATION-DISCOVERY in eidos/domains/spec-engine/capabilities/exploration-discovery.adoc.
+  - operation: add
+    target: CAP-EXPLORATION-DISCOVERY
+    details: Rename CAP-PROD-003 to CAP-EXPLORATION-DISCOVERY in eidos/domains/spec-engine/capabilities/exploration-discovery.adoc and update policy paths.
+    expect:
+      frontmatter:
+        id: CAP-EXPLORATION-DISCOVERY
+        status: active
+  - operation: remove
+    target: CAP-VCS-001
+    details: Replaced by semantic ID CAP-DRIFT-DETECTION in eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc.
+  - operation: add
+    target: CAP-DRIFT-DETECTION
+    details: Rename CAP-VCS-001 to CAP-DRIFT-DETECTION in eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc and update policy paths/references.
+    expect:
+      frontmatter:
+        id: CAP-DRIFT-DETECTION
+        status: active
+      body:
+        not_contains:
+          - "POL-001"
+  - operation: remove
+    target: POL-001-GIT-SOURCE-OF-TRUTH
+    details: Replaced by POL-GIT-SOURCE-OF-TRUTH at eidos/policies/git-source-of-truth.adoc.
+  - operation: remove
+    target: INV-POL-001-GIT-SOURCE-OF-TRUTH
+    details: Replaced by INV-POL-GIT-SOURCE-OF-TRUTH.
+  - operation: add
+    target: POL-GIT-SOURCE-OF-TRUTH
+    details: Rename POL-001-GIT-SOURCE-OF-TRUTH to POL-GIT-SOURCE-OF-TRUTH at eidos/policies/git-source-of-truth.adoc.
+    expect:
+      frontmatter:
+        id: POL-GIT-SOURCE-OF-TRUTH
+        status: active
+        invariants.id:
+          - INV-POL-GIT-SOURCE-OF-TRUTH
+  - operation: add
+    target: INV-POL-GIT-SOURCE-OF-TRUTH
+    details: Rename INV-POL-001-GIT-SOURCE-OF-TRUTH to INV-POL-GIT-SOURCE-OF-TRUTH bound to tests/test_validator.py::test_validate_eidos_specifications.
+    expect:
+      frontmatter:
+        rule: "Git repository"
+        test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
+  - operation: remove
+    target: POL-002-INVARIANT-TEST-ENFORCEMENT
+    details: Replaced by POL-INVARIANT-TEST-ENFORCEMENT at eidos/policies/invariant-test-enforcement.adoc.
+  - operation: remove
+    target: INV-POL-002-INVARIANT-TEST-ENFORCEMENT
+    details: Replaced by INV-POL-INVARIANT-TEST-ENFORCEMENT.
+  - operation: add
+    target: POL-INVARIANT-TEST-ENFORCEMENT
+    details: Rename POL-002-INVARIANT-TEST-ENFORCEMENT to POL-INVARIANT-TEST-ENFORCEMENT at eidos/policies/invariant-test-enforcement.adoc and rename DEC-POL-002-STATIC-TRACEABILITY-BOUNDARY to DEC-POL-STATIC-TRACEABILITY-BOUNDARY.
+    expect:
+      frontmatter:
+        id: POL-INVARIANT-TEST-ENFORCEMENT
+        status: active
+        invariants.id:
+          - INV-POL-INVARIANT-TEST-ENFORCEMENT
+        decisions.id:
+          - DEC-POL-STATIC-TRACEABILITY-BOUNDARY
+  - operation: add
+    target: INV-POL-INVARIANT-TEST-ENFORCEMENT
+    details: Rename INV-POL-002-INVARIANT-TEST-ENFORCEMENT to INV-POL-INVARIANT-TEST-ENFORCEMENT bound to tests/test_validator.py::test_validate_eidos_specifications.
+    expect:
+      frontmatter:
+        rule: "test_binding"
+        test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
+  - operation: remove
+    target: POL-003-CONTINUOUS-DOCUMENTATION-SYNC
+    details: Replaced by POL-CONTINUOUS-DOCUMENTATION-SYNC at eidos/policies/continuous-documentation-sync.adoc.
+  - operation: remove
+    target: INV-POL-003-CONTINUOUS-DOCUMENTATION-SYNC
+    details: Replaced by INV-POL-CONTINUOUS-DOCUMENTATION-SYNC.
+  - operation: add
+    target: POL-CONTINUOUS-DOCUMENTATION-SYNC
+    details: Rename POL-003-CONTINUOUS-DOCUMENTATION-SYNC to POL-CONTINUOUS-DOCUMENTATION-SYNC at eidos/policies/continuous-documentation-sync.adoc.
+    expect:
+      frontmatter:
+        id: POL-CONTINUOUS-DOCUMENTATION-SYNC
+        status: active
+        invariants.id:
+          - INV-POL-CONTINUOUS-DOCUMENTATION-SYNC
+  - operation: add
+    target: INV-POL-CONTINUOUS-DOCUMENTATION-SYNC
+    details: Rename INV-POL-003-CONTINUOUS-DOCUMENTATION-SYNC to INV-POL-CONTINUOUS-DOCUMENTATION-SYNC bound to tests/test_docs_sync.py::test_documentation_and_schemas_in_sync.
+    expect:
+      frontmatter:
+        rule: "continuously synchronized"
+        test_binding: "tests/test_docs_sync.py::test_documentation_and_schemas_in_sync"
+  - operation: remove
+    target: POL-004-ZERO-AI-CALL-DEPENDENCY
+    details: Replaced by POL-ZERO-AI-CALL-DEPENDENCY at eidos/policies/zero-ai-call-dependency.adoc.
+  - operation: remove
+    target: INV-POL-004-ZERO-AI-CALL-DEPENDENCY
+    details: Replaced by INV-POL-ZERO-AI-CALL-DEPENDENCY.
+  - operation: add
+    target: POL-ZERO-AI-CALL-DEPENDENCY
+    details: Rename POL-004-ZERO-AI-CALL-DEPENDENCY to POL-ZERO-AI-CALL-DEPENDENCY at eidos/policies/zero-ai-call-dependency.adoc.
+    expect:
+      frontmatter:
+        id: POL-ZERO-AI-CALL-DEPENDENCY
+        status: active
+        invariants.id:
+          - INV-POL-ZERO-AI-CALL-DEPENDENCY
+  - operation: add
+    target: INV-POL-ZERO-AI-CALL-DEPENDENCY
+    details: Rename INV-POL-004-ZERO-AI-CALL-DEPENDENCY to INV-POL-ZERO-AI-CALL-DEPENDENCY bound to tests/test_policy_zero_ai.py::test_pyproject_contains_zero_ai_dependencies.
+    expect:
+      frontmatter:
+        rule: "NEVER initiate calls to AI"
+        test_binding: "tests/test_policy_zero_ai.py::test_pyproject_contains_zero_ai_dependencies"
+  - operation: remove
+    target: POL-005-STATEMENT-TEST-COVERAGE
+    details: Replaced by POL-STATEMENT-TEST-COVERAGE at eidos/policies/statement-test-coverage.adoc.
+  - operation: remove
+    target: INV-POL-005-STATEMENT-TEST-COVERAGE
+    details: Replaced by INV-POL-STATEMENT-TEST-COVERAGE.
+  - operation: add
+    target: POL-STATEMENT-TEST-COVERAGE
+    details: Rename POL-005-STATEMENT-TEST-COVERAGE to POL-STATEMENT-TEST-COVERAGE at eidos/policies/statement-test-coverage.adoc.
+    expect:
+      frontmatter:
+        id: POL-STATEMENT-TEST-COVERAGE
+        status: active
+        invariants.id:
+          - INV-POL-STATEMENT-TEST-COVERAGE
+  - operation: add
+    target: INV-POL-STATEMENT-TEST-COVERAGE
+    details: Rename INV-POL-005-STATEMENT-TEST-COVERAGE to INV-POL-STATEMENT-TEST-COVERAGE bound to tests/test_validator.py::test_pol_statement_test_coverage.
+    expect:
+      frontmatter:
+        rule: "90.0% statement test coverage"
+        test_binding: "tests/test_validator.py::test_pol_statement_test_coverage"
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: Update policy references in core.adoc and align v1 schema descriptions under assets/schemas/v1/ to promote non-numbered semantic living-spec IDs without Eidos-self policy parentheticals.
+    expect:
+      frontmatter:
+        status: active
+      body:
+        not_contains:
+          - "POL-001"
+          - "POL-004"
+          - "POL-005"
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+    details: Update policy references in eidos/architecture/containers/index.adoc.
+    expect:
+      frontmatter:
+        status: active
+      body:
+        not_contains:
+          - "POL-001"
+          - "POL-004"
+  - operation: modify
+    target: CNT-EIDOS-VCS
+    details: Update policy and decision references in eidos/architecture/containers/vcs.adoc.
+    expect:
+      frontmatter:
+        status: active
+      body:
+        not_contains:
+          - "POL-002"
+  - operation: modify
+    target: CNT-EIDOS-DOCS
+    details: Update policy references in eidos/architecture/containers/docs.adoc.
+    expect:
+      frontmatter:
+        status: active
+      body:
+        not_contains:
+          - "POL-002"
+          - "POL-003"
+          - "POL-005"
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: Document non-numbered semantic ID examples in bundled Agent Skills (assets/plugin_reference/skills/).
+    expect:
+      frontmatter:
+        status: active
+      body:
+        contains:
+          - "semantic"
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+    details: Strip redundant living-spec type prefixes (cap-, pol-, cnt-, ctr-, per-) from non-numeric scaffolded filenames in create_spec and emit non-numbered semantic example IDs in _synthesize_example_value (keeping EXP-/DLT- chronological and MEM- hash-suffixed).
+    expect:
+      frontmatter:
+        status: active
+      body:
+        contains:
+          - "prefix-stripped"
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+    details: Align eidos spec create ID help examples in src/eidos/cli/spec_commands.py to non-numbered semantic living-spec IDs (keeping EXP-2026-001 chronological).
+    expect:
+      frontmatter:
+        status: active
+      body:
+        contains:
+          - "semantic"
+  - operation: modify
+    target: CMP-DELTA-AUDITOR
+    details: Update POL-001 reference to POL-GIT-SOURCE-OF-TRUTH.
+    expect:
+      body:
+        contains:
+          - "POL-GIT-SOURCE-OF-TRUTH"
+        not_contains:
+          - "POL-001"
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: Update POL-003 reference to POL-CONTINUOUS-DOCUMENTATION-SYNC.
+    expect:
+      body:
+        contains:
+          - "POL-CONTINUOUS-DOCUMENTATION-SYNC"
+        not_contains:
+          - "POL-003"
+  - operation: modify
+    target: CMP-DOCS-GETTING-STARTED
+    details: Update POL-003 reference to POL-CONTINUOUS-DOCUMENTATION-SYNC.
+    expect:
+      body:
+        contains:
+          - "POL-CONTINUOUS-DOCUMENTATION-SYNC"
+        not_contains:
+          - "POL-003"
+  - operation: modify
+    target: CMP-HTTP-TOPOLOGY-LINKER
+    details: Update POL-004 reference to POL-ZERO-AI-CALL-DEPENDENCY.
+    expect:
+      body:
+        contains:
+          - "POL-ZERO-AI-CALL-DEPENDENCY"
+        not_contains:
+          - "POL-004"
+  - operation: modify
+    target: CMP-INVARIANT-TRACEABILITY-VERIFIER
+    details: Update POL-002 references to POL-INVARIANT-TEST-ENFORCEMENT.
+    expect:
+      body:
+        contains:
+          - "POL-INVARIANT-TEST-ENFORCEMENT"
+        not_contains:
+          - "POL-002"
+  - operation: modify
+    target: CMP-MEMORY-ENGINE
+    details: Update POL-004 reference to POL-ZERO-AI-CALL-DEPENDENCY.
+    expect:
+      body:
+        contains:
+          - "POL-ZERO-AI-CALL-DEPENDENCY"
+        not_contains:
+          - "POL-004"
+  - operation: modify
+    target: CMP-MERMAID-VALIDATOR
+    details: Update ARCH-EIDOS-001 and POL-004 references to ARCH-EIDOS and POL-ZERO-AI-CALL-DEPENDENCY.
+    expect:
+      body:
+        contains:
+          - "ARCH-EIDOS"
+          - "POL-ZERO-AI-CALL-DEPENDENCY"
+        not_contains:
+          - "ARCH-EIDOS-001"
+          - "POL-004"
+  - operation: modify
+    target: CMP-SEMANTIC-EMBEDDING-ENGINE
+    details: Update POL-004 reference to POL-ZERO-AI-CALL-DEPENDENCY.
+    expect:
+      body:
+        contains:
+          - "POL-ZERO-AI-CALL-DEPENDENCY"
+        not_contains:
+          - "POL-004"
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+    details: Update POL-004 reference to POL-ZERO-AI-CALL-DEPENDENCY.
+    expect:
+      frontmatter:
+        status: active
+  - operation: modify
+    target: DOM-SPEC-ENGINE
+    details: Update POL-002 reference to POL-INVARIANT-TEST-ENFORCEMENT.
+    expect:
+      body:
+        contains:
+          - "POL-INVARIANT-TEST-ENFORCEMENT"
+        not_contains:
+          - "POL-002"
+  - operation: modify
+    target: DOM-VCS-LIFECYCLE
+    details: Update POL-001 reference to POL-GIT-SOURCE-OF-TRUTH.
+    expect:
+      body:
+        contains:
+          - "POL-GIT-SOURCE-OF-TRUTH"
+        not_contains:
+          - "POL-001"
+  - operation: modify
+    target: SCR-PORTAL-CATALOG
+    details: Update SYS-EIDOS-001 reference to SYS-EIDOS.
+    expect:
+      body:
+        contains:
+          - "SYS-EIDOS"
+        not_contains:
+          - "SYS-EIDOS-001"
+tombstone:
+  allowed_reasons:
+    - path: "eidos/explorations/"
+      reason: "Historical adopted/discarded explorations (EXP-2026-*) retain original snapshot prose references."
+    - path: "tests/test_scaffolder.py"
+      reason: "INV-ENGINE-GENERICITY negative regex guards intentionally keep legacy numbered Eidos-self ID patterns blocked."
+    - path: "tests/test_portal.py"
+      reason: "BANNED_JARGON negative UI test retains legacy 'POL-002 Traceability' regression token."
+    - path: "src/eidos/portal/frontend/tests/presentation.test.ts"
+      reason: "BANNED_JARGON negative UI test retains legacy 'POL-002 Traceability' regression token."
+vcs:
+  branch: main
+  base_commit: 809743ada6d6ba36ca72eb6f208a534a2db3c365
+---
+= SpecDelta: Remove Numbering from Living Specification IDs and Align Semantic Naming Conventions
+:toc: left
+
+== Problem Statement
+Living specifications across `eidos/` mixed representative semantic names (`CNT-*`, `CMP-*`, `CTR-*`, `DOM-*`, `PER-*`, `DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`) with arbitrary numeric identifiers and filenames (`SYS-EIDOS-001`, `ARCH-EIDOS-001`, `CAP-*-00N`, `cap-agent-002.adoc`, `POL-00N-*`, `POL-001-*.adoc`..`pol-005-*.adoc`, `INV-POL-00N-*`, `DEC-POL-002-*`). Bundled v1 schemas, `create_spec` filename generation, `_synthesize_example_value`, CLI help text, bundled Agent Skills, and user documentation also recommended numbered living-spec patterns (`CAP-<DOMAIN>-<NUMBER>`, `POL-<NUMBER>-<NAME>`, `*-EXAMPLE-001`).
+
+== Proposed Specification Changes
+* **Living Specs (`eidos/`)**:
+  * Rename `SYS-EIDOS-001` -> `SYS-EIDOS` (`eidos/system.adoc`) and `ARCH-EIDOS-001` -> `ARCH-EIDOS` (`eidos/architecture/system-architecture.adoc`).
+  * Rename all 8 capability IDs (`CAP-AGENT-001` -> `CAP-AGENT-ADAPTER`, `CAP-AGENT-002` / `cap-agent-002.adoc` -> `CAP-AST-CODE-GRAPH` / `ast-code-graph.adoc`, `CAP-EXP-001` -> `CAP-LIVING-WEB-PORTAL`, `CAP-EXP-002` -> `CAP-MULTI-DESIGN-SYSTEMS`, `CAP-PROD-001` -> `CAP-LIVING-SPEC-ENGINE`, `CAP-PROD-002` -> `CAP-SPEC-DELTA-MUTATIONS`, `CAP-PROD-003` -> `CAP-EXPLORATION-DISCOVERY`, `CAP-VCS-001` -> `CAP-DRIFT-DETECTION`).
+  * Rename all 5 policy IDs, filenames, invariants, and embedded policy decision (`POL-001-GIT-SOURCE-OF-TRUTH` -> `POL-GIT-SOURCE-OF-TRUTH` / `git-source-of-truth.adoc`, `POL-002-INVARIANT-TEST-ENFORCEMENT` -> `POL-INVARIANT-TEST-ENFORCEMENT` / `invariant-test-enforcement.adoc` + `DEC-POL-STATIC-TRACEABILITY-BOUNDARY`, `POL-003-CONTINUOUS-DOCUMENTATION-SYNC` -> `POL-CONTINUOUS-DOCUMENTATION-SYNC` / `continuous-documentation-sync.adoc`, `POL-004-ZERO-AI-CALL-DEPENDENCY` -> `POL-ZERO-AI-CALL-DEPENDENCY` / `zero-ai-call-dependency.adoc`, `POL-005-STATEMENT-TEST-COVERAGE` -> `POL-STATEMENT-TEST-COVERAGE` / `statement-test-coverage.adoc`) and their `INV-POL-*` IDs.
+  * Keep chronological `EXP-2026-*` explorations, `DLT-2026-*` SpecDeltas, and historical applied/archived `eidos/deltas/` files unchanged.
+* **Eidos Conventions (`assets/schemas/v1/`, `CMP-LIFECYCLE-SCAFFOLDER`, `CMP-CLI-SPEC-COMMANDS`, `CNT-EIDOS-PLUGIN`, `CNT-EIDOS-DOCS`)**:
+  * Update v1 schema `id` descriptions to recommend non-numbered semantic conventions (`SYS-<NAME>`, `ARCH-<NAME>`, `CAP-<NAME>`, `POL-<NAME>`) and remove Eidos-self `(POL-001)` parentheticals from generic schema descriptions.
+  * Update `create_spec` in `src/eidos/core/lifecycle/scaffolder.py` to strip redundant type prefixes (`cap-`, `pol-`, `cnt-`, `ctr-`, `per-`) when the remaining stem is non-numeric, and update `_synthesize_example_value` to synthesize non-numbered `<PREFIX>EXAMPLE` IDs for living specs (retaining `DLT-2026-001`, `EXP-2026-001`, and `MEM-EXAMPLE-A1B2`).
+  * Align `eidos spec create` help examples (`src/eidos/cli/spec_commands.py` + `tests/fixtures/cli_command_tree.json`), bundled skills (`assets/plugin_reference/skills/`), docs (`docs/`), `README.md`, and `.github/workflows/ci.yml`.
+
+== Implementation Plan
+1. **Living Specs & Cross-References (`eidos/`)**: Rename `cap-agent-002.adoc` -> `ast-code-graph.adoc` and all 5 policy files under `eidos/policies/`, update `SYS-EIDOS`, `ARCH-EIDOS`, all 8 `CAP-*`, all 5 `POL-*`, all cross-references across `CNT-*`, `CMP-*`, `DOM-*`, `SCR-PORTAL-CATALOG`, the broken policy link in `eidos/explorations/EXP-2026-003.adoc`, and active target IDs in the 3 open `proposed` SpecDeltas (`DLT-2026-119`, `DLT-2026-120`, `DLT-2026-170`), leaving all applied/archived historical `eidos/deltas/` immutable.
+2. **Schemas, Scaffolder, CLI & Source Comments**: Update `assets/schemas/v1/**/*.schema.yaml` (`CNT-EIDOS-CORE`), `src/eidos/core/lifecycle/scaffolder.py` (`CMP-LIFECYCLE-SCAFFOLDER`), `src/eidos/cli/spec_commands.py` (`CMP-CLI-SPEC-COMMANDS`), `src/eidos/core/lifecycle/changelog.py` (body-only; no spec mutation), and `src/eidos/portal/frontend/src/lib/specNav.ts` (body-only; no spec mutation).
+3. **Bundled Skills, Docs, README & CI**: Align `assets/plugin_reference/skills/{eidos-ops,eidos-plan,eidos-spec}/SKILL.md` (`CNT-EIDOS-PLUGIN`, preserving `INV-PLUGIN-SKILL-SIZE-CEILING`), `docs/**/*.md` (`CNT-EIDOS-DOCS`, `CMP-DOCS-CORE-CONCEPTS`, `CMP-DOCS-GETTING-STARTED`, with `docs/guides/agent-plugin.md` covered via parent `CNT-EIDOS-DOCS`), `README.md`, and `.github/workflows/ci.yml`.
+4. **Tests & Verification**: Update `tests/` (including `INV-POL-*` test bindings, `test_pol_statement_test_coverage`, `INV-ENGINE-GENERICITY` forbidden patterns, `tests/fixtures/cli_command_tree.json`, and portal frontend Vitest fixtures), verify `>90.0%` per-file coverage (`POL-STATEMENT-TEST-COVERAGE`), run `eidos delta verify`, `eidos delta audit --strict`, `eidos delta apply`, and `eidos drift --uncommitted --json`.

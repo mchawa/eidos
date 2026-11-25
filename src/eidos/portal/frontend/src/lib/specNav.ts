@@ -10,7 +10,7 @@
 export const SPEC_NAV_EVENT = "eidos:navigate-spec";
 
 export interface SpecNavDetail {
-  /** Raw target as written in the document: a spec ID (`CAP-EXP-001`) or a relative `.adoc`/`.html` path. */
+  /** Raw target as written in the document: a spec ID (`CAP-USAGE-BILLING`) or a relative `.adoc`/`.html` path. */
   target: string;
   /** Navigation mode: `"entity"` routes to the domain/architecture view; `"reader"` opens SpecReader in CatalogView. */
   mode?: "entity" | "reader";

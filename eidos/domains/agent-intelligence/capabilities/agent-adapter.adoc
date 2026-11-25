@@ -1,6 +1,6 @@
 ---
 type: product/capability
-id: CAP-AGENT-001
+id: CAP-AGENT-ADAPTER
 title: "Universal Agent Adapter & Context Slicing Engine"
 domain: DOM-AGENT-INTELLIGENCE
 status: active
@@ -13,8 +13,8 @@ business:
     - eidos/personas/product-lead.adoc
     - eidos/personas/autonomous-agent.adoc
   policies:
-    - eidos/policies/POL-002-invariant-test-enforcement.adoc
-    - eidos/policies/POL-004-zero-ai-call-dependency.adoc
+    - eidos/policies/invariant-test-enforcement.adoc
+    - eidos/policies/zero-ai-call-dependency.adoc
 
 technical:
   containers:
@@ -101,7 +101,7 @@ Enable the team to use any state-of-the-art coding agent (Antigravity agy, Claud
 == Intent
 Avoids vendor lock-in and eliminates context window bloat. External AI coding assistants—including Google Antigravity `agy`, Claude Code, Cursor, Aider, Cline, Kilo Code, OpenCode, OpenAI Codex, and GitHub Copilot—query the deterministic Eidos CLI (`eidos context --json`) to retrieve token-budgeted, graph-indexed architectural slices and verify invariant compliance before committing changes.
 
-In strict adherence to *POL-004*, Eidos never initiates AI/LLM calls itself. Instead, it provides the authoritative, noise-free substrate (C4 topology, interface contracts, governing policies, and test-bound invariants) that grounds external agents and prevents architectural drift.
+In strict adherence to *POL-ZERO-AI-CALL-DEPENDENCY*, Eidos never initiates AI/LLM calls itself. Instead, it provides the authoritative, noise-free substrate (C4 topology, interface contracts, governing policies, and test-bound invariants) that grounds external agents and prevents architectural drift.
 
 == Key Responsibilities
 * **Deterministic Substrate for Coding Agents**: Exposing machine-readable JSON envelopes across CLI inspection commands (`eidos context`, `eidos index`, `eidos drift`).

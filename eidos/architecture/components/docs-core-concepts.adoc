@@ -21,4 +21,4 @@ Documents Eidos's architectural foundations, execution pipeline, 17-schema gloss
 * `docs/concepts/design.md`, `docs/concepts/schema-glossary.md`
 
 == Design Constraints & Operational Notes
-* **Schema Glossary Completeness (`POL-003`, `INV-DOCS-SYNCHRONIZATION`)**: `tests/test_docs_sync.py` verifies that all 17 v1 schemas (`assets/schemas/v1/**/*.schema.yaml`), their `type` constants, aligned modern `tech/contract` protocol values, and ID prefixes are documented with schema-valid YAML examples in `schema-glossary.md`.
+* **Schema Glossary Completeness (`POL-CONTINUOUS-DOCUMENTATION-SYNC`, `INV-DOCS-SYNCHRONIZATION`)**: `tests/test_docs_sync.py` verifies that all 17 v1 schemas (`assets/schemas/v1/**/*.schema.yaml`), their `type` constants, aligned modern `tech/contract` protocol values, and ID prefixes are documented with schema-valid YAML examples in `schema-glossary.md`.

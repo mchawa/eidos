@@ -194,11 +194,11 @@ eidos/
   * [`VCS Lifecycle Domain`](eidos/domains/vcs-lifecycle/domain.adoc)
   * [`Experience Portal Domain`](eidos/domains/experience-portal/domain.adoc)
 * **Policies**:
-  * [`POL-001: Git Source of Truth`](eidos/policies/POL-001-git-as-single-source-of-truth.adoc)
-  * [`POL-002: Invariant Test Enforcement`](eidos/policies/POL-002-invariant-test-enforcement.adoc)
-  * [`POL-003: Continuous Documentation Sync`](eidos/policies/POL-003-continuous-documentation-sync.adoc)
-  * [`POL-004: Zero AI Call Dependency`](eidos/policies/POL-004-zero-ai-call-dependency.adoc)
-  * [`POL-005: Statement Test Coverage (>90%)`](eidos/policies/pol-005-statement-test-coverage.adoc)
+  * [`POL-GIT-SOURCE-OF-TRUTH: Git Source of Truth`](eidos/policies/git-source-of-truth.adoc)
+  * [`POL-INVARIANT-TEST-ENFORCEMENT: Invariant Test Enforcement`](eidos/policies/invariant-test-enforcement.adoc)
+  * [`POL-CONTINUOUS-DOCUMENTATION-SYNC: Continuous Documentation Sync`](eidos/policies/continuous-documentation-sync.adoc)
+  * [`POL-ZERO-AI-CALL-DEPENDENCY: Zero AI Call Dependency`](eidos/policies/zero-ai-call-dependency.adoc)
+  * [`POL-STATEMENT-TEST-COVERAGE: Statement Test Coverage (>90%)`](eidos/policies/statement-test-coverage.adoc)
 * **Technical Architecture**:
   * [`Global System Architecture`](eidos/architecture/system-architecture.adoc)
   * [`Containers Directory`](eidos/architecture/containers/)

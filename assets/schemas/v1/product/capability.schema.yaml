@@ -18,7 +18,7 @@ properties:
   id:
     type: string
     pattern: "^CAP-[A-Z0-9_-]+$"
-    description: "Unique capability identifier following the CAP-<DOMAIN>-<NUMBER> convention (e.g. CAP-PROD-001)."
+    description: "Unique capability identifier following the CAP-<NAME> convention (e.g. CAP-METERED-USAGE)."
   title:
     $ref: "#/$defs/non_empty_string"
     description: "Descriptive human-readable title of this capability."
@@ -102,6 +102,6 @@ properties:
           $ref: "#/$defs/invariant"
   decisions:
     type: array
-    description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on this capability specification (POL-001)."
+    description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on this capability specification."
     items:
       $ref: "#/$defs/decision"

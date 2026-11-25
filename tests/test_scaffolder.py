@@ -1,4 +1,4 @@
-"""Tests verifying specification scaffolding, reference checking, and delta lifecycle management (CTR-EIDOS-CLI, POL-002)."""
+"""Tests verifying specification scaffolding, reference checking, and delta lifecycle management (CTR-EIDOS-CLI, POL-INVARIANT-TEST-ENFORCEMENT)."""
 
 from pathlib import Path
 
@@ -27,7 +27,9 @@ def assert_valid_spec(validator: SpecValidator, path: Path):
 
 
 def test_scaffold_all_spec_types(tmp_path):
-    """Verify that create_spec scaffolds syntactically valid documents for all 15 living spec types and rejects delta (CTR-EIDOS-CLI, POL-002, INV-SPIKE-ISOLATION)."""
+    """Verify that create_spec scaffolds syntactically valid documents for all 15 living spec types and rejects delta (CTR-EIDOS-CLI, POL-INVARIANT-TEST-ENFORCEMENT, INV-SPIKE-ISOLATION)."""
+    from eidos.core.lifecycle.scaffolder import get_spec_schema_info
+
     validator = SpecValidator()
 
     # 0a. System
@@ -44,7 +46,7 @@ def test_scaffold_all_spec_types(tmp_path):
     arch_file = create_spec(
         eidos_dir=tmp_path,
         doc_type_key="architecture",
-        raw_id="ARCH-AUTH-001",
+        raw_id="ARCH-AUTH-PLATFORM",
         title="Auth Technical Architecture",
     )
     assert arch_file == tmp_path / "architecture" / "system-architecture.adoc"
@@ -60,55 +62,72 @@ def test_scaffold_all_spec_types(tmp_path):
     assert dom_file.exists()
     assert_valid_spec(validator, dom_file)
 
-    # 2. Capability
+    # 2. Capability (prefix-stripped semantic filename)
     cap_file = create_spec(
         eidos_dir=tmp_path,
         doc_type_key="capability",
-        raw_id="CAP-AUTH-001",
+        raw_id="CAP-PASSWORD-LOGIN",
         title="Password Login",
     )
+    assert cap_file.name == "password-login.adoc"
     assert cap_file.exists()
     assert_valid_spec(validator, cap_file)
 
-    # 3. Policy
+    # 3. Policy (prefix-stripped semantic filename + legacy numeric fallback)
     pol_file = create_spec(
         eidos_dir=tmp_path,
         doc_type_key="policy",
-        raw_id="POL-003-AUTH-LOCK",
+        raw_id="POL-AUTH-LOCK",
         title="Account Lockout Policy",
     )
+    assert pol_file.name == "auth-lock.adoc"
     assert pol_file.exists()
     assert_valid_spec(validator, pol_file)
 
-    # 4. Container
+    # 4. Container (prefix-stripped semantic filename)
     cnt_file = create_spec(
         eidos_dir=tmp_path,
         doc_type_key="container",
         raw_id="CNT-AUTH-SERVICE",
         title="Auth Microservice",
     )
+    assert cnt_file.name == "auth-service.adoc"
     assert cnt_file.exists()
     assert_valid_spec(validator, cnt_file)
 
-    # 5. Contract
+    # 5. Contract (prefix-stripped semantic filename)
     ctr_file = create_spec(
         eidos_dir=tmp_path,
         doc_type_key="contract",
         raw_id="CTR-AUTH-REST",
         title="Auth REST API",
     )
+    assert ctr_file.name == "auth-rest.adoc"
     assert ctr_file.exists()
     assert_valid_spec(validator, ctr_file)
 
-    # 6. Persona
+    # 6. Persona (prefix-stripped semantic filename)
     per_file = create_spec(
         eidos_dir=tmp_path,
         doc_type_key="persona",
         raw_id="PER-SECURITY-AUDITOR",
         title="Security Auditor",
     )
+    assert per_file.name == "security-auditor.adoc"
     assert per_file.exists()
     assert_valid_spec(validator, per_file)
+
+    # Verify schema example synthesis uses non-numbered semantic IDs for living specs,
+    # chronological IDs for explorations/deltas, and hash-suffixed IDs for memories
+    cap_schema = get_spec_schema_info("capability")
+    assert "id: CAP-EXAMPLE" in cap_schema["example_frontmatter"]
+    assert "EXAMPLE-001" not in cap_schema["example_frontmatter"]
+    exp_schema = get_spec_schema_info("exploration")
+    assert "id: EXP-2026-001" in exp_schema["example_frontmatter"]
+    dlt_schema = get_spec_schema_info("delta")
+    assert "id: DLT-2026-001" in dlt_schema["example_frontmatter"]
+    mem_schema = get_spec_schema_info("memory")
+    assert "id: MEM-EXAMPLE-A1B2" in mem_schema["example_frontmatter"]
 
     # 7. Delta is rejected by create_spec (disjoint boundary) and handled by create_delta
     with pytest.raises(ValueError, match="SpecDeltas"):
@@ -198,8 +217,9 @@ def test_scaffold_all_spec_types(tmp_path):
 
 def test_list_specs_and_filtering(tmp_path):
     """Verify list_specs returns all documents with accurate metadata and supports filtering (CTR-EIDOS-CLI)."""
-    create_spec(tmp_path, "policy", "POL-001", "Policy 1")
-    create_spec(tmp_path, "policy", "POL-002", "Policy 2")
+    pol_num = create_spec(tmp_path, "policy", "POL-001", "Policy 1")
+    assert pol_num.name == "pol-001.adoc"
+    create_spec(tmp_path, "policy", "POL-DATA-RETENTION", "Policy 2")
     create_spec(tmp_path, "contract", "CTR-CLI", "Contract 1")
 
     all_specs = list_specs(tmp_path)
@@ -233,7 +253,7 @@ def test_spec_deletion_safety_with_references(tmp_path):
 
 
 def test_delta_lifecycle_apply(tmp_path):
-    """Verify SpecDelta transition in flat storage with in-place status update (CTR-EIDOS-CLI, CAP-AGENT-001)."""
+    """Verify SpecDelta transition in flat storage with in-place status update (CTR-EIDOS-CLI, CAP-AGENT-ADAPTER)."""
     create_spec(tmp_path, "policy", "POL-RATE-001", "Rate Limiter Policy")
     dlt_file = create_delta(
         eidos_dir=tmp_path,
@@ -466,7 +486,7 @@ def test_cli_spec_lifecycle_tools(tmp_path):
 
 
 def test_all_skills_in_bundle():
-    """Verify that the plugin contains the 5 cohesive workflow skills (CAP-AGENT-001, DLT-2026-171)."""
+    """Verify that the plugin contains the 5 cohesive workflow skills (CAP-AGENT-ADAPTER, DLT-2026-171)."""
     from eidos.plugin.installer import locate_plugin_bundle
     from eidos.plugin.validator import validate_plugin_package
 
@@ -685,7 +705,7 @@ def test_cli_command_groups_help_and_subapps():
 
 
 def test_scaffold_design_system_and_tokens(tmp_path):
-    """Verify scaffolding of base and client design systems with W3C tokens (CAP-AGENT-001)."""
+    """Verify scaffolding of base and client design systems with W3C tokens (CAP-AGENT-ADAPTER)."""
     validator = SpecValidator()
 
     # 1. Base Core Design System
@@ -711,7 +731,7 @@ def test_scaffold_design_system_and_tokens(tmp_path):
 
 
 def test_scaffold_ui_component(tmp_path):
-    """Verify scaffolding of UI components under a design system (CAP-AGENT-001)."""
+    """Verify scaffolding of UI components under a design system (CAP-AGENT-ADAPTER)."""
     validator = SpecValidator()
 
     # Scaffold core component
@@ -736,7 +756,7 @@ def test_scaffold_ui_component(tmp_path):
 
 
 def test_scaffold_screen_and_capability_experience(tmp_path):
-    """Verify screen specification and capability experience linkage (CAP-AGENT-001)."""
+    """Verify screen specification and capability experience linkage (CAP-AGENT-ADAPTER)."""
     validator = SpecValidator()
 
     # Create screen (requires explicit --client)
@@ -903,7 +923,16 @@ def test_engine_genericity_zero_self_references():
     import re
 
     forbidden = re.compile(
-        r"\b(SYS-EIDOS-\d+|CNT-EIDOS-[A-Z0-9_-]+|CTR-EIDOS-[A-Z0-9_-]+|DOM-SPEC-ENGINE|DOM-AGENT-INTELLIGENCE|DOM-DEVEX-VCS|CAP-PROD-\d+|CAP-AGENT-\d+|CAP-VCS-\d+)\b|src/eidos"
+        r"\b("
+        r"SYS-EIDOS(?:-\d+)?|ARCH-EIDOS(?:-\d+)?|"
+        r"CNT-EIDOS-[A-Z0-9_-]+|CTR-EIDOS-[A-Z0-9_-]+|"
+        r"DOM-SPEC-ENGINE|DOM-AGENT-INTELLIGENCE|DOM-EXPERIENCE-PORTAL|DOM-VCS-LIFECYCLE|DOM-DEVEX-VCS|"
+        r"CAP-PROD-\d+|CAP-AGENT-\d+|CAP-EXP-\d+|CAP-VCS-\d+|"
+        r"CAP-LIVING-SPEC-ENGINE|CAP-SPEC-DELTA-MUTATIONS|CAP-EXPLORATION-DISCOVERY|"
+        r"CAP-AGENT-ADAPTER|CAP-AST-CODE-GRAPH|CAP-LIVING-WEB-PORTAL|CAP-MULTI-DESIGN-SYSTEMS|CAP-DRIFT-DETECTION|"
+        r"POL-GIT-SOURCE-OF-TRUTH|POL-INVARIANT-TEST-ENFORCEMENT|POL-CONTINUOUS-DOCUMENTATION-SYNC|"
+        r"POL-ZERO-AI-CALL-DEPENDENCY|POL-STATEMENT-TEST-COVERAGE"
+        r")\b|src/eidos"
     )
     skills_forbidden = re.compile(
         r"\b(POL-00\d+|INV-COMPONENT-CENTRALIZATION-MANDATE|INV-COMPONENT-CONTAINER-AFFINITY|DEC-VCS-STATIC-INVARIANT-TRACEABILITY)\b"
@@ -1607,7 +1636,7 @@ def test_a7_a8_a11_catalog_scaffolder_and_design_edge_cases(tmp_path: Path) -> N
     pol_referrer.write_text(
         pol_referrer.read_text(encoding="utf-8").replace(
             "Normative rule for Referrer Policy.",
-            "See eidos/policies/pol-target.adoc for details.",
+            "See eidos/policies/target.adoc for details.",
         ),
         encoding="utf-8",
     )
@@ -1728,7 +1757,7 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
     init_repository(ws, title="WS A")
     eidos_dir = ws / "eidos"
     cnt_path = create_spec(eidos_dir, "container", "CNT-API-GATEWAY", "API Gateway")
-    assert find_spec_by_id_or_path(eidos_dir, "cnt-api-gateway.adoc") == cnt_path.resolve()
+    assert find_spec_by_id_or_path(eidos_dir, "api-gateway.adoc") == cnt_path.resolve()
 
     dom_path = create_spec(eidos_dir, "domain", "DOM-PAYMENTS", "Payments Domain")
     cap_path = create_spec(

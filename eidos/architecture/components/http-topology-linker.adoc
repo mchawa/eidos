@@ -25,4 +25,4 @@ Extracts polyglot server HTTP route declarations (`http_endpoint`, including ASP
 * `extract_http_endpoints_with_metadata(indexer: Any, p: Path, content: str, *, _symbols: list[CodeSymbol] | None = None, base_controllers: dict[str, dict[str, Any]] | None = None) -> list[HttpEndpointMeta]`
 
 == Design Constraints & Operational Notes
-* **Zero Runtime Server Execution (`POL-004`)**: Derives cross-runtime frontend-to-backend topology strictly via static AST/text inspection without launching application servers or making LLM calls.
+* **Zero Runtime Server Execution (`POL-ZERO-AI-CALL-DEPENDENCY`)**: Derives cross-runtime frontend-to-backend topology strictly via static AST/text inspection without launching application servers or making LLM calls.

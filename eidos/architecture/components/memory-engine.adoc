@@ -29,4 +29,4 @@ Manages the Git-native team operational memory lifecycle (`type: agent/memory`, 
 * `verify_memory(...) -> dict[str, Any]`, `archive_memory(...) -> dict[str, Any]`, `promote_memory(...) -> dict[str, Any]`, `audit_memories(...) -> dict[str, Any]`
 
 == Design Constraints & Operational Notes
-* **Deterministic Offline Execution (`POL-004`)**: Zero remote API calls; never triggers full-corpus ONNX embedding during `add_memory` or `audit_memories`.
+* **Deterministic Offline Execution (`POL-ZERO-AI-CALL-DEPENDENCY`)**: Zero remote API calls; never triggers full-corpus ONNX embedding during `add_memory` or `audit_memories`.

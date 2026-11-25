@@ -16,7 +16,7 @@ This domain represents the authoritative intellectual core of Eidos. It is respo
 * **Responsibilities**:
   - Parse, validate, and index all living AsciiDoc specification frontmatters against strict JSON/YAML schemas.
   - Resolve specification entity cross-references and detect broken dependency links across the graph.
-  - Enforce bidirectional invariant-to-test traceability and continuous policy compliance (`POL-002`).
+  - Enforce bidirectional invariant-to-test traceability and continuous policy compliance (`POL-INVARIANT-TEST-ENFORCEMENT`).
   - Manage the SpecDelta mutation lifecycle (`DLT-*`: propose, review, verify, apply) for planned architectural changes.
   - Support hypothesis-driven exploratory spikes and technical discoveries (`EXP-*`).
 * **Out of Scope**:

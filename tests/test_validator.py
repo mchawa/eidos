@@ -38,7 +38,7 @@ def test_bundled_schemas_loaded(validator):
 
 
 def test_validate_eidos_specifications(validator, tmp_path):
-    """Verify INV-SPEC-VALIDATION, INV-SPEC-GRAPH-INTEGRITY, INV-W3C-DTCG-COMPLIANCE, INV-CLIENT-DESIGN-BINDING, INV-POL-001-GIT-SOURCE-OF-TRUTH, and INV-POL-002-INVARIANT-TEST-ENFORCEMENT: all living specifications pass schema validation and entity ID graph integrity."""
+    """Verify INV-SPEC-VALIDATION, INV-SPEC-GRAPH-INTEGRITY, INV-W3C-DTCG-COMPLIANCE, INV-CLIENT-DESIGN-BINDING, INV-POL-GIT-SOURCE-OF-TRUTH, and INV-POL-INVARIANT-TEST-ENFORCEMENT: all living specifications pass schema validation and entity ID graph integrity."""
     from eidos.core.spec.validator import evaluate_import_boundaries
 
     eidos_dir = Path("eidos")
@@ -60,10 +60,10 @@ def test_validate_eidos_specifications(validator, tmp_path):
     assert "PER-SOFTWARE-ARCHITECT" in report.entity_index
     assert "PER-SOFTWARE-ENGINEER" in report.entity_index
     assert "PER-DESIGN-ENGINEER" in report.entity_index
-    assert "POL-001-GIT-SOURCE-OF-TRUTH" in report.entity_index
+    assert "POL-GIT-SOURCE-OF-TRUTH" in report.entity_index
 
-    # Self-hosted ARCH-EIDOS-001 import_boundaries compliance (zero violations, zero ratchet debt)
-    arch_doc = report.entity_index["ARCH-EIDOS-001"]
+    # Self-hosted ARCH-EIDOS import_boundaries compliance (zero violations, zero ratchet debt)
+    arch_doc = report.entity_index["ARCH-EIDOS"]
     assert arch_doc.model.import_boundaries is not None
     assert arch_doc.model.import_boundaries.tier_rules["core"].deny == ["presentation"]
     assert evaluate_import_boundaries(eidos_dir) == ([], [])
@@ -3943,7 +3943,7 @@ def test_dlt_2026_114_cli_contract_positional_placeholder_alignment(tmp_path: Pa
 
 
 def test_dlt_132_134_136_tokens_containment_active_bindings_and_strict_schemas(tmp_path, validator):
-    """Verify DLT-2026-132, DLT-2026-134, and DLT-2026-136: tokens.manifest containment, repo-relative schema_errors, strict active test_binding (including UIC-*), non-empty schema strings/arrays, and cli client platform (INV-W3C-DTCG-COMPLIANCE, INV-POL-002-INVARIANT-TEST-ENFORCEMENT, INV-SPEC-VALIDATION, INV-CLIENT-DESIGN-BINDING)."""
+    """Verify DLT-2026-132, DLT-2026-134, and DLT-2026-136: tokens.manifest containment, repo-relative schema_errors, strict active test_binding (including UIC-*), non-empty schema strings/arrays, and cli client platform (INV-W3C-DTCG-COMPLIANCE, INV-POL-INVARIANT-TEST-ENFORCEMENT, INV-SPEC-VALIDATION, INV-CLIENT-DESIGN-BINDING)."""
     from eidos.core.spec.parser import parse_spec_file
 
     repo = tmp_path / "repo"
@@ -4879,8 +4879,8 @@ def test_group_e_parser_models_project_and_spec_cli_branches(tmp_path, validator
     assert "positional" in adv_refs
 
 
-def _verify_pol_005_coverage_json(coverage_json_path: Path, src_dir: Path, repo_root: Path) -> None:
-    """Enforce POL-005 strictly >90.0% statement coverage on every individual Python module under src/eidos/."""
+def _verify_pol_coverage_json(coverage_json_path: Path, src_dir: Path, repo_root: Path) -> None:
+    """Enforce POL-STATEMENT-TEST-COVERAGE strictly >90.0% statement coverage on every individual Python module under src/eidos/."""
     import orjson
 
     cov_data = orjson.loads(coverage_json_path.read_bytes())
@@ -4897,14 +4897,14 @@ def _verify_pol_005_coverage_json(coverage_json_path: Path, src_dir: Path, repo_
     if offenders:
         rows = "\n".join(f"  | {rel} | {pct:.2f}% |" for rel, pct in offenders)
         raise AssertionError(
-            "POL-005 per-file statement coverage violation (every module must be strictly > 90.0%):\n"
+            "POL-STATEMENT-TEST-COVERAGE per-file statement coverage violation (every module must be strictly > 90.0%):\n"
             "  | Module | Coverage |\n"
             f"{rows}"
         )
 
 
-def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
-    """Verify POL-005-STATEMENT-TEST-COVERAGE and INV-POL-005-STATEMENT-TEST-COVERAGE: policy spec, pyproject.toml coverage settings, CI per-file coverage.json enforcement, and edge-case branches across core/cli/vcs/plugin modules."""
+def test_pol_statement_test_coverage(tmp_path, monkeypatch, validator):
+    """Verify POL-STATEMENT-TEST-COVERAGE and INV-POL-STATEMENT-TEST-COVERAGE: policy spec, pyproject.toml coverage settings, CI per-file coverage.json enforcement, and edge-case branches across core/cli/vcs/plugin modules."""
     import importlib
     import importlib.metadata
     import subprocess
@@ -4962,11 +4962,11 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
 
     repo_root = Path(__file__).parent.parent
 
-    # 1. Verify POL-005-STATEMENT-TEST-COVERAGE specification and pyproject.toml [tool.coverage]
-    policy_path = repo_root / "eidos/policies/pol-005-statement-test-coverage.adoc"
+    # 1. Verify POL-STATEMENT-TEST-COVERAGE specification and pyproject.toml [tool.coverage]
+    policy_path = repo_root / "eidos/policies/statement-test-coverage.adoc"
     assert policy_path.is_file()
     pol_doc = parse_spec_file(policy_path)
-    assert pol_doc.doc_id == "POL-005-STATEMENT-TEST-COVERAGE"
+    assert pol_doc.doc_id == "POL-STATEMENT-TEST-COVERAGE"
     assert pol_doc.doc_type == "product/policy"
     assert pol_doc.frontmatter.get("status") == "active"
     assert pol_doc.frontmatter.get("category") == "testing"
@@ -4999,7 +4999,7 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
     cov_pass_files = {rel: {"summary": {"percent_covered": 90.1}} for rel in real_modules}
     cov_pass_files["src/eidos/_version.py"] = {"summary": {"percent_covered": 0.0}}
     cov_pass_json.write_bytes(orjson.dumps({"files": cov_pass_files}))
-    _verify_pol_005_coverage_json(cov_pass_json, src_eidos_dir, repo_root)
+    _verify_pol_coverage_json(cov_pass_json, src_eidos_dir, repo_root)
 
     # Strict > 90.0% check: exact 90.0% boundary or subsidized 85.0% module or missing entry must fail!
     cov_boundary_files = dict(cov_pass_files)
@@ -5007,17 +5007,17 @@ def test_pol_005_statement_test_coverage(tmp_path, monkeypatch, validator):
     cov_boundary_json = tmp_path / "cov_boundary.json"
     cov_boundary_json.write_bytes(orjson.dumps({"files": cov_boundary_files}))
     with pytest.raises(AssertionError, match=r"strictly > 90\.0%"):
-        _verify_pol_005_coverage_json(cov_boundary_json, src_eidos_dir, repo_root)
+        _verify_pol_coverage_json(cov_boundary_json, src_eidos_dir, repo_root)
 
     cov_missing_files = {rel: {"summary": {"percent_covered": 99.5}} for rel in real_modules[1:]}
     cov_missing_json = tmp_path / "cov_missing.json"
     cov_missing_json.write_bytes(orjson.dumps({"files": cov_missing_files}))
     with pytest.raises(AssertionError, match=real_modules[0]):
-        _verify_pol_005_coverage_json(cov_missing_json, src_eidos_dir, repo_root)
+        _verify_pol_coverage_json(cov_missing_json, src_eidos_dir, repo_root)
 
     live_cov_json = repo_root / "coverage.json"
     if live_cov_json.is_file():
-        _verify_pol_005_coverage_json(live_cov_json, src_eidos_dir, repo_root)
+        _verify_pol_coverage_json(live_cov_json, src_eidos_dir, repo_root)
 
     # 2. src/eidos/__init__.py version fallback branches
     import eidos

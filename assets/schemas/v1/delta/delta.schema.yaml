@@ -243,6 +243,6 @@ properties:
         description: "Git commit SHA snapshot at the time this delta was created, anchoring baseline diff checks."
   decisions:
     type: array
-    description: "In-place architectural decisions, trade-offs, and rejected alternatives established by this SpecDelta (POL-001)."
+    description: "In-place architectural decisions, trade-offs, and rejected alternatives established by this SpecDelta."
     items:
       $ref: "#/$defs/decision"

@@ -23,7 +23,7 @@ states:
 
 == 1. View Purpose & Unified Hierarchical Tree-Grid Architecture
 The Catalog View (`SCR-PORTAL-CATALOG`) provides an interactive, unified hierarchical tree-grid (tree-table) representing the entire Living Specification topology:
-* **Level 0 (System Root)**: Represents the top-level repository system archetype (`SYS-EIDOS-001`).
+* **Level 0 (System Root)**: Represents the top-level repository system archetype (`SYS-EIDOS`).
 * **Level 1 (Core Pillars)**: Groups specifications into the three core architectural dimensions plus mutations:
   - **Business & Governance**: Product Domains (`DOM-*`), System Policies (`POL-*`), Personas (`PER-*`), Explorations (`EXP-*`).
   - **Design & Experience**: Design Systems (`DS-*`), Screens (`SCR-*`), UI Component Contracts (`UIC-*`).

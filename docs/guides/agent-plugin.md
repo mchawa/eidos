@@ -343,7 +343,7 @@ When agents pass `--json`, Eidos outputs structured JSON payloads designed for p
   ],
   "capabilities": [
     {
-      "id": "CAP-AGENT-001",
+      "id": "CAP-AGENT-ADAPTER",
       "title": "Agent Adapter & Context Engine",
       "domain": "DOM-AGENT-INTELLIGENCE"
     }
@@ -358,7 +358,7 @@ When agents pass `--json`, Eidos outputs structured JSON payloads designed for p
   ],
   "policies": [
     {
-      "id": "POL-001-GIT-SOURCE-OF-TRUTH",
+      "id": "POL-GIT-SOURCE-OF-TRUTH",
       "title": "Git Repository as the Single Source of Truth"
     }
   ]

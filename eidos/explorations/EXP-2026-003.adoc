@@ -130,8 +130,8 @@ The exploration will establish an automated bridge between Eidos living design s
 
 This exploration adheres strictly to Eidos governance and quality standards:
 
-* **link:../policies/POL-001-git-as-single-source-of-truth.adoc[POL-001] (Git as Single Source of Truth):** Frontend source code lives directly inside the Git repository (`src/eidos/portal/frontend/` or `portal/`), maintaining transparent version history.
-* **link:../domains/experience-portal/capabilities/living-web-portal.adoc[CAP-EXP-001] (Living Web Portal Capability):** Supports real-time inspection of C4 topologies, living specifications, design tokens, and SpecDeltas.
+* **link:../policies/git-source-of-truth.adoc[POL-GIT-SOURCE-OF-TRUTH] (Git as Single Source of Truth):** Frontend source code lives directly inside the Git repository (`src/eidos/portal/frontend/` or `portal/`), maintaining transparent version history.
+* **link:../domains/experience-portal/capabilities/living-web-portal.adoc[CAP-LIVING-WEB-PORTAL] (Living Web Portal Capability):** Supports real-time inspection of C4 topologies, living specifications, design tokens, and SpecDeltas.
 * **`INV-PORTAL-ZERO-NODE-DEP`:** The portal daemon (`eidos serve`) and static site generator (`eidos build-site`) must run using standard Python without requiring Node.js or npm on end-user machines.
 * **`INV-PORTAL-INTERACTIVE-C4`:** The portal must render responsive C4 Level 1 Context and Level 2 Container diagrams dynamically generated from living architecture specifications.
 

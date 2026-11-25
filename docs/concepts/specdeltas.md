@@ -8,7 +8,7 @@ A **SpecDelta** is a semantic mutation artifact describing an architectural chan
 
 ## Dual Workflows: Direct Mode vs. Planned Mode
 
-Eidos recognizes that software development cannot be burdened by ceremony for every localized fix. It enforces **Dual Workflows (`POL-003`)**:
+Eidos recognizes that software development cannot be burdened by ceremony for every localized fix. It enforces **Dual Workflows (`POL-CONTINUOUS-DOCUMENTATION-SYNC`)**:
 
 | Mode | When to Use | How It Works |
 | :--- | :--- | :--- |

@@ -44,6 +44,6 @@ properties:
       $ref: "#/$defs/non_empty_string"
   decisions:
     type: array
-    description: "In-place domain and architectural decisions recorded on this domain specification (POL-001)."
+    description: "In-place domain and architectural decisions recorded on this domain specification."
     items:
       $ref: "#/$defs/decision"

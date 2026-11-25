@@ -1,6 +1,6 @@
 ---
 type: product/capability
-id: CAP-PROD-002
+id: CAP-SPEC-DELTA-MUTATIONS
 title: "SpecDelta Semantic Mutation Engine"
 domain: DOM-SPEC-ENGINE
 status: active
@@ -13,7 +13,7 @@ business:
     - eidos/personas/product-lead.adoc
     - eidos/personas/autonomous-agent.adoc
   policies:
-    - eidos/policies/POL-002-invariant-test-enforcement.adoc
+    - eidos/policies/invariant-test-enforcement.adoc
 
 technical:
   containers:

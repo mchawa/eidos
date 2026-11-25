@@ -1,6 +1,6 @@
 ---
 type: product/capability
-id: CAP-AGENT-002
+id: CAP-AST-CODE-GRAPH
 title: "Polyglot AST Code Graph & Structural Repo Map Intelligence"
 domain: DOM-AGENT-INTELLIGENCE
 status: active
@@ -12,9 +12,9 @@ business:
     - eidos/personas/software-architect.adoc
     - eidos/personas/software-engineer.adoc
   policies:
-    - eidos/policies/POL-001-git-as-single-source-of-truth.adoc
-    - eidos/policies/POL-002-invariant-test-enforcement.adoc
-    - eidos/policies/POL-004-zero-ai-call-dependency.adoc
+    - eidos/policies/git-source-of-truth.adoc
+    - eidos/policies/invariant-test-enforcement.adoc
+    - eidos/policies/zero-ai-call-dependency.adoc
 
 technical:
   containers:
@@ -66,7 +66,7 @@ technical:
       rule: "sync_index must serialize multi-process and multi-thread writes under re-entrant _advisory_db_lock and BEGIN IMMEDIATE (re-checking is_dirty on contention or PRAGMA data_version changes), while 'eidos index sync' must support --no-semantic and --json with auto_semantic=False and serialized semantic_sync.lock verification so foreground sync never spawns competing ONNX workers."
       test_binding: "tests/test_dotnet_polyglot_fixes.py::test_parallel_sync_lock_and_cli_no_semantic_json"
     - id: INV-INDEX-STATIC-HTTP-AUTOLINK
-      rule: "AstGrepIndexer and _derive_http_request_edges must deterministically extract polyglot server http_endpoint routes and non-test (is_test = 0) client http_request calls with zero runtime LLM calls (POL-004), normalize dynamic path parameters (:id, {id}, <int:id>, [id], ${expr}) to {*}, match client calls from both CMP-* and container-direct CNT-* files against server endpoints and OpenAPI/rest_http CTR-* contracts (with single-candidate base-path prefix disambiguation), and materialize ast_http edges and code_couplings rows with file:line evidence without polluting synthetic method or repo-map symbol counts."
+      rule: "AstGrepIndexer and _derive_http_request_edges must deterministically extract polyglot server http_endpoint routes and non-test (is_test = 0) client http_request calls with zero runtime LLM calls (POL-ZERO-AI-CALL-DEPENDENCY), normalize dynamic path parameters (:id, {id}, <int:id>, [id], ${expr}) to {*}, match client calls from both CMP-* and container-direct CNT-* files against server endpoints and OpenAPI/rest_http CTR-* contracts (with single-candidate base-path prefix disambiguation), and materialize ast_http edges and code_couplings rows with file:line evidence without polluting synthetic method or repo-map symbol counts."
       test_binding: "tests/test_http_autolink.py::test_static_frontend_request_to_backend_endpoint_autolink"
     - id: INV-INDEX-EPISTEMIC-PROVENANCE
       rule: "The SQLite knowledge graph schema (SCHEMA_VERSION >= '2.20.0') must persist explicit epistemic provenance and file:line evidence on edges using strict precedence upserts (declared_spec > ast_import > ast_http > ast_symbol > inferred_ownership) alongside per-call-site code_couplings, expose edge_counts_by_provenance in 'eidos index status', stamp normalized provenance and 3-tier confidence (observed, derived, inferred) on 'eidos index search' and 'eidos index find-symbol', and filter recursive k-hop blast-radius traversals by --min-confidence (observed > derived > inferred)."
@@ -101,7 +101,7 @@ Empower AI coding agents and human engineers with token-budgeted structural repo
 
 This capability bridges the semantic chasm between **C4 Level 3 (Living Specifications)** and **C4 Level 4 (Code & Syntax Trees)**. It provides autonomous coding agents (Google Antigravity `agy`, Claude Code, Cursor, Copilot, Aider) with instant, token-compressed structural codebase intelligence (`eidos context`, `eidos index repo-map`, and `eidos index find-symbol`) directly from local SQLite storage (`eidos/.cache/index.db`), eliminating hallucinated symbol names and context window exhaustion.
 
-In strict compliance with *POL-004-ZERO-AI-CALL-DEPENDENCY*, all AST extraction, repo map synthesis, and symbol indexing execute 100% deterministically on local CPU using `ast-grep-py` (`SgRoot`) across all 17 supported languages with zero calls to remote AI or embedding APIs.
+In strict compliance with *POL-ZERO-AI-CALL-DEPENDENCY*, all AST extraction, repo map synthesis, and symbol indexing execute 100% deterministically on local CPU using `ast-grep-py` (`SgRoot`) across all 17 supported languages with zero calls to remote AI or embedding APIs.
 
 == 2. Key Responsibilities
 
@@ -118,4 +118,4 @@ In strict compliance with *POL-004-ZERO-AI-CALL-DEPENDENCY*, all AST extraction,
 6. **AST Engine, Epistemic Provenance, Governance Health Scorecard & Invariant Telemetry (`eidos index status`, `eidos index health`, `INV-INDEX-EPISTEMIC-PROVENANCE`, `INV-INDEX-GOVERNANCE-HEALTH-SCORECARD`, `INV-INDEX-HEALTH-GENERATED-AND-COMPONENT-SCOPE`)**:
    Exposes deterministic telemetry regarding the active AST parsing engine (`AstGrepIndexer`), `edge_counts_by_provenance` across `SCHEMA_VERSION` `2.23.0` `edges.provenance` tags (`declared_spec`, `ast_import`, `ast_http`, `ast_symbol`, `inferred_ownership`), `--min-confidence` (`observed`, `derived`, `inferred`) blast-radius traversal filtering, symbol counts by syntax kind, exact test-to-invariant assertion metrics, and repository-wide architecture governance health scorecards (source ownership % excluding gitignored and `linguist-generated`/`linguist-vendored` files, component-scoped Public Surface coverage alongside container counts, contract verification %, capability invariant coverage, advisory warnings, and `ratchet_baseline` debt) surfaced in both CLI (`--json` / Rich) and Living Web Portal (`governance_health`).
 7. **Polyglot Static Frontend-to-Backend HTTP Auto-Linking & Structural Diff Classification (`CMP-HTTP-TOPOLOGY-LINKER`, `CMP-AST-DIFF-CLASSIFIER`, `INV-INDEX-STATIC-HTTP-AUTOLINK`)**:
-   Extracts server `http_endpoint` routes and non-test client `http_request` calls across polyglot web frameworks and HTTP clients with zero runtime LLM calls (`POL-004`), normalizes dynamic route parameters to `{*}`, and links client components/containers to backend endpoints and OpenAPI/`rest_http` `CTR-*` contracts via `ast_http` edges and `code_couplings` rows with `file:line` evidence.
+   Extracts server `http_endpoint` routes and non-test client `http_request` calls across polyglot web frameworks and HTTP clients with zero runtime LLM calls (`POL-ZERO-AI-CALL-DEPENDENCY`), normalizes dynamic route parameters to `{*}`, and links client components/containers to backend endpoints and OpenAPI/`rest_http` `CTR-*` contracts via `ast_http` edges and `code_couplings` rows with `file:line` evidence.

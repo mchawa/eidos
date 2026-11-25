@@ -12,7 +12,7 @@ Eidos connects user needs, visual interface, and backend code in an unbroken cha
 
 ```mermaid
 graph TD
-    PER["PER-* (Persona)<br/><i>User / Agent</i>"] -->|Executes JTBD| CAP["CAP-* (Product Capability)<br/><i>e.g. CAP-CHECKOUT-001</i>"]
+    PER["PER-* (Persona)<br/><i>User / Agent</i>"] -->|Executes JTBD| CAP["CAP-* (Product Capability)<br/><i>e.g. CAP-CHECKOUT</i>"]
     
     subgraph Experience Layer
         CAP -->|experience.clients| CLT["CLT-* (Client Application)<br/><i>e.g. CLT-WEB-PORTAL</i>"]

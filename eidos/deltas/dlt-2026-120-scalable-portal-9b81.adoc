@@ -60,8 +60,8 @@ mutations:
           - "deduplicated"
           - "/api/validate"
   - operation: modify
-    target: CAP-EXP-001
-    details: "Extend capability CAP-EXP-001 (bump version to 1.2.0) and add invariant INV-PORTAL-PROGRESSIVE-UX verifying global scope filtering, dedicated full-page C4 canvas mode, nested C4 catalog hierarchy, and inspector back-navigation."
+    target: CAP-LIVING-WEB-PORTAL
+    details: "Extend capability CAP-LIVING-WEB-PORTAL (bump version to 1.2.0) and add invariant INV-PORTAL-PROGRESSIVE-UX verifying global scope filtering, dedicated full-page C4 canvas mode, nested C4 catalog hierarchy, and inspector back-navigation."
     expect:
       frontmatter:
         version: "1.2.0"
@@ -235,7 +235,7 @@ When a repository scales to dozens of C4 containers (`CNT-*`) and hundreds of co
 
 == Implementation Plan
 1. **Living Specifications Update**:
-   * Update `eidos/architecture/containers/portal.adoc` (`CNT-EIDOS-PORTAL`), `eidos/architecture/components/portal-assets.adoc` (`CMP-PORTAL-ASSETS`), `eidos/architecture/components/portal-generator.adoc` (`CMP-PORTAL-GENERATOR`), `eidos/architecture/components/portal-server.adoc` (`CMP-PORTAL-SERVER`), `eidos/architecture/contracts/portal.adoc` (`CTR-EIDOS-PORTAL`), `eidos/domains/experience-portal/capabilities/living-web-portal.adoc` (`CAP-EXP-001` v1.2.0 + `INV-PORTAL-PROGRESSIVE-UX`), `eidos/design/systems/core/components/portal-shell.adoc` (`UIC-PORTAL-SHELL`), `eidos/design/systems/core/components/portal-reader.adoc` (`UIC-PORTAL-READER`), and screen specs (`SCR-PORTAL-ARCHITECTURE`, `SCR-PORTAL-BUSINESS`, `SCR-PORTAL-DESIGN`, `SCR-PORTAL-CATALOG`, `SCR-PORTAL-DELTAS`).
+   * Update `eidos/architecture/containers/portal.adoc` (`CNT-EIDOS-PORTAL`), `eidos/architecture/components/portal-assets.adoc` (`CMP-PORTAL-ASSETS`), `eidos/architecture/components/portal-generator.adoc` (`CMP-PORTAL-GENERATOR`), `eidos/architecture/components/portal-server.adoc` (`CMP-PORTAL-SERVER`), `eidos/architecture/contracts/portal.adoc` (`CTR-EIDOS-PORTAL`), `eidos/domains/experience-portal/capabilities/living-web-portal.adoc` (`CAP-LIVING-WEB-PORTAL` v1.2.0 + `INV-PORTAL-PROGRESSIVE-UX`), `eidos/design/systems/core/components/portal-shell.adoc` (`UIC-PORTAL-SHELL`), `eidos/design/systems/core/components/portal-reader.adoc` (`UIC-PORTAL-READER`), and screen specs (`SCR-PORTAL-ARCHITECTURE`, `SCR-PORTAL-BUSINESS`, `SCR-PORTAL-DESIGN`, `SCR-PORTAL-CATALOG`, `SCR-PORTAL-DELTAS`).
 2. **Backend & Frontend Implementation (`src/eidos/portal/`)**:
    * Update `src/eidos/portal/generator.py` and `src/eidos/portal/server.py` to eliminate double validation passes, deduplicate `/api/data` payloads via `_deduplicate_portal_payload`, cache serialized JSON bytes, and memoize batch SpecDelta impact resolution.
    * Implement Global Scope Lens state and In-Drawer Navigation History stack in `App.tsx` and `SpecReader.tsx`.

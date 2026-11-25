@@ -125,7 +125,7 @@ jobs:
           uv run eidos index sync
           uv run pytest -v --cov=src/eidos --cov-report=term-missing --cov-report=markdown:coverage.md --cov-report=json:coverage.json --junitxml=junit.xml
 
-      - name: Verify per-file >90% statement coverage (POL-005)
+      - name: Verify per-file >90% statement coverage (POL-STATEMENT-TEST-COVERAGE)
         run: |
           python3 - << 'EOF'
           import json
@@ -144,13 +144,13 @@ jobs:
               if pct <= 90.0:
                   offenders.append((rel, pct))
           if offenders:
-              print("POL-005 per-file coverage violation (each module must be strictly > 90.0%):", file=sys.stderr)
+              print("POL-STATEMENT-TEST-COVERAGE per-file coverage violation (each module must be strictly > 90.0%):", file=sys.stderr)
               print("| Module | Coverage |", file=sys.stderr)
               print("| :--- | ---: |", file=sys.stderr)
               for rel, pct in offenders:
                   print(f"| `{rel}` | {pct:.2f}% |", file=sys.stderr)
               sys.exit(1)
-          print("POL-005 verified: every Python module under src/eidos/ has > 90.0% statement coverage.")
+          print("POL-STATEMENT-TEST-COVERAGE verified: every Python module under src/eidos/ has > 90.0% statement coverage.")
           EOF
 
       - name: Write test summary

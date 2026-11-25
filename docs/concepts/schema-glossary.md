@@ -37,7 +37,7 @@ This glossary details all **17 document schemas** (plus shared `$defs` in `commo
 
 ### `product/system`
 * **Schema**: `schemas/v1/product/system.schema.yaml`
-* **ID Convention**: `SYS-<NAME>-<NUMBER>` (e.g., `SYS-EIDOS-001`)
+* **ID Convention**: `SYS-<NAME>` (e.g., `SYS-EIDOS`)
 * **Location**: `eidos/system.adoc`
 * **Required Properties**: `type`, `id`, `title`, `status`, `archetypes`
 * **Intent**: Anchors the root system identity and archetypes in YAML frontmatter while product vision, target users, value proposition, and technical stack profile live in the AsciiDoc prose body.
@@ -45,7 +45,7 @@ This glossary details all **17 document schemas** (plus shared `$defs` in `commo
 ```yaml
 ---
 type: product/system
-id: SYS-EIDOS-001
+id: SYS-EIDOS
 title: "Eidos: Agent-Agnostic Git-Native Development Ecosystem"
 status: active
 archetypes:
@@ -79,7 +79,7 @@ owners:
 
 ### `product/capability`
 * **Schema**: `schemas/v1/product/capability.schema.yaml`
-* **ID Convention**: `CAP-<DOMAIN>-<NUMBER>` (e.g., `CAP-PROD-001`, `CAP-AUTH-002`)
+* **ID Convention**: `CAP-<NAME>` (e.g., `CAP-LIVING-SPEC-ENGINE`, `CAP-USER-AUTH`)
 * **Location**: `eidos/domains/<domain-name>/capabilities/<name>.adoc`
 * **Required Properties**: `type`, `id`, `title`, `domain`, `status`, `technical`
 * **Intent**: The core building block of functionality. Bridges human personas and policies with technical containers, components, contracts, and test-bound invariants (`INV-*`).
@@ -87,7 +87,7 @@ owners:
 ```yaml
 ---
 type: product/capability
-id: CAP-PROD-001
+id: CAP-LIVING-SPEC-ENGINE
 title: "Living Baseline Specification Engine"
 domain: DOM-SPEC-ENGINE
 status: active # draft | planned | active | deprecated | retired
@@ -97,7 +97,7 @@ business:
   personas:
     - eidos/personas/product-lead.adoc
   policies:
-    - eidos/policies/POL-001-git-as-single-source-of-truth.adoc
+    - eidos/policies/git-source-of-truth.adoc
 
 technical:
   containers:
@@ -118,21 +118,21 @@ technical:
 
 ### `product/policy`
 * **Schema**: `schemas/v1/product/policy.schema.yaml`
-* **ID Convention**: `POL-<NUMBER>-<NAME>` (e.g., `POL-001-GIT-SOURCE-OF-TRUTH`)
-* **Location**: `eidos/policies/POL-*.adoc`
+* **ID Convention**: `POL-<NAME>` (e.g., `POL-GIT-SOURCE-OF-TRUTH`)
+* **Location**: `eidos/policies/<slug>.adoc`
 * **Required Properties**: `type`, `id`, `title`, `status`, `category`, `invariants`
 * **Intent**: Declarative system-wide governance laws (governance, architectural, security, compliance, testing) enforced via test-bound invariants (`INV-*`).
 
 ```yaml
 ---
 type: product/policy
-id: POL-002-INVARIANT-TEST-ENFORCEMENT
+id: POL-INVARIANT-TEST-ENFORCEMENT
 title: "Mandatory Invariant Test Binding"
 status: active # draft | planned | active | deprecated | retired
 category: testing # governance | architectural | security | compliance | testing
 severity: blocking # blocking | warning | advisory
 invariants:
-  - id: INV-POL-002
+  - id: INV-POL-INVARIANT-TEST-ENFORCEMENT
     rule: "Every active invariant (INV-*) MUST declare a test_binding that resolves to an existing test function."
     test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
 ---
@@ -185,7 +185,7 @@ decision:
 
 ### `tech/architecture`
 * **Schema**: `schemas/v1/tech/architecture.schema.yaml`
-* **ID Convention**: `ARCH-<NAME>-<NUMBER>` (e.g., `ARCH-EIDOS-001`)
+* **ID Convention**: `ARCH-<NAME>` (e.g., `ARCH-EIDOS`)
 * **Location**: `eidos/architecture/system-architecture.adoc`
 * **Required Properties**: `type`, `id`, `title`, `status`, `c4_context`
 * **Optional Governance**: `import_boundaries` (`tier_rules`, `enforce_declared_containers`, and brownfield `ratchet_baseline` with monotonically shrinking `max_imports >= 1` ceilings enforced across `ast_import` and `ast_http` couplings by `eidos validate` and `eidos drift`)
@@ -194,7 +194,7 @@ decision:
 ```yaml
 ---
 type: tech/architecture
-id: ARCH-EIDOS-001
+id: ARCH-EIDOS
 title: "Eidos Global System Architecture"
 status: active
 c4_context:
@@ -245,7 +245,7 @@ decisions:
     rationale: "Guarantees zero external runtime dependencies and sub-2ms local queries."
     rejected_alternatives:
       - option: "ChromaDB / LanceDB Vector Store"
-        reason_rejected: "Requires external model weights or API calls, violating POL-004."
+        reason_rejected: "Requires external model weights or API calls, violating POL-ZERO-AI-CALL-DEPENDENCY."
     graduated_from: EXP-2026-002
 ---
 ```

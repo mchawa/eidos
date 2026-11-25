@@ -1,4 +1,4 @@
-"""Tests verifying automated SpecDelta-backed changelog generation (INV-DELTA-CHANGELOG-GENERATION, POL-004)."""
+"""Tests verifying automated SpecDelta-backed changelog generation (INV-DELTA-CHANGELOG-GENERATION, POL-ZERO-AI-CALL-DEPENDENCY)."""
 
 from pathlib import Path
 

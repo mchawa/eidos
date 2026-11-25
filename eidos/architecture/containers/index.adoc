@@ -18,10 +18,10 @@ decisions:
   - id: DEC-INDEX-SQLITE-WAL
     title: "Use Embedded SQLite WAL + FTS5 Instead of External Vector DB"
     decision: "Store the architectural knowledge graph and lexical index in local SQLite3 with WAL mode and FTS5 BM25."
-    rationale: "Guarantees zero external runtime dependencies (Python stdlib), sub-2ms local queries, and 100% deterministic offline operation under POL-004."
+    rationale: "Guarantees zero external runtime dependencies (Python stdlib), sub-2ms local queries, and 100% deterministic offline operation under POL-ZERO-AI-CALL-DEPENDENCY."
     rejected_alternatives:
       - option: "ChromaDB / LanceDB Vector Store"
-        reason_rejected: "Requires embedding model weights or external API calls, violating POL-004 and bloating installation size."
+        reason_rejected: "Requires embedding model weights or external API calls, violating POL-ZERO-AI-CALL-DEPENDENCY and bloating installation size."
     graduated_from: EXP-2026-002
   - id: DEC-INDEX-FTS-RETRIEVAL-HYGIENE
     title: "Lexical FTS Hygiene & Two-Stage Truncation"
@@ -42,7 +42,7 @@ decisions:
   - id: DEC-INDEX-STATELESS-DERIVED-CACHE
     title: "Remove Stateful delta_baselines Table in Favor of Pure Git Baselines"
     decision: "Remove the delta_baselines table from eidos/.cache/index.db and _snapshot_delta_baselines from create_delta, resolving pre-delta modification baselines strictly from Git (vcs.base_commit and commit history via _resolve_git_baseline_sha) alongside declarative expect post-conditions."
-    rationale: "Makes eidos/.cache/index.db a 100% stateless, derived cache that can be dropped and rebuilt identically on any machine or CI runner (POL-001), eliminates full-catalog file hashing on every eidos delta create, and speeds up multi-mutation eidos delta verify via memoized Git blob resolution."
+    rationale: "Makes eidos/.cache/index.db a 100% stateless, derived cache that can be dropped and rebuilt identically on any machine or CI runner (POL-GIT-SOURCE-OF-TRUTH), eliminates full-catalog file hashing on every eidos delta create, and speeds up multi-mutation eidos delta verify via memoized Git blob resolution."
     rejected_alternatives:
       - option: "Retain delta_baselines in eidos/.cache/index.db as a fallback beside Git baselines"
         reason_rejected: "Preserves non-portable local state in a gitignored cache, requires special-case table retention during schema migrations, and incurs unnecessary full-catalog disk I/O during create_delta."
@@ -94,10 +94,10 @@ decisions:
   - id: DEC-INDEX-HTTP-LINKING-AND-PROVENANCE
     title: "Static Polyglot HTTP Client-to-Endpoint Auto-Linking and 3-Tier Epistemic Provenance Tags"
     decision: "Extend SCHEMA_VERSION to 2.20.0 with explicit edges(provenance, evidence) precedence upserts (declared_spec > ast_import > ast_http > ast_symbol > inferred_ownership) and a derived code_couplings table preserving every cross-boundary ast_import and ast_http call site, extract polyglot http_endpoint and http_request AST symbols (excluding test files and synthetic method/repo-map projections), match client calls against server endpoints and OpenAPI/http_json CTR-* contracts, and project 3-tier epistemic certainty (observed, derived, inferred) across k-hop blast-radius (--min-confidence), search/symbol lookups, and guardrails/deep context slices."
-    rationale: "Deterministically closes cross-runtime frontend-to-backend visibility blind spots with zero runtime LLM calls (POL-004), prevents declared_spec edges from masking raw code couplings during import-boundary enforcement, and lets agents filter speculative hops during high-stakes impact analysis."
+    rationale: "Deterministically closes cross-runtime frontend-to-backend visibility blind spots with zero runtime LLM calls (POL-ZERO-AI-CALL-DEPENDENCY), prevents declared_spec edges from masking raw code couplings during import-boundary enforcement, and lets agents filter speculative hops during high-stakes impact analysis."
     rejected_alternatives:
       - option: "Use an LLM or runtime proxy trace to infer frontend-to-backend HTTP dependencies"
-        reason_rejected: "Violates POL-004 (zero runtime LLM calls) and requires executing user application servers during static indexing."
+        reason_rejected: "Violates POL-ZERO-AI-CALL-DEPENDENCY (zero runtime LLM calls) and requires executing user application servers during static indexing."
       - option: "Count cross-container couplings only on the collapsed edges table without a separate code_couplings table"
         reason_rejected: "Precedence upserts on edges collapse declared_spec CTR-* links over ast_import/ast_http and deduplicate multiple call sites into one row, breaking max_imports ratchet counting."
     graduated_from: DLT-2026-137-ADD-STATIC-FRONTEND-TO-A4CB
@@ -147,7 +147,7 @@ This container represents the embedded relational, lexical, and optional semanti
 
 == Quality Attributes & Operational Policies
 * **Sub-10ms Query & Sync Latency & Strict-Freshness Lock Diagnostics (`INV-AGENT-GRAPH-INDEX-FRESHNESS`, `INV-INDEX-FRESHNESS-AND-LOCK-DIAGNOSTICS`)**: Warm dirty checks and incremental single-file syncs complete in <5ms; recursive CTE blast-radius, FTS5 queries, and `spec_embeddings` BLAS cosine scans (`0.22ms`) execute in sub-millisecond to <4ms latency. Opportunistic cache reads/writes never stall on `index.db.lock`, while freshness-critical waits emit `sys.stderr` holder-PID notices before waiting cleanly for the active writer to commit.
-* **Stateless Derived Cache (`DEC-INDEX-STATELESS-DERIVED-CACHE`, `POL-001`)**: `eidos/.cache/index.db` contains zero unrecoverable state and automatically drops and rebuilds whenever `SCHEMA_VERSION` changes.
-* **Offline Determinism & Opt-In Local Semantic Indexing (`POL-004`, `INV-AGENT-HYBRID-SEMANTIC-FALLBACK`)**: Core CLI workflows use stdlib `sqlite3` and deterministic AST/BM25 algorithms with zero required model weights, while optional `eidos-ai[semantic]` runs 100% locally on CPU with zero remote API calls and 100% deterministic fallback to FTS5 BM25.
+* **Stateless Derived Cache (`DEC-INDEX-STATELESS-DERIVED-CACHE`, `POL-GIT-SOURCE-OF-TRUTH`)**: `eidos/.cache/index.db` contains zero unrecoverable state and automatically drops and rebuilds whenever `SCHEMA_VERSION` changes.
+* **Offline Determinism & Opt-In Local Semantic Indexing (`POL-ZERO-AI-CALL-DEPENDENCY`, `INV-AGENT-HYBRID-SEMANTIC-FALLBACK`)**: Core CLI workflows use stdlib `sqlite3` and deterministic AST/BM25 algorithms with zero required model weights, while optional `eidos-ai[semantic]` runs 100% locally on CPU with zero remote API calls and 100% deterministic fallback to FTS5 BM25.
 
 

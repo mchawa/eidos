@@ -1,4 +1,4 @@
-"""Tests verifying continuous documentation synchronization and invariant coverage (INV-DOCS-SYNCHRONIZATION, POL-003)."""
+"""Tests verifying continuous documentation synchronization and invariant coverage (INV-DOCS-SYNCHRONIZATION, POL-CONTINUOUS-DOCUMENTATION-SYNC)."""
 
 import glob
 import shutil
@@ -11,7 +11,7 @@ from eidos.core.spec.parser import safe_load_yaml
 
 
 def test_documentation_and_schemas_in_sync():
-    """Verify INV-DOCS-SYNCHRONIZATION, INV-POL-003-CONTINUOUS-DOCUMENTATION-SYNC, and POL-003: All 17 living specification schemas and CLI commands are accurately documented."""
+    """Verify INV-DOCS-SYNCHRONIZATION, INV-POL-CONTINUOUS-DOCUMENTATION-SYNC, and POL-CONTINUOUS-DOCUMENTATION-SYNC: All 17 living specification schemas and CLI commands are accurately documented."""
     repo_root = Path(__file__).parent.parent
 
     # 1. Verify all canonical v1 schemas are represented in docs/concepts/schema-glossary.md
@@ -115,7 +115,7 @@ def test_documentation_and_schemas_in_sync():
 
 
 def test_zensical_strict_build():
-    """Verify INV-DOCS-SYNCHRONIZATION and POL-003: Zensical strict documentation build succeeds with zero errors."""
+    """Verify INV-DOCS-SYNCHRONIZATION and POL-CONTINUOUS-DOCUMENTATION-SYNC: Zensical strict documentation build succeeds with zero errors."""
     repo_root = Path(__file__).parent.parent
 
     # Locate zensical executable

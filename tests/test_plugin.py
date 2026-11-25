@@ -2957,9 +2957,9 @@ def test_eidos_plan_skill_blast_radius_reconciliation_rules():
 
     sample_inv = "INV-" + "BILL-WEBHOOK-SIG"
     by_target = {m["target"]: m for m in dlt_fm["mutations"]}
-    assert {"CMP-WEBHOOK-VERIFIER", "CTR-BILLING-API", "CAP-BILL-001", sample_inv} <= set(by_target)
+    assert {"CMP-WEBHOOK-VERIFIER", "CTR-BILLING-API", "CAP-METERED-USAGE", sample_inv} <= set(by_target)
 
-    cap_mut = by_target["CAP-BILL-001"]
+    cap_mut = by_target["CAP-METERED-USAGE"]
     assert cap_mut["expect"]["frontmatter"]["technical.invariants.id"] == [sample_inv]
     assert sample_inv in cap_mut["expect"]["body"]["contains"]
 

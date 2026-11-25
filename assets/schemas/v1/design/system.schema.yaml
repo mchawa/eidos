@@ -74,6 +74,6 @@ properties:
     $ref: "#/$defs/external_design_references"
   decisions:
     type: array
-    description: "In-place design system decisions recorded on this specification (POL-001)."
+    description: "In-place design system decisions recorded on this specification."
     items:
       $ref: "#/$defs/decision"

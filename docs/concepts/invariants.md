@@ -19,18 +19,18 @@ Eidos enforces **Bidirectional Invariant-Test Traceability** using two complemen
 
 Policies define non-negotiable system invariants, compliance rules, structural guardrails, and quality gates across the entire repository.
 
-### Example Policy: [`POL-002-INVARIANT-TEST-ENFORCEMENT.adoc`](../../eidos/policies/POL-002-invariant-test-enforcement.adoc)
+### Example Policy: [`invariant-test-enforcement.adoc`](../../eidos/policies/invariant-test-enforcement.adoc)
 
 ```asciidoc
 ---
 type: product/policy
-id: POL-002-INVARIANT-TEST-ENFORCEMENT
+id: POL-INVARIANT-TEST-ENFORCEMENT
 title: "Mandatory Invariant Test Binding"
 status: active
 category: testing
 severity: blocking
 invariants:
-  - id: INV-POL-002
+  - id: INV-POL-INVARIANT-TEST-ENFORCEMENT
     rule: "Every technical invariant declared in an active specification must specify a concrete test_binding path."
     test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
 ---
@@ -69,7 +69,7 @@ technical:
       rule: "All cross-document references and entity IDs must resolve to valid catalog entity IDs with zero collisions and strictly match the target entity prefix and type declared by x-eidos-ref."
       test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
 
-    # 3. Documentation Sync Invariant (POL-003):
+    # 3. Documentation Sync Invariant (POL-CONTINUOUS-DOCUMENTATION-SYNC):
     - id: INV-DOCS-SYNCHRONIZATION
       rule: "All 16 living specification schemas, CLI command interfaces, and C4 components must be accurately documented in docs/ and pass strict static site compilation."
       test_binding: "tests/test_docs_sync.py::test_documentation_and_schemas_in_sync"
@@ -109,7 +109,7 @@ When `eidos drift` runs, `CMP-DRIFT-DETECTOR` (`src/eidos/vcs/invariants.py`) an
     ```python
     @pytest.mark.invariant("INV-SPEC-VALIDATION")
     def test_validate_eidos_specifications():
-        """Verify INV-SPEC-VALIDATION and POL-002: All living specs conform to schema."""
+        """Verify INV-SPEC-VALIDATION and POL-INVARIANT-TEST-ENFORCEMENT: All living specs conform to schema."""
         ...
     ```
 

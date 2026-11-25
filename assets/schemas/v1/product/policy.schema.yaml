@@ -18,7 +18,7 @@ properties:
   id:
     type: string
     pattern: "^POL-[A-Z0-9_-]+$"
-    description: "Unique policy identifier following the POL-<NUMBER>-<NAME> convention (e.g. POL-001-GIT-SOURCE-OF-TRUTH)."
+    description: "Unique policy identifier following the POL-<NAME> convention (e.g. POL-WEBHOOK-IDEMPOTENCY)."
   title:
     $ref: "#/$defs/non_empty_string"
     description: "Short human-readable title of the policy."
@@ -53,6 +53,6 @@ properties:
       $ref: "#/$defs/invariant"
   decisions:
     type: array
-    description: "In-place architectural and governance decisions recorded on this policy specification (POL-001)."
+    description: "In-place architectural and governance decisions recorded on this policy specification."
     items:
       $ref: "#/$defs/decision"

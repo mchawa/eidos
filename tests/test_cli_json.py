@@ -233,7 +233,7 @@ def test_cli_contract_json_and_create_flags(tmp_path):
         ],
     )
     assert res_ctr.exit_code == 0
-    ctr_content = (eidos_dir / "architecture" / "contracts" / "ctr-openapi.adoc").read_text(encoding="utf-8")
+    ctr_content = (eidos_dir / "architecture" / "contracts" / "openapi.adoc").read_text(encoding="utf-8")
     assert "container: CNT-API" in ctr_content
 
     res_dlt = runner.invoke(

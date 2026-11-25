@@ -21,7 +21,7 @@ eidos init --title "My System"
 # 2. Scaffold Arc42 Master Architecture, initial product domains, personas, and C4 containers
 #    (consult 'eidos-spec' or run 'eidos spec schema <type>' for YAML schemas)
 eidos spec schema
-eidos spec create architecture ARCH-CORE-001 --title "My System Architecture"
+eidos spec create architecture ARCH-MY-SYSTEM --title "My System Architecture"
 eidos spec create domain DOM-CORE --title "Core Application Domain"
 eidos spec create persona PER-DEVELOPER --title "Application Developer"
 eidos spec create container CNT-APP-API --title "Core Application API"
