@@ -121,14 +121,111 @@ class BaseAstIndexer(ABC):
 
             if suffix == ".rs":
                 rs_root = SgRoot(content, "rust").root()
-                for udecl in rs_root.find_all(kind="use_declaration"):
-                    arg = udecl.field("argument")
-                    if arg is not None:
-                        m = re.match(r"^([A-Za-z0-9_:]+)", arg.text().strip())
-                        if m:
-                            clean_rs = m.group(1).rstrip(":")
-                            if clean_rs:
-                                _add(clean_rs)
+                cfg_test_re = re.compile(r"\bcfg\s*\([^)]*\btest\b")
+
+                def _emit_rust_use(raw_path: str, mod_stack: list[str]) -> None:
+                    clean_path = raw_path.lstrip(":").strip().rstrip(":")
+                    if not clean_path:
+                        return
+                    segs = [s for s in clean_path.split("::") if s]
+                    if not segs:
+                        return
+                    if mod_stack and segs[0] == "super":
+                        n_super = 0
+                        while n_super < len(segs) and segs[n_super] == "super":
+                            n_super += 1
+                        tail = segs[n_super:]
+                        depth = len(mod_stack)
+                        if n_super <= depth:
+                            if not tail:
+                                return
+                            prefix_mods = mod_stack[: depth - n_super]
+                            _add("::".join(["self", *prefix_mods, *tail]))
+                            return
+                        rem_super = n_super - depth
+                        _add("::".join(["super"] * rem_super + tail))
+                        return
+                    if mod_stack and segs[0] == "self":
+                        _add("::".join(["self", *mod_stack, *segs[1:]]))
+                        return
+                    _add("::".join(segs))
+
+                def _walk_rust_use(node: Any, mod_stack: list[str], prefix: str = "") -> None:
+                    kind = node.kind()
+                    if kind == "use_as_clause":
+                        p_node = node.field("path")
+                        if p_node is not None:
+                            _walk_rust_use(p_node, mod_stack, prefix)
+                        return
+                    if kind == "use_wildcard":
+                        base_txt = node.text().strip().rstrip("*").rstrip(":").strip()
+                        full = f"{prefix}::{base_txt}" if (prefix and base_txt) else (prefix or base_txt)
+                        if full:
+                            _emit_rust_use(full, mod_stack)
+                        return
+                    if kind == "scoped_use_list":
+                        p_node = node.field("path")
+                        l_node = node.field("list")
+                        base_txt = p_node.text().strip().rstrip(":") if p_node is not None else ""
+                        new_prefix = f"{prefix}::{base_txt}" if (prefix and base_txt) else (prefix or base_txt)
+                        for ch in l_node.children() if l_node is not None else ():
+                            if ch.text() not in ("{", "}", ","):
+                                _walk_rust_use(ch, mod_stack, new_prefix)
+                        return
+                    if kind == "use_list":
+                        for ch in node.children():
+                            if ch.text() not in ("{", "}", ","):
+                                _walk_rust_use(ch, mod_stack, prefix)
+                        return
+                    txt = node.text().strip().rstrip(":")
+                    if not txt:
+                        return
+                    if txt == "self":
+                        if prefix:
+                            _emit_rust_use(prefix, mod_stack)
+                        return
+                    m = re.match(r"^([A-Za-z0-9_:#]+)", txt)
+                    if m:
+                        clean_leaf = m.group(1).rstrip(":")
+                        full = f"{prefix}::{clean_leaf}" if (prefix and clean_leaf) else (prefix or clean_leaf)
+                        if full:
+                            _emit_rust_use(full, mod_stack)
+
+                def _walk_rust_items(container: Any, mod_stack: list[str]) -> None:
+                    pending_cfg_test = False
+                    for ch in container.children():
+                        ck = ch.kind()
+                        if ck == "attribute_item":
+                            if cfg_test_re.search(ch.text()):
+                                pending_cfg_test = True
+                            continue
+                        if ck in ("line_comment", "block_comment"):
+                            continue
+                        is_cfg_test = pending_cfg_test
+                        pending_cfg_test = False
+                        if is_cfg_test:
+                            continue
+                        if ck == "use_declaration":
+                            arg = ch.field("argument")
+                            if arg is not None:
+                                _walk_rust_use(arg, mod_stack)
+                        elif ck == "mod_item":
+                            m_name_node = ch.field("name")
+                            m_name = m_name_node.text().strip() if m_name_node is not None else ""
+                            m_body = ch.field("body")
+                            if m_body is None:
+                                if m_name:
+                                    _add("::".join(["self", *mod_stack, m_name]))
+                            elif m_name:
+                                _walk_rust_items(m_body, [*mod_stack, m_name])
+                        elif ck in ("function_item", "impl_item", "trait_item", "block"):
+                            # Also capture function-scoped use_declaration statements inside production blocks.
+                            for udecl in ch.find_all(kind="use_declaration"):
+                                arg = udecl.field("argument")
+                                if arg is not None:
+                                    _walk_rust_use(arg, mod_stack)
+
+                _walk_rust_items(rs_root, [])
                 return imports
 
             if suffix == ".java":

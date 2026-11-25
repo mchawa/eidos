@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import posixpath
 import time
 from pathlib import Path
 from typing import Any
 
 import orjson
 
-from eidos.core.index.code_graph import _normalize_rel_path, build_module_to_file_map, resolve_import_target_file
+from eidos.core.index.code_graph import (
+    _normalize_rel_path,
+    build_module_to_file_map,
+    discover_go_module_roots,
+    discover_rust_crate_map,
+    resolve_import_target_files,
+)
 from eidos.core.index.context_globs import (
     _expand_context_file_pattern,
 )
@@ -1163,22 +1170,39 @@ def build_tiered_context_slice(
                         ).fetchall()
                     )
                 if test_imp_rows:
-                    target_mod_map = build_module_to_file_map(target_source_files)
+                    all_known_files: set[str] = set(target_source_files)
+                    for (kf_row,) in cursor.execute(
+                        "SELECT DISTINCT file_path FROM code_symbols WHERE is_test = 0 UNION SELECT rel_path FROM indexed_files WHERE doc_type = 'code/source';"
+                    ).fetchall():
+                        if kf_row:
+                            all_known_files.add(_normalize_rel_path(str(kf_row)))
+                    target_mod_map = build_module_to_file_map(all_known_files)
+                    idx_root = getattr(index, "root", None)
+                    go_mods = discover_go_module_roots(idx_root, all_known_files)
+                    go_files_by_dir: dict[str, list[str]] = {}
+                    for kf in sorted(all_known_files):
+                        if kf.endswith(".go") and not kf.endswith("_test.go"):
+                            go_files_by_dir.setdefault(posixpath.dirname(kf), []).append(kf)
+                    rs_crates = discover_rust_crate_map(idx_root, all_known_files)
                     for tb_fp, imp_sym in test_imp_rows:
                         norm_tb = _normalize_rel_path(str(tb_fp or ""))
-                        resolved = resolve_import_target_file(
+                        resolved_list = resolve_import_target_files(
                             norm_tb,
                             str(imp_sym or "").strip(),
-                            target_source_files,
+                            all_known_files,
                             target_mod_map,
                             fallback_parent=True,
+                            repo_root=idx_root,
+                            go_modules=go_mods,
+                            go_files_by_dir=go_files_by_dir,
+                            rust_crates=rs_crates,
                         )
-                        if not resolved:
-                            continue
-                        if resolved in edited_file_set:
-                            tb_coupling_tier[norm_tb] = 2
-                        elif resolved in primary_comp_file_set and tb_coupling_tier.get(norm_tb, 0) < 1:
-                            tb_coupling_tier[norm_tb] = 1
+                        for resolved in resolved_list:
+                            if resolved in edited_file_set:
+                                tb_coupling_tier[norm_tb] = 2
+                                break
+                            if resolved in primary_comp_file_set and tb_coupling_tier.get(norm_tb, 0) < 1:
+                                tb_coupling_tier[norm_tb] = 1
 
         def _cap_inv_rank_key(
             item: tuple[int, dict[str, Any]],

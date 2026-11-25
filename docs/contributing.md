@@ -46,7 +46,17 @@ uv run eidos plugin validate
 All tests run in parallel by default via `pytest-xdist` (`-n auto --dist worksteal` in `pyproject.toml`) and must satisfy `POL-STATEMENT-TEST-COVERAGE` (`>90%` statement coverage for every Python file under `src/eidos/`, with `fail_under = 90` enforced in `pyproject.toml`):
 
 ```bash
-uv run pytest -v --cov=src/eidos --cov-report=term-missing
+uv run pytest -v --cov=src/eidos --cov-report=term-missing --cov-report=json:coverage.json
+```
+
+To enforce **diff-line statement coverage (`>= 90%`)** on newly added or modified lines in your working tree (matching CI's PR check so untested new branches aren't masked by existing file-level coverage):
+
+```bash
+# Uncommitted working tree + untracked files vs HEAD
+uv run python tests/check_diff_coverage.py
+
+# Branch diff vs origin/main
+uv run python tests/check_diff_coverage.py --base origin/main
 ```
 
 To run serially (for example, when stepping through a single test with `--pdb` or `-s`), override with `-n 0`:

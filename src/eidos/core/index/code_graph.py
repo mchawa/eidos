@@ -7,6 +7,7 @@ import os
 import posixpath
 import re
 import sqlite3
+import tomllib
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -315,13 +316,15 @@ def _find_import_line(content: str | None, imp: str) -> int:
     if not content or not imp:
         return 1
     clean = imp.lstrip(".")
-    leaf = clean.rsplit("/", 1)[-1].rsplit(".", 1)[-1].rstrip("*")
+    leaf = clean.rsplit("/", 1)[-1].rsplit(".", 1)[-1].rsplit("::", 1)[-1].rstrip("*")
     for idx, line in enumerate(content.splitlines(), start=1):
         s = line.strip()
         if not s or s.startswith(("#", "//", "/*", "*")):
             continue
         if (clean and clean in s) or (
-            leaf and leaf in s and any(kw in s for kw in ("import", "from", "using", "use ", "require", "#include"))
+            leaf
+            and leaf in s
+            and any(kw in s for kw in ("import", "from", "using", "use ", "mod ", "require", "#include"))
         ):
             return idx
     return 1
@@ -450,6 +453,313 @@ def build_module_to_file_map(known_files: Iterable[str]) -> dict[str, str]:
     return module_to_file
 
 
+_GO_MOD_MODULE_RE = re.compile(r'^\s*module\s+["`]?([^\s"`]+)["`]?')
+_RUST_STDLIB_CRATES = frozenset({"std", "core", "alloc", "proc_macro", "test"})
+
+
+def discover_go_module_roots(
+    repo_root: Path | None,
+    known_files: Iterable[str],
+) -> list[tuple[str, str]]:
+    """Discover ``(rel_dir, module_path)`` pairs from ``go.mod`` files covering ``known_files``, longest module first."""
+    if repo_root is None:
+        return []
+    eff_root = repo_root.resolve()
+    candidate_dirs: set[str] = {""}
+    for kf in known_files:
+        norm = _normalize_rel_path(kf)
+        if not norm.endswith(".go"):
+            continue
+        cur = posixpath.dirname(norm)
+        while cur:
+            candidate_dirs.add(cur)
+            parent = posixpath.dirname(cur)
+            if parent == cur:
+                break
+            cur = parent
+
+    modules: list[tuple[str, str]] = []
+    for rel_dir in sorted(candidate_dirs):
+        go_mod = (eff_root / rel_dir / "go.mod") if rel_dir else (eff_root / "go.mod")
+        if not go_mod.is_file():
+            continue
+        with contextlib.suppress(OSError):
+            for raw_line in go_mod.read_text(encoding="utf-8", errors="replace").splitlines():
+                stripped = raw_line.split("//", 1)[0].strip()
+                if not stripped:
+                    continue
+                m = _GO_MOD_MODULE_RE.match(stripped)
+                if m:
+                    mod_path = m.group(1).strip().rstrip("/")
+                    if mod_path:
+                        modules.append((rel_dir, mod_path))
+                    break
+    modules.sort(key=lambda item: (-len(item[1]), -len(item[0]), item[0]))
+    return modules
+
+
+def discover_rust_crate_map(
+    repo_root: Path | None,
+    known_files: Iterable[str],
+) -> dict[str, str]:
+    """Map normalized Rust workspace library crate names (``-`` -> ``_``) to their repo-relative source root directory."""
+    norm_known = {_normalize_rel_path(kf) for kf in known_files if kf}
+    eff_root = repo_root.resolve() if repo_root is not None else None
+    crate_map: dict[str, str] = {}
+
+    # 1. Discover Cargo.toml manifests along ancestor directories of .rs files (handles unindexed lib.rs & custom [lib].path).
+    if eff_root is not None:
+        pkg_dirs: set[str] = {""}
+        for kf in norm_known:
+            if not kf.endswith(".rs"):
+                continue
+            cur = posixpath.dirname(kf)
+            while cur:
+                pkg_dirs.add(cur)
+                parent = posixpath.dirname(cur)
+                if parent == cur:
+                    break
+                cur = parent
+        for pkg_dir in sorted(pkg_dirs):
+            cargo_toml = (eff_root / pkg_dir / "Cargo.toml") if pkg_dir else (eff_root / "Cargo.toml")
+            if not cargo_toml.is_file():
+                continue
+            with contextlib.suppress(OSError, tomllib.TOMLDecodeError):
+                parsed = tomllib.loads(cargo_toml.read_text(encoding="utf-8", errors="replace"))
+                pkg_tbl = parsed.get("package") if isinstance(parsed, dict) else None
+                lib_tbl = parsed.get("lib") if isinstance(parsed, dict) else None
+                if not isinstance(pkg_tbl, dict):
+                    continue
+                lib_path_rel = str(lib_tbl.get("path", "")).strip() if isinstance(lib_tbl, dict) else ""
+                default_lib = f"{pkg_dir}/src/lib.rs" if pkg_dir else "src/lib.rs"
+                explicit_lib = (
+                    _normalize_rel_path(posixpath.normpath(posixpath.join(pkg_dir, lib_path_rel)))
+                    if lib_path_rel
+                    else ""
+                )
+                has_lib = bool(
+                    isinstance(lib_tbl, dict)
+                    or default_lib in norm_known
+                    or (eff_root / default_lib).is_file()
+                    or (explicit_lib and (explicit_lib in norm_known or (eff_root / explicit_lib).is_file()))
+                )
+                if not has_lib:
+                    continue
+                raw_name = ""
+                if isinstance(lib_tbl, dict) and isinstance(lib_tbl.get("name"), str) and lib_tbl["name"].strip():
+                    raw_name = lib_tbl["name"].strip()
+                elif isinstance(pkg_tbl.get("name"), str) and pkg_tbl["name"].strip():
+                    raw_name = pkg_tbl["name"].strip()
+                if not raw_name:
+                    continue
+                crate_slug = raw_name.replace("-", "_")
+                src_dir = posixpath.dirname(explicit_lib) if explicit_lib else (f"{pkg_dir}/src" if pkg_dir else "src")
+                crate_map.setdefault(crate_slug, src_dir)
+
+    # 2. Fallback for library crates present in known_files without Cargo.toml on disk (never shadow Rust stdlib names).
+    known_src_dirs = set(crate_map.values())
+    for kf in sorted(norm_known):
+        if not (kf.endswith("/lib.rs") or kf == "lib.rs"):
+            continue
+        src_dir = posixpath.dirname(kf)
+        if src_dir in known_src_dirs:
+            continue
+        pkg_dir = posixpath.dirname(src_dir) if posixpath.basename(src_dir) == "src" else src_dir
+        dir_slug = posixpath.basename(pkg_dir).replace("-", "_") if pkg_dir else ""
+        if dir_slug and dir_slug not in _RUST_STDLIB_CRATES:
+            crate_map.setdefault(dir_slug, src_dir)
+
+    return crate_map
+
+
+_discover_rust_crate_map = discover_rust_crate_map
+
+
+def _rust_crate_root_for(src_file: str, known_files: set[str]) -> str:
+    """Find nearest enclosing Rust crate source root directory for ``src_file``."""
+    cur = posixpath.dirname(src_file)
+    src_fallback: str | None = None
+    while True:
+        lib_cand = f"{cur}/lib.rs" if cur else "lib.rs"
+        main_cand = f"{cur}/main.rs" if cur else "main.rs"
+        if lib_cand in known_files or main_cand in known_files:
+            return cur
+        if src_fallback is None and posixpath.basename(cur) == "src":
+            src_fallback = cur
+        if not cur:
+            break
+        parent = posixpath.dirname(cur)
+        if parent == cur:
+            break
+        cur = parent
+    return src_fallback if src_fallback is not None else ""
+
+
+def _resolve_rust_module_in_dir(
+    base_dir: str,
+    rel_segs: list[str],
+    known_files: set[str],
+    *,
+    src_file: str,
+    allow_lib: bool = True,
+    allow_main: bool = True,
+    allow_root_fallback: bool = True,
+) -> str | None:
+    """Resolve Rust module segments under ``base_dir`` checking ``<path>.rs`` and ``<path>/mod.rs`` longest-first."""
+    for k in range(len(rel_segs), 0, -1):
+        prefix = "/".join(rel_segs[:k])
+        cand_base = f"{base_dir}/{prefix}".strip("/") if base_dir else prefix
+        for cand in (f"{cand_base}.rs", f"{cand_base}/mod.rs"):
+            if cand in known_files and cand != src_file:
+                return cand
+    if not allow_root_fallback:
+        return None
+    fallbacks: list[str] = [
+        f"{base_dir}/mod.rs" if base_dir else "mod.rs",
+        f"{base_dir}.rs" if base_dir else "",
+    ]
+    if allow_lib:
+        fallbacks.append(f"{base_dir}/lib.rs" if base_dir else "lib.rs")
+    if allow_main:
+        fallbacks.append(f"{base_dir}/main.rs" if base_dir else "main.rs")
+    for fallback in fallbacks:
+        if fallback and fallback in known_files and fallback != src_file:
+            return fallback
+    return None
+
+
+def _resolve_rust_import_file(
+    src_file: str,
+    imp: str,
+    known_files: set[str],
+    rust_crates: dict[str, str] | None = None,
+) -> str | None:
+    """Resolve a Rust ``use`` or ``mod`` import specifier to a repo-relative ``.rs`` file."""
+    norm_src = _normalize_rel_path(src_file)
+    clean = imp.lstrip(":").strip()
+    segs = [s for s in clean.split("::") if s and s != "*"]
+    if not segs:
+        return None
+    base_name = posixpath.basename(norm_src)
+    src_dir = posixpath.dirname(norm_src)
+    is_mod_root = base_name in ("lib.rs", "main.rs", "mod.rs")
+
+    if segs[0] == "crate":
+        crate_root = _rust_crate_root_for(norm_src, known_files)
+        return _resolve_rust_module_in_dir(
+            crate_root,
+            segs[1:],
+            known_files,
+            src_file=norm_src,
+            allow_lib=(base_name != "main.rs"),
+            allow_main=(base_name != "lib.rs"),
+        )
+
+    if segs[0] == "self":
+        sub_dir = src_dir if is_mod_root else posixpath.splitext(norm_src)[0]
+        return _resolve_rust_module_in_dir(
+            sub_dir,
+            segs[1:],
+            known_files,
+            src_file=norm_src,
+            allow_root_fallback=False,
+        )
+
+    if segs[0] == "super":
+        n_super = 0
+        while n_super < len(segs) and segs[n_super] == "super":
+            n_super += 1
+        ups = n_super if is_mod_root else (n_super - 1)
+        parts = [p for p in src_dir.split("/") if p]
+        crate_root = _rust_crate_root_for(norm_src, known_files)
+        crate_depth = len([p for p in crate_root.split("/") if p])
+        if len(parts) - ups < crate_depth:
+            return None
+        target_dir = "/".join(parts[: len(parts) - ups])
+        return _resolve_rust_module_in_dir(
+            target_dir,
+            segs[n_super:],
+            known_files,
+            src_file=norm_src,
+            allow_lib=(base_name != "main.rs"),
+            allow_main=(base_name != "lib.rs"),
+        )
+
+    if rust_crates and segs[0] in rust_crates:
+        return _resolve_rust_module_in_dir(
+            rust_crates[segs[0]],
+            segs[1:],
+            known_files,
+            src_file=norm_src,
+            allow_lib=True,
+            allow_main=False,
+        )
+
+    return None
+
+
+def _resolve_go_import_files(
+    src_file: str,
+    imp: str,
+    known_files: set[str],
+    go_modules: list[tuple[str, str]],
+    go_files_by_dir: dict[str, list[str]] | None = None,
+) -> list[str]:
+    """Resolve a Go package import path to all non-test ``.go`` files in the target intra-repo package directory."""
+    if not imp:
+        return []
+    norm_src = _normalize_rel_path(src_file)
+    if go_files_by_dir is None:
+        go_files_by_dir = {}
+        for kf in sorted(known_files):
+            norm_kf = _normalize_rel_path(kf)
+            if norm_kf.endswith(".go") and not norm_kf.endswith("_test.go"):
+                go_files_by_dir.setdefault(posixpath.dirname(norm_kf), []).append(norm_kf)
+
+    clean_imp = imp.strip().rstrip("/")
+    if go_modules:
+        for mod_dir, mod_path in go_modules:
+            if clean_imp == mod_path or clean_imp.startswith(f"{mod_path}/"):
+                sub = clean_imp[len(mod_path) :].lstrip("/")
+                target_dir = f"{mod_dir}/{sub}".strip("/") if mod_dir else sub
+                return [f for f in go_files_by_dir.get(target_dir, ()) if f != norm_src]
+        return []
+
+    return [f for f in go_files_by_dir.get(clean_imp, ()) if f != norm_src]
+
+
+def resolve_import_target_files(
+    src_file: str,
+    imp: str,
+    known_files: set[str],
+    module_to_file: dict[str, str],
+    *,
+    fallback_parent: bool = False,
+    repo_root: Path | None = None,
+    go_modules: list[tuple[str, str]] | None = None,
+    go_files_by_dir: dict[str, list[str]] | None = None,
+    rust_crates: dict[str, str] | None = None,
+) -> list[str]:
+    """Resolve one extracted AST import string to one or more known repo-relative source files (Go/Rust aware)."""
+    if not src_file or not imp:
+        return []
+    norm_src = _normalize_rel_path(src_file)
+    norm_known = (
+        known_files
+        if all("\\" not in f and not f.startswith("./") for f in known_files)
+        else {_normalize_rel_path(f) for f in known_files}
+    )
+    if norm_src.endswith(".go"):
+        eff_go_mods = go_modules if go_modules is not None else discover_go_module_roots(repo_root, norm_known)
+        return _resolve_go_import_files(norm_src, imp, norm_known, eff_go_mods, go_files_by_dir=go_files_by_dir)
+    if norm_src.endswith(".rs"):
+        eff_crates = rust_crates if rust_crates is not None else discover_rust_crate_map(repo_root, norm_known)
+        rs_hit = _resolve_rust_import_file(norm_src, imp, norm_known, rust_crates=eff_crates)
+        return [rs_hit] if rs_hit else []
+    single = resolve_import_target_file(norm_src, imp, norm_known, module_to_file, fallback_parent=fallback_parent)
+    return [single] if single else []
+
+
 def resolve_import_target_file(
     src_file: str,
     imp: str,
@@ -457,21 +767,43 @@ def resolve_import_target_file(
     module_to_file: dict[str, str],
     *,
     fallback_parent: bool = False,
+    repo_root: Path | None = None,
 ) -> str | None:
     """Resolve one extracted AST import string from ``src_file`` to a known repo-relative source file."""
     if not src_file or not imp:
         return None
-    if src_file.endswith(".py"):
+    norm_src = _normalize_rel_path(src_file)
+    norm_known = (
+        known_files
+        if all("\\" not in f and not f.startswith("./") for f in known_files)
+        else {_normalize_rel_path(f) for f in known_files}
+    )
+    if norm_src.endswith(".go"):
+        go_hits = _resolve_go_import_files(
+            norm_src,
+            imp,
+            norm_known,
+            discover_go_module_roots(repo_root, norm_known),
+        )
+        return go_hits[0] if go_hits else None
+    if norm_src.endswith(".rs"):
+        return _resolve_rust_import_file(
+            norm_src,
+            imp,
+            norm_known,
+            rust_crates=discover_rust_crate_map(repo_root, norm_known),
+        )
+    if norm_src.endswith(".py"):
         if imp.startswith("."):
             level = len(imp) - len(imp.lstrip("."))
             rem = imp[level:].replace(".", "/")
-            parts = src_file.split("/")[:-1]
+            parts = norm_src.split("/")[:-1]
             if level - 1 <= len(parts):
                 base = "/".join(parts[: len(parts) - (level - 1)])
                 cand = f"{base}/{rem}".strip("/") if rem else base
-                if f"{cand}.py" in known_files:
+                if f"{cand}.py" in norm_known:
                     return f"{cand}.py"
-                if f"{cand}/__init__.py" in known_files:
+                if f"{cand}/__init__.py" in norm_known:
                     return f"{cand}/__init__.py"
             return None
         hit = module_to_file.get(imp)
@@ -479,8 +811,8 @@ def resolve_import_target_file(
             return hit
         return module_to_file.get(imp.rsplit(".", 1)[0])
     if imp.startswith("."):
-        norm_imp = _normalize_rel_path(posixpath.normpath(posixpath.join(posixpath.dirname(src_file), imp)))
-        if norm_imp in known_files:
+        norm_imp = _normalize_rel_path(posixpath.normpath(posixpath.join(posixpath.dirname(norm_src), imp)))
+        if norm_imp in norm_known:
             return norm_imp
         base_imp = (
             norm_imp[:-3] if norm_imp.endswith(".js") else (norm_imp[:-4] if norm_imp.endswith(".jsx") else norm_imp)
@@ -549,7 +881,19 @@ def _derive_ast_import_edges(
             known_files.add(_normalize_rel_path(fp))
     known_files.update(resolver.declared_files())
 
+    eff_root = Path(repo_root).resolve() if repo_root is not None else None
+    if eff_root is None:
+        db_file = _resolve_conn_db_path(conn)
+        if db_file is not None and db_file.parent.name == ".cache" and db_file.parent.parent.name == "eidos":
+            eff_root = db_file.parents[2]
+
     module_to_file = build_module_to_file_map(known_files)
+    go_modules = discover_go_module_roots(eff_root, known_files)
+    go_files_by_dir: dict[str, list[str]] = {}
+    for kf in sorted(known_files):
+        if kf.endswith(".go") and not kf.endswith("_test.go"):
+            go_files_by_dir.setdefault(posixpath.dirname(kf), []).append(kf)
+    rust_crates = _discover_rust_crate_map(eff_root, known_files)
 
     ns_to_owners: dict[str, set[tuple[str, str]]] = {}
     file_declared_ns: dict[str, set[str]] = {}
@@ -568,12 +912,6 @@ def _derive_ast_import_edges(
 
     ast_cnt_deps: dict[tuple[str, str], str] = {}
     csproj_cnt_deps: set[tuple[str, str]] = set()
-
-    eff_root = Path(repo_root).resolve() if repo_root is not None else None
-    if eff_root is None:
-        db_file = _resolve_conn_db_path(conn)
-        if db_file is not None and db_file.parent.name == ".cache" and db_file.parent.parent.name == "eidos":
-            eff_root = db_file.parents[2]
 
     if eff_root is not None and eff_root.is_dir():
         nested_roots = set(discover_nested_subproject_roots(eff_root))
@@ -693,9 +1031,18 @@ def _derive_ast_import_edges(
         if not src_file or not imp:
             continue
 
-        dst_file = resolve_import_target_file(src_file, imp, known_files, module_to_file)
+        dst_files = resolve_import_target_files(
+            src_file,
+            imp,
+            known_files,
+            module_to_file,
+            repo_root=eff_root,
+            go_modules=go_modules,
+            go_files_by_dir=go_files_by_dir,
+            rust_crates=rust_crates,
+        )
 
-        if not dst_file:
+        if not dst_files:
             if src_file.endswith((".cs", ".java", ".kt", ".kts")):
                 clean_imp = imp[:-2] if imp.endswith(".*") else imp
                 matched_ns = ""
@@ -747,19 +1094,29 @@ def _derive_ast_import_edges(
                             ast_cnt_deps.setdefault((src_cnt, dst_cnt), ev_ns)
             continue
 
-        if dst_file == src_file:
-            continue
-
         src_cnt, src_cmp = _effective_cnt_and_comp(src_file, row["entity_id"])
-        dst_cnt, dst_cmp = _effective_cnt_and_comp(dst_file)
-        ev_imp = f"{src_file}:{imp_line} -> {dst_file}"
+        seen_go_dst_owners: set[tuple[str, str]] = set()
+        for dst_file in dst_files:
+            if dst_file == src_file:
+                continue
+            dst_cnt, dst_cmp = _effective_cnt_and_comp(dst_file)
+            if src_file.endswith(".go"):
+                # Avoid multiplying identical Go package import couplings across every file in the same target component.
+                dst_owner_key = (dst_cnt, dst_cmp)
+                if dst_owner_key in seen_go_dst_owners:
+                    continue
+                seen_go_dst_owners.add(dst_owner_key)
+                target_ref = posixpath.dirname(dst_file) or dst_file
+            else:
+                target_ref = dst_file
+            ev_imp = f"{src_file}:{imp_line} -> {target_ref}"
 
-        if (src_cmp and dst_cmp and src_cmp != dst_cmp) or (src_cnt and dst_cnt and src_cnt != dst_cnt):
-            _record_coupling(src_cnt, src_cmp, dst_cnt, dst_cmp, "ast_import", src_file, imp_line, dst_file)
-        if src_cmp and dst_cmp and src_cmp != dst_cmp:
-            upsert_edge(conn, src_cmp, dst_cmp, "consumes_api", "ast_import", ev_imp)
-        if src_cnt and dst_cnt and src_cnt != dst_cnt and src_cnt.startswith("CNT-") and dst_cnt.startswith("CNT-"):
-            ast_cnt_deps.setdefault((src_cnt, dst_cnt), ev_imp)
+            if (src_cmp and dst_cmp and src_cmp != dst_cmp) or (src_cnt and dst_cnt and src_cnt != dst_cnt):
+                _record_coupling(src_cnt, src_cmp, dst_cnt, dst_cmp, "ast_import", src_file, imp_line, target_ref)
+            if src_cmp and dst_cmp and src_cmp != dst_cmp:
+                upsert_edge(conn, src_cmp, dst_cmp, "consumes_api", "ast_import", ev_imp)
+            if src_cnt and dst_cnt and src_cnt != dst_cnt and src_cnt.startswith("CNT-") and dst_cnt.startswith("CNT-"):
+                ast_cnt_deps.setdefault((src_cnt, dst_cnt), ev_imp)
 
     conn.execute("DELETE FROM edges WHERE rel_type = 'depends_on';")
 

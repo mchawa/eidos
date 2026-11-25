@@ -1,0 +1,108 @@
+---
+type: delta/mutation
+id: DLT-2026-177-SURFACE-UNTOUCHED-3F20
+title: Surface Untouched Sibling Consumers in Drift Detection
+status: applied
+intent:
+  kind: feature
+  motivation: Provide deterministic, polyglot, harness-agnostic review signals in eidos drift by surfacing untouched governed source files outside the diff that import and reference modified, removed, or body-changed symbols (including 1-hop re-export barrels and deleted targets), without requiring AI subagents or non-generic coverage-report parsers.
+mutations:
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    details: Add src/eidos/vcs/consumers.py (find_untouched_consumers) to CMP-DRIFT-DETECTOR source_path and expose non-blocking DriftCheckResult.untouched_consumers across detect_drift and build_drift_remediation_and_summary.
+    expect:
+      frontmatter:
+        status: active
+        source_path:
+          - src/eidos/vcs/drift.py
+          - src/eidos/vcs/snapshot.py
+          - src/eidos/vcs/structural.py
+          - src/eidos/vcs/consumers.py
+          - src/eidos/vcs/report.py
+      body:
+        contains:
+          - "find_untouched_consumers"
+          - "untouched_consumers"
+  - operation: modify
+    target: CMP-CLI-DRIFT-COMMANDS
+    details: Expose untouched_consumers in eidos drift --json and render concise non-blocking advisory untouched consumer diagnostics in Rich terminal output without failing exit code 0 or --fail-on-warnings.
+    expect:
+      frontmatter:
+        status: active
+        source_path: src/eidos/cli/drift_commands.py
+      body:
+        contains:
+          - "untouched_consumers"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: Bump CTR-EIDOS-CLI to 1.12.0 documenting non-blocking advisory untouched_consumers in eidos drift --json and Rich/Markdown outputs.
+    expect:
+      frontmatter:
+        status: active
+        version: "1.12.0"
+      body:
+        contains:
+          - "untouched_consumers"
+  - operation: modify
+    target: CNT-EIDOS-VCS
+    details: Record DEC-VCS-UNTOUCHED-CONSUMERS-ADVISORY in CNT-EIDOS-VCS and include src/eidos/vcs/consumers.py under CMP-DRIFT-DETECTOR internal structure.
+    expect:
+      frontmatter:
+        status: active
+        decisions.id:
+          - "DEC-VCS-UNTOUCHED-CONSUMERS-ADVISORY"
+      body:
+        contains:
+          - "consumers.py"
+          - "DEC-VCS-UNTOUCHED-CONSUMERS-ADVISORY"
+  - operation: modify
+    target: CAP-DRIFT-DETECTION
+    details: Bump CAP-DRIFT-DETECTION to 1.16.0 and add INV-DRIFT-UNTOUCHED-CONSUMERS.
+    expect:
+      frontmatter:
+        status: active
+        version: "1.16.0"
+        technical.invariants.id:
+          - "INV-DRIFT-UNTOUCHED-CONSUMERS"
+      body:
+        contains:
+          - "INV-DRIFT-UNTOUCHED-CONSUMERS"
+  - operation: add
+    target: INV-DRIFT-UNTOUCHED-CONSUMERS
+    details: Bind INV-DRIFT-UNTOUCHED-CONSUMERS in CAP-DRIFT-DETECTION to tests/test_drift.py::test_drift_untouched_consumers_advisory_and_barrels.
+    expect:
+      frontmatter:
+        rule: "untouched_consumers"
+        test_binding: "tests/test_drift.py::test_drift_untouched_consumers_advisory_and_barrels"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: Document untouched_consumers in docs/guides/cli.md and eidos/architecture/components/docs-user-guides.adoc (INV-DOCS-SYNCHRONIZATION).
+    expect:
+      frontmatter:
+        status: active
+        source_path: docs/guides
+      body:
+        contains:
+          - "untouched_consumers"
+vcs:
+  branch: main
+  base_commit: 4c69da2468fd26bef7f1bcf1b9ba5c9faf15a972
+---
+= SpecDelta: Surface Untouched Sibling Consumers in Drift Detection
+:toc: left
+
+== Problem Statement
+Even when `eidos drift --uncommitted --json` reports `is_clean: true` and `eidos context --uncommitted --json` has been consulted, coding agents—especially on harnesses without subagents—lack a deterministic, diff-scoped list of untouched source files outside the diff that import and reference symbols modified, removed, or deleted in the diff.
+
+== Proposed Specification Changes
+1. **`CMP-DRIFT-DETECTOR` (`src/eidos/vcs/consumers.py`, `drift.py`, `report.py`)**: Add `find_untouched_consumers(...)` leveraging the synced SQLite knowledge graph (`code_symbols`, `file_tokens_fts`) and polyglot import resolution (`build_module_to_file_map`, `resolve_import_target_file`, plus `.cs`/`.java`/`.kt` namespace imports and 1-hop re-export barrels/facades) intersected with modified/removed/body-changed symbols from the diff. Expose `DriftCheckResult.untouched_consumers` as a strictly non-blocking advisory list sorted highest-risk first (`file_deleted`, `symbol_removed`, `signature_changed`, `body_changed`, `symbol_added`), rendered in PR Markdown summaries and never affecting `is_clean` or `--fail-on-warnings`.
+2. **`CMP-CLI-DRIFT-COMMANDS` & `CTR-EIDOS-CLI` (`1.12.0`)**: Emit `"untouched_consumers"` in `eidos drift --json` and render a concise advisory Rich terminal section when non-empty.
+3. **`CNT-EIDOS-VCS` (`DEC-VCS-UNTOUCHED-CONSUMERS-ADVISORY`)**: Record the architectural decision to derive untouched consumers purely from polyglot SQLite AST/import/token tables as non-blocking advisories while keeping language-specific coverage-report parsing out of `eidos drift`.
+4. **`CAP-DRIFT-DETECTION` (`1.16.0`) & `INV-DRIFT-UNTOUCHED-CONSUMERS`**: Bind the deterministic advisory untouched-consumer behavior (including 1-hop barrels, deleted targets, snapshot isolation, and non-blocking `--fail-on-warnings` semantics) to `tests/test_drift.py::test_drift_untouched_consumers_advisory_and_barrels`.
+5. **`CMP-DOCS-USER-GUIDES`**: Document `untouched_consumers` in `docs/guides/cli.md`.
+
+== Implementation Plan
+1. Implement `src/eidos/vcs/consumers.py` (`find_untouched_consumers`) and wire it into `src/eidos/vcs/drift.py`, `src/eidos/vcs/report.py`, and `src/eidos/cli/drift_commands.py` (`POL-STATEMENT-TEST-COVERAGE`: keep all `src/eidos/` modules strictly `> 90.0%`).
+2. Tighten `assets/plugin_reference/skills/eidos/SKILL.md` Stage 2 (generic wording, word-neutral under `INV-PLUGIN-SKILL-SIZE-CEILING` 2050-word body ceiling and `INV-ENGINE-GENERICITY`; non-structural doc edit under `CNT-EIDOS-PLUGIN`).
+3. Add repo-local & CI diff-line coverage verification (`tests/check_diff_coverage.py`, `tests/test_diff_coverage.py`, `.github/workflows/ci.yml`, `docs/contributing.md`; test/CI/doc infrastructure, no spec mutation required).
+4. Update living specs (`drift-detector.adoc`, `cli-drift-commands.adoc`, `cli.adoc`, `vcs.adoc`, `drift-detection.adoc`, `docs-user-guides.adoc`) and `docs/guides/cli.md`, add comprehensive tests (`tests/test_drift.py::test_drift_untouched_consumers_advisory_and_barrels`, `tests/test_cli_json.py`), verify and apply `DLT-2026-177-SURFACE-UNTOUCHED-3F20`.

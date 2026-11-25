@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import typer
+from rich.markup import escape
 from rich.table import Table
 
 from eidos.cli._shared import PANEL_GOVERNANCE, console, resolve_cli_eidos_dir
@@ -113,6 +114,7 @@ def drift_cmd(
             "boundary_violations": result.boundary_violations,
             "ratchet_shrink_candidates": result.ratchet_shrink_candidates,
             "ready_to_apply_deltas": result.ready_to_apply_deltas,
+            "untouched_consumers": result.untouched_consumers,
         }
         console.print_json(data=data)
     else:
@@ -220,6 +222,27 @@ def drift_cmd(
                     f"  [yellow]• {rtd['id']}[/yellow] ({rtd['path']}, status={rtd['status']}): "
                     f"{rtd['verified_mutations']}/{rtd['total_mutations']} mutations verified — "
                     f"run [bold green]eidos delta apply {rtd['id']}[/bold green]"
+                )
+
+        if result.untouched_consumers:
+            console.print("\n[bold cyan]→ Untouched Sibling Consumers to Review (Advisory):[/bold cyan]")
+            for uc in result.untouched_consumers[:15]:
+                owner_part = f" ({escape(uc['owner'])})" if uc.get("owner") else ""
+                via_part = f" via {escape(uc['via'])}" if uc.get("via") else ""
+                syms = uc.get("symbols") or []
+                if syms:
+                    sym_preview = ", ".join(syms[:5]) + (f" (+{len(syms) - 5})" if len(syms) > 5 else "")
+                    sym_part = f" — {escape(sym_preview)}"
+                else:
+                    sym_part = ""
+                kinds_badge = escape(f"[{', '.join(uc.get('change_kinds') or [])}]")
+                console.print(
+                    f"  [cyan]• {escape(uc['file'])}:{uc['line']}[/cyan]{owner_part} -> "
+                    f"{escape(uc['target_file'])}{via_part} {kinds_badge}{sym_part}"
+                )
+            if len(result.untouched_consumers) > 15:
+                console.print(
+                    f"  [dim]... and {len(result.untouched_consumers) - 15} more (use --json for full list)[/dim]"
                 )
 
         has_advisory_warnings = bool(result.validation_warnings or result.ready_to_apply_deltas)

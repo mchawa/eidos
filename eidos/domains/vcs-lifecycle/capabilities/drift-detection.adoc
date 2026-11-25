@@ -4,7 +4,7 @@ id: CAP-DRIFT-DETECTION
 title: "Git-Native Spec-to-Code Drift Detection"
 domain: DOM-VCS-LIFECYCLE
 status: active
-version: "1.15.0"
+version: "1.16.0"
 
 business:
   personas:
@@ -57,6 +57,9 @@ technical:
     - id: INV-DRIFT-READY-TO-APPLY-DELTAS
       rule: "detect_drift and 'eidos drift' must detect diff-touched and spec-overlapping open non-archived SpecDeltas (proposed, in_review, approved with non-empty mutations) whose declared mutations are already 100% verified on disk, surface them as advisory ready_to_apply_deltas in JSON, Rich terminal, and Markdown summaries without flipping is_clean or blaming unrelated open deltas, and escalate all non-empty ready_to_apply_deltas to exit code 1 when --fail-on-warnings is supplied without --warn-only."
       test_binding: "tests/test_drift.py::test_drift_ready_to_apply_deltas_and_fail_on_warnings"
+    - id: INV-DRIFT-UNTOUCHED-CONSUMERS
+      rule: "detect_drift and 'eidos drift' must deterministically resolve untouched governed non-test source files outside the diff that import or depend on modified code files (via SQLite code_symbols/file_tokens_fts, including 1-hop re-export barrels/facades, namespace imports, and deleted targets) and reference modified, removed, or body-changed symbols, surfacing them as strictly non-blocking advisory untouched_consumers in JSON, Rich terminal, and Markdown summaries without flipping is_clean or failing --fail-on-warnings."
+      test_binding: "tests/test_drift.py::test_drift_untouched_consumers_advisory_and_barrels"
 ---
 = Capability: Git-Native Spec-to-Code Drift Detection
 :toc: left
@@ -77,4 +80,5 @@ By leveraging the SQLite Knowledge Graph (`eidos/.cache/index.db`), drift detect
 * **Single Source of Truth & Planned-Mode Mutation Enforcement**: Gating CI/CD pipelines via `eidos drift` and enforcing `verify_delta_mutations` and `_spec_coverage_verdict` on newly applied SpecDeltas (`POL-GIT-SOURCE-OF-TRUTH`).
 * **Diff-Aware & Boundary-Aware Spec Coverage**: Rejecting "touch-to-appease" spec edits (blank lines, `//` comments, re-wrapping) as coverage for new source files and new public symbols, rejecting spec coverage when removed public symbols remain referenced in the owning specification (`stale_removed_symbol`), enforcing strict symbol/file anchoring (`is_anchored`) for unclaimed files and package/contract boundary exports while allowing substantive owning/1-hop spec updates to cover module-internal helper functions, requiring bound design subgraph (`tokens.json`, `DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`) updates for both `token` and `ui_contract` frontend changes (`DEC-VCS-STRICT-UI-CONTRACT-DESIGN-DRIFT`), and reporting rejected edits in `trivially_covered_files`.
 * **Executable Import Boundary & Monotonic Ratchet Enforcement (`INV-DRIFT-IMPORT-BOUNDARY-RATCHET`, `DEC-VCS-EXECUTABLE-IMPORT-RATCHET`)**: Evaluates `ARCH-*.import_boundaries` and `CNT-*/CMP-*.import_boundary` against snapshot-synced `ast_import` and `ast_http` `code_couplings`, failing closed with `boundary_violations` when forbidden couplings or `ratchet_baseline` count increases occur while surfacing non-blocking `ratchet_shrink_candidates` tightening advisories.
+* **Untouched Sibling Consumer Discovery (`INV-DRIFT-UNTOUCHED-CONSUMERS`, `DEC-VCS-UNTOUCHED-CONSUMERS-ADVISORY`)**: Surfaces deterministic, severity-sorted non-blocking `untouched_consumers` identifying governed source files outside the diff that import and reference changed, removed, or body-modified symbols (including 1-hop re-export barrels and deleted targets) across JSON, Rich terminal, and PR Markdown outputs.
 * **Direct Mode Frictionless Co-evolution**: Enabling developers and autonomous agents to write code first and instantly reconcile specifications in the same commit.

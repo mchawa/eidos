@@ -14,6 +14,7 @@ from eidos.core.spec.boundary_validator import evaluate_import_boundaries
 from eidos.core.spec.parser import extract_frontmatter
 from eidos.core.spec.validator import SpecValidator, ValidationReport
 from eidos.core.workspace.project import find_git_root, is_generated_or_vendored
+from eidos.vcs.consumers import find_untouched_consumers
 from eidos.vcs.diff import (
     POLYGLOT_TEST_PATTERNS,
     ChangedFilesClassification,
@@ -82,6 +83,7 @@ __all__ = [
     "detect_drift",
     "detect_orphan_invariants",
     "extract_invariants_and_verify",
+    "find_untouched_consumers",
     "generate_remediation_prompt",
     "get_git_diff_files",
     "get_living_specs_catalog",
@@ -111,6 +113,7 @@ class DriftCheckResult:
     boundary_violations: list[dict[str, Any]] = field(default_factory=list)
     ratchet_shrink_candidates: list[dict[str, Any]] = field(default_factory=list)
     ready_to_apply_deltas: list[dict[str, Any]] = field(default_factory=list)
+    untouched_consumers: list[dict[str, Any]] = field(default_factory=list)
     remediation_suggestions: list[str] = field(default_factory=list)
     summary_markdown: str = ""
 
@@ -265,6 +268,7 @@ def detect_drift(
         structural_code_files: list[str] = []
         body_only_code_files: list[str] = []
         structural_additions: dict[str, _StructuralAddition] = {}
+        symbol_diffs: dict[str, Any] = {}
         design_changes: dict[str, tuple[str, list[str]]] = {}
         versions = {cf: _fetch_versions(cf) for cf in classification.code_files}
         smap = _SymbolMapCache(versions)
@@ -276,6 +280,7 @@ def detect_drift(
             if old_c is not None and new_c is not None:
                 if smap.supports(cf):
                     symbol_diff = smap.diff(cf)
+                    symbol_diffs[cf] = symbol_diff
                     is_structural = bool(symbol_diff)
                 else:
                     is_structural, _ = has_structural_changes(old_c, new_c, cf)
@@ -884,6 +889,16 @@ def detect_drift(
             and len(orphan_invariants) == 0
         )
 
+        # 5b. Advisory Untouched Sibling Consumers (DLT-2026-177)
+        untouched_consumers = find_untouched_consumers(
+            idx=idx,
+            code_files=classification.code_files,
+            versions=versions,
+            smap=smap,
+            symbol_diffs=symbol_diffs,
+            all_changed_files=changed_files,
+        )
+
         # 6 & 7. Remediation suggestions and Markdown Summary (CMP-DRIFT-DETECTOR report module)
         remediation, summary_markdown = build_drift_remediation_and_summary(
             workflow_mode=workflow_mode,
@@ -914,6 +929,7 @@ def detect_drift(
             boundary_violations=boundary_violations,
             ratchet_shrink_candidates=ratchet_shrink_candidates,
             ready_to_apply_deltas=ready_to_apply_deltas,
+            untouched_consumers=untouched_consumers,
         )
 
         return DriftCheckResult(
@@ -933,6 +949,7 @@ def detect_drift(
             boundary_violations=boundary_violations,
             ratchet_shrink_candidates=ratchet_shrink_candidates,
             ready_to_apply_deltas=ready_to_apply_deltas,
+            untouched_consumers=untouched_consumers,
             remediation_suggestions=remediation,
             summary_markdown=summary_markdown,
         )

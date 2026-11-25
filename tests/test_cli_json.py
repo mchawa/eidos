@@ -12,7 +12,7 @@ def test_cli_validate_json_output(tmp_path):
     """Verify 'eidos validate --json' outputs compact JSON (omitting passing documents and listing only failing ones)."""
     result = runner.invoke(app, ["validate", "eidos", "--json"])
     assert result.exit_code == 0
-    data = orjson.loads(result.output)
+    data = orjson.loads(result.stdout)
     assert data["is_clean"] is True
     assert data["total_docs"] >= 60
     assert data["valid_docs"] == data["total_docs"]
@@ -39,12 +39,13 @@ def test_cli_drift_json_output():
     """Verify 'eidos drift --uncommitted --json' outputs structured JSON."""
     result = runner.invoke(app, ["drift", "--uncommitted", "--json"])
     assert result.exit_code == 0
-    data = orjson.loads(result.output)
+    data = orjson.loads(result.stdout)
     assert "drift_detected" in data
     assert "workflow_mode" in data
     assert "valid_specs" in data
     assert "total_specs" in data
     assert isinstance(data["ready_to_apply_deltas"], list)
+    assert isinstance(data["untouched_consumers"], list)
     assert isinstance(data["code_files"], list)
 
 

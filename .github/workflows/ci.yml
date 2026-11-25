@@ -192,6 +192,21 @@ jobs:
               print(cov_path.read_text(encoding="utf-8").strip())
           EOF
 
+      - name: Verify diff-line statement coverage (>=90%)
+        if: ${{ success() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_type != 'tag')) }}
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            uv run python tests/check_diff_coverage.py --base "origin/${BASE_REF}" --head HEAD --min-coverage 90.0 --summary-out "$GITHUB_STEP_SUMMARY"
+          elif [ -n "$EVENT_BEFORE" ] && [ "$EVENT_BEFORE" != "0000000000000000000000000000000000000000" ] && git cat-file -e "${EVENT_BEFORE}^{commit}" 2>/dev/null; then
+            uv run python tests/check_diff_coverage.py --base "$EVENT_BEFORE" --head HEAD --min-coverage 90.0 --summary-out "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Skipping diff-line coverage check (no prior base commit available)."
+          fi
+
   build-site:
     name: Build Documentation & Living Portal
     runs-on: ubuntu-latest

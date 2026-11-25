@@ -1456,7 +1456,78 @@ def test_deep_review_polyglot_ast_refinements():
     assert sw_imps == ["Foundation", "Foundation.URL"]
 
     rs_imps = indexer.extract_imports("src/lib.rs", "use crate::core::{foo, bar};\n")
-    assert rs_imps == ["crate::core"]
+    assert rs_imps == ["crate::core::foo", "crate::core::bar"]
+
+    rs_grouped = indexer.extract_imports(
+        "src/lib.rs",
+        "pub mod billing;\n"
+        "pub mod outer {\n"
+        "    pub mod inner;\n"
+        "    use super::*;\n"
+        "    use super::sibling::run;\n"
+        "    use super::super::parent_mod::item;\n"
+        "    use self::sub::helper;\n"
+        "}\n"
+        "fn local_fn() {\n"
+        "    use crate::fn_scoped::tool;\n"
+        "}\n"
+        "#[cfg(test)]\n"
+        "mod tests {\n"
+        "    use super::*;\n"
+        "    use crate::test_only::mock;\n"
+        "}\n"
+        "use crate::{auth::verify, billing::*};\n"
+        "use crate::billing::{self, sub::deep as d};\n"
+        "use core_lib::{pricing, auth};\n"
+        "use crate::r#match::eval;\n",
+    )
+    assert rs_grouped == [
+        "self::billing",
+        "self::outer::inner",
+        "self::sibling::run",
+        "super::parent_mod::item",
+        "self::outer::sub::helper",
+        "crate::fn_scoped::tool",
+        "crate::auth::verify",
+        "crate::billing",
+        "crate::billing::sub::deep",
+        "core_lib::pricing",
+        "core_lib::auth",
+        "crate::r#match::eval",
+    ]
+
+    from eidos.core.index.code_graph import (
+        discover_rust_crate_map,
+        resolve_import_target_file,
+        resolve_import_target_files,
+    )
+
+    known_gr = {
+        "internal/pkg/a.go",
+        "internal/pkg/b.go",
+        "crates/core/src/lib.rs",
+        "crates/core/src/main.rs",
+        "crates/core/src/util.rs",
+        "crates/core/src/sub/mod.rs",
+        "crates/core/build.rs",
+    }
+    assert resolve_import_target_files("cmd\\main.go", "internal/pkg", known_gr, {}) == [
+        "internal/pkg/a.go",
+        "internal/pkg/b.go",
+    ]
+    assert resolve_import_target_file("cmd/main.go", "internal/pkg", known_gr, {}) == "internal/pkg/a.go"
+    assert (
+        resolve_import_target_file("crates/core/src/sub/mod.rs", "super::util::run", known_gr, {})
+        == "crates/core/src/util.rs"
+    )
+    # super::super:: must never escape above crate root into crates/core/build.rs.
+    assert resolve_import_target_file("crates/core/src/sub/mod.rs", "super::super::build", known_gr, {}) is None
+    # Dual lib.rs + main.rs must never cross-fallback to each other, and dir_slug 'core' must never shadow stdlib core::.
+    assert resolve_import_target_file("crates/core/src/lib.rs", "crate::LocalOnly", known_gr, {}) is None
+    assert resolve_import_target_file("crates/core/src/main.rs", "crate::BinOnly", known_gr, {}) is None
+    assert resolve_import_target_file("crates/core/src/sub/mod.rs", "core::fmt::Display", known_gr, {}) is None
+    assert resolve_import_target_file("crates/core/src/sub/mod.rs", "std::collections::HashMap", known_gr, {}) is None
+    assert "core" not in discover_rust_crate_map(None, known_gr)
 
     # 2. Vue / Svelte SFC <script> unwrapping in list_test_functions and extract_test_bindings
     vue_sfc = (

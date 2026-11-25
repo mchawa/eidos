@@ -5742,3 +5742,608 @@ def test_drift_ready_to_apply_deltas_and_fail_on_warnings(tmp_path: Path):
     )
     assert res_applied.exit_code == 0, res_applied.output
     assert orjson.loads(res_applied.output)["ready_to_apply_deltas"] == []
+
+
+def test_drift_untouched_consumers_advisory_and_barrels(tmp_path: Path):
+    """Verify INV-DRIFT-UNTOUCHED-CONSUMERS: deterministic advisory untouched_consumers across direct imports, 1-hop barrels, body/signature/removed/constant/deleted changes, C# namespaces, commit-range snapshots, and non-blocking --fail-on-warnings."""
+    import re
+    import subprocess
+
+    from eidos.cli.main import app
+    from eidos.vcs.consumers import _extract_top_level_identifiers, _innermost_overlapping_symbols, _token_for_symbol
+    from eidos.vcs.report import build_drift_remediation_and_summary
+
+    def _run_git(cwd: Path, *args: str) -> None:
+        subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+
+    repo = tmp_path / "consumers_repo"
+    repo.mkdir()
+    _run_git(repo, "init", "-b", "main")
+    _run_git(repo, "config", "user.email", "test@example.com")
+    _run_git(repo, "config", "user.name", "Test")
+
+    eidos_dir = repo / "eidos"
+    for sub in ("architecture/containers", "architecture/components"):
+        (eidos_dir / sub).mkdir(parents=True, exist_ok=True)
+
+    (eidos_dir / "system.adoc").write_text(
+        "---\ntype: product/system\nid: SYS-CONSUMERS\ntitle: Consumers Repo\nstatus: active\nversion: 1.0.0\narchetypes:\n  - library\n---\n= Consumers Repo\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "app.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-APP\ntitle: App Container\nstatus: active\n"
+        "container_type: library\nruntime: Python 3.12\nsource_path: src\n---\n= App\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "core.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-CORE\ntitle: Core\ncontainer: CNT-APP\nstatus: active\n"
+        "source_path:\n  - src/pkg/helper.py\n  - src/pkg/facade.py\n  - src/pkg/legacy.py\n---\n"
+        "= Core\n\n== Public Surface\n* `compute_rate`\n* `stable_helper`\n* `LegacyBox`\n* `deprecated_hook`\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "services.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-SERVICES\ntitle: Services\ncontainer: CNT-APP\nstatus: active\n"
+        "source_path:\n  - src/svc/direct_caller.py\n  - src/svc/barrel_caller.py\n  - src/svc/unrelated_caller.py\n"
+        "  - src/svc/legacy_caller.py\n---\n= Services\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "dotnet.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-DOTNET\ntitle: Dotnet\ncontainer: CNT-APP\nstatus: active\n"
+        "source_path:\n  - src/dotnet/Billing.cs\n  - src/dotnet/Checkout.cs\n---\n= Dotnet\n",
+        encoding="utf-8",
+    )
+
+    (repo / "src" / "pkg").mkdir(parents=True)
+    (repo / "src" / "svc").mkdir(parents=True)
+    (repo / "src" / "dotnet").mkdir(parents=True)
+    (repo / "tests").mkdir(parents=True)
+
+    (repo / "src" / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "src" / "pkg" / "helper.py").write_text(
+        "DEFAULT_RATE = 10\n\n"
+        "class LegacyBox:\n"
+        "    def __init__(self, value: int) -> None:\n"
+        "        self.value = value\n\n"
+        "    def format_value(self) -> str:\n"
+        "        return str(self.value)\n\n"
+        "def compute_rate(amount: int) -> int:\n"
+        "    return amount * DEFAULT_RATE\n\n"
+        "def stable_helper(x: int) -> int:\n"
+        "    return x + 1\n\n"
+        "def _private_old() -> int:\n"
+        "    return 42\n",
+        encoding="utf-8",
+    )
+    (repo / "src" / "pkg" / "facade.py").write_text(
+        "from pkg.helper import compute_rate as compute_rate\n",
+        encoding="utf-8",
+    )
+    (repo / "src" / "pkg" / "legacy.py").write_text(
+        "def deprecated_hook() -> str:\n    return 'old'\n",
+        encoding="utf-8",
+    )
+    (repo / "src" / "svc" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "src" / "svc" / "direct_caller.py").write_text(
+        "from pkg.helper import compute_rate, _private_old, DEFAULT_RATE\n\n"
+        "def run_direct(n: int) -> int:\n"
+        "    return compute_rate(n) + _private_old() + DEFAULT_RATE\n",
+        encoding="utf-8",
+    )
+    (repo / "src" / "svc" / "barrel_caller.py").write_text(
+        "from pkg.facade import compute_rate\n\ndef run_via_facade(n: int) -> int:\n    return compute_rate(n)\n",
+        encoding="utf-8",
+    )
+    # Imports pkg.helper, but ONLY references stable_helper -> MUST NOT be flagged when compute_rate changes.
+    (repo / "src" / "svc" / "unrelated_caller.py").write_text(
+        "from pkg.helper import stable_helper\n\ndef run_unrelated(n: int) -> int:\n    return stable_helper(n)\n",
+        encoding="utf-8",
+    )
+    (repo / "src" / "svc" / "legacy_caller.py").write_text(
+        "from pkg.legacy import deprecated_hook\n\ndef run_legacy() -> str:\n    return deprecated_hook()\n",
+        encoding="utf-8",
+    )
+    (repo / "src" / "dotnet" / "Billing.cs").write_text(
+        "namespace Acme.Billing {\n"
+        "    public class InvoiceCalculator {\n"
+        "        public int ComputeTotal(int amount) { return amount * 2; }\n"
+        "    }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (repo / "src" / "dotnet" / "Checkout.cs").write_text(
+        "using Acme.Billing;\n"
+        "namespace Acme.Checkout {\n"
+        "    public class Cart {\n"
+        "        public int Checkout(int x) { return new InvoiceCalculator().ComputeTotal(x); }\n"
+        "    }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    # Test file importing pkg.helper -> MUST be excluded from untouched_consumers.
+    (repo / "tests" / "test_helper.py").write_text(
+        "from pkg.helper import compute_rate\n\ndef test_rate():\n    assert compute_rate(2) == 20\n",
+        encoding="utf-8",
+    )
+
+    _run_git(repo, "add", ".")
+    _run_git(repo, "commit", "-m", "initial commit")
+
+    # 1. Body-only edit to compute_rate + constant DEFAULT_RATE + removed _private_old (no spec drift on body-only,
+    #    plus check direct, barrel via facade.py, facade.py itself, unrelated exclusion, test exclusion, and --fail-on-warnings = 0).
+    (repo / "src" / "pkg" / "helper.py").write_text(
+        "DEFAULT_RATE = 20\n\n"
+        "class LegacyBox:\n"
+        "    def __init__(self, value: int) -> None:\n"
+        "        self.value = value\n\n"
+        "    def format_value(self) -> str:\n"
+        "        return str(self.value)\n\n"
+        "def compute_rate(amount: int) -> int:\n"
+        "    return (amount + 1) * DEFAULT_RATE\n\n"
+        "def stable_helper(x: int) -> int:\n"
+        "    return x + 1\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    res_json = runner.invoke(app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--fail-on-warnings", "--json"])
+    assert res_json.exit_code == 0, res_json.output
+    data = orjson.loads(res_json.output)
+    assert data["is_clean"] is True
+
+    consumers = data["untouched_consumers"]
+    by_file = {c["file"]: c for c in consumers}
+    assert "src/svc/direct_caller.py" in by_file
+    assert "src/svc/barrel_caller.py" in by_file
+    assert "src/pkg/facade.py" in by_file
+    assert "src/svc/unrelated_caller.py" not in by_file
+    assert "tests/test_helper.py" not in by_file
+
+    direct = by_file["src/svc/direct_caller.py"]
+    assert direct["owner"] == "CMP-SERVICES"
+    assert direct["target_file"] == "src/pkg/helper.py"
+    assert direct["via"] is None
+    assert "compute_rate" in direct["symbols"]
+    assert "_private_old" in direct["symbols"]
+    assert "DEFAULT_RATE" in direct["symbols"]
+    assert direct["change_kinds"][0] == "symbol_removed"
+    assert "body_changed" in direct["change_kinds"]
+
+    barrel = by_file["src/svc/barrel_caller.py"]
+    assert barrel["owner"] == "CMP-SERVICES"
+    assert barrel["target_file"] == "src/pkg/helper.py"
+    assert barrel["via"] == "src/pkg/facade.py"
+    assert barrel["symbols"] == ["compute_rate"]
+    assert barrel["change_kinds"] == ["body_changed"]
+
+    # Direct consumer with symbol_removed ranks ahead of body_changed-only barrel consumer.
+    assert consumers.index(direct) < consumers.index(barrel)
+
+    # Rich terminal & Markdown output render advisory section while exiting 0 even under --fail-on-warnings.
+    md_out = tmp_path / "drift-summary.md"
+    res_rich = runner.invoke(
+        app,
+        ["drift", "--uncommitted", "--path", str(eidos_dir), "--fail-on-warnings", "--markdown", str(md_out)],
+    )
+    assert res_rich.exit_code == 0, res_rich.output
+    rich_flat = re.sub(r"\s+", " ", res_rich.output)
+    assert "Untouched Sibling Consumers to Review (Advisory)" in rich_flat
+    assert "src/svc/direct_caller.py" in rich_flat
+    assert "[symbol_removed, body_changed]" in rich_flat
+    assert "via src/pkg/facade.py" in rich_flat
+    assert "[body_changed]" in rich_flat
+    md_text = md_out.read_text(encoding="utf-8")
+    assert "### 🔍 Untouched Sibling Consumers to Review (Advisory):" in md_text
+    assert "`src/svc/barrel_caller.py:1`" in md_text
+    assert "via `src/pkg/facade.py`" in md_text
+
+    # 2. Modifying direct_caller.py removes it from untouched_consumers (already in diff).
+    (repo / "src" / "svc" / "direct_caller.py").write_text(
+        "from pkg.helper import compute_rate, DEFAULT_RATE\n\n"
+        "def run_direct(n: int) -> int:\n"
+        "    return compute_rate(n) + DEFAULT_RATE\n",
+        encoding="utf-8",
+    )
+    res_touched = runner.invoke(app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--json"])
+    assert res_touched.exit_code == 0, res_touched.output
+    touched_files = {c["file"] for c in orjson.loads(res_touched.output)["untouched_consumers"]}
+    assert "src/svc/direct_caller.py" not in touched_files
+    assert "src/svc/barrel_caller.py" in touched_files
+
+    # 3. Deleted target file + C# namespace consumer + commit-range (--base main --head HEAD) snapshot isolation.
+    (repo / "src" / "pkg" / "legacy.py").unlink()
+    (repo / "src" / "dotnet" / "Billing.cs").write_text(
+        "namespace Acme.Billing {\n"
+        "    public class InvoiceCalculator {\n"
+        "        public int ComputeTotal(int amount) { return amount * 3; }\n"
+        "    }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    # Keep living specs synced with deleted legacy.py so commit-range drift is clean.
+    (eidos_dir / "architecture" / "containers" / "app.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-APP\ntitle: App Container\nstatus: active\n"
+        "container_type: library\nruntime: Python 3.12\nsource_path: src\n---\n"
+        "= App\n\nRetired `src/pkg/legacy.py` module.\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "core.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-CORE\ntitle: Core\ncontainer: CNT-APP\nstatus: active\n"
+        "source_path:\n  - src/pkg/helper.py\n  - src/pkg/facade.py\n---\n"
+        "= Core\n\nRemoved `src/pkg/legacy.py`.\n\n== Public Surface\n* `compute_rate`\n* `stable_helper`\n* `LegacyBox`\n",
+        encoding="utf-8",
+    )
+    _run_git(repo, "checkout", "-b", "feat/consumers")
+    _run_git(repo, "add", "-A")
+    _run_git(repo, "commit", "-m", "update helper, delete legacy, edit Billing.cs")
+
+    res_branch = runner.invoke(
+        app,
+        ["drift", "--base", "main", "--head", "HEAD", "--path", str(eidos_dir), "--fail-on-warnings", "--json"],
+    )
+    assert res_branch.exit_code == 0, res_branch.output
+    branch_data = orjson.loads(res_branch.output)
+    assert branch_data["is_clean"] is True
+    branch_consumers = branch_data["untouched_consumers"]
+    branch_by_file = {c["file"]: c for c in branch_consumers}
+
+    assert "src/svc/legacy_caller.py" in branch_by_file
+    assert branch_by_file["src/svc/legacy_caller.py"]["change_kinds"] == ["file_deleted"]
+    assert branch_by_file["src/svc/legacy_caller.py"]["target_file"] == "src/pkg/legacy.py"
+    # file_deleted has severity 0 -> sorted first.
+    assert branch_consumers[0]["file"] == "src/svc/legacy_caller.py"
+
+    assert "src/dotnet/Checkout.cs" in branch_by_file
+    assert branch_by_file["src/dotnet/Checkout.cs"]["target_file"] == "src/dotnet/Billing.cs"
+    assert any("ComputeTotal" in s for s in branch_by_file["src/dotnet/Checkout.cs"]["symbols"])
+
+    # Snapshot paths must never leak into untouched_consumers output.
+    for uc in branch_consumers:
+        assert "eidos_head_" not in uc["file"]
+        assert "eidos_head_" not in uc["target_file"]
+
+    # 4. Unit checks for helper edge cases: dunders, nested classes, Python multi-line/deleted constants vs multiline
+    #    strings, wildcard barrels, deleted C# namespace targets, Java single-class imports, and CLI/Markdown >15 overflow.
+    assert _token_for_symbol("LegacyBox", "__init__") == ("LegacyBox.__init__", "legacybox")
+    assert _token_for_symbol("LegacyBox", "__call__") == ("LegacyBox.__call__", "legacybox")
+    assert _token_for_symbol("Outer::Inner", "id") == ("Outer::Inner.id", "inner")
+    assert _extract_top_level_identifiers(["    INDENTED = 1", "return = 2", "API_VER = '2'"], 1, 3) == ["API_VER"]
+    assert _innermost_overlapping_symbols([], 1, 2) == []
+
+    from eidos.vcs.consumers import _extract_file_change_summary
+    from eidos.vcs.structural import _SymbolMapCache
+
+    py_old = '"""\nstatus = 1\n"""\n__all__ = ["MULTI_ITEMS"]\nMULTI_ITEMS = {\n    "alpha",\n}\nOLD_CONST = 99\n'
+    py_new = '"""\nstatus = 2\n"""\n__all__ = ["MULTI_ITEMS", "EXTRA"]\nMULTI_ITEMS = {\n    "alpha",\n    "beta",\n}\n'
+    py_sum = _extract_file_change_summary(
+        "src/pkg/consts.py",
+        py_old,
+        py_new,
+        smap=_SymbolMapCache({"src/pkg/consts.py": (py_old, py_new)}),
+        symbol_diff=None,
+    )
+    assert "MULTI_ITEMS" in py_sum.symbol_kinds and py_sum.symbol_kinds["MULTI_ITEMS"] == {"body_changed"}
+    assert "OLD_CONST" in py_sum.symbol_kinds and py_sum.symbol_kinds["OLD_CONST"] == {"symbol_removed"}
+    assert "status" not in py_sum.symbol_kinds
+    assert "__all__" not in py_sum.symbol_kinds
+
+    # Wildcard barrel (__init__.py `from .helper import *`), same-package non-reexport sibling, Java single-class import,
+    # and deleted C# namespace target.
+    wild_repo = tmp_path / "poly_barrel_repo"
+    wild_repo.mkdir()
+    _run_git(wild_repo, "init", "-b", "main")
+    _run_git(wild_repo, "config", "user.email", "test@example.com")
+    _run_git(wild_repo, "config", "user.name", "Test")
+    w_eidos = wild_repo / "eidos"
+    for sub in ("architecture/containers", "architecture/components"):
+        (w_eidos / sub).mkdir(parents=True, exist_ok=True)
+    (w_eidos / "system.adoc").write_text(
+        "---\ntype: product/system\nid: SYS-WILD\ntitle: Wild\nstatus: active\nversion: 1.0.0\narchetypes:\n  - library\n---\n= Wild\n",
+        encoding="utf-8",
+    )
+    (w_eidos / "architecture" / "containers" / "app.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-WILD\ntitle: Wild\nstatus: active\ncontainer_type: library\nruntime: Polyglot\nsource_path: src\n---\n= Wild\n",
+        encoding="utf-8",
+    )
+    for d in ("src/pkg", "src/app", "src/java/billing", "src/java/app", "src/cs"):
+        (wild_repo / d).mkdir(parents=True)
+    (wild_repo / "src" / "pkg" / "helper.py").write_text(
+        "def wild_calc(x: int) -> int:\n    return x + 1\n", encoding="utf-8"
+    )
+    (wild_repo / "src" / "pkg" / "__init__.py").write_text("from .helper import *\n", encoding="utf-8")
+    # Same-package sibling importing helper.py without referencing wild_calc (exercises facade skip branch).
+    (wild_repo / "src" / "pkg" / "sibling.py").write_text(
+        "from pkg import helper\n\ndef other() -> int:\n    return 0\n", encoding="utf-8"
+    )
+    (wild_repo / "src" / "app" / "wild_consumer.py").write_text(
+        "from pkg import wild_calc\nfrom pkg.sibling import other\n\ndef go() -> int:\n    return wild_calc(1) + other()\n",
+        encoding="utf-8",
+    )
+    (wild_repo / "src" / "java" / "billing" / "Pricer.java").write_text(
+        "package com.acme.billing;\npublic class Pricer {\n    public int price(int n) { return n * 2; }\n}\n",
+        encoding="utf-8",
+    )
+    (wild_repo / "src" / "java" / "app" / "OrderApp.java").write_text(
+        "package com.acme.app;\nimport com.acme.billing.Pricer;\npublic class OrderApp {\n    int run(int n) { return new Pricer().price(n); }\n}\n",
+        encoding="utf-8",
+    )
+    (wild_repo / "src" / "cs" / "RetiredTax.cs").write_text(
+        "namespace Acme.Tax {\n    public class RetiredTaxEngine {\n        public int CalcTax(int x) { return x; }\n    }\n}\n",
+        encoding="utf-8",
+    )
+    (wild_repo / "src" / "cs" / "TaxCaller.cs").write_text(
+        "using Acme.Tax;\nnamespace Acme.Orders {\n    public class OrderSvc {\n        public int Run(int x) { return new RetiredTaxEngine().CalcTax(x); }\n    }\n}\n",
+        encoding="utf-8",
+    )
+    (wild_repo / "src" / "cs" / "UnrelatedTaxCaller.cs").write_text(
+        "using Acme.Tax;\nnamespace Acme.Orders {\n    public class OtherSvc {\n        public int Run(int x) { return x; }\n    }\n}\n",
+        encoding="utf-8",
+    )
+    _run_git(wild_repo, "add", ".")
+    _run_git(wild_repo, "commit", "-m", "init wild")
+
+    (wild_repo / "src" / "pkg" / "helper.py").write_text(
+        "def wild_calc(x: int) -> int:\n    return x + 2\n", encoding="utf-8"
+    )
+    (wild_repo / "src" / "java" / "billing" / "Pricer.java").write_text(
+        "package com.acme.billing;\npublic class Pricer {\n    public int price(int n) { return n * 3; }\n}\n",
+        encoding="utf-8",
+    )
+    (wild_repo / "src" / "cs" / "RetiredTax.cs").unlink()
+
+    wild_res = detect_drift(repo_root=wild_repo, eidos_dir=w_eidos, uncommitted=True)
+    wild_by_file = {c["file"]: c for c in wild_res.untouched_consumers}
+    assert "src/app/wild_consumer.py" in wild_by_file
+    assert wild_by_file["src/app/wild_consumer.py"]["via"] == "src/pkg/__init__.py"
+    assert wild_by_file["src/app/wild_consumer.py"]["symbols"] == ["wild_calc"]
+    assert "src/java/app/OrderApp.java" in wild_by_file
+    assert any("price" in s for s in wild_by_file["src/java/app/OrderApp.java"]["symbols"])
+    assert "src/cs/TaxCaller.cs" in wild_by_file
+    assert wild_by_file["src/cs/TaxCaller.cs"]["change_kinds"] == ["file_deleted"]
+    assert "src/cs/UnrelatedTaxCaller.cs" not in wild_by_file
+
+    # CLI Rich + Markdown overflow (>15 consumers) and >5 symbols truncation (+1) + bracketed path escaping.
+    many_consumers = [
+        {
+            "file": f"src/app/[id]/c_{i:02d}.py",
+            "line": i + 1,
+            "owner": "CMP-SERVICES",
+            "target_file": "src/pkg/helper.py",
+            "symbols": [f"sym_{j}" for j in range(6)],
+            "change_kinds": ["body_changed"],
+            "via": None,
+        }
+        for i in range(17)
+    ]
+    from unittest.mock import patch
+
+    from eidos.core.spec.validator import ValidationReport
+    from eidos.vcs.diff import ChangedFilesClassification
+    from eidos.vcs.drift import DriftCheckResult
+
+    _, overflow_md = build_drift_remediation_and_summary(
+        workflow_mode="direct",
+        is_clean=True,
+        drift_detected=False,
+        base_direct_drift=False,
+        unmapped_drift=False,
+        design_drift=False,
+        uncovered_delta_drift=False,
+        specs_changed=False,
+        has_deltas=False,
+        classification=ChangedFilesClassification(),
+        structural_code_files=[],
+        comp_mappings=[],
+        uncovered_direct_components=[],
+        uncovered_components=[],
+        uncovered_unmapped_code=[],
+        uncovered_design=[],
+        trivial_records=[],
+        validation_report=ValidationReport(),
+        invariants=[],
+        uncovered_invariants=[],
+        orphan_invariants=[],
+        touched_components=[],
+        untouched_consumers=many_consumers,
+    )
+    assert "2 more untouched consumer(s) in JSON output" in overflow_md
+    assert "(+1)" in overflow_md
+
+    mock_result = DriftCheckResult(
+        is_clean=True,
+        drift_detected=False,
+        workflow_mode="direct",
+        classification=ChangedFilesClassification(),
+        validation_report=ValidationReport(),
+        untouched_consumers=many_consumers,
+    )
+    with patch("eidos.cli.drift_commands.detect_drift", return_value=mock_result):
+        res_overflow = runner.invoke(app, ["drift", "--uncommitted", "--path", str(eidos_dir)])
+    assert res_overflow.exit_code == 0, res_overflow.output
+    ov_flat = re.sub(r"\s+", " ", res_overflow.output)
+    assert "src/app/[id]/c_00.py:1" in ov_flat
+    assert "[body_changed]" in ov_flat
+    assert "(+1)" in ov_flat
+    assert "... and 2 more (use --json for full list)" in ov_flat
+
+    # 5. Go (go.mod multi-file package, third-party rejection, deleted .go file, code_couplings dedup)
+    #    and Rust (crate::, super::, self::, wildcard lib.rs barrel, grouped use_list, Cargo workspace cross-crate).
+    go_rs_repo = tmp_path / "go_rust_repo"
+    go_rs_repo.mkdir()
+    _run_git(go_rs_repo, "init", "-b", "main")
+    _run_git(go_rs_repo, "config", "user.email", "test@example.com")
+    _run_git(go_rs_repo, "config", "user.name", "Test")
+    gr_eidos = go_rs_repo / "eidos"
+    for sub in ("architecture/containers", "architecture/components"):
+        (gr_eidos / sub).mkdir(parents=True, exist_ok=True)
+    (gr_eidos / "system.adoc").write_text(
+        "---\ntype: product/system\nid: SYS-GORS\ntitle: GoRust\nstatus: active\nversion: 1.0.0\narchetypes:\n  - library\n---\n= GoRust\n",
+        encoding="utf-8",
+    )
+    (gr_eidos / "architecture" / "containers" / "go-svc.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-GO\ntitle: Go Service\nstatus: active\ncontainer_type: service\nruntime: Go 1.23\n"
+        "source_path:\n  - internal\n  - cmd\n---\n= Go Service\n",
+        encoding="utf-8",
+    )
+    (gr_eidos / "architecture" / "components" / "go-billing.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-GO-BILLING\ntitle: GoBilling\ncontainer: CNT-GO\nstatus: active\n"
+        "source_path: internal/billing\n---\n= GoBilling\n",
+        encoding="utf-8",
+    )
+    (gr_eidos / "architecture" / "components" / "go-api.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-GO-API\ntitle: GoApi\ncontainer: CNT-GO\nstatus: active\n"
+        "source_path: cmd\n---\n= GoApi\n",
+        encoding="utf-8",
+    )
+    (gr_eidos / "architecture" / "containers" / "rust-ws.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-RUST\ntitle: Rust Workspace\nstatus: active\ncontainer_type: library\nruntime: Rust 1.82\n"
+        "source_path: crates\n---\n= Rust Workspace\n",
+        encoding="utf-8",
+    )
+    (gr_eidos / "architecture" / "components" / "rust-core.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-RS-CORE\ntitle: RustCore\ncontainer: CNT-RUST\nstatus: active\n"
+        "source_path: crates/core-lib/src\n---\n= RustCore\n",
+        encoding="utf-8",
+    )
+    (gr_eidos / "architecture" / "components" / "rust-app.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-RS-APP\ntitle: RustApp\ncontainer: CNT-RUST\nstatus: active\n"
+        "source_path: crates/app-bin/src\n---\n= RustApp\n",
+        encoding="utf-8",
+    )
+
+    for rel_dir in (
+        "internal/billing",
+        "cmd/api",
+        "cmd/worker",
+        "crates/core-lib/src/pricing",
+        "crates/app-bin/src/handlers",
+    ):
+        (go_rs_repo / rel_dir).mkdir(parents=True)
+
+    (go_rs_repo / "go.mod").write_text("module github.com/acme/shop\n\ngo 1.23\n", encoding="utf-8")
+    (go_rs_repo / "internal" / "billing" / "tax.go").write_text(
+        "package billing\n\nfunc CalcTax(amount int) int {\n\treturn amount * 10\n}\n",
+        encoding="utf-8",
+    )
+    (go_rs_repo / "internal" / "billing" / "invoice.go").write_text(
+        "package billing\n\nfunc BuildInvoice(id int) int {\n\treturn id + 1\n}\n",
+        encoding="utf-8",
+    )
+    (go_rs_repo / "internal" / "billing" / "retired.go").write_text(
+        "package billing\n\nfunc RetiredDiscount(x int) int {\n\treturn x\n}\n",
+        encoding="utf-8",
+    )
+    (go_rs_repo / "internal" / "billing" / "doc.go").write_text(
+        "// Package billing handles invoicing.\npackage billing\n",
+        encoding="utf-8",
+    )
+    (go_rs_repo / "cmd" / "api" / "main.go").write_text(
+        'package main\n\nimport (\n\t"fmt"\n\t"github.com/acme/shop/internal/billing"\n\t"github.com/other/shop/internal/billing"\n)\n\n'
+        "func Handle() {\n\tfmt.Println(billing.CalcTax(5) + billing.RetiredDiscount(1))\n}\n",
+        encoding="utf-8",
+    )
+    (go_rs_repo / "cmd" / "worker" / "main.go").write_text(
+        'package main\n\nimport "github.com/acme/shop/internal/billing"\n\n'
+        "func RunWorker() int {\n\treturn billing.BuildInvoice(9)\n}\n",
+        encoding="utf-8",
+    )
+
+    (go_rs_repo / "crates" / "core-lib" / "Cargo.toml").write_text(
+        '[package]\nname = "core-lib"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    (go_rs_repo / "crates" / "core-lib" / "src" / "lib.rs").write_text(
+        "pub mod pricing;\npub use pricing::*;\n", encoding="utf-8"
+    )
+    (go_rs_repo / "crates" / "core-lib" / "src" / "pricing" / "mod.rs").write_text(
+        "pub fn calc_price(n: i32) -> i32 { n * 2 }\n\n"
+        "#[cfg(test)]\n"
+        "mod tests {\n"
+        "    use super::*;\n"
+        "    #[test]\n"
+        "    fn it_works() { assert_eq!(calc_price(2), 4); }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (go_rs_repo / "crates" / "core-lib" / "src" / "sibling.rs").write_text(
+        "use crate::calc_price;\n\npub fn run_sibling(n: i32) -> i32 { calc_price(n) }\n",
+        encoding="utf-8",
+    )
+    (go_rs_repo / "crates" / "app-bin" / "Cargo.toml").write_text(
+        '[package]\nname = "app-bin"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    (go_rs_repo / "crates" / "app-bin" / "src" / "main.rs").write_text(
+        "mod handlers;\nuse core_lib::pricing::calc_price;\nuse std::collections::HashMap;\n\n"
+        "fn main() { let _ = calc_price(3); let _ = handlers::format_price(3); }\n",
+        encoding="utf-8",
+    )
+    (go_rs_repo / "crates" / "app-bin" / "src" / "handlers" / "mod.rs").write_text(
+        "pub mod fmt_helper;\nuse self::fmt_helper::wrap_price;\n\n"
+        "pub fn format_price(n: i32) -> i32 { wrap_price(n) }\n",
+        encoding="utf-8",
+    )
+    (go_rs_repo / "crates" / "app-bin" / "src" / "handlers" / "fmt_helper.rs").write_text(
+        "pub fn wrap_price(n: i32) -> i32 { n + 1 }\n", encoding="utf-8"
+    )
+    (go_rs_repo / "crates" / "app-bin" / "src" / "handlers" / "super_caller.rs").write_text(
+        "use super::fmt_helper::wrap_price;\n\npub fn call_super(n: i32) -> i32 { wrap_price(n) }\n",
+        encoding="utf-8",
+    )
+
+    _run_git(go_rs_repo, "add", ".")
+    _run_git(go_rs_repo, "commit", "-m", "init go and rust workspace")
+
+    # Modify Go tax.go + delete retired.go; modify Rust pricing/mod.rs + fmt_helper.rs.
+    (go_rs_repo / "internal" / "billing" / "tax.go").write_text(
+        "package billing\n\nfunc CalcTax(amount int) int {\n\treturn amount * 15\n}\n",
+        encoding="utf-8",
+    )
+    (go_rs_repo / "internal" / "billing" / "retired.go").unlink()
+    (go_rs_repo / "internal" / "billing" / "doc.go").unlink()
+    (go_rs_repo / "crates" / "core-lib" / "src" / "pricing" / "mod.rs").write_text(
+        "pub fn calc_price(n: i32) -> i32 { n * 3 }\n", encoding="utf-8"
+    )
+    (go_rs_repo / "crates" / "app-bin" / "src" / "handlers" / "fmt_helper.rs").write_text(
+        "pub fn wrap_price(n: i32) -> i32 { n + 5 }\n", encoding="utf-8"
+    )
+
+    gr_res = detect_drift(repo_root=go_rs_repo, eidos_dir=gr_eidos, uncommitted=True)
+    gr_pairs = {(c["file"], c["target_file"]): c for c in gr_res.untouched_consumers}
+
+    # Go: cmd/api/main.go flagged for both tax.go (CalcTax) and deleted retired.go (RetiredDiscount);
+    #     cmd/worker/main.go NOT flagged for either!
+    assert ("cmd/api/main.go", "internal/billing/tax.go") in gr_pairs
+    assert gr_pairs[("cmd/api/main.go", "internal/billing/tax.go")]["symbols"] == ["CalcTax"]
+    assert ("cmd/api/main.go", "internal/billing/retired.go") in gr_pairs
+    assert gr_pairs[("cmd/api/main.go", "internal/billing/retired.go")]["change_kinds"] == ["file_deleted"]
+    assert ("cmd/worker/main.go", "internal/billing/tax.go") not in gr_pairs
+    assert ("cmd/worker/main.go", "internal/billing/retired.go") not in gr_pairs
+    # Deleting doc-only doc.go when sibling .go files remain must NOT blast package importers.
+    assert ("cmd/api/main.go", "internal/billing/doc.go") not in gr_pairs
+    assert ("cmd/worker/main.go", "internal/billing/doc.go") not in gr_pairs
+
+    # Rust: wildcard barrel lib.rs -> sibling.rs, cross-crate core_lib -> app-bin/src/main.rs,
+    #       self:: in handlers/mod.rs, and super:: in handlers/super_caller.rs!
+    assert ("crates/core-lib/src/sibling.rs", "crates/core-lib/src/pricing/mod.rs") in gr_pairs
+    assert gr_pairs[("crates/core-lib/src/sibling.rs", "crates/core-lib/src/pricing/mod.rs")]["via"] == (
+        "crates/core-lib/src/lib.rs"
+    )
+    assert ("crates/app-bin/src/main.rs", "crates/core-lib/src/pricing/mod.rs") in gr_pairs
+    assert ("crates/app-bin/src/handlers/mod.rs", "crates/app-bin/src/handlers/fmt_helper.rs") in gr_pairs
+    assert ("crates/app-bin/src/handlers/super_caller.rs", "crates/app-bin/src/handlers/fmt_helper.rs") in gr_pairs
+
+    # Verify code_couplings deduplicated Go package import to 1 coupling per importing file -> target component
+    # and recorded cross-crate Rust ast_import coupling (CMP-RS-APP -> CMP-RS-CORE).
+    from eidos.core.index.graph_index import get_architectural_index
+
+    gr_idx = get_architectural_index(repo_root=go_rs_repo, eidos_dir=gr_eidos)
+    gr_conn = gr_idx._get_connection()
+    go_couplings = gr_conn.execute(
+        "SELECT src_file, target_ref FROM code_couplings WHERE source_entity_id = 'CMP-GO-API' AND target_entity_id = 'CMP-GO-BILLING';"
+    ).fetchall()
+    assert len(go_couplings) == 2  # 1 from cmd/api/main.go + 1 from cmd/worker/main.go (deduped across package files)
+    assert all(r["target_ref"] == "internal/billing" for r in go_couplings)
+    rs_couplings = gr_conn.execute(
+        "SELECT src_file, target_ref FROM code_couplings WHERE source_entity_id = 'CMP-RS-APP' AND target_entity_id = 'CMP-RS-CORE';"
+    ).fetchall()
+    assert len(rs_couplings) == 1
+    assert rs_couplings[0]["src_file"] == "crates/app-bin/src/main.rs"
+    assert rs_couplings[0]["target_ref"] == "crates/core-lib/src/pricing/mod.rs"

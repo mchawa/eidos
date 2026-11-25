@@ -44,12 +44,14 @@ def build_drift_remediation_and_summary(
     boundary_violations: list[dict[str, Any]] | None = None,
     ratchet_shrink_candidates: list[dict[str, Any]] | None = None,
     ready_to_apply_deltas: list[dict[str, Any]] | None = None,
+    untouched_consumers: list[dict[str, Any]] | None = None,
 ) -> tuple[list[str], str]:
     """Build actionable remediation suggestions and Markdown summary report for drift detection."""
     remediation: list[str] = []
     b_violations = list(boundary_violations or [])
     shrink_cands = list(ratchet_shrink_candidates or [])
     ready_deltas = list(ready_to_apply_deltas or [])
+    consumers = list(untouched_consumers or [])
     if base_direct_drift:
         target_list = uncovered_direct_components or comp_mappings
         structural_set = set(structural_code_files)
@@ -266,6 +268,25 @@ def build_drift_remediation_and_summary(
                 f"`{rtd.get('verified_mutations', 0)}/{rtd.get('total_mutations', 0)}` mutations verified — "
                 f"run `eidos delta apply {rtd['id']}`"
             )
+        summary_lines.append("")
+
+    if consumers:
+        summary_lines.append("### 🔍 Untouched Sibling Consumers to Review (Advisory):")
+        for uc in consumers[:15]:
+            owner_badge = f" (`{uc['owner']}`)" if uc.get("owner") else ""
+            via_note = f" via `{uc['via']}`" if uc.get("via") else ""
+            syms_list = uc.get("symbols") or []
+            if syms_list:
+                sym_preview = ", ".join(syms_list[:5]) + (f" (+{len(syms_list) - 5})" if len(syms_list) > 5 else "")
+                sym_note = f" — symbols: `{sym_preview}`"
+            else:
+                sym_note = ""
+            kinds = ", ".join(uc.get("change_kinds") or [])
+            summary_lines.append(
+                f"- `{uc['file']}:{uc['line']}`{owner_badge} imports `{uc['target_file']}`{via_note} [{kinds}]{sym_note}"
+            )
+        if len(consumers) > 15:
+            summary_lines.append(f"- *… and {len(consumers) - 15} more untouched consumer(s) in JSON output.*")
         summary_lines.append("")
 
     return remediation, "\n".join(summary_lines)
