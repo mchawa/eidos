@@ -40,7 +40,8 @@ site/
 .cursor/
 .claude/
 .agents/*
-!.agents/skills
+!.agents/skills/
+!.agents/.eidos-manifest.json
 .aider*
 .clinerules
 .cline/
