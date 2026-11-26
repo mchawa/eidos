@@ -20,6 +20,7 @@ import os
 import sqlite3
 import struct
 import time
+import urllib.parse
 import urllib.request
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
@@ -27,9 +28,33 @@ from typing import Any
 
 import orjson
 
+_STDLIB_URLOPEN = urllib.request.urlopen
+
+
+class _SafeHTTPSRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Redirect handler blocking non-HTTP(S) schemes (e.g. ftp://, file://) and HTTPS->HTTP downgrades."""
+
+    def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> Any:
+        orig_scheme = urllib.parse.urlparse(req.full_url).scheme.lower()
+        new_scheme = urllib.parse.urlparse(newurl).scheme.lower()
+        if new_scheme not in ("http", "https"):
+            raise ValueError(f"Blocked redirect to unsupported URL scheme '{new_scheme}' ({newurl}).")
+        if orig_scheme == "https" and new_scheme == "http":
+            raise ValueError(f"Blocked insecure HTTPS-to-HTTP redirect ({req.full_url} -> {newurl}).")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _open_artifact_url(req: urllib.request.Request, *, timeout: int = 60) -> Any:
+    """Open an artifact URL with strict redirect scheme/downgrade protection (honoring test urlopen monkeypatches)."""
+    if urllib.request.urlopen is not _STDLIB_URLOPEN:
+        return urllib.request.urlopen(req, timeout=timeout)
+    opener = urllib.request.build_opener(_SafeHTTPSRedirectHandler())
+    return opener.open(req, timeout=timeout)
+
+
 # NOTE (DEC-INDEX-PRESERVE-EMBEDDINGS-ON-SCHEMA-MIGRATION, DLT-2026-179):
 # spec_embeddings survives unrelated SQLite SCHEMA_VERSION bumps when EMBEDDING_SCHEMA_VERSION
-# in src/eidos/core/index/storage.py matches. Bump EMBEDDING_SCHEMA_VERSION whenever changing
+# in `eidos.core.index.storage` matches. Bump EMBEDDING_SCHEMA_VERSION whenever changing
 # HARRIER_MODEL_ID, HARRIER_HF_REVISION, HARRIER_EMBEDDING_DIM, HARRIER_DOC_MAX_LENGTH,
 # HARRIER_STS_INSTRUCTION, vector normalization/dtype, or format_spec_embedding_document().
 HARRIER_MODEL_ID = "onnx-community/harrier-oss-v1-0.6b-ONNX"
@@ -106,7 +131,7 @@ def format_spec_embedding_document(
     """Construct the deterministic unprefixed specification text used for content-addressed embedding.
 
     Note: Changing this layout invalidates persisted vectors—bump ``EMBEDDING_SCHEMA_VERSION`` in
-    ``src/eidos/core/index/storage.py`` (``DEC-SEMANTIC-EMBEDDING-SCHEMA-BUMP-CONTRACT``).
+    ``eidos.core.index.storage`` (``DEC-SEMANTIC-EMBEDDING-SCHEMA-BUMP-CONTRACT``).
     """
     return (
         f"[{entity_id}] ({entity_type}) {title or entity_id}\n"
@@ -959,7 +984,7 @@ def setup_semantic_model(
         total_bytes: int | None = None
         hdr_sha256 = ""
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp, open(tmp_dest, "wb") as out_f:
+            with _open_artifact_url(req, timeout=60) as resp, open(tmp_dest, "wb") as out_f:
                 headers = getattr(resp, "headers", None) or {}
                 content_len_hdr = headers.get("Content-Length") if hasattr(headers, "get") else None
                 total_bytes = (

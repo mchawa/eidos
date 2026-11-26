@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import math
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -189,7 +190,9 @@ class ConfigValidationError(ValueError):
     def __init__(self, errors: list[str] | tuple[str, ...], config_path: Path | None = None) -> None:
         self.errors: tuple[str, ...] = tuple(errors)
         self.config_path: Path | None = config_path
-        prefix = f"Invalid configuration in '{config_path}'" if config_path is not None else "Invalid Eidos configuration"
+        prefix = (
+            f"Invalid configuration in '{config_path}'" if config_path is not None else "Invalid Eidos configuration"
+        )
         detail = "; ".join(self.errors) if self.errors else "unknown validation error"
         super().__init__(f"{prefix}: {detail}")
 
@@ -592,29 +595,119 @@ def find_config_file(
     return None
 
 
+def _normalize_portal_out_dir(raw_out_dir: str) -> str:
+    """Normalize a validated relative portal.build.out_dir path into canonical POSIX segments."""
+    norm = raw_out_dir.strip().replace("\\", "/")
+    parts = [seg for seg in norm.split("/") if seg and seg != "."]
+    return "/".join(parts)
+
+
+def _brace_expansion_exceeds_limit(pattern: str, *, limit: int = 256) -> bool:
+    """Return True if expanding '{a,b}' brace groups in ``pattern`` would exceed ``limit`` patterns."""
+    if "{" not in pattern or "}" not in pattern:
+        return False
+
+    def _first_group(s: str) -> tuple[int, int, list[str]] | None:
+        n = len(s)
+        idx = 0
+        while idx < n:
+            if s[idx] == "{":
+                depth = 1
+                j = idx + 1
+                parts: list[str] = []
+                seg_start = j
+                while j < n and depth > 0:
+                    ch = s[j]
+                    if ch == "{":
+                        depth += 1
+                    elif ch == "}":
+                        depth -= 1
+                        if depth == 0:
+                            parts.append(s[seg_start:j])
+                            break
+                    elif ch == "," and depth == 1:
+                        parts.append(s[seg_start:j])
+                        seg_start = j + 1
+                    j += 1
+                if depth == 0 and len(parts) >= 2:
+                    return idx, j, parts
+            idx += 1
+        return None
+
+    count = 0
+    stack: list[str] = [pattern]
+    while stack:
+        cur = stack.pop()
+        group = _first_group(cur)
+        if group is None:
+            count += 1
+            if count > limit:
+                return True
+            continue
+        open_idx, close_idx, options = group
+        prefix = cur[:open_idx]
+        suffix = cur[close_idx + 1 :]
+        for opt in options:
+            stack.append(f"{prefix}{opt}{suffix}")
+    return False
+
+
+def _find_non_finite_floats(obj: Any, prefix: str = "") -> list[str]:
+    """Return validation error messages for any non-finite float (.inf, -.inf, .nan) in parsed YAML."""
+    errs: list[str] = []
+    if isinstance(obj, float) and not math.isfinite(obj):
+        loc = f"Property '{prefix}'" if prefix else "Root configuration"
+        errs.append(f"{loc}: non-finite floating-point value ({obj}) is not allowed.")
+    elif isinstance(obj, dict):
+        for k, v in obj.items():
+            child = f"{prefix}.{k}" if prefix else str(k)
+            errs.extend(_find_non_finite_floats(v, child))
+    elif isinstance(obj, list):
+        for idx, item in enumerate(obj):
+            child = f"{prefix}[{idx}]" if prefix else f"[{idx}]"
+            errs.extend(_find_non_finite_floats(item, child))
+    return errs
+
+
 def _validate_mirror_url(raw_url: str, *, field_label: str = "context.semantic.model_mirror_url") -> str | None:
-    """Validate an HTTP(S) mirror URL, rejecting file://, non-HTTP schemes, whitespace, and embedded credentials."""
+    """Validate an HTTP(S) mirror URL, rejecting file://, non-HTTP schemes, control chars, invalid ports, and credentials."""
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in raw_url):
+        return f"Property '{field_label}': URL must not contain control characters or newlines."
     cleaned = raw_url.strip()
     if not cleaned:
         return f"Property '{field_label}': must be a non-empty http:// or https:// URL."
     if any(ch.isspace() for ch in cleaned):
         return f"Property '{field_label}': URL '{raw_url}' must not contain whitespace."
-    parsed = urlparse(cleaned)
+    if any(ch in cleaned for ch in ("?", "#", ";", "\\")):
+        return (
+            f"Property '{field_label}': URL '{raw_url}' must be a clean base URL "
+            "without query string, fragment, path parameters, or backslashes."
+        )
+    try:
+        parsed = urlparse(cleaned)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError as exc:
+        return f"Property '{field_label}': malformed URL '{raw_url}' ({exc})."
     scheme = (parsed.scheme or "").lower()
-    if scheme not in ("http", "https") or not parsed.netloc:
+    if "@" in (parsed.netloc or "") or parsed.username is not None or parsed.password is not None:
+        return f"Property '{field_label}': must not embed credentials in URLs committed to eidos/eidos.yaml."
+    if (parsed.netloc or "").endswith(":"):
+        return f"Property '{field_label}': empty port specifier in URL '{raw_url}'."
+    if scheme not in ("http", "https") or not hostname:
         return (
             f"Property '{field_label}': must use an 'https://' or 'http://' URL scheme with a valid host "
             f"(got '{raw_url}'; file:// and other schemes are forbidden)."
         )
-    if parsed.username or parsed.password:
-        return (
-            f"Property '{field_label}': must not embed credentials in URLs committed to eidos/eidos.yaml."
-        )
+    if port is not None and not (1 <= port <= 65535):
+        return f"Property '{field_label}': invalid port '{port}' in URL '{raw_url}'."
     return None
 
 
 def _validate_portal_out_dir(raw_out_dir: str, *, repo_root: Path | None = None) -> str | None:
     """Validate that portal.build.out_dir stays strictly contained within repo_root (no '.', '..', abs, or symlinks)."""
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in raw_out_dir):
+        return "Property 'portal.build.out_dir': path must not contain control characters or null bytes."
     cleaned = raw_out_dir.strip()
     if not cleaned:
         return "Property 'portal.build.out_dir': must be a non-empty repository-relative directory path."
@@ -637,20 +730,21 @@ def _validate_portal_out_dir(raw_out_dir: str, *, repo_root: Path | None = None)
             "specify a dedicated subdirectory (e.g. 'site' or 'docs/portal')."
         )
     if repo_root is not None:
-        root_res = repo_root.resolve()
-        cur = root_res
-        for seg in effective_parts:
-            cur = cur / seg
-            if cur.is_symlink():
-                return (
-                    f"Property 'portal.build.out_dir': '{raw_out_dir}' traverses a symbolic link ('{seg}'), "
-                    "which is forbidden to prevent repository escape."
-                )
-        resolved_target = cur.resolve()
+        try:
+            root_res = repo_root.resolve()
+            cur = root_res
+            for seg in effective_parts:
+                cur = cur / seg
+                if cur.is_symlink():
+                    return (
+                        f"Property 'portal.build.out_dir': '{raw_out_dir}' traverses a symbolic link ('{seg}'), "
+                        "which is forbidden to prevent repository escape."
+                    )
+            resolved_target = cur.resolve()
+        except (OSError, ValueError) as exc:
+            return f"Property 'portal.build.out_dir': invalid path '{raw_out_dir}' ({exc})."
         if resolved_target == root_res or not resolved_target.is_relative_to(root_res):
-            return (
-                f"Property 'portal.build.out_dir': '{raw_out_dir}' escapes the repository root '{root_res}'."
-            )
+            return f"Property 'portal.build.out_dir': '{raw_out_dir}' escapes the repository root '{root_res}'."
     return None
 
 
@@ -664,7 +758,10 @@ def validate_config_data(data: Any, *, repo_root: Path | None = None) -> list[st
     errors: list[str] = []
     raw_version = data.get("version")
     unsupported_future_version = (
-        isinstance(raw_version, int) and not isinstance(raw_version, bool) and raw_version > CONFIG_SCHEMA_VERSION
+        isinstance(raw_version, (int, float))
+        and not isinstance(raw_version, bool)
+        and math.isfinite(raw_version)
+        and raw_version > CONFIG_SCHEMA_VERSION
     )
     if unsupported_future_version:
         errors.append(
@@ -711,14 +808,46 @@ def validate_config_data(data: Any, *, repo_root: Path | None = None) -> list[st
             if out_err is not None and out_err not in errors:
                 errors.append(out_err)
 
+    for nf_err in _find_non_finite_floats(data):
+        if nf_err not in errors:
+            errors.append(nf_err)
+
+    glob_fields: list[tuple[str, Any]] = []
+    ws_sec = data.get("workspace")
+    if isinstance(ws_sec, dict):
+        glob_fields.append(("workspace.exclude", ws_sec.get("exclude")))
+        glob_fields.append(("workspace.subprojects_exclude", ws_sec.get("subprojects_exclude")))
+        ws_tests = ws_sec.get("tests")
+        if isinstance(ws_tests, dict):
+            glob_fields.append(("workspace.tests.include", ws_tests.get("include")))
+            glob_fields.append(("workspace.tests.exclude", ws_tests.get("exclude")))
+    dr_sec = data.get("drift")
+    if isinstance(dr_sec, dict):
+        glob_fields.append(("drift.ignore_paths", dr_sec.get("ignore_paths")))
+    for field_name, raw_list in glob_fields:
+        if isinstance(raw_list, list):
+            for pat in raw_list:
+                if isinstance(pat, str) and _brace_expansion_exceeds_limit(pat, limit=256):
+                    msg = (
+                        f"Property '{field_name}': glob pattern '{pat}' exceeds the maximum "
+                        "brace expansion limit (256)."
+                    )
+                    if msg not in errors:
+                        errors.append(msg)
+
     return errors
 
 
 def validate_config_file(config_path: Path, *, repo_root: Path | None = None) -> list[str]:
     """Validate an eidos/eidos.yaml file on disk, failing closed on syntax, schema, URL, or containment violations."""
     p = Path(config_path)
-    if p.is_symlink() and not p.exists():
-        return [f"Configuration file '{p}' is a broken symbolic link."]
+    if p.is_symlink():
+        if not p.exists():
+            return [f"Configuration file '{p}' is a broken symbolic link."]
+        return [
+            f"Configuration file '{p}' is a symbolic link; "
+            "eidos/eidos.yaml must be a regular file inside the repository."
+        ]
     if not p.is_file():
         return [f"Configuration file '{p}' does not exist or is not a regular file."]
     try:
@@ -730,7 +859,7 @@ def validate_config_file(config_path: Path, *, repo_root: Path | None = None) ->
     except YamlError as exc:
         return [f"Invalid YAML syntax: {exc}"]
 
-    effective_root = repo_root if repo_root is not None else p.resolve().parent.parent
+    effective_root = repo_root if repo_root is not None else p.parent.resolve().parent
     return validate_config_data(parsed, repo_root=effective_root)
 
 
@@ -929,9 +1058,7 @@ def _build_config_from_dict(merged: dict[str, Any]) -> EidosConfig:
                 enabled=bool(ctx_sem["enabled"]),
                 variant=str(ctx_sem["variant"]),
                 model_mirror_url=(
-                    str(ctx_sem["model_mirror_url"]).strip()
-                    if isinstance(ctx_sem["model_mirror_url"], str)
-                    else None
+                    str(ctx_sem["model_mirror_url"]).strip() if isinstance(ctx_sem["model_mirror_url"], str) else None
                 ),
             ),
         ),
@@ -971,7 +1098,7 @@ def _build_config_from_dict(merged: dict[str, Any]) -> EidosConfig:
                 open_browser=bool(pt_serve["open_browser"]),
             ),
             build=PortalBuildConfig(
-                out_dir=str(pt_build["out_dir"]).strip(),
+                out_dir=_normalize_portal_out_dir(str(pt_build["out_dir"])) or "site",
                 single_file=bool(pt_build["single_file"]),
             ),
         ),
@@ -1018,10 +1145,14 @@ def _resolve_repo_config_internal(
     eff_env = os.environ if env is None else env
     candidate, inferred_root = _resolve_config_candidate_and_root(eidos_dir=eidos_dir, repo_root=repo_root)
     config_path: Path | None = None
+    non_regular_entry = False
     if candidate.is_symlink():
         config_path = candidate
     elif candidate.is_file():
         config_path = candidate.resolve()
+    elif candidate.exists():
+        config_path = candidate.resolve()
+        non_regular_entry = True
 
     # Zero-config fast path: no file and no relevant EIDOS_* env vars set
     if config_path is None and not any(eff_env.get(k, "").strip() for k in _ENV_VAR_NAMES):
@@ -1032,8 +1163,16 @@ def _resolve_repo_config_internal(
     errors: list[str] = []
 
     if config_path is not None:
-        if config_path.is_symlink() and not config_path.exists():
-            errors.append(f"Configuration file '{config_path}' is a broken symbolic link.")
+        if config_path.is_symlink():
+            if not config_path.exists():
+                errors.append(f"Configuration file '{config_path}' is a broken symbolic link.")
+            else:
+                errors.append(
+                    f"Configuration file '{config_path}' is a symbolic link; "
+                    "eidos/eidos.yaml must be a regular file inside the repository."
+                )
+        elif non_regular_entry or not config_path.is_file():
+            errors.append(f"Configuration file '{config_path}' does not exist or is not a regular file.")
         else:
             try:
                 raw_text = config_path.read_text(encoding="utf-8")
@@ -1105,17 +1244,53 @@ def load_repo_config(
 
 def init_config_file(eidos_dir: Path, *, force: bool = False) -> Path:
     """Scaffold a commented, schema-validated starter <eidos_dir>/eidos.yaml file."""
+    import contextlib
+    import errno
+    import tempfile
+
     target_dir = Path(eidos_dir).resolve()
     if not target_dir.is_dir():
-        raise FileNotFoundError(
-            f"Specifications directory '{target_dir}' does not exist. Run 'eidos init' first."
-        )
+        raise FileNotFoundError(f"Specifications directory '{target_dir}' does not exist. Run 'eidos init' first.")
     target_file = target_dir / CONFIG_FILENAME
-    if target_file.exists() and not force:
-        raise FileExistsError(
-            f"Configuration file already exists at '{target_file}'. Pass --force to overwrite."
+    if target_file.is_dir() and not target_file.is_symlink():
+        raise IsADirectoryError(
+            f"Configuration path '{target_file}' is a directory; remove it before running 'eidos config init'."
         )
-    target_file.write_text(STARTER_CONFIG_YAML, encoding="utf-8")
+    if not force:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            fd = os.open(str(target_file), flags, 0o644)
+        except FileExistsError as exc:
+            raise FileExistsError(
+                f"Configuration file already exists at '{target_file}'. Pass --force to overwrite."
+            ) from exc
+        except OSError as exc:
+            if exc.errno in (errno.ELOOP, errno.EEXIST):
+                raise FileExistsError(
+                    f"Configuration file already exists at '{target_file}'. Pass --force to overwrite."
+                ) from exc
+            raise
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(STARTER_CONFIG_YAML)
+    else:
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=target_dir,
+                prefix=".eidos-config-",
+                suffix=".tmp",
+                delete=False,
+            ) as tmp_f:
+                tmp_path = Path(tmp_f.name)
+                tmp_f.write(STARTER_CONFIG_YAML)
+            os.replace(tmp_path, target_file)
+            tmp_path = None
+        finally:
+            if tmp_path is not None:
+                with contextlib.suppress(OSError):
+                    tmp_path.unlink()
     errs = validate_config_file(target_file, repo_root=target_dir.parent)
     if errs:  # pragma: no cover - defensive self-check on bundled starter template
         raise ConfigValidationError(errs, config_path=target_file)

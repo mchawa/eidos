@@ -928,6 +928,7 @@ def list_memories(
                 active_batch,
                 catalog_ids,
                 conn=conn,
+                eidos_dir=eidos_dir,
                 db_path=getattr(idx, "db_path", None),
                 today=today,
             )
@@ -1004,6 +1005,7 @@ def search_memories(
         batch_inputs,
         catalog_ids,
         conn=conn,
+        eidos_dir=eidos_dir,
         db_path=getattr(idx, "db_path", None),
         today=today,
     )
@@ -1056,6 +1058,7 @@ def show_memory(eidos_dir: Path, target: str, *, today: date | None = None) -> d
             [(mem_id, fm)],
             catalog_ids,
             conn=conn,
+            eidos_dir=eidos_dir,
             db_path=getattr(idx, "db_path", None),
             today=today,
         ).get(mem_id, ("fresh", ""))
@@ -1165,7 +1168,9 @@ def verify_memory(
     fresh, reason = (
         ("draft", "")
         if mem_status == "draft"
-        else evaluate_memory_freshness(repo_root, fm, catalog_ids, today=effective_today, head_sha=head_sha)
+        else evaluate_memory_freshness(
+            repo_root, fm, catalog_ids, today=effective_today, head_sha=head_sha, eidos_dir=eidos_dir
+        )
     )
 
     try:

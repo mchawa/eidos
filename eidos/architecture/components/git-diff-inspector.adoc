@@ -18,9 +18,9 @@ Inspects Git commit ranges and uncommitted working trees (`get_git_diff_files`),
 
 == Public Surface
 * `GitResolutionError`, `ChangedFilesClassification`, `POLYGLOT_TEST_PATTERNS`
-* `get_git_diff_files(repo_root: Path, base_ref: str | None = None, head_ref: str = "HEAD", uncommitted: bool = False, merge_base: str | None = None, *, repo_config: EidosConfig | None = None, eidos_dir: Path | None = None) -> list[str]`
-* `classify_changed_files(changed_files: list[str], eidos_dir: Path | None = None, repo_root: Path | None = None, *, package_paths: list[str] | None = None, repo_config: EidosConfig | None = None) -> ChangedFilesClassification`
-* `collect_polyglot_test_files(repo_root: Path, *, package_paths: list[str] | None = None, eidos_dir: Path | None = None, repo_config: EidosConfig | None = None) -> list[Path]`
+* `get_git_diff_files(repo_root: Path, base_ref: str | None = None, head_ref: str = "HEAD", uncommitted: bool = False, *, merge_base: str | None = None, repo_config: EidosConfig | None = None, eidos_dir: Path | None = None, snapshot_root: Path | None = None) -> list[str]`
+* `classify_changed_files(files: list[str], repo_root: Path | None = None, eidos_dir: Path | None = None, package_paths: Iterable[str] | None = None, *, repo_config: EidosConfig | None = None) -> ChangedFilesClassification`
+* `collect_polyglot_test_files(repo_root: Path, *, eidos_dir: Path | None = None, repo_config: EidosConfig | None = None) -> dict[str, str]`
 * `map_code_to_components(eidos_dir: Path, code_files: list[str], repo_root: Path | None = None) -> list[tuple[str, str, str]]`
 * `batch_read_git_blobs(repo_root: Path, specs: list[str]) -> dict[str, str | None]`
 

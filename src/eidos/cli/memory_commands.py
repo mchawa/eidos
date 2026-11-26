@@ -68,7 +68,7 @@ def memory_add_cmd(
     expires: str | None = typer.Option(
         None,
         "--expires",
-        help="Optional ISO expiration date YYYY-MM-DD for time-bounded project notes.",
+        help="Optional ISO expiration date YYYY-MM-DD (or 'none' to opt out of memory.default_expiry_days).",
     ),
     status: str = typer.Option("active", "--status", help="Initial status: active (default) or draft."),
     semantic: bool = typer.Option(
@@ -149,7 +149,10 @@ def memory_list_cmd(
     json_output: bool = typer.Option(False, "--json", help="Output memories as JSON."),
 ) -> None:
     """List team operational memories with computed freshness status."""
+    from eidos.cli._shared import load_cli_repo_config
+
     eidos_dir = resolve_cli_eidos_dir(path)
+    load_cli_repo_config(eidos_dir, json_output=json_output)
     try:
         items = list_memories(
             eidos_dir,
@@ -239,7 +242,10 @@ def memory_show_cmd(
     json_output: bool = typer.Option(False, "--json", help="Output full memory details as JSON."),
 ) -> None:
     """Display frontmatter metadata, freshness diagnostics, and body of a team memory."""
+    from eidos.cli._shared import load_cli_repo_config
+
     eidos_dir = resolve_cli_eidos_dir(path)
+    load_cli_repo_config(eidos_dir, json_output=json_output)
     try:
         detail = show_memory(eidos_dir, id_or_path)
     except ValueError as exc:
@@ -276,7 +282,10 @@ def memory_verify_cmd(
     json_output: bool = typer.Option(False, "--json", help="Output updated verification result as JSON."),
 ) -> None:
     """Re-stamp verified_at and verified_commit on a memory after checking live code."""
+    from eidos.cli._shared import load_cli_repo_config
+
     eidos_dir = resolve_cli_eidos_dir(path)
+    load_cli_repo_config(eidos_dir, json_output=json_output)
     try:
         res = verify_memory(eidos_dir, id_or_path, expires_at=expires, clear_expires=clear_expires)
     except ValueError as exc:
@@ -300,7 +309,10 @@ def memory_archive_cmd(
     json_output: bool = typer.Option(False, "--json", help="Output archive result as JSON."),
 ) -> None:
     """Retire a team memory (status: archived) and move it under eidos/memory/archive/."""
+    from eidos.cli._shared import load_cli_repo_config
+
     eidos_dir = resolve_cli_eidos_dir(path)
+    load_cli_repo_config(eidos_dir, json_output=json_output)
     try:
         res = archive_memory(eidos_dir, id_or_path, reason=reason)
     except ValueError as exc:
@@ -398,7 +410,10 @@ def memory_promote_cmd(
     json_output: bool = typer.Option(False, "--json", help="Output promotion result as JSON."),
 ) -> None:
     """Graduate a team memory into a verified formal DEC-*, INV-*, or POL-* specification."""
+    from eidos.cli._shared import load_cli_repo_config
+
     eidos_dir = resolve_cli_eidos_dir(path)
+    load_cli_repo_config(eidos_dir, json_output=json_output)
     try:
         res = promote_memory(eidos_dir, id_or_path, to_kind=to, spec_id=spec_id, archive=archive)
     except ValueError as exc:

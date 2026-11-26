@@ -3612,9 +3612,7 @@ def test_semantic_engine_setup_onnx_protobuf_and_auto_refresh_coverage(tmp_path:
     fake_payload = b"artifact-bytes"
     fake_sha = hashlib.sha256(fake_payload).hexdigest()
 
-    fake_manifest = {
-        fname: (len(fake_payload), fake_sha) for fname in (*_METADATA_FILES, *_VARIANT_FILES["quantized"])
-    }
+    fake_manifest = {fname: (len(fake_payload), fake_sha) for fname in (*_METADATA_FILES, *_VARIANT_FILES["quantized"])}
     monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=60: _FakeResp(fake_payload))
     setup_dir = tmp_path / "setup_eidos"
     with _semantic_cli_progress(Console(quiet=True), mode="setup", enabled=True):

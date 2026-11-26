@@ -244,9 +244,7 @@ def doctor_cmd(
     agents_md_check = _check_onboarding_governance(plugin_root)
     open_deltas_check = _check_open_deltas(eidos_dir, specs_exist, schema_error_paths=schema_error_paths)
     cli_update = (
-        check_cli_update_status()
-        if repo_cfg.plugin.updates_check
-        else check_cli_update_status(allow_network=False)
+        check_cli_update_status() if repo_cfg.plugin.updates_check else check_cli_update_status(allow_network=False)
     )
 
     checks = {
@@ -383,14 +381,14 @@ def doctor_cmd(
 
     if plugin_installed and not hooks_ok:
         plugin_badge = "[bold red]FAIL[/bold red]"
+    elif plugin_installed and not plugin_up_to_date:
+        plugin_badge = f"[bold yellow]{plugin_status.get('status', '').upper()}[/bold yellow]"
     elif plugin_up_to_date and not missing_configured_targets:
         plugin_badge = "[bold green]PASS[/bold green]"
     elif missing_configured_targets:
         plugin_badge = "[bold yellow]WARN[/bold yellow]"
-    elif not plugin_installed:
-        plugin_badge = "[dim]NOT INSTALLED[/dim]"
     else:
-        plugin_badge = f"[bold yellow]{plugin_status.get('status', '').upper()}[/bold yellow]"
+        plugin_badge = "[dim]NOT INSTALLED[/dim]"
 
     table.add_row(
         "Agent Plugin Status",

@@ -7,7 +7,11 @@ import orjson
 import typer
 from rich.console import Console
 
-from eidos.core.workspace.config import ConfigValidationError, EidosConfig, load_repo_config
+from eidos.core.workspace.config import (
+    ConfigValidationError,
+    EidosConfig,
+    load_repo_config_with_sources,
+)
 from eidos.core.workspace.project import _has_eidos_markers, find_git_root, find_repo_root, resolve_spec_and_repo_roots
 
 PANEL_SETUP = "Setup & Workspace"
@@ -47,13 +51,13 @@ def resolve_param_from_config(param_name: str, cli_value: Any, config_value: Any
     return config_value
 
 
-def load_cli_repo_config(
+def load_cli_repo_config_with_sources(
     eidos_dir: Path,
     *,
     repo_root: Path | None = None,
     json_output: bool = False,
-) -> EidosConfig:
-    """Load optional ``<eidos_dir>/eidos.yaml`` for CLI commands, failing closed with exit code 1 on errors."""
+) -> tuple[EidosConfig, Path | None, dict[str, str]]:
+    """Load optional ``<eidos_dir>/eidos.yaml`` with per-key provenance for CLI commands, failing closed on errors."""
     effective_root = repo_root
     if effective_root is None:
         resolved_eidos = eidos_dir.resolve()
@@ -64,7 +68,7 @@ def load_cli_repo_config(
         else:
             effective_root = find_repo_root(resolved_eidos.parent if resolved_eidos.parent.exists() else None)
     try:
-        return load_repo_config(eidos_dir=eidos_dir, repo_root=effective_root)
+        return load_repo_config_with_sources(eidos_dir=eidos_dir, repo_root=effective_root)
     except ConfigValidationError as exc:
         if json_output:
             typer.echo(
@@ -76,6 +80,21 @@ def load_cli_repo_config(
         else:
             console.print(f"[bold red]Configuration Error:[/bold red] {exc}")
         raise typer.Exit(code=1) from exc
+
+
+def load_cli_repo_config(
+    eidos_dir: Path,
+    *,
+    repo_root: Path | None = None,
+    json_output: bool = False,
+) -> EidosConfig:
+    """Load optional ``<eidos_dir>/eidos.yaml`` for CLI commands, failing closed with exit code 1 on errors."""
+    cfg, _cfg_path, _sources = load_cli_repo_config_with_sources(
+        eidos_dir=eidos_dir,
+        repo_root=repo_root,
+        json_output=json_output,
+    )
+    return cfg
 
 
 def resolve_cli_eidos_dir(

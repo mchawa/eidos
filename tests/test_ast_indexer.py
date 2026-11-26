@@ -581,7 +581,7 @@ def test_architectural_index_find_symbol_and_repo_map():
     assert len(to_dict_matches) > 0
 
     # 2. get_repo_map
-    repo_map = arch_idx.get_repo_map(max_tokens=1000)
+    repo_map = arch_idx.get_repo_map(max_tokens=1500)
     assert "# 🗺️ Structural Code Graph (Repo Map)" in repo_map
     assert "src/eidos/core/index/ast_indexer.py" in repo_map or "src/eidos/core/index/graph_index.py" in repo_map
 

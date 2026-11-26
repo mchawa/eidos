@@ -34,6 +34,7 @@ def index_status_cmd(
 ):
     """Display health, schema version, cache size, AST telemetry, and statistics of the architectural index."""
     eidos_dir = resolve_cli_eidos_dir(path)
+    load_cli_repo_config(eidos_dir, json_output=json_output)
     idx = get_architectural_index(eidos_dir=eidos_dir)
     status = idx.get_index_status()
 
@@ -299,6 +300,7 @@ def index_blast_radius_cmd(
         raise typer.Exit(code=1) from exc
 
     eidos_dir = resolve_cli_eidos_dir(path)
+    load_cli_repo_config(eidos_dir, json_output=json_output)
     idx = get_architectural_index(eidos_dir=eidos_dir)
     resolved_ids = idx.resolve_blast_radius_targets(symbol_or_path)
     neighbors = (
@@ -413,6 +415,7 @@ def index_find_symbol_cmd(
 ):
     """Locate symbol matches and their associated living component specifications."""
     eidos_dir = resolve_cli_eidos_dir(path)
+    load_cli_repo_config(eidos_dir, json_output=json_output)
     idx = get_architectural_index(eidos_dir=eidos_dir)
     matches = idx.find_symbol(query=query, limit=limit)
 
@@ -577,7 +580,10 @@ def index_health_cmd(
     ),
 ):
     """Display an architecture governance health scorecard across source ownership, Public Surface, contracts, invariants, warnings, and ratchet debt."""
+    from eidos.cli._shared import load_cli_repo_config
+
     eidos_dir = resolve_cli_eidos_dir(path)
+    load_cli_repo_config(eidos_dir, json_output=json_output)
     idx = get_architectural_index(eidos_dir=eidos_dir)
     health = idx.get_governance_health()
 

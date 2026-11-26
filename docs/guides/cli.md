@@ -489,7 +489,7 @@ eidos memory promote MEM-USE-PNPM-IN-PORTAL-FRONTEND-A1B2 --to decision --spec-i
 ```
 
 Sub-commands:
-* `add`: Create a collision-resistant, AsciiDoc-sanitized, schema-validated `MEM-*` memory (`--title`, `--summary`, `--category [feedback|project|reference]`, `--guidance`, `--why`, `--entity`, `--file`, `--expires YYYY-MM-DD`, `--status [active|draft]`, `--semantic/--no-semantic`, `--path`, `--json`).
+* `add`: Create a collision-resistant, AsciiDoc-sanitized, schema-validated `MEM-*` memory (`--title`, `--summary`, `--category [feedback|project|reference]`, `--guidance`, `--why`, `--entity`, `--file`, `--expires YYYY-MM-DD|none`, `--status [active|draft]`, `--semantic/--no-semantic`, `--path`, `--json`).
 * `list`: List team memories with computed freshness (`--category`, `--status`, `--entity`, `--include-archived`, `--path`, `--json`).
 * `search <QUERY>`: Search active team memories via BM25 and optional Harrier Hybrid RRF (`--limit`, `--semantic/--no-semantic`, `--path`, `--json`).
 * `show <ID_OR_PATH>`: Display full frontmatter, freshness diagnostics, and body of an active or archived memory (`--path`, `--json`).

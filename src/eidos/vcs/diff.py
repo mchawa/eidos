@@ -7,6 +7,7 @@ polyglot test detection, changed files classification, and component mapping.
 from __future__ import annotations
 
 import contextlib
+import inspect
 import os
 import re
 import subprocess
@@ -186,7 +187,9 @@ def _candidate_base_refs(
     eidos_dir: Path | None = None,
 ) -> tuple[str, ...]:
     """Return ordered candidate base refs, prepending drift.base_ref from eidos/eidos.yaml when configured."""
-    cfg = repo_config if repo_config is not None else load_repo_config_with_errors(eidos_dir=eidos_dir, repo_root=repo)[0]
+    cfg = (
+        repo_config if repo_config is not None else load_repo_config_with_errors(eidos_dir=eidos_dir, repo_root=repo)[0]
+    )
     if cfg.drift.base_ref:
         return tuple(dict.fromkeys([cfg.drift.base_ref, *_CANDIDATE_BASE_REFS]))
     return _CANDIDATE_BASE_REFS
@@ -303,11 +306,10 @@ def _resolve_base_and_merge_base(
         head_sha = _stdout_str(head_check)
 
     eff_candidates = _candidate_base_refs(repo, repo_config=repo_config, eidos_dir=eidos_dir)
-    candidate = (
-        _resolve_base_ref(repo, None, candidate_refs=eff_candidates)
-        if eff_candidates != _CANDIDATE_BASE_REFS
-        else _resolve_base_ref(repo, None)
-    )
+    if "candidate_refs" in inspect.signature(_resolve_base_ref).parameters:
+        candidate = _resolve_base_ref(repo, None, candidate_refs=eff_candidates)
+    else:
+        candidate = _resolve_base_ref(repo, None)
     if not candidate:
         if _is_shallow_repository(git_root):
             raise GitResolutionError(
@@ -455,13 +457,15 @@ def get_git_diff_files(
     merge_base: str | None = None,
     repo_config: EidosConfig | None = None,
     eidos_dir: Path | None = None,
+    snapshot_root: Path | None = None,
 ) -> list[str]:
     """Retrieve list of modified and added files using NUL-delimited Git output, scoped to repo_root."""
     repo = repo_root.resolve()
     git_root = find_git_root(repo)
-    nested_roots = discover_nested_subproject_roots(repo, repo_config=repo_config)
+    scan_root = snapshot_root.resolve() if snapshot_root is not None else repo
+    nested_roots = discover_nested_subproject_roots(scan_root, repo_config=repo_config)
     nested_prefixes: tuple[str, ...] = tuple(
-        f"{nr.relative_to(repo).as_posix().strip('/')}/" for nr in nested_roots if nr.is_relative_to(repo)
+        f"{nr.relative_to(scan_root).as_posix().strip('/')}/" for nr in nested_roots if nr.is_relative_to(scan_root)
     )
 
     if uncommitted:
@@ -610,7 +614,9 @@ def collect_polyglot_test_files(
         return all_tests_content
 
     eff_eidos = eidos_dir.resolve() if eidos_dir is not None else (root / "eidos")
-    cfg = repo_config if repo_config is not None else load_repo_config_with_errors(eidos_dir=eff_eidos, repo_root=root)[0]
+    cfg = (
+        repo_config if repo_config is not None else load_repo_config_with_errors(eidos_dir=eff_eidos, repo_root=root)[0]
+    )
     ws_exclude = cfg.workspace.exclude
     pkg_paths = _discover_container_package_paths(eff_eidos) if eff_eidos.is_dir() else None
 
@@ -810,7 +816,9 @@ def classify_changed_files(
         is_in_eidos = prefix_len > 0 and len(parts) >= prefix_len and parts[:prefix_len] == eidos_rel_parts
         sub_parts = parts[prefix_len:] if is_in_eidos else []
         is_repo_config = is_in_eidos and sub_parts == [CONFIG_FILENAME]
-        is_eidos_ignored = is_repo_config or f.name == ".gitkeep" or (is_in_eidos and any(p.startswith(".") for p in sub_parts))
+        is_eidos_ignored = (
+            is_repo_config or f.name == ".gitkeep" or (is_in_eidos and any(p.startswith(".") for p in sub_parts))
+        )
         is_eidos_spec = is_in_eidos and not is_repo_config and sfx in {".adoc", ".json", ".yaml", ".yml"}
         is_ws_excluded = bool(ws_exclude and not is_in_eidos and is_excluded_by_config(rel_str_norm, ws_exclude))
         is_test = (

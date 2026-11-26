@@ -43,7 +43,6 @@ from eidos.core.workspace.config import (
     CONFIG_FILENAME,
     DriftChecksConfig,
     EidosConfig,
-    find_config_file,
     load_repo_config_with_errors,
     validate_config_file,
 )
@@ -253,8 +252,12 @@ class SpecValidator:
             cfg, config_errors = load_repo_config_with_errors(eidos_dir=spec_root, repo_root=resolved_repo_root)
         else:
             cfg = repo_config
-            cfg_file = find_config_file(eidos_dir=spec_root, repo_root=resolved_repo_root)
-            config_errors = validate_config_file(cfg_file, repo_root=resolved_repo_root) if cfg_file is not None else []
+            cfg_cand = spec_root / CONFIG_FILENAME
+            config_errors = (
+                validate_config_file(cfg_cand, repo_root=resolved_repo_root)
+                if (cfg_cand.exists() or cfg_cand.is_symlink())
+                else []
+            )
         if config_errors:
             cfg_err_key = self._schema_error_key(
                 spec_root / CONFIG_FILENAME,
@@ -1021,6 +1024,11 @@ class SpecValidator:
             if repo_root is not None
             else resolve_spec_and_repo_roots(root_dir, doc_path)[1].resolve()
         )
+        if doc_path.is_symlink():
+            try:
+                return (doc_path.parent.resolve() / doc_path.name).relative_to(eff_repo).as_posix()
+            except (ValueError, OSError):
+                pass
         try:
             return doc_path.resolve().relative_to(eff_repo).as_posix()
         except ValueError:

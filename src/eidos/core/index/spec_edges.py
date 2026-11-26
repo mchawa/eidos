@@ -588,17 +588,42 @@ def _reconcile_invariant_coverage(
     index: Any,
     conn: sqlite3.Connection,
     ast_idx: Any,
+    *,
+    repo_config: Any = None,
 ) -> None:
     """Reconcile invariant entity has_test_coverage and matching_tests against AST-verified test bindings."""
     inv_rows = conn.execute("SELECT id, data_json FROM entities WHERE type = 'invariant';").fetchall()
     if not inv_rows:
         return
 
+    from eidos.core.workspace.project import is_excluded_by_config
+
+    root_res = index.root.resolve()
+    ws_exclude = repo_config.workspace.exclude if repo_config is not None else ()
+    tests_exclude = repo_config.workspace.tests.exclude if repo_config is not None else ()
+
+    def _is_tb_allowed(tb_rel: str) -> tuple[bool, Path | None, str]:
+        if not tb_rel:
+            return False, None, ""
+        try:
+            abs_p = (index.root / tb_rel).resolve()
+            norm_rel = abs_p.relative_to(root_res).as_posix()
+        except (OSError, ValueError):
+            return False, None, ""
+        if ws_exclude and is_excluded_by_config(norm_rel, ws_exclude):
+            return False, None, norm_rel
+        if tests_exclude and is_excluded_by_config(norm_rel, tests_exclude):
+            return False, None, norm_rel
+        return True, abs_p, norm_rel
+
     assert_edges: dict[str, list[str]] = {}
     for source_id, target_id in conn.execute(
         "SELECT source_id, target_id FROM edges WHERE rel_type = 'asserts' AND instr(source_id, '::') > 0;"
     ).fetchall():
-        assert_edges.setdefault(target_id, []).append(source_id)
+        src_file = source_id.split("::", 1)[0].replace("\\", "/")
+        allowed, _, _ = _is_tb_allowed(src_file)
+        if allowed:
+            assert_edges.setdefault(target_id, []).append(source_id)
 
     test_cache_by_file: dict[str, tuple[dict[str, list[str]], set[str]]] | None = None
 
@@ -644,42 +669,45 @@ def _reconcile_invariant_coverage(
             parts = [p.strip() for p in test.split("::") if p.strip()]
             tb_file = parts[0].replace("\\", "/") if parts else ""
             tb_func = "::".join(parts[1:]) if len(parts) > 1 else ""
-            abs_tb = (index.root / tb_file) if tb_file else None
+            tb_allowed, abs_tb, norm_tb = _is_tb_allowed(tb_file)
             tb_verified = False
 
-            if tb_file:
+            if not tb_allowed:
+                matching: list[str] = []
+                has_coverage = False
+            else:
                 conn.execute(
                     "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'test_binding');",
-                    (tb_file, iid),
+                    (norm_tb, iid),
                 )
 
-            if tb_func:
-                target_ref = f"{tb_file}::{tb_func}"
-                if target_ref in ast_matches:
-                    tb_verified = True
-                elif abs_tb is not None and abs_tb.is_file():
-                    funcs, _ = _get_cached_test_tokens(tb_file, abs_tb)
-                    candidate_token_lists: list[list[str]] = []
-                    if tb_func in funcs:
-                        candidate_token_lists.append(funcs[tb_func])
-                    elif "::" not in tb_func:
-                        suffix = f"::{parts[-1]}"
-                        candidate_token_lists.extend(
-                            toks for k, toks in funcs.items() if k == parts[-1] or k.endswith(suffix)
-                        )
-                    tb_verified = any(iid in toks for toks in candidate_token_lists)
-                    if tb_verified:
-                        upsert_edge(conn, target_ref, iid, "asserts", "ast_symbol", target_ref)
-                matching = list(dict.fromkeys([target_ref, *ast_matches])) if tb_verified else []
-                has_coverage = tb_verified
-            else:
-                if any(m.startswith(f"{tb_file}::") for m in ast_matches):
-                    tb_verified = True
-                elif abs_tb is not None and abs_tb.is_file():
-                    _, file_tokens = _get_cached_test_tokens(tb_file, abs_tb)
-                    tb_verified = iid in file_tokens
-                matching = list(dict.fromkeys([tb_file, *ast_matches])) if tb_verified else []
-                has_coverage = tb_verified
+                if tb_func:
+                    target_ref = f"{norm_tb}::{tb_func}"
+                    if target_ref in ast_matches:
+                        tb_verified = True
+                    elif abs_tb is not None and abs_tb.is_file():
+                        funcs, _ = _get_cached_test_tokens(norm_tb, abs_tb)
+                        candidate_token_lists: list[list[str]] = []
+                        if tb_func in funcs:
+                            candidate_token_lists.append(funcs[tb_func])
+                        elif "::" not in tb_func:
+                            suffix = f"::{parts[-1]}"
+                            candidate_token_lists.extend(
+                                toks for k, toks in funcs.items() if k == parts[-1] or k.endswith(suffix)
+                            )
+                        tb_verified = any(iid in toks for toks in candidate_token_lists)
+                        if tb_verified:
+                            upsert_edge(conn, target_ref, iid, "asserts", "ast_symbol", target_ref)
+                    matching = list(dict.fromkeys([target_ref, *ast_matches])) if tb_verified else []
+                    has_coverage = tb_verified
+                else:
+                    if any(m.startswith(f"{norm_tb}::") for m in ast_matches):
+                        tb_verified = True
+                    elif abs_tb is not None and abs_tb.is_file():
+                        _, file_tokens = _get_cached_test_tokens(norm_tb, abs_tb)
+                        tb_verified = iid in file_tokens
+                    matching = list(dict.fromkeys([norm_tb, *ast_matches])) if tb_verified else []
+                    has_coverage = tb_verified
         else:
             matching = ast_matches
             has_coverage = bool(matching)

@@ -539,6 +539,9 @@ def spec_discover_cmd(
             repo_root = resolved
             eidos_dir = resolved / "eidos"
 
+    from eidos.cli._shared import load_cli_repo_config
+
+    load_cli_repo_config(eidos_dir, repo_root=repo_root, json_output=json_output)
     try:
         blueprint = discover_repository_blueprint(repo_root=repo_root, eidos_dir=eidos_dir)
     except FileNotFoundError as exc:

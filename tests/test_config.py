@@ -204,7 +204,9 @@ def _write_minimal_governed_repo(repo: Path, *, with_git: bool = True) -> Path:
     return eidos_dir
 
 
-def test_repo_config_schema_precedence_and_subproject_isolation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_repo_config_schema_precedence_and_subproject_isolation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Verify INV-REPO-CONFIG-SCHEMA-AND-PRECEDENCE: closed Draft 2020-12 schema outside assets/schemas/v1/,
     security containment & upgrade hints, CLI > EIDOS_* env > eidos/eidos.yaml > defaults precedence,
     monorepo sub-project isolation, zero-config eidos init preservation, and eidos config CLI commands.
@@ -797,7 +799,9 @@ def test_drift_and_validator_config_enforcement_and_head_snapshot_isolation(
     dr_ib_warn = detect_drift(repo_root=repo, eidos_dir=eidos_dir, uncommitted=True)
     assert dr_ib_warn.is_clean is True
     assert dr_ib_warn.boundary_violations == []
-    assert any("import" in w.lower() or "boundary" in w.lower() or "CMP-HELPER" in w for w in dr_ib_warn.validation_warnings)
+    assert any(
+        "import" in w.lower() or "boundary" in w.lower() or "CMP-HELPER" in w for w in dr_ib_warn.validation_warnings
+    )
 
     # import_boundaries: off -> skipped completely
     cfg_path.write_text("version: 1\ndrift:\n  checks:\n    import_boundaries: off\n", encoding="utf-8")
@@ -888,11 +892,7 @@ def test_drift_and_validator_config_enforcement_and_head_snapshot_isolation(
         encoding="utf-8",
     )
     cfg_path.write_text(
-        "version: 1\n"
-        "drift:\n"
-        "  strict: true\n"
-        "  warn_only: true\n"
-        "  fail_on_warnings: true\n",
+        "version: 1\ndrift:\n  strict: true\n  warn_only: true\n  fail_on_warnings: true\n",
         encoding="utf-8",
     )
     # strict=true causes drift, warn_only=true makes exit code 0; --no-warn-only escalates to exit code 1!
@@ -984,7 +984,9 @@ def test_drift_and_validator_config_enforcement_and_head_snapshot_isolation(
     # and context.semantic.enabled: false suppressing _trigger_auto_semantic_refresh
     (repo / "src" / "custom_qa_check.py").write_text("def check_custom():\n    return True\n", encoding="utf-8")
     (repo / "src" / "tests").mkdir(exist_ok=True)
-    (repo / "src" / "tests" / "test_fixture_like.py").write_text("def test_fixture():\n    return True\n", encoding="utf-8")
+    (repo / "src" / "tests" / "test_fixture_like.py").write_text(
+        "def test_fixture():\n    return True\n", encoding="utf-8"
+    )
     cfg_path.write_text(
         "version: 1\n"
         "workspace:\n"
@@ -1064,7 +1066,9 @@ def test_drift_and_validator_config_enforcement_and_head_snapshot_isolation(
     _git(repo, "commit", "-m", "commit strict config and body-only edit")
 
     # Verify drift.base_ref resolves develop ahead of main
-    assert _resolve_base_ref(repo, repo_config=load_repo_config(eidos_dir=eidos_dir, repo_root=repo, env={})) == "develop"
+    assert (
+        _resolve_base_ref(repo, repo_config=load_repo_config(eidos_dir=eidos_dir, repo_root=repo, env={})) == "develop"
+    )
 
     # Now poison the UNCOMMITTED working-tree eidos/eidos.yaml with strict: false AND invalid YAML!
     # Commit-range detect_drift(uncommitted=False) MUST load strictly from --head / eval_root, ignoring working tree!
@@ -1137,6 +1141,33 @@ def test_context_memory_hook_plugin_and_portal_config_overrides(
     ctx_data = orjson.loads(res_ctx_default.stdout)
     assert ctx_data["tier"] == "anchor"
 
+    # Non-vacuous context.budgets verification: tightening anchor budget actually drives _enforce_token_budget pruning
+    from eidos.core.index.context import build_tiered_context_slice
+    from eidos.core.index.graph_index import ArchitecturalIndex as _ArchIdx
+
+    _b_idx = _ArchIdx(repo_root=repo, eidos_dir=eidos_dir)
+    try:
+        slice_280 = build_tiered_context_slice(_b_idx, component="CMP-APP")
+        assert slice_280.tier == "anchor"
+        assert slice_280.token_estimate <= 280
+        assert slice_280._drop_anchor_decisions is False
+        # ArchitecturalIndex.get_tiered_context_slice facade also honors config default_tier & budgets
+        facade_slice = _b_idx.get_tiered_context_slice(component="CMP-APP")
+        assert facade_slice.tier == "anchor"
+        assert facade_slice.token_estimate <= 280
+        assert facade_slice._drop_anchor_decisions is False
+
+        # Tightening context.budgets.anchor below slice size forces anchor budget compaction/pruning
+        orig_cfg_text = cfg_path.read_text(encoding="utf-8")
+        cfg_path.write_text(orig_cfg_text.replace("anchor: 280", "anchor: 10"), encoding="utf-8")
+        slice_tight = _b_idx.get_tiered_context_slice(component="CMP-APP")
+        assert slice_tight.tier == "anchor"
+        assert slice_tight._compact_decisions is True
+        assert slice_tight._drop_anchor_decisions is True
+        cfg_path.write_text(orig_cfg_text, encoding="utf-8")
+    finally:
+        _b_idx.close()
+
     # Explicit CLI --tier deep overrides context.default_tier
     res_ctx_cli = runner.invoke(app, ["context", "-c", "CMP-APP", "--tier", "deep", "--path", str(eidos_dir), "--json"])
     assert res_ctx_cli.exit_code == 0
@@ -1151,10 +1182,48 @@ def test_context_memory_hook_plugin_and_portal_config_overrides(
     assert orjson.loads(res_rm_cli.stdout)["max_tokens"] == 777
     res_sync_no_sem = runner.invoke(app, ["index", "sync", "--path", str(eidos_dir), "--json"])
     assert res_sync_no_sem.exit_code == 0
+    assert orjson.loads(res_sync_no_sem.stdout)["semantic_enabled"] is False
     res_sync_sem = runner.invoke(app, ["index", "sync", "--semantic", "--path", str(eidos_dir), "--json"])
     assert res_sync_sem.exit_code == 0
-    res_search = runner.invoke(app, ["index", "search", "App", "--path", str(eidos_dir), "--json"])
-    assert res_search.exit_code == 0
+    assert orjson.loads(res_sync_sem.stdout)["semantic_enabled"] is True
+
+    # Non-vacuous index search & index semantic setup CLI config-override verification
+    import eidos.cli.index_commands as _idx_cmd_mod
+
+    seen_search_sem: list[bool] = []
+    _orig_query_fts = _ArchIdx.query_fts
+
+    def _spy_query_fts(self: Any, *a: Any, **kw: Any) -> Any:
+        seen_search_sem.append(bool(kw.get("use_semantic", True)))
+        return _orig_query_fts(self, *a, **kw)
+
+    monkeypatch.setattr(_ArchIdx, "query_fts", _spy_query_fts)
+    assert runner.invoke(app, ["index", "search", "App", "--path", str(eidos_dir), "--json"]).exit_code == 0
+    assert seen_search_sem[-1] is False
+    assert (
+        runner.invoke(app, ["index", "search", "App", "--semantic", "--path", str(eidos_dir), "--json"]).exit_code == 0
+    )
+    assert seen_search_sem[-1] is True
+
+    seen_setup_variants: list[str | None] = []
+    monkeypatch.setattr(
+        _ArchIdx,
+        "setup_semantic",
+        lambda self, variant=None, force=False: (
+            seen_setup_variants.append(variant)
+            or {"variant": variant or "quantized", "model_dir": str(eidos_dir), "downloaded": [], "skipped": []}
+        ),
+    )
+    assert runner.invoke(app, ["index", "semantic", "setup", "--path", str(eidos_dir), "--json"]).exit_code == 0
+    assert seen_setup_variants[-1] == "fp16"
+    assert (
+        runner.invoke(
+            app, ["index", "semantic", "setup", "--model", "quantized", "--path", str(eidos_dir), "--json"]
+        ).exit_code
+        == 0
+    )
+    assert seen_setup_variants[-1] == "quantized"
+    assert _idx_cmd_mod is not None
 
     # 2. setup_semantic_model: resolves variant + model_mirror_url from config, unconditionally enforces
     #    HARRIER_ARTIFACT_MANIFEST SHA-256 verification (failing on mismatched mirror bytes!), and rejects file://
@@ -1267,25 +1336,74 @@ def test_context_memory_hook_plugin_and_portal_config_overrides(
     from eidos.core.spec.parser import parse_spec_file
 
     mem_doc = parse_spec_file(Path(mem1["path"]))
-    fresh_status, _fresh_reason = evaluate_memory_freshness(
-        repo, mem_doc.frontmatter, {"CMP-APP"}, eidos_dir=eidos_dir
-    )
+    fresh_status, _fresh_reason = evaluate_memory_freshness(repo, mem_doc.frontmatter, {"CMP-APP"}, eidos_dir=eidos_dir)
     assert fresh_status == "stale"
 
-    batch = resolve_memory_freshness_batch(
-        repo, [(mem1["id"], mem_doc.frontmatter)], {"CMP-APP"}, eidos_dir=eidos_dir
-    )
+    batch = resolve_memory_freshness_batch(repo, [(mem1["id"], mem_doc.frontmatter)], {"CMP-APP"}, eidos_dir=eidos_dir)
     assert batch[mem1["id"]][0] == "stale"
 
-    # memory search & memory audit honor context.semantic.enabled cleanly
-    assert runner.invoke(app, ["memory", "search", "Permanent", "--path", str(eidos_dir), "--json"]).exit_code == 0
-    assert runner.invoke(app, ["memory", "audit", "--path", str(eidos_dir), "--json"]).exit_code == 0
+    # Non-vacuous memory search & memory audit CLI semantic config-override verification
+    import eidos.cli.memory_commands as _mem_cmd_mod
 
-    # 4. lifecycle.archive defaults in eidos delta archive
+    seen_mem_search_sem: list[bool] = []
+    _orig_search_mem = _mem_cmd_mod.search_memories
+
+    def _spy_search_mem(*a: Any, **kw: Any) -> Any:
+        seen_mem_search_sem.append(bool(kw.get("use_semantic", True)))
+        return _orig_search_mem(*a, **kw)
+
+    seen_mem_audit_sem: list[bool] = []
+    _orig_audit_mem = _mem_cmd_mod.audit_memories
+
+    def _spy_audit_mem(*a: Any, **kw: Any) -> Any:
+        seen_mem_audit_sem.append(bool(kw.get("use_semantic", False)))
+        return _orig_audit_mem(*a, **kw)
+
+    monkeypatch.setattr(_mem_cmd_mod, "search_memories", _spy_search_mem)
+    monkeypatch.setattr(_mem_cmd_mod, "audit_memories", _spy_audit_mem)
+    assert runner.invoke(app, ["memory", "search", "Permanent", "--path", str(eidos_dir), "--json"]).exit_code == 0
+    assert seen_mem_search_sem[-1] is False
+    assert (
+        runner.invoke(
+            app, ["memory", "search", "Permanent", "--semantic", "--path", str(eidos_dir), "--json"]
+        ).exit_code
+        == 0
+    )
+    assert seen_mem_search_sem[-1] is True
+    assert runner.invoke(app, ["memory", "audit", "--path", str(eidos_dir), "--json"]).exit_code == 0
+    assert seen_mem_audit_sem[-1] is False
+    assert runner.invoke(app, ["memory", "audit", "--semantic", "--path", str(eidos_dir), "--json"]).exit_code == 0
+    assert seen_mem_audit_sem[-1] is True
+
+    # 4. lifecycle.archive defaults in eidos delta archive (non-vacuous include_explorations=false vs --explorations)
+    exp_dir = eidos_dir / "explorations"
+    exp_dir.mkdir(exist_ok=True)
+    (exp_dir / "exp-2026-999.adoc").write_text(
+        "---\ntype: product/exploration\nid: EXP-2026-999\ntitle: Archived Spike\nstatus: adopted\n---\n= Spike\n",
+        encoding="utf-8",
+    )
     res_arch = runner.invoke(app, ["delta", "archive", "--dry-run", "--path", str(eidos_dir), "--json"])
     assert res_arch.exit_code == 0
     arch_data = orjson.loads(res_arch.stdout)
     assert arch_data["keep_recent"] == 2
+    assert arch_data["explorations"]["archived_ids"] == []
+
+    # Even with --keep-recent 0, config include_explorations=false still skips archiving explorations
+    res_arch_k0 = runner.invoke(
+        app, ["delta", "archive", "--dry-run", "--keep-recent", "0", "--path", str(eidos_dir), "--json"]
+    )
+    assert res_arch_k0.exit_code == 0
+    assert orjson.loads(res_arch_k0.stdout)["explorations"]["archived_ids"] == []
+
+    # Explicit --explorations CLI flag overrides lifecycle.archive.include_explorations=false
+    res_arch_exp = runner.invoke(
+        app,
+        ["delta", "archive", "--dry-run", "--keep-recent", "0", "--explorations", "--path", str(eidos_dir), "--json"],
+    )
+    assert res_arch_exp.exit_code == 0
+    arch_exp_data = orjson.loads(res_arch_exp.stdout)
+    assert "EXP-2026-999" in arch_exp_data["explorations"]["archived_ids"]
+    (exp_dir / "exp-2026-999.adoc").unlink()
 
     # 5. plugin.updates_check + EIDOS_NO_UPDATE_CHECK / EIDOS_FORCE_UPDATE_CHECK
     upd_disabled = check_cli_update_status(allow_network=False)
@@ -1380,12 +1498,7 @@ def test_context_memory_hook_plugin_and_portal_config_overrides(
 
     # 7. CMP-HOOK-RUNNER: plugin.hooks.{enabled,strict,fail_on_warnings,baseline_ttl_seconds} + invalid config guard
     cfg_path.write_text(
-        "version: 1\n"
-        "drift:\n"
-        "  strict: true\n"
-        "plugin:\n"
-        "  hooks:\n"
-        "    enabled: false\n",
+        "version: 1\ndrift:\n  strict: true\nplugin:\n  hooks:\n    enabled: false\n",
         encoding="utf-8",
     )
     _git(repo, "add", ".")
@@ -1438,18 +1551,54 @@ def test_context_memory_hook_plugin_and_portal_config_overrides(
     res_hook_nostrict = handle_stop_hook({"hook_event_name": "Stop", "session_id": "s-strict"}, workspace_root=repo)
     assert res_hook_nostrict == {}
 
+    # Non-vacuous plugin.hooks.fail_on_warnings: null inherits drift.fail_on_warnings=true; explicit false overrides it
+    _git(repo, "checkout", "--", "src/app.py", "eidos/eidos.yaml")
+    dep_cnt = eidos_dir / "architecture" / "containers" / "legacy.adoc"
+    dep_cnt.write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-LEGACY-HOOK\n"
+        "title: Legacy\n"
+        "status: deprecated\n"
+        "container_type: library\n"
+        "runtime: Python 3.12\n"
+        "source_path: src/app.py\n"
+        "domain: DOM-CORE\n"
+        "tier: core\n"
+        "---\n"
+        "= Container: Legacy\n",
+        encoding="utf-8",
+    )
+    cap_path = eidos_dir / "domains" / "core" / "capabilities" / "app.adoc"
+    orig_cap_text = cap_path.read_text(encoding="utf-8")
+    cap_path.write_text(
+        orig_cap_text.replace(
+            "  containers:\n    - CNT-APP\n", "  containers:\n    - CNT-APP\n    - CNT-LEGACY-HOOK\n"
+        ),
+        encoding="utf-8",
+    )
+    cfg_path.write_text(
+        "version: 1\ndrift:\n  fail_on_warnings: true\nplugin:\n  hooks:\n    enabled: true\n    fail_on_warnings: null\n",
+        encoding="utf-8",
+    )
+    res_hook_fow_inherit = handle_stop_hook({"hook_event_name": "Stop", "session_id": "s-fow-1"}, workspace_root=repo)
+    assert res_hook_fow_inherit.get("decision") == "block"
+
+    cfg_path.write_text(
+        "version: 1\ndrift:\n  fail_on_warnings: true\nplugin:\n  hooks:\n    enabled: true\n    fail_on_warnings: false\n",
+        encoding="utf-8",
+    )
+    res_hook_fow_override = handle_stop_hook({"hook_event_name": "Stop", "session_id": "s-fow-2"}, workspace_root=repo)
+    assert res_hook_fow_override == {}
+    dep_cnt.unlink()
+    cap_path.write_text(orig_cap_text, encoding="utf-8")
+
     # Invalid eidos/eidos.yaml change MUST NOT zero-change short-circuit in handle_stop_hook; must block!
     _git(repo, "checkout", "--", "src/app.py", "eidos/eidos.yaml")
     capture_session_baseline({"hook_event_name": "SessionStart", "session_id": "s-invalid-cfg"}, workspace_root=repo)
     # Valid config tweak with zero governed changes short-circuits cleanly
     cfg_path.write_text(
-        "version: 1\n"
-        "drift:\n"
-        "  strict: false\n"
-        "plugin:\n"
-        "  hooks:\n"
-        "    enabled: true\n"
-        "    baseline_ttl_seconds: 10\n",
+        "version: 1\ndrift:\n  strict: false\nplugin:\n  hooks:\n    enabled: true\n    baseline_ttl_seconds: 10\n",
         encoding="utf-8",
     )
     assert handle_stop_hook({"hook_event_name": "Stop", "session_id": "s-invalid-cfg"}, workspace_root=repo) == {}
@@ -1499,16 +1648,17 @@ def test_context_memory_hook_plugin_and_portal_config_overrides(
     monkeypatch.setattr(
         portal_cmd_mod,
         "build_static_portal",
-        lambda eidos_dir, output_dir, single_file=False: captured_build.append(
-            {"out_dir": Path(output_dir), "single_file": single_file}
-        )
-        or Path(output_dir),
+        lambda eidos_dir, output_dir, single_file=False: (
+            captured_build.append({"out_dir": Path(output_dir), "single_file": single_file}) or Path(output_dir)
+        ),
     )
 
     assert runner.invoke(app, ["portal", "serve", "--path", str(eidos_dir)]).exit_code == 0
     assert captured_serve[-1] == {"host": "0.0.0.0", "port": 4321, "open_browser": True}
 
-    assert runner.invoke(app, ["portal", "serve", "--path", str(eidos_dir), "--no-open", "--port", "9090"]).exit_code == 0
+    assert (
+        runner.invoke(app, ["portal", "serve", "--path", str(eidos_dir), "--no-open", "--port", "9090"]).exit_code == 0
+    )
     assert captured_serve[-1] == {"host": "0.0.0.0", "port": 9090, "open_browser": False}
 
     assert runner.invoke(app, ["portal", "build", "--path", str(eidos_dir)]).exit_code == 0
@@ -1636,3 +1786,565 @@ def test_config_cli_shared_and_sync_edge_branches(tmp_path: Path, monkeypatch: p
     finally:
         prune_idx.close()
 
+
+def test_repo_config_security_containment_isolation_and_audit_regressions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression suite covering DLT-2026-178 security, isolation, glob, hook, sync, and CLI audit findings."""
+    _clear_config_env(monkeypatch)
+    from eidos.core.index.graph_index import ArchitecturalIndex
+    from eidos.core.index.sync import sync_index
+    from eidos.core.spec.validator import SpecValidator
+    from eidos.core.workspace.config import (
+        CONFIG_FILENAME,
+        DEFAULT_CONFIG,
+        init_config_file,
+        load_repo_config,
+        load_repo_config_with_errors,
+        parse_config_yaml_text,
+        validate_config_data,
+        validate_config_file,
+    )
+    from eidos.core.workspace.project import (
+        _is_dir_excluded_by_patterns,
+        discover_nested_subproject_roots,
+        is_excluded_by_config,
+        is_polyglot_test_file,
+    )
+    from eidos.plugin.hooks import capture_session_baseline, handle_stop_hook
+    from eidos.vcs.diff import _resolve_base_and_merge_base, classify_changed_files
+    from eidos.vcs.drift import detect_drift
+
+    # 1. portal.build.out_dir: POSIX backslash normalization, null-byte/long-segment fail-closed, symlinked config root
+    sec_repo = tmp_path / "sec_repo"
+    sec_eidos = _write_minimal_governed_repo(sec_repo, with_git=False)
+    outside = tmp_path / "outside_dir"
+    outside.mkdir()
+    assert validate_config_data({"version": 1, "portal": {"build": {"out_dir": "site\x00evil"}}}, repo_root=sec_repo)
+    assert validate_config_data({"version": 1, "portal": {"build": {"out_dir": "a" * 300}}}, repo_root=sec_repo)
+    cfg_norm, errs_norm, _ = parse_config_yaml_text(
+        "version: 1\nportal:\n  build:\n    out_dir: docs\\\\portal\n",
+        repo_root=sec_repo,
+        env={},
+    )
+    assert errs_norm == []
+    assert cfg_norm.portal.build.out_dir == "docs/portal"
+
+    # External symlink at eidos/eidos.yaml is rejected outright without reading or leaking host file contents
+    ext_cfg = outside / "shared.yaml"
+    ext_cfg.write_text("version: 1\nsecret_token: super_secret_123\ndrift:\n  warn_only: true\n", encoding="utf-8")
+    (sec_eidos / CONFIG_FILENAME).symlink_to(ext_cfg)
+    sym_errs = validate_config_file(sec_eidos / CONFIG_FILENAME)
+    assert any("symbolic link" in e for e in sym_errs)
+    assert not any("secret_token" in e for e in sym_errs)
+    cfg_sym_res, sym_load_errs = load_repo_config_with_errors(eidos_dir=sec_eidos, repo_root=sec_repo, env={})
+    assert any("symbolic link" in e for e in sym_load_errs)
+    assert cfg_sym_res.drift.warn_only is False
+    # SpecValidator._schema_error_key uses 'eidos/eidos.yaml' (not raw absolute path) for symlinked configs
+    val_rep_sym = SpecValidator().validate_directory(sec_eidos)
+    assert "eidos/eidos.yaml" in val_rep_sym.schema_errors
+    (sec_eidos / CONFIG_FILENAME).unlink()
+
+    # 2. model_mirror_url: malformed IPv6, hostless, @-userinfo, invalid/empty port, query/fragment/params/backslash, redirect guards
+    for bad_url in (
+        "https://[::1/models",
+        "https://:8080/models",
+        "https://@mirror.internal/models",
+        "https://:@mirror.internal/models",
+        "https://mirror.internal:0/models",
+        "https://mirror.internal:/models",
+        "https://mirror.internal:99999/models",
+        "https://mirror.internal:notaport/models",
+        "https://mirror.internal/models?k=v#frag",
+        "https://mirror.internal/models?",
+        "https://mirror.internal/models#",
+        "https://mirror.internal/models;param=1",
+        "https://evil.com\\foo/models",
+        "https://mirror.internal/models\n",
+    ):
+        errs_u = validate_config_data({"version": 1, "context": {"semantic": {"model_mirror_url": bad_url}}})
+        assert errs_u, f"Expected mirror URL validation failure for {bad_url!r}"
+    assert (
+        validate_config_data(
+            {"version": 1, "context": {"semantic": {"model_mirror_url": "HTTPS://mirror.internal/models"}}}
+        )
+        == []
+    )
+    from eidos.core.index.semantic import _SafeHTTPSRedirectHandler
+
+    redir_handler = _SafeHTTPSRedirectHandler()
+    req_https = urllib.request.Request("https://mirror.internal/model.onnx")
+    with pytest.raises(ValueError, match="unsupported URL scheme"):
+        redir_handler.redirect_request(req_https, None, 302, "Found", {}, "ftp://evil.internal/model.onnx")
+    with pytest.raises(ValueError, match="HTTPS-to-HTTP"):
+        redir_handler.redirect_request(req_https, None, 302, "Found", {}, "http://mirror.internal/model.onnx")
+
+    # 3. Non-finite YAML floats (.inf, .nan), float future version (2.0), and bounded brace expansion DoS guard
+    for nf_val in (".inf", "-.inf", ".nan"):
+        _, nf_errs, _ = parse_config_yaml_text(
+            f"version: 1\nplugin:\n  hooks:\n    baseline_ttl_seconds: {nf_val}\n",
+            env={},
+        )
+        assert any("non-finite" in e for e in nf_errs)
+    assert any("Upgrade Eidos" in e for e in validate_config_data({"version": 2.0}))
+    from eidos.core.workspace.project import expand_brace_globs
+
+    assert len(expand_brace_globs("{a,b}" * 12)) == 256
+    assert any(
+        "brace expansion limit" in e
+        for e in validate_config_data({"version": 1, "workspace": {"exclude": ["{a,b}" * 10]}})
+    )
+
+    # 4. init_config_file refuses broken symlinks (force=False) and unlinks live symlinks instead of overwriting external targets (force=True)
+    broken_target = outside / "never_created.yaml"
+    (sec_eidos / CONFIG_FILENAME).symlink_to(broken_target)
+    with pytest.raises(FileExistsError):
+        init_config_file(sec_eidos, force=False)
+    assert not broken_target.exists()
+
+    live_ext = outside / "protected_external.yaml"
+    live_ext.write_text("KEEP_ME\n", encoding="utf-8")
+    (sec_eidos / CONFIG_FILENAME).unlink()
+    (sec_eidos / CONFIG_FILENAME).symlink_to(live_ext)
+    init_config_file(sec_eidos, force=True)
+    assert not (sec_eidos / CONFIG_FILENAME).is_symlink()
+    assert live_ext.read_text(encoding="utf-8") == "KEEP_ME\n"
+    (sec_eidos / CONFIG_FILENAME).unlink()
+
+    # Directory at eidos/eidos.yaml fails closed in load_repo_config_with_errors, SpecValidator, AND init_config_file
+    (sec_eidos / CONFIG_FILENAME).mkdir()
+    _, dir_errs = load_repo_config_with_errors(eidos_dir=sec_eidos, repo_root=sec_repo, env={})
+    assert any("regular file" in e for e in dir_errs)
+    val_rep_dir_explicit = SpecValidator().validate_directory(sec_eidos, repo_config=DEFAULT_CONFIG)
+    assert "eidos/eidos.yaml" in val_rep_dir_explicit.schema_errors
+    with pytest.raises(IsADirectoryError):
+        init_config_file(sec_eidos, force=True)
+    assert runner.invoke(app, ["config", "init", "--force", "--path", str(sec_eidos), "--json"]).exit_code == 1
+    (sec_eidos / CONFIG_FILENAME).rmdir()
+
+    # 5. Trailing-slash directory globs (including inside braces) & is_polyglot_test_file(abs_path, eidos_dir=...) & non-code filtering
+    assert is_excluded_by_config("examples", ["examples/"]) is True
+    assert is_excluded_by_config("examples/", ["examples/"]) is True
+    assert _is_dir_excluded_by_patterns("examples", ["examples/"]) is True
+    assert is_excluded_by_config("generated/foo.py", ["generated/**/"]) is True
+    assert is_excluded_by_config("examples/a.py", ["{examples/,fixtures/}"]) is True
+    assert is_excluded_by_config("fixtures", ["{examples/,fixtures/}"]) is True
+    sub_demo = sec_repo / "examples" / "demo" / "eidos"
+    sub_demo.mkdir(parents=True)
+    (sub_demo / "system.adoc").write_text(
+        "---\ntype: product/system\nid: SYS-D\ntitle: D\nstatus: active\n---\n= D\n", encoding="utf-8"
+    )
+    (sec_eidos / CONFIG_FILENAME).write_text(
+        "version: 1\nworkspace:\n  subprojects_exclude: ['examples/*/']\n", encoding="utf-8"
+    )
+    assert discover_nested_subproject_roots(sec_repo) == []
+
+    (sec_eidos / CONFIG_FILENAME).write_text(
+        "version: 1\nworkspace:\n  tests:\n    include: ['qa/**']\n    exclude: ['tests/helpers/**']\n",
+        encoding="utf-8",
+    )
+    assert is_polyglot_test_file(sec_repo / "qa" / "spec.py", eidos_dir=sec_eidos) is True
+    assert is_polyglot_test_file(sec_repo / "qa" / "README.md", eidos_dir=sec_eidos) is False
+    assert is_polyglot_test_file(sec_repo / "tests" / "helpers" / "test_util.py", eidos_dir=sec_eidos) is False
+    cls_docs = classify_changed_files(
+        ["qa/README.md", "qa/spec.py"],
+        repo_root=sec_repo,
+        eidos_dir=sec_eidos,
+        repo_config=load_repo_config(eidos_dir=sec_eidos, repo_root=sec_repo, env={}),
+    )
+    assert cls_docs.test_files == ["qa/spec.py"]
+    assert "qa/README.md" not in cls_docs.test_files
+
+    # 6. sync_index leading-wildcard, trailing-slash & brace-glob workspace.tests.include, containment, orphan cleanup, and test_binding exclusion
+    from eidos.core.index.sync import _extract_test_include_targets
+    from eidos.vcs.invariants import _verify_single_invariant
+
+    (outside / "secret.py").write_text("SECRET = 1\n", encoding="utf-8")
+    (sec_repo / "escape_link").symlink_to(outside)
+    (sec_repo / "qa").mkdir(exist_ok=True)
+    (sec_repo / "qa" / "link.e2e.py").symlink_to(outside / "secret.py")
+    (sec_repo / "e2e_web").mkdir(exist_ok=True)
+    (sec_repo / "e2e_web" / "smoke.py").write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
+    inc_dirs, inc_files = _extract_test_include_targets(
+        sec_repo,
+        ("../outside/**", "../outside/secret.py", "escape_link/**", "escape_link/secret.py", "**/*.e2e.py", "e2e_*/"),
+        set(),
+        (),
+    )
+    assert all(Path(p).resolve().is_relative_to(sec_repo.resolve()) for p in (*inc_dirs, *inc_files))
+    assert not any(p.endswith("link.e2e.py") for p in inc_files)
+    assert any(p.endswith("e2e_web/smoke.py") for p in inc_files)
+    assert is_polyglot_test_file("qa/link.e2e.py", repo_root=sec_repo, eidos_dir=sec_eidos) is False
+    (sec_repo / "qa" / "link.e2e.py").unlink()
+    (sec_repo / "escape_link").unlink()
+
+    (sec_repo / "qa" / "login.e2e.py").write_text(
+        'def test_login():\n    """Covers INV-APP-001."""\n    assert True\n',  # eidos:fixture
+        encoding="utf-8",
+    )
+    (sec_repo / "scripts").mkdir(exist_ok=True)
+    (sec_repo / "scripts" / "login_e2e.py").write_text("def test_s():\n    assert True\n", encoding="utf-8")
+    (sec_repo / "scripts" / "helper.py").write_text("def not_a_test():\n    return 1\n", encoding="utf-8")
+    (sec_repo / "e2e").mkdir(exist_ok=True)
+    (sec_repo / "e2e" / "checkout.py").write_text("def test_checkout():\n    assert True\n", encoding="utf-8")
+    (sec_repo / "tests" / "helpers").mkdir(parents=True, exist_ok=True)
+    (sec_repo / "tests" / "helpers" / "test_util.py").write_text(
+        "def test_util():\n    assert True\n", encoding="utf-8"
+    )
+    (sec_eidos / CONFIG_FILENAME).write_text(
+        "version: 1\nworkspace:\n  tests:\n    include: ['**/*.e2e.py', '{e2e,qa}/checkout.py', 'e2e_*/', 'scripts/*_e2e.py']\n    exclude: ['tests/helpers/**']\n",
+        encoding="utf-8",
+    )
+    s_idx = ArchitecturalIndex(repo_root=sec_repo, eidos_dir=sec_eidos)
+    try:
+        sync_index(s_idx, force=True, auto_semantic=False)
+        conn = s_idx._get_connection()
+        test_rels = {
+            r[0] for r in conn.execute("SELECT rel_path FROM indexed_files WHERE doc_type = 'code/test';").fetchall()
+        }
+        all_indexed = {r[0] for r in conn.execute("SELECT rel_path FROM indexed_files;").fetchall()}
+        assert "qa/login.e2e.py" in test_rels
+        assert "e2e/checkout.py" in test_rels
+        assert "e2e_web/smoke.py" in test_rels
+        assert "scripts/login_e2e.py" in test_rels
+        assert "scripts/helper.py" not in all_indexed
+        assert "tests/helpers/test_util.py" not in test_rels
+
+        # Excluding tests/test_app.py (even with simultaneous edit + explicit test_binding) clears coverage & symbol_mappings
+        (sec_repo / "tests" / "test_app.py").write_text(
+            'from src.app import compute_total\n\n\ndef test_app_invariant():\n    """Verifies INV-APP-001 (edited)."""\n    assert compute_total(1) == 2\n',  # eidos:fixture
+            encoding="utf-8",
+        )
+        (sec_eidos / CONFIG_FILENAME).write_text(
+            "version: 1\nworkspace:\n  tests:\n    exclude: ['tests/test_app.py']\n",
+            encoding="utf-8",
+        )
+        sync_index(s_idx, force=False, auto_semantic=False)
+        inv_row = conn.execute("SELECT data_json FROM entities WHERE id = 'INV-APP-001';").fetchone()  # eidos:fixture
+        assert inv_row is not None and orjson.loads(inv_row[0])["has_test_coverage"] is False
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM symbol_mappings WHERE symbol = 'tests/test_app.py' AND kind = 'test_binding';"
+            ).fetchone()[0]
+            == 0
+        )
+        traces_excl = extract_invariants_and_verify(sec_eidos, sec_repo)
+        assert all(t.has_test_coverage is False for t in traces_excl)
+        inv_fixture_id = "INV-APP-001"  # eidos:fixture
+        assert _verify_single_invariant(inv_fixture_id, "../../outside/secret.py::test_x", sec_repo, {}, {}) == []
+
+        # Temporarily excluding src/app.py preserves spec-declared mappings so removing exclusion rediscovers it
+        (sec_eidos / CONFIG_FILENAME).write_text(
+            "version: 1\nworkspace:\n  exclude: ['src/app.py']\n",
+            encoding="utf-8",
+        )
+        sync_index(s_idx, force=False, auto_semantic=False)
+        assert conn.execute("SELECT 1 FROM indexed_files WHERE rel_path = 'src/app.py';").fetchone() is None
+
+        # Removing eidos/eidos.yaml deletes unowned qa/login.e2e.py AND rediscovers src/app.py cleanly without --force
+        (sec_eidos / CONFIG_FILENAME).unlink()
+        sync_index(s_idx, force=False, auto_semantic=False)
+        all_rels = {r[0] for r in conn.execute("SELECT rel_path FROM indexed_files;").fetchall()}
+        assert "src/app.py" in all_rels
+        assert "qa/login.e2e.py" not in all_rels
+        assert "e2e/checkout.py" not in all_rels
+        assert "e2e_web/smoke.py" not in all_rels
+        assert "scripts/login_e2e.py" not in all_rels
+        assert "scripts/helper.py" not in all_rels
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM symbol_mappings WHERE symbol = 'qa/login.e2e.py' AND kind = 'test_binding';"
+            ).fetchone()[0]
+            == 0
+        )
+    finally:
+        s_idx.close()
+
+    # 7. Commit-range isolation: uncommitted working-tree eidos.yaml never leaks into --base/--head runs,
+    #    and invalid --head eidos.yaml with drift.warn_only: true + symlink out_dir exits 1!
+    iso_repo = tmp_path / "iso_repo"
+    iso_eidos = _write_minimal_governed_repo(iso_repo, with_git=True)
+    sub_e = iso_repo / "sub" / "eidos"
+    sub_e.mkdir(parents=True)
+    (sub_e / "system.adoc").write_text(
+        "---\ntype: product/system\nid: SYS-S\ntitle: S\nstatus: active\n---\n= S\n", encoding="utf-8"
+    )
+    (iso_repo / "sub" / "worker.py").write_text("X = 1\n", encoding="utf-8")
+    _git(iso_repo, "add", ".")
+    _git(iso_repo, "commit", "-m", "add sub")
+    _git(iso_repo, "branch", "develop")
+    _git(iso_repo, "checkout", "-b", "feat")
+    (iso_repo / "src" / "app.py").write_text(
+        '"""App."""\n\n\ndef compute_total(x: int) -> int:\n    return x + 10\n', encoding="utf-8"
+    )
+    (iso_repo / "sub" / "worker.py").write_text("X = 2\n", encoding="utf-8")
+    _git(iso_repo, "add", ".")
+    _git(iso_repo, "commit", "-m", "feat edit")
+
+    # Write uncommitted working-tree eidos/eidos.yaml (HEAD still has none!)
+    (iso_eidos / CONFIG_FILENAME).write_text(
+        "version: 1\ndrift:\n  base_ref: develop\nworkspace:\n  subprojects_exclude: ['sub/**']\n",
+        encoding="utf-8",
+    )
+    resolved_base, _, _ = _resolve_base_and_merge_base(
+        iso_repo, None, "HEAD", repo_config=DEFAULT_CONFIG, eidos_dir=iso_eidos
+    )
+    assert resolved_base == "main"
+    dr_iso = detect_drift(iso_repo, base_ref="main", head_ref="HEAD", eidos_dir=iso_eidos, uncommitted=False)
+    assert "sub/worker.py" not in dr_iso.classification.code_files
+    (iso_eidos / CONFIG_FILENAME).unlink()
+
+    # Commit nested symlink nested/out_link -> outside + drift.warn_only: true on branch evil_outlink, then checkout clean main!
+    _git(iso_repo, "checkout", "-b", "evil_outlink")
+    (iso_repo / "nested").mkdir(exist_ok=True)
+    (iso_repo / "nested" / "out_link").symlink_to(outside)
+    (iso_eidos / CONFIG_FILENAME).write_text(
+        "version: 1\ndrift:\n  warn_only: true\nportal:\n  build:\n    out_dir: nested/out_link/site\n",
+        encoding="utf-8",
+    )
+    _git(iso_repo, "add", "nested/out_link", "eidos/eidos.yaml")
+    _git(iso_repo, "commit", "-m", "commit bad symlink out_dir with warn_only")
+    _git(iso_repo, "checkout", "main")
+    assert not (iso_repo / "nested" / "out_link").exists()
+    assert not (iso_eidos / CONFIG_FILENAME).exists()
+    res_sym_drift = runner.invoke(
+        app, ["drift", "--base", "main", "--head", "evil_outlink", "--path", str(iso_eidos), "--json"]
+    )
+    assert res_sym_drift.exit_code == 1
+    assert orjson.loads(res_sym_drift.stdout)["is_clean"] is False
+    # GitResolutionError also fails closed (exit 1) when --head has symlink-invalid out_dir + warn_only: true
+    res_sym_giterr = runner.invoke(
+        app, ["drift", "--base", "nonexistent-ref-xyz", "--head", "evil_outlink", "--path", str(iso_eidos), "--json"]
+    )
+    assert res_sym_giterr.exit_code == 1
+
+    # Direct unit tests for snapshot symlink-extraction & head-tree symlink guards
+    import io as _io
+    import tarfile as _tarfile
+
+    from eidos.vcs.snapshot import _head_tree_has_symlink, _load_head_commit_config, _safe_extract_member
+
+    assert _head_tree_has_symlink(iso_repo, "evil_outlink", "", "") is False
+    assert _head_tree_has_symlink(iso_repo, "nonexistent-ref-xyz", "", "nested/out_link") is False
+    _git(iso_repo, "checkout", "-b", "bad_cfg_branch")
+    (iso_eidos / CONFIG_FILENAME).write_text("version: 1\nunknown_head_key: 1\n", encoding="utf-8")
+    _git(iso_repo, "add", "eidos/eidos.yaml")
+    _git(iso_repo, "commit", "-m", "commit invalid eidos.yaml")
+    _git(iso_repo, "checkout", "main")
+    assert _load_head_commit_config(iso_repo, iso_repo, "eidos", "bad_cfg_branch") == DEFAULT_CONFIG
+    # Invalid HEAD eidos.yaml still preserves valid EIDOS_* env overrides in _load_head_commit_config
+    monkeypatch.setenv("EIDOS_DRIFT_BASE_REF", "develop")
+    assert _load_head_commit_config(iso_repo, iso_repo, "eidos", "bad_cfg_branch").drift.base_ref == "develop"
+    monkeypatch.delenv("EIDOS_DRIFT_BASE_REF")
+
+    # Committed Git symlink at eidos/eidos.yaml with YAML payload in target is rejected (never grants warn_only=True)
+    _git(iso_repo, "checkout", "-b", "symlink_cfg_branch")
+    (iso_eidos / CONFIG_FILENAME).symlink_to("version: 1\ndrift:\n  warn_only: true\n")
+    _git(iso_repo, "add", "eidos/eidos.yaml")
+    _git(iso_repo, "commit", "-m", "commit symlink eidos.yaml with yaml target")
+    _git(iso_repo, "checkout", "main")
+    assert _load_head_commit_config(iso_repo, iso_repo, "eidos", "symlink_cfg_branch").drift.warn_only is False
+
+    # Unrelated root symlink named 'site' does NOT discard valid HEAD eidos.yaml when portal.build.out_dir is omitted
+    _git(iso_repo, "checkout", "-b", "root_site_symlink_branch")
+    (iso_repo / "docs_real").mkdir(exist_ok=True)
+    (iso_repo / "docs_real" / "index.md").write_text("# docs\n", encoding="utf-8")
+    (iso_repo / "site").symlink_to("docs_real")
+    (iso_eidos / CONFIG_FILENAME).write_text(
+        "version: 1\ndrift:\n  base_ref: develop\n  strict: true\n", encoding="utf-8"
+    )
+    _git(iso_repo, "add", "docs_real", "site", "eidos/eidos.yaml")
+    _git(iso_repo, "commit", "-m", "commit valid config alongside unrelated root site symlink")
+    _git(iso_repo, "checkout", "main")
+    site_sym_cfg = _load_head_commit_config(iso_repo, iso_repo, "eidos", "root_site_symlink_branch")
+    assert site_sym_cfg.drift.base_ref == "develop"
+    assert site_sym_cfg.drift.strict is True
+
+    # Commit-range detect_drift ignores uncommitted working-tree .gitattributes & nested eidos/ subprojects
+    (iso_repo / ".gitattributes").write_text("src/app.py linguist-generated\n", encoding="utf-8")
+    dr_wt_attr = detect_drift(iso_repo, base_ref="main", head_ref="feat", eidos_dir=iso_eidos, uncommitted=False)
+    assert "src/app.py" in dr_wt_attr.classification.code_files
+    (iso_repo / ".gitattributes").unlink()
+
+    snap_unit = tmp_path / "snap_unit"
+    snap_unit.mkdir()
+    buf = _io.BytesIO()
+    with _tarfile.open(fileobj=buf, mode="w") as tw:
+        ti_hard = _tarfile.TarInfo("hard_esc")
+        ti_hard.type = _tarfile.LNKTYPE
+        ti_hard.linkname = "../../outside"
+        tw.addfile(ti_hard)
+        ti_badname = _tarfile.TarInfo("../escape_sym")
+        ti_badname.type = _tarfile.SYMTYPE
+        ti_badname.linkname = "/etc/passwd"
+        tw.addfile(ti_badname)
+        ti_symparent = _tarfile.TarInfo("p_link/child_sym")
+        ti_symparent.type = _tarfile.SYMTYPE
+        ti_symparent.linkname = "/etc/passwd"
+        tw.addfile(ti_symparent)
+    (snap_unit / "p_link").symlink_to(outside)
+    buf.seek(0)
+    with _tarfile.open(fileobj=buf, mode="r") as tr:
+        for bad_member in tr.getmembers():
+            with pytest.raises(_tarfile.TarError):
+                _safe_extract_member(tr, bad_member, snap_unit, snap_unit.resolve())
+
+    # 8. Single-commit non-main branch fallback to uncommitted mode honors working-tree drift.warn_only consistently
+    fb_repo = tmp_path / "fb_repo"
+    fb_eidos = _write_minimal_governed_repo(fb_repo, with_git=True)
+    _git(fb_repo, "branch", "-m", "topic")
+    (fb_repo / "src" / "app.py").write_text(
+        '"""App."""\n\n\ndef compute_total(x: int) -> int:\n    return x + 1\n\n\ndef extra_fn() -> int:\n    return 2\n',
+        encoding="utf-8",
+    )
+    (fb_eidos / CONFIG_FILENAME).write_text("version: 1\ndrift:\n  warn_only: true\n", encoding="utf-8")
+    res_fb_default = runner.invoke(app, ["drift", "--path", str(fb_eidos), "--json"])
+    res_fb_uncomm = runner.invoke(app, ["drift", "--uncommitted", "--path", str(fb_eidos), "--json"])
+    assert res_fb_default.exit_code == 0
+    assert res_fb_uncomm.exit_code == 0
+
+    # 9. Monorepo sub-project Stop hook does NOT short-circuit corrupted <subproject>/eidos/eidos.yaml
+    mono = tmp_path / "mono_hook"
+    mono.mkdir()
+    _git(mono, "init")
+    _git(mono, "config", "user.email", "t@example.com")
+    _git(mono, "config", "user.name", "T")
+    sub_pkg = mono / "packages" / "svc"
+    sub_eidos = _write_minimal_governed_repo(sub_pkg, with_git=False)
+    (sub_eidos / CONFIG_FILENAME).write_text("version: 1\n", encoding="utf-8")
+    _git(mono, "add", ".")
+    _git(mono, "commit", "-m", "init mono")
+    capture_session_baseline({"hook_event_name": "SessionStart", "session_id": "m-sub"}, workspace_root=sub_pkg)
+    (sub_eidos / CONFIG_FILENAME).write_text("version: 1\ninvalid_sub_key: true\n", encoding="utf-8")
+    res_mono_hook = handle_stop_hook({"hook_event_name": "Stop", "session_id": "m-sub"}, workspace_root=sub_pkg)
+    assert res_mono_hook.get("decision") == "block"
+    # Pre-dirty monorepo eidos.yaml edited again during session (SHA-256 baseline computed from git_root, not sub_pkg)
+    (sub_eidos / CONFIG_FILENAME).write_text("version: 1\ndrift:\n  strict: false\n", encoding="utf-8")
+    capture_session_baseline({"hook_event_name": "SessionStart", "session_id": "m-sub-dirty"}, workspace_root=sub_pkg)
+    (sub_eidos / CONFIG_FILENAME).write_text("version: 1\ninvalid_sub_key: true\n", encoding="utf-8")
+    assert (
+        handle_stop_hook({"hook_event_name": "Stop", "session_id": "m-sub-dirty"}, workspace_root=sub_pkg).get(
+            "decision"
+        )
+        == "block"
+    )
+    # Explicit payload paths (absolute, normalized relative, and unrelated non-config file)
+    assert (
+        handle_stop_hook(
+            {"hook_event_name": "Stop", "modified_files": [str(sub_eidos / CONFIG_FILENAME)]},
+            workspace_root=sub_pkg,
+        ).get("decision")
+        == "block"
+    )
+    assert (
+        handle_stop_hook(
+            {"hook_event_name": "Stop", "modified_files": ["packages/svc/eidos/../eidos/eidos.yaml"]},
+            workspace_root=sub_pkg,
+        ).get("decision")
+        == "block"
+    )
+    assert (
+        handle_stop_hook(
+            {"hook_event_name": "Stop", "modified_files": ["README.md"]},
+            workspace_root=sub_pkg,
+        )
+        == {}
+    )
+    # Monorepo sub-project Stop hook scopes Git-root-relative paths to sub_pkg:
+    # (a) corrupted sub_pkg/eidos/system.adoc blocks (no silent bypass);
+    # (b) workspace.exclude match & sibling sub-project edit short-circuit cleanly even over pre-dirty code!
+    (sub_eidos / CONFIG_FILENAME).write_text("version: 1\nworkspace:\n  exclude: ['generated/**']\n", encoding="utf-8")
+    _git(mono, "add", "packages/svc/eidos/eidos.yaml")
+    _git(mono, "commit", "-m", "set subproject exclude config")
+    orig_sys = (sub_eidos / "system.adoc").read_text(encoding="utf-8")
+    capture_session_baseline({"hook_event_name": "SessionStart", "session_id": "m-sub-spec"}, workspace_root=sub_pkg)
+    (sub_eidos / "system.adoc").write_text("---\ntype: product/system\nid: BROKEN\n---\n", encoding="utf-8")
+    assert (
+        handle_stop_hook({"hook_event_name": "Stop", "session_id": "m-sub-spec"}, workspace_root=sub_pkg).get(
+            "decision"
+        )
+        == "block"
+    )
+    (sub_eidos / "system.adoc").write_text(orig_sys, encoding="utf-8")
+
+    # Pre-dirty structural edit in sub_pkg/src/app.py BEFORE SessionStart, then edit ONLY excluded generated/auto.py and sibling packages/other/foo.py
+    orig_sub_app = (sub_pkg / "src" / "app.py").read_text(encoding="utf-8")
+    (sub_pkg / "src" / "app.py").write_text(
+        orig_sub_app + "\ndef pre_dirty_fn() -> int:\n    return 1\n", encoding="utf-8"
+    )
+    capture_session_baseline({"hook_event_name": "SessionStart", "session_id": "m-sub-excl"}, workspace_root=sub_pkg)
+    (sub_pkg / "generated").mkdir(exist_ok=True)
+    (sub_pkg / "generated" / "auto.py").write_text("AUTO = 1\n", encoding="utf-8")
+    (mono / "packages" / "other").mkdir(parents=True, exist_ok=True)
+    (mono / "packages" / "other" / "foo.py").write_text("OTHER = 1\n", encoding="utf-8")
+    assert handle_stop_hook({"hook_event_name": "Stop", "session_id": "m-sub-excl"}, workspace_root=sub_pkg) == {}
+    from eidos.plugin.hooks import _scope_paths_to_subproject
+
+    assert _scope_paths_to_subproject(
+        [
+            str(sub_eidos / "system.adoc"),
+            str(mono / "AGENTS.md"),
+            str(mono / "packages" / "other" / "foo.py"),
+            "AGENTS.md",
+            "src/app.py",
+        ],
+        sub_pkg,
+        mono,
+    ) == ["eidos/system.adoc", "AGENTS.md", "src/app.py"]
+    (sub_pkg / "src" / "app.py").write_text(orig_sub_app, encoding="utf-8")
+    (sub_pkg / "generated" / "auto.py").unlink()
+    (mono / "packages" / "other" / "foo.py").unlink()
+    (sub_eidos / CONFIG_FILENAME).write_text("version: 1\ninvalid_sub_key: true\n", encoding="utf-8")
+
+    # 10. Read-only CLI commands fail closed on invalid eidos/eidos.yaml, portal build starter preserves CWD out_dir,
+    #     and config schema Rich output includes 'version' without duplicated enum lists
+    for bad_cmd in (
+        ["index", "status", "--path", str(sub_eidos), "--json"],
+        ["index", "health", "--path", str(sub_eidos), "--json"],
+        ["index", "blast-radius", "CMP-APP", "--path", str(sub_eidos), "--json"],
+        ["index", "find-symbol", "compute_total", "--path", str(sub_eidos), "--json"],
+        ["memory", "list", "--path", str(sub_eidos), "--json"],
+        ["memory", "show", "MEM-ANY", "--path", str(sub_eidos), "--json"],
+        ["memory", "verify", "MEM-ANY", "--path", str(sub_eidos), "--json"],
+        ["memory", "archive", "MEM-ANY", "--path", str(sub_eidos), "--json"],
+        ["memory", "promote", "MEM-ANY", "--to", "policy", "--spec-id", "POL-1", "--path", str(sub_eidos), "--json"],
+        ["delta", "conflicts", "--path", str(sub_eidos), "--json"],
+        ["delta", "audit", "DLT-ANY", "--path", str(sub_eidos), "--json"],
+        ["spec", "discover", "--path", str(sub_pkg), "--json"],
+    ):
+        r_bad = runner.invoke(app, bad_cmd)
+        assert r_bad.exit_code == 1, f"Expected exit 1 for {bad_cmd}"
+
+    # Starter eidos/eidos.yaml ('version: 1' only) keeps default portal build out_dir = Path('site')
+    (sub_eidos / CONFIG_FILENAME).write_text("version: 1\n", encoding="utf-8")
+    built_dirs: list[Path] = []
+    import eidos.cli.portal_commands as _portal_mod
+
+    monkeypatch.setattr(
+        _portal_mod,
+        "build_static_portal",
+        lambda eidos_dir, output_dir, single_file=False: built_dirs.append(Path(output_dir)) or Path(output_dir),
+    )
+    assert runner.invoke(app, ["portal", "build", "--path", str(sub_eidos)]).exit_code == 0
+    assert built_dirs[-1] == Path("site")
+
+    # config schema Rich output includes top-level 'version' and does not duplicate enum(...) values
+    res_schema_rich = runner.invoke(app, ["config", "schema"])
+    assert res_schema_rich.exit_code == 0
+    assert "version" in res_schema_rich.stdout
+    assert "enum(error | warn | off) (error, warn, off)" not in res_schema_rich.stdout
+
+    # eidos doctor surfaces OUTDATED badge (not WARN) when an installed plugin is stale AND another configured target is missing
+    (sub_eidos / CONFIG_FILENAME).write_text(
+        "version: 1\nplugin:\n  targets: [claude, cursor]\n  updates_check: false\n",
+        encoding="utf-8",
+    )
+    assert runner.invoke(app, ["plugin", "install", "claude", "--project-dir", str(mono)]).exit_code == 0
+    claude_manifest = mono / ".claude" / ".eidos-manifest.json"
+    mdata = orjson.loads(claude_manifest.read_bytes())
+    mdata["version"] = "0.0.1"
+    claude_manifest.write_bytes(orjson.dumps(mdata, option=orjson.OPT_INDENT_2))
+    res_doc_outdated = runner.invoke(app, ["doctor", "--path", str(sub_eidos)])
+    assert res_doc_outdated.exit_code == 1
+    assert "OUTDATED" in res_doc_outdated.stdout
+    assert "cursor" in res_doc_outdated.stdout

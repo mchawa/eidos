@@ -18,7 +18,7 @@ Implements `eidos validate` and the `eidos spec` subcommand group (`list`, `show
 
 == Public Surface
 * `register(app: typer.Typer) -> None`, `spec_app: typer.Typer`
-* `validate(path: Path, fail_on_warnings: bool = False, json_output: bool = False) -> None`
+* `validate(target_path: Path | None, fail_on_warnings: bool = False, json_output: bool = False) -> None`
 * `spec_list_cmd(...)`, `spec_show_cmd(...)`, `spec_schema_cmd(...)`, `spec_create_cmd(...)`, `spec_delete_cmd(...)`, `spec_discover_cmd(...)`
 
 == Design Constraints & Operational Notes

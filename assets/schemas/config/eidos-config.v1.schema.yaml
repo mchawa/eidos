@@ -197,7 +197,7 @@ properties:
           model_mirror_url:
             anyOf:
               - type: string
-                pattern: "^https?://\\S+$"
+                pattern: "^[Hh][Tt][Tt][Pp][Ss]?://\\S+$"
               - type: "null"
             default: null
             description: "Optional HTTP(S) mirror base URL for downloading pinned SHA-256 ONNX model artifacts."
@@ -306,7 +306,7 @@ properties:
           baseline_ttl_seconds:
             type: number
             exclusiveMinimum: 0
-            default: 86400
+            default: 86400.0
             description: "Expiration window in seconds for cached Stop hook session baselines."
 
   portal:

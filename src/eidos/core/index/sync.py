@@ -73,6 +73,7 @@ from eidos.core.workspace.project import (
     _is_dir_excluded_by_patterns,
     _is_test_dir_segment,
     discover_nested_subproject_roots,
+    expand_brace_globs,
     extract_entity_paths,
     is_dotnet_bin_dir,
     is_excluded_by_config,
@@ -138,42 +139,99 @@ def _extract_test_include_targets(
     nested_dir_strs: set[str],
     ws_exclude: tuple[str, ...],
 ) -> tuple[list[str], list[str]]:
-    """Resolve literal root directories and files referenced by workspace.tests.include globs."""
+    """Resolve root directories and files referenced by workspace.tests.include globs (including braces & leading wildcards)."""
     dirs: list[str] = []
+    seen_dirs: set[str] = set()
     files: list[str] = []
-    root_str = str(root)
+    seen_files: set[str] = set()
+    leading_wildcard_pats: list[str] = []
+    root_res = root.resolve()
+    root_str = str(root_res)
+
     for raw_pat in patterns:
-        pat = raw_pat.strip().replace("\\", "/")
-        while pat.startswith("./"):
-            pat = pat[2:]
-        pat = pat.strip("/")
-        if not pat:
-            continue
-        if any(ch in pat for ch in "*?["):
-            prefix_parts: list[str] = []
-            for part in pat.split("/"):
-                if any(ch in part for ch in "*?["):
-                    break
-                if part:
-                    prefix_parts.append(part)
-            prefix = "/".join(prefix_parts)
-            if not prefix:
+        for expanded in expand_brace_globs(raw_pat):
+            raw_norm = expanded.strip().replace("\\", "/")
+            has_trailing_slash = raw_norm.endswith("/")
+            while raw_norm.startswith("./"):
+                raw_norm = raw_norm[2:]
+            pat = raw_norm.strip("/")
+            if not pat or any(seg == ".." for seg in pat.split("/")):
                 continue
-            if ws_exclude and _is_dir_excluded_by_patterns(prefix, ws_exclude):
-                continue
-            full_p = os.path.normpath(os.path.join(root_str, prefix))
-            if full_p not in nested_dir_strs and os.path.isdir(full_p):
-                dirs.append(full_p)
-        else:
-            if ws_exclude and is_excluded_by_config(pat, ws_exclude):
-                continue
-            full_p = os.path.normpath(os.path.join(root_str, pat))
-            if full_p in nested_dir_strs:
-                continue
-            if os.path.isdir(full_p):
-                dirs.append(full_p)
-            elif os.path.isfile(full_p):
-                files.append(full_p)
+            if any(ch in pat for ch in "*?["):
+                prefix_parts: list[str] = []
+                for part in pat.split("/"):
+                    if any(ch in part for ch in "*?["):
+                        break
+                    if part:
+                        prefix_parts.append(part)
+                prefix = "/".join(prefix_parts)
+                if not prefix:
+                    leading_wildcard_pats.append(f"{pat}/" if has_trailing_slash else pat)
+                    continue
+                if ws_exclude and _is_dir_excluded_by_patterns(prefix, ws_exclude):
+                    continue
+                full_p = os.path.normpath(os.path.join(root_str, prefix))
+                try:
+                    if not Path(full_p).resolve().is_relative_to(root_res):
+                        continue
+                except OSError:
+                    continue
+                if full_p not in nested_dir_strs and full_p not in seen_dirs and os.path.isdir(full_p):
+                    seen_dirs.add(full_p)
+                    dirs.append(full_p)
+            else:
+                if ws_exclude and is_excluded_by_config(pat, ws_exclude):
+                    continue
+                full_p = os.path.normpath(os.path.join(root_str, pat))
+                try:
+                    if not Path(full_p).resolve().is_relative_to(root_res):
+                        continue
+                except OSError:
+                    continue
+                if full_p in nested_dir_strs:
+                    continue
+                if os.path.isdir(full_p):
+                    if full_p not in seen_dirs:
+                        seen_dirs.add(full_p)
+                        dirs.append(full_p)
+                elif os.path.isfile(full_p) and full_p not in seen_files:
+                    seen_files.add(full_p)
+                    files.append(full_p)
+
+    if leading_wildcard_pats and root_res.is_dir():
+        for dirpath, dirnames, filenames in os.walk(root_str):
+            next_dirs: list[str] = []
+            for d in dirnames:
+                if d in STANDARD_EXCLUDED_DIRS or d.startswith("."):
+                    continue
+                child_str = os.path.normpath(os.path.join(dirpath, d))
+                if child_str in nested_dir_strs or is_dotnet_bin_dir(Path(child_str)):
+                    continue
+                if ws_exclude:
+                    rel_d = os.path.relpath(child_str, root_str).replace("\\", "/")
+                    if _is_dir_excluded_by_patterns(rel_d, ws_exclude):
+                        continue
+                next_dirs.append(d)
+            dirnames[:] = next_dirs
+            for fn in filenames:
+                if Path(fn).suffix.lower() not in _CODE_EXTS:
+                    continue
+                full_f = os.path.normpath(os.path.join(dirpath, fn))
+                if full_f in seen_files:
+                    continue
+                p_full = Path(full_f)
+                try:
+                    if p_full.is_symlink() or not p_full.resolve().is_relative_to(root_res):
+                        continue
+                except OSError:
+                    continue
+                rel_f = os.path.relpath(full_f, root_str).replace("\\", "/")
+                if ws_exclude and is_excluded_by_config(rel_f, ws_exclude):
+                    continue
+                if is_excluded_by_config(rel_f, leading_wildcard_pats):
+                    seen_files.add(full_f)
+                    files.append(full_f)
+
     return dirs, files
 
 
@@ -317,12 +375,17 @@ def reconcile_code_ownership(
         ):
             store_code_symbols(conn, rel_test, [], [])
             conn.execute("DELETE FROM test_binding_cache WHERE file_path = ?;", (rel_test,))
+            conn.execute("DELETE FROM symbol_mappings WHERE symbol = ? AND kind = 'test_binding';", (rel_test,))
             conn.execute(
-                "DELETE FROM edges WHERE rel_type = 'asserts' AND (source_id = ? OR source_id LIKE ?);",
-                (rel_test, f"{rel_test}::%"),
+                "DELETE FROM edges WHERE rel_type = 'asserts' AND (source_id = ? OR substr(source_id, 1, ?) = ?);",
+                (rel_test, len(rel_test) + 2, f"{rel_test}::"),
             )
             abs_test = (index.root / rel_test).resolve()
-            if abs_test.is_file() and _is_governed_source_file(abs_test.name):
+            if (
+                abs_test.is_file()
+                and _is_governed_source_file(abs_test.name)
+                and (rel_test in candidates or bool(resolver.owners(rel_test)))
+            ):
                 stat = abs_test.stat()
                 raw_bytes = abs_test.read_bytes()
                 index_source_file(
@@ -338,6 +401,7 @@ def reconcile_code_ownership(
                 processed.add(rel_test)
             else:
                 conn.execute("DELETE FROM indexed_files WHERE rel_path = ?;", (rel_test,))
+                conn.execute("DELETE FROM file_tokens_fts WHERE rel_path = ?;", (rel_test,))
 
     for rel_code, p_file in sorted(candidates.items()):
         if rel_code in processed:
@@ -536,7 +600,6 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
         nested_dir_strs,
         ws_exclude,
     )
-    tracked_code_dirs.update(inc_dirs)
     explicit_code_files.extend(inc_files)
 
     package_paths: set[str] = set()
@@ -593,7 +656,7 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
                     return True
         return False
 
-    def _scan_code_dir(dir_path: str) -> None:
+    def _scan_code_dir(dir_path: str, *, test_only: bool = False) -> None:
         if os.path.normpath(dir_path) in nested_dir_strs:
             return
         if ws_exclude:
@@ -612,7 +675,7 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
                                 continue
                             if ws_exclude and _is_dir_excluded_by_patterns(_rel_path(entry.path), ws_exclude):
                                 continue
-                            _scan_code_dir(entry.path)
+                            _scan_code_dir(entry.path, test_only=test_only)
                             continue
                     except OSError:
                         continue
@@ -623,6 +686,13 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
                     if nested_prefixes and rel_code.startswith(nested_prefixes):
                         continue
                     if ws_exclude and is_excluded_by_config(rel_code, ws_exclude):
+                        continue
+                    if test_only and not is_polyglot_test_file(
+                        rel_code,
+                        repo_root=index.root,
+                        eidos_dir=index.eidos_dir,
+                        repo_config=cfg,
+                    ):
                         continue
                     if rel_code in disk_files:
                         continue
@@ -638,6 +708,12 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
     for code_dir in top_code_dirs:
         if os.path.isdir(code_dir):
             _scan_code_dir(code_dir)
+
+    for inc_dir in inc_dirs:
+        if os.path.isdir(inc_dir) and not any(
+            inc_dir == parent or inc_dir.startswith(parent + os.sep) for parent in top_code_dirs
+        ):
+            _scan_code_dir(inc_dir, test_only=True)
 
     for full_pp in explicit_code_files:
         rel_code = _rel_path(full_pp)
@@ -813,7 +889,10 @@ def _sync_index_locked(
             if row and row["doc_type"] in ("code/source", "code/test"):
                 code_deleted = True
                 store_code_symbols(conn, d_rel, [], [])
-                conn.execute("DELETE FROM symbol_mappings WHERE symbol = ?;", (d_rel,))
+                conn.execute(
+                    "DELETE FROM symbol_mappings WHERE symbol = ? AND kind IN ('source_path', 'inferred_path', 'test_binding');",
+                    (d_rel,),
+                )
                 conn.execute("DELETE FROM test_binding_cache WHERE file_path = ?;", (d_rel,))
                 conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
             elif row and row["doc_id"]:
@@ -1279,6 +1358,11 @@ def _sync_index_locked(
                 )
             else:
                 conn.execute("DELETE FROM test_binding_cache WHERE file_path = ?;", (rel_p,))
+                conn.execute("DELETE FROM symbol_mappings WHERE symbol = ? AND kind = 'test_binding';", (rel_p,))
+                conn.execute(
+                    "DELETE FROM edges WHERE rel_type = 'asserts' AND (source_id = ? OR substr(source_id, 1, ?) = ?);",
+                    (rel_p, len(rel_p) + 2, f"{rel_p}::"),
+                )
                 index_source_file(conn, ast_idx, p, rel_p, mtime, sha, resolver, raw_bytes=raw_bytes)
                 processed_code.add(rel_p)
 
@@ -1509,20 +1593,23 @@ def _sync_index_locked(
                     ):
                         candidate_test_files.setdefault(rel_t, tp)
 
+        root_res = index.root.resolve()
         for (tb_sym,) in conn.execute(
             "SELECT DISTINCT symbol FROM symbol_mappings WHERE kind = 'test_binding';"
         ).fetchall():
             if not tb_sym:
                 continue
-            abs_tb = (index.root / str(tb_sym).strip()).resolve()
+            try:
+                abs_tb = (index.root / str(tb_sym).strip()).resolve()
+                rel_tb = abs_tb.relative_to(root_res).as_posix()
+            except (OSError, ValueError):
+                continue
             if abs_tb.is_file() and abs_tb.suffix in _CODE_EXTS:
-                try:
-                    rel_tb = str(abs_tb.relative_to(index.root)).replace("\\", "/")
-                except ValueError:
-                    rel_tb = str(abs_tb).replace("\\", "/")
                 if nested_prefixes and rel_tb.startswith(nested_prefixes):
                     continue
                 if ws_exclude and is_excluded_by_config(rel_tb, ws_exclude):
+                    continue
+                if cfg.workspace.tests.exclude and is_excluded_by_config(rel_tb, cfg.workspace.tests.exclude):
                     continue
                 candidate_test_files.setdefault(rel_tb, abs_tb)
 
@@ -1624,6 +1711,6 @@ def _sync_index_locked(
                 "DELETE FROM memory_freshness_cache WHERE memory_id NOT IN (SELECT id FROM entities WHERE type = 'agent/memory');"
             )
         prune_stale_test_binding_edges(conn)
-        _reconcile_invariant_coverage(index, conn, ast_idx)
+        _reconcile_invariant_coverage(index, conn, ast_idx, repo_config=cfg)
 
     return spec_updates

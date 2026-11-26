@@ -17,7 +17,7 @@ Exposes the `eidos drift` CLI command for verifying zero specification-to-code d
 
 == Public Surface
 * `register(app: typer.Typer) -> None`
-* `drift_cmd(base: str, head: str, uncommitted: bool, strict: bool, markdown: Path | None, json_output: bool, warn_only: bool, fail_on_warnings: bool = False) -> None`
+* `drift_cmd(base: str | None, head: str, uncommitted: bool, path: Path | None, warn_only: bool, fail_on_warnings: bool, strict: bool, markdown_out: Path | None, json_output: bool) -> None`
 
 == Design Constraints & Operational Notes
 * **Fail-Closed Exit Semantics**: Exits with code `1` whenever schema validation errors, uncovered/orphan invariants, unmapped structural code files (or uncovered `body_only_code_files` under `--strict`), unverified SpecDelta targets, or invalid `--base` Git references (`GitResolutionError`) are encountered.

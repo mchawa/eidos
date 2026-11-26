@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import inspect
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,7 +14,7 @@ from eidos.core.index.storage import get_cached_spec_document
 from eidos.core.spec.boundary_validator import evaluate_import_boundaries
 from eidos.core.spec.parser import extract_frontmatter
 from eidos.core.spec.validator import SpecValidator, ValidationReport
-from eidos.core.workspace.config import DEFAULT_CONFIG, EidosConfig, load_repo_config_with_errors
+from eidos.core.workspace.config import EidosConfig, load_repo_config_with_errors
 from eidos.core.workspace.project import find_git_root, is_generated_or_vendored
 from eidos.vcs.consumers import find_untouched_consumers
 from eidos.vcs.diff import (
@@ -118,6 +119,8 @@ class DriftCheckResult:
     untouched_consumers: list[dict[str, Any]] = field(default_factory=list)
     remediation_suggestions: list[str] = field(default_factory=list)
     summary_markdown: str = ""
+    eval_config: EidosConfig | None = None
+    eval_config_errors: list[str] = field(default_factory=list)
 
     @property
     def validation_passed(self) -> bool:
@@ -158,6 +161,7 @@ def detect_drift(
     eidos_dir: Path | None = None,
     uncommitted: bool = False,
     strict: bool | None = None,
+    *,
     repo_config: EidosConfig | None = None,
 ) -> DriftCheckResult:
     """Run drift detection: evaluate spec-code synchronization, schema validation, and invariant check."""
@@ -223,23 +227,27 @@ def detect_drift(
             eval_root = snap_root
             eval_eidos = (snap_root / eidos_rel_prefix).resolve()
 
+    eval_config_errors: list[str] = []
     if repo_config is not None:
         eval_config = repo_config
     else:
-        eval_config, _ = load_repo_config_with_errors(eidos_dir=eval_eidos, repo_root=eval_root)
+        eval_config, eval_config_errors = load_repo_config_with_errors(eidos_dir=eval_eidos, repo_root=eval_root)
     effective_strict = strict if strict is not None else eval_config.drift.strict
 
     try:
-        if eval_config != DEFAULT_CONFIG:
-            changed_files = get_git_diff_files(
-                root,
-                base_ref=resolved_base_ref,
-                head_ref=head_ref,
-                uncommitted=effective_uncommitted,
-                merge_base=resolved_mb,
-                repo_config=eval_config,
-                eidos_dir=eval_eidos,
-            )
+        diff_sig_params = inspect.signature(get_git_diff_files).parameters
+        if "repo_config" in diff_sig_params and "eidos_dir" in diff_sig_params:
+            diff_kwargs: dict[str, Any] = {
+                "base_ref": resolved_base_ref,
+                "head_ref": head_ref,
+                "uncommitted": effective_uncommitted,
+                "merge_base": resolved_mb,
+                "repo_config": eval_config,
+                "eidos_dir": eval_eidos,
+            }
+            if "snapshot_root" in diff_sig_params:
+                diff_kwargs["snapshot_root"] = eval_root
+            changed_files = get_git_diff_files(root, **diff_kwargs)
         else:
             changed_files = get_git_diff_files(
                 root,
@@ -251,8 +259,8 @@ def detect_drift(
         head_pkg_paths = _discover_container_package_paths(eval_eidos) if eval_eidos.exists() else None
         classification = classify_changed_files(
             changed_files,
-            repo_root=root,
-            eidos_dir=target_eidos,
+            repo_root=eval_root,
+            eidos_dir=eval_eidos,
             package_paths=head_pkg_paths,
             repo_config=eval_config,
         )
@@ -1001,6 +1009,13 @@ def detect_drift(
             untouched_consumers=untouched_consumers,
         )
 
+        all_eval_cfg_errors = list(eval_config_errors)
+        for err_path, errs in validation_report.schema_errors.items():
+            if err_path == "eidos.yaml" or err_path.endswith("/eidos.yaml"):
+                for em in errs:
+                    if em not in all_eval_cfg_errors:
+                        all_eval_cfg_errors.append(em)
+
         return DriftCheckResult(
             is_clean=is_clean,
             drift_detected=drift_detected,
@@ -1021,6 +1036,8 @@ def detect_drift(
             untouched_consumers=untouched_consumers,
             remediation_suggestions=remediation,
             summary_markdown=summary_markdown,
+            eval_config=eval_config,
+            eval_config_errors=all_eval_cfg_errors,
         )
     finally:
         if snap_root is not None:

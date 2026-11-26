@@ -398,6 +398,8 @@ def _verify_single_invariant(
     all_tests_content: dict[str, Any],
     inv_to_test_funcs: dict[str, list[str]],
     ast_idx: Any = None,
+    *,
+    repo_config: EidosConfig | None = None,
 ) -> list[str]:
     """Strictly verify static invariant coverage against test_binding (file::func or file) or test suite."""
     uses_cached_entries = (
@@ -411,7 +413,19 @@ def _verify_single_invariant(
             return []
         tb_file = parts[0].replace("\\", "/")
         tb_func = "::".join(parts[1:]) if len(parts) > 1 else None
-        tb_path = repo_root / tb_file
+        root_res = repo_root.resolve()
+        try:
+            tb_path = (repo_root / tb_file).resolve()
+            norm_tb = tb_path.relative_to(root_res).as_posix()
+        except (OSError, ValueError):
+            return []
+        if repo_config is not None:
+            if repo_config.workspace.exclude and is_excluded_by_config(norm_tb, repo_config.workspace.exclude):
+                return []
+            if repo_config.workspace.tests.exclude and is_excluded_by_config(
+                norm_tb, repo_config.workspace.tests.exclude
+            ):
+                return []
         if not tb_path.exists():
             return []
 
@@ -622,12 +636,17 @@ def extract_invariants_and_verify(
 ) -> list[InvariantTrace]:
     """Extract all invariants declared in capabilities, policies, containers, and C4 components, and strictly verify static test bindings."""
     invariants: list[InvariantTrace] = []
+    eff_cfg = (
+        repo_config
+        if repo_config is not None
+        else load_repo_config_with_errors(eidos_dir=eidos_dir, repo_root=repo_root)[0]
+    )
 
     if cached_tests is None:
         cached_tests = _load_or_update_test_binding_cache(
             repo_root,
             eidos_dir=eidos_dir,
-            repo_config=repo_config,
+            repo_config=eff_cfg,
         )
 
     inv_to_test_funcs: dict[str, list[str]] = {}
@@ -651,7 +670,7 @@ def extract_invariants_and_verify(
         )
         rule = (getattr(inv, "rule", None) or "") if not isinstance(inv, dict) else inv.get("rule", "")
         is_pending_draft_tbd = doc_status in ("draft", "planned") and str(tb or "").strip().upper() == "TBD"
-        matching = _verify_single_invariant(iid, tb, repo_root, cached_tests, inv_to_test_funcs)
+        matching = _verify_single_invariant(iid, tb, repo_root, cached_tests, inv_to_test_funcs, repo_config=eff_cfg)
         invariants.append(
             InvariantTrace(
                 invariant_id=iid,

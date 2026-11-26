@@ -24,7 +24,7 @@ Root Typer CLI application (`src/eidos/cli/main.py`) and shared workspace resolu
 * `info() -> None`, `version_callback(value: bool) -> None`
 * `resolve_cli_eidos_dir(target_path: Path | None = None, hint_files: list[str] | None = None) -> Path`, `has_eidos_markers(cand: Path) -> bool`
 * `resolve_param_from_config(param_name: str, cli_value: Any, config_value: Any) -> Any`
-* `load_cli_repo_config(eidos_dir: Path, *, repo_root: Path | None = None, json_output: bool = False) -> EidosConfig`
+* `load_cli_repo_config(eidos_dir: Path, *, repo_root: Path | None = None, json_output: bool = False) -> EidosConfig`, `load_cli_repo_config_with_sources(eidos_dir: Path, *, repo_root: Path | None = None, json_output: bool = False) -> tuple[EidosConfig, Path | None, dict[str, str]]`
 
 == Design Constraints & Operational Notes
 * **Thin Presentation Boundary**: Contains zero domain business logic; delegates all operations to `CNT-EIDOS-CORE`, `CNT-EIDOS-INDEX`, `CNT-EIDOS-VCS`, `CNT-EIDOS-PORTAL`, and `CNT-EIDOS-PLUGIN`.

@@ -987,6 +987,7 @@ def compute_governance_health(
             mem_active_batch,
             catalog_ids,
             conn=conn,
+            eidos_dir=eidos_res,
         )
         for mid, _ in mem_active_batch:
             verdict = freshness_map.get(mid, ("fresh", ""))[0]

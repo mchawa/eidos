@@ -15,7 +15,7 @@ from typing import Any
 import orjson
 
 from eidos.core.workspace.config import CONFIG_FILENAME, EidosConfig, load_repo_config_with_errors
-from eidos.core.workspace.project import find_repo_root
+from eidos.core.workspace.project import find_git_root, find_repo_root
 from eidos.vcs.diff import classify_changed_files
 from eidos.vcs.drift import detect_drift
 
@@ -202,6 +202,7 @@ def _snapshot_dirty_worktree(repo_root: Path) -> dict[str, str] | None:
         return None
 
     tokens = proc.stdout.split(b"\x00")
+    git_base = (find_git_root(repo_root) or repo_root).resolve()
     snapshot: dict[str, str] = {}
     idx = 0
     while idx < len(tokens):
@@ -220,7 +221,7 @@ def _snapshot_dirty_worktree(repo_root: Path) -> dict[str, str] | None:
             norm = p_str.replace("\\", "/")
             if norm.startswith(("eidos/.cache/", ".cache/", ".git/")) or "/.cache/" in norm or "/.git/" in norm:
                 continue
-            full = repo_root / norm
+            full = git_base / norm
             try:
                 if full.is_symlink():
                     snapshot[norm] = f"{xy}:symlink:{os.readlink(full)}"
@@ -324,21 +325,95 @@ def _config_file_changed_and_invalid(
     """Return True when <eidos_dir>/eidos.yaml was edited and fails validation (prevents silent short-circuiting)."""
     if not cfg_errors:
         return False
-    cfg_abs = (eidos_dir / CONFIG_FILENAME).resolve()
-    try:
-        expected_rel = cfg_abs.relative_to(resolved_root.resolve()).as_posix().lower()
-    except ValueError:
-        expected_rel = f"{eidos_dir.name}/{CONFIG_FILENAME}".lower()
+    cfg_raw = eidos_dir / CONFIG_FILENAME
+    cfg_abs = cfg_raw.parent.resolve() / cfg_raw.name if cfg_raw.is_symlink() else cfg_raw.resolve()
+    root_res = resolved_root.resolve()
+    git_root = find_git_root(root_res)
+    expected_rels: set[str] = set()
+    for anchor in (root_res, *([git_root.resolve()] if git_root is not None else [])):
+        with contextlib.suppress(ValueError):
+            expected_rels.add(cfg_abs.relative_to(anchor).as_posix().lower())
+    if not expected_rels:
+        expected_rels.add(f"{eidos_dir.name}/{CONFIG_FILENAME}".lower())
     for raw_p in changed_paths:
-        norm = raw_p.replace("\\", "/").lstrip("./")
-        if norm.lower() == expected_rel:
+        norm = raw_p.replace("\\", "/")
+        while norm.startswith("./"):
+            norm = norm[2:]
+        if norm.lower() in expected_rels:
             return True
         with contextlib.suppress(OSError):
             cand = Path(norm)
-            resolved = cand.resolve() if cand.is_absolute() else (resolved_root / cand).resolve()
-            if resolved == cfg_abs:
-                return True
+            if cand.is_absolute():
+                resolved_c = cand.parent.resolve() / cand.name if cand.is_symlink() else cand.resolve()
+                if resolved_c == cfg_abs:
+                    return True
+            else:
+                for anchor in (root_res, *([git_root.resolve()] if git_root is not None else [])):
+                    target = anchor / cand
+                    resolved_c = target.parent.resolve() / target.name if target.is_symlink() else target.resolve()
+                    if resolved_c == cfg_abs:
+                        return True
     return False
+
+
+_ROOT_ONBOARDING_FILES = frozenset({"agents.md", "claude.md", ".aider.conf.yml"})
+_ROOT_ONBOARDING_PREFIXES = (".agents/skills/", ".claude/skills/", ".aider/skills/")
+
+
+def _scope_paths_to_subproject(
+    changed_paths: list[str],
+    resolved_root: Path,
+    git_root: Path | None,
+) -> list[str]:
+    """Normalize changed paths to ``resolved_root``-relative POSIX paths for monorepo sub-project Stop hooks."""
+    root_res = resolved_root.resolve()
+    git_res = git_root.resolve() if git_root is not None else None
+    sub_prefix = ""
+    if git_res is not None and git_res != root_res and root_res.is_relative_to(git_res):
+        sub_prefix = root_res.relative_to(git_res).as_posix().strip("/") + "/"
+
+    scoped: list[str] = []
+    seen: set[str] = set()
+
+    def _add(rel_p: str) -> None:
+        if rel_p and rel_p not in seen:
+            seen.add(rel_p)
+            scoped.append(rel_p)
+
+    for raw_p in changed_paths:
+        norm = raw_p.replace("\\", "/")
+        while norm.startswith("./"):
+            norm = norm[2:]
+        if not norm:
+            continue
+        cand = Path(norm)
+        if cand.is_absolute():
+            with contextlib.suppress(OSError):
+                cand_abs = cand.parent.resolve() / cand.name if cand.is_symlink() else cand.resolve()
+                if cand_abs.is_relative_to(root_res):
+                    _add(cand_abs.relative_to(root_res).as_posix())
+                    continue
+                if git_res is not None and cand_abs.is_relative_to(git_res):
+                    g_rel = cand_abs.relative_to(git_res).as_posix()
+                    g_low = g_rel.lower()
+                    if g_low in _ROOT_ONBOARDING_FILES or g_low.startswith(_ROOT_ONBOARDING_PREFIXES):
+                        _add(g_rel)
+                continue
+        if sub_prefix:
+            if norm.startswith(sub_prefix):
+                _add(norm[len(sub_prefix) :])
+                continue
+            low = norm.lower()
+            if low in _ROOT_ONBOARDING_FILES or low.startswith(_ROOT_ONBOARDING_PREFIXES):
+                _add(norm)
+                continue
+            # Preserve paths already passed relative to resolved_root (e.g. explicit hook payloads)
+            local_cand = root_res / norm
+            if local_cand.exists() or local_cand.is_symlink():
+                _add(norm)
+            continue
+        _add(norm)
+    return scoped
 
 
 def _zero_governed_changes_since_baseline(
@@ -358,6 +433,7 @@ def _zero_governed_changes_since_baseline(
     else:
         cfg = repo_config
         cfg_errs = config_errors
+    git_root = find_git_root(resolved_root)
 
     for explicit_key in ("modified_files", "editedFiles"):
         explicit_val = payload.get(explicit_key)
@@ -369,7 +445,10 @@ def _zero_governed_changes_since_baseline(
                 return True
             if _config_file_changed_and_invalid(str_paths, resolved_root, eidos_dir, cfg_errs):
                 return False
-            cls_exp = classify_changed_files(str_paths, repo_root=resolved_root, eidos_dir=eidos_dir, repo_config=cfg)
+            scoped_exp = _scope_paths_to_subproject(str_paths, resolved_root, git_root)
+            if not scoped_exp:
+                return True
+            cls_exp = classify_changed_files(scoped_exp, repo_root=resolved_root, eidos_dir=eidos_dir, repo_config=cfg)
             if (
                 cls_exp.code_files
                 or cls_exp.spec_files
@@ -406,7 +485,10 @@ def _zero_governed_changes_since_baseline(
         return True
     if _config_file_changed_and_invalid(changed_paths, resolved_root, eidos_dir, cfg_errs):
         return False
-    cls = classify_changed_files(changed_paths, repo_root=resolved_root, eidos_dir=eidos_dir, repo_config=cfg)
+    scoped_changed = _scope_paths_to_subproject(changed_paths, resolved_root, git_root)
+    if not scoped_changed:
+        return True
+    cls = classify_changed_files(scoped_changed, repo_root=resolved_root, eidos_dir=eidos_dir, repo_config=cfg)
     if cls.code_files or cls.spec_files or cls.delta_files or cls.test_files or cls.onboarding_files:
         return False
     return not _memory_files_require_validation(cls.memory_files, resolved_root, eidos_dir)

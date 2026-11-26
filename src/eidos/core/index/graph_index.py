@@ -314,8 +314,8 @@ class ArchitecturalIndex:
         files: list[str] | str | None = None,
         component: str | None = None,
         task: str | None = None,
-        tier: str = "guardrails",
-        use_semantic: bool = True,
+        tier: str | None = None,
+        use_semantic: bool | None = None,
     ) -> TieredContextSlice:
         """Extract a token-budgeted architectural context slice using hybrid indexed retrieval."""
         return build_tiered_context_slice(
@@ -334,7 +334,7 @@ class ArchitecturalIndex:
         self._ensure_synced()
         return get_semantic_index_status(self._get_connection(), self.eidos_dir)
 
-    def setup_semantic(self, variant: str = "quantized", force: bool = False) -> dict[str, Any]:
+    def setup_semantic(self, variant: str | None = None, force: bool = False) -> dict[str, Any]:
         """Provision Harrier-OSS-v1-0.6B ONNX artifacts into ``eidos/.cache/models/harrier-oss-v1-0.6b/``."""
         from eidos.core.index.semantic import setup_semantic_model
 

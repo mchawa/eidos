@@ -383,7 +383,10 @@ def delta_audit_cmd(
     ),
 ):
     """Audit entities removed or deprecated by a SpecDelta for dangling references and active leaks."""
+    from eidos.cli._shared import load_cli_repo_config
+
     eidos_dir = resolve_cli_eidos_dir(path)
+    load_cli_repo_config(eidos_dir, json_output=json_output)
     engine = AuditEngine(eidos_dir=eidos_dir)
     result = engine.audit_delta(target)
 
@@ -717,7 +720,10 @@ def delta_conflicts_cmd(
     ),
 ):
     """Detect direct mutation target collisions and 1-hop blast-radius overlaps across open SpecDeltas."""
+    from eidos.cli._shared import load_cli_repo_config
+
     eidos_dir = resolve_cli_eidos_dir(path)
+    load_cli_repo_config(eidos_dir, json_output=json_output)
     result = detect_delta_conflicts(eidos_dir, include_blast_radius=blast_radius)
 
     if json_output:

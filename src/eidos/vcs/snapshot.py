@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -13,6 +14,27 @@ from typing import Any
 
 from eidos.core.spec.models import ValidationReport
 from eidos.core.spec.parser import extract_frontmatter
+
+
+def _safe_extract_member(tf: tarfile.TarFile, member: tarfile.TarInfo, snap_root: Path, snap_res: Path) -> None:
+    """Extract one tar member safely, replacing outside-pointing git symlinks with safe dangling placeholders."""
+    try:
+        tf.extract(member, path=snap_root, filter="data")
+    except (tarfile.AbsoluteLinkError, tarfile.LinkOutsideDestinationError):
+        if not member.issym():
+            raise
+        norm_name = member.name.replace("\\", "/")
+        raw_parts = [seg for seg in norm_name.split("/") if seg and seg != "."]
+        if not raw_parts or norm_name.startswith("/") or any(seg == ".." for seg in raw_parts):
+            raise
+        cur = snap_res
+        for parent_seg in raw_parts[:-1]:
+            cur = cur / parent_seg
+            if cur.is_symlink():
+                raise
+            cur.mkdir(exist_ok=True)
+        dest = cur / raw_parts[-1]
+        os.symlink("__eidos_outside_symlink__", dest)
 
 
 def _materialize_head_snapshot(
@@ -33,6 +55,7 @@ def _materialize_head_snapshot(
 
     tmp_dir = tempfile.TemporaryDirectory(prefix="eidos_head_")
     snap_root = Path(tmp_dir.name)
+    snap_res = snap_root.resolve()
     try:
         proc = subprocess.Popen(
             ["git", "archive", "--format=tar", tree_spec],
@@ -42,7 +65,8 @@ def _materialize_head_snapshot(
         )
         assert proc.stdout is not None
         with tarfile.open(fileobj=proc.stdout, mode="r|") as tf:
-            tf.extractall(path=snap_root, filter="data")
+            for member in tf:
+                _safe_extract_member(tf, member, snap_root, snap_res)
         proc.stdout.close()
         if proc.stderr is not None:
             proc.stderr.close()
@@ -66,6 +90,31 @@ def _materialize_head_snapshot(
     return tmp_dir
 
 
+def _head_tree_has_symlink(git_root: Path, head_ref: str, sub_prefix: str, rel_target: str) -> bool:
+    """Return True if any path segment of ``rel_target`` is a Git symlink (mode 120000) in ``head_ref``."""
+    parts = [seg for seg in rel_target.replace("\\", "/").split("/") if seg and seg != "."]
+    if not parts:
+        return False
+    check_paths: list[str] = []
+    acc: list[str] = [sub_prefix] if sub_prefix else []
+    for seg in parts:
+        acc.append(seg)
+        check_paths.append("/".join(acc))
+    try:
+        res = subprocess.run(
+            ["git", "ls-tree", head_ref, "--", *check_paths],
+            cwd=git_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return False
+    if res.returncode != 0:
+        return False
+    return any(line.startswith("120000 ") for line in res.stdout.splitlines())
+
+
 def _load_head_commit_config(
     git_root: Path,
     repo_root: Path,
@@ -73,27 +122,56 @@ def _load_head_commit_config(
     head_ref: str,
 ) -> Any:
     """Load optional <eidos_dir>/eidos.yaml strictly from head_ref via git show (zero working-tree leakage)."""
-    from eidos.core.workspace.config import CONFIG_FILENAME, DEFAULT_CONFIG, parse_config_yaml_text
+    from eidos.core.workspace.config import CONFIG_FILENAME, parse_config_yaml_text
 
     sub_prefix = ""
     if repo_root != git_root and repo_root.is_relative_to(git_root):
         sub_prefix = str(repo_root.relative_to(git_root)).replace("\\", "/").strip("/")
     clean_eidos_rel = eidos_rel_prefix.replace("\\", "/").strip("/")
     parts = [p for p in (sub_prefix, clean_eidos_rel, CONFIG_FILENAME) if p]
-    obj_spec = f"{head_ref}:{'/'.join(parts)}"
+    rel_config = "/".join(parts)
+    obj_spec = f"{head_ref}:{rel_config}"
+    raw_text = ""
+    is_regular_blob = True
     try:
-        res = subprocess.run(
-            ["git", "show", obj_spec],
+        ls_res = subprocess.run(
+            ["git", "ls-tree", head_ref, "--", rel_config],
             cwd=git_root,
             capture_output=True,
             text=True,
             check=False,
         )
-        raw_text = res.stdout if res.returncode == 0 else ""
+        if ls_res.returncode == 0:
+            ls_line = ls_res.stdout.strip().splitlines()[0] if ls_res.stdout.strip() else ""
+            if ls_line and not ls_line.startswith(("100644 ", "100755 ")):
+                is_regular_blob = False
+            elif ls_line:
+                res = subprocess.run(
+                    ["git", "show", obj_spec],
+                    cwd=git_root,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                raw_text = res.stdout if res.returncode == 0 else ""
     except OSError:
         raw_text = ""
-    cfg, errs, _sources = parse_config_yaml_text(raw_text, repo_root=None)
-    return DEFAULT_CONFIG if errs else cfg
+
+    if not is_regular_blob:
+        cfg_env_only, _errs, _sources = parse_config_yaml_text("", repo_root=None)
+        return cfg_env_only
+
+    cfg, errs, sources = parse_config_yaml_text(raw_text, repo_root=None)
+    if errs:
+        return cfg
+    if (
+        raw_text
+        and sources.get("portal.build.out_dir") == "file"
+        and _head_tree_has_symlink(git_root, head_ref, sub_prefix, cfg.portal.build.out_dir)
+    ):
+        cfg_env_only, _e, _s = parse_config_yaml_text("", repo_root=None)
+        return cfg_env_only
+    return cfg
 
 
 def _remap_snapshot_str(text: str, snap_root: Path | None) -> str:

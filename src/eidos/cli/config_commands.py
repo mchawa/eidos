@@ -216,18 +216,17 @@ def config_schema_cmd(
     keys_table.add_column("Default", style="green")
     keys_table.add_column("Description", style="dim")
 
-    for section in info["sections"]:
-        for k_info in section["keys"]:
-            type_label = str(k_info.get("type") or "any")
-            enum_vals = k_info.get("enum")
-            if enum_vals:
-                type_label = f"{type_label} ({', '.join(str(e) for e in enum_vals)})"
-            keys_table.add_row(
-                str(k_info["key"]),
-                type_label,
-                _format_config_value(k_info.get("default")),
-                str(k_info.get("description") or ""),
-            )
+    for k_info in info["keys"]:
+        type_label = str(k_info.get("type") or "any")
+        enum_vals = k_info.get("enum")
+        if enum_vals and not type_label.startswith("enum("):
+            type_label = f"{type_label} ({', '.join(str(e) for e in enum_vals)})"
+        keys_table.add_row(
+            str(k_info["key"]),
+            type_label,
+            _format_config_value(k_info.get("default")),
+            str(k_info.get("description") or ""),
+        )
     console.print(keys_table)
 
     env_table = Table(title="Supported EIDOS_* Environment Variables", show_header=True, header_style="bold magenta")

@@ -317,6 +317,29 @@ def _list_gitignored_dirs(root: Path) -> set[Path]:
     return set()
 
 
+def _match_exclude_pattern(norm_path: str, pattern: str) -> bool:
+    """Match ``norm_path`` against an exclude/include pattern, normalizing trailing-slash directory globs."""
+    raw = str(pattern).strip().replace("\\", "/")
+    if not raw:
+        return False
+    for sub_pat in expand_brace_globs(raw):
+        pat = sub_pat.strip()
+        if not pat:
+            continue
+        if pat.endswith("/"):
+            base = pat.rstrip("/")
+            if not base:
+                continue
+            if base.endswith("/**"):
+                if match_path_pattern(norm_path, base) > 0:
+                    return True
+            elif match_path_pattern(norm_path, base) > 0 or match_path_pattern(norm_path, f"{base}/**") > 0:
+                return True
+        elif match_path_pattern(norm_path, pat) > 0:
+            return True
+    return False
+
+
 def _is_dir_excluded_by_patterns(rel_dir: str, patterns: tuple[str, ...] | Iterable[str]) -> bool:
     """Return True if a directory and its descendants are excluded by glob/prefix patterns."""
     pat_list = tuple(patterns)
@@ -326,7 +349,7 @@ def _is_dir_excluded_by_patterns(rel_dir: str, patterns: tuple[str, ...] | Itera
     if not norm:
         return False
     probe = f"{norm}/__eidos_dir_probe__"
-    return any(match_path_pattern(norm, pat) > 0 and match_path_pattern(probe, pat) > 0 for pat in pat_list)
+    return any(_match_exclude_pattern(norm, pat) and _match_exclude_pattern(probe, pat) for pat in pat_list)
 
 
 def is_excluded_by_config(
@@ -361,7 +384,7 @@ def is_excluded_by_config(
         norm = normalize_rel_path(str(rel_path))
     if not norm:
         return False
-    return any(match_path_pattern(norm, pat) > 0 for pat in patterns)
+    return any(_match_exclude_pattern(norm, pat) for pat in patterns)
 
 
 def discover_nested_subproject_roots(
@@ -676,7 +699,9 @@ def get_tracked_files(
     root = repo_root.resolve()
     if not root.exists():
         return []
-    cfg = repo_config if repo_config is not None else load_repo_config_with_errors(eidos_dir=eidos_dir, repo_root=root)[0]
+    cfg = (
+        repo_config if repo_config is not None else load_repo_config_with_errors(eidos_dir=eidos_dir, repo_root=root)[0]
+    )
     ws_exclude = cfg.workspace.exclude
     nested_roots = discover_nested_subproject_roots(root, repo_config=cfg)
     nested_prefixes: tuple[str, ...] = tuple(
@@ -783,12 +808,22 @@ def is_polyglot_test_file(
     p = Path(path)
     name = p.name
 
-    if repo_root is not None:
-        root_res = repo_root.resolve()
-        target_p = (root_res / p).resolve() if not p.is_absolute() else p.resolve()
+    effective_root = (
+        repo_root.resolve()
+        if repo_root is not None
+        else (eidos_dir.resolve().parent if eidos_dir is not None else None)
+    )
+    if effective_root is not None:
+        candidate_p = (effective_root / p) if not p.is_absolute() else p
+        target_p = candidate_p.resolve()
         try:
-            rel_path = target_p.relative_to(root_res)
+            rel_path = target_p.relative_to(effective_root)
         except ValueError:
+            if not p.is_absolute():
+                return False
+            with contextlib.suppress(OSError):
+                if p.is_symlink() and p.parent.resolve().is_relative_to(effective_root):
+                    return False
             rel_path = p
     elif p.is_absolute():
         try:
@@ -809,7 +844,11 @@ def is_polyglot_test_file(
         norm_rel = normalize_rel_path(str(rel_path))
         if eff_cfg.workspace.tests.exclude and is_excluded_by_config(norm_rel, eff_cfg.workspace.tests.exclude):
             return False
-        if eff_cfg.workspace.tests.include and is_excluded_by_config(norm_rel, eff_cfg.workspace.tests.include):
+        if (
+            eff_cfg.workspace.tests.include
+            and p.suffix.lower() in _POLYGLOT_TEST_CODE_EXTS
+            and is_excluded_by_config(norm_rel, eff_cfg.workspace.tests.include)
+        ):
             return True
 
     if rel_path.is_absolute():
@@ -973,21 +1012,28 @@ def has_brace_glob(pat: str) -> bool:
     return _parse_first_brace_group(pat, 0) is not None
 
 
-def expand_brace_globs(pattern: str) -> list[str]:
-    """Deterministically expand '{a,b}' brace expressions (including nested/multiple groups) into concrete patterns."""
+def expand_brace_globs(pattern: str, *, max_expansions: int = 256) -> list[str]:
+    """Deterministically expand '{a,b}' brace expressions (including nested/multiple groups) with a hard expansion cap."""
     parsed = _parse_first_brace_group(pattern, 0)
     if parsed is None:
         return [pattern]
-    open_idx, close_idx, options = parsed
-    prefix = pattern[:open_idx]
-    suffix = pattern[close_idx + 1 :]
+    cap = max(1, max_expansions)
     expanded: list[str] = []
     seen: set[str] = set()
-    for opt in options:
-        for tail in expand_brace_globs(f"{prefix}{opt}{suffix}"):
-            if tail not in seen:
-                seen.add(tail)
-                expanded.append(tail)
+    stack: list[str] = [pattern]
+    while stack and len(expanded) < cap:
+        cur = stack.pop()
+        group = _parse_first_brace_group(cur, 0)
+        if group is None:
+            if cur not in seen:
+                seen.add(cur)
+                expanded.append(cur)
+            continue
+        open_idx, close_idx, options = group
+        prefix = cur[:open_idx]
+        suffix = cur[close_idx + 1 :]
+        for opt in reversed(options):
+            stack.append(f"{prefix}{opt}{suffix}")
     return expanded
 
 
@@ -1083,7 +1129,7 @@ def match_path_pattern(rel_file: str, pattern: str) -> int:
     # 2. Directory prefix without glob wildcards
     if not is_glob:
         prefix = norm_pat.rstrip("/")
-        if norm_file.startswith(prefix + "/"):
+        if norm_file == prefix or norm_file.startswith(prefix + "/"):
             return 500 + len(prefix)
         return 0
 

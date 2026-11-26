@@ -4,8 +4,13 @@ from pathlib import Path
 
 import typer
 
-from eidos.cli._shared import console, load_cli_repo_config, resolve_cli_eidos_dir, resolve_param_from_config
-from eidos.core.workspace.config import find_config_file
+from eidos.cli._shared import (
+    console,
+    load_cli_repo_config,
+    load_cli_repo_config_with_sources,
+    resolve_cli_eidos_dir,
+    resolve_param_from_config,
+)
 from eidos.core.workspace.project import resolve_spec_and_repo_roots
 from eidos.portal.builder import build_static_portal
 from eidos.portal.server import run_portal_server
@@ -84,9 +89,10 @@ def build_site_cmd(
         raise typer.Exit(code=1)
 
     spec_root, repo_root = resolve_spec_and_repo_roots(target)
-    repo_cfg = load_cli_repo_config(spec_root, repo_root=repo_root)
-    cfg_exists = find_config_file(eidos_dir=spec_root, repo_root=repo_root) is not None
-    default_out = (repo_root / repo_cfg.portal.build.out_dir) if cfg_exists else out_dir
+    repo_cfg, _cfg_path, cfg_sources = load_cli_repo_config_with_sources(spec_root, repo_root=repo_root)
+    default_out = (
+        (repo_root / repo_cfg.portal.build.out_dir) if cfg_sources.get("portal.build.out_dir") == "file" else out_dir
+    )
     eff_out_dir = Path(resolve_param_from_config("out_dir", out_dir, default_out))
     eff_single_file = bool(resolve_param_from_config("single_file", single_file, repo_cfg.portal.build.single_file))
 

@@ -80,7 +80,9 @@ def drift_cmd(
         eval_cfg, eval_cfg_errors = load_repo_config_with_errors(eidos_dir=resolved_eidos, repo_root=repo_root)
     else:
         try:
-            eidos_rel_prefix = str(resolved_eidos.relative_to(repo_root.resolve())).replace("\\", "/").strip("/") or "eidos"
+            eidos_rel_prefix = (
+                str(resolved_eidos.relative_to(repo_root.resolve())).replace("\\", "/").strip("/") or "eidos"
+            )
         except ValueError:
             eidos_rel_prefix = resolved_eidos.name or "eidos"
         eval_cfg = _load_head_commit_config(git_root, repo_root.resolve(), eidos_rel_prefix, head)
@@ -109,6 +111,18 @@ def drift_cmd(
         if not eff_warn_only:
             raise typer.Exit(code=1) from err
         return
+
+    # Re-resolve warn_only / fail_on_warnings against the final evaluated config (handles fallback to uncommitted mode
+    # and forces fail-closed exit code 1 whenever <eidos_dir>/eidos.yaml itself failed validation on eval_root).
+    final_cfg = result.eval_config if result.eval_config is not None else eval_cfg
+    has_final_cfg_errors = bool(result.eval_config_errors) or any(
+        k == "eidos.yaml" or k.endswith("/eidos.yaml") for k in result.validation_report.schema_errors
+    )
+    final_cfg_warn_only = False if has_final_cfg_errors else final_cfg.drift.warn_only
+    eff_warn_only = bool(resolve_param_from_config("warn_only", warn_only, final_cfg_warn_only))
+    eff_fail_on_warnings = bool(
+        resolve_param_from_config("fail_on_warnings", fail_on_warnings, final_cfg.drift.fail_on_warnings)
+    )
 
     if json_output:
         data = {
