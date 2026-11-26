@@ -730,12 +730,18 @@ def _validate_portal_out_dir(raw_out_dir: str, *, repo_root: Path | None = None)
             "specify a dedicated subdirectory (e.g. 'site' or 'docs/portal')."
         )
     if repo_root is not None:
+        import stat as _stat
+
         try:
             root_res = repo_root.resolve()
             cur = root_res
             for seg in effective_parts:
                 cur = cur / seg
-                if cur.is_symlink():
+                try:
+                    st = os.lstat(cur)
+                except (FileNotFoundError, NotADirectoryError):
+                    continue
+                if _stat.S_ISLNK(st.st_mode):
                     return (
                         f"Property 'portal.build.out_dir': '{raw_out_dir}' traverses a symbolic link ('{seg}'), "
                         "which is forbidden to prevent repository escape."
