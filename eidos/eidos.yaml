@@ -1,0 +1,63 @@
+# Eidos Repository Configuration (Schema v1)
+# Canonical location: eidos/eidos.yaml
+# Living specifications under eidos/*.adoc remain the single source of architectural truth.
+# Precedence: CLI flags > EIDOS_* env vars > eidos/eidos.yaml > built-in defaults
+# Inspect effective values: `eidos config show` | Schema reference: `eidos config schema`
+
+version: 1
+
+drift:
+  base_ref: origin/main
+  strict: false
+  warn_only: false
+  fail_on_warnings: true
+  checks:
+    mermaid: error
+    import_boundaries: error
+    public_surface: error
+    contract_parity: error
+    deprecated_references: warn
+
+context:
+  default_tier: guardrails
+  budgets:
+    anchor: 300
+    guardrails: 1000
+    deep: 2500
+  repo_map_max_tokens: 1500
+  semantic:
+    enabled: true
+    variant: quantized
+
+memory:
+  commit_drift_threshold: 5
+  tier_caps:
+    anchor: [2, 0]
+    guardrails: [3, 2]
+    deep: [5, 3]
+
+lifecycle:
+  archive:
+    keep_recent: 15
+    include_explorations: true
+
+plugin:
+  targets:
+    - antigravity
+  launcher: eidos
+  updates_check: true
+  hooks:
+    install: false
+    enabled: true
+    strict: null
+    fail_on_warnings: null
+    baseline_ttl_seconds: 86400
+
+portal:
+  serve:
+    host: 127.0.0.1
+    port: 3000
+    open_browser: false
+  build:
+    out_dir: site/portal
+    single_file: false
