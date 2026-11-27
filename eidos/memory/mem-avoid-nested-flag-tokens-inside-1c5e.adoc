@@ -12,7 +12,7 @@ targets:
     - docs/guides/**
     - tests/test_docs_sync.py
 verified_at: "2026-11-27"
-verified_commit: 218cfb91a839bfd736a15d531a151117d02d3f96
+verified_commit: 7746bd06c3b43e9e49a8d92e3c8da13ba5193273
 ---
 = Memory: Avoid nested flag tokens inside quoted bash examples in docs
 :toc: left
