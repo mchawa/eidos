@@ -436,8 +436,8 @@ def list_specs(
     from eidos.core.index.graph_index import get_architectural_index
 
     eidos_resolved = eidos_dir.resolve()
-    idx = get_architectural_index(eidos_dir=eidos_dir, force_new=True)
-    all_entities = idx.get_entities()
+    idx = get_architectural_index(eidos_dir=eidos_dir)
+    all_entities = idx.get_entities(bypass_debounce=True)
     results = []
 
     raw_type_clean = type_filter.strip().lower() if type_filter else None

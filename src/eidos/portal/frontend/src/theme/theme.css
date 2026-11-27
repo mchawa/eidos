@@ -74,127 +74,164 @@
 }
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  /* Reader-Friendly Light Mode — Clean Soft Off-White Paper & Crisp Slate Ink */
+  --background: #fafafa;
+  --foreground: #1f2328;
 
   --card: #ffffff;
-  --card-foreground: #0f172a;
+  --card-foreground: #1f2328;
 
   --popover: #ffffff;
-  --popover-foreground: #0f172a;
+  --popover-foreground: #1f2328;
 
-  --primary: #2563eb;
+  --primary: #1d5fd1;
   --primary-foreground: #ffffff;
+  --link: #1d5fd1;
 
-  --secondary: #7c3aed;
+  --secondary: #6d4aff;
   --secondary-foreground: #ffffff;
 
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
+  --muted: #f0f2f5;
+  --muted-foreground: #59636e;
 
-  --accent: #f1f5f9;
-  --accent-foreground: #0f172a;
+  --accent: #eaedf1;
+  --accent-foreground: #1f2328;
 
-  --destructive: #ef4444;
+  --destructive: #c9372c;
   --destructive-foreground: #ffffff;
 
-  --border: #e2e8f0;
-  --input: #cbd5e1;
-  --ring: #2563eb;
+  --border: #e1e4e8;
+  --input: #d0d7de;
+  --ring: #1d5fd1;
+
+  /* Adaptive Code Block Surface (Soft Light Neutral in Light Mode) */
+  --code-bg: #f4f6f8;
+  --code-header-bg: #ebeef2;
+  --code-fg: #1f2328;
+  --code-muted: #59636e;
+  --code-border: #dfe3e8;
+  --inline-code-bg: #eff1f4;
+  --inline-code-fg: #24292f;
 
   --radius: 0.75rem;
 
   /* MD3 Color Roles (Light) */
-  --md-primary: #2563eb;
+  --md-primary: #1d5fd1;
   --md-on-primary: #ffffff;
-  --md-primary-container: rgba(37, 99, 235, 0.12);
-  --md-on-primary-container: #1e3a8a;
+  --md-primary-container: rgba(29, 95, 209, 0.11);
+  --md-on-primary-container: #153e8a;
 
-  --md-secondary: #7c3aed;
+  --md-secondary: #6d4aff;
   --md-on-secondary: #ffffff;
-  --md-secondary-container: rgba(124, 58, 237, 0.12);
-  --md-on-secondary-container: #4c1d95;
+  --md-secondary-container: rgba(109, 74, 255, 0.11);
+  --md-on-secondary-container: #3e259e;
 
-  --md-tertiary: #059669;
+  --md-tertiary: #157f59;
   --md-on-tertiary: #ffffff;
-  --md-tertiary-container: rgba(5, 150, 105, 0.12);
-  --md-on-tertiary-container: #064e3b;
+  --md-tertiary-container: rgba(21, 127, 89, 0.11);
+  --md-on-tertiary-container: #0b4a33;
 
-  --md-surface: #f8fafc;
-  --md-on-surface: #0f172a;
-  --md-surface-dim: #f1f5f9;
+  --md-surface: #fafafa;
+  --md-on-surface: #1f2328;
+  --md-surface-dim: #f0f2f5;
   --md-surface-bright: #ffffff;
   --md-surface-container-lowest: #ffffff;
-  --md-surface-container-low: #f8fafc;
+  --md-surface-container-low: #fafafa;
   --md-surface-container: #ffffff;
-  --md-surface-container-high: #f1f5f9;
-  --md-surface-container-highest: #e2e8f0;
+  --md-surface-container-high: #f0f2f5;
+  --md-surface-container-highest: #e4e7ec;
 
-  --md-outline: #94a3b8;
-  --md-outline-variant: #e2e8f0;
+  --md-outline: #8b949e;
+  --md-outline-variant: #e1e4e8;
 
   color-scheme: light;
+  accent-color: var(--primary);
 }
 
 .dark {
-  --background: #09090b;
-  --foreground: #f4f4f5;
+  /* Reader-Friendly Dark Mode — Balanced Dimmed Slate (GitHub Dimmed / Linear Inspired) */
+  --background: #1c2026;
+  --foreground: #e6edf3;
 
-  --card: #121215;
-  --card-foreground: #f4f4f5;
+  --card: #22272f;
+  --card-foreground: #e6edf3;
 
-  --popover: #18181b;
-  --popover-foreground: #f4f4f5;
+  --popover: #282e38;
+  --popover-foreground: #e6edf3;
 
-  --primary: #3b82f6;
-  --primary-foreground: #ffffff;
+  --primary: #4b89f0;
+  --primary-foreground: #0d1117;
+  --link: #7cb3ff;
 
-  --secondary: #8b5cf6;
-  --secondary-foreground: #ffffff;
+  --secondary: #9b82f8;
+  --secondary-foreground: #120d26;
 
-  --muted: #1e1e24;
-  --muted-foreground: #a1a1aa;
+  --muted: #262c36;
+  --muted-foreground: #9aa4b2;
 
-  --accent: #1e1e24;
-  --accent-foreground: #f4f4f5;
+  --accent: #2c333f;
+  --accent-foreground: #e6edf3;
 
-  --destructive: #ef4444;
-  --destructive-foreground: #ffffff;
+  --destructive: #e56b63;
+  --destructive-foreground: #1a0b0a;
 
-  --border: #27272a;
-  --input: #27272a;
-  --ring: #3b82f6;
+  --border: #323946;
+  --input: #3e4756;
+  --ring: #6da6ff;
+
+  /* Adaptive Code Block Surface (Clean Recessed Slate in Dark Mode) */
+  --code-bg: #161a20;
+  --code-header-bg: #1e232b;
+  --code-fg: #dce3ec;
+  --code-muted: #9aa4b2;
+  --code-border: #2e3542;
+  --inline-code-bg: #272d37;
+  --inline-code-fg: #e6edf3;
 
   /* MD3 Color Roles (Dark) */
-  --md-primary: #60a5fa;
-  --md-on-primary: #09090b;
-  --md-primary-container: rgba(59, 130, 246, 0.16);
-  --md-on-primary-container: #bfdbfe;
+  --md-primary: #7cb3ff;
+  --md-on-primary: #0d1117;
+  --md-primary-container: rgba(109, 166, 255, 0.15);
+  --md-on-primary-container: #c8dfff;
 
-  --md-secondary: #a78bfa;
-  --md-on-secondary: #09090b;
-  --md-secondary-container: rgba(139, 92, 246, 0.16);
-  --md-on-secondary-container: #ddd6fe;
+  --md-secondary: #b19bfa;
+  --md-on-secondary: #120d26;
+  --md-secondary-container: rgba(155, 130, 248, 0.16);
+  --md-on-secondary-container: #e3d9ff;
 
-  --md-tertiary: #34d399;
-  --md-on-tertiary: #09090b;
-  --md-tertiary-container: rgba(16, 185, 129, 0.16);
-  --md-on-tertiary-container: #a7f3d0;
+  --md-tertiary: #4ecba0;
+  --md-on-tertiary: #062118;
+  --md-tertiary-container: rgba(78, 203, 160, 0.15);
+  --md-on-tertiary-container: #baf0da;
 
-  --md-surface: #09090b;
-  --md-on-surface: #f4f4f5;
-  --md-surface-dim: #050507;
-  --md-surface-bright: #27272a;
-  --md-surface-container-lowest: #050507;
-  --md-surface-container-low: #0e0e11;
-  --md-surface-container: #121215;
-  --md-surface-container-high: #1a1a1f;
-  --md-surface-container-highest: #24242a;
+  --md-surface: #1c2026;
+  --md-on-surface: #e6edf3;
+  --md-surface-dim: #161a20;
+  --md-surface-bright: #323946;
+  --md-surface-container-lowest: #161a20;
+  --md-surface-container-low: #1f242b;
+  --md-surface-container: #22272f;
+  --md-surface-container-high: #282e38;
+  --md-surface-container-highest: #323946;
 
-  --md-outline: #71717a;
-  --md-outline-variant: #27272a;
+  --md-outline: #7c8594;
+  --md-outline-variant: #323946;
 
   color-scheme: dark;
+  accent-color: var(--primary);
+}
+
+@media (forced-colors: active) {
+  :root,
+  .dark {
+    --background: Canvas;
+    --foreground: CanvasText;
+    --card: Canvas;
+    --card-foreground: CanvasText;
+    --border: ButtonBorder;
+    --primary: LinkText;
+    --link: LinkText;
+  }
 }
 
 html, body {
@@ -320,6 +357,79 @@ html, body {
   letter-spacing: -0.011em;
 }
 
+/* Give narrative prose a comfortable wide reading measure while letting tables, code, and Mermaid expand full width */
+.prose-measure-narrative .paragraph,
+.prose-measure-narrative > p,
+.prose-measure-narrative .ulist,
+.prose-measure-narrative .olist,
+.prose-measure-narrative .dlist,
+.prose-measure-narrative .quoteblock,
+.prose-measure-narrative .verseblock,
+.prose-measure-narrative .admonitionblock {
+  max-width: 90ch;
+}
+
+/* Deduplicate leading AsciiDoc H1 when reader header already presents the title */
+.adoc-hide-leading-h1 > h1:first-child {
+  display: none;
+}
+
+/* Native <dialog> top-layer scroll containment (prevents background page scroll chaining) */
+dialog:not([open]) {
+  display: none;
+}
+dialog:modal {
+  overscroll-behavior: contain;
+}
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(4px);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+/* Responsive keyboard-scrollable data table container with sticky column headers */
+.table-wrapper {
+  overflow: auto;
+  max-inline-size: 100%;
+  container-type: inline-size;
+}
+.table-wrapper table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.table-wrapper thead {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+}
+.table-wrapper thead th {
+  border-bottom: 1px solid var(--border);
+}
+.table-wrapper tbody > tr:not(:last-child) > :is(th, td) {
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+/* Lightweight native <details> disclosure styling */
+.portal-disclosure > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.portal-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.portal-disclosure > summary .disclosure-chevron {
+  transition: transform 160ms ease;
+}
+.portal-disclosure[open] > summary .disclosure-chevron {
+  transform: rotate(90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-disclosure > summary .disclosure-chevron {
+    transition: none;
+  }
+}
+
 /* Heading Anchor Scroll Margins for Sticky Headers */
 .spec-heading {
   scroll-margin-top: 5rem;
@@ -409,7 +519,7 @@ html, body {
 
 /* Inline text */
 .adoc-body a {
-  color: var(--primary);
+  color: var(--link);
   font-weight: 500;
   text-decoration: none;
 }
@@ -423,7 +533,7 @@ html, body {
   opacity: 0.7;
 }
 .adoc-body a.adoc-spec-link {
-  border-bottom: 1px dashed color-mix(in srgb, var(--primary) 55%, transparent);
+  border-bottom: 1px dashed color-mix(in oklab, var(--link) 55%, transparent);
 }
 .adoc-body strong {
   font-weight: 700;
@@ -438,9 +548,9 @@ html, body {
   font-weight: 500;
   padding: 0.125rem 0.375rem;
   border-radius: 0.25rem;
-  background: color-mix(in srgb, var(--muted) 80%, transparent);
-  color: var(--primary);
-  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  background: var(--inline-code-bg);
+  color: var(--inline-code-fg);
+  border: 1px solid color-mix(in oklab, var(--border) 75%, transparent);
 }
 .adoc-body kbd {
   font-family: var(--font-mono);
@@ -602,29 +712,28 @@ html, body {
   margin-top: 0.5rem;
 }
 
-/* Source / literal blocks with copy bar */
+/* Source / literal blocks with copy bar (adaptive light & dark surfaces) */
 .adoc-body .listingblock,
 .adoc-body .literalblock {
   border-radius: var(--radius-xl);
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  background: #09090b;
-  color: #f4f4f5;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--code-border);
+  background: var(--code-bg);
+  color: var(--code-fg);
 }
 .adoc-body .listingblock > .title,
 .adoc-body .literalblock > .title {
   padding: 0.375rem 1rem 0;
   margin: 0;
-  color: #a1a1aa;
+  color: var(--code-muted);
 }
 .adoc-body .adoc-code-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0.5rem 1rem;
-  background: #18181b;
-  border-bottom: 1px solid rgba(63, 63, 70, 0.6);
+  background: var(--code-header-bg);
+  border-bottom: 1px solid var(--code-border);
   font-family: var(--font-mono);
 }
 .adoc-body .adoc-code-lang {
@@ -632,24 +741,24 @@ html, body {
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #d4d4d8;
+  color: var(--code-muted);
 }
 .adoc-body .adoc-copy-btn {
   font-size: 0.6875rem;
   padding: 0.25rem 0.5rem;
   border-radius: 0.25rem;
-  color: #d4d4d8;
+  color: var(--code-muted);
   cursor: pointer;
   background: transparent;
   border: 0;
   transition: background-color 150ms ease, color 150ms ease;
 }
 .adoc-body .adoc-copy-btn:hover {
-  background: rgba(63, 63, 70, 0.6);
-  color: #fff;
+  background: color-mix(in oklab, var(--foreground) 10%, transparent);
+  color: var(--code-fg);
 }
 .adoc-body .adoc-copy-btn.is-copied {
-  color: #34d399;
+  color: var(--md-tertiary);
   font-weight: 600;
 }
 .adoc-body .listingblock pre,
@@ -661,7 +770,7 @@ html, body {
   font-size: 0.8125rem;
   line-height: 1.6;
   background: transparent;
-  color: #f4f4f5;
+  color: var(--code-fg);
 }
 .adoc-body .listingblock pre code,
 .adoc-body .literalblock pre code {
@@ -678,7 +787,7 @@ html, body {
   display: inline-block;
   font-style: normal;
   font-weight: 700;
-  color: #38bdf8;
+  color: var(--primary);
   user-select: none;
 }
 .adoc-body .colist ol {
@@ -826,8 +935,8 @@ html, body {
   font-family: var(--font-mono);
   font-size: 0.8125rem;
   line-height: 1.6;
-  background: #09090b;
-  color: #f4f4f5;
+  background: var(--code-bg);
+  color: var(--code-fg);
 }
 .adoc-mermaid-slot .adoc-mermaid-source-pre code,
 .adoc-body .adoc-mermaid-slot .adoc-mermaid-source-pre code {

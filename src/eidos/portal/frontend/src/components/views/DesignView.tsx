@@ -11,6 +11,9 @@ import {
   FileText,
   Sliders,
   Sparkles,
+  Maximize,
+  ListOrdered,
+  X,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +32,7 @@ import {
 import { cn } from "@/lib/utils";
 import type {
   PortalData,
+  SpecFlow,
   SpecScreenState,
   SpecUIVariant,
 } from "@/types";
@@ -111,12 +115,35 @@ export function DesignView({
   const [selectedVariantByComp, setSelectedVariantByComp] = React.useState<Record<string, string>>({});
   const [copiedToken, setCopiedToken] = React.useState<string | null>(null);
   const [flowsLayout, setFlowsLayout] = React.useState<"split" | "stacked">("split");
+  const [fullscreenFlow, setFullscreenFlow] = React.useState<SpecFlow | null>(null);
+  const [showFullscreenSteps, setShowFullscreenSteps] = React.useState<boolean>(true);
+  const flowDialogRef = React.useRef<HTMLDialogElement>(null);
+  const flowDialogPressedOutsideRef = React.useRef<boolean>(false);
+  const flowDialogHeadingId = React.useId();
   const [inspectingItem, setInspectingItem] = React.useState<{
     id?: string;
     title: string;
     subtitle?: string;
     body?: string;
   } | null>(null);
+
+  React.useEffect(() => {
+    const dialog = flowDialogRef.current;
+    if (!dialog) return;
+    if (fullscreenFlow) {
+      if (typeof dialog.showModal === "function") {
+        if (!dialog.open) dialog.showModal();
+      } else {
+        dialog.setAttribute("open", "");
+      }
+    } else if (dialog.open) {
+      if (typeof dialog.close === "function") {
+        dialog.close();
+      } else {
+        dialog.removeAttribute("open");
+      }
+    }
+  }, [fullscreenFlow]);
 
   React.useEffect(() => {
     if (!initialSelectedId) return;
@@ -955,7 +982,9 @@ export function DesignView({
                   <span
                     className={cn(
                       "text-[10px] px-1.5 py-0.2 rounded-md",
-                      isSelected ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
+                      isSelected
+                        ? "bg-primary-foreground/15 text-primary-foreground"
+                        : "bg-muted text-muted-foreground"
                     )}
                   >
                     {scr.route || "/"}
@@ -1068,6 +1097,7 @@ export function DesignView({
                   </div>
                   <MermaidDiagram
                     id={`screen-${activeScreen.id}`}
+                    title={`${formatDisplayTitle(activeScreen.title, activeScreen.id)} — State Flow`}
                     code={activeScreen.mermaid}
                     darkMode={darkMode}
                     minHeight="320px"
@@ -1134,15 +1164,33 @@ export function DesignView({
                     No flows declared for this client.
                   </div>
                 ) : (
-                  clientFlows.map((flow) => (
+                  clientFlows.map((flow) => {
+                    const flowTitle = formatDisplayTitle(flow.title, flow.id);
+                    return (
                     <Card key={flow.id} className="p-4 space-y-3">
                       <div className="flex items-center justify-between gap-2">
                         <h5 className="text-xs font-bold text-foreground">
-                          {formatDisplayTitle(flow.title, flow.id)}
+                          {flowTitle}
                         </h5>
-                        <Badge variant="outline" className="text-[10px] shrink-0">
-                          {flow.trigger ? humanizeToken(flow.trigger) : formatFlowType(flow.flow_type)}
-                        </Badge>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Badge variant="outline" className="text-[10px]">
+                            {flow.trigger ? humanizeToken(flow.trigger) : formatFlowType(flow.flow_type)}
+                          </Badge>
+                          <button
+                            type="button"
+                            data-flow-fullscreen={flow.id}
+                            aria-label={`Expand ${flowTitle} to full screen`}
+                            onClick={() => {
+                              setShowFullscreenSteps(Boolean(flow.steps && flow.steps.length > 0));
+                              setFullscreenFlow(flow);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-border/80 bg-muted/40 hover:bg-primary/10 hover:text-primary hover:border-primary/40 text-[11px] font-medium text-muted-foreground transition-colors cursor-pointer"
+                            title="Expand flow to full screen"
+                          >
+                            <Maximize className="h-3 w-3" aria-hidden="true" />
+                            <span>Full Screen</span>
+                          </button>
+                        </div>
                       </div>
                       {flow.description && (
                         <p className="text-[11px] text-muted-foreground">
@@ -1192,6 +1240,7 @@ export function DesignView({
                           </span>
                           <MermaidDiagram
                             id={`flow-${flow.id}`}
+                            title={flowTitle}
                             code={flow.mermaid}
                             darkMode={darkMode}
                             minHeight="280px"
@@ -1200,7 +1249,8 @@ export function DesignView({
                         </div>
                       )}
                     </Card>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -1217,81 +1267,260 @@ export function DesignView({
                     No cross-client flows declared.
                   </div>
                 ) : (
-                  omnichannelFlows.map((flow) => (
-                    <Card key={flow.id} className="p-4 space-y-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <h5 className="text-xs font-bold text-foreground">
-                          {formatDisplayTitle(flow.title, flow.id)}
-                        </h5>
-                        <Badge variant="outline" className="text-[10px] shrink-0">
-                          {flow.client
-                            ? resolveEntityTitle(flow.client, labelIndex)
-                            : formatFlowType(flow.flow_type || "cross_client")}
-                        </Badge>
-                      </div>
-                      {flow.description && (
-                        <p className="text-[11px] text-muted-foreground">
-                          {flow.description}
-                        </p>
-                      )}
-
-                      {flow.steps && flow.steps.length > 0 && (
-                        <div className="space-y-1.5 pt-2 border-t border-border/60">
-                          <span className="text-[10px] font-bold text-foreground uppercase tracking-wider block">
-                            Sequence Steps
-                          </span>
-                          <div className="space-y-1.5">
-                            {flow.steps.map((st) => (
-                              <div
-                                key={st.step}
-                                className="flex items-start gap-2 text-xs p-2 rounded-lg bg-muted/20 border border-border/50"
-                              >
-                                <span className="h-4 w-4 rounded-full bg-purple-500/20 text-purple-400 font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5">
-                                  {st.step}
-                                </span>
-                                <div className="space-y-0.5">
-                                  <span className="font-semibold text-foreground text-[11px]">
-                                    {st.title || st.action}
-                                  </span>
-                                  {st.action && st.title && (
-                                    <p className="text-[10px] text-muted-foreground">
-                                      {st.action}
-                                    </p>
-                                  )}
-                                  {st.outcome && (
-                                    <p className="text-[10px] text-emerald-400">
-                                      ↳ {st.outcome}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
+                  omnichannelFlows.map((flow) => {
+                    const flowTitle = formatDisplayTitle(flow.title, flow.id);
+                    return (
+                      <Card key={flow.id} className="p-4 space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <h5 className="text-xs font-bold text-foreground">
+                            {flowTitle}
+                          </h5>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <Badge variant="outline" className="text-[10px]">
+                              {flow.client
+                                ? resolveEntityTitle(flow.client, labelIndex)
+                                : formatFlowType(flow.flow_type || "cross_client")}
+                            </Badge>
+                            <button
+                              type="button"
+                              data-flow-fullscreen={flow.id}
+                              aria-label={`Expand ${flowTitle} to full screen`}
+                              onClick={() => {
+                                setShowFullscreenSteps(Boolean(flow.steps && flow.steps.length > 0));
+                                setFullscreenFlow(flow);
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-border/80 bg-muted/40 hover:bg-primary/10 hover:text-primary hover:border-primary/40 text-[11px] font-medium text-muted-foreground transition-colors cursor-pointer"
+                              title="Expand flow to full screen"
+                            >
+                              <Maximize className="h-3 w-3" aria-hidden="true" />
+                              <span>Full Screen</span>
+                            </button>
                           </div>
                         </div>
-                      )}
+                        {flow.description && (
+                          <p className="text-[11px] text-muted-foreground">
+                            {flow.description}
+                          </p>
+                        )}
 
-                      {flow.mermaid && (
-                        <div className="pt-2 border-t border-border/60 space-y-1">
-                          <span className="text-[10px] font-bold text-foreground uppercase tracking-wider block">
-                            Sequence Diagram
-                          </span>
-                          <MermaidDiagram
-                            id={`omni-flow-${flow.id}`}
-                            code={flow.mermaid}
-                            darkMode={darkMode}
-                            minHeight="360px"
-                            expandedHeight="600px"
-                          />
-                        </div>
-                      )}
-                    </Card>
-                  ))
+                        {flow.steps && flow.steps.length > 0 && (
+                          <div className="space-y-1.5 pt-2 border-t border-border/60">
+                            <span className="text-[10px] font-bold text-foreground uppercase tracking-wider block">
+                              Sequence Steps
+                            </span>
+                            <div className="space-y-1.5">
+                              {flow.steps.map((st) => (
+                                <div
+                                  key={st.step}
+                                  className="flex items-start gap-2 text-xs p-2 rounded-lg bg-muted/20 border border-border/50"
+                                >
+                                  <span className="h-4 w-4 rounded-full bg-purple-500/20 text-purple-400 font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5">
+                                    {st.step}
+                                  </span>
+                                  <div className="space-y-0.5">
+                                    <span className="font-semibold text-foreground text-[11px]">
+                                      {st.title || st.action}
+                                    </span>
+                                    {st.action && st.title && (
+                                      <p className="text-[10px] text-muted-foreground">
+                                        {st.action}
+                                      </p>
+                                    )}
+                                    {st.outcome && (
+                                      <p className="text-[10px] text-emerald-400">
+                                        ↳ {st.outcome}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {flow.mermaid && (
+                          <div className="pt-2 border-t border-border/60 space-y-1">
+                            <span className="text-[10px] font-bold text-foreground uppercase tracking-wider block">
+                              Sequence Diagram
+                            </span>
+                            <MermaidDiagram
+                              id={`omni-flow-${flow.id}`}
+                              title={flowTitle}
+                              code={flow.mermaid}
+                              darkMode={darkMode}
+                              minHeight="360px"
+                              expandedHeight="600px"
+                            />
+                          </div>
+                        )}
+                      </Card>
+                    );
+                  })
                 )}
               </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* Native Top-Layer Full-Screen Flow Explorer (<dialog>) */}
+      <dialog
+        id="flowFullscreenDialog"
+        ref={flowDialogRef}
+        aria-labelledby={flowDialogHeadingId}
+        {...({ closedby: "any" } as Record<string, string>)}
+        onClose={() => setFullscreenFlow(null)}
+        onPointerDown={(e) => {
+          const dlg = flowDialogRef.current;
+          if (!dlg || (typeof HTMLDialogElement !== "undefined" && "closedBy" in HTMLDialogElement.prototype)) return;
+          const r = dlg.getBoundingClientRect();
+          flowDialogPressedOutsideRef.current =
+            e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+        }}
+        onPointerUp={(e) => {
+          const dlg = flowDialogRef.current;
+          if (
+            !dlg ||
+            (typeof HTMLDialogElement !== "undefined" && "closedBy" in HTMLDialogElement.prototype) ||
+            !flowDialogPressedOutsideRef.current
+          ) {
+            return;
+          }
+          const r = dlg.getBoundingClientRect();
+          const outside =
+            e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+          flowDialogPressedOutsideRef.current = false;
+          if (outside) setFullscreenFlow(null);
+        }}
+        className="open:flex flex-col w-[96vw] h-[94vh] max-w-none max-h-[94vh] m-auto rounded-2xl bg-card text-foreground border border-border shadow-2xl p-0 overflow-hidden"
+      >
+        {fullscreenFlow && (() => {
+          const fsTitle = formatDisplayTitle(fullscreenFlow.title, fullscreenFlow.id);
+          const hasSteps = Boolean(fullscreenFlow.steps && fullscreenFlow.steps.length > 0);
+          return (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-b border-border/80 bg-muted/30 shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Workflow className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
+                  <h2 id={flowDialogHeadingId} className="text-sm sm:text-base font-bold text-foreground truncate">
+                    {fsTitle}
+                  </h2>
+                  <Badge variant="outline" className="text-[10px] shrink-0">
+                    {fullscreenFlow.trigger
+                      ? humanizeToken(fullscreenFlow.trigger)
+                      : formatFlowType(fullscreenFlow.flow_type)}
+                  </Badge>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {hasSteps && (
+                    <button
+                      type="button"
+                      aria-pressed={showFullscreenSteps}
+                      onClick={() => setShowFullscreenSteps((prev) => !prev)}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer",
+                        showFullscreenSteps
+                          ? "bg-primary/10 text-primary border-primary/30"
+                          : "bg-muted/40 text-muted-foreground border-border hover:text-foreground"
+                      )}
+                    >
+                      <ListOrdered className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>Steps ({fullscreenFlow.steps!.length})</span>
+                    </button>
+                  )}
+                  {hasSpecBodyOrChunk(fullscreenFlow.id, fullscreenFlow.body) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const fl = fullscreenFlow;
+                        setFullscreenFlow(null);
+                        setInspectingItem({
+                          id: fl.id,
+                          title: fsTitle,
+                          subtitle: formatFlowType(fl.flow_type),
+                          body: fl.body,
+                        });
+                      }}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-border bg-muted/40 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    >
+                      <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>Read Spec</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setFullscreenFlow(null)}
+                    aria-label="Exit full screen flow"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted hover:bg-muted/80 text-xs font-medium text-foreground cursor-pointer transition-colors"
+                  >
+                    <X className="h-4 w-4" aria-hidden="true" />
+                    <span>Close</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
+                {hasSteps && showFullscreenSteps && (
+                  <aside
+                    aria-label="Flow steps"
+                    className="w-full lg:w-80 xl:w-96 shrink-0 border-b lg:border-b-0 lg:border-r border-border/70 overflow-y-auto p-4 space-y-3 max-h-[35vh] lg:max-h-none"
+                  >
+                    {fullscreenFlow.description && (
+                      <p className="text-xs text-muted-foreground leading-relaxed pb-2 border-b border-border/60">
+                        {fullscreenFlow.description}
+                      </p>
+                    )}
+                    <ol className="divide-y divide-border/50">
+                      {fullscreenFlow.steps!.map((st) => (
+                        <li key={st.step} className="py-2.5 first:pt-0 flex items-start gap-2.5 text-xs">
+                          <span className="h-5 w-5 rounded-full bg-primary/15 text-primary font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5">
+                            {st.step}
+                          </span>
+                          <div className="space-y-0.5 min-w-0">
+                            <p className="font-semibold text-foreground leading-snug">
+                              {st.title || st.action}
+                            </p>
+                            {st.action && st.title && (
+                              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                {st.action}
+                              </p>
+                            )}
+                            {st.outcome && (
+                              <p className="text-[11px] text-emerald-500 dark:text-emerald-400">
+                                ↳ {st.outcome}
+                              </p>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  </aside>
+                )}
+
+                <div className="flex-1 min-w-0 min-h-0 p-3 flex flex-col">
+                  {fullscreenFlow.mermaid ? (
+                    <MermaidDiagram
+                      id={`flow-fullscreen-${fullscreenFlow.id}`}
+                      code={fullscreenFlow.mermaid}
+                      darkMode={darkMode}
+                      minHeight="100%"
+                      expandedHeight="100%"
+                      wheelZoom="always"
+                      allowFullscreen={false}
+                      className="flex-1 h-full border-0 bg-transparent rounded-none"
+                    />
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+                      No flow diagram defined for this journey.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          );
+        })()}
+      </dialog>
 
       {/* Design Spec Inspector Drawer Sheet */}
       <Sheet
@@ -1311,6 +1540,8 @@ export function DesignView({
             specId={inspectingItem?.id}
             content={inspectingItem?.body || ""}
             title={inspectingItem?.title}
+            measure="full"
+            hideLeadingTitle={true}
           />
         </div>
       </Sheet>

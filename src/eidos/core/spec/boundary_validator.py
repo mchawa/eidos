@@ -190,7 +190,7 @@ def evaluate_import_boundaries(
             auto_semantic=False,
             _pre_data_version=pre_dv,
         )
-        conn = idx._get_connection()
+    conn = idx._get_connection()
 
     declared_ctr_pairs: set[tuple[str, str]] = {
         (str(r[0]), str(r[1]))

@@ -153,6 +153,14 @@ class ArchitecturalIndex:
             return None
         return self._get_connection()
 
+    def _db_file_identity(self) -> tuple[int, int] | None:
+        """Return ``(st_dev, st_ino)`` for ``self.db_path`` when backed by a live file, else ``None``."""
+        try:
+            st = self.db_path.stat()
+            return (st.st_dev, st.st_ino)
+        except OSError:
+            return None
+
     @_conn.setter
     def _conn(self, value: sqlite3.Connection | None) -> None:
         if value is None:
@@ -160,21 +168,24 @@ class ArchitecturalIndex:
         else:
             with self._conns_lock:
                 self._closed = False
-                self._local._entry = (self._generation, value)
+                self._local._entry = (self._generation, value, self._db_file_identity())
                 if not any(conn is value for _, conn in self._conns):
                     self._conns.append((threading.get_ident(), value))
 
     def _get_connection(self) -> sqlite3.Connection:
         entry = getattr(self._local, "_entry", None)
         if not self._closed and entry is not None and entry[0] == self._generation:
-            return entry[1]
+            recorded_id = entry[2] if len(entry) >= 3 else None
+            if recorded_id is None or self._db_file_identity() == recorded_id:
+                return entry[1]
         if entry is not None:
             with contextlib.suppress(sqlite3.Error):
                 entry[1].close()
         conn = open_cache_connection(self.db_path)
+        file_id = self._db_file_identity()
         with self._conns_lock:
             self._closed = False
-            self._local._entry = (self._generation, conn)
+            self._local._entry = (self._generation, conn, file_id)
             self._conns.append((threading.get_ident(), conn))
         return conn
 
@@ -215,10 +226,10 @@ class ArchitecturalIndex:
         """Perform sub-5ms dirty checking comparing filesystem mtime with indexed state."""
         return check_index_dirty(self)
 
-    def _ensure_synced(self) -> None:
+    def _ensure_synced(self, *, bypass_debounce: bool = False) -> None:
         """Lazily ensure the index is synchronized (<2ms check when clean, 50ms in-process debounce)."""
         now = time.monotonic()
-        if self._last_synced_check > 0.0 and (now - self._last_synced_check) < 0.05:
+        if not bypass_debounce and self._last_synced_check > 0.0 and (now - self._last_synced_check) < 0.05:
             return
         pre_dv_row = self._get_connection().execute("PRAGMA data_version;").fetchone()
         pre_dv = int(pre_dv_row[0]) if pre_dv_row else 0
@@ -480,9 +491,11 @@ class ArchitecturalIndex:
         self,
         entity_type: str | None = None,
         status: str | None = None,
+        *,
+        bypass_debounce: bool = False,
     ) -> list[dict[str, Any]]:
         """Retrieve entities from the knowledge graph with optional type and status filtering."""
-        self._ensure_synced()
+        self._ensure_synced(bypass_debounce=bypass_debounce)
         query = "SELECT id, title, type, status, domain, file_path, data_json FROM entities WHERE 1=1"
         params: list[Any] = []
         if entity_type:
@@ -509,9 +522,11 @@ class ArchitecturalIndex:
     def get_spec_catalog(
         self,
         eidos_dir: Path | None = None,
+        *,
+        bypass_debounce: bool = False,
     ) -> tuple[dict[str, tuple[Path, str, dict[str, Any]]], dict[str, tuple[Path, dict[str, Any]]]]:
         """Retrieve (specs_by_id, invariant_map) from the synchronized knowledge graph."""
-        self._ensure_synced()
+        self._ensure_synced(bypass_debounce=bypass_debounce)
         return query_spec_catalog_in_db(
             self._get_connection(),
             eidos_dir=eidos_dir or self.eidos_dir,

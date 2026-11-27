@@ -21,23 +21,18 @@ states:
 = Screen: Living Specifications Master Catalog View
 :toc: left
 
-== 1. View Purpose & Unified Hierarchical Tree-Grid Architecture
-The Catalog View (`SCR-PORTAL-CATALOG`) provides an interactive, unified hierarchical tree-grid (tree-table) representing the entire Living Specification topology:
-* **Level 0 (System Root)**: Represents the top-level repository system archetype (`SYS-EIDOS`).
-* **Level 1 (Core Pillars)**: Groups specifications into the three core architectural dimensions plus mutations:
-  - **Business & Governance**: Product Domains (`DOM-*`), System Policies (`POL-*`), Personas (`PER-*`), Explorations (`EXP-*`).
-  - **Design & Experience**: Design Systems (`DS-*`), Screens (`SCR-*`), UI Component Contracts (`UIC-*`).
-  - **Technical Architecture**: System Architecture (`ARCH-*`), Containers (`CNT-*`), Components (`CMP-*`), Protocol Contracts (`CTR-*`).
-  - **SpecDeltas & Mutations**: Active and completed mutation deltas (`DLT-*`).
-* **Level 2 (Domains & Sub-Pillars)**: Domain boundaries (`DOM-SPEC-ENGINE`, `DOM-EXPERIENCE-PORTAL`, `DOM-AGENT-INTELLIGENCE`, `DOM-VCS-LIFECYCLE`), Container manifests (`CNT-*`), Screen groups, and Policy invariants.
-* **Level 3 (Leaf Living Specifications)**: Individual Capabilities (`CAP-*`), Screen State Machines (`SCR-*`), Container & Component Manifests (`CNT-*`, `CMP-*`), and Contracts (`CTR-*`).
+== 1. View Purpose & Docs Reader Architecture
+The Catalog View (`SCR-PORTAL-CATALOG`) opens by default into a **Docs Reader** (`#catalogDocsReader`) 3-pane documentation experience, with one-click switching to **Tree** and **List** tabular overviews (`#specsTreeGridTable`):
+* **Left Navigation Tree**: Collapsible sticky specification directory organized across Overview & Policies, Domains & Capabilities, Architecture & Systems, Design Systems & Experience, Personas & Explorations, Change Proposals, and Team Memory, paired with `/` instant search and category filtering.
+* **Center Borderless Reading Stage**: Renders the active specification inline through `SpecReader` (`UIC-PORTAL-READER`) with breadcrumbs, deduplicated title, clickable `xref:` navigation that updates the active document in place, and sequential Previous / Next links—eliminating modal popups for routine reading.
+* **Right On-This-Page Outline**: Quiet borderless sticky Table of Contents synced to scroll progress.
+* **Tree & List Table Modes**: Structured 4-column tabular view (`Document`, `Category`, `Section`, `Status`) inside a keyboard-scrollable `.table-wrapper` where clicking any document jumps straight into the inline Docs Reader.
 
-== 2. Collapsible Navigation & Level Zooming
-The tree-grid toolbar provides instant macro/micro zoom controls:
-1. **Level 1 (Pillars)**: Folds all sub-trees, displaying high-level system pillars with aggregated child counts.
-2. **Level 2 (Domains)**: Expands pillars to reveal domain packages and container modules.
-3. **Level 3 (All Specs)**: Unfolds all leaf specifications for complete system inspection.
-4. **Expand All / Collapse All**: One-click toggles across all nesting depths.
+== 2. Collapsible Navigation & Branch Controls
+The Catalog toolbar provides rapid navigation and directory controls:
+1. **Docs Reader / Tree / List Mode Switcher**: Toggles between the default 3-pane Docs Reader (`#catalogDocsReader`), hierarchical Tree table, and flat List table (`#specsTreeGridTable`).
+2. **Category Filter**: Dropdown narrowing the left spec directory or table to a single pillar/type.
+3. **Expand All / Collapse All**: One-click toggles across all nesting depths in Tree mode.
 
 == 3. Table Column Integrity & Human-Readable Presentation
 Each row preserves structured, tabular alignment across 4 clean, human-readable columns without raw ID slugs, raw schema type slugs, raw file paths, or ASCII tree characters:
@@ -45,7 +40,7 @@ Each row preserves structured, tabular alignment across 4 clean, human-readable 
 * **Category**: Color-coded human-readable category badges (e.g. `Container`, `UI Component`, `Capability`, `Change Proposal`, `Interface Contract`).
 * **Section**: Resolved parent domain, container, or area title.
 * **Status**: Plain-language validation health indicator (`Valid` or `Needs Attention`) paired with humanized lifecycle status.
-* **Seamless Inspection**: Clicking anywhere on a document row directly opens the rich `SpecReader` Inspector Modal with resolved human-titled cross-reference links, while keeping canonical IDs searchable in the background search bar (`"Search documents..."`) and Tree View / List View switcher.
+* **Seamless Inspection**: Clicking or keyboard-activating any document row jumps directly into the inline `SpecReader` Docs Reader with resolved human-titled in-place cross-reference links, while keeping canonical IDs searchable in the background search bar (`"Search documents..."`) and Docs Reader / Tree / List switcher.
 
 == 4. Real-Time Branch Unfolding & Search Experience
 The enhanced search toolbar provides immediate, responsive discoverability:

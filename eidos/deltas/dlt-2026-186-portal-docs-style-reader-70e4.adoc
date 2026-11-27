@@ -1,0 +1,115 @@
+---
+type: delta/mutation
+id: DLT-2026-186-PORTAL-DOCS-STYLE-READER-70E4
+title: "Portal Docs-Style Reader, De-Carded Views, and Full-Screen Flow Viewer"
+status: applied
+intent:
+  kind: feature
+  motivation: "Reduce card visual noise across the Living Web Portal by introducing a docs-style 3-pane split reader in Catalog, de-carding prose surfaces and content views (Business, Deltas, Explorations, Team Memory) with optimal 90ch narrative measure and collapsible native metadata disclosures, and adding full-screen diagram expansion to User Flows and Mermaid diagrams."
+mutations:
+  - operation: modify
+    target: UIC-PORTAL-READER
+    details: "De-card SpecReader and AsciiDocRenderer default document surfaces, deduplicate repeated H1 titles, constrain narrative prose blocks to 90ch while allowing wide tables/code/Mermaid breakouts, and add Prev/Next document navigation and breadcrumbs."
+    expect:
+      body:
+        contains:
+          - "borderless"
+          - "prose-measure-narrative"
+          - "hideLeadingTitle"
+          - "prevSpec"
+  - operation: modify
+    target: SCR-PORTAL-CATALOG
+    details: "Promote CatalogView to a default 3-pane Docs Reader (collapsible left spec tree, borderless center SpecReader with breadcrumbs and Prev/Next, sticky borderless right TOC) while retaining Tree and List table modes."
+    expect:
+      body:
+        contains:
+          - "Docs Reader"
+          - "#catalogDocsReader"
+  - operation: modify
+    target: SCR-PORTAL-BUSINESS
+    details: "Replace nested Domain/Capability/Policy/Persona/Rule card grids with clean editorial divided sections, a responsive sticky-header Rules table, and de-carded drawers using native <details> disclosures with Open in Full Reader escalation."
+    expect:
+      body:
+        contains:
+          - "responsive"
+          - "#businessRulesTable"
+  - operation: modify
+    target: SCR-PORTAL-DELTAS
+    details: "Default DeltasView to the scannable divided Timeline list while retaining Kanban Board toggle, and de-card the change proposal drawer with collapsible metadata and Open in Full Reader escalation."
+    expect:
+      body:
+        contains:
+          - "Timeline"
+          - "Open in Full Reader"
+  - operation: modify
+    target: SCR-PORTAL-EXPLORATIONS
+    details: "Replace the Exploration card grid with a clean divided scannable list and de-card the exploration drawer with native <details> metadata and Open in Full Reader escalation."
+    expect:
+      body:
+        contains:
+          - "scannable list"
+          - "Open in Full Reader"
+  - operation: modify
+    target: SCR-PORTAL-MEMORY
+    details: "Replace the Team Operational Memory card grid with a clean scannable divided list while preserving category/freshness filters, advisory hygiene highlights, data-memory-card hooks, and reader escalation."
+    expect:
+      body:
+        contains:
+          - "scannable list"
+          - "data-memory-card"
+  - operation: modify
+    target: SCR-PORTAL-DESIGN
+    details: "Add native <dialog> full-screen flow expansion controls to User Flows & Journeys (client and cross-client flows) and MermaidDiagram toolbars so flow diagrams and journey steps can be inspected at full viewport scale."
+    expect:
+      body:
+        contains:
+          - "Full Screen"
+          - "data-flow-fullscreen"
+          - "#flowFullscreenDialog"
+  - operation: modify
+    target: CAP-LIVING-WEB-PORTAL
+    details: "Extend CAP-LIVING-WEB-PORTAL with INV-PORTAL-DOCS-READER-AND-FLOW-FULLSCREEN."
+    expect:
+      frontmatter:
+        technical.invariants.id:
+          - "INV-PORTAL-DOCS-READER-AND-FLOW-FULLSCREEN"
+  - operation: add
+    target: INV-PORTAL-DOCS-READER-AND-FLOW-FULLSCREEN
+    details: "Bind INV-PORTAL-DOCS-READER-AND-FLOW-FULLSCREEN to tests/test_portal.py::test_portal_docs_reader_decarded_views_and_flow_fullscreen."
+    expect:
+      frontmatter:
+        rule: "Docs Reader"
+        test_binding: "tests/test_portal.py::test_portal_docs_reader_decarded_views_and_flow_fullscreen"
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+    details: "Document the docs-style split reader, de-carded list/table surfaces, native <dialog> full-screen flow viewer, and rebuilt air-gapped portal bundle."
+    expect:
+      body:
+        contains:
+          - "INV-PORTAL-DOCS-READER-AND-FLOW-FULLSCREEN"
+          - "#flowFullscreenDialog"
+vcs:
+  branch: main
+  base_commit: 80be731730f437462cc0897fcdc398028f6047b0
+---
+= SpecDelta: Portal Docs-Style Reader, De-Carded Views, and Full-Screen Flow Viewer
+:toc: left
+
+== Problem Statement
+Across the Living Web Portal, users currently navigate walls of cards with 1–2 line truncated excerpts and read specifications inside popup modals that double-box the header, prose, and TOC inside nested cards. In addition, User Flows & Journeys in `DesignView` only offer inline height expansion rather than a true full-screen flow viewer.
+
+== Proposed Specification Changes
+1. **Phase 1 — Docs-Style Split Reader & Reader Typography (`UIC-PORTAL-READER`, `SCR-PORTAL-CATALOG`)**:
+   - Make `CatalogView` open directly into a 3-pane documentation layout: collapsible left spec tree sidebar, borderless center `SpecReader` reading canvas with breadcrumbs and Prev/Next navigation, and borderless sticky right "On This Page" TOC.
+   - Flatten `SpecReader` and `AsciiDocRenderer` default surfaces (eliminating nested cards), deduplicate repeated document titles, and constrain narrative prose blocks (`p`, `ul`, `ol`, `dl`, blockquotes, admonitions) to `90ch` while allowing wide tables, code blocks, and Mermaid diagrams to expand up to `max-w-4xl xl:max-w-5xl`.
+2. **Phase 2 — De-Carded Content Views (`SCR-PORTAL-BUSINESS`, `SCR-PORTAL-DELTAS`, `SCR-PORTAL-EXPLORATIONS`, `SCR-PORTAL-MEMORY`)**:
+   - Replace dense card grids with clean editorial divided sections, scannable list rows, and a semantic sticky-header responsive Rules table in `BusinessView`.
+   - Default `DeltasView` to the chronological Timeline list (retaining Kanban Board toggle).
+   - Flatten entity drawers with compact metadata strips and native `<details>` disclosures so full AsciiDoc prose leads immediately, paired with `"Open in Full Reader"` escalation.
+3. **Full-Screen Flow & Diagram Expansion (`SCR-PORTAL-DESIGN`, `MermaidDiagram`)**:
+   - Add a **"Full Screen"** button on every client and cross-client flow in `DesignView` and in the `MermaidDiagram` toolbar, opening a native `<dialog>` top-layer modal (`showModal()`, `Esc` + click-outside dismissal, `overscroll-behavior: contain`) with full-viewport interactive Mermaid pan/zoom/fit and a toggleable journey steps panel.
+
+== Implementation Plan
+1. Update `theme.css`, `AsciiDocRenderer.tsx`, `SpecReader.tsx`, `CatalogView.tsx`, and `App.tsx` (Phase 1).
+2. Update `BusinessView.tsx`, `DeltasView.tsx`, `ExplorationsView.tsx`, `MemoryView.tsx`, `MermaidDiagram.tsx`, and `DesignView.tsx` (Phase 2 + Full-Screen Flows).
+3. Update Vitest suites, rebuild `assets/portal/bundle.html.gz` via `pnpm build:assets`, add Python invariant test `test_portal_docs_reader_decarded_views_and_flow_fullscreen`, co-evolve living specs, verify and apply `DLT-2026-186`, and run full verification.

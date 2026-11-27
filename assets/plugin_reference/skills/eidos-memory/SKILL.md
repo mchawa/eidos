@@ -9,7 +9,7 @@ description: "Git-native team operational memory (eidos/memory/mem-*.adoc). Load
 ## 1. When to Save Automatically (and Disclose)
 
 Run `eidos memory add` proactively—and explicitly report the created or updated `MEM-*` file path in your reply so the engineer can review or revert it in Git—whenever:
-* The user corrects a repo-specific engineering assumption, test/build convention, toolchain quirk, or workflow mistake, **or** you self-discover a non-obvious build/test/CI/tooling trap (`--category feedback`, no TTL).
+* The user corrects a repo-specific engineering assumption, test/build convention, toolchain quirk, or workflow mistake, **or** you self-discover a non-obvious build/test/runtime/concurrency/UI/tooling trap or bug root cause (`--category feedback`, no TTL).
 * You uncover a **time-bounded** operational constraint, release freeze, CI cap, or active migration caveat (`--category project --expires YYYY-MM-DD`).
 * The user points to a shared operational dashboard, staging URL, or benchmark resource (`--category reference`).
 

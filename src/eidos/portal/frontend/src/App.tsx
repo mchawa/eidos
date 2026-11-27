@@ -806,13 +806,13 @@ export function App() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 min-w-0 flex flex-col min-h-screen overflow-y-auto">
+      <main className="flex-1 min-w-0 flex flex-col min-h-screen">
         {/* Top Header */}
-        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border/80 bg-background/80 backdrop-blur-md px-6 py-3.5">
+        <header className="h-14 shrink-0 sticky top-0 z-30 flex items-center justify-between border-b border-border/70 bg-background/90 backdrop-blur-md px-6">
           <div className="flex items-center gap-2 text-xs">
             <span className="font-semibold text-muted-foreground">Eidos</span>
             <span className="text-border">/</span>
-            <span className="font-semibold text-primary">
+            <span className="font-semibold text-foreground">
               {formatTabLabel(activeTab)}
             </span>
           </div>
@@ -857,7 +857,11 @@ export function App() {
         </header>
 
         {/* Viewport Content */}
-        <div className="flex-1 p-6 max-w-7xl w-full mx-auto">
+        <div
+          className={`flex-1 w-full mx-auto ${
+            activeTab === "catalog" ? "px-6 lg:px-8 py-6 max-w-[1800px]" : "p-6 max-w-7xl"
+          }`}
+        >
           <ViewErrorBoundary resetKey={activeTab}>
             {activeTab === "home" && (
               <HomeView

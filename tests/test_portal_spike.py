@@ -86,7 +86,7 @@ def test_spike_b_md3_tokens_and_shadcn_bridge(repo_root):
     assert "brand" in tokens_data["color"]
     assert "primary" in tokens_data["color"]["brand"]
     primary_hex = tokens_data["color"]["brand"]["primary"]["$value"]
-    assert primary_hex == "#3b82f6"
+    assert primary_hex == "#1d5fd1"
 
     # Verify MD3 theme bridge definitions exist
     bridge_file = repo_root / "src" / "eidos" / "portal" / "frontend" / "src" / "theme" / "md3-tokens.ts"

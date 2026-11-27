@@ -23,10 +23,10 @@ states:
 :toc: left
 
 == 1. View Purpose & Business Context
-The Business Architecture View (`SCR-PORTAL-BUSINESS`) leads the product-engineering conversation using clean human-readable titles, humanized badges, and plain-language labels (never rendering raw ID slugs, literal backticks, or raw test file paths):
-* **Domains**: Core areas of the product, responsibilities, and humanized classification badges.
-* **Capabilities**: Customer outcomes, ownership, and clickable resolved links to bound domains, containers, interface contracts, personas, and policies.
-* **Policies**: Organization-wide rules and compliance constraints with humanized category and severity badges (`Mandatory`, `Warning`, `Advisory`).
-* **Personas**: Human and automated actors with humanized archetype badges and resolved capability links.
-* **System Rules & Automated Verification**: Non-negotiable rules presented with humanized rule titles, resolved owning entity titles, and plain `Test Verified` indicators.
+The Business Architecture View (`SCR-PORTAL-BUSINESS`) leads the product-engineering conversation with a clean, de-carded editorial layout using human-readable titles, humanized badges, and plain-language labels (never rendering raw ID slugs, literal backticks, or raw test file paths):
+* **Domains & Capabilities**: Divided domain sections with mission statements and indented clickable capability rows (eliminating nested cards).
+* **Policies**: Scannable divided rows presenting organization-wide compliance constraints with humanized category and severity badges (`Mandatory`, `Warning`, `Advisory`).
+* **Personas**: Clean divided stakeholder rows listing human and automated actors with archetype badges, roles, and key goals.
+* **System Rules & Automated Verification**: Semantic responsive sticky-header table (`#businessRulesTable` inside a keyboard-scrollable `.table-wrapper`) listing verified rules, guarantees, owning sources, and `Test Verified` status.
+* **De-Carded Drawers**: Inspection drawers collapse verbose structured metadata into native `<details>` disclosures so full AsciiDoc specification prose leads clearly, paired with `"Open in Full Reader"` escalation.
 

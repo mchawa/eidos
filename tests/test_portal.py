@@ -336,7 +336,7 @@ def test_portal_reading_ergonomics():
     prose_tokens = tokens["typography"]["prose"]
     assert prose_tokens["body"]["$value"] == "16px"
     assert prose_tokens["line_height"]["$value"] == "1.75"
-    assert prose_tokens["measure"]["$value"] == "72ch"
+    assert prose_tokens["measure"]["$value"] == "90ch"
     assert prose_tokens["h1"]["$value"] == "30px"
     assert prose_tokens["h2"]["$value"] == "22px"
 
@@ -3392,3 +3392,170 @@ def test_portal_document_mermaid_rendering() -> None:
     gzip_bytes = gzip.compress(raw_bytes)
     assert len(raw_bytes) <= 5 * 1024 * 1024, f"Raw bundle exceeds 5 MiB: {len(raw_bytes)}"
     assert len(gzip_bytes) <= 2048 * 1024, f"Gzipped bundle exceeds 2 MiB: {len(gzip_bytes)}"
+
+
+def test_portal_docs_reader_decarded_views_and_flow_fullscreen() -> None:
+    """Verify INV-PORTAL-DOCS-READER-AND-FLOW-FULLSCREEN: CatalogView defaults to the borderless 3-pane
+    Docs Reader (#catalogDocsReader) with deduplicated SpecReader titles, 90ch narrative prose measure,
+    and Prev/Next navigation; Business/Deltas/Explorations/Memory views render de-carded lists and
+    responsive tables with native <details> disclosures; and DesignView User Flows plus MermaidDiagram
+    expose native <dialog> Full Screen expansion (data-flow-fullscreen, #flowFullscreenDialog)."""
+    from eidos.portal.assets import get_portal_html_template
+
+    frontend_src = Path(__file__).resolve().parent.parent / "src" / "eidos" / "portal" / "frontend" / "src"
+    catalog_src = (frontend_src / "components" / "views" / "CatalogView.tsx").read_text(encoding="utf-8")
+    reader_src = (frontend_src / "components" / "ui" / "SpecReader.tsx").read_text(encoding="utf-8")
+    adoc_src = (frontend_src / "components" / "ui" / "AsciiDocRenderer.tsx").read_text(encoding="utf-8")
+    business_src = (frontend_src / "components" / "views" / "BusinessView.tsx").read_text(encoding="utf-8")
+    deltas_src = (frontend_src / "components" / "views" / "DeltasView.tsx").read_text(encoding="utf-8")
+    exp_src = (frontend_src / "components" / "views" / "ExplorationsView.tsx").read_text(encoding="utf-8")
+    mem_src = (frontend_src / "components" / "views" / "MemoryView.tsx").read_text(encoding="utf-8")
+    design_src = (frontend_src / "components" / "views" / "DesignView.tsx").read_text(encoding="utf-8")
+    diagram_src = (frontend_src / "components" / "ui" / "MermaidDiagram.tsx").read_text(encoding="utf-8")
+    css_src = (frontend_src / "theme" / "theme.css").read_text(encoding="utf-8")
+
+    # 1. Phase 1: 3-pane borderless Docs Reader & optimal 90ch narrative prose with wide breakouts
+    assert 'useState<"reader" | "hierarchy" | "flat">("reader")' in catalog_src
+    assert 'id="catalogDocsReader"' in catalog_src
+    assert "prevSpec" in reader_src and "nextSpec" in reader_src
+    assert "hideLeadingTitle" in adoc_src
+    assert "prose-measure-narrative" in adoc_src and ".prose-measure-narrative" in css_src
+    assert "max-width: 90ch;" in css_src
+    assert "adoc-hide-leading-h1" in adoc_src and ".adoc-hide-leading-h1" in css_src
+
+    # 2. Phase 2: De-carded content views, responsive Rules table, Timeline default, native <details>
+    assert 'id="businessRulesTable"' in business_src
+    assert "portal-disclosure" in business_src
+    assert 'useState<"kanban" | "timeline">("timeline")' in deltas_src
+    assert "portal-disclosure" in deltas_src
+    assert "Open in Full Reader" in exp_src
+    assert "data-memory-card" in mem_src
+    assert "dialog:modal" in css_src and "overscroll-behavior: contain" in css_src
+
+    # 3. Full-screen flow & Mermaid diagram native <dialog> expansion
+    assert "data-flow-fullscreen" in design_src
+    assert 'id="flowFullscreenDialog"' in design_src
+    assert "showModal" in design_src and "showModal" in diagram_src
+    assert "allowFullscreen" in diagram_src
+    assert "Expand diagram to full screen" in diagram_src
+
+    # 4. Compiled air-gapped portal bundle reflects all new UI surfaces
+    bundle_html = get_portal_html_template()
+    for marker in (
+        "catalogDocsReader",
+        "businessRulesTable",
+        "flowFullscreenDialog",
+        "data-flow-fullscreen",
+        "prose-measure-narrative",
+        "Expand diagram to full screen",
+    ):
+        assert marker in bundle_html
+
+
+def test_portal_data_resilient_to_concurrent_index_eviction_and_catalog_bypass(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test for sqlite3.ProgrammingError ('Cannot operate on a closed database.') when
+    /api/data (get_portal_data) runs concurrently with /api/events or /api/drift delta verification:
+    1) _build_spec_catalog_with_invariants and list_specs reuse the shared ArchitecturalIndex via
+       bypass_debounce=True instead of calling force_new=True (which closes the live singleton).
+    2) Even if another thread explicitly closes/evicts the active ArchitecturalIndex mid-flight,
+       get_portal_data never reuses a rotated local sqlite3.Connection across arch_idx calls."""
+    import threading
+
+    from eidos.core.index import graph_index as gi
+    from eidos.core.lifecycle.catalog import _build_spec_catalog_with_invariants
+    from eidos.core.lifecycle.scaffolder import list_specs
+    from eidos.portal.generator import get_portal_data
+
+    eidos_dir = tmp_path / "eidos"
+    (eidos_dir / "domains" / "billing").mkdir(parents=True)
+    (eidos_dir / "design" / "systems" / "acme").mkdir(parents=True)
+    (eidos_dir / "memory").mkdir(parents=True)
+    (eidos_dir / "system.adoc").write_text(
+        "---\ntype: product/system\nid: SYS-RACE\ntitle: Race Test System\n---\n= Race Test System\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "domains" / "billing" / "domain.adoc").write_text(
+        "---\ntype: product/domain\nid: DOM-BILLING\ntitle: Billing\n---\n= Billing\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "design" / "systems" / "acme" / "system.adoc").write_text(
+        "---\ntype: design/system\nid: DS-ACME\ntitle: Acme Design\nstatus: active\n---\n= Acme Design\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "memory" / "mem-race-note.adoc").write_text(
+        (
+            "---\n"
+            "type: agent/memory\n"
+            "id: MEM-RACE-NOTE\n"
+            "title: Race Memory Note\n"
+            "category: feedback\n"
+            "status: active\n"
+            "summary: Ensure portal memory audit survives concurrent index eviction.\n"
+            "verified_at: '2026-11-27'\n"
+            "targets:\n"
+            "  entities:\n"
+            "    - DOM-BILLING\n"
+            "---\n"
+            "= Race Memory Note\n\n"
+            "== Guidance\nKeep concurrent SQLite connections fresh.\n"
+        ),
+        encoding="utf-8",
+    )
+
+    idx = gi.get_architectural_index(eidos_dir=eidos_dir, repo_root=tmp_path, force_new=True)
+    gen_before = idx._generation
+
+    # Adding a brand-new spec within the 50ms debounce window must still be visible immediately
+    # via _build_spec_catalog_with_invariants and list_specs WITHOUT closing/replacing the singleton.
+    (eidos_dir / "domains" / "billing" / "extra.adoc").write_text(
+        "---\ntype: product/domain\nid: DOM-EXTRA\ntitle: Extra Domain\n---\n= Extra Domain\n",
+        encoding="utf-8",
+    )
+    specs_by_id, _ = _build_spec_catalog_with_invariants(eidos_dir)
+    assert "DOM-EXTRA" in specs_by_id
+    listed_ids = {item["id"] for item in list_specs(eidos_dir)}
+    assert "DOM-EXTRA" in listed_ids
+    assert gi.get_architectural_index(eidos_dir=eidos_dir, repo_root=tmp_path) is idx
+    assert idx._generation == gen_before
+    assert not idx._closed
+
+    # Even if another thread forcibly evicts/closes the singleton mid-flight right before
+    # arch_idx.get_entities() rotates the thread-local SQLite connection, get_portal_data succeeds.
+    orig_get_entities = idx.get_entities
+    evicted = False
+
+    def _evicting_get_entities(*args, **kwargs):
+        nonlocal evicted
+        if not evicted:
+            evicted = True
+            t = threading.Thread(
+                target=lambda: gi.get_architectural_index(
+                    eidos_dir=eidos_dir,
+                    repo_root=tmp_path,
+                    force_new=True,
+                )
+            )
+            t.start()
+            t.join()
+        return orig_get_entities(*args, **kwargs)
+
+    monkeypatch.setattr(idx, "get_entities", _evicting_get_entities)
+
+    payload = get_portal_data(eidos_dir)
+    assert evicted is True
+    assert payload["overview"]["system_id"] == "SYS-RACE"
+    assert len(payload["design_systems"]) == 1
+    assert len(payload["memories"]) == 1
+    assert isinstance(payload["edges"], list)
+    assert isinstance(payload["governance_health"], dict)
+
+    # Even if eidos/.cache/index.db is deleted externally on POSIX, _get_connection() detects
+    # the changed/missing inode and reopens a fresh cache instead of querying an unlinked inode.
+    live_idx = gi.get_architectural_index(eidos_dir=eidos_dir, repo_root=tmp_path)
+    live_idx.db_path.unlink()
+    reopened_specs, _ = _build_spec_catalog_with_invariants(eidos_dir)
+    assert "DOM-EXTRA" in reopened_specs
+    assert live_idx.db_path.is_file()

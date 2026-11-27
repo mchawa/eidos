@@ -78,18 +78,18 @@ export function buildMermaidConfig(dark: boolean): MermaidConfig {
       ? {
           darkMode: true,
           background: "transparent",
-          mainBkg: "#111827",
-          nodeBorder: "#3b82f6",
-          lineColor: "#60a5fa",
-          textColor: "#f8fafc",
+          mainBkg: "#22272f",
+          nodeBorder: "#4b89f0",
+          lineColor: "#7cb3ff",
+          textColor: "#e6edf3",
         }
       : {
           darkMode: false,
           background: "transparent",
           mainBkg: "#ffffff",
-          nodeBorder: "#2563eb",
-          lineColor: "#2563eb",
-          textColor: "#0f172a",
+          nodeBorder: "#1d5fd1",
+          lineColor: "#1d5fd1",
+          textColor: "#1f2328",
         },
   };
 }

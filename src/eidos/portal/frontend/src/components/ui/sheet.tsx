@@ -23,7 +23,7 @@ export function Sheet({
 }: SheetProps) {
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && open) {
+      if (e.key === "Escape" && open && !document.querySelector("dialog[open]")) {
         onOpenChange(false);
       }
     };

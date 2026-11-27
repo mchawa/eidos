@@ -1,0 +1,29 @@
+---
+type: agent/memory
+id: MEM-AVOID-PORTAL-STICKY-TABLE-BORDER-AND-80F2
+title: "Avoid portal sticky, table-border, and dialog Escape traps"
+category: feedback
+status: active
+summary: "In the portal SPA: (1) keep App.tsx <main> free of unbounded overflow-y-auto (min-h-screen without h-screen silently breaks position:sticky headers/sidebars/TOCs and SpecReader scroll-spy); (2) style .table-wrapper..."
+targets:
+  entities:
+    - CMP-PORTAL-ASSETS
+  paths:
+    - src/eidos/portal/frontend/src/App.tsx
+    - src/eidos/portal/frontend/src/components/ui/SpecReader.tsx
+    - src/eidos/portal/frontend/src/components/ui/sheet.tsx
+    - src/eidos/portal/frontend/src/components/ui/MermaidDiagram.tsx
+    - src/eidos/portal/frontend/src/theme/theme.css
+verified_at: "2026-11-27"
+verified_commit: 80be731730f437462cc0897fcdc398028f6047b0
+---
+= Memory: Avoid portal sticky, table-border, and dialog Escape traps
+:toc: left
+
+== Guidance
+
+In the portal SPA: (1) keep App.tsx <main> free of unbounded overflow-y-auto (min-h-screen without h-screen silently breaks position:sticky headers/sidebars/TOCs and SpecReader scroll-spy); (2) style .table-wrapper borders on th/td rather than thead/tbody/tr because border-collapse: separate ignores row borders; (3) mount native <dialog> modals as Fragment siblings outside pan/zoom containers and guard Sheet Escape with !document.querySelector('dialog[open]').
+
+== Why
+
+All three cause silent UX regressions that unit tests do not catch visually: unbounded overflow-y-auto creates a non-scrolling container for sticky/scroll-spy descendants, CSS 2.2 suppresses row/thead borders under border-collapse: separate, and Sheet's window Escape listener closes drawers behind an open top-layer <dialog>.

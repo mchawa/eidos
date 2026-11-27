@@ -17,16 +17,17 @@ import {
   Brain,
   ListTree,
   Table as TableIcon,
+  BookOpen,
   Box,
   Layers,
   FileCode,
   Smartphone,
   Users,
+  X,
 } from "lucide-react";
-import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Sheet } from "@/components/ui/sheet";
 import { SpecReader } from "@/components/ui/SpecReader";
+import { requestSpecNavigation } from "@/lib/specNav";
 import {
   formatDisplayTitle,
   formatSpecType,
@@ -38,7 +39,7 @@ import type { PortalData, SpecItem } from "@/types";
 
 export interface CatalogViewProps {
   data: PortalData;
-  /** Spec ID to open in the inspector (set by in-portal xref navigation). */
+  /** Spec ID to open in the reader (set by in-portal xref / mode='reader' navigation). */
   focusSpecId?: string;
   focusNonce?: number;
   onFocusHandled?: () => void;
@@ -79,6 +80,15 @@ export interface HierarchyBranch {
 
 const SPEC_CATEGORIES: SpecCategoryDefinition[] = [
   {
+    id: "governance",
+    name: "Overview & Policies",
+    description: "System overview and organization-wide governance policies",
+    icon: ShieldCheck,
+    color: "text-emerald-500",
+    badgeBg: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
+    types: ["product/system", "product/policy"],
+  },
+  {
     id: "domains",
     name: "Domains & Capabilities",
     description: "Product areas, capabilities, and business rules",
@@ -112,15 +122,6 @@ const SPEC_CATEGORIES: SpecCategoryDefinition[] = [
     ],
   },
   {
-    id: "governance",
-    name: "Overview & Policies",
-    description: "System overview and organization-wide governance policies",
-    icon: ShieldCheck,
-    color: "text-emerald-500",
-    badgeBg: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
-    types: ["product/system", "product/policy"],
-  },
-  {
     id: "personas_research",
     name: "Personas & Explorations",
     description: "User personas and research explorations",
@@ -149,13 +150,27 @@ const SPEC_CATEGORIES: SpecCategoryDefinition[] = [
   },
 ];
 
+interface OrderedSpecEntry {
+  spec: SpecItem;
+  branchId: string;
+  branchName: string;
+  subgroupId: string;
+  subgroupName: string;
+  isParent: boolean;
+}
+
 export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: CatalogViewProps) {
   const labelIndex = useEntityLabels();
   const [searchQuery, setSearchQuery] = React.useState("");
   const [selectedType, setSelectedType] = React.useState("all");
-  const [viewMode, setViewMode] = React.useState<"hierarchy" | "flat">("hierarchy");
-  const [inspectedSpec, setInspectedSpec] = React.useState<SpecItem | null>(null);
+  const [viewMode, setViewMode] = React.useState<"reader" | "hierarchy" | "flat">("reader");
+  const [selectedSpecId, setSelectedSpecId] = React.useState<string>(() => {
+    if (focusSpecId) return focusSpecId;
+    const sys = data.specs.find((s) => s.type === "product/system");
+    return sys?.id || data.specs[0]?.id || "";
+  });
   const searchInputRef = React.useRef<HTMLInputElement>(null);
+  const readerPaneRef = React.useRef<HTMLDivElement>(null);
 
   // Bind '/' shortcut to focus #catalogSearchInput when no text input is active
   React.useEffect(() => {
@@ -176,15 +191,6 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
-
-  // Open the spec targeted by an xref:/<<ID>>/link:*.adoc[] click from the AsciiDoc reader.
-  React.useEffect(() => {
-    if (!focusSpecId) return;
-    const target = data.specs.find((s) => s.id === focusSpecId);
-    if (target) setInspectedSpec(target);
-    onFocusHandled?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusSpecId, focusNonce]);
 
   const specTypes = React.useMemo(() => {
     const set = new Set<string>();
@@ -458,30 +464,30 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
           (s) => !isArch(s) && s.frontmatter?.status?.toLowerCase() !== "applied"
         );
 
-        if (applied.length > 0) {
-          subgroups.push({
-            id: "subgroup-deltas-applied",
-            name: `Applied Changes (${applied.length})`,
-            badge: "Applied",
-            icon: GitBranch,
-            specs: applied,
-          });
-        }
-
         if (pending.length > 0) {
           subgroups.push({
             id: "subgroup-deltas-pending",
-            name: `Open Change Proposals (${pending.length})`,
+            name: `Open Change Proposals`,
             badge: "Open",
             icon: GitBranch,
             specs: pending,
           });
         }
 
+        if (applied.length > 0) {
+          subgroups.push({
+            id: "subgroup-deltas-applied",
+            name: `Applied Changes`,
+            badge: "Applied",
+            icon: GitBranch,
+            specs: applied,
+          });
+        }
+
         if (archived.length > 0) {
           subgroups.push({
             id: "subgroup-deltas-archived",
-            name: `Archived Changes (${archived.length})`,
+            name: `Archived Changes`,
             badge: "Archived",
             icon: GitBranch,
             specs: archived,
@@ -499,7 +505,7 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
         if (activeMems.length > 0) {
           subgroups.push({
             id: "subgroup-memory-active",
-            name: `Active Team Notes (${activeMems.length})`,
+            name: `Active Team Notes`,
             badge: "Active",
             icon: Brain,
             specs: activeMems,
@@ -508,7 +514,7 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
         if (archivedMems.length > 0) {
           subgroups.push({
             id: "subgroup-memory-archived",
-            name: `Archived & Promoted Notes (${archivedMems.length})`,
+            name: `Archived & Promoted Notes`,
             badge: "Archived",
             icon: Brain,
             specs: archivedMems,
@@ -532,13 +538,74 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
     });
   }, [filteredSpecs]);
 
+  // Flatten ordered entries for breadcrumbs and Prev/Next book navigation
+  const orderedSpecs = React.useMemo<OrderedSpecEntry[]>(() => {
+    const entries: OrderedSpecEntry[] = [];
+    const seen = new Set<string>();
+    hierarchicalBranches.forEach((branch) => {
+      branch.subgroups.forEach((sg) => {
+        if (sg.parentSpec && !seen.has(sg.parentSpec.id)) {
+          seen.add(sg.parentSpec.id);
+          entries.push({
+            spec: sg.parentSpec,
+            branchId: branch.id,
+            branchName: branch.name,
+            subgroupId: sg.id,
+            subgroupName: sg.name,
+            isParent: true,
+          });
+        }
+        sg.specs.forEach((sp) => {
+          if (!seen.has(sp.id)) {
+            seen.add(sp.id);
+            entries.push({
+              spec: sp,
+              branchId: branch.id,
+              branchName: branch.name,
+              subgroupId: sg.id,
+              subgroupName: sg.name,
+              isParent: false,
+            });
+          }
+        });
+      });
+    });
+    return entries;
+  }, [hierarchicalBranches]);
+
   const [expandedNodes, setExpandedNodes] = React.useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
     SPEC_CATEGORIES.forEach((c) => {
-      initial[c.id] = true;
+      // Keep heavy historical branches collapsed by default in the left docs tree
+      initial[c.id] = c.id !== "deltas";
     });
     return initial;
   });
+
+  // Open the spec targeted by an xref:/<<ID>>/link:*.adoc[] or mode='reader' click
+  React.useEffect(() => {
+    if (!focusSpecId) return;
+    const target = data.specs.find((s) => s.id === focusSpecId);
+    if (target) {
+      setSelectedSpecId(target.id);
+      setViewMode("reader");
+      const entry = orderedSpecs.find((e) => e.spec.id === target.id);
+      if (entry) {
+        setExpandedNodes((prev) => ({
+          ...prev,
+          [entry.branchId]: true,
+          [entry.subgroupId]: true,
+        }));
+      } else {
+        if (searchQuery) setSearchQuery("");
+        if (selectedType !== "ALL" && target.type !== selectedType) {
+          setSelectedType("ALL");
+        }
+      }
+    }
+    onFocusHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusSpecId, focusNonce]);
 
   React.useEffect(() => {
     if (searchQuery.trim()) {
@@ -552,6 +619,61 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
       setExpandedNodes(allOpen);
     }
   }, [searchQuery, hierarchicalBranches]);
+
+  const activeSpec = React.useMemo(() => {
+    const exact = data.specs.find((s) => s.id === selectedSpecId);
+    if (exact) return exact;
+    return orderedSpecs[0]?.spec || data.specs[0] || null;
+  }, [data.specs, selectedSpecId, orderedSpecs]);
+
+  const activeIndex = React.useMemo(
+    () => (activeSpec ? orderedSpecs.findIndex((e) => e.spec.id === activeSpec.id) : -1),
+    [orderedSpecs, activeSpec]
+  );
+
+  const activeEntry = activeIndex >= 0 ? orderedSpecs[activeIndex] : null;
+  const prevEntry = activeIndex > 0 ? orderedSpecs[activeIndex - 1] : null;
+  const nextEntry = activeIndex >= 0 && activeIndex < orderedSpecs.length - 1 ? orderedSpecs[activeIndex + 1] : null;
+
+  const selectDocForReading = React.useCallback(
+    (specRef: string) => {
+      const cleaned = specRef.trim();
+      if (!cleaned) return;
+      const lower = cleaned.toLowerCase();
+      const normPath = cleaned.replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase();
+      const matchedSpec =
+        data.specs.find((s) => s.id === cleaned || s.id.toLowerCase() === lower) ||
+        data.specs.find((s) => {
+          const p = (s.path || "").replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase();
+          return p === normPath || p.endsWith(`/${normPath}`) || normPath.endsWith(`/${p}`);
+        });
+
+      if (!matchedSpec) {
+        requestSpecNavigation(cleaned, { mode: "reader" });
+        return;
+      }
+
+      setSelectedSpecId(matchedSpec.id);
+      setViewMode("reader");
+      const entry = orderedSpecs.find((e) => e.spec.id === matchedSpec.id);
+      if (entry) {
+        setExpandedNodes((prev) => ({
+          ...prev,
+          [entry.branchId]: true,
+          [entry.subgroupId]: true,
+        }));
+      } else {
+        if (searchQuery) setSearchQuery("");
+        if (selectedType !== "ALL" && matchedSpec.type !== selectedType) {
+          setSelectedType("ALL");
+        }
+      }
+      if (readerPaneRef.current) {
+        readerPaneRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    },
+    [data.specs, orderedSpecs, searchQuery, selectedType]
+  );
 
   const toggleTreeGridRow = (nodeKey: string) => {
     setExpandedNodes((prev) => ({
@@ -575,14 +697,23 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
     setExpandedNodes({});
   };
 
+  const activeBreadcrumb = React.useMemo(() => {
+    if (!activeEntry) return undefined;
+    const crumbs = [activeEntry.branchName];
+    if (!activeEntry.isParent && activeEntry.subgroupName && activeEntry.subgroupName !== activeEntry.branchName) {
+      crumbs.push(activeEntry.subgroupName);
+    }
+    return crumbs;
+  }, [activeEntry]);
+
   return (
     <div className="space-y-4 animate-in fade-in duration-200">
-      {/* Top Filter Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-card border border-border md-elevation-1">
-        <div className="flex flex-wrap items-center gap-3 flex-1">
+      {/* Compact Borderless Top Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/70">
+        <div className="flex flex-wrap items-center gap-2.5 flex-1">
           {/* Search Box */}
-          <div className="relative flex-1 min-w-[200px] max-w-md">
-            <Search className="h-4 w-4 text-muted-foreground absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
+            <Search className="h-3.5 w-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
             <input
               ref={searchInputRef}
               id="catalogSearchInput"
@@ -590,23 +721,38 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search documents..."
-              className="w-full bg-muted/40 border border-border text-xs rounded-xl pl-9 pr-14 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              className="w-full bg-muted/40 border border-border/80 text-xs rounded-lg pl-8.5 pr-12 py-1.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             />
-            <kbd
-              id="catalogSearchKbd"
-              className="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[10px] text-muted-foreground bg-card border border-border/80 px-1.5 py-0.5 rounded"
-            >
-              /
-            </kbd>
+            {searchQuery ? (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                aria-label="Clear search"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <X className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            ) : (
+              <kbd
+                id="catalogSearchKbd"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 font-mono text-[10px] text-muted-foreground bg-card border border-border/80 px-1.5 py-0.5 rounded"
+              >
+                /
+              </kbd>
+            )}
           </div>
 
           {/* Category Filter */}
           <div className="tree-select-wrapper">
+            <label htmlFor="catalogTypeFilter" className="sr-only">
+              Category
+            </label>
             <select
               id="catalogTypeFilter"
+              aria-label="Filter documents by category"
               value={selectedType}
               onChange={(e) => setSelectedType(e.target.value)}
-              className="bg-muted/40 border border-border text-xs rounded-xl px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              className="bg-muted/40 border border-border/80 text-xs rounded-lg px-2.5 py-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             >
               <option value="all">All Categories ({data.specs.length})</option>
               {specTypes.map((t) => (
@@ -620,7 +766,7 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
           {/* Match pill count */}
           <span
             id="catalogSearchMatchPill"
-            className="text-xs text-muted-foreground px-2.5 py-1 rounded-full bg-muted/60"
+            className="text-xs text-muted-foreground px-2 py-0.5 rounded-full bg-muted/50"
           >
             {filteredSpecs.length} {filteredSpecs.length === 1 ? "document" : "documents"}
           </span>
@@ -628,59 +774,265 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
 
         {/* View Mode & Hierarchy Controls */}
         <div className="flex items-center gap-2 text-xs">
-          <div className="flex items-center bg-muted/60 p-0.5 rounded-xl border border-border/60">
+          <div className="flex items-center bg-muted/50 p-0.5 rounded-lg border border-border/60">
             <button
-              onClick={() => setViewMode("hierarchy")}
+              type="button"
+              onClick={() => setViewMode("reader")}
               className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer",
-                viewMode === "hierarchy"
-                  ? "bg-card text-foreground font-semibold md-elevation-1"
+                "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer",
+                viewMode === "reader"
+                  ? "bg-card text-foreground font-semibold shadow-xs"
                   : "text-muted-foreground hover:text-foreground"
               )}
-              title="Tree View"
+              title="Docs Reader"
             >
-              <ListTree className="h-3.5 w-3.5 text-primary" />
-              <span>Tree View</span>
+              <BookOpen className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+              <span>Docs Reader</span>
             </button>
             <button
+              type="button"
+              onClick={() => setViewMode("hierarchy")}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer",
+                viewMode === "hierarchy"
+                  ? "bg-card text-foreground font-semibold shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              title="Tree Table"
+            >
+              <ListTree className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>Tree</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setViewMode("flat")}
               className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer",
+                "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer",
                 viewMode === "flat"
-                  ? "bg-card text-foreground font-semibold md-elevation-1"
+                  ? "bg-card text-foreground font-semibold shadow-xs"
                   : "text-muted-foreground hover:text-foreground"
               )}
               title="List View"
             >
-              <TableIcon className="h-3.5 w-3.5" />
-              <span>List View</span>
+              <TableIcon className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>List</span>
             </button>
           </div>
 
-          <span className="text-border">|</span>
-
-          <div className="flex items-center gap-1">
-            <button
-              onClick={expandAllTreeGrid}
-              className="px-2.5 py-1 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer text-xs"
-            >
-              Expand All
-            </button>
-            <button
-              onClick={collapseAllTreeGrid}
-              className="px-2.5 py-1 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer text-xs"
-            >
-              Collapse All
-            </button>
-          </div>
+          {viewMode !== "flat" && (
+            <>
+              <span className="text-border">|</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={expandAllTreeGrid}
+                  className="px-2 py-1 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer text-xs"
+                >
+                  Expand All
+                </button>
+                <button
+                  type="button"
+                  onClick={collapseAllTreeGrid}
+                  className="px-2 py-1 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer text-xs"
+                >
+                  Collapse All
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Documents TreeGrid Table */}
-      <Card className="p-0 overflow-hidden">
-        <div className="overflow-x-auto">
+      {/* MODE 1 (DEFAULT): 3-Pane Docs-Style Split Reader */}
+      {viewMode === "reader" ? (
+        <div
+          id="catalogDocsReader"
+          className="flex flex-col lg:flex-row items-start gap-6 min-h-[70vh]"
+        >
+          {/* Left Pane: Collapsible Documentation Navigation Tree */}
+          <aside
+            aria-label="Specification directory"
+            className="w-full lg:w-64 xl:w-68 shrink-0 lg:sticky lg:top-16 lg:max-h-[calc(100vh-5.5rem)] lg:overflow-y-auto lg:pr-3.5 lg:border-r lg:border-border/60 space-y-2 pb-6"
+          >
+            {filteredSpecs.length === 0 ? (
+              <p className="py-6 text-xs text-muted-foreground text-center">
+                No documents match "{searchQuery}".
+              </p>
+            ) : (
+              hierarchicalBranches.map((branch) => {
+                if (branch.total === 0) return null;
+                const isCatExpanded = Boolean(expandedNodes[branch.id]);
+                const BranchIcon = branch.icon;
+
+                return (
+                  <div key={branch.id} className="space-y-0.5">
+                    <button
+                      type="button"
+                      aria-expanded={isCatExpanded}
+                      onClick={() => toggleTreeGridRow(branch.id)}
+                      className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg text-xs font-bold text-foreground hover:bg-muted/60 transition-colors cursor-pointer"
+                    >
+                      <span className="flex items-center gap-2 min-w-0">
+                        {isCatExpanded ? (
+                          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" aria-hidden="true" />
+                        ) : (
+                          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" aria-hidden="true" />
+                        )}
+                        <BranchIcon className={cn("h-3.5 w-3.5 shrink-0", branch.color)} aria-hidden="true" />
+                        <span className="truncate">{branch.name}</span>
+                      </span>
+                      <span className="text-[10px] font-medium text-muted-foreground shrink-0">
+                        {branch.total}
+                      </span>
+                    </button>
+
+                    {isCatExpanded && (
+                      <div className="pl-3 space-y-0.5 border-l border-border/50 ml-3">
+                        {branch.subgroups.map((subgroup) => {
+                          const hasChildren = subgroup.specs.length > 0;
+                          const isSgExpanded = expandedNodes[subgroup.id] !== false;
+                          const isParentActive = subgroup.parentSpec && activeSpec?.id === subgroup.parentSpec.id;
+
+                          return (
+                            <div key={subgroup.id} className="space-y-0.5">
+                              <div className="flex items-center gap-1">
+                                {hasChildren ? (
+                                  <button
+                                    type="button"
+                                    aria-label={`Toggle ${subgroup.name}`}
+                                    aria-expanded={isSgExpanded}
+                                    onClick={() => toggleTreeGridRow(subgroup.id)}
+                                    className="p-1 rounded text-muted-foreground hover:text-foreground cursor-pointer shrink-0"
+                                  >
+                                    {isSgExpanded ? (
+                                      <ChevronDown className="h-3 w-3" aria-hidden="true" />
+                                    ) : (
+                                      <ChevronRight className="h-3 w-3" aria-hidden="true" />
+                                    )}
+                                  </button>
+                                ) : (
+                                  <span className="w-5 shrink-0" />
+                                )}
+
+                                {subgroup.parentSpec ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => selectDocForReading(subgroup.parentSpec!.id)}
+                                    aria-current={isParentActive ? "page" : undefined}
+                                    className={cn(
+                                      "flex-1 text-left px-2 py-1 rounded-md text-xs truncate transition-colors cursor-pointer",
+                                      isParentActive
+                                        ? "bg-accent text-foreground font-semibold"
+                                        : "text-foreground/90 font-medium hover:bg-muted/60 hover:text-foreground"
+                                    )}
+                                    title={formatDisplayTitle(subgroup.parentSpec.title, subgroup.parentSpec.id)}
+                                  >
+                                    {formatDisplayTitle(subgroup.parentSpec.title, subgroup.parentSpec.id)}
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleTreeGridRow(subgroup.id)}
+                                    className="flex-1 text-left px-1.5 py-1 rounded-md text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground truncate cursor-pointer"
+                                  >
+                                    {subgroup.name} ({subgroup.specs.length})
+                                  </button>
+                                )}
+                              </div>
+
+                              {isSgExpanded && hasChildren && (
+                                <div className="pl-5 space-y-0.5">
+                                  {subgroup.specs.map((spec) => {
+                                    const isCurrent = activeSpec?.id === spec.id;
+                                    const title = formatDisplayTitle(spec.title, spec.id);
+                                    return (
+                                      <button
+                                        key={spec.id}
+                                        type="button"
+                                        onClick={() => selectDocForReading(spec.id)}
+                                        aria-current={isCurrent ? "page" : undefined}
+                                        className={cn(
+                                          "w-full flex items-center gap-2 px-2 py-1 rounded-md text-xs text-left transition-colors cursor-pointer",
+                                          isCurrent
+                                            ? "bg-accent text-foreground font-semibold"
+                                            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                                        )}
+                                        title={spec.is_valid === false ? `${title} (Needs Attention)` : title}
+                                      >
+                                        <span
+                                          className={cn(
+                                            "h-1.5 w-1.5 rounded-full shrink-0",
+                                            isCurrent
+                                              ? "bg-foreground"
+                                              : spec.is_valid === false
+                                              ? "bg-red-500"
+                                              : "bg-border"
+                                          )}
+                                          aria-hidden="true"
+                                        />
+                                        <span className="truncate">{title}</span>
+                                        {spec.is_valid === false && (
+                                          <span className="sr-only">Needs Attention</span>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </aside>
+
+          {/* Center & Right Panes: Inline Borderless SpecReader */}
+          <div ref={readerPaneRef} className="flex-1 min-w-0 pt-1 scroll-mt-20">
+            {activeSpec ? (
+              <SpecReader
+                spec={activeSpec}
+                breadcrumb={activeBreadcrumb}
+                prevSpec={
+                  prevEntry
+                    ? {
+                        id: prevEntry.spec.id,
+                        title: formatDisplayTitle(prevEntry.spec.title, prevEntry.spec.id),
+                        type: prevEntry.spec.type,
+                      }
+                    : null
+                }
+                nextSpec={
+                  nextEntry
+                    ? {
+                        id: nextEntry.spec.id,
+                        title: formatDisplayTitle(nextEntry.spec.title, nextEntry.spec.id),
+                        type: nextEntry.spec.type,
+                      }
+                    : null
+                }
+                onNavigateDoc={selectDocForReading}
+              />
+            ) : (
+              <div className="py-16 text-center text-sm text-muted-foreground">
+                Select a specification from the directory to start reading.
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* MODE 2 & 3: Tabular Tree / List Overview (Clean Borderless Table) */
+        <div
+          tabIndex={0}
+          role="region"
+          aria-label="Living specifications directory table"
+          className="table-wrapper border-y border-border/70 max-h-[70vh]"
+        >
           <table id="specsTreeGridTable" className="w-full text-left text-xs">
-            <thead className="bg-muted/40 border-b border-border text-muted-foreground font-semibold uppercase tracking-wider text-[10px]">
+            <thead className="bg-background/95 backdrop-blur-xs border-b border-border text-muted-foreground font-semibold uppercase tracking-wider text-[10px]">
               <tr>
                 <th className="py-3 px-4 w-5/12">Document</th>
                 <th className="py-3 px-4 w-2/12">Category</th>
@@ -705,22 +1057,30 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
                       {/* LEVEL 1: Category Header Row */}
                       <tr
                         onClick={() => toggleTreeGridRow(branch.id)}
-                        className="bg-muted/30 hover:bg-muted/60 cursor-pointer select-none transition-colors border-t-2 border-border/80"
+                        className="bg-muted/25 hover:bg-muted/50 cursor-pointer select-none transition-colors border-t border-border/80"
                       >
                         <td colSpan={3} className="py-2.5 px-4">
-                          <div className="flex items-center gap-2.5">
+                          <button
+                            type="button"
+                            aria-expanded={isCatExpanded}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleTreeGridRow(branch.id);
+                            }}
+                            className="flex items-center gap-2.5 w-full text-left cursor-pointer"
+                          >
                             <span className="p-1 rounded-md text-muted-foreground hover:text-foreground transition-colors">
                               {isCatExpanded ? (
-                                <ChevronDown className="h-4 w-4" />
+                                <ChevronDown className="h-4 w-4" aria-hidden="true" />
                               ) : (
-                                <ChevronRight className="h-4 w-4" />
+                                <ChevronRight className="h-4 w-4" aria-hidden="true" />
                               )}
                             </span>
                             <div className={cn("p-1.5 rounded-lg shrink-0", branch.badgeBg)}>
                               {isCatExpanded ? (
-                                <FolderOpen className="h-4 w-4" />
+                                <FolderOpen className="h-4 w-4" aria-hidden="true" />
                               ) : (
-                                <Folder className="h-4 w-4" />
+                                <Folder className="h-4 w-4" aria-hidden="true" />
                               )}
                             </div>
                             <div className="flex items-center gap-2 min-w-0">
@@ -731,7 +1091,7 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
                                 • {branch.description}
                               </span>
                             </div>
-                          </div>
+                          </button>
                         </td>
                         <td className="py-2.5 px-4">
                           <div className="flex items-center gap-2">
@@ -755,7 +1115,13 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
                           return (
                             <React.Fragment key={subgroup.id}>
                               {/* LEVEL 2: SubGroup / Parent Entity Row */}
-                              <tr className="hover:bg-muted/30 transition-colors border-t border-border/40 group">
+                              <tr
+                                onClick={!subgroup.parentSpec && hasChildren ? () => toggleTreeGridRow(subgroup.id) : undefined}
+                                className={cn(
+                                  "hover:bg-muted/30 transition-colors border-t border-border/40 group",
+                                  !subgroup.parentSpec && hasChildren && "cursor-pointer"
+                                )}
+                              >
                                 <td className="py-2 px-4 pl-9">
                                   <div className="flex items-center gap-2">
                                     {hasChildren ? (
@@ -778,14 +1144,15 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
                                     )}
                                     <SgIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                                     {subgroup.parentSpec ? (
-                                      <div
-                                        onClick={() => setInspectedSpec(subgroup.parentSpec!)}
-                                        className="flex items-center gap-2 cursor-pointer hover:underline min-w-0"
+                                      <button
+                                        type="button"
+                                        onClick={() => selectDocForReading(subgroup.parentSpec!.id)}
+                                        className="flex items-center gap-2 cursor-pointer hover:underline min-w-0 text-left"
                                       >
                                         <span className="text-foreground font-semibold truncate max-w-md group-hover:text-primary transition-colors">
                                           {formatDisplayTitle(subgroup.parentSpec.title, subgroup.parentSpec.id)}
                                         </span>
-                                      </div>
+                                      </button>
                                     ) : (
                                       <span className="font-semibold text-foreground text-xs">
                                         {subgroup.name}
@@ -841,16 +1208,23 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
                                 subgroup.specs.map((spec) => (
                                   <tr
                                     key={spec.id}
-                                    onClick={() => setInspectedSpec(spec)}
+                                    onClick={() => selectDocForReading(spec.id)}
                                     className="hover:bg-muted/40 cursor-pointer transition-colors group"
                                   >
                                     <td className="py-2 px-4 pl-16">
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0 group-hover:text-primary transition-colors" />
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          selectDocForReading(spec.id);
+                                        }}
+                                        className="flex items-center gap-2 min-w-0 text-left cursor-pointer"
+                                      >
+                                        <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0 group-hover:text-primary transition-colors" aria-hidden="true" />
                                         <span className="text-foreground font-medium truncate max-w-md group-hover:text-primary transition-colors">
                                           {formatDisplayTitle(spec.title, spec.id)}
                                         </span>
-                                      </div>
+                                      </button>
                                     </td>
                                     <td className="py-2 px-4">
                                       <Badge variant="outline" className="text-[10px]">
@@ -886,26 +1260,33 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
                 filteredSpecs.map((spec) => (
                   <tr
                     key={spec.id}
-                    onClick={() => setInspectedSpec(spec)}
+                    onClick={() => selectDocForReading(spec.id)}
                     className="hover:bg-muted/30 cursor-pointer transition-colors group"
                   >
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0 group-hover:text-primary transition-colors" />
+                    <td className="py-2.5 px-4">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          selectDocForReading(spec.id);
+                        }}
+                        className="flex items-center gap-2 min-w-0 text-left cursor-pointer"
+                      >
+                        <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0 group-hover:text-primary transition-colors" aria-hidden="true" />
                         <span className="text-foreground font-medium truncate max-w-md group-hover:text-primary transition-colors">
                           {formatDisplayTitle(spec.title, spec.id)}
                         </span>
-                      </div>
+                      </button>
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-2.5 px-4">
                       <Badge variant="outline" className="text-[10px]">
                         {formatSpecType(spec.type)}
                       </Badge>
                     </td>
-                    <td className="py-3 px-4 text-muted-foreground text-[11px] truncate max-w-sm">
+                    <td className="py-2.5 px-4 text-muted-foreground text-[11px] truncate max-w-sm">
                       {resolveSpecSection(spec)}
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-2.5 px-4">
                       {spec.is_valid ? (
                         <span className="inline-flex items-center gap-1 text-emerald-500 font-semibold text-[11px]">
                           <CheckCircle2 className="h-3.5 w-3.5" />
@@ -924,24 +1305,7 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
             </tbody>
           </table>
         </div>
-      </Card>
-
-      {/* Document Inspector Sheet */}
-      <Sheet
-        open={Boolean(inspectedSpec)}
-        onOpenChange={(open) => !open && setInspectedSpec(null)}
-        title={inspectedSpec ? formatDisplayTitle(inspectedSpec.title, inspectedSpec.id) : "Document"}
-        subtitle={inspectedSpec ? formatSpecType(inspectedSpec.type) : undefined}
-        maxWidth="6xl"
-      >
-        {inspectedSpec && (
-          <SpecReader
-            spec={inspectedSpec}
-            onClose={() => setInspectedSpec(null)}
-            isModal={true}
-          />
-        )}
-      </Sheet>
+      )}
     </div>
   );
 }

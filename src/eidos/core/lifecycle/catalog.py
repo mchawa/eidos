@@ -423,5 +423,5 @@ def _build_spec_catalog_with_invariants(
     repo_root = resolved_eidos.parent if resolved_eidos.name == "eidos" else resolved_eidos
     from eidos.core.index.graph_index import get_architectural_index
 
-    idx = get_architectural_index(eidos_dir=resolved_eidos, repo_root=repo_root, force_new=True)
-    return idx.get_spec_catalog(eidos_dir=eidos_dir)
+    idx = get_architectural_index(eidos_dir=resolved_eidos, repo_root=repo_root)
+    return idx.get_spec_catalog(eidos_dir=eidos_dir, bypass_debounce=True)

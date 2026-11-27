@@ -29,6 +29,8 @@ export interface AsciiDocRendererProps {
   title?: string;
   fontSize?: "compact" | "comfortable" | "large";
   measure?: "prose" | "full";
+  variant?: "document" | "card";
+  hideLeadingTitle?: boolean;
   hideControls?: boolean;
   /**
    * Invoked when the reader clicks an `xref:` / `<<SPEC-ID>>` / `link:*.adoc[]` reference to another
@@ -91,6 +93,8 @@ export function AsciiDocRenderer({
   bodyChunk,
   className,
   measure = "prose",
+  variant = "document",
+  hideLeadingTitle = false,
   onNavigateSpec,
 }: AsciiDocRendererProps) {
   const { body: resolvedContent, loading: chunkLoading } = useResolvedSpecBody(
@@ -215,10 +219,14 @@ export function AsciiDocRenderer({
 
   // Optimal reading typography & responsive measure (INV-PORTAL-READING-ERGONOMICS, DEC-PORTAL-UNCRAMPED-INSPECTOR-PROSE)
   const measureClass = measure === "full" ? "w-full" : "w-full max-w-4xl xl:max-w-5xl mx-auto";
+  const surfaceClass =
+    variant === "card"
+      ? "p-5 sm:p-7 rounded-2xl bg-card border border-border/80 md-elevation-1 space-y-4 text-foreground/90 overflow-x-hidden"
+      : "py-1 space-y-4 text-foreground/90 overflow-x-hidden";
 
   return (
     <div className={cn("space-y-3.5", className)}>
-      <div className="p-5 sm:p-7 rounded-2xl bg-card border border-border/80 md-elevation-1 space-y-4 text-foreground/90 overflow-x-hidden">
+      <div className={surfaceClass}>
         <div className={cn("transition-all duration-200", measureClass)}>
           {state.status === "loading" && (
             <p className="text-muted-foreground italic text-center py-8">Loading document…</p>
@@ -235,7 +243,11 @@ export function AsciiDocRenderer({
             <>
               <div
                 ref={bodyRef}
-                className="adoc-body prose-reading"
+                className={cn(
+                  "adoc-body prose-reading",
+                  measure !== "full" && "prose-measure-narrative",
+                  hideLeadingTitle && "adoc-hide-leading-h1"
+                )}
                 onClick={handleClick}
                 dangerouslySetInnerHTML={htmlMarkup}
               />

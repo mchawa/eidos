@@ -1,0 +1,32 @@
+---
+type: agent/memory
+id: MEM-AVOID-FORCE-NEW-TRUE-AND-STALE-8A15
+title: Avoid force_new=True and stale SQLite conn across index calls
+category: feedback
+status: active
+summary: "Never call get_architectural_index(..., force_new=True) in production code to bypass the 50ms sync debounce; use bypass_debounce=True on ArchitecturalIndex._ensure_synced / get_entities / get_spec_catalog instead, and..."
+targets:
+  entities:
+    - CMP-ARCHITECTURE-BOUNDARY-VALIDATOR
+    - CMP-GRAPH-STORAGE
+    - CMP-LIFECYCLE-SCAFFOLDER
+    - CMP-PORTAL-GENERATOR
+  paths:
+    - src/eidos/core/index/graph_index.py
+    - src/eidos/portal/generator.py
+    - src/eidos/core/lifecycle/catalog.py
+    - src/eidos/core/lifecycle/scaffolder.py
+    - src/eidos/core/spec/boundary_validator.py
+verified_at: "2026-11-27"
+verified_commit: 80be731730f437462cc0897fcdc398028f6047b0
+---
+= Memory: Avoid force_new=True and stale SQLite conn across index calls
+:toc: left
+
+== Guidance
+
+Never call get_architectural_index(..., force_new=True) in production code to bypass the 50ms sync debounce; use bypass_debounce=True on ArchitecturalIndex._ensure_synced / get_entities / get_spec_catalog instead, and never hold a local conn = idx._get_connection() across subsequent idx.* calls.
+
+== Why
+
+In multi-threaded portal serve (/api/data + /api/events SSE), force_new=True evicts the shared ArchitecturalIndex singleton and increments _generation; the next idx._get_connection() on another live thread closes its old thread-local sqlite3.Connection, crashing any cached local conn with sqlite3.ProgrammingError: Cannot operate on a closed database.

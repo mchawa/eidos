@@ -27,5 +27,5 @@ The **Explorations & Research** View (`SCR-PORTAL-EXPLORATIONS`) tracks hypothes
 * **Exit Criteria & Recommendations**: Enforces explicit time-boxing, hydrated `exit_criteria` checklists, and structured `recommendation` summaries extracted from exploration specifications.
 * **Decisions & Learnings**: Displays humanized outcome badges (`Adopted`, `Discarded`, `Proposed`, `In Progress`) and empirical takeaways, plus an `Archived` status filter pill and badge for archived explorations.
 * **Resulting Change Proposal Bridge**: 1-click navigation into resulting change proposals displaying each proposal's human-readable title and clean `"Open <Change Title>"` tooltip.
-* **Detailed AsciiDoc Specification Inspection**: Centered modal inspection with complete rendered AsciiDoc rationale.
+* **Scannable List & Detailed AsciiDoc Inspection**: Renders explorations in a clean, de-carded scannable list with status badges, hypothesis previews, empirical takeaways, and clickable resulting change links; clicking any row opens a de-carded detail drawer with collapsible `<details>` success criteria, `"Open in Full Reader"` escalation, and full borderless rendered AsciiDoc rationale.
 

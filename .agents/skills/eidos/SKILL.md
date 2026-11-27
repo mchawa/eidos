@@ -122,7 +122,7 @@ eidos drift --uncommitted --json
 ```
 
 * **`eidos drift`** runs `eidos validate` internally (v1 schemas, `x-eidos-ref`, `source_path`/`specification_file`, `import_boundaries`, `== Public Surface`, and **bidirectional contract parity** across all canonical `tech/contract` protocols) plus Git diff ownership, workflow mode, substantive diff, `stale_removed_symbol`, `--strict` body drift, and polyglot `INV-*` `test_binding` checks. (Use `eidos validate eidos --json` outside Git.)
-* **If `is_clean: false` or `drift_detected: true`**: Follow `remediation_suggestions`, `boundary_violations` (remove forbidden imports/HTTP calls or adjust `ratchet_baseline` via SpecDelta), and `validation_errors` until exit code is `0` (`ratchet_shrink_candidates` are non-blocking hints).
+* **If `is_clean: false` or `drift_detected: true`**: Follow `remediation_suggestions`, `boundary_violations` (remove forbidden imports/HTTP calls or adjust `ratchet_baseline` via SpecDelta), and `validation_errors` until exit `0` (`ratchet_shrink_candidates` are advisory).
 
 ### Stage 2: Mandatory Post-Implementation Adversarial Diff Review
 
@@ -142,9 +142,9 @@ On multi-file (`>=3`) or contract/schema edits, prefer delegating this read-only
 3. **Contract & Public Surface (`CTR-*`, `CMP-*`)**: Sync flags, routes, schemas, `== Public Surface`, and coupled clauses (exit codes, docs, SemVer).
 4. **Invariant & Diff-Line Tests (`INV-*`)**: Verify tests cover **newly added diff branches** and edge cases, binding every `INV-*` (`test_binding: file::func`).
 5. **Decisions & Co-Evolution (`DEC-*`, `DOM-*`, `PER-*`, `POL-*`, `design/*`)**: Record trade-offs in `decisions:` and co-evolve affected domain, persona, policy, or design specs.
-6. **Team Memory (`eidos-memory`)**: Save any self-discovered build/test/CI/tooling gotcha via `eidos memory add --from-diff` (or `eidos memory update`), and reconcile any `stale`/`expired` `affected_memories` in `eidos drift`.
+6. **Team Memory (`eidos-memory`)**: Check whether any non-obvious build/test/runtime/UI/tooling gotcha or bug root cause should be saved/updated via `eidos memory add --from-diff` / `eidos memory update`, and reconcile `stale`/`expired` `affected_memories`.
 
-**Autonomous Remediation**: Fix every finding immediately, then re-run tests and `eidos drift --uncommitted --json` before responding. Report gate status (`clean`) and verified edge cases.
+**Autonomous Remediation**: Fix every finding, re-run tests and `eidos drift --uncommitted --json`, then report gate status (`clean`) and verified edge cases.
 
 ---
 

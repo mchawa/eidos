@@ -511,7 +511,12 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         _append_decisions(pol.get("decisions", []), pol.get("id", "POL"), "policy")
 
     # 3. Multi-Design Systems, Tokens, UI Components, Clients, Flows, and Screens
-    design_data = _extract_design_systems(eidos_path, specs_by_type, _resolve_ref_id, conn=conn)
+    design_data = _extract_design_systems(
+        eidos_path,
+        specs_by_type,
+        _resolve_ref_id,
+        conn=arch_idx._get_connection(),
+    )
     design_systems = design_data.get("systems", [])
     screens = design_data.get("screens", [])
     ui_components = design_data.get("ui_components", [])
@@ -703,7 +708,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                 check_overlaps=True,
                 use_semantic=False,
                 entries=listed_memories,
-                conn=conn,
+                conn=arch_idx._get_connection(),
             )
             for list_key in ("stale_memories", "expired_memories", "unverifiable_memories"):
                 norm_items: list[dict[str, Any]] = []
@@ -760,13 +765,14 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         "decisions_count": len(all_decisions),
     }
 
+    final_conn = arch_idx._get_connection()
     edges_list = [
         {
             "source": str(r["source_id"] or ""),
             "target": str(r["target_id"] or ""),
             "type": str(r["rel_type"] or ""),
         }
-        for r in conn.execute(
+        for r in final_conn.execute(
             "SELECT source_id, target_id, rel_type FROM edges ORDER BY source_id, target_id, rel_type;"
         ).fetchall()
     ]
@@ -786,7 +792,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     }
 
     governance_health = compute_governance_health(
-        conn,
+        final_conn,
         repo_root=repo_root_resolved,
         eidos_dir=eidos_path,
         validation_report=report,

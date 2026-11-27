@@ -104,7 +104,7 @@ export function NavigationRail({
   return (
     <aside
       className={cn(
-        "sidebar h-screen sticky top-0 bg-card border-r border-border flex flex-col justify-between transition-all duration-200 z-40 select-none shrink-0",
+        "sidebar h-screen sticky top-0 bg-background border-r border-border/70 flex flex-col justify-between transition-all duration-200 z-40 select-none shrink-0",
         collapsed ? "w-16" : "w-64"
       )}
       data-testid="portal-sidebar"
@@ -214,12 +214,18 @@ export function NavigationRail({
                         ? "w-10 h-10 rounded-xl flex items-center justify-center my-0.5"
                         : "w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-xl",
                       isActive
-                        ? "bg-primary text-primary-foreground md-elevation-1 font-semibold"
-                        : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                        ? "bg-muted text-foreground font-semibold"
+                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                     )}
                     title={navAriaLabel}
                   >
-                    <Icon aria-hidden="true" className="h-4 w-4 shrink-0 transition-transform group-hover:scale-105" />
+                    <Icon
+                      aria-hidden="true"
+                      className={cn(
+                        "h-4 w-4 shrink-0 transition-transform group-hover:scale-105",
+                        isActive ? "text-foreground" : "text-muted-foreground"
+                      )}
+                    />
                     {!collapsed && (
                       <>
                         <span className="flex-1 text-left truncate">{tab.label}</span>
@@ -235,10 +241,10 @@ export function NavigationRail({
                         {tab.badge && (
                           <span
                             className={cn(
-                              "text-xs font-mono px-2 py-0.5 rounded-full font-semibold",
+                              "text-xs font-mono px-2 py-0.5 rounded-full font-medium",
                               isActive
-                                ? "bg-white/20 text-white"
-                                : "bg-muted text-muted-foreground group-hover:bg-card"
+                                ? "bg-background text-foreground border border-border/70"
+                                : "bg-muted/80 text-muted-foreground group-hover:bg-background"
                             )}
                           >
                             {tab.badge}
@@ -250,7 +256,7 @@ export function NavigationRail({
                   {collapsed && tab.badge && (
                     <span
                       aria-hidden="true"
-                      className="pointer-events-none absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white font-mono text-[10px] font-bold flex items-center justify-center shadow-md ring-2 ring-card z-20"
+                      className="pointer-events-none absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-muted text-foreground border border-border font-mono text-[10px] font-semibold flex items-center justify-center shadow-xs z-20"
                     >
                       {tab.badge}
                     </span>
@@ -258,7 +264,7 @@ export function NavigationRail({
                   {collapsed && attentionText && (
                     <span
                       aria-hidden="true"
-                      className="pointer-events-none absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ring-card z-20"
+                      className="pointer-events-none absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ring-background z-20"
                     />
                   )}
                 </div>
@@ -284,7 +290,7 @@ export function NavigationRail({
         >
           <div className="flex items-center gap-2.5 truncate">
             {darkMode ? (
-              <Moon className="h-4 w-4 text-blue-400 shrink-0" />
+              <Moon className="h-4 w-4 text-foreground/80 shrink-0" />
             ) : (
               <Sun className="h-4 w-4 text-amber-500 shrink-0" />
             )}
@@ -298,12 +304,12 @@ export function NavigationRail({
             <div
               className={cn(
                 "w-8 h-4 rounded-full transition-colors relative flex items-center px-0.5 shrink-0",
-                darkMode ? "bg-primary" : "bg-muted-foreground/30"
+                darkMode ? "bg-foreground/30" : "bg-muted-foreground/30"
               )}
             >
               <div
                 className={cn(
-                  "w-3 h-3 rounded-full bg-white transition-transform shadow-xs",
+                  "w-3 h-3 rounded-full bg-background transition-transform shadow-xs",
                   darkMode ? "translate-x-4" : "translate-x-0"
                 )}
               />

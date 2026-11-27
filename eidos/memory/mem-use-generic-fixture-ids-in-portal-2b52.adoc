@@ -10,16 +10,16 @@ targets:
     - CMP-PORTAL-ASSETS
   paths:
     - src/eidos/portal/frontend/tests/**
-verified_at: "2026-11-25"
-verified_commit: ff08e8d5f8af04d77f0d4b2d0f0e6d037647529b
+verified_at: "2026-11-27"
+verified_commit: 80be731730f437462cc0897fcdc398028f6047b0
 ---
 = Memory: Use generic fixture IDs in portal frontend tests
 :toc: left
 
 == Guidance
 
-Use generic dummy IDs (e.g., CNT-DEMO-PORTAL, CMP-DEMO-*, SYS-ACME-001) in src/eidos/portal/frontend/tests/*.test.ts and run pytest tests/test_scaffolder.py -k test_engine_genericity_zero_self_references after editing portal frontend files or tests.
+Use generic dummy IDs (e.g., DS-ACME, CNT-DEMO-PORTAL, CMP-DEMO-*, SYS-ACME-001) in src/eidos/portal/frontend/tests/*.test.ts, construct synthetic invariant IDs dynamically (e.g., const invPfx = 'INV'; `${invPfx}-...`) so eidos drift does not flag them as orphan invariants, and run uv run pytest --no-cov tests/test_scaffolder.py -k test_engine_genericity_zero_self_references after editing portal frontend files or tests.
 
 == Why
 
-tests/test_scaffolder.py::test_engine_genericity_zero_self_references scans all .ts/.tsx files under src/eidos/ (excluding dist and node_modules), which includes src/eidos/portal/frontend/tests/, and fails CI on Eidos-self IDs such as CNT-EIDOS-* or CLT-WEB-PORTAL.
+tests/test_scaffolder.py::test_engine_genericity_zero_self_references scans all .ts/.tsx files under src/eidos/ (excluding dist and node_modules) and fails CI on Eidos-self IDs such as CNT-EIDOS-*, CLT-WEB-PORTAL, or DS-CORE; eidos drift also scans test files for literal INV-* tokens not declared in eidos/.

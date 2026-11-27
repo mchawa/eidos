@@ -24,5 +24,5 @@ The Eidos Core Design System (`DS-CORE`) defines the visual language, typography
 All tokens strictly conform to the W3C Design Tokens Community Group (DTCG) specification in a repository-relative `tokens.json` manifest strictly contained within `repo_root` (`is_relative_to`).
 
 == 2. Color Modes & Visual Density Adaptation
-The system provides zero-dependency CSS variable mapping supporting native dark mode (default) and high-legibility light mode, synchronized across all portal views, C4 diagram renderers, and SpecDelta Kanban boards.
+The system provides zero-dependency CSS variable mapping supporting reader-friendly dimmed slate dark mode (`#1c2026` unified canvas with `#e6edf3` soft ink) and clean soft off-white light mode (`#fafafa` unified canvas with `#1f2328` ink and adaptive light code surfaces), synchronized across all portal views, Mermaid/C4 diagram renderers, and Forced Colors Mode.
 

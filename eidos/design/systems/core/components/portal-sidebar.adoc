@@ -32,7 +32,7 @@ The Portal Navigation Sidebar (`UIC-PORTAL-SIDEBAR`) establishes the primary pla
 7. **Design Systems**: Design systems catalog, Design Tokens Studio, UI components, screens, and user flows.
 
 == 2. Visual States & Badges
-Each navigation entry displays an SVG icon or glyph, section label, and live document counter badge. The active view is visually highlighted with high-contrast accent styling and MD3 elevation.
+The sidebar sits on the same unified canvas surface (`bg-background`) as the main reading area, separated by a quiet `border-r border-border/70` hairline, with an `h-14` top header bar aligned flush with the main shell header. Each navigation entry displays an SVG icon, section label, and live document counter badge; the active view uses a calm neutral surface highlight (`bg-muted text-foreground font-semibold`) and neutral count badges rather than heavy colored fills.
 
 == 3. Desktop Collapsible Behavior & Persistence
 The sidebar supports both full-width (`256px` / `w-64`) and icon-only collapsed (`80px` / `w-20`) modes on desktop displays:

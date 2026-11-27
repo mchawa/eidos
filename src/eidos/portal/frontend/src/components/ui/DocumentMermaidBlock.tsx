@@ -138,6 +138,7 @@ export function DocumentMermaidBlock({
         <MermaidDiagram
           id={diagramId}
           code={code}
+          title={displayCaption}
           darkMode={isDark}
           wheelZoom="modifier"
           emptyBehavior="error"

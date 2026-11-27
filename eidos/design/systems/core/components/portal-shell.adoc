@@ -22,8 +22,8 @@ states:
 
 == 1. Structure & Layout Grid
 The Portal Layout Shell (`UIC-PORTAL-SHELL`) establishes the two-pane application framework:
-* **Sidebar Region**: Fixed left navigation drawer containing brand identity, system badges, grouped navigation links, and theme toggle.
-* **Main Viewport Stage**: Scrollable content viewport containing the top context header (human-readable section breadcrumb matching the navigation rail rather than raw uppercase route keys, plain-language live status indicator, and quick controls) and active page views (`ArchitectureView`, `DesignView`, `CatalogView`, `DeltasView`, `ExplorationsView`) wrapped in a tab-scoped `ViewErrorBoundary` (`role="alert"`) so an isolated view render error never unmounts navigation.
+* **Sidebar Region**: Fixed left navigation drawer sharing the unified `bg-background` canvas with an `h-14` brand header bar aligned flush with the main context header, containing brand identity, quick search, grouped navigation links, and theme toggle.
+* **Main Viewport Stage**: Scrollable content viewport containing the `h-14` top context header (human-readable section breadcrumb matching the navigation rail rather than raw uppercase route keys, plain-language live status indicator, and quick controls) and active page views (`ArchitectureView`, `DesignView`, `CatalogView` at `max-w-[1800px]`, `DeltasView`, `ExplorationsView`, `MemoryView`, `BusinessView`, `HomeView`) wrapped in a tab-scoped `ViewErrorBoundary` (`role="alert"`) so an isolated view render error never unmounts navigation.
 
 == 2. Responsive Behavior
 On desktop monitors (>1024px), the sidebar remains pinned at `260px` width. On tablets and mobile screens (<768px), the sidebar collapses into an off-canvas drawer toggled via the hamburger trigger.

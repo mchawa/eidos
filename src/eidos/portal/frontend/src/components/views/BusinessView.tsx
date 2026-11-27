@@ -13,8 +13,8 @@ import {
   AlertTriangle,
   ChevronRight,
   BookOpen,
+  ExternalLink,
 } from "lucide-react";
-import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
 import { AsciiDocRenderer } from "@/components/ui/AsciiDocRenderer";
@@ -23,6 +23,7 @@ import { hasSpecBodyOrChunk } from "@/lib/specChunks";
 import { requestSpecNavigation } from "@/lib/specNav";
 import {
   formatDisplayTitle,
+  formatHumanProse,
   formatSeverity,
   formatStatus,
   humanizeInvariantTitle,
@@ -199,6 +200,12 @@ export function BusinessView({
     return undefined;
   };
 
+  const openInFullReader = (entityId: string) => {
+    setSelectedEntity(null);
+    onClearSelected?.();
+    requestSpecNavigation(entityId, { mode: "reader" });
+  };
+
   const drawerSubtitle = React.useMemo(() => {
     if (!selectedEntity) return undefined;
     switch (selectedEntity.type) {
@@ -216,340 +223,224 @@ export function BusinessView({
   }, [selectedEntity, labelIndex]);
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
-      {/* Top Banner & Strategic Description */}
-      <div className="p-5 sm:p-6 rounded-3xl bg-card border border-border/80 md-elevation-1 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="space-y-8 animate-in fade-in duration-200">
+      {/* Compact Borderless Editorial Header & Filter Bar */}
+      <header className="pb-5 border-b border-border/70 space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="space-y-1">
-            <h2 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight">
+            <h1 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight">
               Business &amp; Product Governance
-            </h2>
-            <p className="text-xs text-muted-foreground max-w-3xl leading-relaxed">
+            </h1>
+            <p className="text-xs text-muted-foreground max-w-2xl leading-relaxed">
               Product domains, customer capabilities, governance policies, user personas, and
-              automated system rules. Select any item to inspect its details.
+              automated system rules.
             </p>
           </div>
 
-          {/* Quick Metrics Strip */}
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setFilterCategory("domains")}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-primary/20 bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors cursor-pointer"
-            >
-              <Briefcase className="h-3.5 w-3.5" />
-              <span>{domains.length} Domains</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterCategory("domains")}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 text-xs font-medium hover:bg-emerald-500/20 transition-colors cursor-pointer"
-            >
-              <Layers className="h-3.5 w-3.5" />
-              <span>{capabilities.length} Capabilities</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterCategory("policies")}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-blue-500/20 bg-blue-500/10 text-blue-500 dark:text-blue-400 text-xs font-medium hover:bg-blue-500/20 transition-colors cursor-pointer"
-            >
-              <ShieldCheck className="h-3.5 w-3.5" />
-              <span>{policies.length} Policies</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterCategory("personas")}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-purple-500/20 bg-purple-500/10 text-purple-500 dark:text-purple-400 text-xs font-medium hover:bg-purple-500/20 transition-colors cursor-pointer"
-            >
-              <UserCheck className="h-3.5 w-3.5" />
-              <span>{personas.length} Personas</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterCategory("invariants")}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-teal-500/20 bg-teal-500/10 text-teal-500 dark:text-teal-400 text-xs font-medium hover:bg-teal-500/20 transition-colors cursor-pointer"
-            >
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              <span>{(invariants || []).length} Rules</span>
-            </button>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+            <span>
+              <strong className="text-foreground">{domains.length}</strong> Domains
+            </span>
+            <span className="text-border">•</span>
+            <span>
+              <strong className="text-foreground">{capabilities.length}</strong> Capabilities
+            </span>
+            <span className="text-border">•</span>
+            <span>
+              <strong className="text-foreground">{policies.length}</strong> Policies
+            </span>
+            <span className="text-border">•</span>
+            <span>
+              <strong className="text-foreground">{personas.length}</strong> Personas
+            </span>
+            <span className="text-border">•</span>
+            <span>
+              <strong className="text-foreground">{(invariants || []).length}</strong> Rules
+            </span>
           </div>
         </div>
 
         {/* Filter Tabs & Search Bar */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-border/60">
-          {/* Segmented Filter Pills */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           <div
             id="businessCategoryFilter"
-            className="flex flex-wrap items-center gap-1 p-1 bg-muted/30 rounded-xl border border-border/60 text-xs"
+            className="flex flex-wrap items-center gap-1 p-0.5 bg-muted/40 rounded-lg border border-border/60 text-xs"
           >
-            <button
-              type="button"
-              onClick={() => setFilterCategory("all")}
-              className={cn(
-                "px-3 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer",
-                filterCategory === "all"
-                  ? "bg-card text-foreground shadow-xs font-semibold"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              All Items
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterCategory("domains")}
-              className={cn(
-                "px-3 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer",
-                filterCategory === "domains"
-                  ? "bg-card text-foreground shadow-xs font-semibold"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              Domains &amp; Capabilities
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterCategory("policies")}
-              className={cn(
-                "px-3 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5",
-                filterCategory === "policies"
-                  ? "bg-card text-foreground shadow-xs font-semibold text-blue-500 dark:text-blue-400"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <ShieldCheck className="h-3 w-3" />
-              <span>Policies</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterCategory("personas")}
-              className={cn(
-                "px-3 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer",
-                filterCategory === "personas"
-                  ? "bg-card text-foreground shadow-xs font-semibold"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              Personas
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterCategory("invariants")}
-              className={cn(
-                "px-3 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5",
-                filterCategory === "invariants"
-                  ? "bg-card text-foreground shadow-xs font-semibold text-teal-500 dark:text-teal-400"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <CheckCircle2 className="h-3 w-3" />
-              <span>Rules</span>
-            </button>
+            {[
+              { key: "all" as const, label: "All" },
+              { key: "domains" as const, label: "Domains & Capabilities" },
+              { key: "policies" as const, label: "Policies" },
+              { key: "personas" as const, label: "Personas" },
+              { key: "invariants" as const, label: "Rules" },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setFilterCategory(tab.key)}
+                className={cn(
+                  "px-3 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer",
+                  filterCategory === tab.key
+                    ? "bg-card text-foreground shadow-xs font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
 
-          {/* Search Input */}
           <div className="relative flex-1 sm:max-w-xs">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
             <input
               id="businessSearchInput"
               type="text"
               placeholder="Search domains, capabilities, policies..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8.5 pr-8 py-1.5 text-xs rounded-xl bg-card border border-border/80 focus:border-primary focus:outline-hidden transition-colors"
+              className="w-full pl-8.5 pr-8 py-1.5 text-xs rounded-lg bg-muted/40 border border-border/80 focus:border-primary focus:outline-hidden transition-colors"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label="Clear filter"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
               >
-                <X className="h-3.5 w-3.5" />
+                <X className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
             )}
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* SECTION 1: PRODUCT DOMAINS & CAPABILITIES */}
+      {/* SECTION 1: PRODUCT DOMAINS & CAPABILITIES (Clean Divided Outline) */}
       {(filterCategory === "all" || filterCategory === "domains") && (
-        <div id="businessDomainsSection" className="space-y-6 pt-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2">
-            <div className="space-y-1">
-              <h3 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-3">
-                <Briefcase className="h-6 w-6 text-primary shrink-0" />
-                <span>Product Domains &amp; Capabilities</span>
-                <Badge variant="outline" className="text-xs px-2 py-0.5">
-                  {filteredDomains.length} Domains
-                </Badge>
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                Core product areas, customer capabilities, and governing rules
-              </p>
-            </div>
+        <section id="businessDomainsSection" className="space-y-4">
+          <div className="flex items-baseline justify-between gap-2">
+            <h2 className="text-base sm:text-lg font-bold text-foreground tracking-tight flex items-center gap-2">
+              <Briefcase className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
+              <span>Product Domains &amp; Capabilities</span>
+              <span className="text-xs font-normal text-muted-foreground">
+                ({filteredDomains.length})
+              </span>
+            </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="divide-y divide-border/70 border-y border-border/70">
             {filteredDomains.map((dom) => {
               const domCaps = capabilities.filter(
                 (c) => c.domain === dom.id || dom.capabilities?.includes(c.id)
               );
 
               return (
-                <Card
-                  key={dom.id}
-                  className="p-5 sm:p-6 space-y-4 border border-border/80 bg-card hover:border-primary/40 transition-colors shadow-xs"
-                >
-                  {/* Domain Header */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
+                <div key={dom.id} className="py-5 space-y-3">
+                  {/* Domain Header Row */}
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1 min-w-0 flex-1 max-w-3xl">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedEntity({ type: "domain", item: dom })}
+                          className="text-base font-bold text-foreground hover:text-primary transition-colors text-left cursor-pointer"
+                        >
+                          {formatDisplayTitle(dom.title, dom.id)}
+                        </button>
                         <Badge
                           variant="outline"
                           className={cn(
                             "text-[10px] font-semibold",
                             dom.classification === "core"
-                              ? "bg-purple-500/10 text-purple-400 border-purple-500/20"
-                              : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                              ? "bg-purple-500/10 text-purple-500 dark:text-purple-400 border-purple-500/20"
+                              : "bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 border-emerald-500/20"
                           )}
                         >
                           {humanizeToken(dom.classification || "Core")}
                         </Badge>
                       </div>
-                      <h3 className="text-base font-bold text-foreground">
-                        {formatDisplayTitle(dom.title, dom.id)}
-                      </h3>
+                      {dom.mission && (
+                        <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                          {dom.mission}
+                        </p>
+                      )}
                     </div>
 
                     <button
                       type="button"
                       onClick={() => setSelectedEntity({ type: "domain", item: dom })}
-                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-muted/60 hover:bg-muted text-foreground transition-colors cursor-pointer shrink-0 flex items-center gap-1"
+                      className="text-xs font-medium text-primary hover:underline cursor-pointer shrink-0 inline-flex items-center gap-1"
                     >
-                      <span>View Domain</span>
-                      <ChevronRight className="h-3 w-3" />
+                      <span>Read Domain</span>
+                      <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
                     </button>
                   </div>
 
-                  {/* Domain Mission */}
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    {dom.mission}
-                  </p>
-
-                  {/* Core Responsibilities Preview */}
-                  {dom.boundaries?.responsibilities && (
-                    <div className="space-y-1.5 text-xs">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                        Core Responsibilities
-                      </span>
-                      <ul className="space-y-1">
-                        {dom.boundaries.responsibilities.slice(0, 2).map((resp, i) => (
-                          <li
-                            key={i}
-                            className="flex items-start gap-1.5 text-[11px] text-muted-foreground leading-normal"
-                          >
-                            <span className="h-1.5 w-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
-                            <span className="line-clamp-2">{resp}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Capabilities Sub-List */}
-                  <div className="space-y-2 pt-3.5 border-t-2 border-border/80">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-[11px] font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                        <Layers className="h-3 w-3 text-emerald-400" />
-                        Capabilities ({domCaps.length})
-                      </h4>
-                      <span className="text-[10px] text-muted-foreground">
-                        Select to read details
-                      </span>
-                    </div>
-
-                    <div className="space-y-2">
+                  {/* Capabilities Nested Divided List (No Nested Cards) */}
+                  {domCaps.length > 0 && (
+                    <div className="pl-4 border-l-2 border-border/60 divide-y divide-border/50">
                       {domCaps.map((cap) => {
                         const capInvariants =
                           cap.invariants || cap.technical?.invariants || [];
-
                         return (
-                          <div
+                          <button
                             key={cap.id}
+                            type="button"
                             onClick={() =>
                               setSelectedEntity({ type: "capability", item: cap })
                             }
-                            className="p-3 rounded-xl border border-border/80 bg-muted/20 hover:bg-muted/50 hover:border-primary/50 transition-all cursor-pointer space-y-1.5 group"
+                            className="w-full py-2.5 px-2 -mx-2 rounded-lg hover:bg-muted/40 transition-colors cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-left group"
                           >
-                            <div className="flex items-center justify-between gap-2">
-                              <h5 className="text-xs font-bold text-foreground group-hover:text-primary transition-colors">
-                                {formatDisplayTitle(cap.title, cap.id)}
-                              </h5>
-                              <div className="flex items-center gap-1.5 shrink-0">
+                            <div className="min-w-0 flex-1 space-y-0.5">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Layers className="h-3.5 w-3.5 text-emerald-500 shrink-0" aria-hidden="true" />
+                                <span className="text-xs sm:text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
+                                  {formatDisplayTitle(cap.title, cap.id)}
+                                </span>
                                 {cap.status && (
-                                  <Badge
-                                    variant="outline"
-                                    className="text-[9px] px-1.5 py-0"
-                                  >
+                                  <Badge variant="outline" className="text-[10px] py-0">
                                     {formatStatus(cap.status)}
                                   </Badge>
                                 )}
-                                <span className="text-muted-foreground group-hover:text-primary transition-colors flex items-center text-[10px] font-medium">
-                                  Details <ArrowRight className="h-3 w-3 ml-0.5" />
-                                </span>
                               </div>
+                              {cap.summary && (
+                                <p className="text-xs text-muted-foreground line-clamp-1 pl-5.5">
+                                  {cap.summary}
+                                </p>
+                              )}
                             </div>
 
-                            {cap.summary && (
-                              <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">
-                                {cap.summary}
-                              </p>
-                            )}
-
-                            {capInvariants.length > 0 && (
-                              <div className="flex items-center gap-1.5 text-[10px] text-emerald-500 dark:text-emerald-400 pt-1">
-                                <CheckCircle2 className="h-3 w-3 shrink-0" />
-                                <span>
-                                  {capInvariants.length} verified {capInvariants.length === 1 ? "rule" : "rules"}
+                            <div className="flex items-center gap-3 shrink-0 pl-5.5 sm:pl-0 text-[11px]">
+                              {capInvariants.length > 0 && (
+                                <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+                                  <CheckCircle2 className="h-3 w-3 shrink-0" aria-hidden="true" />
+                                  {capInvariants.length} {capInvariants.length === 1 ? "rule" : "rules"}
                                 </span>
-                              </div>
-                            )}
-                          </div>
+                              )}
+                              <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" aria-hidden="true" />
+                            </div>
+                          </button>
                         );
                       })}
                     </div>
-                  </div>
-                </Card>
+                  )}
+                </div>
               );
             })}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* SECTION 2: GOVERNANCE POLICIES */}
+      {/* SECTION 2: GOVERNANCE POLICIES (Scannable Divided List) */}
       {(filterCategory === "all" || filterCategory === "policies") && (
-        <div
-          id="businessPoliciesSection"
-          className={cn(
-            "space-y-6",
-            filterCategory === "all" ? "pt-12 mt-12 border-t-2 border-border/80" : "pt-6"
-          )}
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2">
-            <div className="space-y-1">
-              <h3 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-3">
-                <ShieldCheck className="h-6 w-6 text-blue-500 shrink-0" />
-                <span>Governance Policies</span>
-                <Badge variant="outline" className="text-xs px-2 py-0.5">
-                  {filteredPolicies.length} Active
-                </Badge>
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                Mandatory quality standards, compliance constraints, and system-wide rules
-              </p>
-            </div>
-          </div>
+        <section id="businessPoliciesSection" className="space-y-4">
+          <h2 className="text-base sm:text-lg font-bold text-foreground tracking-tight flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-blue-500 shrink-0" aria-hidden="true" />
+            <span>Governance Policies</span>
+            <span className="text-xs font-normal text-muted-foreground">
+              ({filteredPolicies.length})
+            </span>
+          </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="divide-y divide-border/70 border-y border-border/70">
             {filteredPolicies.map((pol) => {
               const boundCapabilities = capabilities.filter((c) =>
                 c.business?.policies?.some((pRef) => pRef.includes(pol.id))
@@ -557,215 +448,186 @@ export function BusinessView({
               const ruleCount = pol.invariants?.length || 0;
 
               return (
-                <Card
+                <button
                   key={pol.id}
-                  className="p-5 sm:p-6 space-y-4 border border-border/80 bg-card hover:border-primary/40 transition-colors shadow-xs"
+                  type="button"
+                  onClick={() => setSelectedEntity({ type: "policy", item: pol })}
+                  className="w-full py-4 px-2 -mx-2 rounded-lg hover:bg-muted/30 transition-colors cursor-pointer text-left flex flex-col sm:flex-row sm:items-start justify-between gap-3 group"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] font-semibold bg-blue-500/10 text-blue-400 border-blue-500/20"
-                        >
-                          {humanizeToken(pol.category)}
-                        </Badge>
-                        {pol.severity && (
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30 flex items-center gap-1">
-                            <Lock className="h-2.5 w-2.5" />
-                            {formatSeverity(pol.severity)}
-                          </span>
-                        )}
-                      </div>
-                      <h3 className="text-base font-bold text-foreground">
+                  <div className="space-y-1.5 min-w-0 flex-1 max-w-3xl">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-bold text-foreground group-hover:text-primary transition-colors">
                         {formatDisplayTitle(pol.title, pol.id)}
-                      </h3>
+                      </span>
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] font-semibold bg-blue-500/10 text-blue-500 dark:text-blue-400 border-blue-500/20"
+                      >
+                        {humanizeToken(pol.category)}
+                      </Badge>
+                      {pol.severity && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-500/10 text-rose-500 dark:text-rose-400 inline-flex items-center gap-1">
+                          <Lock className="h-2.5 w-2.5" aria-hidden="true" />
+                          {formatSeverity(pol.severity)}
+                        </span>
+                      )}
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setSelectedEntity({ type: "policy", item: pol })}
-                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-muted/60 hover:bg-muted text-foreground transition-colors cursor-pointer shrink-0 flex items-center gap-1"
-                    >
-                      <span>View Policy</span>
-                      <ChevronRight className="h-3 w-3" />
-                    </button>
+                    {pol.invariants && pol.invariants.length > 0 && (
+                      <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
+                        {pol.invariants[0].rule}
+                      </p>
+                    )}
                   </div>
 
-                  {/* Policy Rule Callout */}
-                  {pol.invariants && pol.invariants.length > 0 && (
-                    <div className="p-3.5 rounded-xl border border-border/80 bg-muted/20 space-y-2">
-                      <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                        <div className="flex items-center gap-1.5">
-                          <ShieldCheck className="h-3.5 w-3.5 text-blue-400" />
-                          <span>Enforced Rules ({pol.invariants.length})</span>
-                        </div>
-                        {pol.invariants[0].test_binding && (
-                          <span className="text-emerald-500 normal-case font-medium">
-                            Test Verified
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs sm:text-sm font-medium text-foreground leading-relaxed">
-                        "{pol.invariants[0].rule}"
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Card Footer */}
-                  <div className="pt-3.5 border-t-2 border-border/80 flex items-center justify-between text-xs text-muted-foreground">
-                    <span className="text-[11px]">
+                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground shrink-0 sm:pt-0.5">
+                    <span>
                       {boundCapabilities.length > 0
-                        ? `Applies to ${boundCapabilities.length} ${boundCapabilities.length === 1 ? "capability" : "capabilities"}`
-                        : "System-wide Governance Policy"}
+                        ? `${boundCapabilities.length} ${boundCapabilities.length === 1 ? "capability" : "capabilities"}`
+                        : "System-wide"}
                     </span>
-                    <span className="text-[11px]">
+                    <span className="text-border">•</span>
+                    <span>
                       {ruleCount} {ruleCount === 1 ? "rule" : "rules"}
                     </span>
+                    <ChevronRight className="h-3.5 w-3.5 group-hover:text-primary transition-colors" aria-hidden="true" />
                   </div>
-                </Card>
+                </button>
               );
             })}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* SECTION 3: PERSONAS & STAKEHOLDERS */}
+      {/* SECTION 3: PERSONAS & STAKEHOLDERS (Compact Divided Rows) */}
       {(filterCategory === "all" || filterCategory === "personas") && (
-        <div
-          id="businessPersonasSection"
-          className={cn(
-            "space-y-6",
-            filterCategory === "all" ? "pt-12 mt-12 border-t-2 border-border/80" : "pt-6"
-          )}
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2">
-            <div className="space-y-1">
-              <h3 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-3">
-                <UserCheck className="h-6 w-6 text-purple-400 shrink-0" />
-                <span>Personas &amp; Stakeholders</span>
-                <Badge variant="outline" className="text-xs px-2 py-0.5">
-                  {filteredPersonas.length} Personas
-                </Badge>
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                Human stakeholders, engineering teams, and automated assistants using the system
-              </p>
-            </div>
-          </div>
+        <section id="businessPersonasSection" className="space-y-4">
+          <h2 className="text-base sm:text-lg font-bold text-foreground tracking-tight flex items-center gap-2">
+            <UserCheck className="h-4 w-4 text-purple-500 shrink-0" aria-hidden="true" />
+            <span>Personas &amp; Stakeholders</span>
+            <span className="text-xs font-normal text-muted-foreground">
+              ({filteredPersonas.length})
+            </span>
+          </h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="divide-y divide-border/70 border-y border-border/70">
             {filteredPersonas.map((per) => (
-              <Card
+              <button
                 key={per.id}
+                type="button"
                 onClick={() => setSelectedEntity({ type: "persona", item: per })}
-                className="p-5 sm:p-6 space-y-4 cursor-pointer hover:border-purple-400/60 hover:shadow-lg transition-all duration-150 group border border-border/80 bg-card rounded-2xl"
+                className="w-full py-3.5 px-2 -mx-2 rounded-lg hover:bg-muted/30 transition-colors cursor-pointer text-left flex flex-col sm:flex-row sm:items-center justify-between gap-2 group"
               >
-                <div className="flex items-center justify-between">
-                  <Badge variant="outline" className="text-[10px]">
-                    {humanizeToken(per.archetype)}
-                  </Badge>
-                </div>
-
-                <div className="space-y-0.5">
-                  <h4 className="text-sm font-bold text-foreground group-hover:text-purple-400 transition-colors">
-                    {formatDisplayTitle(per.title, per.id)}
-                  </h4>
-                  <p className="text-xs text-muted-foreground">{per.role}</p>
-                </div>
-
-                {per.goals && per.goals.length > 0 && (
-                  <div className="space-y-1 pt-1">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                      Key Goals
+                <div className="min-w-0 flex-1 space-y-1 max-w-3xl">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-bold text-foreground group-hover:text-purple-500 dark:group-hover:text-purple-400 transition-colors">
+                      {formatDisplayTitle(per.title, per.id)}
                     </span>
-                    <ul className="text-[11px] text-muted-foreground list-disc pl-4 space-y-0.5">
-                      {per.goals.slice(0, 2).map((g, idx) => (
-                        <li key={idx} className="line-clamp-1 leading-snug">
-                          {g}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                <div className="pt-2 border-t border-border/60 flex items-center justify-end text-purple-400 text-xs font-semibold group-hover:translate-x-0.5 transition-transform">
-                  <span>View Persona</span>
-                  <ArrowRight className="h-3 w-3 ml-1" />
-                </div>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* SECTION 4: SYSTEM RULES & CHECKS */}
-      {(filterCategory === "all" || filterCategory === "invariants") && (
-        <div
-          id="businessInvariantsSection"
-          className={cn(
-            "space-y-6",
-            filterCategory === "all" ? "pt-12 mt-12 border-t-2 border-border/80" : "pt-6"
-          )}
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2">
-            <div className="space-y-1">
-              <h3 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-3">
-                <CheckCircle2 className="h-6 w-6 text-teal-500 shrink-0" />
-                <span>System Rules &amp; Checks</span>
-                <Badge variant="outline" className="text-xs px-2 py-0.5">
-                  {filteredInvariants.length} Rules
-                </Badge>
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                Verified product, design, and architecture rules backed by automated tests
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filteredInvariants.map((inv, idx) => (
-              <Card
-                key={`${inv.id}-${idx}`}
-                onClick={() => setSelectedEntity({ type: "invariant", item: inv })}
-                className="p-4 space-y-2.5 cursor-pointer hover:border-teal-500/60 hover:shadow-md transition-all duration-150 group border border-border/80 bg-card rounded-2xl"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-bold text-foreground group-hover:text-teal-500 transition-colors">
-                    {humanizeInvariantTitle(inv)}
-                  </span>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {inv.category && (
-                      <Badge variant="outline" className="text-[10px]">
-                        {humanizeToken(inv.category)}
-                      </Badge>
-                    )}
-                    {inv.severity && (
-                      <Badge variant="outline" className="text-[10px]">
-                        {formatSeverity(inv.severity)}
-                      </Badge>
+                    <Badge variant="outline" className="text-[10px]">
+                      {humanizeToken(per.archetype)}
+                    </Badge>
+                    {per.role && (
+                      <span className="text-xs text-muted-foreground">• {per.role}</span>
                     )}
                   </div>
-                </div>
-                <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
-                  {inv.rule}
-                </p>
-                <div className="pt-1 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
-                  {inv.source_title && <span className="truncate">{inv.source_title}</span>}
-                  {inv.test_binding && inv.test_binding !== "N/A" && (
-                    <span className="inline-flex items-center gap-1 text-emerald-500 font-medium shrink-0">
-                      <CheckCircle2 className="h-3 w-3 shrink-0" />
-                      Test Verified
-                    </span>
+                  {per.goals && per.goals.length > 0 && (
+                    <p className="text-xs text-muted-foreground line-clamp-1">
+                      {per.goals.slice(0, 2).join(" • ")}
+                    </p>
                   )}
                 </div>
-              </Card>
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-purple-400 shrink-0 transition-colors" aria-hidden="true" />
+              </button>
             ))}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* DETAIL INSPECTION DRAWER (SHEET) */}
+      {/* SECTION 4: SYSTEM RULES & CHECKS (Semantic Sticky-Header Responsive Table) */}
+      {(filterCategory === "all" || filterCategory === "invariants") && (
+        <section id="businessInvariantsSection" className="space-y-4">
+          <div className="flex items-baseline justify-between gap-2">
+            <h2 className="text-base sm:text-lg font-bold text-foreground tracking-tight flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-teal-500 shrink-0" aria-hidden="true" />
+              <span>System Rules &amp; Checks</span>
+              <span className="text-xs font-normal text-muted-foreground">
+                ({filteredInvariants.length})
+              </span>
+            </h2>
+          </div>
+
+          <div
+            tabIndex={0}
+            role="region"
+            aria-label="System rules and automated checks"
+            className="table-wrapper border-y border-border/70 max-h-[640px]"
+          >
+            <table id="businessRulesTable" className="w-full text-left text-xs">
+              <thead className="bg-background/95 backdrop-blur-xs border-b border-border text-muted-foreground font-semibold uppercase tracking-wider text-[10px]">
+                <tr>
+                  <th scope="col" className="py-2.5 px-3 w-4/12">Rule</th>
+                  <th scope="col" className="py-2.5 px-3 w-4/12">Guarantee</th>
+                  <th scope="col" className="py-2.5 px-3 w-2/12">Source</th>
+                  <th scope="col" className="py-2.5 px-3 w-2/12">Verification</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/50">
+                {filteredInvariants.map((inv, idx) => (
+                  <tr
+                    key={`${inv.id}-${idx}`}
+                    onClick={() => setSelectedEntity({ type: "invariant", item: inv })}
+                    className="hover:bg-muted/30 cursor-pointer transition-colors group"
+                  >
+                    <th scope="row" className="py-2.5 px-3 font-semibold text-foreground group-hover:text-teal-500 transition-colors align-top">
+                      <div className="space-y-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedEntity({ type: "invariant", item: inv });
+                          }}
+                          className="text-left font-semibold text-foreground group-hover:text-teal-500 transition-colors cursor-pointer"
+                        >
+                          {humanizeInvariantTitle(inv)}
+                        </button>
+                        <div className="flex flex-wrap gap-1">
+                          {inv.category && (
+                            <Badge variant="outline" className="text-[9px] py-0">
+                              {humanizeToken(inv.category)}
+                            </Badge>
+                          )}
+                          {inv.severity && (
+                            <Badge variant="outline" className="text-[9px] py-0">
+                              {formatSeverity(inv.severity)}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    </th>
+                    <td className="py-2.5 px-3 text-muted-foreground leading-relaxed align-top">
+                      <p className="line-clamp-2">{formatHumanProse(inv.rule, labelIndex)}</p>
+                    </td>
+                    <td className="py-2.5 px-3 text-muted-foreground align-top truncate max-w-[180px]">
+                      {inv.source_title || "—"}
+                    </td>
+                    <td className="py-2.5 px-3 align-top whitespace-nowrap">
+                      {inv.test_binding && inv.test_binding !== "N/A" ? (
+                        <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium text-[11px]">
+                          <CheckCircle2 className="h-3 w-3 shrink-0" aria-hidden="true" />
+                          Test Verified
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground text-[11px]">Declared</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* DETAIL INSPECTION DRAWER (De-Carded Editorial Layout + Collapsible Metadata) */}
       <Sheet
         open={Boolean(selectedEntity)}
         onOpenChange={(open) => {
@@ -788,42 +650,48 @@ export function BusinessView({
           <div className="space-y-5 text-xs text-foreground">
             {/* POLICY DETAIL DRAWER */}
             {selectedEntity.type === "policy" && (
-              <div className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="primary">Policy</Badge>
-                  <Badge variant="outline">{humanizeToken(selectedEntity.item.category)}</Badge>
-                  {selectedEntity.item.severity && (
-                    <Badge variant="warning">
-                      {formatSeverity(selectedEntity.item.severity)}
-                    </Badge>
-                  )}
+              <div className="space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/60">
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="primary">Policy</Badge>
+                    <Badge variant="outline">{humanizeToken(selectedEntity.item.category)}</Badge>
+                    {selectedEntity.item.severity && (
+                      <Badge variant="warning">
+                        {formatSeverity(selectedEntity.item.severity)}
+                      </Badge>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openInFullReader(selectedEntity.item.id)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer transition-colors"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Open in Full Reader</span>
+                  </button>
                 </div>
 
-                {/* Policy Rules */}
                 {selectedEntity.item.invariants && selectedEntity.item.invariants.length > 0 && (
                   <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                      <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
+                    <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      <ShieldCheck className="h-3.5 w-3.5 text-blue-500" aria-hidden="true" />
                       Enforced Policy Rules ({selectedEntity.item.invariants.length})
                     </h4>
-                    <div className="space-y-2">
+                    <div className="divide-y divide-border/60 border-l-2 border-blue-500 pl-4 space-y-2">
                       {selectedEntity.item.invariants.map((inv, idx) => (
-                        <div
-                          key={inv.id || idx}
-                          className="p-3.5 rounded-xl bg-blue-500/10 border-l-3 border-blue-500 text-xs space-y-1.5"
-                        >
+                        <div key={inv.id || idx} className="pt-2 first:pt-0 space-y-1">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="font-bold text-blue-400">
+                            <span className="font-semibold text-foreground">
                               {humanizeInvariantTitle(inv as SpecInvariant)}
                             </span>
                             {inv.test_binding && (
-                              <Badge variant="outline" className="text-[10px] text-emerald-500 border-emerald-500/30">
+                              <span className="text-[11px] text-emerald-500 font-medium">
                                 Test Verified
-                              </Badge>
+                              </span>
                             )}
                           </div>
-                          <p className="font-medium text-foreground leading-relaxed">
-                            "{inv.rule}"
+                          <p className="text-muted-foreground leading-relaxed">
+                            "{formatHumanProse(inv.rule, labelIndex)}"
                           </p>
                         </div>
                       ))}
@@ -831,7 +699,6 @@ export function BusinessView({
                   </div>
                 )}
 
-                {/* Related Capabilities */}
                 {(() => {
                   const boundCaps = capabilities.filter((c) =>
                     c.business?.policies?.some((pRef) =>
@@ -840,12 +707,12 @@ export function BusinessView({
                   );
                   if (boundCaps.length === 0) return null;
                   return (
-                    <div className="space-y-2">
-                      <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                        <Layers className="h-3.5 w-3.5 text-primary" />
-                        Related Capabilities ({boundCaps.length})
-                      </h4>
-                      <div className="space-y-2">
+                    <details className="portal-disclosure border-y border-border/60 py-2.5">
+                      <summary className="flex items-center gap-2 text-xs font-semibold text-foreground select-none">
+                        <ChevronRight className="disclosure-chevron h-3.5 w-3.5 text-muted-foreground shrink-0" aria-hidden="true" />
+                        <span>Related Capabilities ({boundCaps.length})</span>
+                      </summary>
+                      <div className="pt-2.5 pl-5 flex flex-wrap gap-2">
                         {boundCaps.map((c) => (
                           <button
                             key={c.id}
@@ -853,27 +720,29 @@ export function BusinessView({
                             onClick={() =>
                               setSelectedEntity({ type: "capability", item: c })
                             }
-                            className="w-full text-left p-2.5 rounded-xl bg-muted/20 hover:bg-muted/50 border border-border/70 flex items-center justify-between transition-colors cursor-pointer"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted/50 hover:bg-primary/10 hover:text-primary border border-border/60 text-xs font-medium cursor-pointer transition-colors"
                           >
-                            <span className="text-xs font-semibold text-foreground">
-                              {formatDisplayTitle(c.title, c.id)}
-                            </span>
-                            <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span>{formatDisplayTitle(c.title, c.id)}</span>
+                            <ArrowRight className="h-3 w-3" aria-hidden="true" />
                           </button>
                         ))}
                       </div>
-                    </div>
+                    </details>
                   );
                 })()}
 
-                {/* Document Body */}
                 {hasSpecBodyOrChunk(selectedEntity.item.id, selectedEntity.item.body) && (
-                  <div className="space-y-2 pt-2">
-                    <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                      <BookOpen className="h-3.5 w-3.5 text-purple-400" />
-                      Policy Details
+                  <div className="space-y-2 pt-1">
+                    <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      <BookOpen className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                      Policy Specification
                     </h4>
-                    <AsciiDocRenderer specId={selectedEntity.item.id} content={selectedEntity.item.body || ""} />
+                    <AsciiDocRenderer
+                      specId={selectedEntity.item.id}
+                      content={selectedEntity.item.body || ""}
+                      measure="full"
+                      hideLeadingTitle={true}
+                    />
                   </div>
                 )}
               </div>
@@ -881,99 +750,96 @@ export function BusinessView({
 
             {/* DOMAIN DETAIL DRAWER */}
             {selectedEntity.type === "domain" && (
-              <div className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="primary">Domain</Badge>
-                  <Badge variant="outline">
-                    {humanizeToken(selectedEntity.item.classification || "Core")}
-                  </Badge>
+              <div className="space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/60">
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="primary">Domain</Badge>
+                    <Badge variant="outline">
+                      {humanizeToken(selectedEntity.item.classification || "Core")}
+                    </Badge>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openInFullReader(selectedEntity.item.id)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer transition-colors"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Open in Full Reader</span>
+                  </button>
                 </div>
 
-                {/* Vision / Mission */}
-                <div className="space-y-1.5">
-                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                    Domain Vision &amp; Mission
-                  </h4>
-                  <p className="p-3.5 rounded-xl bg-muted/20 border border-border/80 text-xs text-foreground leading-relaxed">
+                {selectedEntity.item.mission && (
+                  <p className="text-sm text-foreground/90 leading-relaxed max-w-3xl">
                     {selectedEntity.item.mission}
                   </p>
-                </div>
-
-                {/* Core Responsibilities */}
-                {selectedEntity.item.boundaries?.responsibilities && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                      In-Scope Responsibilities
-                    </h4>
-                    <ul className="space-y-1.5">
-                      {selectedEntity.item.boundaries.responsibilities.map((r, i) => (
-                        <li
-                          key={i}
-                          className="flex items-start gap-2 p-2 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-xs text-foreground/90"
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 mt-0.5 shrink-0" />
-                          <span>{r}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
                 )}
 
-                {/* Out of Scope */}
-                {selectedEntity.item.boundaries?.out_of_scope && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-foreground uppercase tracking-wider text-muted-foreground">
-                      Out of Scope
-                    </h4>
-                    <ul className="space-y-1.5">
-                      {selectedEntity.item.boundaries.out_of_scope.map((o, i) => (
-                        <li
-                          key={i}
-                          className="flex items-start gap-2 p-2 rounded-lg bg-muted/30 border border-border/60 text-xs text-muted-foreground"
-                        >
-                          <span className="text-muted-foreground">✕</span>
-                          <span>{o}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                {/* Collapsible Structured Scope & Capabilities */}
+                {(selectedEntity.item.boundaries?.responsibilities?.length ||
+                  selectedEntity.item.boundaries?.out_of_scope?.length) && (
+                  <details className="portal-disclosure border-y border-border/60 py-2.5">
+                    <summary className="flex items-center gap-2 text-xs font-semibold text-foreground select-none">
+                      <ChevronRight className="disclosure-chevron h-3.5 w-3.5 text-muted-foreground shrink-0" aria-hidden="true" />
+                      <span>Scope &amp; Boundaries</span>
+                    </summary>
+                    <div className="pt-3 pl-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {selectedEntity.item.boundaries?.responsibilities && (
+                        <div className="space-y-1.5">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-500">
+                            In Scope
+                          </span>
+                          <ul className="space-y-1 list-disc pl-4 text-xs text-foreground/90">
+                            {selectedEntity.item.boundaries.responsibilities.map((r, i) => (
+                              <li key={i}>{r}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {selectedEntity.item.boundaries?.out_of_scope && (
+                        <div className="space-y-1.5">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                            Out of Scope
+                          </span>
+                          <ul className="space-y-1 list-disc pl-4 text-xs text-muted-foreground">
+                            {selectedEntity.item.boundaries.out_of_scope.map((o, i) => (
+                              <li key={i}>{o}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </details>
                 )}
 
-                {/* Capabilities in this Domain */}
                 {(() => {
                   const domCaps = capabilities.filter(
                     (c) =>
                       c.domain === selectedEntity.item.id ||
                       selectedEntity.item.capabilities?.includes(c.id)
                   );
+                  if (domCaps.length === 0) return null;
                   return (
-                    <div className="space-y-2 pt-2 border-t border-border/60">
-                      <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center justify-between">
-                        <span>Capabilities</span>
-                        <span className="text-muted-foreground">({domCaps.length})</span>
-                      </h4>
-                      <div className="space-y-2">
-                        {domCaps.map((c) => (
-                          <button
-                            key={c.id}
-                            type="button"
-                            onClick={() =>
-                              setSelectedEntity({ type: "capability", item: c })
-                            }
-                            className="w-full text-left p-3 rounded-xl bg-muted/20 hover:bg-muted/50 border border-border/70 flex items-center justify-between transition-colors cursor-pointer group"
-                          >
-                            <span className="text-xs font-bold text-foreground group-hover:text-primary">
-                              {formatDisplayTitle(c.title, c.id)}
-                            </span>
-                            <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-transform" />
-                          </button>
-                        ))}
-                      </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-semibold text-muted-foreground">
+                        Capabilities:
+                      </span>
+                      {domCaps.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() =>
+                            setSelectedEntity({ type: "capability", item: c })
+                          }
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-muted/40 hover:bg-primary/10 hover:text-primary border border-border/60 text-xs font-medium cursor-pointer transition-colors"
+                        >
+                          <span>{formatDisplayTitle(c.title, c.id)}</span>
+                          <ArrowRight className="h-3 w-3" aria-hidden="true" />
+                        </button>
+                      ))}
                     </div>
                   );
                 })()}
 
-                {/* Domain Team Memories */}
                 <EntityMemoriesStrip
                   entityId={selectedEntity.item.id}
                   memories={data.memories}
@@ -983,14 +849,18 @@ export function BusinessView({
                   }}
                 />
 
-                {/* Full Document */}
                 {hasSpecBodyOrChunk(selectedEntity.item.id, selectedEntity.item.body) && (
-                  <div className="space-y-2 pt-2">
-                    <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                      <BookOpen className="h-3.5 w-3.5 text-purple-400" />
-                      Domain Details
+                  <div className="space-y-2 pt-2 border-t border-border/60">
+                    <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      <BookOpen className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                      Domain Specification
                     </h4>
-                    <AsciiDocRenderer specId={selectedEntity.item.id} content={selectedEntity.item.body || ""} />
+                    <AsciiDocRenderer
+                      specId={selectedEntity.item.id}
+                      content={selectedEntity.item.body || ""}
+                      measure="full"
+                      hideLeadingTitle={true}
+                    />
                   </div>
                 )}
               </div>
@@ -998,167 +868,199 @@ export function BusinessView({
 
             {/* CAPABILITY DETAIL DRAWER */}
             {selectedEntity.type === "capability" && (
-              <div className="space-y-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="primary">Capability</Badge>
-                  {selectedEntity.item.domain && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const dom = domainsById.get(selectedEntity.item.domain);
-                        if (dom) setSelectedEntity({ type: "domain", item: dom });
-                      }}
-                      className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors cursor-pointer"
-                    >
-                      {resolveEntityTitle(selectedEntity.item.domain, labelIndex)}
-                    </button>
-                  )}
-                  {selectedEntity.item.status && (
-                    <Badge variant="outline">{formatStatus(selectedEntity.item.status)}</Badge>
-                  )}
-                  {selectedEntity.item.version && (
-                    <Badge variant="outline">v{selectedEntity.item.version}</Badge>
-                  )}
+              <div className="space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/60">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="primary">Capability</Badge>
+                    {selectedEntity.item.domain && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const dom = domainsById.get(selectedEntity.item.domain);
+                          if (dom) setSelectedEntity({ type: "domain", item: dom });
+                        }}
+                        className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors cursor-pointer"
+                      >
+                        {resolveEntityTitle(selectedEntity.item.domain, labelIndex)}
+                      </button>
+                    )}
+                    {selectedEntity.item.status && (
+                      <Badge variant="outline">{formatStatus(selectedEntity.item.status)}</Badge>
+                    )}
+                    {selectedEntity.item.version && (
+                      <Badge variant="outline">v{selectedEntity.item.version}</Badge>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openInFullReader(selectedEntity.item.id)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer transition-colors"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Open in Full Reader</span>
+                  </button>
                 </div>
 
-                {/* Purpose & Customer Outcome */}
-                <div className="space-y-1.5">
-                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                    Purpose &amp; Customer Outcome
-                  </h4>
-                  <p className="p-3.5 rounded-xl bg-muted/20 border border-border/80 text-xs text-foreground leading-relaxed">
-                    {selectedEntity.item.business?.jtbd ||
-                      selectedEntity.item.summary ||
-                      "Core product capability."}
+                {(selectedEntity.item.business?.jtbd || selectedEntity.item.summary) && (
+                  <p className="text-sm text-foreground/90 leading-relaxed max-w-3xl">
+                    {selectedEntity.item.business?.jtbd || selectedEntity.item.summary}
                   </p>
-                </div>
+                )}
 
-                {/* Verified Rules */}
+                {/* Collapsible Structured Links & Verified Rules */}
                 {(() => {
                   const invs =
                     selectedEntity.item.invariants ||
                     selectedEntity.item.technical?.invariants ||
                     [];
-                  if (invs.length === 0) return null;
+                  const hasLinks = Boolean(
+                    selectedEntity.item.technical?.contracts?.length ||
+                      selectedEntity.item.technical?.containers?.length ||
+                      selectedEntity.item.technical?.components?.length ||
+                      selectedEntity.item.business?.personas?.length ||
+                      selectedEntity.item.business?.policies?.length
+                  );
+                  if (invs.length === 0 && !hasLinks) return null;
                   return (
-                    <div className="space-y-2">
-                      <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center justify-between">
-                        <span className="flex items-center gap-1.5 text-emerald-400">
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          Verified Rules
-                        </span>
-                        <span className="text-muted-foreground">({invs.length})</span>
-                      </h4>
-                      <div className="space-y-2">
-                        {invs.map((inv, idx) => (
-                          <div
-                            key={inv.id || idx}
-                            className="p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 space-y-1.5 text-xs"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-bold text-emerald-500 dark:text-emerald-400">
-                                {humanizeInvariantTitle(inv as SpecInvariant)}
-                              </span>
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] text-emerald-500 border-emerald-500/30 shrink-0"
-                              >
-                                Test Verified
-                              </Badge>
-                            </div>
-                            <p className="text-foreground/90 font-medium leading-relaxed">
-                              {inv.rule}
-                            </p>
+                    <div className="divide-y divide-border/60 border-y border-border/60">
+                      {invs.length > 0 && (
+                        <details className="portal-disclosure py-2.5" open>
+                          <summary className="flex items-center gap-2 text-xs font-semibold text-foreground select-none">
+                            <ChevronRight className="disclosure-chevron h-3.5 w-3.5 text-muted-foreground shrink-0" aria-hidden="true" />
+                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" aria-hidden="true" />
+                            <span>Verified Rules ({invs.length})</span>
+                          </summary>
+                          <div className="pt-2.5 pl-5 divide-y divide-border/50">
+                            {invs.map((inv, idx) => (
+                              <div key={inv.id || idx} className="py-2 first:pt-0 space-y-0.5">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-semibold text-foreground">
+                                    {humanizeInvariantTitle(inv as SpecInvariant)}
+                                  </span>
+                                  {inv.test_binding && inv.test_binding !== "N/A" && (
+                                    <span className="text-[10px] text-emerald-500 font-medium shrink-0">
+                                      Test Verified
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-muted-foreground leading-relaxed">
+                                  {formatHumanProse(inv.rule, labelIndex)}
+                                </p>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
+                        </details>
+                      )}
+
+                      {hasLinks && (
+                        <details className="portal-disclosure py-2.5">
+                          <summary className="flex items-center gap-2 text-xs font-semibold text-foreground select-none">
+                            <ChevronRight className="disclosure-chevron h-3.5 w-3.5 text-muted-foreground shrink-0" aria-hidden="true" />
+                            <FileCode className="h-3.5 w-3.5 text-primary shrink-0" aria-hidden="true" />
+                            <span>Architecture, Personas &amp; Policies</span>
+                          </summary>
+                          <div className="pt-3 pl-5 space-y-3">
+                            {selectedEntity.item.technical?.contracts && selectedEntity.item.technical.contracts.length > 0 && (
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-[11px] text-muted-foreground mr-1">Contracts:</span>
+                                {selectedEntity.item.technical.contracts.map((ctr, i) => (
+                                  <button
+                                    key={i}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedEntity(null);
+                                      requestSpecNavigation(String(ctr));
+                                    }}
+                                    className="text-[11px] px-2 py-0.5 rounded bg-muted/60 hover:bg-primary/15 text-primary font-medium cursor-pointer"
+                                  >
+                                    {resolveEntityTitle(String(ctr), labelIndex)}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            {selectedEntity.item.technical?.containers && selectedEntity.item.technical.containers.length > 0 && (
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-[11px] text-muted-foreground mr-1">Containers:</span>
+                                {selectedEntity.item.technical.containers.map((c, i) => (
+                                  <button
+                                    key={i}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedEntity(null);
+                                      requestSpecNavigation(String(c));
+                                    }}
+                                    className="text-[11px] px-2 py-0.5 rounded bg-muted/60 hover:bg-primary/15 text-primary font-medium cursor-pointer"
+                                  >
+                                    {resolveEntityTitle(String(c), labelIndex)}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            {selectedEntity.item.technical?.components && selectedEntity.item.technical.components.length > 0 && (
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-[11px] text-muted-foreground mr-1">Components:</span>
+                                {selectedEntity.item.technical.components.map((c, i) => (
+                                  <button
+                                    key={i}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedEntity(null);
+                                      requestSpecNavigation(String(c));
+                                    }}
+                                    className="text-[11px] px-2 py-0.5 rounded bg-muted/60 hover:bg-primary/15 text-foreground font-medium cursor-pointer"
+                                  >
+                                    {resolveEntityTitle(String(c), labelIndex)}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            {selectedEntity.item.business?.personas && selectedEntity.item.business.personas.length > 0 && (
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-[11px] text-muted-foreground mr-1">Personas:</span>
+                                {selectedEntity.item.business.personas.map((pRef, i) => {
+                                  const persona = resolvePersona(pRef);
+                                  return (
+                                    <button
+                                      key={i}
+                                      type="button"
+                                      onClick={() => {
+                                        if (persona) setSelectedEntity({ type: "persona", item: persona });
+                                      }}
+                                      className="px-2 py-0.5 rounded text-[11px] font-medium bg-purple-500/10 text-purple-500 dark:text-purple-400 hover:bg-purple-500/20 cursor-pointer"
+                                    >
+                                      {persona ? formatDisplayTitle(persona.title, persona.id) : resolveEntityTitle(pRef, labelIndex)}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {selectedEntity.item.business?.policies && selectedEntity.item.business.policies.length > 0 && (
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-[11px] text-muted-foreground mr-1">Policies:</span>
+                                {selectedEntity.item.business.policies.map((pRef, i) => {
+                                  const policy = resolvePolicy(pRef);
+                                  return (
+                                    <button
+                                      key={i}
+                                      type="button"
+                                      onClick={() => {
+                                        if (policy) setSelectedEntity({ type: "policy", item: policy });
+                                      }}
+                                      className="px-2 py-0.5 rounded text-[11px] font-medium bg-blue-500/10 text-blue-500 dark:text-blue-400 hover:bg-blue-500/20 cursor-pointer"
+                                    >
+                                      {policy ? formatDisplayTitle(policy.title, policy.id) : resolveEntityTitle(pRef, labelIndex)}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </details>
+                      )}
                     </div>
                   );
                 })()}
 
-                {/* Interface Contracts */}
-                {selectedEntity.item.technical?.contracts && selectedEntity.item.technical.contracts.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                      <FileCode className="h-3.5 w-3.5 text-primary" />
-                      Interface Contracts
-                    </h4>
-                    <div className="p-3 rounded-xl bg-muted/30 border border-border/80 flex flex-wrap gap-1.5">
-                      {selectedEntity.item.technical.contracts.map((ctr, i) => (
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => {
-                            setSelectedEntity(null);
-                            requestSpecNavigation(String(ctr));
-                          }}
-                          className="text-[11px] px-2.5 py-0.5 rounded bg-card border border-border hover:border-primary/50 text-primary font-semibold cursor-pointer transition-colors"
-                        >
-                          {resolveEntityTitle(String(ctr), labelIndex)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Realizing System Architecture */}
-                {((selectedEntity.item.technical?.containers && selectedEntity.item.technical.containers.length > 0) ||
-                  (selectedEntity.item.technical?.components && selectedEntity.item.technical.components.length > 0)) && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                      <Layers className="h-3.5 w-3.5 text-primary" />
-                      Supporting Architecture
-                    </h4>
-                    <div className="p-3 rounded-xl bg-muted/30 border border-border/80 space-y-2">
-                      {selectedEntity.item.technical.containers && selectedEntity.item.technical.containers.length > 0 && (
-                        <div>
-                          <span className="text-[10px] font-bold text-muted-foreground uppercase">
-                            System Containers
-                          </span>
-                          <div className="flex flex-wrap gap-1.5 mt-1">
-                            {selectedEntity.item.technical.containers.map((c, i) => (
-                              <button
-                                key={i}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedEntity(null);
-                                  requestSpecNavigation(String(c));
-                                }}
-                                className="text-[11px] px-2.5 py-0.5 rounded bg-card border border-border hover:border-primary/50 text-primary font-semibold cursor-pointer transition-colors"
-                              >
-                                {resolveEntityTitle(String(c), labelIndex)}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {selectedEntity.item.technical.components && selectedEntity.item.technical.components.length > 0 && (
-                        <div>
-                          <span className="text-[10px] font-bold text-muted-foreground uppercase">
-                            Internal Components
-                          </span>
-                          <div className="flex flex-wrap gap-1.5 mt-1">
-                            {selectedEntity.item.technical.components.map((c, i) => (
-                              <button
-                                key={i}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedEntity(null);
-                                  requestSpecNavigation(String(c));
-                                }}
-                                className="text-[11px] px-2.5 py-0.5 rounded bg-card border border-border hover:border-primary/50 text-foreground cursor-pointer transition-colors"
-                              >
-                                {resolveEntityTitle(String(c), labelIndex)}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Capability Team Memories */}
                 <EntityMemoriesStrip
                   entityId={selectedEntity.item.id}
                   memories={data.memories}
@@ -1168,71 +1070,18 @@ export function BusinessView({
                   }}
                 />
 
-                {/* Personas & Policies */}
-                <div className="space-y-3 pt-2 border-t border-border/60">
-                  {selectedEntity.item.business?.personas && (
-                    <div className="space-y-1.5">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                        Target Personas
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {selectedEntity.item.business.personas.map((pRef, i) => {
-                          const persona = resolvePersona(pRef);
-                          return (
-                            <button
-                              key={i}
-                              type="button"
-                              onClick={() => {
-                                if (persona)
-                                  setSelectedEntity({ type: "persona", item: persona });
-                              }}
-                              className="px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/20 transition-colors cursor-pointer flex items-center gap-1"
-                            >
-                              <UserCheck className="h-3 w-3" />
-                              <span>{persona ? formatDisplayTitle(persona.title, persona.id) : resolveEntityTitle(pRef, labelIndex)}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedEntity.item.business?.policies && (
-                    <div className="space-y-1.5">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                        Governing Policies
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {selectedEntity.item.business.policies.map((pRef, i) => {
-                          const policy = resolvePolicy(pRef);
-                          return (
-                            <button
-                              key={i}
-                              type="button"
-                              onClick={() => {
-                                if (policy)
-                                  setSelectedEntity({ type: "policy", item: policy });
-                              }}
-                              className="px-2.5 py-1 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors cursor-pointer flex items-center gap-1"
-                            >
-                              <ShieldCheck className="h-3 w-3" />
-                              <span>{policy ? formatDisplayTitle(policy.title, policy.id) : resolveEntityTitle(pRef, labelIndex)}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Full Document */}
                 {hasSpecBodyOrChunk(selectedEntity.item.id, selectedEntity.item.body) && (
-                  <div className="space-y-2 pt-2">
-                    <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                      <BookOpen className="h-3.5 w-3.5 text-purple-400" />
-                      Capability Details
+                  <div className="space-y-2 pt-1">
+                    <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      <BookOpen className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                      Capability Specification
                     </h4>
-                    <AsciiDocRenderer specId={selectedEntity.item.id} content={selectedEntity.item.body || ""} />
+                    <AsciiDocRenderer
+                      specId={selectedEntity.item.id}
+                      content={selectedEntity.item.body || ""}
+                      measure="full"
+                      hideLeadingTitle={true}
+                    />
                   </div>
                 )}
               </div>
@@ -1240,85 +1089,69 @@ export function BusinessView({
 
             {/* PERSONA DETAIL DRAWER */}
             {selectedEntity.type === "persona" && (
-              <div className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="primary">Persona</Badge>
-                  <Badge variant="outline">{humanizeToken(selectedEntity.item.archetype)}</Badge>
+              <div className="space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/60">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="primary">Persona</Badge>
+                    <Badge variant="outline">{humanizeToken(selectedEntity.item.archetype)}</Badge>
+                    {selectedEntity.item.role && (
+                      <span className="text-xs text-muted-foreground">{selectedEntity.item.role}</span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openInFullReader(selectedEntity.item.id)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer transition-colors"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Open in Full Reader</span>
+                  </button>
                 </div>
 
-                <div className="p-3.5 rounded-xl bg-muted/20 border border-border/80 space-y-1">
-                  <h4 className="text-sm font-bold text-foreground">
-                    {formatDisplayTitle(selectedEntity.item.title, selectedEntity.item.id)}
-                  </h4>
-                  <p className="text-xs text-purple-400 font-medium">
-                    {selectedEntity.item.role}
-                  </p>
-                </div>
-
-                {selectedEntity.item.goals && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                      Goals &amp; Desired Outcomes
-                    </h4>
-                    <ul className="space-y-1.5">
-                      {selectedEntity.item.goals.map((goal, i) => (
-                        <li
-                          key={i}
-                          className="flex items-start gap-2 p-2 rounded-lg bg-muted/30 border border-border/60 text-xs text-foreground/90"
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5 text-purple-400 mt-0.5 shrink-0" />
-                          <span>{goal}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {selectedEntity.item.pain_points && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-foreground uppercase tracking-wider text-rose-400">
-                      Pain Points &amp; Challenges
-                    </h4>
-                    <ul className="space-y-1.5">
-                      {selectedEntity.item.pain_points.map((pain, i) => (
-                        <li
-                          key={i}
-                          className="flex items-start gap-2 p-2 rounded-lg bg-rose-500/5 border border-rose-500/20 text-xs text-foreground/90"
-                        >
-                          <AlertTriangle className="h-3.5 w-3.5 text-rose-500 mt-0.5 shrink-0" />
-                          <span>{pain}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {selectedEntity.item.interaction_modes && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                      How They Interact
-                    </h4>
-                    <ul className="space-y-1.5">
-                      {selectedEntity.item.interaction_modes.map((mode, i) => (
-                        <li
-                          key={i}
-                          className="flex items-start gap-2 p-2 rounded-lg bg-card border border-border text-xs text-foreground/90"
-                        >
-                          <ArrowRight className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
-                          <span>{mode}</span>
-                        </li>
-                      ))}
-                    </ul>
+                {(selectedEntity.item.goals?.length ||
+                  selectedEntity.item.pain_points?.length ||
+                  selectedEntity.item.interaction_modes?.length) && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pb-4 border-b border-border/60">
+                    {selectedEntity.item.goals && selectedEntity.item.goals.length > 0 && (
+                      <div className="space-y-1.5">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-purple-500 dark:text-purple-400">
+                          Goals &amp; Desired Outcomes
+                        </span>
+                        <ul className="space-y-1 list-disc pl-4 text-xs text-foreground/90">
+                          {selectedEntity.item.goals.map((goal, i) => (
+                            <li key={i}>{goal}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {selectedEntity.item.pain_points && selectedEntity.item.pain_points.length > 0 && (
+                      <div className="space-y-1.5">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-rose-500 dark:text-rose-400 flex items-center gap-1">
+                          <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                          Pain Points &amp; Challenges
+                        </span>
+                        <ul className="space-y-1 list-disc pl-4 text-xs text-foreground/90">
+                          {selectedEntity.item.pain_points.map((pain, i) => (
+                            <li key={i}>{pain}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {hasSpecBodyOrChunk(selectedEntity.item.id, selectedEntity.item.body) && (
-                  <div className="space-y-2 pt-2">
-                    <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                      <BookOpen className="h-3.5 w-3.5 text-purple-400" />
+                  <div className="space-y-2">
+                    <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      <BookOpen className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
                       Persona Profile
                     </h4>
-                    <AsciiDocRenderer specId={selectedEntity.item.id} content={selectedEntity.item.body || ""} />
+                    <AsciiDocRenderer
+                      specId={selectedEntity.item.id}
+                      content={selectedEntity.item.body || ""}
+                      measure="full"
+                      hideLeadingTitle={true}
+                    />
                   </div>
                 )}
               </div>
@@ -1341,20 +1174,20 @@ export function BusinessView({
                 </div>
 
                 <div className="space-y-1.5">
-                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-teal-500" />
+                  <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-teal-500" aria-hidden="true" />
                     Rule Statement
                   </h4>
-                  <div className="p-3.5 rounded-xl bg-teal-500/10 border-l-3 border-teal-500 text-xs font-medium text-foreground leading-relaxed">
-                    "{selectedEntity.item.rule}"
-                  </div>
+                  <blockquote className="pl-4 py-1 border-l-3 border-teal-500 text-sm font-medium text-foreground leading-relaxed max-w-3xl">
+                    "{formatHumanProse(selectedEntity.item.rule, labelIndex)}"
+                  </blockquote>
                 </div>
 
                 {selectedEntity.item.source_title && (
-                  <div className="p-3 rounded-xl bg-muted/30 border border-border/80 text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground pt-2 border-t border-border/60">
                     <span className="font-semibold text-foreground">Defined in: </span>
                     {selectedEntity.item.source_title}
-                  </div>
+                  </p>
                 )}
               </div>
             )}

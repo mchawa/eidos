@@ -8,9 +8,9 @@ category: content
 
 variants:
   - name: "focused-prose"
-    description: "Expansive reading stage with optimal reading typography (max-w-4xl xl:max-w-5xl) and sticky right-hand outline navigation inside an enlarged modal window (max-w-[94vw] 2xl:max-w-[1550px])."
-  - name: "high-contrast-dark"
-    description: "High-contrast dark mode neutral zinc palette with elevated cards (#121215) and crisp structural borders (#27272a)."
+    description: "Expansive inline reading stage with optimal reading typography (90ch narrative prose measure within max-w-4xl xl:max-w-5xl) and quiet borderless sticky right-hand outline navigation."
+  - name: "reader-friendly-themes"
+    description: "Clean soft off-white light mode (#fafafa unified canvas, #1f2328 ink, adaptive light code blocks) and balanced dimmed slate dark mode (#1c2026 unified canvas, #e6edf3 ink, zero pitch-black halation) with WCAG AA+ contrast and Forced Colors support."
 
 states:
   - default
@@ -31,21 +31,22 @@ decisions:
 :toc: left
 
 == 1. Component Purpose & Reading Ergonomics
-The Portal Living Specification Reader (`UIC-PORTAL-READER`) establishes the reading-friendly stage for long-form technical documentation across the Eidos Living Web Portal:
-* **Expansive Stage & Optimal Measure**: Renders within an enlarged modal dialog (`max-w-[94vw] 2xl:max-w-[1550px] h-[95vh]`) with optimal line length (`max-w-4xl xl:max-w-5xl`) to prevent ocular fatigue while utilizing modern wide displays.
+The Portal Living Specification Reader (`UIC-PORTAL-READER`) establishes the borderless, docs-style reading stage for long-form technical documentation across the Eidos Living Web Portal:
+* **Borderless Reading Stage & Optimal Measure**: Renders directly inline in `CatalogView` (or inside an enlarged `Sheet` drawer) without double-nested cards; narrative prose blocks (`p`, lists, definition lists, blockquotes, admonitions) follow a comfortable `90ch` reading measure (`prose-measure-narrative`) while wide tables, code snippets, and embedded Mermaid diagrams expand across `max-w-4xl xl:max-w-5xl` (or full drawer width via `measure="full"`).
+* **Deduplicated Editorial Header, Readable Verified Rules & Book Navigation**: Displays breadcrumbs, category/validation/status badges, a single deduplicated document title (`hideLeadingTitle`), resolved parent domain/container links, a clickable `"N Rules Verified"` anchor jumping to an inline **Verified Rules** (`#spec-verified-rules`) section rendering every frontmatter invariant rule with humanized titles and plain-language prose (included in the right-hand TOC), and sequential Previous / Next document links (`prevSpec`, `nextSpec`).
 * **Typographic Hierarchy**: Distinct, readable type sizes based on `DS-CORE` tokens:
   - Title (H1): `26px`–`30px` bold with tracking-tight.
   - Section Headings (H2): `20px`–`24px` bold with top breathing room and hoverable anchor links.
   - Subsection Headings (H3): `18px` semibold with visual hierarchy.
-  - Body Copy: `15.5px`–`16px` with relaxed `1.8` line-height.
+  - Body Copy: `15.5px`–`16px` with relaxed `1.75` line-height.
   - Code Snippets: `13px` monospace with syntax styling and one-click copy.
 * **Human-Centric Specification Header**: Renders human-readable document titles, clean category badges, plain `Valid` / `Needs Attention` health pills, humanized status badges, resolved parent domain and container title links with clean tooltips, and human-titled cross-reference links via `EntityLabelProvider`—omitting raw ID copy chips, raw file path pills, and raw YAML/JSON frontmatter inspectors from visible reader chrome.
-* **High-Contrast Dark Theme**: Clean neutral zinc surfaces (`#121215`), elevated popovers (`#18181b`), readable muted foregrounds (`#a1a1aa`), and distinct borders (`#27272a`) ensuring effortless legibility comparable to light mode.
+* **Reader-Friendly Light & Dark Themes**: Soft off-white light mode (`#fafafa` unified sidebar and reading canvas, `#1f2328` ink, `#59636e` secondary ink, `#f4f6f8` light code surfaces) and balanced dimmed slate dark mode (`#1c2026` unified canvas, `#22272f` elevated surfaces, `#e6edf3` ink, `#9aa4b2` secondary ink, `#161a20` code surfaces), eliminating harsh glare and pitch-black halation while honoring WCAG AA contrast, neutral inline code styling (distinct from `--link`), `<meta name="color-scheme" content="light dark">`, and `@media (forced-colors: active)`.
 
 == 2. Dynamic Table of Contents (TOC) & On-This-Page Navigation
 For multi-section specifications with two or more H2 headings:
-* A sticky right-hand navigation rail renders the hierarchical section tree (`== ` and `=== `).
-* Real-time scroll-spy tracks reading progress and highlights the current section.
+* A quiet, borderless sticky right-hand navigation rail (`border-l`) renders the hierarchical section tree (`== ` and `=== `).
+* Real-time scroll-spy tracks reading progress and highlights the current section with a left-edge accent bar.
 * Clicking any outline entry smoothly scrolls the viewport to the target heading anchor.
 
 == 3. Optimal Reading Ergonomics

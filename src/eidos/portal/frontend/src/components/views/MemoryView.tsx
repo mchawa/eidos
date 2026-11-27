@@ -252,16 +252,16 @@ export function MemoryView({
 
   return (
     <div id="teamMemoryView" className="space-y-6 animate-in fade-in duration-200">
-      {/* Header & Filter Controls */}
-      <div className="space-y-4 p-5 sm:p-6 rounded-3xl bg-card border border-border md-elevation-1">
+      {/* Compact Borderless Header & Filter Controls */}
+      <header className="space-y-4 pb-5 border-b border-border/70">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-base sm:text-lg font-bold text-foreground tracking-tight flex items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-2">
                 <Brain aria-hidden="true" className="h-5 w-5 text-teal-500" />
                 <span>Team Operational Memory</span>
               </h1>
-              <span className="text-xs px-2.5 py-0.5 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 font-semibold border border-teal-500/20">
+              <span className="text-xs px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 font-semibold">
                 {rawMemories.length} {rawMemories.length === 1 ? "Note" : "Notes"}
               </span>
               {attentionCount > 0 && (
@@ -288,15 +288,15 @@ export function MemoryView({
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
               placeholder="Search team notes, targets, categories..."
-              className="bg-muted/50 border border-border text-xs rounded-xl px-3 py-1.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-full sm:w-72"
+              className="bg-muted/40 border border-border/80 text-xs rounded-lg px-3 py-1.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-full sm:w-72"
             />
           </div>
         </div>
 
         {/* Category & Freshness Filter Groups */}
         {rawMemories.length > 0 && (
-          <div className="space-y-2.5 pt-2 border-t border-border/60">
-            <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by category">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by category">
               <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1 mr-1">
                 <Filter aria-hidden="true" className="h-3 w-3" /> Category:
               </span>
@@ -312,10 +312,10 @@ export function MemoryView({
                   aria-pressed={categoryFilter === opt.key}
                   onClick={() => setCategoryFilter(opt.key)}
                   className={cn(
-                    "px-3 py-1 rounded-xl text-xs font-medium transition-all cursor-pointer border",
+                    "px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer border",
                     categoryFilter === opt.key
-                      ? "bg-primary text-primary-foreground border-primary font-semibold shadow-xs"
-                      : "border-border/60 bg-muted/30 text-muted-foreground hover:text-foreground hover:bg-muted"
+                      ? "bg-primary text-primary-foreground border-primary font-semibold"
+                      : "border-border/50 bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50"
                   )}
                 >
                   {opt.label}
@@ -323,7 +323,7 @@ export function MemoryView({
               ))}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by freshness and status">
+            <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by freshness and status">
               <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1 mr-1">
                 <Sparkles aria-hidden="true" className="h-3 w-3" /> Freshness:
               </span>
@@ -349,10 +349,10 @@ export function MemoryView({
                   aria-pressed={stateFilter === opt.key}
                   onClick={() => setStateFilter(opt.key)}
                   className={cn(
-                    "px-3 py-1 rounded-xl text-xs font-medium transition-all cursor-pointer border",
+                    "px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer border",
                     stateFilter === opt.key
-                      ? "bg-teal-500/15 text-teal-600 dark:text-teal-400 border-teal-500/35 font-semibold shadow-xs"
-                      : "border-border/60 bg-muted/30 text-muted-foreground hover:text-foreground hover:bg-muted"
+                      ? "bg-teal-500/15 text-teal-600 dark:text-teal-400 border-teal-500/35 font-semibold"
+                      : "border-border/50 bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50"
                   )}
                 >
                   {opt.label}
@@ -361,7 +361,7 @@ export function MemoryView({
             </div>
           </div>
         )}
-      </div>
+      </header>
 
       {/* Non-Blocking Hygiene & Overlap Highlights */}
       {hasAuditHighlights && (
@@ -499,11 +499,11 @@ export function MemoryView({
           </div>
         </div>
       ) : filteredMemories.length === 0 ? (
-        <div className="py-16 text-center text-sm text-muted-foreground border border-dashed border-border/80 rounded-3xl p-8">
+        <div className="py-12 text-center text-sm text-muted-foreground border-y border-dashed border-border/80">
           No team memories match your current filter.
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="divide-y divide-border/70 border-y border-border/70">
           {filteredMemories.map((mem) => {
             const targetEntities = mem.targets?.entities || [];
             const targetPathsCount = (mem.targets?.paths || []).length;
@@ -520,129 +520,114 @@ export function MemoryView({
               : "";
 
             return (
-              <Card
+              <article
                 key={mem.id}
                 data-memory-card={mem.id}
-                className="p-5 space-y-4 hover:border-primary/50 transition-all hover:md-elevation-2 flex flex-col justify-between group"
+                className="py-4 px-2 -mx-2 rounded-lg hover:bg-muted/25 transition-colors space-y-2.5 group"
               >
-                <div className="space-y-3">
-                  {/* Top Badges */}
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-1.5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-1 min-w-0 flex-1 max-w-3xl">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-sm font-bold text-foreground leading-snug">
+                        <button
+                          type="button"
+                          onClick={() => openMemory(mem.id)}
+                          className="text-left group-hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-sm cursor-pointer transition-colors"
+                        >
+                          {displayTitle}
+                        </button>
+                      </h2>
                       {getCategoryBadge(mem.category)}
                       {getFreshnessBadge(mem)}
                     </div>
-                    {mem.verified_at && (
-                      <span className="text-[11px] text-muted-foreground">
-                        Verified {mem.verified_at}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Title & Summary */}
-                  <div className="space-y-1.5">
-                    <h2 className="text-sm font-bold text-foreground leading-snug">
-                      <button
-                        type="button"
-                        onClick={() => openMemory(mem.id)}
-                        className="text-left group-hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-sm cursor-pointer transition-colors"
-                      >
-                        {displayTitle}
-                      </button>
-                    </h2>
                     {cleanSummary && (
-                      <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">
+                      <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
                         {cleanSummary}
                       </p>
                     )}
                   </div>
 
-                  {/* Advisory Freshness Callout */}
-                  {showReasonCallout && (
-                    <div
-                      className={cn(
-                        "p-3 rounded-xl border text-xs leading-relaxed flex items-start gap-2",
-                        mem.freshness === "expired"
-                          ? "bg-red-500/5 border-red-500/20 text-red-600 dark:text-red-400"
-                          : mem.freshness === "stale"
-                          ? "bg-amber-500/5 border-amber-500/20 text-amber-600 dark:text-amber-400"
-                          : "bg-muted/30 border-border/70 text-muted-foreground"
-                      )}
-                    >
-                      {mem.freshness === "expired" ? (
-                        <Clock aria-hidden="true" className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                      ) : mem.freshness === "stale" ? (
-                        <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                      ) : (
-                        <HelpCircle aria-hidden="true" className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                      )}
-                      <span>{cleanReason}</span>
-                    </div>
-                  )}
-
-                  {/* Promoted Link */}
-                  {mem.promoted_to && promotedTitle && (
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => requestSpecNavigation(mem.promoted_to!)}
-                        className="text-[11px] font-medium px-2.5 py-0.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 inline-flex items-center gap-1 transition-colors cursor-pointer"
-                        title={`Open ${promotedTitle}`}
-                      >
-                        <Award aria-hidden="true" className="h-3 w-3 shrink-0" />
-                        <span className="truncate max-w-[240px]">Promoted to {promotedTitle}</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Footer: Target Cross-Links & Read Action */}
-                <div className="space-y-2.5 pt-3 border-t border-border/60">
-                  {(targetEntities.length > 0 || targetPathsCount > 0) && (
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {targetEntities.slice(0, 4).map((entId) => {
-                        const entTitle = resolveEntityTitle(entId, labelIndex, "Target Area");
-                        return (
-                          <button
-                            key={entId}
-                            type="button"
-                            onClick={() => requestSpecNavigation(entId)}
-                            title={`Open ${entTitle}`}
-                            className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-muted/60 hover:bg-primary/15 text-foreground hover:text-primary border border-border/70 transition-colors cursor-pointer max-w-[200px] truncate"
-                          >
-                            {entTitle}
-                          </button>
-                        );
-                      })}
-                      {targetEntities.length > 4 && (
-                        <span className="text-[11px] text-muted-foreground">
-                          +{targetEntities.length - 4} more
-                        </span>
-                      )}
-                      {targetPathsCount > 0 && (
-                        <span className="text-[11px] text-muted-foreground px-2 py-0.5 rounded-md bg-muted/30 border border-border/50">
-                          {targetPathsCount} {targetPathsCount === 1 ? "scoped path" : "scoped paths"}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                    <span>
-                      {mem.expires_at ? `Expires ${mem.expires_at}` : "Persistent note"}
-                    </span>
+                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground shrink-0">
+                    {mem.verified_at && <span>Verified {mem.verified_at}</span>}
                     <button
                       type="button"
                       onClick={() => openMemory(mem.id)}
                       aria-label={`Read note: ${displayTitle}`}
-                      className="flex items-center gap-1 text-primary font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-sm group-hover:translate-x-0.5 transition-transform text-xs cursor-pointer"
+                      className="inline-flex items-center gap-1 text-primary font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-sm text-xs cursor-pointer"
                     >
                       <span>Read Note</span>
                       <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </div>
-              </Card>
+
+                {/* Advisory Freshness Inline Notice */}
+                {showReasonCallout && (
+                  <div
+                    className={cn(
+                      "pl-3 py-1 border-l-2 text-xs leading-relaxed flex items-start gap-2 max-w-3xl",
+                      mem.freshness === "expired"
+                        ? "border-red-500 text-red-600 dark:text-red-400"
+                        : mem.freshness === "stale"
+                        ? "border-amber-500 text-amber-600 dark:text-amber-400"
+                        : "border-border text-muted-foreground"
+                    )}
+                  >
+                    {mem.freshness === "expired" ? (
+                      <Clock aria-hidden="true" className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                    ) : mem.freshness === "stale" ? (
+                      <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                    ) : (
+                      <HelpCircle aria-hidden="true" className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                    )}
+                    <span>{cleanReason}</span>
+                  </div>
+                )}
+
+                {/* Inline Targets & Promoted Cross-Links */}
+                {(targetEntities.length > 0 || targetPathsCount > 0 || (mem.promoted_to && promotedTitle)) && (
+                  <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                    {mem.promoted_to && promotedTitle && (
+                      <button
+                        type="button"
+                        onClick={() => requestSpecNavigation(mem.promoted_to!)}
+                        className="font-medium px-2 py-0.5 rounded-md bg-primary/10 hover:bg-primary/20 text-primary inline-flex items-center gap-1 transition-colors cursor-pointer"
+                        title={`Open ${promotedTitle}`}
+                      >
+                        <Award aria-hidden="true" className="h-3 w-3 shrink-0" />
+                        <span className="truncate max-w-[240px]">Promoted to {promotedTitle}</span>
+                      </button>
+                    )}
+                    {targetEntities.slice(0, 4).map((entId) => {
+                      const entTitle = resolveEntityTitle(entId, labelIndex, "Target Area");
+                      return (
+                        <button
+                          key={entId}
+                          type="button"
+                          onClick={() => requestSpecNavigation(entId)}
+                          title={`Open ${entTitle}`}
+                          className="font-medium px-2 py-0.5 rounded-md bg-muted/50 hover:bg-primary/15 text-foreground hover:text-primary transition-colors cursor-pointer max-w-[200px] truncate"
+                        >
+                          {entTitle}
+                        </button>
+                      );
+                    })}
+                    {targetEntities.length > 4 && (
+                      <span className="text-muted-foreground">
+                        +{targetEntities.length - 4} more
+                      </span>
+                    )}
+                    {targetPathsCount > 0 && (
+                      <span className="text-muted-foreground">
+                        • {targetPathsCount} {targetPathsCount === 1 ? "scoped path" : "scoped paths"}
+                      </span>
+                    )}
+                    {mem.expires_at && (
+                      <span className="text-muted-foreground">• Expires {mem.expires_at}</span>
+                    )}
+                  </div>
+                )}
+              </article>
             );
           })}
         </div>
@@ -801,6 +786,7 @@ export function MemoryView({
                   </h3>
                   <AsciiDocRenderer
                     measure="full"
+                    hideLeadingTitle={true}
                     specId={selectedMem.id}
                     content={selectedMem.body || ""}
                   />

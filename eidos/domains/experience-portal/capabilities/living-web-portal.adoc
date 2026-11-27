@@ -58,7 +58,7 @@ technical:
       rule: "The portal must render a dynamic hierarchical C4 architecture explorer enabling clickable drill-down from L1 System Context to L2 Containers and L3 Component Whiteboxes with breadcrumbs and component inspection."
       test_binding: "tests/test_portal.py::test_static_portal_builder"
     - id: INV-PORTAL-READING-ERGONOMICS
-      rule: "The portal living specification viewer must enforce a minimum 15px body prose, 72ch optimal reading measure, dynamic in-page Table of Contents (TOC) outlines, and non-blocking metadata headers."
+      rule: "The portal living specification viewer must enforce a minimum 15px body prose, 90ch optimal narrative reading measure, dynamic in-page Table of Contents (TOC) outlines, and non-blocking metadata headers."
       test_binding: "tests/test_portal.py::test_portal_reading_ergonomics"
     - id: INV-PORTAL-C4-CONTAINER-HIERARCHY
       rule: "The portal C4 Level 2 Container Diagram must structure containers into semantic architectural tiers within the system boundary and explicitly render declared inter-container dependency connections and contract bindings."
@@ -87,6 +87,9 @@ technical:
     - id: INV-PORTAL-DOCUMENT-MERMAID-RENDERING
       rule: "AsciiDocRenderer (UIC-PORTAL-READER) must extract embedded [mermaid] and [source,mermaid] AsciiDoc blocks at the Asciidoctor AST level with CSPRNG per-parse nonced anti-spoofing roles, preserve untouched DOMPurify SANITIZE_DOM=true and FORBID_TAGS sanitization, and mount interactive Mermaid v12 diagrams post-DOMPurify via sibling React portals and a single serialized securityLevel 'strict' queue shared with ArchitectureView (with View Source / Copy controls, non-scroll-trapping modifier-wheel zoom, reactive light/dark theming, and human-readable role='alert' raw-source error fallback)."
       test_binding: "tests/test_portal.py::test_portal_document_mermaid_rendering"
+    - id: INV-PORTAL-DOCS-READER-AND-FLOW-FULLSCREEN
+      rule: "CatalogView must default to a borderless 3-pane Docs Reader (#catalogDocsReader) with deduplicated SpecReader titles, 90ch narrative prose measure (with wide table/code/Mermaid breakouts), and Prev/Next document navigation; Business, Deltas, Explorations, and Memory views must present de-carded scannable lists/tables with native <details> metadata disclosures; and DesignView User Flows plus MermaidDiagram toolbars must provide native <dialog> Full Screen expansion (data-flow-fullscreen, #flowFullscreenDialog) without leaking raw Eidos entity IDs."
+      test_binding: "tests/test_portal.py::test_portal_docs_reader_decarded_views_and_flow_fullscreen"
 ---
 = Capability: Interactive Living Web Portal & Visual Documentation Engine
 :toc: left
