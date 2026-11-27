@@ -144,7 +144,7 @@ def _update_project_claude_settings(file_path: Path, launcher: str = "eidos") ->
 
     _upsert_nested_command_hook(hooks_dict, "SessionStart", {"type": "command", "command": hook_cmd, "timeout": 10})
     _upsert_nested_command_hook(hooks_dict, "Stop", {"type": "command", "command": hook_cmd, "timeout": 30})
-    file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+    file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2) + b"\n")
     return file_path
 
 
@@ -178,7 +178,7 @@ def _remove_project_claude_settings(file_path: Path) -> bool:
             with contextlib.suppress(OSError):
                 parent.rmdir()
     else:
-        file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+        file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2) + b"\n")
     return True
 
 
@@ -260,7 +260,7 @@ def _update_project_cursor_hooks(file_path: Path, launcher: str = "eidos") -> Pa
 
     _upsert_flat_command_hook(hooks_dict, "sessionStart", {"command": hook_cmd}, _is_eidos_cursor_hook_entry)
     _upsert_flat_command_hook(hooks_dict, "stop", {"command": hook_cmd, "loop_limit": 1}, _is_eidos_cursor_hook_entry)
-    file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+    file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2) + b"\n")
     return file_path
 
 
@@ -294,7 +294,7 @@ def _remove_project_cursor_hooks(file_path: Path) -> bool:
             with contextlib.suppress(OSError):
                 parent.rmdir()
     else:
-        file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+        file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2) + b"\n")
     return True
 
 
@@ -331,7 +331,7 @@ def _update_project_copilot_hooks(file_path: Path, launcher: str = "eidos") -> P
         {"type": "command", "bash": hook_cmd, "powershell": hook_cmd, "timeoutSec": 30},
         _is_eidos_copilot_hook_entry,
     )
-    file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+    file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2) + b"\n")
     return file_path
 
 
@@ -365,7 +365,7 @@ def _remove_project_copilot_hooks(file_path: Path) -> bool:
                 with contextlib.suppress(OSError):
                     parent.rmdir()
     else:
-        file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+        file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2) + b"\n")
     return True
 
 
@@ -389,7 +389,7 @@ def _update_project_codex_hooks(file_path: Path, launcher: str = "eidos") -> Pat
 
     _upsert_nested_command_hook(hooks_dict, "SessionStart", {"type": "command", "command": hook_cmd, "timeout": 10})
     _upsert_nested_command_hook(hooks_dict, "Stop", {"type": "command", "command": hook_cmd, "timeout": 30})
-    file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+    file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2) + b"\n")
     return file_path
 
 
@@ -423,7 +423,7 @@ def _remove_project_codex_hooks(file_path: Path) -> bool:
             with contextlib.suppress(OSError):
                 parent.rmdir()
     else:
-        file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+        file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2) + b"\n")
     return True
 
 
@@ -496,7 +496,7 @@ def _update_project_antigravity_hooks(file_path: Path, launcher: str = "eidos") 
             }
         ],
     }
-    file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+    file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2) + b"\n")
     return file_path
 
 
@@ -526,7 +526,7 @@ def _remove_project_antigravity_hooks(file_path: Path) -> bool:
             with contextlib.suppress(OSError):
                 parent.rmdir()
     else:
-        file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+        file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2) + b"\n")
     return True
 
 

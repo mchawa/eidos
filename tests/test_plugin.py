@@ -3237,18 +3237,32 @@ def test_installer_truthful_version_comments_symlinks_and_uninstall(tmp_path, mo
     assert remove_managed_block(keep_empty, "agents-md", unlink_if_empty=False).status is BlockStatus.REMOVED
     assert keep_empty.is_file() and keep_empty.read_text(encoding="utf-8") == ""
 
-    # Hook health diagnostics across all JSON hook targets + unmanifested Cline PreToolUse hook preference detection
+    # Hook health diagnostics & POSIX trailing newlines across all JSON hook targets (install + uninstall-preserve)
     hh_ws = tmp_path / "hook_health_edges"
-    install_plugin(target=PluginInstallTarget.ALL, project_dir=hh_ws, force=True, hooks=True)
-    for t_name, rel_h in (
-        ("antigravity", ".agents/hooks.json"),
-        ("claude", ".claude/settings.json"),
-        ("codex", ".codex/hooks.json"),
-        ("cursor", ".cursor/hooks.json"),
-        ("copilot", ".github/hooks/hooks.json"),
+    for rel_h in (
+        ".agents/hooks.json",
+        ".claude/settings.json",
+        ".codex/hooks.json",
+        ".cursor/hooks.json",
+        ".github/hooks/hooks.json",
     ):
-        assert check_target_hook_health(hh_ws, t_name, hooks_expected=True)["status"] == "active"
+        seed = hh_ws / rel_h
+        seed.parent.mkdir(parents=True, exist_ok=True)
+        seed.write_text('{"custom_keep": true}\n', encoding="utf-8")
+    install_plugin(target=PluginInstallTarget.ALL, project_dir=hh_ws, force=True, hooks=True)
+    for t_enum, t_name, rel_h in (
+        (PluginInstallTarget.ANTIGRAVITY, "antigravity", ".agents/hooks.json"),
+        (PluginInstallTarget.CLAUDE, "claude", ".claude/settings.json"),
+        (PluginInstallTarget.CODEX, "codex", ".codex/hooks.json"),
+        (PluginInstallTarget.CURSOR, "cursor", ".cursor/hooks.json"),
+        (PluginInstallTarget.COPILOT, "copilot", ".github/hooks/hooks.json"),
+    ):
         hp = hh_ws / rel_h
+        assert hp.read_bytes().endswith(b"\n")
+        assert check_target_hook_health(hh_ws, t_name, hooks_expected=True)["status"] == "active"
+        uninstall_plugin(target=t_enum, project_dir=hh_ws)
+        assert hp.is_file() and hp.read_bytes().endswith(b"\n")
+        assert orjson.loads(hp.read_bytes()).get("custom_keep") is True
         hp.write_text("[]", encoding="utf-8")
         assert check_target_hook_health(hh_ws, t_name, hooks_expected=True)["status"] == "invalid"
         hp.write_text("{}", encoding="utf-8")
