@@ -1,6 +1,6 @@
-"""Drift remediation suggestion synthesis and Markdown report rendering (CMP-DRIFT-DETECTOR).
+"""Drift remediation suggestion synthesis and AI remediation prompt formatting (CMP-DRIFT-DETECTOR).
 
-Formats actionable remediation messages and PR verification Markdown tables
+Formats actionable remediation messages and agent remediation prompts
 from structural drift, invariant verification, and schema validation outcomes.
 """
 
@@ -14,17 +14,12 @@ if TYPE_CHECKING:
     from eidos.vcs.invariants import InvariantTrace
 
 
-def build_drift_remediation_and_summary(
+def build_drift_remediation(
     *,
-    workflow_mode: str,
-    is_clean: bool,
-    drift_detected: bool,
     base_direct_drift: bool,
     unmapped_drift: bool,
     design_drift: bool,
     uncovered_delta_drift: bool,
-    specs_changed: bool,
-    has_deltas: bool,
     classification: ChangedFilesClassification,
     structural_code_files: list[str],
     comp_mappings: list[tuple[str, str, str]],
@@ -34,24 +29,16 @@ def build_drift_remediation_and_summary(
     uncovered_design: list[tuple[str, str, list[str], list[str]]],
     trivial_records: list[dict[str, Any]],
     validation_report: ValidationReport,
-    invariants: list[InvariantTrace],
     uncovered_invariants: list[InvariantTrace],
     orphan_invariants: list[tuple[str, str]],
-    touched_components: list[str],
     eidos_rel_prefix: str = "eidos",
     body_only_code_files: list[str] | None = None,
     strict: bool = False,
     boundary_violations: list[dict[str, Any]] | None = None,
-    ratchet_shrink_candidates: list[dict[str, Any]] | None = None,
-    ready_to_apply_deltas: list[dict[str, Any]] | None = None,
-    untouched_consumers: list[dict[str, Any]] | None = None,
-) -> tuple[list[str], str]:
-    """Build actionable remediation suggestions and Markdown summary report for drift detection."""
+) -> list[str]:
+    """Build actionable remediation suggestions for drift detection."""
     remediation: list[str] = []
     b_violations = list(boundary_violations or [])
-    shrink_cands = list(ratchet_shrink_candidates or [])
-    ready_deltas = list(ready_to_apply_deltas or [])
-    consumers = list(untouched_consumers or [])
     if base_direct_drift:
         target_list = uncovered_direct_components or comp_mappings
         structural_set = set(structural_code_files)
@@ -169,127 +156,7 @@ def build_drift_remediation_and_summary(
                 f"• {bv['source']} -> {bv['target']} ({bv['rule']}): observed {bv['observed_imports']} coupling(s), max allowed {bv['max_imports']}{ev_preview}"
             )
 
-    summary_lines = [
-        "## 🧭 Eidos Living Specification Drift Detection Summary",
-        "",
-    ]
-
-    mode_badge = (
-        "📋 Mode: **Planned (SpecDelta)**" if workflow_mode == "planned" else "⚡ Mode: **Direct (Co-Evolution)**"
-    )
-    summary_lines.append(f"{mode_badge}\n")
-
-    if is_clean:
-        summary_lines.append("### ✅ Status: PASSED (Specifications and Code are Synchronized)")
-    elif drift_detected:
-        if classification.code_files:
-            summary_lines.append("### ⚠️ Status: DRIFT DETECTED (Code modified without living spec updates)")
-        else:
-            summary_lines.append("### ⚠️ Status: DRIFT DETECTED (Specification or SpecDelta synchronization required)")
-    elif uncovered_invariants or orphan_invariants:
-        summary_lines.append("### ❌ Status: INVARIANT VERIFICATION FAILED (Broken or orphan invariant test bindings)")
-    else:
-        summary_lines.append("### ❌ Status: VALIDATION FAILED")
-
-    eff_body_count = (
-        len(body_only_code_files)
-        if body_only_code_files is not None
-        else max(0, len(classification.code_files) - len(structural_code_files))
-    )
-    code_count_cell = (
-        f"`{len(classification.code_files)}` (`{len(structural_code_files)}` structural, `{eff_body_count}` body-only)"
-        if eff_body_count > 0
-        else f"`{len(classification.code_files)}` (`{len(structural_code_files)}` structural)"
-    )
-
-    summary_lines.extend(
-        [
-            "",
-            "| Metric | Count | Status |",
-            "|---|---|---|",
-            f"| Modified Code Files | {code_count_cell} | {'⚠️ Needs Spec Update' if (drift_detected and classification.code_files) else '✓'} |",
-            f"| Modified Living Specs | `{len(classification.spec_files)}` | {'✓ In Sync' if specs_changed else '—'} |",
-            f"| Modified SpecDeltas | `{len(classification.delta_files)}` | {'✓ Planned' if has_deltas else '— (Direct Mode)'} |",
-            f"| Modified Test Files | `{len(classification.test_files)}` | {'✓' if classification.test_files else '—'} |",
-            f"| Living Specs Validated | `{validation_report.valid_docs}/{validation_report.total_docs}` | {'✓ 100% Green' if validation_report.is_clean else '✗ Errors'} |",
-            f"| Invariants Verified | `{len(invariants) - len(uncovered_invariants)}/{len(invariants)}` | {'✓ 100% Covered' if not uncovered_invariants else f'✗ {len(uncovered_invariants)} Uncovered'} |",
-            *(
-                [
-                    f"| Import Boundaries | `{len(b_violations)} violations` | {'✓ Enforced' if not b_violations else f'✗ {len(b_violations)} Violated'} |"
-                ]
-                if (b_violations or shrink_cands)
-                else []
-            ),
-            "",
-        ]
-    )
-
-    if touched_components:
-        summary_lines.append(f"**Impacted Components:** `{', '.join(touched_components)}`\n")
-
-    if classification.spec_files:
-        summary_lines.append("### 📄 Touched Living Specifications:")
-        for sf in classification.spec_files:
-            summary_lines.append(f"- `{sf}`")
-        summary_lines.append("")
-
-    if classification.delta_files:
-        summary_lines.append("### 📋 Associated SpecDeltas:")
-        for df in classification.delta_files:
-            summary_lines.append(f"- `{df}`")
-        summary_lines.append("")
-
-    if remediation:
-        summary_lines.append("### 💡 Recommended Actions:")
-        for rem in remediation:
-            summary_lines.append(f"- {rem}")
-        summary_lines.append("")
-
-    if shrink_cands:
-        summary_lines.append("### 📉 Ratchet Tightening Opportunities (Advisory):")
-        for sc in shrink_cands:
-            summary_lines.append(
-                f"- `{sc['source']} -> {sc['target']}` ({sc.get('spec_path', '')}): "
-                f"observed `{sc['observed_imports']}` < `max_imports: {sc['max_imports']}` ({sc['action']})"
-            )
-        summary_lines.append("")
-
-    if validation_report.warnings:
-        summary_lines.append("### ⚠️ Specification Validation Warnings (Advisory):")
-        for warn in validation_report.warnings:
-            summary_lines.append(f"- {warn}")
-        summary_lines.append("")
-
-    if ready_deltas:
-        summary_lines.append("### 📋 Open SpecDeltas Ready to Apply (Advisory):")
-        for rtd in ready_deltas:
-            summary_lines.append(
-                f"- `{rtd['id']}` (`{rtd.get('path', '')}`, status `{rtd.get('status', 'proposed')}`): "
-                f"`{rtd.get('verified_mutations', 0)}/{rtd.get('total_mutations', 0)}` mutations verified — "
-                f"run `eidos delta apply {rtd['id']}`"
-            )
-        summary_lines.append("")
-
-    if consumers:
-        summary_lines.append("### 🔍 Untouched Sibling Consumers to Review (Advisory):")
-        for uc in consumers[:15]:
-            owner_badge = f" (`{uc['owner']}`)" if uc.get("owner") else ""
-            via_note = f" via `{uc['via']}`" if uc.get("via") else ""
-            syms_list = uc.get("symbols") or []
-            if syms_list:
-                sym_preview = ", ".join(syms_list[:5]) + (f" (+{len(syms_list) - 5})" if len(syms_list) > 5 else "")
-                sym_note = f" — symbols: `{sym_preview}`"
-            else:
-                sym_note = ""
-            kinds = ", ".join(uc.get("change_kinds") or [])
-            summary_lines.append(
-                f"- `{uc['file']}:{uc['line']}`{owner_badge} imports `{uc['target_file']}`{via_note} [{kinds}]{sym_note}"
-            )
-        if len(consumers) > 15:
-            summary_lines.append(f"- *… and {len(consumers) - 15} more untouched consumer(s) in JSON output.*")
-        summary_lines.append("")
-
-    return remediation, "\n".join(summary_lines)
+    return remediation
 
 
 def generate_remediation_prompt(report: Any) -> str:

@@ -306,7 +306,8 @@ AI agents execute Eidos CLI commands directly from terminal / subshell tools. Al
 | `eidos index blast-radius` | `<symbol>`, `--depth 2`, `--json` | Computes transitive dependency and governance blast radius for a symbol or spec path. |
 | `eidos index status` | `--json` | Reports index health, cache size, AST telemetry, entity/edge counts, and auto-sync freshness. |
 | `eidos index sync` | `--force` | Incrementally synchronizes or force-rebuilds the architectural knowledge graph. |
-| `eidos memory add` | `--title`, `--category`, `--summary`, `--entity`, `--file`, `--json` | Creates a schema-validated Git-native team memory (`MEM-*`) under `eidos/memory/`. |
+| `eidos memory add` | `--title`, `--category`, `[--summary]`, `--guidance`, `--file`, `--from-diff`, `--json` | Creates a schema-validated Git-native team memory (`MEM-*`) under `eidos/memory/` with optional auto-derived summary and automatic `CMP-*`/`CNT-*` entity anchoring. |
+| `eidos memory update` | `<id_or_path>`, `--guidance`, `--file`, `--replace-targets`, `--json` | Updates an active or draft team memory in place and re-stamps `verified_at`/`verified_commit`. |
 | `eidos memory audit` | `--json` | Runs a non-blocking audit across freshness, duplicates, and formal spec overlaps. |
 | `eidos drift` | `--uncommitted`, `--base <ref>`, `--json` | Inspects spec-to-code drift, boundary-aware spec anchoring, and polyglot `INV-*` test bindings. |
 | `eidos validate` | `[PATH]`, `--json` | Validates all living specifications against their bundled v1 JSON Schemas, `x-eidos-ref` links, and bidirectional contract parity. |

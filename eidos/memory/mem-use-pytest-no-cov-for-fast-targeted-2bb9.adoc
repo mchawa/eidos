@@ -1,0 +1,24 @@
+---
+type: agent/memory
+id: MEM-USE-PYTEST-NO-COV-FOR-FAST-TARGETED-2BB9
+title: Use pytest --no-cov for fast targeted runs and check diff coverage
+category: feedback
+status: active
+summary: "Use 'uv run pytest --no-cov' for fast targeted runs and run check_diff_coverage.py with --cov=src/eidos before completing code edits."
+targets:
+  paths:
+    - pyproject.toml
+    - tests/check_diff_coverage.py
+verified_at: "2026-11-27"
+verified_commit: 218cfb91a839bfd736a15d531a151117d02d3f96
+---
+= Memory: Use pytest --no-cov for fast targeted runs and check diff coverage
+:toc: left
+
+== Guidance
+
+Pass --no-cov to uv run pytest when iterating on targeted test files; before completing edits under src/eidos/, run uv run pytest --cov=src/eidos --cov-report=json and uv run python tests/check_diff_coverage.py to confirm >90% per-file coverage.
+
+== Why
+
+Targeted runs with --no-cov finish in a few seconds while check_diff_coverage.py reproduces the exact CI per-file statement coverage gate.

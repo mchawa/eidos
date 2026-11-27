@@ -52,12 +52,6 @@ def drift_cmd(
         "--strict/--no-strict",
         help="Treat body-only code changes as drift unless accompanied by a 1-hop spec, active SpecDelta, or test update.",
     ),
-    markdown_out: Path | None = typer.Option(
-        None,
-        "--markdown",
-        "-m",
-        help="Write markdown summary to file (e.g. for CI/CD reports).",
-    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -149,6 +143,7 @@ def drift_cmd(
             "ratchet_shrink_candidates": result.ratchet_shrink_candidates,
             "ready_to_apply_deltas": result.ready_to_apply_deltas,
             "untouched_consumers": result.untouched_consumers,
+            "affected_memories": result.affected_memories,
         }
         console.print_json(data=data)
     else:
@@ -279,6 +274,31 @@ def drift_cmd(
                     f"  [dim]... and {len(result.untouched_consumers) - 15} more (use --json for full list)[/dim]"
                 )
 
+        if result.affected_memories:
+            console.print("\n[bold cyan]→ Team Operational Memories Affected by Diff (Advisory):[/bold cyan]")
+            for mem in result.affected_memories[:10]:
+                mfresh = str(mem.get("freshness") or "fresh")
+                if mfresh in ("stale", "expired"):
+                    fresh_badge = f"[yellow]{escape(mfresh)}[/yellow]"
+                elif mfresh == "unverifiable":
+                    fresh_badge = f"[dim]{escape(mfresh)}[/dim]"
+                else:
+                    fresh_badge = f"[green]{escape(mfresh)}[/green]"
+                mid = escape(str(mem.get("id") or ""))
+                msum = escape(str(mem.get("summary") or mem.get("title") or ""))
+                console.print(f"  [cyan]• {mid}[/cyan] ({fresh_badge}): {msum}")
+                if mfresh != "fresh":
+                    mreason = str(mem.get("freshness_reason") or "").strip()
+                    reason_prefix = f"{escape(mreason)} — " if mreason else ""
+                    console.print(
+                        f"    [dim]{reason_prefix}verify via [bold]eidos memory verify {mid}[/bold] "
+                        f"or retire via [bold]eidos memory archive {mid}[/bold][/dim]"
+                    )
+            if len(result.affected_memories) > 10:
+                console.print(
+                    f"  [dim]... and {len(result.affected_memories) - 10} more (use --json for full list)[/dim]"
+                )
+
         has_advisory_warnings = bool(result.validation_warnings or result.ready_to_apply_deltas)
         if result.is_clean and eff_fail_on_warnings and has_advisory_warnings:
             parts: list[str] = []
@@ -293,11 +313,6 @@ def drift_cmd(
             console.print(
                 "\n[bold green]✓ Verification Passed![/bold green] Living specifications and code are synchronized."
             )
-
-    if markdown_out:
-        markdown_out.write_text(result.summary_markdown, encoding="utf-8")
-        if not json_output:
-            console.print(f"\n[dim]Saved markdown summary to: {markdown_out}[/dim]")
 
     has_escalatable_advisories = bool(result.validation_warnings or result.ready_to_apply_deltas)
     if (not result.is_clean or (eff_fail_on_warnings and has_escalatable_advisories)) and not eff_warn_only:

@@ -414,10 +414,13 @@ class ArchitecturalContextSlice:
                     mreason = str(mem.get("freshness_reason") or "").strip()
                     if mfresh != "fresh" and mreason:
                         lines.append(f"  - *Freshness:* {mreason}")
-                    if self.tier == "deep":
-                        mguid = str(mem.get("guidance") or "").strip()
-                        if mguid:
+                    mguid = str(mem.get("guidance") or "").strip()
+                    if mguid:
+                        if self.tier == "guardrails":
+                            lines.append(f"  - *Guidance:* {_clip_text(mguid, 220)}")
+                        else:
                             lines.append(f"  - *Guidance:* {_clip_text(mguid, 300) if compact_prose else mguid}")
+                    if self.tier == "deep":
                         mwhy = str(mem.get("why") or "").strip()
                         if mwhy:
                             lines.append(f"  - *Why:* {_clip_text(mwhy, 200) if compact_prose else mwhy}")
@@ -764,14 +767,17 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 out["freshness_reason"] = reason
             if mem.get("file_path") and not self._compact_metadata:
                 out["file_path"] = mem["file_path"]
+            raw_g = str(mem.get("guidance") or "").strip()
+            if raw_g:
+                if self.tier == "guardrails":
+                    out["guidance"] = self._clip(raw_g, 220)
+                else:
+                    out["guidance"] = self._clip(raw_g, 300) if self._compact_prose else raw_g
             if self.tier == "deep":
                 if mem.get("verified_at"):
                     out["verified_at"] = mem["verified_at"]
-                if mem.get("guidance"):
-                    raw_g = str(mem["guidance"])
-                    out["guidance"] = self._clip(raw_g, 300) if self._compact_prose else raw_g
-                if mem.get("why"):
-                    raw_w = str(mem["why"])
+                raw_w = str(mem.get("why") or "").strip()
+                if raw_w:
                     out["why"] = self._clip(raw_w, 200) if self._compact_prose else raw_w
         return out
 
@@ -1052,6 +1058,8 @@ class TieredContextSlice(ArchitecturalContextSlice):
         self._prune_matched_reasons()
         self._invalidate_budget_cache()
 
+        original_memories = list(self.memories)
+
         def _prune_memories_first() -> None:
             # Stage 0: Secondary team memories always yield before any architectural entity or invariant.
             if not self.memories or not self._exceeds_budget(budget):
@@ -1068,6 +1076,41 @@ class TieredContextSlice(ArchitecturalContextSlice):
                     return
             while self.memories and self._exceeds_budget(budget):
                 self._pop_item(self.memories)
+
+        def _backfill_memories_into_headroom() -> None:
+            # After architectural pruning settles, backfill highest-ranked anchored memories into unused
+            # headroom without ever exceeding budget, restoring shed globals, or evicting architectural entities.
+            if not original_memories or len(self.memories) >= len(original_memories) or self._exceeds_budget(budget):
+                return
+            present_ids = {str(m.get("id") or "") for m in self.memories}
+            anchored_missing = [
+                m
+                for m in original_memories
+                if m.get("match_scope") != "global" and str(m.get("id") or "") not in present_ids
+            ]
+            if not anchored_missing:
+                return
+            if not self.memories:
+                self._compact_memories = False
+                self._invalidate_budget_cache()
+            added_any = False
+            for cand in anchored_missing:
+                self.memories.append(cand)
+                self._invalidate_budget_cache()
+                if self._exceeds_budget(budget):
+                    self.memories.pop()
+                    self._invalidate_budget_cache()
+                else:
+                    added_any = True
+            if not added_any and not self._compact_memories:
+                self._compact_memories = True
+                self._invalidate_budget_cache()
+                for cand in anchored_missing:
+                    self.memories.append(cand)
+                    self._invalidate_budget_cache()
+                    if self._exceeds_budget(budget):
+                        self.memories.pop()
+                        self._invalidate_budget_cache()
 
         if self.tier == "anchor":
             self.capabilities = []
@@ -1095,6 +1138,8 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 self._drop_anchor_decisions = True
                 self._invalidate_budget_cache()
             self._prune_matched_reasons()
+            self._invalidate_budget_cache()
+            _backfill_memories_into_headroom()
             self._invalidate_budget_cache()
             self.token_estimate = self._estimate_tokens()
             return
@@ -1192,5 +1237,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
             self._pop_item(self.components)
 
         self._prune_matched_reasons()
+        self._invalidate_budget_cache()
+        _backfill_memories_into_headroom()
         self._invalidate_budget_cache()
         self.token_estimate = self._estimate_tokens()

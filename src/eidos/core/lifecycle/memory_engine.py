@@ -14,20 +14,24 @@ import re
 import secrets
 import sqlite3
 import struct
+from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 import orjson
 
+from eidos.core.index.context_globs import _expand_context_file_pattern, _has_glob_magic, expand_brace_globs
 from eidos.core.index.context_memories import (
     _resolve_git_head_sha,
+    _scan_memory_h2_sections,
     evaluate_memory_freshness,
     extract_memory_sections,
     resolve_memory_freshness_batch,
 )
 from eidos.core.index.fts_query import FTS_COLUMN_WEIGHTS, build_fts_match_query, execute_fts_query
 from eidos.core.index.graph_index import get_architectural_index
+from eidos.core.index.traversal import resolve_symbol_or_path_in_db
 from eidos.core.spec.models import SpecDocument
 from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 from eidos.core.spec.validator import SpecValidator
@@ -328,16 +332,234 @@ def sanitize_memory_asciidoc_body(raw_text: str) -> str:
     return "\n".join(out).strip()
 
 
-def _render_memory_body(title: str, guidance: str, why: str) -> str:
+_SUMMARY_MAX_LEN = 220
+_ADOC_ATTR_BLOCK_RE = re.compile(r"^\[[^\]\n]+\]$")
+_ADOC_BULLET_PREFIX_RE = re.compile(r"^\s*(?:\*{1,5}|[-+])\s+(.+)$")
+_ADOC_ORD_PREFIX_RE = re.compile(r"^\s*(?:\.{1,5}|\d+\.)\s+(.+)$")
+_ABBREV_END_RE = re.compile(r"(?:^|[\s(\[])(?:e\.g|i\.e|vs|etc|cf|fig|no|dr|mr|ms|v)\.$", re.IGNORECASE)
+
+
+def _truncate_word_boundary(text: str, max_len: int = _SUMMARY_MAX_LEN) -> str:
+    """Collapse whitespace and cleanly truncate ``text`` on word boundaries to ``<= max_len`` chars."""
+    collapsed = " ".join((text or "").split()).strip()
+    if len(collapsed) <= max_len:
+        return collapsed
+    budget = max(1, max_len - 3)
+    cut = collapsed[: budget + 1].rfind(" ")
+    prefix = collapsed[:cut].rstrip(" ,;:-") if cut >= max(1, budget // 2) else collapsed[:budget].rstrip()
+    return f"{prefix}..."
+
+
+def _first_sentence(text: str) -> str:
+    """Return the first sentence of ``text`` without splitting inside parentheses or on common abbreviations."""
+    paren_depth = 0
+    n = len(text)
+    for idx, ch in enumerate(text):
+        if ch == "(":
+            paren_depth += 1
+        elif ch == ")" and paren_depth > 0:
+            paren_depth -= 1
+        elif ch in ".!?" and paren_depth == 0 and idx + 1 < n and text[idx + 1].isspace():
+            prefix = text[: idx + 1]
+            if ch == "." and _ABBREV_END_RE.search(prefix):
+                continue
+            return prefix.strip()
+    return text.strip()
+
+
+def _derive_memory_summary(title: str, guidance: str) -> str:
+    """Deterministically derive a concise single-line summary (<= 220 chars) from guidance or title."""
+    lines = (guidance or "").replace("\r\n", "\n").replace("\r", "\n").splitlines()
+    total = len(lines)
+    in_fence_char: str | None = None
+    in_fence_len = 0
+    in_adoc_delim: str | None = None
+
+    for idx, raw_line in enumerate(lines):
+        stripped = raw_line.strip()
+        if in_fence_char is not None:
+            if re.fullmatch(rf"{re.escape(in_fence_char)}{{{in_fence_len},}}", stripped):
+                in_fence_char = None
+            continue
+        if in_adoc_delim is not None:
+            if stripped == in_adoc_delim:
+                in_adoc_delim = None
+            continue
+        if not stripped:
+            continue
+        m_fence = _MD_FENCE_RE.match(stripped)
+        if m_fence:
+            in_fence_char = m_fence.group(1)[0]
+            in_fence_len = len(m_fence.group(1))
+            continue
+        if _DASH_RUN_RE.match(stripped) or stripped in ("====", "****", "____", "////", "....", "++++"):
+            if any(lines[scan].strip() == stripped for scan in range(idx + 1, total)):
+                in_adoc_delim = stripped
+            continue
+        if (
+            stripped in ("---", "'''")
+            or stripped.startswith("//")
+            or _ADOC_ATTR_BLOCK_RE.match(stripped)
+            or _PREPROC_RE.match(raw_line)
+        ):
+            continue
+
+        candidate = stripped
+        m_md_h = _MD_HEADING_RE.match(candidate)
+        if m_md_h:
+            candidate = m_md_h.group(1).strip()
+        else:
+            m_adoc_h = _ADOC_HEADING_RE.match(candidate)
+            if m_adoc_h:
+                candidate = m_adoc_h.group(1).strip()
+            else:
+                m_bul = _ADOC_BULLET_PREFIX_RE.match(raw_line)
+                if m_bul:
+                    candidate = m_bul.group(1).strip()
+                else:
+                    m_ord = _ADOC_ORD_PREFIX_RE.match(raw_line)
+                    if m_ord:
+                        candidate = m_ord.group(1).strip()
+
+        candidate = " ".join(candidate.split()).strip()
+        if any(ch.isalnum() for ch in candidate):
+            first_sent = _first_sentence(candidate)
+            return _truncate_word_boundary(first_sent or candidate, _SUMMARY_MAX_LEN)
+
+    return _truncate_word_boundary(title, _SUMMARY_MAX_LEN)
+
+
+def _extract_raw_memory_sections(body: str) -> tuple[str, str, str, str, list[tuple[str, str]]]:
+    """Losslessly extract ``(preamble, guidance, why, why_heading, extra_sections)`` ignoring headings in code blocks."""
+    preamble, scanned = _scan_memory_h2_sections(body)
+    guidance_raw = ""
+    why_raw = ""
+    why_heading = "Why"
+    extra: list[tuple[str, str]] = []
+    for heading_orig, content in scanned:
+        heading_low = heading_orig.lower()
+        if heading_low == "guidance" and not guidance_raw:
+            guidance_raw = content
+        elif heading_low in ("why", "rationale", "context") and not why_raw:
+            why_raw = content
+            why_heading = heading_orig
+        elif content:
+            extra.append((heading_orig, content))
+    return preamble, guidance_raw, why_raw, why_heading, extra
+
+
+def _render_memory_body_from_sections(
+    title: str,
+    guidance: str,
+    why: str,
+    extra_sections: list[tuple[str, str]] | None = None,
+    *,
+    preamble: str = "",
+    why_heading: str = "Why",
+) -> str:
     safe_title = " ".join((title or "").split()).strip()
-    clean_guidance = sanitize_memory_asciidoc_body(guidance)
-    clean_why = sanitize_memory_asciidoc_body(why)
     parts = [f"= Memory: {safe_title}", ":toc: left"]
+    clean_preamble = (preamble or "").strip()
+    clean_guidance = (guidance or "").strip()
+    clean_why = (why or "").strip()
+    if clean_preamble:
+        parts.append(f"\n{clean_preamble}")
     if clean_guidance:
         parts.append(f"\n== Guidance\n\n{clean_guidance}")
     if clean_why:
-        parts.append(f"\n== Why\n\n{clean_why}")
+        parts.append(f"\n== {why_heading.strip() or 'Why'}\n\n{clean_why}")
+    for heading, content in extra_sections or ():
+        if heading.strip() and content.strip():
+            parts.append(f"\n== {heading.strip()}\n\n{content.strip()}")
     return "\n".join(parts).rstrip() + "\n"
+
+
+def _render_memory_body(title: str, guidance: str, why: str) -> str:
+    clean_guidance = sanitize_memory_asciidoc_body(guidance)
+    clean_why = sanitize_memory_asciidoc_body(why)
+    return _render_memory_body_from_sections(title, clean_guidance, clean_why)
+
+
+def _normalize_memory_path(raw: str) -> str:
+    norm = raw.strip().replace("\\", "/")
+    while norm.startswith("./"):
+        norm = norm[2:]
+    return norm
+
+
+def infer_memory_entities_for_paths(eidos_dir: Path, paths: Sequence[str]) -> list[str]:
+    """Deterministically infer owning ``CMP-*`` / ``CNT-*`` entity IDs for repository paths or globs via ``index.db``."""
+    if not paths or not eidos_dir.is_dir():
+        return []
+    repo_root = _resolve_repo_root(eidos_dir)
+    idx = _sync_index_silently(eidos_dir)
+    conn = idx._get_connection()
+
+    inferred: set[str] = set()
+    owner_kinds = frozenset({"source_path", "package_path", "owned_path", "inferred_path"})
+
+    for raw_p in paths:
+        if not isinstance(raw_p, str) or not raw_p.strip():
+            continue
+        norm = _normalize_memory_path(raw_p).rstrip("/")
+        if not norm or norm.startswith("/") or (len(norm) >= 2 and norm[1] == ":") or ".." in norm.split("/"):
+            continue
+
+        candidates: list[str]
+        if _has_glob_magic(norm):
+            candidates = _expand_context_file_pattern(repo_root, conn, norm)
+            if not candidates:
+                # Fall back to the longest non-magic directory prefix of each brace variant.
+                for var in expand_brace_globs(norm):
+                    static_segs: list[str] = []
+                    for seg in var.split("/"):
+                        if not seg or seg == ".":
+                            continue
+                        if _has_glob_magic(seg):
+                            break
+                        static_segs.append(seg)
+                    if static_segs:
+                        prefix_path = "/".join(static_segs)
+                        if prefix_path not in candidates:
+                            candidates.append(prefix_path)
+        else:
+            candidates = [norm]
+
+        # On broad globs (>200 files), check every exact indexed file/dir plus one representative per directory
+        # so components sorting after index 200 are never silently dropped while staying sub-10ms.
+        if len(candidates) > 200:
+            known_exact = {
+                str(r[0]).replace("\\", "/").rstrip("/")
+                for r in conn.execute(
+                    "SELECT DISTINCT symbol FROM symbol_mappings WHERE kind IN ('source_path', 'package_path', 'owned_path', 'inferred_path');"
+                ).fetchall()
+                if r[0]
+            }
+            sampled: list[str] = []
+            seen_dirs: set[str] = set()
+            for cand in candidates:
+                parent_dir = cand.rsplit("/", 1)[0] if "/" in cand else ""
+                if cand in known_exact or parent_dir not in seen_dirs:
+                    seen_dirs.add(parent_dir)
+                    sampled.append(cand)
+            candidates = sampled
+
+        for cand in candidates:
+            matches = resolve_symbol_or_path_in_db(conn, cand)
+            owner_matches = [
+                m
+                for m in matches
+                if m.get("type") in ("tech/component", "tech/container") and m.get("kind") in owner_kinds
+            ]
+            if not owner_matches:
+                continue
+            comp_ids = [str(m["entity_id"]).upper() for m in owner_matches if m.get("type") == "tech/component"]
+            if comp_ids:
+                inferred.update(comp_ids)
+            else:
+                inferred.update(str(m["entity_id"]).upper() for m in owner_matches if m.get("type") == "tech/container")
+
+    return sorted(inferred)
 
 
 def _iter_memory_files(eidos_dir: Path, *, include_archived: bool = True) -> list[tuple[Path, bool]]:
@@ -747,12 +969,13 @@ def add_memory(
     eidos_dir: Path,
     *,
     title: str,
-    category: str,
-    summary: str,
+    category: str = "feedback",
+    summary: str | None = None,
     guidance: str = "",
     why: str = "",
-    entities: list[str] | None = None,
-    paths: list[str] | None = None,
+    entities: Sequence[str] | None = None,
+    paths: Sequence[str] | None = None,
+    auto_entities: bool = True,
     expires_at: str | None = None,
     status: str = "active",
     use_semantic: bool = True,
@@ -772,13 +995,16 @@ def add_memory(
     if clean_cat not in VALID_MEMORY_CATEGORIES:
         raise ValueError(f"Invalid category '{category}'. Expected one of: {', '.join(VALID_MEMORY_CATEGORIES)}.")
 
-    clean_summary = " ".join((summary or "").split()).strip()
-    if not clean_summary:
-        raise ValueError("Memory --summary cannot be empty.")
-    if len(clean_summary) > 220:
-        raise ValueError(
-            f"Memory --summary exceeds 220 characters ({len(clean_summary)} chars); keep summaries concise."
-        )
+    if summary is None:
+        clean_summary = _derive_memory_summary(clean_title, guidance)
+    else:
+        clean_summary = " ".join((summary or "").split()).strip()
+        if not clean_summary:
+            raise ValueError("Memory --summary cannot be empty.")
+        if len(clean_summary) > _SUMMARY_MAX_LEN:
+            raise ValueError(
+                f"Memory --summary exceeds {_SUMMARY_MAX_LEN} characters ({len(clean_summary)} chars); keep summaries concise."
+            )
 
     clean_status = (status or "active").strip().lower()
     if clean_status not in ("active", "draft"):
@@ -788,8 +1014,13 @@ def add_memory(
     if expires_at is not None:
         clean_expires = _validate_iso_date(expires_at, "--expires")
 
-    clean_entities = list(dict.fromkeys(e.strip().upper() for e in (entities or ()) if e and e.strip()))
-    clean_paths = list(dict.fromkeys(p.strip().replace("\\", "/") for p in (paths or ()) if p and p.strip()))
+    explicit_entities = list(dict.fromkeys(e.strip().upper() for e in (entities or ()) if e and e.strip()))
+    clean_paths = list(dict.fromkeys(_normalize_memory_path(p) for p in (paths or ()) if p and p.strip()))
+    clean_paths = [p for p in clean_paths if p]
+    inferred_entities = (
+        infer_memory_entities_for_paths(eidos_dir, clean_paths) if (auto_entities and clean_paths) else []
+    )
+    clean_entities = list(dict.fromkeys([*explicit_entities, *inferred_entities]))
 
     # Check overlaps before writing so the newly written file does not self-match
     overlaps = detect_memory_overlaps(eidos_dir, clean_title, clean_summary, use_semantic=use_semantic)
@@ -832,7 +1063,7 @@ def add_memory(
         doc_type="agent/memory",
         doc_id=mem_id,
     )
-    errors = SpecValidator().validate_document(doc)
+    errors = SpecValidator().validate_document(doc, root_dir=eidos_dir)
     if errors:
         raise ValueError(f"Memory failed agent/memory schema validation: {'; '.join(errors)}")
 
@@ -852,10 +1083,204 @@ def add_memory(
         "status": clean_status,
         "summary": clean_summary,
         "targets": targets,
+        "inferred_entities": inferred_entities,
         "verified_at": verified_at,
         "verified_commit": head_sha or None,
         "expires_at": clean_expires,
         "path": str(target_file),
+        "relative_path": rel_path,
+        "warnings": overlaps,
+    }
+
+
+def update_memory(
+    eidos_dir: Path,
+    target: str,
+    *,
+    title: str | None = None,
+    category: str | None = None,
+    summary: str | None = None,
+    guidance: str | None = None,
+    why: str | None = None,
+    entities: Sequence[str] | None = None,
+    paths: Sequence[str] | None = None,
+    replace_targets: bool = False,
+    auto_entities: bool = True,
+    expires_at: str | None = None,
+    clear_expires: bool = False,
+    status: str | None = None,
+    use_semantic: bool = True,
+    today: date | None = None,
+) -> dict[str, Any]:
+    """Update an active or draft ``agent/memory`` entry in place, re-stamp verification, and report overlaps."""
+    if clear_expires and expires_at is not None:
+        raise ValueError("Cannot combine --clear-expires with --expires.")
+
+    mem_path = find_memory_by_id_or_path(eidos_dir, target, include_archived=True)
+    doc = parse_spec_file(mem_path)
+    fm = dict(doc.frontmatter or {})
+    if doc.doc_type != "agent/memory":
+        raise ValueError(f"'{target}' is type '{doc.doc_type}', not 'agent/memory'.")
+
+    _, arch_dir = _memory_dirs(eidos_dir)
+    cur_status = str(fm.get("status") or "active").strip().lower()
+    if mem_path.resolve().is_relative_to(arch_dir.resolve()) or cur_status in ("archived", "promoted"):
+        raise ValueError(f"Cannot update archived or promoted memory '{doc.doc_id or target}' (status: {cur_status}).")
+
+    mem_id = str(fm.get("id") or doc.doc_id or mem_path.stem)
+
+    if title is not None:
+        clean_title = " ".join(title.split()).strip()
+        if not clean_title:
+            raise ValueError("Memory --title cannot be empty.")
+        fm["title"] = clean_title
+    else:
+        clean_title = " ".join(str(fm.get("title") or mem_id).split()).strip()
+
+    if category is not None:
+        clean_cat = category.strip().lower()
+        if clean_cat == "user":
+            raise ValueError(
+                "Category 'user' is excluded from Git-tracked eidos/memory/. "
+                "Keep personal developer preferences in client-native memory; use feedback, project, or reference for shared team knowledge."
+            )
+        if clean_cat not in VALID_MEMORY_CATEGORIES:
+            raise ValueError(f"Invalid category '{category}'. Expected one of: {', '.join(VALID_MEMORY_CATEGORIES)}.")
+        fm["category"] = clean_cat
+    else:
+        clean_cat = str(fm.get("category") or "feedback").strip().lower()
+
+    if status is not None:
+        clean_status = status.strip().lower()
+        if clean_status not in ("active", "draft"):
+            raise ValueError(f"Invalid status '{status}'. Expected 'active' or 'draft'.")
+        fm["status"] = clean_status
+    else:
+        clean_status = cur_status
+
+    if summary is not None:
+        clean_summary = " ".join(summary.split()).strip()
+        if not clean_summary:
+            raise ValueError("Memory --summary cannot be empty.")
+        if len(clean_summary) > _SUMMARY_MAX_LEN:
+            raise ValueError(
+                f"Memory --summary exceeds {_SUMMARY_MAX_LEN} characters ({len(clean_summary)} chars); keep summaries concise."
+            )
+        fm["summary"] = clean_summary
+    else:
+        clean_summary = str(fm.get("summary") or "").strip()
+
+    if clear_expires:
+        fm.pop("expires_at", None)
+    elif expires_at is not None:
+        fm["expires_at"] = _validate_iso_date(expires_at, "--expires")
+
+    cur_entities, cur_paths = _safe_target_lists(fm)
+    norm_cur_paths = [p for p in (_normalize_memory_path(p) for p in cur_paths) if p]
+    new_entities = (
+        list(dict.fromkeys(e.strip().upper() for e in entities if e and e.strip())) if entities is not None else []
+    )
+    new_paths = (
+        [p for p in dict.fromkeys(_normalize_memory_path(p) for p in paths if p and p.strip()) if p]
+        if paths is not None
+        else []
+    )
+    if replace_targets:
+        eff_entities = new_entities if entities is not None else []
+        eff_paths = new_paths if paths is not None else []
+    else:
+        eff_entities = list(dict.fromkeys([*(e.upper() for e in cur_entities), *new_entities]))
+        eff_paths = list(dict.fromkeys([*norm_cur_paths, *new_paths]))
+
+    inferred_entities: list[str] = []
+    if auto_entities and eff_paths and (paths is not None or replace_targets):
+        inferred_entities = infer_memory_entities_for_paths(eidos_dir, eff_paths)
+        eff_entities = list(dict.fromkeys([*eff_entities, *inferred_entities]))
+
+    targets: dict[str, list[str]] = {}
+    if eff_entities:
+        targets["entities"] = eff_entities
+    if eff_paths:
+        targets["paths"] = eff_paths
+    if targets:
+        fm["targets"] = targets
+    else:
+        fm.pop("targets", None)
+
+    cur_preamble, cur_guidance_raw, cur_why_raw, cur_why_heading, extra_sections = _extract_raw_memory_sections(
+        doc.body or ""
+    )
+    eff_guidance = sanitize_memory_asciidoc_body(guidance) if guidance is not None else cur_guidance_raw
+    eff_why = sanitize_memory_asciidoc_body(why) if why is not None else cur_why_raw
+    eff_why_heading = cur_why_heading if why is None else (cur_why_heading if cur_why_raw else "Why")
+    body = _render_memory_body_from_sections(
+        clean_title,
+        eff_guidance,
+        eff_why,
+        extra_sections,
+        preamble=cur_preamble,
+        why_heading=eff_why_heading,
+    )
+
+    effective_today = today or date.today()
+    repo_root = _resolve_repo_root(eidos_dir)
+    head_sha = _resolve_git_head_sha(repo_root)
+    fm["verified_at"] = effective_today.isoformat()
+    if head_sha:
+        fm["verified_commit"] = head_sha
+    else:
+        fm.pop("verified_commit", None)
+
+    updated_doc = SpecDocument(
+        file_path=mem_path,
+        frontmatter=fm,
+        body=body,
+        doc_type="agent/memory",
+        doc_id=mem_id,
+    )
+    errors = SpecValidator().validate_document(updated_doc, root_dir=eidos_dir)
+    if errors:
+        raise ValueError(f"Updated memory failed schema validation: {'; '.join(errors)}")
+
+    overlaps = detect_memory_overlaps(
+        eidos_dir,
+        clean_title,
+        clean_summary,
+        exclude_id=mem_id,
+        use_semantic=use_semantic,
+    )
+
+    mem_path.write_text(dump_spec_document(fm, body), encoding="utf-8")
+    idx = _sync_index_silently(eidos_dir)
+    conn = idx._get_connection()
+    catalog_ids = {str(r[0]) for r in conn.execute("SELECT id FROM entities;").fetchall()}
+    fresh, reason = (
+        ("draft", "")
+        if clean_status == "draft"
+        else evaluate_memory_freshness(
+            repo_root, fm, catalog_ids, today=effective_today, head_sha=head_sha, eidos_dir=eidos_dir
+        )
+    )
+
+    try:
+        rel_path = mem_path.resolve().relative_to(repo_root.resolve()).as_posix()
+    except ValueError:
+        rel_path = mem_path.as_posix()
+
+    return {
+        "id": mem_id,
+        "title": clean_title,
+        "category": clean_cat,
+        "status": clean_status,
+        "summary": clean_summary,
+        "targets": targets,
+        "inferred_entities": inferred_entities,
+        "verified_at": fm["verified_at"],
+        "verified_commit": fm.get("verified_commit"),
+        "expires_at": fm.get("expires_at"),
+        "freshness": fresh,
+        "freshness_reason": reason,
+        "path": str(mem_path),
         "relative_path": rel_path,
         "warnings": overlaps,
     }

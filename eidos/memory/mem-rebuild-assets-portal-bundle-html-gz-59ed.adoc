@@ -1,0 +1,26 @@
+---
+type: agent/memory
+id: MEM-REBUILD-ASSETS-PORTAL-BUNDLE-HTML-GZ-59ED
+title: Compile portal bundle.html.gz via pnpm on frontend changes
+category: feedback
+status: active
+summary: "Compile bundle.html.gz using pnpm inside src/eidos/portal/frontend when TypeScript, React, or CSS sources change."
+targets:
+  entities:
+    - CMP-PORTAL-ASSETS
+  paths:
+    - src/eidos/portal/frontend/src/**
+    - assets/portal/bundle.html.gz
+verified_at: "2026-11-27"
+verified_commit: 218cfb91a839bfd736a15d531a151117d02d3f96
+---
+= Memory: Compile portal bundle.html.gz via pnpm on frontend changes
+:toc: left
+
+== Guidance
+
+After modifying TypeScript, React, or CSS files under src/eidos/portal/frontend/src/, run pnpm exec tsc --noEmit, pnpm test, and pnpm build inside src/eidos/portal/frontend (using pnpm rather than npm) so assets/portal/bundle.html.gz stays synchronized.
+
+== Why
+
+Python packaging and eidos portal serve/build serve the precompiled assets/portal/bundle.html.gz artifact; editing frontend sources without running pnpm build leaves the shipped bundle stale.

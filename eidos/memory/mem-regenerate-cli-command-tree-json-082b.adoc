@@ -1,0 +1,26 @@
+---
+type: agent/memory
+id: MEM-REGENERATE-CLI-COMMAND-TREE-JSON-082B
+title: Regenerate cli_command_tree.json after Typer option or help edits
+category: feedback
+status: active
+summary: "Regenerate tests/fixtures/cli_command_tree.json whenever any Typer command, option, default, or help string changes under src/eidos/cli/."
+targets:
+  entities:
+    - CNT-EIDOS-CLI
+  paths:
+    - src/eidos/cli/**
+    - tests/fixtures/cli_command_tree.json
+verified_at: "2026-11-27"
+verified_commit: 218cfb91a839bfd736a15d531a151117d02d3f96
+---
+= Memory: Regenerate cli_command_tree.json after Typer option or help edits
+:toc: left
+
+== Guidance
+
+Whenever adding, removing, or renaming a Typer command, option, default, or help string under src/eidos/cli/, regenerate tests/fixtures/cli_command_tree.json from _walk_command_tree(typer.main.get_command(app), []) and run uv run pytest tests/test_cli_json.py -k test_cli_command_tree_unchanged.
+
+== Why
+
+test_cli_command_tree_unchanged asserts exact equality on every Typer parameter name, flag, default, and help string, so even a minor help-text edit breaks CI until the snapshot fixture is updated.

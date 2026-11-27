@@ -41,7 +41,77 @@ _FRESHNESS_ORDER: dict[str, int] = {
 
 _HEX40_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _FRONTMATTER_RE = re.compile(r"\A---[ \t]*\r?\n.*?\r?\n---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
-_H2_HEADING_RE = re.compile(r"^==[ \t]+(.+?)[ \t]*$", re.MULTILINE)
+_H2_HEADING_RE = re.compile(r"^==[ \t]+(.+?)[ \t]*$")
+_MD_FENCE_LINE_RE = re.compile(r"^(`{3,}|~{3,})")
+_ADOC_BLOCK_DELIM_RE = re.compile(r"^(?:-{4,}|={4,}|\.{4,}|\+{4,}|/{4,}|\*{4,}|_{4,})$")
+_ADOC_ATTR_LINE_RE = re.compile(r"^:[A-Za-z0-9_.-]+:.*$")
+
+
+def _scan_memory_h2_sections(raw_body: str) -> tuple[str, list[tuple[str, str]]]:
+    """Scan top-level AsciiDoc ``== Heading`` sections while ignoring headings inside fenced or delimited blocks.
+
+    Returns ``(preamble, sections)`` where ``preamble`` preserves any prose before the first H2
+    (excluding the leading ``= Title`` and ``:attr:`` document header lines) and ``sections`` is an
+    ordered list of ``(heading, raw_content)`` pairs.
+    """
+    lines = (raw_body or "").replace("\r\n", "\n").replace("\r", "\n").splitlines()
+    total = len(lines)
+    in_fence_char: str | None = None
+    in_fence_len = 0
+    in_adoc_delim: str | None = None
+
+    preamble_lines: list[str] = []
+    sections: list[tuple[str, list[str]]] = []
+    in_doc_header = True
+
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+
+        if in_fence_char is not None:
+            if re.fullmatch(rf"{re.escape(in_fence_char)}{{{in_fence_len},}}", stripped):
+                in_fence_char = None
+            (sections[-1][1] if sections else preamble_lines).append(line)
+            continue
+
+        if in_adoc_delim is not None:
+            if stripped == in_adoc_delim:
+                in_adoc_delim = None
+            (sections[-1][1] if sections else preamble_lines).append(line)
+            continue
+
+        if not sections and in_doc_header:
+            if not stripped:
+                continue
+            if stripped.startswith("= ") and not stripped.startswith("== "):
+                continue
+            if _ADOC_ATTR_LINE_RE.match(stripped):
+                continue
+            in_doc_header = False
+
+        m_fence = _MD_FENCE_LINE_RE.match(stripped)
+        if m_fence:
+            in_fence_char = m_fence.group(1)[0]
+            in_fence_len = len(m_fence.group(1))
+            (sections[-1][1] if sections else preamble_lines).append(line)
+            continue
+
+        if _ADOC_BLOCK_DELIM_RE.match(stripped):
+            has_close = any(lines[scan].strip() == stripped for scan in range(idx + 1, total))
+            if has_close:
+                in_adoc_delim = stripped
+            (sections[-1][1] if sections else preamble_lines).append(line)
+            continue
+
+        m_h2 = _H2_HEADING_RE.match(line)
+        if m_h2:
+            sections.append((m_h2.group(1).strip(), []))
+            continue
+
+        (sections[-1][1] if sections else preamble_lines).append(line)
+
+    preamble = "\n".join(preamble_lines).strip()
+    rendered_sections = [(heading, "\n".join(buf).strip()) for heading, buf in sections]
+    return preamble, rendered_sections
 
 
 def _run_git(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -57,31 +127,32 @@ def _run_git(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(["git", *args], 127, "", "")
 
 
-def _resolve_git_head_sha(repo_root: Path) -> str:
-    """Resolve repository Git HEAD commit SHA with a sub-millisecond .git/HEAD fast path."""
-    git_dir = repo_root / ".git"
-    if git_dir.is_dir():
-        head_file = git_dir / "HEAD"
-        with contextlib.suppress(OSError):
-            head_raw = head_file.read_text(encoding="utf-8", errors="replace").strip()
-            if _HEX40_RE.match(head_raw):
-                return head_raw.lower()
-            if head_raw.startswith("ref:"):
-                ref_name = head_raw[4:].strip()
-                ref_file = git_dir / ref_name
-                if ref_file.is_file():
-                    sha = ref_file.read_text(encoding="utf-8", errors="replace").strip()
-                    if _HEX40_RE.match(sha):
-                        return sha.lower()
-                packed_refs = git_dir / "packed-refs"
-                if packed_refs.is_file():
-                    for line in packed_refs.read_text(encoding="utf-8", errors="replace").splitlines():
-                        if not line or line.startswith(("#", "^")):
-                            continue
-                        parts = line.split(" ", 1)
-                        if len(parts) == 2 and parts[1].strip() == ref_name and _HEX40_RE.match(parts[0].strip()):
-                            return parts[0].strip().lower()
-    res = _run_git(repo_root, "rev-parse", "--verify", "HEAD")
+def _resolve_git_head_sha(repo_root: Path, *, head_ref: str = "HEAD") -> str:
+    """Resolve repository Git commit SHA (default ``HEAD`` with a sub-millisecond .git/HEAD fast path)."""
+    if head_ref == "HEAD":
+        git_dir = repo_root / ".git"
+        if git_dir.is_dir():
+            head_file = git_dir / "HEAD"
+            with contextlib.suppress(OSError):
+                head_raw = head_file.read_text(encoding="utf-8", errors="replace").strip()
+                if _HEX40_RE.match(head_raw):
+                    return head_raw.lower()
+                if head_raw.startswith("ref:"):
+                    ref_name = head_raw[4:].strip()
+                    ref_file = git_dir / ref_name
+                    if ref_file.is_file():
+                        sha = ref_file.read_text(encoding="utf-8", errors="replace").strip()
+                        if _HEX40_RE.match(sha):
+                            return sha.lower()
+                    packed_refs = git_dir / "packed-refs"
+                    if packed_refs.is_file():
+                        for line in packed_refs.read_text(encoding="utf-8", errors="replace").splitlines():
+                            if not line or line.startswith(("#", "^")):
+                                continue
+                            parts = line.split(" ", 1)
+                            if len(parts) == 2 and parts[1].strip() == ref_name and _HEX40_RE.match(parts[0].strip()):
+                                return parts[0].strip().lower()
+    res = _run_git(repo_root, "rev-parse", "--verify", head_ref)
     return res.stdout.strip().lower() if res.returncode == 0 else ""
 
 
@@ -109,15 +180,13 @@ def extract_memory_sections(raw_text: str) -> dict[str, str]:
     if not raw_text:
         return {}
     body = _FRONTMATTER_RE.sub("", raw_text, count=1)
-    matches = list(_H2_HEADING_RE.finditer(body))
-    if not matches:
+    _preamble, scanned = _scan_memory_h2_sections(body)
+    if not scanned:
         return {}
     sections: dict[str, str] = {}
-    for idx, match in enumerate(matches):
-        heading = match.group(1).strip().lower()
-        start = match.end()
-        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(body)
-        content = re.sub(r"\s+", " ", body[start:end]).strip()
+    for heading_orig, raw_content in scanned:
+        heading = heading_orig.lower()
+        content = re.sub(r"\s+", " ", raw_content).strip()
         if not content:
             continue
         if heading == "guidance" and "guidance" not in sections:
@@ -260,6 +329,8 @@ def evaluate_memory_freshness(
     head_sha: str | None = None,
     commit_drift_threshold: int | None = None,
     eidos_dir: Path | None = None,
+    git_repo_root: Path | None = None,
+    head_ref: str = "HEAD",
 ) -> tuple[str, str]:
     """Deterministically evaluate freshness for a single ``agent/memory`` entry.
 
@@ -285,21 +356,22 @@ def evaluate_memory_freshness(
     v_commit = str(v_commit_raw).strip() if isinstance(v_commit_raw, str) and v_commit_raw.strip() else ""
     v_at = str(frontmatter.get("verified_at") or "").strip()
 
-    effective_head = _resolve_git_head_sha(repo_root) if head_sha is None else head_sha
+    git_cwd = git_repo_root if git_repo_root is not None else repo_root
+    effective_head = _resolve_git_head_sha(git_cwd, head_ref=head_ref) if head_sha is None else head_sha
     if not effective_head:
         return "unverifiable", f"no Git HEAD commit available (last verified {v_at})"
 
     if not v_commit:
         return "unverifiable", f"verified_commit not recorded (last verified {v_at})"
 
-    anc_res = _run_git(repo_root, "merge-base", "--is-ancestor", v_commit, "HEAD")
+    anc_res = _run_git(git_cwd, "merge-base", "--is-ancestor", v_commit, head_ref)
     if anc_res.returncode != 0:
         return (
             "unverifiable",
-            f"verified_commit {v_commit[:7]} unreachable from HEAD (shallow clone, squash-merge, or rebase); last verified {v_at}",
+            f"verified_commit {v_commit[:7]} unreachable from {head_ref} (shallow clone, squash-merge, or rebase); last verified {v_at}",
         )
 
-    cnt_res = _run_git(repo_root, "rev-list", "--count", f"{v_commit}..HEAD", "--", *git_pathspecs)
+    cnt_res = _run_git(git_cwd, "rev-list", "--count", f"{v_commit}..{head_ref}", "--", *git_pathspecs)
     if cnt_res.returncode == 0 and cnt_res.stdout.strip().isdigit():
         n_commits = int(cnt_res.stdout.strip())
         if n_commits >= effective_threshold:
@@ -322,6 +394,8 @@ def resolve_memory_freshness_batch(
     today: date | None = None,
     commit_drift_threshold: int | None = None,
     eidos_dir: Path | None = None,
+    git_repo_root: Path | None = None,
+    head_ref: str = "HEAD",
 ) -> dict[str, tuple[str, str]]:
     """Resolve freshness verdicts for a batch of memories backed by ``memory_freshness_cache``."""
     if not memories:
@@ -347,7 +421,8 @@ def resolve_memory_freshness_batch(
     if not need_git_check:
         return results
 
-    head_sha = _resolve_git_head_sha(repo_root)
+    git_cwd = git_repo_root if git_repo_root is not None else repo_root
+    head_sha = _resolve_git_head_sha(git_cwd, head_ref=head_ref)
     cached_rows: dict[str, tuple[str, str, str, str, str]] = {}
     if conn is not None:
         mem_ids = [mid for mid, _ in need_git_check]
@@ -392,6 +467,8 @@ def resolve_memory_freshness_batch(
             head_sha=head_sha,
             commit_drift_threshold=effective_threshold,
             eidos_dir=eidos_dir,
+            git_repo_root=git_repo_root,
+            head_ref=head_ref,
         )
         results[mem_id] = (freshness, reason)
         if freshness != "unverifiable":
@@ -614,12 +691,12 @@ def attach_context_memories(
             "match_scope": scope,
             "matched_by": matched_by,
         }
-        if tier == "deep" and rel_fp:
+        if tier in ("guardrails", "deep") and rel_fp:
             with contextlib.suppress(OSError):
                 sections = extract_memory_sections((repo_root / rel_fp).read_text(encoding="utf-8", errors="replace"))
                 if sections.get("guidance"):
                     entry["guidance"] = sections["guidance"]
-                if sections.get("why"):
+                if tier == "deep" and sections.get("why"):
                     entry["why"] = sections["why"]
         output.append(entry)
 

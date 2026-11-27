@@ -1410,13 +1410,14 @@ def test_context_secondary_team_memory_attachment_and_budget_precedence(tmp_path
     from eidos.core.index.graph_index import ArchitecturalIndex
     from eidos.core.lifecycle.initializer import init_repository
 
-    # Direct extract_memory_sections checks
+    # Direct extract_memory_sections checks (including ignoring '== ' inside AsciiDoc listing blocks)
     assert extract_memory_sections("") == {}
     assert extract_memory_sections("Just plain prose without headings.") == {}
     sec = extract_memory_sections(
-        "---\nid: MEM-X\n---\n= Title\n\n== Guidance\nRun via uv.\n\n== Rationale\nLocked deps.\n"
+        "---\nid: MEM-X\n---\n= Title\n\n== Guidance\nRun via uv.\n\n[source,asciidoc]\n----\n== Public Surface\n* foo()\n----\n\n== Rationale\nLocked deps.\n"
     )
-    assert sec == {"guidance": "Run via uv.", "why": "Locked deps."}
+    assert "Run via uv." in sec["guidance"] and "== Public Surface" in sec["guidance"]
+    assert sec["why"] == "Locked deps."
 
     def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=False)
@@ -1623,7 +1624,7 @@ def test_context_secondary_team_memory_attachment_and_budget_precedence(tmp_path
         assert all(m["id"] != "MEM-ARCH-ACTIVE-9999" for m in d_anchor["memories"])
         assert set(d_anchor["memories"][0].keys()) == {"id", "category", "summary", "freshness"}
 
-        # 4. Guardrails tier: <=3 anchored + <=2 fresh globals (expired excluded), stale reason included
+        # 4. Guardrails tier: <=3 anchored + <=2 fresh globals (expired excluded), stale reason + clipped guidance (no why)
         sl_guard = idx.get_tiered_context_slice(files=["src/pay/ledger.py"], tier="guardrails", use_semantic=False)
         d_guard = sl_guard.to_dict()
         md_guard = sl_guard.to_markdown()
@@ -1637,11 +1638,44 @@ def test_context_secondary_team_memory_attachment_and_budget_precedence(tmp_path
         assert "MEM-GLOBAL-EXPIRED-06AA" not in guard_ids
         global_in_guard = [m for m in guard_mems if m["id"].startswith("MEM-GLOBAL-")]
         assert len(global_in_guard) == 2
+        exact_guard = next(m for m in guard_mems if m["id"] == "MEM-LEDGER-EXACT-1111")
+        assert "SERIALIZABLE" in exact_guard["guidance"]
+        assert len(exact_guard["guidance"]) <= 220
+        assert "why" not in exact_guard
         stale_entry = next(m for m in guard_mems if m["id"] == "MEM-STALE-PATH-3333")
         assert stale_entry["freshness"] == "stale"
         assert "missing target path" in stale_entry["freshness_reason"]
         assert "Team Operational Memories" in md_guard
         assert "*Freshness:*" in md_guard
+        assert "*Guidance:*" in md_guard
+        assert "*Why:*" not in md_guard
+
+        # Verify long guidance is clipped to <= 220 chars on guardrails while full on deep (uncompacted)
+        long_guidance = "Always wrap settlement writes in SERIALIZABLE transactions " + ("with retry backoff " * 15)
+        (eidos_dir / "memory" / "mem-ledger-exact-1111.adoc").write_text(
+            "---\n"
+            "type: agent/memory\n"
+            "id: MEM-LEDGER-EXACT-1111\n"
+            'title: "Ledger serializable transactions"\n'
+            "category: feedback\n"
+            "status: active\n"
+            'summary: "Always wrap ledger inserts in SERIALIZABLE transactions."\n'
+            "targets:\n"
+            "  entities: [CMP-PAY-LEDGER]\n"
+            "  paths: [src/pay/ledger.py]\n"
+            'verified_at: "2026-11-24"\n'
+            f'verified_commit: "{head_sha}"\n'
+            "---\n"
+            "= Memory: Ledger serializable transactions\n\n"
+            f"== Guidance\n{long_guidance}\n\n"
+            "== Why\nConcurrent retries previously caused phantom balance drift.\n",
+            encoding="utf-8",
+        )
+        idx.sync(force=False, auto_semantic=False)
+        sl_guard_clip = idx.get_tiered_context_slice(files=["src/pay/ledger.py"], tier="guardrails", use_semantic=False)
+        exact_guard_clip = next(m for m in sl_guard_clip.to_dict()["memories"] if m["id"] == "MEM-LEDGER-EXACT-1111")
+        assert len(exact_guard_clip["guidance"]) <= 220 and exact_guard_clip["guidance"].endswith("...")
+        assert "why" not in exact_guard_clip
 
         # 5. Deep tier: <=5 anchored + <=3 globals, includes extracted guidance & why sections
         sl_deep = idx.get_tiered_context_slice(files=["src/pay/ledger.py"], tier="deep", use_semantic=False)
@@ -1750,6 +1784,7 @@ def test_context_secondary_team_memory_attachment_and_budget_precedence(tmp_path
             "id": f"MEM-ANCHOR-{i}",
             "category": "feedback",
             "summary": ("Anchored memory operational warning detail " * 5).strip(),
+            "guidance": ("Run explicit SERIALIZABLE retry blocks before ledger mutation " * 5).strip(),
             "freshness": "stale",
             "freshness_reason": "8 commits modified src/pay/ledger.py since deadbee",
             "file_path": f"eidos/memory/mem-anchor-{i}.adoc",
@@ -1761,6 +1796,7 @@ def test_context_secondary_team_memory_attachment_and_budget_precedence(tmp_path
             "id": f"MEM-GLOB-{i}",
             "category": "project",
             "summary": ("Global repo convention explanation prose " * 5).strip(),
+            "guidance": ("Check shared CI settings before pushing changes " * 4).strip(),
             "freshness": "fresh",
             "freshness_reason": "no path anchors",
             "file_path": f"eidos/memory/mem-glob-{i}.adoc",
@@ -1780,6 +1816,74 @@ def test_context_secondary_team_memory_attachment_and_budget_precedence(tmp_path
         "Stage 0 must prune memories before evicting any architectural invariant"
     )
     assert all(m.get("match_scope") != "global" for m in with_mems.memories)
+    assert all("guidance" not in m for m in with_mems.to_dict().get("memories", [])), (
+        "Stage 0 memory-first pruning must strip guardrails guidance before evicting architectural entities"
+    )
+
+    # Post-Stage-3 headroom backfill: when verbose architectural prose triggers Stage 0 eviction
+    # (popping globals and anchored memories) and Stage 1a compresses prose down with remaining headroom,
+    # anchored memories backfill cleanly while shed globals remain evicted and invariants stay intact.
+    verbose_arch_invs = [
+        {
+            "id": f"RULE-VERB-{i:02d}",
+            "rule": (
+                f"Detailed architectural invariant {i} enforcing idempotent ledger writes, strict audit logging, "
+                "and serializable isolation across all payment replicas and webhook handlers. " * 3
+            ).strip(),
+            "has_test_coverage": True,
+            "test_binding": f"tests/test_pay.py::test_verb_{i}",
+        }
+        for i in range(1, 6)
+    ]
+    backfill_mem = {
+        "id": "MEM-BACKFILL-ANCHOR-1",
+        "category": "feedback",
+        "summary": "Always wrap ledger inserts in SERIALIZABLE transactions.",
+        "guidance": "Open a SERIALIZABLE transaction block.",
+        "freshness": "fresh",
+        "freshness_reason": "0 commits",
+        "file_path": "eidos/memory/mem-backfill.adoc",
+        "match_scope": "anchored",
+    }
+    backfill_global = {
+        "id": "MEM-BACKFILL-GLOBAL-1",
+        "category": "project",
+        "summary": "Repository-wide convention note.",
+        "guidance": "Check CI config.",
+        "freshness": "fresh",
+        "freshness_reason": "no path anchors",
+        "file_path": "eidos/memory/mem-backfill-global.adoc",
+        "match_scope": "global",
+    }
+    bf_baseline = TieredContextSlice(
+        tier="guardrails",
+        invariants=list(verbose_arch_invs),
+        **{k: list(v) if isinstance(v, list) else dict(v) for k, v in base_kwargs.items() if k != "invariants"},
+    )
+    assert bf_baseline._exceeds_budget(TIER_TOKEN_BUDGETS["guardrails"])
+    bf_baseline._enforce_token_budget(primary_cids={"CMP-PAY-LEDGER", "CNT-PAY"})
+    bf_with_mem = TieredContextSlice(
+        tier="guardrails",
+        invariants=list(verbose_arch_invs),
+        memories=[dict(backfill_mem), dict(backfill_global)],
+        **{k: list(v) if isinstance(v, list) else dict(v) for k, v in base_kwargs.items() if k != "invariants"},
+    )
+    bf_with_mem._enforce_token_budget(primary_cids={"CMP-PAY-LEDGER", "CNT-PAY"})
+    assert bf_with_mem.token_estimate <= TIER_TOKEN_BUDGETS["guardrails"]
+    assert len(bf_with_mem.to_json()) // 4 <= TIER_TOKEN_BUDGETS["guardrails"]
+    assert [i["id"] for i in bf_with_mem.invariants] == [i["id"] for i in bf_baseline.invariants]
+    bf_ids = [m["id"] for m in bf_with_mem.memories]
+    assert "MEM-BACKFILL-ANCHOR-1" in bf_ids
+    assert "MEM-BACKFILL-GLOBAL-1" not in bf_ids
+    assert bf_with_mem.to_dict()["memories"][0].get("guidance") == "Open a SERIALIZABLE transaction block."
+
+    # Whitespace-only guidance omitted consistently in _project_memory and to_markdown
+    ws_slice = TieredContextSlice(
+        tier="guardrails",
+        memories=[{**backfill_mem, "guidance": "   \t  "}],
+    )
+    assert "guidance" not in ws_slice.to_dict()["memories"][0]
+    assert "*Guidance:*" not in ws_slice.to_markdown()
 
     # Anchor tier Stage 0 pruning drops memories before dropping primary component
     anchor_bloated = TieredContextSlice(

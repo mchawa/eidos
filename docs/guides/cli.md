@@ -39,7 +39,7 @@ eidos info
 ---
 
 ### `eidos doctor`
-Verify optional repository configuration (`checks.repo_config`), Eidos tool installation, non-blocking PyPI release update availability (`checks.cli_update`, honoring `plugin.updates_check`), root `AGENTS.md` managed-block integrity (`checks.agents_md`), non-blocking open SpecDelta verification readiness (`checks.open_deltas`), Git repository status, specification directory health, knowledge graph index freshness, and installed agent plugin currency, `Stop` / `PreToolUse` hook health (`hooks_ok`, `hooks_status`, `target_hooks`, `hook_errors`), and non-blocking advisories for missing concrete `plugin.targets`:
+Verify optional repository configuration (`checks.repo_config`), Eidos tool installation, non-blocking PyPI release update availability (`checks.cli_update`, honoring `plugin.updates_check`), root `AGENTS.md` managed-block integrity (`checks.agents_md`), non-blocking open SpecDelta verification readiness (`checks.open_deltas`), non-blocking team operational memory health (`checks.team_memories`), Git repository status, specification directory health, knowledge graph index freshness, and installed agent plugin currency, `Stop` / `PreToolUse` hook health (`hooks_ok`, `hooks_status`, `target_hooks`, `hook_errors`), and non-blocking advisories for missing concrete `plugin.targets`:
 
 ```bash
 eidos doctor
@@ -49,7 +49,7 @@ eidos doctor --json
 
 Options:
 * `--path, -p PATH`: Path to the project or specifications directory (default: current directory).
-* `--json`: Output diagnostic report in JSON format (including `checks.repo_config`, `checks.cli_update`, `checks.agents_md`, `checks.open_deltas`, and `checks.agent_plugin` with `hooks_ok`, `hooks_status`, `target_hooks`, `hook_errors`, `configured_targets`, and `missing_configured_targets`).
+* `--json`: Output diagnostic report in JSON format (including `checks.repo_config`, `checks.cli_update`, `checks.agents_md`, `checks.open_deltas`, `checks.team_memories`, and `checks.agent_plugin` with `hooks_ok`, `hooks_status`, `target_hooks`, `hook_errors`, `configured_targets`, and `missing_configured_targets`).
 
 ---
 
@@ -238,9 +238,6 @@ eidos drift --base origin/main
 # Inspect uncommitted working tree and staged changes:
 eidos drift --uncommitted
 
-# Generate a markdown summary comment (ideal for CI step summary or PR comment):
-eidos drift --base origin/main --markdown drift-report.md
-
 # Output structured JSON (includes touched_components, trivially_covered_files, remediation_suggestions):
 eidos drift --uncommitted --json
 
@@ -254,14 +251,13 @@ Options:
 * `--head REF`: Head git reference (defaults to `HEAD`; commit-range checks load specs and `eidos/eidos.yaml` strictly from `--head`).
 * `--uncommitted, -u`: Analyze uncommitted working tree and staged changes instead of branch diff.
 * `--path, -p PATH`: Path to eidos specifications directory (defaults to `./eidos`).
-* `--markdown, -m FILE`: Path to write the markdown summary comment.
-* `--json`: Output raw JSON verification result (including `structural_code_files`, `body_only_code_files`, `trivially_covered_files`, `boundary_violations`, `ratchet_shrink_candidates`, non-blocking `validation_warnings`, diff-scoped `ready_to_apply_deltas`, and advisory `untouched_consumers`).
+* `--json`: Output raw JSON verification result (including `structural_code_files`, `body_only_code_files`, `trivially_covered_files`, `boundary_violations`, `ratchet_shrink_candidates`, non-blocking `validation_warnings`, diff-scoped `ready_to_apply_deltas`, advisory `untouched_consumers`, and strictly non-blocking diff-scoped `affected_memories`).
 * `--strict / --no-strict`: Treat body-only code changes as drift unless accompanied by a 1-hop spec, active SpecDelta, or test update (resolves default from `drift.strict` / `EIDOS_DRIFT_STRICT`).
-* `--fail-on-warnings / --no-fail-on-warnings`: Exit with code `1` when advisory `validation_warnings` or `ready_to_apply_deltas` are non-empty unless effective `warn_only` is active (resolves default from `drift.fail_on_warnings` / `EIDOS_DRIFT_FAIL_ON_WARNINGS`); `ratchet_shrink_candidates` and `untouched_consumers` remain strictly non-blocking review advisories.
+* `--fail-on-warnings / --no-fail-on-warnings`: Exit with code `1` when advisory `validation_warnings` or `ready_to_apply_deltas` are non-empty unless effective `warn_only` is active (resolves default from `drift.fail_on_warnings` / `EIDOS_DRIFT_FAIL_ON_WARNINGS`); `ratchet_shrink_candidates`, `untouched_consumers`, and `affected_memories` remain strictly non-blocking review advisories.
 * `--warn-only / --no-warn-only`: Do not exit with code 1 when drift is detected (resolves default from `drift.warn_only` / `EIDOS_DRIFT_WARN_ONLY`).
 
 Exit Codes:
-* `0`: Specifications and code are synchronized, all schemas, import boundaries, and bindings valid, invariant tests green (advisory `ratchet_shrink_candidates`, `untouched_consumers`, `validation_warnings`, and `ready_to_apply_deltas` do not fail exit code `0`, though `validation_warnings` and `ready_to_apply_deltas` escalate when effective `fail_on_warnings` is active).
+* `0`: Specifications and code are synchronized, all schemas, import boundaries, and bindings valid, invariant tests green (advisory `ratchet_shrink_candidates`, `untouched_consumers`, `affected_memories`, `validation_warnings`, and `ready_to_apply_deltas` do not fail exit code `0`, though `validation_warnings` and `ready_to_apply_deltas` escalate when effective `fail_on_warnings` is active).
 * `1`: Spec-to-code drift detected, architectural import `boundary_violations` detected, unowned structural code found, specification or `eidos/eidos.yaml` validation errors found, uncovered/orphan invariants detected, or non-empty `validation_warnings` / `ready_to_apply_deltas` under `--fail-on-warnings` (without `--warn-only`).
 
 > [!IMPORTANT]
@@ -306,7 +302,7 @@ Options:
 * `--head REF`: Head Git reference when slicing with `--base` (default: `HEAD`).
 * `-T, --tier [anchor|guardrails|deep]`: Context compression budget (default: `guardrails`).
   * `anchor`: Container/component metadata, direct contract signatures, 1-line `DEC-*` summaries, and up to 2 anchored `MEM-*` team memory summaries (`<= 300 tokens`).
-  * `guardrails`: Adds structured epistemic `provenance_tags`, domain capabilities, active invariants with `test_binding`, policies, full `DEC-*` rationale, and up to 3 anchored + 2 global `MEM-*` memories with non-fresh diagnostics (`<= 1,000 tokens`).
+  * `guardrails`: Adds structured epistemic `provenance_tags`, domain capabilities, active invariants with `test_binding`, policies, full `DEC-*` rationale, and up to 3 anchored + 2 global `MEM-*` memories with non-fresh diagnostics and clipped `guidance` (`<= 1,000 tokens`).
   * `deep`: Adds standalone C4 component details, contract schemas, downstream dependents with `provenance_tags`, and up to 5 anchored + 3 global `MEM-*` memories with extracted `guidance` and `why` sections (`<= 2,500 tokens`).
 * `--semantic / --no-semantic`: Enable or disable opt-in Harrier Hybrid RRF semantic fusion when `spec_embeddings` synchronization is complete (`semantic_sync_complete = 1`; partial/interrupted syncs deterministically fall back to FTS5 BM25) (default: `--semantic`).
 * `--json`: Output context slice as machine-readable JSON instead of Markdown.
@@ -471,12 +467,18 @@ Options:
 Manage Git-native team operational memories (`type: agent/memory`, `MEM-*`) stored as one `.adoc` file per entry under `eidos/memory/` and `eidos/memory/archive/`. Memories capture shared repository lessons (never personal preferences), attach automatically to `eidos context` via a secondary budgeted pass, and never block `eidos validate` or `eidos drift`.
 
 ```bash
-# Save a team operational memory anchored to a component and path glob
+# Save a team operational memory (--summary is optional; --file auto-anchors owning CMP-*/CNT-* entities)
 eidos memory add --title "Use pnpm in portal frontend" --category feedback \
-  --summary "Run pnpm inside src/eidos/portal/frontend; npm fails on devEngines." \
-  --guidance "Use pnpm exec vitest and pnpm build inside src/eidos/portal/frontend." \
+  --guidance "Use pnpm exec vitest and pnpm build inside src/eidos/portal/frontend; npm fails on devEngines." \
   --why "package.json devEngines pins pnpm 12." \
-  --entity CMP-PORTAL-FRONTEND --file "src/eidos/portal/frontend/**" --json
+  --file "src/eidos/portal/frontend/**" --json
+
+# Anchor directly to modified non-memory uncommitted files
+eidos memory add --title "Keep integration DB fixtures real" --guidance "Pass tmp_path SQLite DBs." --from-diff --json
+
+# Update an active or draft memory in place and re-stamp verification
+eidos memory update MEM-USE-PNPM-IN-PORTAL-FRONTEND-A1B2 \
+  --guidance "Run pnpm test and pnpm build inside src/eidos/portal/frontend." --json
 
 # List, search, and inspect team memories
 eidos memory list --json
@@ -495,7 +497,8 @@ eidos memory promote MEM-USE-PNPM-IN-PORTAL-FRONTEND-A1B2 --to decision --spec-i
 ```
 
 Sub-commands:
-* `add`: Create a collision-resistant, AsciiDoc-sanitized, schema-validated `MEM-*` memory (`--title`, `--summary`, `--category [feedback|project|reference]`, `--guidance`, `--why`, `--entity`, `--file`, `--expires YYYY-MM-DD|none`, `--status [active|draft]`, `--semantic/--no-semantic`, `--path`, `--json`).
+* `add`: Create a collision-resistant, AsciiDoc-sanitized, schema-validated `MEM-*` memory (`--title`, optional `--summary`, `--category [feedback|project|reference]`, `--guidance`, `--why`, `--entity`, `--file`, `--auto-entities/--no-auto-entities`, `--from-diff`, `--expires YYYY-MM-DD|none`, `--status [active|draft]`, `--semantic/--no-semantic`, `--path`, `--json`).
+* `update <ID_OR_PATH>`: Update an active or draft `MEM-*` entry in place and re-stamp verification (`--title`, `--category`, `--summary`, `--guidance`, `--why`, `--entity`, `--file`, `--replace-targets`, `--auto-entities/--no-auto-entities`, `--expires`, `--clear-expires`, `--status [active|draft]`, `--semantic/--no-semantic`, `--path`, `--json`).
 * `list`: List team memories with computed freshness (`--category`, `--status`, `--entity`, `--include-archived`, `--path`, `--json`).
 * `search <QUERY>`: Search active team memories via BM25 and optional Harrier Hybrid RRF (`--limit`, `--semantic/--no-semantic`, `--path`, `--json`).
 * `show <ID_OR_PATH>`: Display full frontmatter, freshness diagnostics, and body of an active or archived memory (`--path`, `--json`).

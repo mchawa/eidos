@@ -521,7 +521,6 @@ export interface SpecDriftStatus {
   uncovered_invariants?: string[];
   orphan_invariants?: Array<{ test_id: string; invariant_id: string }>;
   remediation_suggestions?: string[];
-  summary_markdown?: string;
   error?: string;
 }
 

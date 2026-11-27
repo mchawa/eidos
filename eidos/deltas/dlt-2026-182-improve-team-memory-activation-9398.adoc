@@ -1,0 +1,303 @@
+---
+type: delta/mutation
+id: DLT-2026-182-IMPROVE-TEAM-MEMORY-ACTIVATION-9398
+title: "Improve Team Memory Activation, Capture Ergonomics, Guardrails Guidance, and Advisory Drift/Doctor Visibility"
+status: applied
+intent:
+  kind: feature
+  motivation: >
+    Team operational memories (eidos/memory/mem-*.adoc) are severely underutilized in day-to-day
+    engineering sessions because (1) AGENTS.md only triggers capture "when corrected" rather than
+    on self-discovered build/test/CI/tooling gotchas and eidos/SKILL.md omits memory checks from
+    its Stage 2 pre-completion review, (2) eidos context strips actionable guidance unless
+    --tier deep is requested, (3) eidos memory add requires verbose mandatory flags without
+    auto-inferring entity anchors from --file or uncommitted diffs and lacks an in-place update
+    command, and (4) neither eidos drift nor eidos doctor surfaces non-blocking memory advisories.
+    Delivering these four quick wins closes the capture, surfacing, and maintenance feedback loops
+    while preserving strict non-blocking memory isolation and existing skill word ceilings.
+mutations:
+  - operation: modify
+    target: CMP-MEMORY-ENGINE
+    details: >
+      Make summary optional in add_memory (deterministically auto-deriving from guidance or title
+      within the 220-char schema cap), add deterministic path-to-entity auto-anchoring via
+      infer_memory_entities_for_paths (default auto_entities=True, merging resolved CMP-*/CNT-*
+      owners with explicit entities), add update_memory for in-place editing and re-verification of
+      active/draft memories (rejecting archived/promoted entries and category 'user'), and record
+      DEC-MEMORY-CAPTURE-ERGONOMICS-AND-ADVISORY-SURFACING in CMP-MEMORY-ENGINE decisions.
+    expect:
+      frontmatter:
+        decisions.id:
+          - "DEC-MEMORY-CAPTURE-ERGONOMICS-AND-ADVISORY-SURFACING"
+      body:
+        contains:
+          - "infer_memory_entities_for_paths"
+          - "update_memory"
+          - "DEC-MEMORY-CAPTURE-ERGONOMICS-AND-ADVISORY-SURFACING"
+  - operation: modify
+    target: CMP-CLI-MEMORY-COMMANDS
+    details: >
+      Make --summary optional on 'eidos memory add', add --auto-entities/--no-auto-entities (default
+      true) and --from-diff (resolving uncommitted changed files via CMP-GIT-DIFF-INSPECTOR and
+      filtering out eidos/memory/**) on 'eidos memory add', and mount the 9th subcommand
+      'eidos memory update <id_or_path>' (memory_update_cmd) with Rich and --json outputs.
+    expect:
+      body:
+        contains:
+          - "memory_update_cmd"
+          - "--from-diff"
+          - "--auto-entities"
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+    details: >
+      Extract compact guidance via extract_memory_sections for both guardrails and deep tiers
+      (keeping why exclusive to deep) in context_memories.py, and emit clipped guidance (<=220 chars
+      on guardrails, <=300 chars on deep under _compact_prose) in TieredContextSlice._project_memory
+      and to_markdown() when _compact_memories is False so Stage 0 memory-first pruning strips
+      guidance cleanly before evicting architectural invariants, decisions, or capabilities.
+    expect:
+      body:
+        contains:
+          - "guardrails"
+          - "guidance"
+          - "extract_memory_sections"
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    details: >
+      Add deterministic find_affected_memories(...) and DriftCheckResult.affected_memories matching
+      diff-changed paths and touched_components against active non-archived agent/memory targets
+      (isolated to eval_root on --base/--head commit-range runs) with cached freshness verdicts,
+      strictly non-blocking (never altering is_clean, drift_detected, or --fail-on-warnings).
+    expect:
+      body:
+        contains:
+          - "find_affected_memories"
+          - "affected_memories"
+  - operation: modify
+    target: CMP-CLI-DRIFT-COMMANDS
+    details: >
+      Surface strictly non-blocking advisory affected_memories in 'eidos drift' Rich terminal output
+      and --json payload without failing exit code 0 or escalating under --fail-on-warnings.
+    expect:
+      body:
+        contains:
+          - "affected_memories"
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+    details: >
+      Add non-blocking advisory checks.team_memories (_check_team_memories) to 'eidos doctor' Rich
+      table and --json outputs reporting active/fresh/stale/expired/unverifiable counts and
+      actionable guidance without failing healthy or exit code 0.
+    expect:
+      body:
+        contains:
+          - "checks.team_memories"
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: >
+      Broaden the root AGENTS.md capture trigger (assets/plugin_reference/agents-md/block.md,
+      <=250 template / <=320 rendered words) to cover both user corrections and self-discovered
+      non-obvious build/test/CI/tooling gotchas; add a 1-line Stage 2 team memory check in
+      assets/plugin_reference/skills/eidos/SKILL.md while remaining <=2,050 body words; and update
+      assets/plugin_reference/skills/eidos-memory/SKILL.md (<=450 body words) for self-discovered
+      triggers, optional --summary, --from-diff, auto-entity anchoring, and 'eidos memory update'.
+    expect:
+      body:
+        contains:
+          - "eidos memory update"
+          - "self-discovered"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: >
+      Bump CTR-EIDOS-CLI to 2.1.0 to document optional --summary, --from-diff, and
+      --auto-entities/--no-auto-entities on 'eidos memory add', the new 'eidos memory update'
+      subcommand, guardrails-tier memory guidance in 'eidos context', strictly non-blocking
+      'affected_memories' in 'eidos drift', and advisory 'checks.team_memories' in 'eidos doctor'.
+    expect:
+      frontmatter:
+        version: "2.1.0"
+      body:
+        contains:
+          - "update <id_or_path>"
+          - "--from-diff"
+          - "affected_memories"
+          - "checks.team_memories"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: >
+      Synchronize docs/guides/cli.md with CTR-EIDOS-CLI 2.1.0 covering 'eidos memory add' optional
+      --summary / --from-diff / --auto-entities, 'eidos memory update', 'eidos drift'
+      affected_memories, and 'eidos doctor' checks.team_memories under INV-POL-CONTINUOUS-DOCUMENTATION-SYNC.
+    expect:
+      body:
+        contains:
+          - "update"
+          - "affected_memories"
+          - "checks.team_memories"
+  - operation: modify
+    target: CAP-LIVING-SPEC-ENGINE
+    details: >
+      Bump CAP-LIVING-SPEC-ENGINE to 1.24.0 and extend INV-MEMORY-LIFECYCLE-AND-SANITIZER to cover
+      auto-derived summaries, deterministic path-to-entity auto-anchoring, and in-place
+      update_memory lifecycle semantics.
+    expect:
+      frontmatter:
+        version: "1.24.0"
+        technical.invariants.id:
+          - "INV-MEMORY-LIFECYCLE-AND-SANITIZER"
+      body:
+        contains:
+          - "update_memory"
+          - "auto-anchoring"
+  - operation: modify
+    target: INV-MEMORY-LIFECYCLE-AND-SANITIZER
+    details: >
+      Extend INV-MEMORY-LIFECYCLE-AND-SANITIZER to cover optional summary derivation, automatic
+      entity anchor inference from file paths, and update_memory validation/re-verification.
+    expect:
+      frontmatter:
+        rule: "update_memory"
+        test_binding: "tests/test_memory.py::test_memory_lifecycle_sanitizer_overlap_and_promotion"
+  - operation: modify
+    target: CAP-AGENT-ADAPTER
+    details: >
+      Bump CAP-AGENT-ADAPTER to 1.22.0, update INV-CONTEXT-TEAM-MEMORY-ATTACHMENT for guardrails
+      guidance surfacing, update INV-MEMORY-CLI-AND-SKILL-PARITY for the 9-subcommand CLI and
+      broadened AGENTS.md/eidos skill triggers, and add INV-DOCTOR-TEAM-MEMORY-ADVISORY.
+    expect:
+      frontmatter:
+        version: "1.22.0"
+        technical.invariants.id:
+          - "INV-CONTEXT-TEAM-MEMORY-ATTACHMENT"
+          - "INV-MEMORY-CLI-AND-SKILL-PARITY"
+          - "INV-DOCTOR-TEAM-MEMORY-ADVISORY"
+      body:
+        contains:
+          - "INV-DOCTOR-TEAM-MEMORY-ADVISORY"
+          - "guidance"
+  - operation: modify
+    target: INV-CONTEXT-TEAM-MEMORY-ATTACHMENT
+    details: >
+      Extend INV-CONTEXT-TEAM-MEMORY-ATTACHMENT to include compact guidance surfacing in guardrails
+      slices (stripped first under Stage 0 memory-first pruning).
+    expect:
+      frontmatter:
+        rule: "guidance"
+        test_binding: "tests/test_context.py::test_context_secondary_team_memory_attachment_and_budget_precedence"
+  - operation: modify
+    target: INV-MEMORY-CLI-AND-SKILL-PARITY
+    details: >
+      Extend INV-MEMORY-CLI-AND-SKILL-PARITY to cover the 9-subcommand eidos memory CLI (adding
+      update and optional --summary/--from-diff/--auto-entities on add) and broadened capture
+      triggers across eidos-memory, eidos Stage 2, and root AGENTS.md within existing ceilings.
+    expect:
+      frontmatter:
+        rule: "update"
+        test_binding: "tests/test_memory.py::test_memory_cli_subcommands_and_nonblocking_audit"
+  - operation: add
+    target: INV-DOCTOR-TEAM-MEMORY-ADVISORY
+    details: >
+      Bind INV-DOCTOR-TEAM-MEMORY-ADVISORY to
+      tests/test_memory.py::test_doctor_team_memories_advisory_nonblocking verifying strictly
+      non-blocking checks.team_memories reporting in 'eidos doctor' Rich and --json outputs.
+    expect:
+      frontmatter:
+        rule: "checks.team_memories"
+        test_binding: "tests/test_memory.py::test_doctor_team_memories_advisory_nonblocking"
+  - operation: modify
+    target: CAP-DRIFT-DETECTION
+    details: >
+      Bump CAP-DRIFT-DETECTION to 1.19.0 and add INV-DRIFT-AFFECTED-MEMORIES-ADVISORY governing
+      non-blocking diff-scoped affected_memories discovery and --fail-on-warnings isolation.
+    expect:
+      frontmatter:
+        version: "1.19.0"
+        technical.invariants.id:
+          - "INV-DRIFT-AFFECTED-MEMORIES-ADVISORY"
+      body:
+        contains:
+          - "INV-DRIFT-AFFECTED-MEMORIES-ADVISORY"
+          - "affected_memories"
+  - operation: add
+    target: INV-DRIFT-AFFECTED-MEMORIES-ADVISORY
+    details: >
+      Bind INV-DRIFT-AFFECTED-MEMORIES-ADVISORY to
+      tests/test_drift.py::test_drift_affected_memories_advisory_isolation verifying diff-scoped
+      affected_memories matching, --head snapshot isolation, and strict non-blocking semantics even
+      under --fail-on-warnings.
+    expect:
+      frontmatter:
+        rule: "affected_memories"
+        test_binding: "tests/test_drift.py::test_drift_affected_memories_advisory_isolation"
+vcs:
+  branch: main
+  base_commit: 218cfb91a839bfd736a15d531a151117d02d3f96
+---
+= SpecDelta: Improve Team Memory Activation, Capture Ergonomics, Guardrails Guidance, and Advisory Drift/Doctor Visibility
+:toc: left
+
+== Problem Statement
+
+Although Eidos ships a full Git-native team memory stack (`agent/memory`, `eidos/memory/`, `eidos memory`, `eidos context` secondary attachment, and `SCR-PORTAL-MEMORY`), dogfooding reveals severe underutilization (only 1 memory file in Eidos's own repository):
+
+1. **Narrow Capture Triggers & Unloaded Skill Cold Start**: Root `AGENTS.md` (`assets/plugin_reference/agents-md/block.md`) only triggers capture *"when corrected on a repo workflow/gotcha"*, missing self-discovered debugging, test, CI, and toolchain traps. Meanwhile `eidos/SKILL.md` omits any memory check from its Stage 2 pre-completion review, leaving `eidos-memory/SKILL.md` unloaded unless the agent already thinks of memory.
+2. **Actionable Guidance Hidden at Default Tier**: `CMP-TIERED-CONTEXT-COMPRESSOR` (`context_memories.py` and `context_models.py`) currently strips `guidance` unless `--tier deep` is requested, so default `guardrails` slices surface only the 1-line `summary` and omit concrete commands or workarounds.
+3. **High Capture Friction & Missing Update Command**: `eidos memory add` requires both `--title` and `--summary` plus manual `--entity` ID lookup; passing `--file` does not auto-infer owning `CMP-*`/`CNT-*` entities from `index.db`, there is no `--from-diff` shortcut to anchor uncommitted changes, and there is no `eidos memory update` subcommand to evolve an existing note when overlap warnings appear.
+4. **Silent Daily Checkpoints**: Neither `eidos drift` nor `eidos doctor` surfaces non-blocking memory signals, so stale or diff-affected memories remain invisible during routine verification unless a developer explicitly runs `eidos memory audit`.
+
+== Proposed Specification Changes
+
+=== 1. Low-Friction Capture, Auto-Anchoring & In-Place Update (`CMP-MEMORY-ENGINE`, `CMP-CLI-MEMORY-COMMANDS`, `CTR-EIDOS-CLI` 2.1.0, `CAP-LIVING-SPEC-ENGINE` 1.24.0)
+* **`add_memory` & `eidos memory add`**:
+  ** Make `--summary` (`-s`) optional (default `None`); when omitted, deterministically derive `summary` from the first non-empty sentence/line of `--guidance` (or `--title` when `--guidance` is empty), cleanly truncated on word boundaries to `<= 220` chars.
+  ** Add `infer_memory_entities_for_paths(eidos_dir, paths)` in `CMP-MEMORY-ENGINE` using the synced SQLite knowledge graph (`index.db`, `CMP-*`/`CNT-*` `source_path` ownership) and run it automatically when `auto_entities=True` (CLI `--auto-entities/--no-auto-entities`, default `True`), merging inferred IDs with any explicit `--entity` flags without duplicating entries.
+  ** Add `--from-diff` on `eidos memory add` in `CMP-CLI-MEMORY-COMMANDS` (invoking `CMP-GIT-DIFF-INSPECTOR` `get_git_diff_files(..., uncommitted=True)` + `classify_changed_files`, keeping `CNT-EIDOS-CORE` acyclic from `CNT-EIDOS-VCS` per `ARCH-EIDOS.import_boundaries`), anchoring all modified non-memory workspace files (`code_files`, `test_files`, `spec_files`, `other_files`) and auto-inferring their owning entities.
+* **`update_memory` & `eidos memory update <id_or_path>`**:
+  ** Add the 9th `eidos memory` subcommand supporting partial updates to `--title`, `--category`, `--summary`, `--guidance`, `--why`, `--entity`, `--file`, `--replace-targets`, `--auto-entities/--no-auto-entities`, `--expires`, `--clear-expires`, and `--status` (`active` or `draft`).
+  ** Reject `archived`/`promoted` targets and personal `category: user` with exit code `1`, sanitize AsciiDoc prose (`INV-ASCIIDOC-ZERO-WARNING-HYGIENE`), validate via `SpecValidator` before writing, re-stamp `verified_at` and `verified_commit`, run self-excluded overlap checks (`exclude_id`), and sync `index.db`.
+* **Decision Record (`DEC-MEMORY-CAPTURE-ERGONOMICS-AND-ADVISORY-SURFACING`)**: Record rationale and rejected alternatives in `CMP-MEMORY-ENGINE.decisions` (including why `--from-diff` lives in `CMP-CLI-MEMORY-COMMANDS` rather than coupling `CNT-EIDOS-CORE` to `CNT-EIDOS-VCS`, and why `affected_memories` / `checks.team_memories` stay strictly outside `--fail-on-warnings`).
+
+=== 2. Actionable `guidance` in Default `guardrails` Context Tier (`CMP-TIERED-CONTEXT-COMPRESSOR`, `CAP-AGENT-ADAPTER` 1.22.0)
+* Extract `guidance` via `extract_memory_sections` in `attach_context_memories` for `tier in ("guardrails", "deep")` while keeping `why` exclusive to `deep`.
+* Render clipped `guidance` (`<= 220` chars on `guardrails`, `<= 300` chars on `deep` under `_compact_prose`) in `TieredContextSlice._project_memory` and `to_markdown()` when `not self._compact_memories`.
+* Stage 0 memory-first pruning (`_compact_memories = True`) drops `guidance` first before compressing or evicting any architectural `INV-*`, `DEC-*`, `POL-*`, or `CTR-*`, preserving `TIER_TOKEN_BUDGETS` (`guardrails <= 1000` tokens) with `0%` architectural eviction.
+
+=== 3. Strictly Non-Blocking Advisory Memory Visibility in `eidos drift` & `eidos doctor` (`CMP-DRIFT-DETECTOR`, `CMP-CLI-DRIFT-COMMANDS`, `CMP-CLI-DOCTOR-HOOKS`, `CAP-DRIFT-DETECTION` 1.19.0, `CAP-AGENT-ADAPTER` 1.22.0)
+* **`detect_drift` & `eidos drift` (`INV-DRIFT-AFFECTED-MEMORIES-ADVISORY`)**:
+  ** Add `find_affected_memories(...)` in `src/eidos/vcs/drift.py` matching diff-changed non-memory files (`code_files`, `test_files`, `spec_files`, `other_files`) via `match_path_pattern` and `touched_components` against active non-archived `agent/memory` entries (evaluated inside `eval_root` on `--base`/`--head` commit-range runs), annotated with cached freshness (`fresh`, `stale`, `expired`, `unverifiable`) via `resolve_memory_freshness_batch`.
+  ** Emit `DriftCheckResult.affected_memories` in `eidos drift --json` and as a concise advisory panel/list in Rich output (highlighting `stale`/`expired`/`unverifiable` entries with `eidos memory verify <ID>` / `eidos memory archive <ID>` hints).
+  ** Strictly non-blocking: `affected_memories` never modifies `is_clean`, `drift_detected`, exit code `0`, or `--fail-on-warnings` (preserving `INV-AGENT-MEMORY-SCHEMA-ISOLATION` and `INV-DRIFT-MEMORY-FILE-ISOLATION`).
+* **`eidos doctor` (`INV-DOCTOR-TEAM-MEMORY-ADVISORY`)**:
+  ** Add `_check_team_memories(eidos_dir, specs_exist)` emitting `checks.team_memories` (`ok: true`, `status: "clean" | "empty" | "needs_review"`, `total_active`, `fresh`, `stale`, `expired`, `unverifiable`, `detail`) and a `Team Memories` row in the Rich doctor table, strictly non-blocking (`overall_ok` and exit code `0` unaffected).
+
+=== 4. Agent Activation Triggers Within Existing Word Ceilings (`CNT-EIDOS-PLUGIN`, `CAP-AGENT-ADAPTER` 1.22.0)
+* **`assets/plugin_reference/agents-md/block.md`** (enforced ceiling `<= 250` template / `<= 320` rendered words across all 9 targets): Broaden the team memory bullet from *"When corrected on a repo workflow/gotcha"* to *"When corrected or after hitting a non-obvious build/test/CI/tooling gotcha, save shared team memory via `eidos memory add` and note the `MEM-*` file in your reply (never personal prefs)."*
+* **`assets/plugin_reference/skills/eidos/SKILL.md`** (enforced ceiling `<= 2,050` body words, currently `2,041`): Add a concise Stage 2 memory capture/reconciliation check (tightening ~10 redundant words elsewhere in Stage 2 so body stays `<= 2,050` with zero ceiling increase).
+* **`assets/plugin_reference/skills/eidos-memory/SKILL.md`** (enforced ceiling `<= 450` body words, currently `357`): Document self-discovered gotcha capture, optional `--summary`, `--from-diff` and automatic `--entity` anchoring, and `eidos memory update <ID>`.
+
+== Implementation Plan
+
+1. **Memory Engine & CLI Ergonomics (`CMP-MEMORY-ENGINE`, `CMP-CLI-MEMORY-COMMANDS`, `CTR-EIDOS-CLI`)**:
+   * Implement optional `summary` auto-derivation, `infer_memory_entities_for_paths`, and `update_memory` in `src/eidos/core/lifecycle/memory_engine.py` (`CNT-EIDOS-CORE` covered via `CMP-MEMORY-ENGINE`).
+   * Update `src/eidos/cli/memory_commands.py` with optional `--summary`, `--auto-entities/--no-auto-entities`, `--from-diff` (via `CMP-GIT-DIFF-INSPECTOR` in presentation tier to preserve `ARCH-EIDOS.import_boundaries`), and `memory_update_cmd` (`CNT-EIDOS-CLI` covered via `CMP-CLI-MEMORY-COMMANDS`).
+   * Synchronize `eidos/architecture/components/memory-engine.adoc` (adding `DEC-MEMORY-CAPTURE-ERGONOMICS-AND-ADVISORY-SURFACING`), `eidos/architecture/components/cli-memory-commands.adoc`, `eidos/architecture/contracts/cli.adoc` (`2.0.0 -> 2.1.0`), `tests/fixtures/cli_command_tree.json` (CLI snapshot fixture synchronized with `CTR-EIDOS-CLI` 2.1.0), and `docs/guides/cli.md` (`CMP-DOCS-USER-GUIDES`; `CNT-EIDOS-DOCS` covered via `CMP-DOCS-USER-GUIDES`).
+
+2. **Guardrails Context Guidance Surfacing (`CMP-TIERED-CONTEXT-COMPRESSOR`)**:
+   * Update `src/eidos/core/index/context_memories.py` to extract `guidance` on `tier in ("guardrails", "deep")` (keeping `why` on `deep`) and `src/eidos/core/index/context_models.py` to project clipped `guidance` on `guardrails` while preserving Stage 0 memory-first pruning (`CNT-EIDOS-INDEX` covered via `CMP-TIERED-CONTEXT-COMPRESSOR`).
+   * Update `eidos/architecture/components/tiered-context-compressor.adoc`.
+
+3. **Advisory Drift & Doctor Visibility (`CMP-DRIFT-DETECTOR`, `CMP-CLI-DRIFT-COMMANDS`, `CMP-CLI-DOCTOR-HOOKS`)**:
+   * Add `find_affected_memories` and `DriftCheckResult.affected_memories` in `src/eidos/vcs/drift.py` (with `eval_root` isolation on commit-range diffs; `CNT-EIDOS-VCS` covered via `CMP-DRIFT-DETECTOR`) and render non-blocking `affected_memories` in `src/eidos/cli/drift_commands.py` (`CNT-EIDOS-CLI` covered via `CMP-CLI-DRIFT-COMMANDS`).
+   * Add `_check_team_memories` and `checks.team_memories` in `src/eidos/cli/doctor_hook_commands.py` (`CNT-EIDOS-CLI` covered via `CMP-CLI-DOCTOR-HOOKS`).
+   * Update `eidos/architecture/components/drift-detector.adoc`, `eidos/architecture/components/cli-drift-commands.adoc`, and `eidos/architecture/components/cli-doctor-hooks.adoc`.
+
+4. **Plugin Skill & `AGENTS.md` Triggers (`CNT-EIDOS-PLUGIN`)**:
+   * Update `assets/plugin_reference/agents-md/block.md`, `assets/plugin_reference/skills/eidos/SKILL.md`, and `assets/plugin_reference/skills/eidos-memory/SKILL.md` strictly within `INV-PLUGIN-SKILL-SIZE-CEILING` (`eidos <= 2050`, `eidos-memory <= 450`, `block.md <= 250` template / `<= 320` rendered) and `INV-PLUGIN-SKILL-CLI-PARITY`.
+   * Sync repository-installed copies in `AGENTS.md`, `.agents/skills/eidos/SKILL.md`, and `.agents/skills/eidos-memory/SKILL.md` via `eidos plugin update` (synced via `eidos plugin update`; governed by `CNT-EIDOS-PLUGIN`).
+   * Update `eidos/architecture/containers/plugin.adoc`.
+
+5. **Capabilities, Invariants, Tests & Repo Dogfooding (`CAP-LIVING-SPEC-ENGINE`, `CAP-AGENT-ADAPTER`, `CAP-DRIFT-DETECTION`)**:
+   * Bump `eidos/domains/spec-engine/capabilities/living-spec-engine.adoc` (`1.24.0`), `eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc` (`1.22.0`), and `eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc` (`1.19.0`), updating `INV-MEMORY-LIFECYCLE-AND-SANITIZER`, `INV-CONTEXT-TEAM-MEMORY-ATTACHMENT`, and `INV-MEMORY-CLI-AND-SKILL-PARITY`, and adding `INV-DOCTOR-TEAM-MEMORY-ADVISORY` and `INV-DRIFT-AFFECTED-MEMORIES-ADVISORY`.
+   * Add/extend bound tests in `tests/test_memory.py` (`test_memory_lifecycle_sanitizer_overlap_and_promotion`, `test_memory_cli_subcommands_and_nonblocking_audit`, `test_doctor_team_memories_advisory_nonblocking`), `tests/test_context.py` (`test_context_secondary_team_memory_attachment_and_budget_precedence`), and `tests/test_drift.py` (`test_drift_affected_memories_advisory_isolation`), maintaining `>90%` per-file statement coverage (`POL-STATEMENT-TEST-COVERAGE`) and verifying `tests/test_plugin.py` (`test_bundled_skill_size_ceilings`, `test_bundled_skill_cli_parity`) and `tests/test_docs_sync.py`.
+   * Seed 4–6 genuine Eidos operational memories under `eidos/memory/mem-*.adoc` via `eidos memory add` (team memory dogfooding; isolated in `ChangedFilesClassification.memory_files`; no spec mutation).
+   * Run `pytest`, `eidos delta verify DLT-2026-182 --json`, `eidos delta apply DLT-2026-182`, and `eidos drift --uncommitted --json` until clean.

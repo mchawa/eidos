@@ -2228,7 +2228,8 @@ def test_init_repository_ci_workflow_templates(tmp_path):
     assert "jobs" in gh_parsed and "eidos-drift" in gh_parsed["jobs"]
     steps = gh_parsed["jobs"]["eidos-drift"]["steps"]
     assert any((s.get("with") or {}).get("fetch-depth") == 0 for s in steps)
-    assert any("eidos drift" in str(s.get("run", "")) and "GITHUB_STEP_SUMMARY" in str(s.get("run", "")) for s in steps)
+    assert any("eidos drift" in str(s.get("run", "")) and "--markdown" not in str(s.get("run", "")) for s in steps)
+    assert "GITHUB_STEP_SUMMARY" not in gh_wf.read_text(encoding="utf-8")
 
     # 2. Non-destructive preservation when workflow already exists without --force, overwrite with --force
     existing_repo = tmp_path / "existing-wf-repo"

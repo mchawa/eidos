@@ -1,8 +1,8 @@
 {
   "version": "0.29.2",
   "files": {
-    "skills/eidos/SKILL.md": "aa39d34caa5ce07eaa7e44ae8183c5a39863e47d71fdccf116d31bc707f0d200",
-    "skills/eidos-memory/SKILL.md": "85df4bced39fd0021a35f4856442f9a95fbaba4ddd3a161835f13173d59b7b4f",
+    "skills/eidos/SKILL.md": "a53692fb881ec8616b92e2b87cfa22e5bddfdb49b907c32d1b535c33521484f8",
+    "skills/eidos-memory/SKILL.md": "ebf01e05e969396d9021bc93c523b664efa43150a1acb628d65e5e1b850dea24",
     "skills/eidos-ops/SKILL.md": "536dc399638b08663c5929bfab2b4335d3b15918cd4d04d810ad70dff9933791",
     "skills/eidos-plan/SKILL.md": "fd26169f17406a5947404ccdfb317a69d02031ad351516ae5518c8067367c0b6",
     "skills/eidos-spec/SKILL.md": "d1d82b5fe607a6575af5dba20738ea97fd6c72c4db1f2ef4b0515c5eff966a45"

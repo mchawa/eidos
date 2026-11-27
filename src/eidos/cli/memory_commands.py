@@ -19,12 +19,13 @@ from eidos.core.lifecycle.memory_engine import (
     promote_memory,
     search_memories,
     show_memory,
+    update_memory,
     verify_memory,
 )
 
 memory_app = typer.Typer(
     name="memory",
-    help="Manage Git-native team operational memories under eidos/memory/ (add, list, search, show, verify, archive, audit, promote).",
+    help="Manage Git-native team operational memories under eidos/memory/ (add, update, list, search, show, verify, archive, audit, promote).",
     add_completion=False,
 )
 
@@ -50,7 +51,12 @@ def memory_add_cmd(
         "-c",
         help="Team memory category: feedback, project, or reference (never personal user preferences).",
     ),
-    summary: str = typer.Option(..., "--summary", "-s", help="Single-line operational takeaway (<= 220 chars)."),
+    summary: str | None = typer.Option(
+        None,
+        "--summary",
+        "-s",
+        help="Optional single-line operational takeaway (<= 220 chars; auto-derived from --guidance or --title when omitted).",
+    ),
     guidance: str = typer.Option("", "--guidance", "-g", help="Actionable engineering guidance body."),
     why: str = typer.Option("", "--why", "-w", help="Rationale or incident context explaining why this rule exists."),
     entity: list[str] = typer.Option(
@@ -64,6 +70,16 @@ def memory_add_cmd(
         "--file",
         "-f",
         help="Target repository file path(s) or glob pattern(s) (repeatable, e.g. -f src/core/storage.py).",
+    ),
+    auto_entities: bool = typer.Option(
+        True,
+        "--auto-entities/--no-auto-entities",
+        help="Automatically infer owning CMP-*/CNT-* entity anchors from --file / --from-diff paths.",
+    ),
+    from_diff: bool = typer.Option(
+        False,
+        "--from-diff",
+        help="Anchor uncommitted changed workspace files (excluding eidos/memory/**) and auto-infer their owning entities.",
     ),
     expires: str | None = typer.Option(
         None,
@@ -94,6 +110,60 @@ def memory_add_cmd(
     else:
         eff_expires = None
 
+    eff_paths = list(file)
+    if from_diff:
+        from eidos.core.workspace.project import find_git_root, find_repo_root, resolve_spec_and_repo_roots
+        from eidos.vcs.diff import GitResolutionError, classify_changed_files, get_git_diff_files
+
+        resolved_eidos = eidos_dir.resolve()
+        if resolved_eidos.name == "eidos":
+            repo_root = resolved_eidos.parent
+        elif resolved_eidos.exists():
+            _, repo_root = resolve_spec_and_repo_roots(resolved_eidos)
+        else:
+            repo_root = find_repo_root(resolved_eidos.parent if resolved_eidos.parent.exists() else None)
+
+        if find_git_root(repo_root) is None:
+            _fail("Cannot use --from-diff outside a Git repository.", json_output=json_output)
+
+        try:
+            changed = get_git_diff_files(
+                repo_root,
+                uncommitted=True,
+                repo_config=repo_cfg,
+                eidos_dir=resolved_eidos,
+            )
+        except GitResolutionError as exc:
+            _fail(str(exc), json_output=json_output)
+
+        cls = classify_changed_files(
+            changed,
+            repo_root=repo_root,
+            eidos_dir=resolved_eidos,
+            repo_config=repo_cfg,
+        )
+        try:
+            eidos_rel_prefix = (
+                str(resolved_eidos.relative_to(repo_root.resolve())).replace("\\", "/").strip("/") or "eidos"
+            )
+        except ValueError:
+            eidos_rel_prefix = resolved_eidos.name or "eidos"
+        mem_dir_prefix = f"{eidos_rel_prefix.lower()}/memory/"
+
+        diff_candidates = [
+            *cls.code_files,
+            *cls.test_files,
+            *cls.spec_files,
+            *cls.doc_files,
+            *cls.other_files,
+        ]
+        for rel_p in diff_candidates:
+            norm_rel = rel_p.replace("\\", "/").lstrip("./")
+            if norm_rel.lower().startswith(mem_dir_prefix) or norm_rel.lower() == mem_dir_prefix.rstrip("/"):
+                continue
+            if (repo_root / rel_p).exists() and rel_p not in eff_paths:
+                eff_paths.append(rel_p)
+
     try:
         res = add_memory(
             eidos_dir,
@@ -103,7 +173,8 @@ def memory_add_cmd(
             guidance=guidance,
             why=why,
             entities=entity,
-            paths=file,
+            paths=eff_paths,
+            auto_entities=auto_entities,
             expires_at=eff_expires,
             status=status,
             use_semantic=eff_semantic,
@@ -120,6 +191,107 @@ def memory_add_cmd(
     console.print(
         f"  Category: {rich_escape(str(res['category']))} | Status: {rich_escape(str(res['status']))} | Verified: {rich_escape(str(res['verified_at']))}"
     )
+    if res.get("inferred_entities"):
+        console.print(f"  Auto-anchored entities: [cyan]{', '.join(res['inferred_entities'])}[/cyan]")
+    warnings = res.get("warnings") or {}
+    for dup in warnings.get("duplicate_memories") or []:
+        console.print(
+            f"  [yellow]⚠ Potential duplicate memory:[/yellow] {rich_escape(str(dup['id']))} ({rich_escape(str(dup['title']))}, {dup['method']}={dup['score']})"
+        )
+    for ov in warnings.get("spec_overlaps") or []:
+        console.print(
+            f"  [yellow]⚠ Potential formal spec overlap:[/yellow] {rich_escape(str(ov['id']))} ({rich_escape(str(ov['title']))}, {ov['method']}={ov['score']})"
+        )
+
+
+@memory_app.command("update")
+def memory_update_cmd(
+    id_or_path: str = typer.Argument(..., help="Memory ID (MEM-*), unambiguous prefix, or path."),
+    title: str | None = typer.Option(None, "--title", "-t", help="Updated memory title."),
+    category: str | None = typer.Option(
+        None,
+        "--category",
+        "-c",
+        help="Updated team memory category: feedback, project, or reference.",
+    ),
+    summary: str | None = typer.Option(
+        None, "--summary", "-s", help="Updated single-line operational takeaway (<= 220 chars)."
+    ),
+    guidance: str | None = typer.Option(None, "--guidance", "-g", help="Updated actionable engineering guidance body."),
+    why: str | None = typer.Option(None, "--why", "-w", help="Updated rationale or incident context."),
+    entity: list[str] | None = typer.Option(
+        None,
+        "--entity",
+        "-e",
+        help="Target Eidos entity ID(s) to add (or replace when --replace-targets is set).",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="Target repository file path(s) or glob pattern(s) to add (or replace when --replace-targets is set).",
+    ),
+    replace_targets: bool = typer.Option(
+        False,
+        "--replace-targets",
+        help="Replace existing target entities and paths instead of merging.",
+    ),
+    auto_entities: bool = typer.Option(
+        True,
+        "--auto-entities/--no-auto-entities",
+        help="Automatically infer owning CMP-*/CNT-* entity anchors from updated --file paths.",
+    ),
+    expires: str | None = typer.Option(None, "--expires", help="Update optional ISO expiration date YYYY-MM-DD."),
+    clear_expires: bool = typer.Option(False, "--clear-expires", help="Remove existing expires_at TTL."),
+    status: str | None = typer.Option(None, "--status", help="Update status: active or draft."),
+    semantic: bool = typer.Option(
+        True,
+        "--semantic/--no-semantic",
+        help="Use pre-computed Harrier embeddings for overlap detection when available.",
+    ),
+    path: Path = typer.Option(Path("eidos"), "--path", "-p", help="Path to eidos specifications directory."),
+    json_output: bool = typer.Option(False, "--json", help="Output updated memory metadata as JSON."),
+) -> None:
+    """Update an active or draft team operational memory in place and re-stamp verification."""
+    from eidos.cli._shared import load_cli_repo_config, resolve_param_from_config
+
+    eidos_dir = resolve_cli_eidos_dir(path)
+    repo_cfg = load_cli_repo_config(eidos_dir, json_output=json_output)
+    eff_semantic = bool(resolve_param_from_config("semantic", semantic, repo_cfg.context.semantic.enabled))
+
+    try:
+        res = update_memory(
+            eidos_dir,
+            id_or_path,
+            title=title,
+            category=category,
+            summary=summary,
+            guidance=guidance,
+            why=why,
+            entities=entity,
+            paths=file,
+            replace_targets=replace_targets,
+            auto_entities=auto_entities,
+            expires_at=expires,
+            clear_expires=clear_expires,
+            status=status,
+            use_semantic=eff_semantic,
+        )
+    except ValueError as exc:
+        _fail(str(exc), json_output=json_output)
+
+    if json_output:
+        _echo_json(res)
+        return
+
+    console.print(f"[bold green]✓ Updated team memory:[/bold green] [cyan]{rich_escape(str(res['id']))}[/cyan]")
+    console.print(f"  File: [dim]{rich_escape(str(res['relative_path']))}[/dim]")
+    console.print(
+        f"  Category: {rich_escape(str(res['category']))} | Status: {rich_escape(str(res['status']))} | "
+        f"Freshness: [yellow]{rich_escape(str(res['freshness']))}[/yellow] | Verified: {rich_escape(str(res['verified_at']))}"
+    )
+    if res.get("inferred_entities"):
+        console.print(f"  Auto-anchored entities: [cyan]{', '.join(res['inferred_entities'])}[/cyan]")
     warnings = res.get("warnings") or {}
     for dup in warnings.get("duplicate_memories") or []:
         console.print(

@@ -22,12 +22,14 @@ from eidos.core.lifecycle.memory_engine import (
     detect_memory_overlaps,
     find_memory_by_id_or_path,
     generate_memory_id,
+    infer_memory_entities_for_paths,
     list_memories,
     promote_memory,
     resolve_promotion_target,
     sanitize_memory_asciidoc_body,
     search_memories,
     show_memory,
+    update_memory,
     verify_memory,
 )
 from eidos.core.spec.parser import parse_spec_file
@@ -385,6 +387,205 @@ def test_memory_lifecycle_sanitizer_overlap_and_promotion(tmp_path: Path, monkey
     _, fn_unique = generate_memory_id("Use real SQLite WAL tmp_path in storage tests", eidos_dir)
     assert fn_unique != mem1_path.name
 
+    # 4. DLT-2026-182: optional summary auto-derivation, deterministic path-to-entity auto-anchoring, and update_memory
+    (repo / "src" / "core" / "other.py").write_text("def helper():\n    return 2\n", encoding="utf-8")
+    assert infer_memory_entities_for_paths(eidos_dir, []) == []
+    assert infer_memory_entities_for_paths(eidos_dir, ["/abs/outside.py", "../escape.py"]) == []
+    # Exact component file resolves to CMP-CORE-DB (more specific than parent CNT-CORE)
+    assert infer_memory_entities_for_paths(eidos_dir, ["src/core/db.py"]) == ["CMP-CORE-DB"]
+    # Container-only file without a CMP-* falls back to CNT-CORE
+    assert infer_memory_entities_for_paths(eidos_dir, ["src/core/other.py"]) == ["CNT-CORE"]
+    # Glob and planned-glob fallback resolution
+    assert set(infer_memory_entities_for_paths(eidos_dir, ["src/core/*.py"])) == {"CMP-CORE-DB", "CNT-CORE"}
+    assert infer_memory_entities_for_paths(eidos_dir, ["src/core/future_dir/*.py"]) == ["CNT-CORE"]
+
+    # Optional summary auto-derived from first guidance sentence (skipping fences & stripping bullet/heading markers)
+    long_guidance_sentence = "Always pass --no-semantic in local unit tests so CPU ONNX inference never stalls " + (
+        "during CI verification " * 12
+    )
+    res_auto = add_memory(
+        eidos_dir,
+        title="Skip ONNX semantic sync in unit tests",
+        category="feedback",
+        summary=None,
+        guidance=f"```bash\nuv run pytest\n```\n- {long_guidance_sentence}. Second sentence ignored.",
+        paths=["src/core/db.py"],
+        auto_entities=True,
+        use_semantic=False,
+        today=today,
+    )
+    assert len(res_auto["summary"]) <= 220 and res_auto["summary"].endswith("...")
+    assert res_auto["summary"].startswith("Always pass --no-semantic")
+    assert res_auto["inferred_entities"] == ["CMP-CORE-DB"]
+    assert res_auto["targets"]["entities"] == ["CMP-CORE-DB"]
+
+    # Auto-summary falls back to title when guidance is empty or code-block-only; auto_entities=False skips inference
+    from eidos.core.lifecycle.memory_engine import _derive_memory_summary, _extract_raw_memory_sections
+
+    assert _derive_memory_summary("T", "[source,bash]\n----\necho hi\n----\n\n## Heading summary") == "Heading summary"
+    assert _derive_memory_summary("T", "---\n== Adoc Heading") == "Adoc Heading"
+    assert _derive_memory_summary("T", "1. Ordered step one.") == "Ordered step one."
+    assert _derive_memory_summary("T", ". Adoc ordered step.") == "Adoc ordered step."
+    assert _derive_memory_summary("T", "Pass flags (e.g. --no-cov) to pytest for fast runs. Second.") == (
+        "Pass flags (e.g. --no-cov) to pytest for fast runs."
+    )
+    assert _derive_memory_summary("T", "Use pnpm vs. npm in frontend. Second.") == "Use pnpm vs. npm in frontend."
+    assert _derive_memory_summary("T", "[IMPORTANT]\n// internal comment\n----\n** Always run pnpm build.") == (
+        "Always run pnpm build."
+    )
+    assert _extract_raw_memory_sections("Plain body with no h2") == ("Plain body with no h2", "", "", "Why", [])
+    assert _extract_raw_memory_sections(
+        "= Memory: Demo\n:toc: left\n\nPreamble line.\n\n== Guidance\n[source,asciidoc]\n----\n== Public Surface\n* foo()\n----\n\n== Rationale\nKeep why heading.\n\n== Extra Notes\nKeep Y\n"
+    ) == (
+        "Preamble line.",
+        "[source,asciidoc]\n----\n== Public Surface\n* foo()\n----",
+        "Keep why heading.",
+        "Rationale",
+        [("Extra Notes", "Keep Y")],
+    )
+
+    # Path normalization deduplicates './src/core/db.py' and 'src/core/db.py'
+    res_norm = add_memory(
+        eidos_dir,
+        title="Normalized path dedup test",
+        summary="Dedup leading dot-slash paths.",
+        paths=["./src/core/db.py", "src/core/db.py"],
+        use_semantic=False,
+        today=today,
+    )
+    assert res_norm["targets"]["paths"] == ["src/core/db.py"]
+
+    # update_memory preserves preamble, AsciiDoc listing block containing '== Public Surface', and '== Rationale' heading
+    code_mem_path = eidos_dir / "memory" / "mem-code-block-preserve-7c1d.adoc"
+    code_mem_path.write_text(
+        "---\n"
+        "type: agent/memory\n"
+        "id: MEM-CODE-BLOCK-PRESERVE-7C1D\n"
+        'title: "Preserve code block headings"\n'
+        "category: feedback\n"
+        "status: active\n"
+        'summary: "Do not split H2 inside listing blocks."\n'
+        'verified_at: "2026-11-25"\n'
+        "---\n"
+        "= Memory: Preserve code block headings\n"
+        ":toc: left\n\n"
+        "Important preamble note.\n\n"
+        "== Guidance\n\n"
+        "[source,asciidoc]\n"
+        "----\n"
+        "== Public Surface\n"
+        "* `run()`\n"
+        "----\n\n"
+        "== Rationale\n\n"
+        "Original rationale.\n",
+        encoding="utf-8",
+    )
+    update_memory(eidos_dir, "MEM-CODE-BLOCK-PRESERVE-7C1D", summary="Updated summary only.", use_semantic=False)
+    updated_code_text = code_mem_path.read_text(encoding="utf-8")
+    assert "Important preamble note." in updated_code_text
+    assert "[source,asciidoc]\n----\n== Public Surface\n* `run()`\n----" in updated_code_text
+    assert "== Rationale\n\nOriginal rationale." in updated_code_text
+    code_mem_path.unlink()
+    Path(res_norm["path"]).unlink()
+
+    res_title_sum = add_memory(
+        eidos_dir,
+        title="Pin Python 3.12 in local virtualenv",
+        category="feedback",
+        summary=None,
+        guidance="```bash\nuv venv\n```",
+        paths=["src/core/db.py"],
+        auto_entities=False,
+        use_semantic=False,
+        today=today,
+    )
+    assert res_title_sum["summary"] == "Pin Python 3.12 in local virtualenv"
+    assert res_title_sum["inferred_entities"] == []
+    assert "entities" not in res_title_sum["targets"]
+
+    # update_memory preserves untouched multiline code blocks losslessly, merges/replaces targets, re-stamps verification
+    upd_preserve = update_memory(
+        eidos_dir,
+        res_auto["id"],
+        why="CPU ONNX loading adds 30s per worker.",
+        use_semantic=False,
+        today=today + timedelta(days=1),
+    )
+    assert upd_preserve["verified_at"] == (today + timedelta(days=1)).isoformat()
+    assert upd_preserve["freshness"] == "fresh"
+    preserved_text = Path(upd_preserve["path"]).read_text(encoding="utf-8")
+    assert "[source,bash]\n----\nuv run pytest\n----" in preserved_text
+    assert "== Why\n\nCPU ONNX loading adds 30s per worker." in preserved_text
+
+    # Merge new path + auto-infer CNT-CORE alongside existing CMP-CORE-DB
+    upd_merge = update_memory(
+        eidos_dir,
+        res_auto["id"],
+        title="Skip ONNX semantic sync in fast unit tests",
+        summary="Always pass --no-semantic in unit tests to avoid CPU ONNX stalls.",
+        guidance="Run `eidos index sync --no-semantic` in tests.",
+        paths=["src/core/other.py"],
+        expires_at="2027-06-01",
+        status="draft",
+        use_semantic=False,
+        today=today + timedelta(days=2),
+    )
+    assert upd_merge["status"] == "draft"
+    assert upd_merge["freshness"] == "draft"
+    assert upd_merge["expires_at"] == "2027-06-01"
+    assert set(upd_merge["targets"]["entities"]) == {"CMP-CORE-DB", "CNT-CORE"}
+    assert set(upd_merge["targets"]["paths"]) == {"src/core/db.py", "src/core/other.py"}
+
+    # Replace targets cleanly + clear_expires + reactivate
+    upd_replace = update_memory(
+        eidos_dir,
+        res_auto["id"],
+        category="project",
+        paths=["src/core/other.py"],
+        replace_targets=True,
+        auto_entities=True,
+        clear_expires=True,
+        status="active",
+        use_semantic=False,
+        today=today + timedelta(days=3),
+    )
+    assert upd_replace["category"] == "project"
+    assert upd_replace["expires_at"] is None
+    assert upd_replace["targets"] == {"entities": ["CNT-CORE"], "paths": ["src/core/other.py"]}
+
+    # Replace targets with empty clears targets completely (turns into global note)
+    upd_global = update_memory(
+        eidos_dir,
+        res_auto["id"],
+        replace_targets=True,
+        use_semantic=False,
+        today=today + timedelta(days=3),
+    )
+    assert upd_global["targets"] == {}
+    assert "targets" not in parse_spec_file(Path(upd_global["path"])).frontmatter
+
+    # update_memory negative guards
+    with pytest.raises(ValueError, match="Cannot combine"):
+        update_memory(eidos_dir, res_auto["id"], expires_at="2027-01-01", clear_expires=True, use_semantic=False)
+    with pytest.raises(ValueError, match="archived or promoted"):
+        update_memory(eidos_dir, prom_arch["id"], summary="Nope", use_semantic=False)
+    with pytest.raises(ValueError, match="archived or promoted"):
+        update_memory(eidos_dir, arch_res["id"], summary="Nope", use_semantic=False)
+    with pytest.raises(ValueError, match="client-native memory"):
+        update_memory(eidos_dir, res_auto["id"], category="user", use_semantic=False)
+    with pytest.raises(ValueError, match="Invalid category"):
+        update_memory(eidos_dir, res_auto["id"], category="bogus", use_semantic=False)
+    with pytest.raises(ValueError, match="Invalid status"):
+        update_memory(eidos_dir, res_auto["id"], status="archived", use_semantic=False)
+    with pytest.raises(ValueError, match="title cannot be empty"):
+        update_memory(eidos_dir, res_auto["id"], title="   ", use_semantic=False)
+    with pytest.raises(ValueError, match="summary cannot be empty"):
+        update_memory(eidos_dir, res_auto["id"], summary="   ", use_semantic=False)
+    with pytest.raises(ValueError, match="exceeds 220"):
+        update_memory(eidos_dir, res_auto["id"], summary="x" * 221, use_semantic=False)
+    with pytest.raises(ValueError, match="not 'agent/memory'"):
+        update_memory(eidos_dir, str(dom_path), summary="Nope", use_semantic=False)
+
 
 def test_memory_cli_subcommands_and_nonblocking_audit(tmp_path: Path) -> None:
     """Verify INV-MEMORY-CLI-AND-SKILL-PARITY: all 8 'eidos memory' CLI subcommands (Rich & --json), strictly non-blocking audit exit code 0, error handling, and root help/info parity."""
@@ -610,6 +811,284 @@ def test_memory_cli_subcommands_and_nonblocking_audit(tmp_path: Path) -> None:
     assert arch_json.exit_code == 0
     assert orjson.loads(arch_json.stdout)["status"] == "archived"
     assert cli.invoke(app, ["memory", "archive", "MEM-MISSING", "--path", str(eidos_dir)]).exit_code == 1
+
+    # 9. DLT-2026-182: optional --summary, --from-diff, --auto-entities/--no-auto-entities, and 9th subcommand 'update'
+    mem_help = cli.invoke(app, ["memory", "--help"])
+    assert mem_help.exit_code == 0
+    for sub in ("add", "update", "list", "search", "show", "verify", "archive", "audit", "promote"):
+        assert sub in mem_help.stdout
+
+    # Modify a tracked file, create an untracked file + doc file, and add non-spec files under eidos/memory/ (all excluded from --from-diff)
+    (_repo / "src" / "core" / "db.py").write_text("def open_db():\n    return 2\n", encoding="utf-8")
+    (_repo / "src" / "core" / "new_untracked.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (_repo / "docs").mkdir(parents=True, exist_ok=True)
+    (_repo / "docs" / "guide.md").write_text("# Guide\n", encoding="utf-8")
+    (eidos_dir / "memory" / "notes.txt").write_text("scratch\n", encoding="utf-8")
+    (eidos_dir / "memory" / "README.md").write_text("# Memory readme\n", encoding="utf-8")
+    add_diff_json = cli.invoke(
+        app,
+        [
+            "memory",
+            "add",
+            "--title",
+            "Reset SQLite connection pool in storage tests",
+            "--guidance",
+            "Always close ArchitecturalIndex instances after mutating src/core/db.py.",
+            "--from-diff",
+            "--no-semantic",
+            "--path",
+            str(eidos_dir),
+            "--json",
+        ],
+    )
+    assert add_diff_json.exit_code == 0, add_diff_json.stdout
+    diff_mem = orjson.loads(add_diff_json.stdout)
+    assert diff_mem["summary"].startswith("Always close ArchitecturalIndex")
+    assert "src/core/db.py" in diff_mem["targets"]["paths"]
+    assert "src/core/new_untracked.py" in diff_mem["targets"]["paths"]
+    assert "docs/guide.md" in diff_mem["targets"]["paths"]
+    assert all(not p.startswith("eidos/memory/") for p in diff_mem["targets"]["paths"])
+    assert "CMP-CORE-DB" in diff_mem["targets"]["entities"]
+    assert "CMP-CORE-DB" in diff_mem["inferred_entities"]
+    (eidos_dir / "memory" / "notes.txt").unlink()
+    (eidos_dir / "memory" / "README.md").unlink()
+
+    # --from-diff outside a Git repository fails closed with exit code 1
+    nongit_dir = tmp_path / "nongit_ws"
+    init_repository(nongit_dir, title="NonGit WS")
+    nongit_res = cli.invoke(
+        app,
+        [
+            "memory",
+            "add",
+            "--title",
+            "No git",
+            "--from-diff",
+            "--no-semantic",
+            "--path",
+            str(nongit_dir / "eidos"),
+            "--json",
+        ],
+    )
+    assert nongit_res.exit_code == 1
+    assert "Git repository" in orjson.loads(nongit_res.stdout)["error"]
+
+    # Rich add with auto-entities displays inferred entities
+    add_auto_rich = cli.invoke(
+        app,
+        [
+            "memory",
+            "add",
+            "--title",
+            "Check db module locking",
+            "--file",
+            "src/core/db.py",
+            "--no-semantic",
+            "--path",
+            str(eidos_dir),
+        ],
+    )
+    assert add_auto_rich.exit_code == 0, add_auto_rich.stdout
+    assert "Auto-anchored entities:" in add_auto_rich.stdout and "CMP-CORE-DB" in add_auto_rich.stdout
+
+    # 9th subcommand: update (Rich + JSON + error on archived/user/missing)
+    upd_rich = cli.invoke(
+        app,
+        [
+            "memory",
+            "update",
+            diff_mem["id"],
+            "--guidance",
+            "Call idx.close() in a finally block after syncing.",
+            "--why",
+            "Open WAL handles prevent temp cleanup on Windows.",
+            "--file",
+            "src/core/db.py",
+            "--no-semantic",
+            "--path",
+            str(eidos_dir),
+        ],
+    )
+    assert upd_rich.exit_code == 0, upd_rich.stdout
+    assert "Updated team memory" in upd_rich.stdout
+    assert "Auto-anchored entities:" in upd_rich.stdout
+
+    upd_json = cli.invoke(
+        app,
+        [
+            "memory",
+            "update",
+            diff_mem["id"],
+            "--replace-targets",
+            "--file",
+            "src/core/db.py",
+            "--no-auto-entities",
+            "--no-semantic",
+            "--path",
+            str(eidos_dir),
+            "--json",
+        ],
+    )
+    assert upd_json.exit_code == 0, upd_json.stdout
+    upd_payload = orjson.loads(upd_json.stdout)
+    assert upd_payload["targets"] == {"paths": ["src/core/db.py"]}
+    assert upd_payload["inferred_entities"] == []
+
+    # Update rejects archived/promoted, category user, and missing ID with exit code 1
+    assert (
+        cli.invoke(app, ["memory", "update", other_id, "--summary", "No", "--path", str(eidos_dir), "--json"]).exit_code
+        == 1
+    )
+    assert (
+        cli.invoke(app, ["memory", "update", diff_mem["id"], "--category", "user", "--path", str(eidos_dir)]).exit_code
+        == 1
+    )
+    assert (
+        cli.invoke(app, ["memory", "update", "MEM-MISSING", "--summary", "No", "--path", str(eidos_dir)]).exit_code == 1
+    )
+
+    # Skill & AGENTS.md trigger parity checks
+    repo_root = Path(__file__).parent.parent
+    block_text = (repo_root / "assets/plugin_reference/agents-md/block.md").read_text(encoding="utf-8")
+    eidos_skill_text = (repo_root / "assets/plugin_reference/skills/eidos/SKILL.md").read_text(encoding="utf-8")
+    mem_skill_text = (repo_root / "assets/plugin_reference/skills/eidos-memory/SKILL.md").read_text(encoding="utf-8")
+    assert "--from-diff" in block_text and "gotcha" in block_text
+    assert "affected_memories" in eidos_skill_text and "eidos memory update" in eidos_skill_text
+    assert "eidos memory update" in mem_skill_text and "--from-diff" in mem_skill_text
+
+
+def test_doctor_team_memories_advisory_nonblocking(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify INV-DOCTOR-TEAM-MEMORY-ADVISORY: eidos doctor surfaces strictly non-blocking checks.team_memories in Rich and --json outputs without failing healthy or exit code 0."""
+    import eidos.cli.doctor_hook_commands as doc_cmd_mod
+
+    monkeypatch.setattr(
+        doc_cmd_mod,
+        "check_cli_update_status",
+        lambda **_kw: {
+            "status": "up_to_date",
+            "installed_version": "0.29.2",
+            "latest_version": "0.29.2",
+            "update_available": False,
+            "upgrade_command": None,
+            "status_text": "Installed: v0.29.2 (up to date)",
+        },
+    )
+
+    repo = tmp_path / "doc_mem_repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.email", "test@eidos.dev")
+    _git(repo, "config", "user.name", "Test")
+    init_repository(repo, title="Doctor Memory Repo")
+    eidos_dir = repo / "eidos"
+    (repo / "src" / "core").mkdir(parents=True, exist_ok=True)
+    (repo / "src" / "core" / "db.py").write_text("def open_db():\n    return True\n", encoding="utf-8")
+    (eidos_dir / "architecture" / "containers" / "cnt-core.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-CORE\ntitle: Core\nstatus: active\n"
+        "container_type: library\nruntime: Python 3.12\nsource_path: src/core\n---\n= Core\n",
+        encoding="utf-8",
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "initial")
+    cli = CliRunner()
+
+    # 1. Empty memory directory -> status=empty, ok=True, healthy=True, exit 0
+    res_empty_json = cli.invoke(app, ["doctor", "--path", str(eidos_dir), "--json"])
+    assert res_empty_json.exit_code == 0, res_empty_json.stdout
+    d_empty = orjson.loads(res_empty_json.stdout)
+    assert d_empty["healthy"] is True
+    tm_empty = d_empty["checks"]["team_memories"]
+    assert tm_empty["ok"] is True
+    assert tm_empty["status"] == "empty"
+    assert tm_empty["total_active"] == 0
+
+    res_empty_rich = cli.invoke(app, ["doctor", "--path", str(eidos_dir)])
+    assert res_empty_rich.exit_code == 0, res_empty_rich.stdout
+    assert "Team Memories" in res_empty_rich.stdout and "EMPTY" in res_empty_rich.stdout
+
+    # 2. One fresh active memory -> status=clean, total_active=1, fresh=1, healthy=True, exit 0
+    add_memory(
+        eidos_dir,
+        title="Use WAL tmp_path in tests",
+        guidance="Pass tmp_path to SQLite index tests.",
+        paths=["src/core/db.py"],
+        use_semantic=False,
+    )
+    res_clean_json = cli.invoke(app, ["doctor", "--path", str(eidos_dir), "--json"])
+    assert res_clean_json.exit_code == 0, res_clean_json.stdout
+    d_clean = orjson.loads(res_clean_json.stdout)
+    assert d_clean["healthy"] is True
+    tm_clean = d_clean["checks"]["team_memories"]
+    assert tm_clean["ok"] is True
+    assert tm_clean["status"] == "clean"
+    assert tm_clean["total_active"] == 1 and tm_clean["fresh"] == 1
+    assert tm_clean["stale"] == 0 and tm_clean["expired"] == 0 and tm_clean["unverifiable"] == 0
+
+    res_clean_rich = cli.invoke(app, ["doctor", "--path", str(eidos_dir)])
+    assert res_clean_rich.exit_code == 0, res_clean_rich.stdout
+    assert "Team Memories" in res_clean_rich.stdout and "1 active (1 fresh)" in res_clean_rich.stdout
+
+    # 3. Stale, expired, and unverifiable memories -> status=needs_review, STILL ok=True, healthy=True, exit 0!
+    add_memory(
+        eidos_dir,
+        title="Stale deleted target note",
+        summary="Points to a missing file.",
+        paths=["src/core/does_not_exist.py"],
+        use_semantic=False,
+    )
+    add_memory(
+        eidos_dir,
+        title="Expired freeze window",
+        category="project",
+        summary="Hold releases until window ends.",
+        expires_at="2020-01-01",
+        use_semantic=False,
+    )
+    unver_file = eidos_dir / "memory" / "mem-unverifiable-sha-9a1b.adoc"
+    unver_file.write_text(
+        "---\n"
+        "type: agent/memory\n"
+        "id: MEM-UNVERIFIABLE-SHA-9A1B\n"
+        'title: "Unreachable commit note"\n'
+        "category: feedback\n"
+        "status: active\n"
+        'summary: "Stamped with unreachable commit SHA."\n'
+        "targets:\n"
+        "  paths: [src/core/db.py]\n"
+        'verified_at: "2026-11-25"\n'
+        'verified_commit: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"\n'
+        "---\n= Memory: Unreachable commit note\n",
+        encoding="utf-8",
+    )
+
+    res_rev_json = cli.invoke(app, ["doctor", "--path", str(eidos_dir), "--json"])
+    assert res_rev_json.exit_code == 0, res_rev_json.stdout
+    d_rev = orjson.loads(res_rev_json.stdout)
+    assert d_rev["healthy"] is True
+    tm_rev = d_rev["checks"]["team_memories"]
+    assert tm_rev["ok"] is True
+    assert tm_rev["status"] == "needs_review"
+    assert tm_rev["total_active"] == 4
+    assert tm_rev["fresh"] == 1
+    assert tm_rev["stale"] == 1
+    assert tm_rev["expired"] == 1
+    assert tm_rev["unverifiable"] == 1
+    assert "eidos memory audit" in tm_rev["detail"]
+
+    res_rev_rich = cli.invoke(app, ["doctor", "--path", str(eidos_dir)])
+    assert res_rev_rich.exit_code == 0, res_rev_rich.stdout
+    assert "Team Memories" in res_rev_rich.stdout and "WARN" in res_rev_rich.stdout
+
+    # 4. Read-only / PermissionError during team memory inspection degrades gracefully without crashing doctor
+    monkeypatch.setattr(doc_cmd_mod, "list_memories", lambda *_a, **_kw: (_ for _ in ()).throw(PermissionError("ro")))
+    res_ro_json = cli.invoke(app, ["doctor", "--path", str(eidos_dir), "--json"])
+    assert res_ro_json.exit_code == 0, res_ro_json.stdout
+    d_ro = orjson.loads(res_ro_json.stdout)
+    assert d_ro["healthy"] is True
+    assert d_ro["checks"]["team_memories"]["ok"] is True
+    assert d_ro["checks"]["team_memories"]["status"] == "unavailable"
+    res_ro_rich = cli.invoke(app, ["doctor", "--path", str(eidos_dir)])
+    assert res_ro_rich.exit_code == 0 and "UNAVAILABLE" in res_ro_rich.stdout
 
 
 def test_memory_deep_review_hardening_regressions(tmp_path: Path) -> None:

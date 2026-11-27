@@ -5762,7 +5762,7 @@ def test_advisory_warnings_overscoped_source_path_and_prose_symbols(tmp_path: Pa
     #    - C# shared-namespace siblings -> NOT warned
     #    - Prose inherited method + Tier-2 lazy symbol + external types + bare PascalCase + contrastive cues -> NOT warned
     #    - Prose ghost method on real class, deleted Class.Call(), deleted func() -> warned
-    #    - eidos validate (--json & terminal) and eidos drift (--json, terminal & --markdown) surface warnings with exit 0
+    #    - eidos validate (--json & terminal) and eidos drift (--json & terminal) surface warnings with exit 0
     ws = tmp_path / "adv_repo"
     eidos_dir = ws / "eidos"
     (eidos_dir / "domains" / "core").mkdir(parents=True)
@@ -5881,7 +5881,7 @@ def test_advisory_warnings_overscoped_source_path_and_prose_symbols(tmp_path: Pa
     assert res_term.exit_code == 0, res_term.output
     assert "Advisory Validation Warnings" in res_term.output
 
-    # 4. Initialize git repo and verify detect_drift + eidos drift (--json, terminal & --markdown) surface validation_warnings with exit 0
+    # 4. Initialize git repo and verify detect_drift + eidos drift (--json & terminal) surface validation_warnings with exit 0
     subprocess.run(["git", "init"], cwd=ws, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=ws, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.name", "Test"], cwd=ws, check=True, capture_output=True)
@@ -5891,7 +5891,6 @@ def test_advisory_warnings_overscoped_source_path_and_prose_symbols(tmp_path: Pa
     drift_res = detect_drift(repo_root=ws, eidos_dir=eidos_dir, uncommitted=True)
     assert drift_res.is_clean is True
     assert len(drift_res.validation_warnings) == len(rep.warnings)
-    assert "Specification Validation Warnings (Advisory)" in drift_res.summary_markdown
 
     drift_json = runner.invoke(cli_app, ["drift", "--path", str(eidos_dir), "--uncommitted", "--json"])
     assert drift_json.exit_code == 0, drift_json.output

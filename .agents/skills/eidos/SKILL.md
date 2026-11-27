@@ -132,18 +132,19 @@ eidos drift --uncommitted --json
 git diff -- <file>   # inspect each modified file untruncated
 ```
 
-On multi-file (`>=3`) or contract/schema edits, prefer delegating this read-only audit (`git diff` + `eidos context --uncommitted --json` + `eidos drift --uncommitted --json`) to a fresh-context subagent when available; **otherwise run every check directly from untruncated per-file diffs**:
+On multi-file (`>=3`) or contract/schema edits, prefer delegating this read-only audit (`git diff`, `eidos context --uncommitted --json`, `eidos drift --uncommitted --json`) to a fresh-context subagent; **otherwise audit untruncated per-file diffs directly**:
 
-1. **Requirements Completeness**: Verify every explicit and implicit requirement is met with zero `TODO`s, stubs, or partial paths.
-2. **Adversarial Code & Heuristic Falsification**: Actively try to break at least 2 assumptions in your diff:
-   * *Parsing vs. heuristics & preconditions*: Could regex/substring checks misfire on comments, prose, case variants, or dot-paths (`.github/`, `.agents/`), or does any recommended action/helper skip preconditions of its downstream target?
-   * *Sibling consumers & shared state*: Inspect `untouched_consumers` from `eidos drift` plus other readers/writers (`eidos index find-symbol`) of any touched helper, schema, or table.
-   * *Scale, boundaries & fallbacks*: Check empty/`None`/unmatched inputs, batch limits (`IN (...)` chunking), parent↔child inheritance, and single- vs. multi-container edge cases.
-3. **Contract, Public Surface & Coupled Clauses (`CTR-*`, `CMP-*`)**: Sync added/removed flags, routes, schemas, `== Public Surface` symbols, and coupled sibling clauses (exit codes, docs, SemVer bumps).
-4. **Invariant & Diff-Line Test Rigor (`INV-*`)**: Verify tests exercise **newly added diff lines/branches** and edge cases (hermetic fixtures for logic; catalog-agnostic live checks) and bind every `INV-*` (`test_binding: file::func`).
-5. **Decisions & Multi-Layer Co-Evolution (`DEC-*`, `DOM-*`, `PER-*`, `POL-*`, `design/*`)**: Record non-obvious trade-offs under `decisions:` and co-evolve any affected domain terms, personas, policies, or UI/design specs.
+1. **Requirements Completeness**: Verify every requirement is met with zero `TODO`s, stubs, or partial paths.
+2. **Adversarial Falsification**: Break at least 2 assumptions in your diff:
+   * *Heuristics & preconditions*: Could regex/substring checks misfire on comments, prose, case, or dot-paths (`.github/`, `.agents/`), or skip downstream preconditions?
+   * *Sibling consumers & shared state*: Inspect `untouched_consumers` from `eidos drift` plus readers/writers (`eidos index find-symbol`) of touched helpers, schemas, or tables.
+   * *Boundaries & fallbacks*: Check empty/`None`/unmatched inputs, `IN (...)` batching, parent↔child inheritance, and multi-container edge cases.
+3. **Contract & Public Surface (`CTR-*`, `CMP-*`)**: Sync flags, routes, schemas, `== Public Surface`, and coupled clauses (exit codes, docs, SemVer).
+4. **Invariant & Diff-Line Tests (`INV-*`)**: Verify tests cover **newly added diff branches** and edge cases, binding every `INV-*` (`test_binding: file::func`).
+5. **Decisions & Co-Evolution (`DEC-*`, `DOM-*`, `PER-*`, `POL-*`, `design/*`)**: Record trade-offs in `decisions:` and co-evolve affected domain, persona, policy, or design specs.
+6. **Team Memory (`eidos-memory`)**: Save any self-discovered build/test/CI/tooling gotcha via `eidos memory add --from-diff` (or `eidos memory update`), and reconcile any `stale`/`expired` `affected_memories` in `eidos drift`.
 
-**Autonomous Remediation Rule**: Fix every defect, edge case, or missing test immediately, then re-run tests and `eidos drift --uncommitted --json` before responding. Report gate status (`clean`) and key verified edge cases.
+**Autonomous Remediation**: Fix every finding immediately, then re-run tests and `eidos drift --uncommitted --json` before responding. Report gate status (`clean`) and verified edge cases.
 
 ---
 
@@ -175,4 +176,4 @@ Load the companion skill matching your task:
 * **`eidos-spec`**: YAML schemas and scaffolding (`eidos spec create/schema/list/show/delete`) for `DOM-*`, `CAP-*`, `PER-*`, `SYS-*`, `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DEC-*`, `DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`, `POL-*`, and polyglot `INV-*` test bindings.
 * **`eidos-plan`**: Technical spikes (`EXP-*`), SpecDelta lifecycle (`eidos delta create/verify/audit/apply/changelog`), declarative `expect:` post-conditions, and 5-dimension Staff Architectural Reviews.
 * **`eidos-ops`**: Greenfield initialization (`eidos init`), 8-phase brownfield codebase extraction, and Living Web Portal operations (`eidos portal serve/build`).
-* **`eidos-memory`**: Shared team operational memories (`eidos/memory/mem-*.adoc`) — proactive capture, disclosure, freshness reconciliation, and promotion (`eidos memory add/list/search/show/verify/archive/audit/promote`).
+* **`eidos-memory`**: Shared team operational memories (`eidos/memory/mem-*.adoc`) — proactive capture, updates, disclosure, freshness reconciliation, and promotion (`eidos memory add/update/list/search/show/verify/archive/audit/promote`).

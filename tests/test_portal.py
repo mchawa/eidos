@@ -1863,6 +1863,7 @@ def test_portal_static_scalability_and_deep_linking(tmp_path: Path):
             assert "is_clean" in drift_payload
             assert "drift_detected" in drift_payload
             assert "workflow_mode" in drift_payload
+            assert "summary_markdown" not in drift_payload
     finally:
         httpd.shutdown()
         httpd.server_close()
@@ -2261,6 +2262,7 @@ def test_portal_live_drift_sse_c4_context_and_screen_hydration(tmp_path: Path, m
             assert drift_json["is_clean"] is False
             assert drift_json["drift_detected"] is True
             assert "simulated git failure" in drift_json.get("error", "")
+            assert "summary_markdown" not in drift_json
     finally:
         httpd.shutdown()
         httpd.server_close()

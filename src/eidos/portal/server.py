@@ -443,7 +443,6 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
                         {"test_id": loc, "invariant_id": inv_id} for inv_id, loc in res_obj.orphan_invariants
                     ],
                     "remediation_suggestions": res_obj.remediation_suggestions,
-                    "summary_markdown": res_obj.summary_markdown,
                 }
             except Exception as exc:
                 return {
@@ -461,7 +460,6 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
                     "remediation_suggestions": [
                         "Inspect repository and Git workspace state; drift check failed closed."
                     ],
-                    "summary_markdown": f"Drift check failed: {exc}",
                     "error": str(exc),
                 }
             EidosPortalHandler._cached_drift_key = snap

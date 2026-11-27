@@ -46,30 +46,26 @@ def test_cli_drift_json_output():
     assert "total_specs" in data
     assert isinstance(data["ready_to_apply_deltas"], list)
     assert isinstance(data["untouched_consumers"], list)
+    assert isinstance(data["affected_memories"], list)
     assert isinstance(data["code_files"], list)
 
 
 def test_drift_remediation_includes_schema_and_broken_reference_bullets():
-    """Verify build_drift_remediation_and_summary surfaces itemized schema_errors and broken_references bullets."""
+    """Verify build_drift_remediation surfaces itemized schema_errors and broken_references bullets."""
     from eidos.core.spec.validator import ValidationReport
     from eidos.vcs.diff import ChangedFilesClassification
-    from eidos.vcs.report import build_drift_remediation_and_summary
+    from eidos.vcs.report import build_drift_remediation
 
     val_report = ValidationReport(
         schema_errors={"eidos/system.adoc": ["'title' is a required property"]},
         broken_references=["eidos/domains/d/domain.adoc references missing 'PER-MISSING'"],
         documents=[],
     )
-    rem, _ = build_drift_remediation_and_summary(
-        workflow_mode="direct",
-        is_clean=False,
-        drift_detected=False,
+    rem = build_drift_remediation(
         base_direct_drift=False,
         unmapped_drift=False,
         design_drift=False,
         uncovered_delta_drift=False,
-        specs_changed=True,
-        has_deltas=False,
         classification=ChangedFilesClassification(),
         structural_code_files=[],
         comp_mappings=[],
@@ -79,10 +75,8 @@ def test_drift_remediation_includes_schema_and_broken_reference_bullets():
         uncovered_design=[],
         trivial_records=[],
         validation_report=val_report,
-        invariants=[],
         uncovered_invariants=[],
         orphan_invariants=[],
-        touched_components=[],
     )
     assert any("eidos/system.adoc: 'title' is a required property" in r for r in rem)
     assert any("Broken reference: eidos/domains/d/domain.adoc references missing 'PER-MISSING'" in r for r in rem)
@@ -328,9 +322,11 @@ def test_cli_error_exit_codes_and_negative_json_contracts(tmp_path):
     assert val_data["is_clean"] is False
     assert val_data["valid_docs"] == 0
 
-    # 2. drift --json --markdown mutually exclusive flags return exit_code 2
-    res_mut = runner.invoke(app, ["drift", "--json", "--markdown"])
-    assert res_mut.exit_code == 2
+    # 2. Removed --markdown / -m option on drift returns exit_code 2 (DLT-2026-181)
+    res_removed_md = runner.invoke(app, ["drift", "--markdown", "out.md"])
+    assert res_removed_md.exit_code == 2
+    res_removed_m = runner.invoke(app, ["drift", "-m", "out.md"])
+    assert res_removed_m.exit_code == 2
 
     # 3. drift --base invalid-ref --json returns exit_code 1 and JSON error payload
     res_drift_err = runner.invoke(app, ["drift", "--base", "nonexistent-git-ref-999999", "--json"])

@@ -10,15 +10,15 @@ source_path: src/eidos/cli/memory_commands.py
 :toc: left
 
 == Responsibility
-Implements the `eidos memory` subcommand group (`add`, `list`, `search`, `show`, `verify`, `archive`, `audit`, `promote`) as a thin Typer presentation adapter over `CMP-MEMORY-ENGINE` with Rich tables/panels and machine-readable `--json` outputs (`CTR-EIDOS-CLI`, `INV-MEMORY-CLI-AND-SKILL-PARITY`).
+Implements the 9-subcommand `eidos memory` CLI group (`add`, `update`, `list`, `search`, `show`, `verify`, `archive`, `audit`, `promote`) as a thin Typer presentation adapter over `CMP-MEMORY-ENGINE` (with `--from-diff` uncommitted file collection via `CMP-GIT-DIFF-INSPECTOR`) with Rich tables/panels and machine-readable `--json` outputs (`CTR-EIDOS-CLI`, `INV-MEMORY-CLI-AND-SKILL-PARITY`).
 
 == Key Responsibilities & Collaborators
-* **Team Memory CRUD & Lifecycle Presentation**: Routes workspace resolution through `resolve_cli_eidos_dir(path)` (`CMP-CLI-APP`) and delegates memory creation (`add`), filtered listing (`list`), BM25/Hybrid search (`search`), inspection (`show`), freshness re-verification (`verify`), archival (`archive`), non-blocking auditing (`audit`, always exit code `0`), and verified graduation (`promote`) to `CMP-MEMORY-ENGINE`.
+* **Team Memory CRUD & Lifecycle Presentation**: Routes workspace resolution through `resolve_cli_eidos_dir(path)` (`CMP-CLI-APP`) and delegates memory creation (`add`, with optional `--summary`, `--auto-entities/--no-auto-entities` default `true`, and `--from-diff` resolving existing non-memory uncommitted files via `CMP-GIT-DIFF-INSPECTOR`), in-place updating (`update`, supporting partial frontmatter/body edits, `--replace-targets`, `--auto-entities/--no-auto-entities`, `--expires`/`--clear-expires`, and `--status`), filtered listing (`list`), BM25/Hybrid search (`search`), inspection (`show`), freshness re-verification (`verify`), archival (`archive`), non-blocking auditing (`audit`, always exit code `0`), and verified graduation (`promote`) to `CMP-MEMORY-ENGINE`.
 * **Consistent CLI Ergonomics**: Uses `--file`/`-f` for target file paths/globs and `--entity`/`-e` for target Eidos entity IDs while reserving `--path`/`-p` for the governing `eidos/` specifications directory across every subcommand.
 
 == Public Surface
 * `memory_app: typer.Typer`
-* `memory_add_cmd(...)`, `memory_list_cmd(...)`, `memory_search_cmd(...)`, `memory_show_cmd(...)`
+* `memory_add_cmd(...)`, `memory_update_cmd(...)`, `memory_list_cmd(...)`, `memory_search_cmd(...)`, `memory_show_cmd(...)`
 * `memory_verify_cmd(...)`, `memory_archive_cmd(...)`, `memory_audit_cmd(...)`, `memory_promote_cmd(...)`
 
 == Design Constraints & Operational Notes

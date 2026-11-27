@@ -32,10 +32,7 @@ jobs:
         run: uvx --from eidos-ai eidos validate
 
       - name: Check spec-to-code drift
-        run: >-
-          uvx --from eidos-ai eidos drift
-          --base "origin/${{ github.base_ref }}"
-          --markdown "$GITHUB_STEP_SUMMARY"
+        run: uvx --from eidos-ai eidos drift --base "origin/${{ github.base_ref }}"
 """
 
 _GITLAB_CI_WORKFLOW_TEMPLATE = """# Include this template from your root .gitlab-ci.yml:

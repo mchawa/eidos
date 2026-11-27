@@ -96,7 +96,7 @@ def test_drift_detection_code_without_specs(monkeypatch, tmp_path):
     assert result.workflow_mode == "direct"
     assert len(result.remediation_suggestions) > 0
     assert any("co-evolve bound DOM-*, PER-*, POL-*, and design/* specs" in r for r in result.remediation_suggestions)
-    assert "DRIFT DETECTED" in result.summary_markdown
+    assert not hasattr(result, "summary_markdown")
 
     # 2. Executable code under docs/ (docs/helper.py, docs/widget.ts) -> code_files & drift,
     #    while static documentation/assets under docs/ stay in doc_files
@@ -247,7 +247,6 @@ def test_pr_check_gate_pass_direct(monkeypatch):
     assert result.drift_detected is False
     assert result.is_clean is True
     assert result.workflow_mode == "direct"
-    assert "PASSED" in result.summary_markdown
 
 
 def test_pr_check_gate_pass_planned(monkeypatch):
@@ -277,7 +276,6 @@ def test_pr_check_gate_pass_planned(monkeypatch):
     result = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
     assert result.drift_detected is False
     assert result.workflow_mode == "planned"
-    assert "Mode: **Planned (SpecDelta)**" in result.summary_markdown
 
 
 def test_cli_drift_and_reconcile_commands(monkeypatch, tmp_path):
@@ -292,12 +290,13 @@ def test_cli_drift_and_reconcile_commands(monkeypatch, tmp_path):
     _patch_versions(monkeypatch, _synthetic_substantive_versions)
 
     # 1. drift passing
-    md_file = tmp_path / "drift_summary.md"
-    res_drift = runner.invoke(app, ["drift", "--markdown", str(md_file)])
+    res_drift = runner.invoke(app, ["drift"])
     assert res_drift.exit_code == 0
     assert "Verification Passed!" in res_drift.output
-    assert md_file.exists()
-    assert "PASSED" in md_file.read_text(encoding="utf-8")
+
+    # 1b. removed --markdown option rejected by CLI
+    res_md = runner.invoke(app, ["drift", "--markdown", str(tmp_path / "drift_summary.md")])
+    assert res_md.exit_code == 2
 
     # 2. drift json output
     res_json = runner.invoke(app, ["drift", "--json"])
@@ -2753,12 +2752,10 @@ def test_drift_report_helpers_and_cli_rich_output(tmp_path):
     (cnt_dir / "broken.adoc").write_text("---\ntype: tech/container\nid: INVALID_ID\n---\n= Broken\n", encoding="utf-8")
 
     runner = CliRunner()
-    md_out = tmp_path / "drift_summary.md"
-    res_cli = runner.invoke(app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--markdown", str(md_out)])
+    res_cli = runner.invoke(app, ["drift", "--uncommitted", "--path", str(eidos_dir)])
     assert res_cli.exit_code == 1
     assert "DRIFT DETECTED" in res_cli.output
     assert "Specification Schema Errors" in res_cli.output
-    assert md_out.exists()
 
     # 3. vcs/diff.py: collect_polyglot_test_files, _resolve_base_and_merge_base fallback scan & shallow error, get_git_diff_files errors
     import pytest
@@ -4733,7 +4730,7 @@ def test_shallow_clone_worktree_and_commit_range_tree_isolation(tmp_path):
     assert {i.invariant_id for i in res_broken_head.uncovered_invariants} == {"INV-SVC-001"}  # eidos:fixture
     assert {o[0] for o in res_broken_head.orphan_invariants} == {"INV-DIRTY-WORKTREE-ORPHAN"}  # eidos:fixture
     assert not res_broken_head.validation_report.is_clean
-    assert "eidos_head_" not in res_broken_head.summary_markdown
+    assert all("eidos_head_" not in rem for rem in res_broken_head.remediation_suggestions)
     assert all("eidos_head_" not in i.spec_path for i in res_broken_head.invariants)
     assert all("eidos_head_" not in loc for _, loc in res_broken_head.orphan_invariants)
 
@@ -5584,7 +5581,7 @@ def test_agent_memory_classification_drift_and_stop_hook_isolation(tmp_path):
 
 
 def test_drift_ready_to_apply_deltas_and_fail_on_warnings(tmp_path: Path):
-    """Verify INV-DRIFT-READY-TO-APPLY-DELTAS: diff-touched and spec-overlapping verified open SpecDeltas surface as ready_to_apply_deltas in eidos drift (JSON, Rich, Markdown) and escalate under --fail-on-warnings."""
+    """Verify INV-DRIFT-READY-TO-APPLY-DELTAS: diff-touched and spec-overlapping verified open SpecDeltas surface as ready_to_apply_deltas in eidos drift (JSON and Rich terminal) and escalate under --fail-on-warnings."""
     import subprocess
 
     from eidos.core.lifecycle.delta_engine import apply_delta, create_delta, set_delta_status
@@ -5665,10 +5662,7 @@ def test_drift_ready_to_apply_deltas_and_fail_on_warnings(tmp_path: Path):
     _run_git(repo, "commit", "-m", "propose DLT-2026-010")
     spec_a.write_text(spec_a.read_text(encoding="utf-8") + "\nALPHA_READY\n", encoding="utf-8")
 
-    md_out = tmp_path / "drift_summary.md"
-    res_default_json = runner.invoke(
-        app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--markdown", str(md_out), "--json"]
-    )
+    res_default_json = runner.invoke(app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--json"])
     assert res_default_json.exit_code == 0
     data_ready = orjson.loads(res_default_json.output)
     assert data_ready["is_clean"] is True
@@ -5676,8 +5670,6 @@ def test_drift_ready_to_apply_deltas_and_fail_on_warnings(tmp_path: Path):
     assert [d["id"] for d in data_ready["ready_to_apply_deltas"]] == [dlt_alpha_id]
     assert data_ready["ready_to_apply_deltas"][0]["verified_mutations"] == 1
     assert data_ready["ready_to_apply_deltas"][0]["total_mutations"] == 1
-    assert "Open SpecDeltas Ready to Apply (Advisory)" in md_out.read_text(encoding="utf-8")
-    assert f"eidos delta apply {dlt_alpha_id}" in md_out.read_text(encoding="utf-8")
 
     # 3. Escalate under --fail-on-warnings (both proposed and in_review escalate; --warn-only suppresses exit 1)
     res_fail_rich = runner.invoke(app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--fail-on-warnings"])
@@ -5751,7 +5743,6 @@ def test_drift_untouched_consumers_advisory_and_barrels(tmp_path: Path):
 
     from eidos.cli.main import app
     from eidos.vcs.consumers import _extract_top_level_identifiers, _innermost_overlapping_symbols, _token_for_symbol
-    from eidos.vcs.report import build_drift_remediation_and_summary
 
     def _run_git(cwd: Path, *args: str) -> None:
         subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
@@ -5918,11 +5909,10 @@ def test_drift_untouched_consumers_advisory_and_barrels(tmp_path: Path):
     # Direct consumer with symbol_removed ranks ahead of body_changed-only barrel consumer.
     assert consumers.index(direct) < consumers.index(barrel)
 
-    # Rich terminal & Markdown output render advisory section while exiting 0 even under --fail-on-warnings.
-    md_out = tmp_path / "drift-summary.md"
+    # Rich terminal output renders advisory section while exiting 0 even under --fail-on-warnings.
     res_rich = runner.invoke(
         app,
-        ["drift", "--uncommitted", "--path", str(eidos_dir), "--fail-on-warnings", "--markdown", str(md_out)],
+        ["drift", "--uncommitted", "--path", str(eidos_dir), "--fail-on-warnings"],
     )
     assert res_rich.exit_code == 0, res_rich.output
     rich_flat = re.sub(r"\s+", " ", res_rich.output)
@@ -5931,10 +5921,6 @@ def test_drift_untouched_consumers_advisory_and_barrels(tmp_path: Path):
     assert "[symbol_removed, body_changed]" in rich_flat
     assert "via src/pkg/facade.py" in rich_flat
     assert "[body_changed]" in rich_flat
-    md_text = md_out.read_text(encoding="utf-8")
-    assert "### 🔍 Untouched Sibling Consumers to Review (Advisory):" in md_text
-    assert "`src/svc/barrel_caller.py:1`" in md_text
-    assert "via `src/pkg/facade.py`" in md_text
 
     # 2. Modifying direct_caller.py removes it from untouched_consumers (already in diff).
     (repo / "src" / "svc" / "direct_caller.py").write_text(
@@ -6002,7 +5988,7 @@ def test_drift_untouched_consumers_advisory_and_barrels(tmp_path: Path):
         assert "eidos_head_" not in uc["target_file"]
 
     # 4. Unit checks for helper edge cases: dunders, nested classes, Python multi-line/deleted constants vs multiline
-    #    strings, wildcard barrels, deleted C# namespace targets, Java single-class imports, and CLI/Markdown >15 overflow.
+    #    strings, wildcard barrels, deleted C# namespace targets, Java single-class imports, and CLI Rich >15 overflow.
     assert _token_for_symbol("LegacyBox", "__init__") == ("LegacyBox.__init__", "legacybox")
     assert _token_for_symbol("LegacyBox", "__call__") == ("LegacyBox.__call__", "legacybox")
     assert _token_for_symbol("Outer::Inner", "id") == ("Outer::Inner.id", "inner")
@@ -6101,7 +6087,7 @@ def test_drift_untouched_consumers_advisory_and_barrels(tmp_path: Path):
     assert wild_by_file["src/cs/TaxCaller.cs"]["change_kinds"] == ["file_deleted"]
     assert "src/cs/UnrelatedTaxCaller.cs" not in wild_by_file
 
-    # CLI Rich + Markdown overflow (>15 consumers) and >5 symbols truncation (+1) + bracketed path escaping.
+    # CLI Rich overflow (>15 consumers) and >5 symbols truncation (+1) + bracketed path escaping.
     many_consumers = [
         {
             "file": f"src/app/[id]/c_{i:02d}.py",
@@ -6119,34 +6105,6 @@ def test_drift_untouched_consumers_advisory_and_barrels(tmp_path: Path):
     from eidos.core.spec.validator import ValidationReport
     from eidos.vcs.diff import ChangedFilesClassification
     from eidos.vcs.drift import DriftCheckResult
-
-    _, overflow_md = build_drift_remediation_and_summary(
-        workflow_mode="direct",
-        is_clean=True,
-        drift_detected=False,
-        base_direct_drift=False,
-        unmapped_drift=False,
-        design_drift=False,
-        uncovered_delta_drift=False,
-        specs_changed=False,
-        has_deltas=False,
-        classification=ChangedFilesClassification(),
-        structural_code_files=[],
-        comp_mappings=[],
-        uncovered_direct_components=[],
-        uncovered_components=[],
-        uncovered_unmapped_code=[],
-        uncovered_design=[],
-        trivial_records=[],
-        validation_report=ValidationReport(),
-        invariants=[],
-        uncovered_invariants=[],
-        orphan_invariants=[],
-        touched_components=[],
-        untouched_consumers=many_consumers,
-    )
-    assert "2 more untouched consumer(s) in JSON output" in overflow_md
-    assert "(+1)" in overflow_md
 
     mock_result = DriftCheckResult(
         is_clean=True,
@@ -6347,3 +6305,355 @@ def test_drift_untouched_consumers_advisory_and_barrels(tmp_path: Path):
     assert len(rs_couplings) == 1
     assert rs_couplings[0]["src_file"] == "crates/app-bin/src/main.rs"
     assert rs_couplings[0]["target_ref"] == "crates/core-lib/src/pricing/mod.rs"
+
+
+def test_drift_affected_memories_advisory_isolation(tmp_path: Path) -> None:
+    """Verify INV-DRIFT-AFFECTED-MEMORIES-ADVISORY: diff-scoped affected_memories matching, --head snapshot isolation, and strict non-blocking semantics even under --fail-on-warnings."""
+    import subprocess
+
+    import orjson
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.memory_engine import add_memory, archive_memory
+
+    def _run_git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+
+    repo = tmp_path / "drift_mem_repo"
+    repo.mkdir()
+    _run_git(repo, "init", "-b", "main")
+    _run_git(repo, "config", "user.email", "dev@example.com")
+    _run_git(repo, "config", "user.name", "Dev")
+
+    init_repository(repo, title="Drift Memory Repo")
+    eidos_dir = repo / "eidos"
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True, exist_ok=True)
+    (eidos_dir / "architecture" / "components").mkdir(parents=True, exist_ok=True)
+    (repo / "src").mkdir(parents=True, exist_ok=True)
+    (repo / "src" / "api.py").write_text("def handle_request() -> int:\n    return 200\n", encoding="utf-8")
+    (repo / "src" / "worker.py").write_text("def run_job() -> int:\n    return 1\n", encoding="utf-8")
+
+    (eidos_dir / "architecture" / "containers" / "cnt-app.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-APP\n"
+        "title: App Service\n"
+        "status: active\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "source_path: src\n"
+        "---\n= App Service\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "cmp-api.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-API\n"
+        "title: ApiHandler\n"
+        "container: CNT-APP\n"
+        "status: active\n"
+        "source_path: src/api.py\n"
+        "---\n= ApiHandler\n\n== Public Surface\n* `handle_request()`\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "cmp-worker.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-WORKER\n"
+        "title: WorkerRunner\n"
+        "container: CNT-APP\n"
+        "status: active\n"
+        "source_path: src/worker.py\n"
+        "---\n= WorkerRunner\n\n== Public Surface\n* `run_job()`\n",
+        encoding="utf-8",
+    )
+
+    _run_git(repo, "add", "-A")
+    _run_git(repo, "commit", "-m", "initial")
+
+    # Seed active fresh, stale, expired, unrelated, global, and archived memories
+    m_fresh = add_memory(
+        eidos_dir,
+        title="Keep API response headers lowercase",
+        guidance="Normalize response headers in src/api.py.",
+        paths=["src/api.py"],
+        use_semantic=False,
+    )
+    m_stale = add_memory(
+        eidos_dir,
+        title="Legacy API middleware cleanup",
+        summary="Legacy middleware file was removed.",
+        paths=["src/api.py", "src/removed_middleware.py"],
+        use_semantic=False,
+    )
+    m_expired = add_memory(
+        eidos_dir,
+        title="Temporary API rate limit cap",
+        category="project",
+        summary="Temporary rate cap during migration.",
+        entities=["CMP-API"],
+        expires_at="2020-01-01",
+        use_semantic=False,
+    )
+    m_unrelated = add_memory(
+        eidos_dir,
+        title="Worker batch size limit",
+        summary="Keep worker batches under 500.",
+        paths=["src/worker.py"],
+        use_semantic=False,
+    )
+    m_global = add_memory(
+        eidos_dir,
+        title="Global formatting convention",
+        summary="Run ruff format before pushing.",
+        use_semantic=False,
+    )
+    m_archived = add_memory(
+        eidos_dir,
+        title="Archived API note",
+        summary="Retired API tip.",
+        paths=["src/api.py"],
+        use_semantic=False,
+    )
+    archive_memory(eidos_dir, m_archived["id"], reason="Superseded")
+
+    _run_git(repo, "add", "-A")
+    _run_git(repo, "commit", "-m", "add team memories")
+
+    # Body-only edit to src/api.py (zero drift, is_clean=True)
+    (repo / "src" / "api.py").write_text("def handle_request() -> int:\n    return 201\n", encoding="utf-8")
+
+    # 1. Uncommitted drift: diff-scoped affected_memories sorted by severity (expired -> stale -> fresh), strictly non-blocking
+    res = detect_drift(repo_root=repo, eidos_dir=eidos_dir, uncommitted=True)
+    assert res.is_clean is True
+    assert res.drift_detected is False
+    aff_ids = [m["id"] for m in res.affected_memories]
+    assert aff_ids == [m_expired["id"], m_stale["id"], m_fresh["id"]]
+    assert [m["freshness"] for m in res.affected_memories] == ["expired", "stale", "fresh"]
+    assert m_unrelated["id"] not in aff_ids
+    assert m_global["id"] not in aff_ids
+    assert m_archived["id"] not in aff_ids
+
+    # 2. CLI --json & Rich under --fail-on-warnings MUST stay exit code 0!
+    cli = CliRunner()
+    cli_json = cli.invoke(app, ["drift", "--uncommitted", "--fail-on-warnings", "--path", str(eidos_dir), "--json"])
+    assert cli_json.exit_code == 0, cli_json.stdout
+    payload = orjson.loads(cli_json.stdout)
+    assert payload["is_clean"] is True
+    assert [m["id"] for m in payload["affected_memories"]] == [m_expired["id"], m_stale["id"], m_fresh["id"]]
+
+    cli_rich = cli.invoke(app, ["drift", "--uncommitted", "--fail-on-warnings", "--path", str(eidos_dir)])
+    assert cli_rich.exit_code == 0, cli_rich.stdout
+    rich_flat = " ".join(cli_rich.stdout.split())
+    assert "Team Operational Memories Affected by Diff (Advisory)" in rich_flat
+    assert f"eidos memory verify {m_stale['id']}" in rich_flat
+    assert f"eidos memory archive {m_expired['id']}" in rich_flat
+
+    # 3. --base/--head commit-range snapshot isolation: uncommitted memory edits MUST NOT leak into commit-range drift
+    _run_git(repo, "add", "src/api.py")
+    _run_git(repo, "commit", "-m", "body-only api tweak")
+    m_wt_only = add_memory(
+        eidos_dir,
+        title="Working tree only API note",
+        summary="Uncommitted note must not leak into commit-range drift.",
+        paths=["src/api.py"],
+        use_semantic=False,
+    )
+
+    range_res = detect_drift(repo_root=repo, eidos_dir=eidos_dir, base_ref="HEAD~1", head_ref="HEAD", uncommitted=False)
+    assert range_res.is_clean is True
+    range_ids = [m["id"] for m in range_res.affected_memories]
+    assert m_wt_only["id"] not in range_ids
+    assert range_ids == [m_expired["id"], m_stale["id"], m_fresh["id"]]
+    # Committed path-anchored fresh memory stays 'fresh' (not 'unverifiable') in snapshot runs!
+    fresh_item = next(m for m in range_res.affected_memories if m["id"] == m_fresh["id"])
+    assert fresh_item["freshness"] == "fresh"
+    assert str(tmp_path) not in fresh_item["relative_path"]
+
+    # 4. Stacked applied SpecDeltas in the same diff: a later verified SemVer bump cleanly supersedes an earlier one
+    (eidos_dir / "deltas").mkdir(parents=True, exist_ok=True)
+    (eidos_dir / "architecture" / "contracts").mkdir(parents=True, exist_ok=True)
+    (eidos_dir / "architecture" / "contracts" / "ctr-api.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "id: CTR-API\n"
+        "title: App API\n"
+        "status: active\n"
+        'version: "2.1.0"\n'
+        "protocol: other\n"
+        "custom_protocol: internal_rpc\n"
+        "container: CNT-APP\n"
+        "---\n= App API\n\nSupports v2.0 and v2.1.\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "deltas" / "dlt-2026-901-bump-major-aaaa.adoc").write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-901-BUMP-MAJOR-AAAA\n"
+        'title: "Major API bump"\n'
+        "status: applied\n"
+        "intent:\n  kind: feature\n  motivation: Major bump.\n"
+        "mutations:\n"
+        "  - operation: modify\n"
+        "    target: CTR-API\n"
+        "    details: Bump CTR-API to 2.0.0.\n"
+        "    expect:\n"
+        "      frontmatter:\n"
+        '        version: "2.0.0"\n'
+        "      body:\n"
+        "        contains: ['v2.0']\n"
+        "---\n= SpecDelta: Major API bump\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "deltas" / "dlt-2026-902-bump-minor-bbbb.adoc").write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-902-BUMP-MINOR-BBBB\n"
+        'title: "Minor API bump"\n'
+        "status: applied\n"
+        "intent:\n  kind: feature\n  motivation: Minor bump.\n"
+        "mutations:\n"
+        "  - operation: modify\n"
+        "    target: CTR-API\n"
+        "    details: Bump CTR-API to 2.1.0.\n"
+        "    expect:\n"
+        "      frontmatter:\n"
+        '        version: "2.1.0"\n'
+        "      body:\n"
+        "        contains: ['v2.1']\n"
+        "---\n= SpecDelta: Minor API bump\n",
+        encoding="utf-8",
+    )
+    stacked_res = detect_drift(repo_root=repo, eidos_dir=eidos_dir, uncommitted=True)
+    assert stacked_res.is_clean is True, stacked_res.validation_errors
+
+    # 4b. Security check: superseded SemVer MUST NOT waive an unfulfilled sibling expect.frontmatter key!
+    (eidos_dir / "deltas" / "dlt-2026-901-bump-major-aaaa.adoc").write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-901-BUMP-MAJOR-AAAA\n"
+        'title: "Major API bump"\n'
+        "status: applied\n"
+        "intent:\n  kind: feature\n  motivation: Major bump.\n"
+        "mutations:\n"
+        "  - operation: modify\n"
+        "    target: CTR-API\n"
+        "    details: Bump CTR-API to 2.0.0 and record DEC-NEVER-IMPLEMENTED.\n"
+        "    expect:\n"
+        "      frontmatter:\n"
+        '        version: "2.0.0"\n'
+        '        decisions.id: ["DEC-NEVER-IMPLEMENTED"]\n'
+        "      body:\n"
+        "        contains: ['v2.0']\n"
+        "---\n= SpecDelta: Major API bump\n",
+        encoding="utf-8",
+    )
+    bypass_res = detect_drift(repo_root=repo, eidos_dir=eidos_dir, uncommitted=True)
+    assert bypass_res.is_clean is False
+    assert any("DEC-NEVER-IMPLEMENTED" in e for e in bypass_res.validation_errors)
+
+    # 4c. 3-delta chain (DLT-1 -> DLT-2 -> DLT-3) with path-vs-ID target normalization passes cleanly
+    (eidos_dir / "domains" / "app" / "capabilities").mkdir(parents=True, exist_ok=True)
+    (eidos_dir / "domains" / "app" / "domain.adoc").write_text(
+        "---\ntype: product/domain\nid: DOM-APP\ntitle: App\nstatus: active\nclassification: core\n---\n= App\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "domains" / "app" / "capabilities" / "cap-app.adoc").write_text(
+        "---\ntype: product/capability\nid: CAP-APP\ntitle: App Cap\ndomain: DOM-APP\nstatus: active\nversion: '1.2.0'\ntechnical:\n  containers: [CNT-APP]\n---\n= App Cap\n\nv1.1 and v1.2.\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "deltas" / "dlt-2026-901-bump-major-aaaa.adoc").write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-901-BUMP-MAJOR-AAAA\n"
+        'title: "Major API bump"\n'
+        "status: applied\n"
+        "intent:\n  kind: feature\n  motivation: Major bump.\n"
+        "mutations:\n"
+        "  - operation: modify\n"
+        "    target: eidos/architecture/contracts/ctr-api.adoc\n"
+        "    details: Bump CTR-API to 2.0.0.\n"
+        "    expect:\n"
+        "      frontmatter:\n"
+        '        version: "2.0.0"\n'
+        "      body:\n"
+        "        contains: ['v2.0']\n"
+        "---\n= SpecDelta: Major API bump\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "deltas" / "dlt-2026-902-bump-minor-bbbb.adoc").write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-902-BUMP-MINOR-BBBB\n"
+        'title: "Minor API and Cap bump"\n'
+        "status: applied\n"
+        "intent:\n  kind: feature\n  motivation: Minor bump.\n"
+        "mutations:\n"
+        "  - operation: modify\n"
+        "    target: CTR-API\n"
+        "    details: Bump CTR-API to 2.1.0.\n"
+        "    expect:\n"
+        "      frontmatter:\n"
+        '        version: "2.1.0"\n'
+        "      body:\n"
+        "        contains: ['v2.1']\n"
+        "  - operation: modify\n"
+        "    target: CAP-APP\n"
+        "    details: Bump CAP-APP to 1.1.0.\n"
+        "    expect:\n"
+        "      frontmatter:\n"
+        '        version: "1.1.0"\n'
+        "      body:\n"
+        "        contains: ['v1.1']\n"
+        "---\n= SpecDelta: Minor API and Cap bump\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "deltas" / "dlt-2026-903-bump-cap-cccc.adoc").write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-903-BUMP-CAP-CCCC\n"
+        'title: "Cap 1.2 bump"\n'
+        "status: applied\n"
+        "intent:\n  kind: feature\n  motivation: Cap bump.\n"
+        "mutations:\n"
+        "  - operation: modify\n"
+        "    target: CAP-APP\n"
+        "    details: Bump CAP-APP to 1.2.0.\n"
+        "    expect:\n"
+        "      frontmatter:\n"
+        '        version: "1.2.0"\n'
+        "      body:\n"
+        "        contains: ['v1.2']\n"
+        "---\n= SpecDelta: Cap 1.2 bump\n",
+        encoding="utf-8",
+    )
+    chain_res = detect_drift(repo_root=repo, eidos_dir=eidos_dir, uncommitted=True)
+    assert chain_res.is_clean is True, chain_res.validation_errors
+
+    # 5. Doc file edits (classification.doc_files) & parent container (CNT-*) anchors surface in affected_memories,
+    #    while non-spec files under eidos/memory/ (e.g. notes.txt) stay excluded.
+    (repo / "docs" / "guides").mkdir(parents=True, exist_ok=True)
+    (repo / "docs" / "guides" / "cli.md").write_text("# CLI Guide\n", encoding="utf-8")
+    m_doc = add_memory(
+        eidos_dir,
+        title="Docs CLI quote convention",
+        summary="Keep quoted CLI examples free of nested flags.",
+        paths=["docs/guides/**"],
+        use_semantic=False,
+    )
+    m_parent_cnt = add_memory(
+        eidos_dir,
+        title="App container env var requirement",
+        summary="CNT-APP requires APP_ENV set in tests.",
+        entities=["CNT-APP"],
+        use_semantic=False,
+    )
+    (eidos_dir / "memory" / "notes.txt").write_text("scratch\n", encoding="utf-8")
+    (repo / "src" / "api.py").write_text("def handle_request() -> int:\n    return 202\n", encoding="utf-8")
+    doc_cnt_res = detect_drift(repo_root=repo, eidos_dir=eidos_dir, uncommitted=True)
+    doc_cnt_ids = [m["id"] for m in doc_cnt_res.affected_memories]
+    assert m_doc["id"] in doc_cnt_ids
+    assert m_parent_cnt["id"] in doc_cnt_ids
+    assert all("eidos/memory/notes.txt" not in m["matched_paths"] for m in doc_cnt_res.affected_memories)

@@ -1,0 +1,25 @@
+---
+type: agent/memory
+id: MEM-RUN-EIDOS-PLUGIN-UPDATE-AFTER-6E84
+title: Sync installed Agent Skills via plugin update after template edits
+category: feedback
+status: active
+summary: "Invoke 'eidos plugin update antigravity' whenever skill or block templates change so .agents/skills/ and AGENTS.md refresh."
+targets:
+  entities:
+    - CNT-EIDOS-PLUGIN
+  paths:
+    - assets/plugin_reference/**
+verified_at: "2026-11-27"
+verified_commit: 218cfb91a839bfd736a15d531a151117d02d3f96
+---
+= Memory: Sync installed Agent Skills via plugin update after template edits
+:toc: left
+
+== Guidance
+
+After modifying assets/plugin_reference/skills/*/SKILL.md or assets/plugin_reference/agents-md/block.md, run uv run eidos plugin update antigravity to refresh .agents/skills/, .agents/.eidos-manifest.json, and root AGENTS.md, then run uv run pytest tests/test_plugin.py -k test_bundled_skill_size_ceilings.
+
+== Why
+
+Bundled plugin assets and repository-installed .agents/skills/ copies are tracked separately; skipping eidos plugin update leaves AGENTS.md and .agents/.eidos-manifest.json stale relative to bundled templates.

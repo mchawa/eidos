@@ -4,18 +4,25 @@ from __future__ import annotations
 
 import contextlib
 import inspect
+import re
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from eidos.core.index.context_globs import expand_brace_globs
+from eidos.core.index.context_memories import (
+    _extract_target_lists,
+    _normalize_target_path,
+    resolve_memory_freshness_batch,
+)
 from eidos.core.index.graph_index import get_architectural_index
 from eidos.core.index.storage import get_cached_spec_document
 from eidos.core.spec.boundary_validator import evaluate_import_boundaries
-from eidos.core.spec.parser import extract_frontmatter
+from eidos.core.spec.parser import extract_frontmatter, parse_spec_file
 from eidos.core.spec.validator import SpecValidator, ValidationReport
 from eidos.core.workspace.config import EidosConfig, load_repo_config_with_errors
-from eidos.core.workspace.project import find_git_root, is_generated_or_vendored
+from eidos.core.workspace.project import find_git_root, is_generated_or_vendored, match_path_pattern
 from eidos.vcs.consumers import find_untouched_consumers
 from eidos.vcs.diff import (
     POLYGLOT_TEST_PATTERNS,
@@ -40,7 +47,7 @@ from eidos.vcs.invariants import (
     extract_invariants_and_verify,
     get_living_specs_catalog,
 )
-from eidos.vcs.report import build_drift_remediation_and_summary, generate_remediation_prompt
+from eidos.vcs.report import build_drift_remediation, generate_remediation_prompt
 from eidos.vcs.snapshot import (
     _has_eidos_onboarding as _has_eidos_onboarding,
 )
@@ -80,12 +87,13 @@ __all__ = [
     "_resolve_base_ref",
     "_resolve_merge_base",
     "batch_read_git_blobs",
-    "build_drift_remediation_and_summary",
+    "build_drift_remediation",
     "classify_changed_files",
     "collect_polyglot_test_files",
     "detect_drift",
     "detect_orphan_invariants",
     "extract_invariants_and_verify",
+    "find_affected_memories",
     "find_untouched_consumers",
     "generate_remediation_prompt",
     "get_git_diff_files",
@@ -117,8 +125,8 @@ class DriftCheckResult:
     ratchet_shrink_candidates: list[dict[str, Any]] = field(default_factory=list)
     ready_to_apply_deltas: list[dict[str, Any]] = field(default_factory=list)
     untouched_consumers: list[dict[str, Any]] = field(default_factory=list)
+    affected_memories: list[dict[str, Any]] = field(default_factory=list)
     remediation_suggestions: list[str] = field(default_factory=list)
-    summary_markdown: str = ""
     eval_config: EidosConfig | None = None
     eval_config_errors: list[str] = field(default_factory=list)
 
@@ -152,6 +160,162 @@ class DriftCheckResult:
     def code_files(self) -> list[str]:
         """Modified source code files in the evaluated diff."""
         return self.classification.code_files
+
+
+_AFFECTED_MEMORY_FRESHNESS_ORDER: dict[str, int] = {
+    "expired": 0,
+    "stale": 1,
+    "unverifiable": 2,
+    "fresh": 3,
+}
+
+
+def find_affected_memories(
+    *,
+    eval_root: Path,
+    eval_eidos: Path,
+    changed_non_memory_paths: list[str],
+    touched_components: list[str],
+    idx: Any = None,
+    catalog_ids: set[str] | None = None,
+    git_repo_root: Path | None = None,
+    head_ref: str = "HEAD",
+    eval_config: EidosConfig | None = None,
+    snap_root: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Deterministically discover active non-archived ``agent/memory`` entries affected by diff paths or touched components.
+
+    Strictly non-blocking advisory signal: never affects ``is_clean``, ``drift_detected``,
+    or ``--fail-on-warnings``, and stays isolated to ``eval_root`` / ``eval_eidos`` on commit-range runs.
+    """
+    mem_dir = eval_eidos / "memory"
+    if not mem_dir.is_dir() or mem_dir.is_symlink():
+        return []
+
+    norm_changed = list(
+        dict.fromkeys(_normalize_target_path(p) for p in changed_non_memory_paths if isinstance(p, str) and p.strip())
+    )
+    norm_changed = [p for p in norm_changed if p]
+    touched_set = {str(c).strip().upper() for c in touched_components if c and str(c).strip()}
+    if not norm_changed and not touched_set:
+        return []
+
+    conn = None
+    eff_catalog_ids = set(catalog_ids) if catalog_ids is not None else set()
+    if idx is not None:
+        with contextlib.suppress(Exception):
+            conn = idx._get_connection()
+            eff_catalog_ids.update(str(r[0]) for r in conn.execute("SELECT id FROM entities;").fetchall())
+            # Expand leaf touched CMP-* components to their owning parent CNT-* container IDs
+            # and resolve modified spec file paths to their entity IDs.
+            if touched_set:
+                touched_list = sorted(touched_set)
+                for start in range(0, len(touched_list), 400):
+                    batch = touched_list[start : start + 400]
+                    ph = ",".join("?" for _ in batch)
+                    for row in conn.execute(
+                        f"SELECT json_extract(data_json, '$.container') AS parent_cnt FROM entities WHERE UPPER(id) IN ({ph});",
+                        tuple(batch),
+                    ).fetchall():
+                        parent_cnt = str(row["parent_cnt"] or "").strip().upper()
+                        if parent_cnt:
+                            touched_set.add(parent_cnt)
+            spec_changed = [p for p in norm_changed if p.lower().endswith(".adoc")]
+            if spec_changed:
+                for start in range(0, len(spec_changed), 400):
+                    batch = spec_changed[start : start + 400]
+                    ph = ",".join("?" for _ in batch)
+                    for row in conn.execute(
+                        f"SELECT id FROM entities WHERE replace(file_path, '\\\\', '/') IN ({ph}) AND type NOT IN ('agent/memory', 'delta/mutation', 'invariant');",
+                        tuple(batch),
+                    ).fetchall():
+                        sid = str(row["id"] or "").strip().upper()
+                        if sid:
+                            touched_set.add(sid)
+
+    mem_root = mem_dir.resolve()
+    eval_root_res = eval_root.resolve()
+    matched: list[tuple[str, str, dict[str, Any], list[str], list[str]]] = []
+
+    for p in sorted(mem_dir.glob("*.adoc")):
+        if p.is_symlink() or not p.is_file():
+            continue
+        if p.name.startswith("_") or p.name.lower() == "readme.adoc":
+            continue
+        p_res = p.resolve()
+        if not p_res.is_relative_to(mem_root):
+            continue
+        try:
+            doc = parse_spec_file(p)
+        except OSError:
+            continue
+        if doc.doc_type != "agent/memory":
+            continue
+        fm = doc.frontmatter or {}
+        if str(fm.get("status") or "active").strip().lower() != "active":
+            continue
+
+        t_entities, t_paths = _extract_target_lists(fm)
+        if not t_entities and not t_paths:
+            continue
+
+        hit_entities = sorted(dict.fromkeys(e.upper() for e in t_entities if e.upper() in touched_set))
+        hit_paths: list[str] = []
+        if norm_changed and t_paths:
+            for cf in norm_changed:
+                for raw_pat in t_paths:
+                    norm_pat = _normalize_target_path(raw_pat)
+                    if not norm_pat:
+                        continue
+                    if any(match_path_pattern(cf, var) > 0 for var in expand_brace_globs(norm_pat)):
+                        if cf not in hit_paths:
+                            hit_paths.append(cf)
+                        break
+
+        if not hit_entities and not hit_paths:
+            continue
+
+        mem_id = str(doc.doc_id or fm.get("id") or p.stem)
+        try:
+            rel_path = p_res.relative_to(eval_root_res).as_posix()
+        except ValueError:
+            rel_path = _remap_snapshot_str(p.as_posix(), snap_root)
+        matched.append((mem_id, rel_path, fm, hit_entities, sorted(hit_paths)))
+
+    if not matched:
+        return []
+
+    freshness_map = resolve_memory_freshness_batch(
+        eval_root_res,
+        [(mid, fm) for mid, _rp, fm, _he, _hp in matched],
+        eff_catalog_ids,
+        conn=conn,
+        db_path=None if snap_root is not None else getattr(idx, "db_path", None),
+        commit_drift_threshold=(eval_config.memory.commit_drift_threshold if eval_config is not None else None),
+        eidos_dir=eval_eidos,
+        git_repo_root=git_repo_root,
+        head_ref=head_ref,
+    )
+
+    items: list[dict[str, Any]] = []
+    for mem_id, rel_path, fm, hit_entities, hit_paths in matched:
+        fresh, reason = freshness_map.get(mem_id, ("fresh", ""))
+        items.append(
+            {
+                "id": mem_id,
+                "title": str(fm.get("title") or mem_id),
+                "category": str(fm.get("category") or "feedback"),
+                "summary": str(fm.get("summary") or fm.get("title") or mem_id).strip(),
+                "freshness": fresh,
+                "freshness_reason": _remap_snapshot_str(reason, snap_root),
+                "relative_path": rel_path,
+                "matched_entities": hit_entities,
+                "matched_paths": hit_paths,
+            }
+        )
+
+    items.sort(key=lambda item: (_AFFECTED_MEMORY_FRESHNESS_ORDER.get(str(item["freshness"]), 9), str(item["id"])))
+    return items
 
 
 def detect_drift(
@@ -779,22 +943,152 @@ def detect_drift(
                     with contextlib.suppress(OSError):
                         delta_eval_path.unlink(missing_ok=True)
 
+        from eidos.core.lifecycle.delta_verifier import _evaluate_declarative_postcondition
+
+        _semver_re = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+        _ver_fail_re = re.compile(r"^frontmatter\.version expected '([^']+)', got '([^']+)'$")
+
+        def _semver_key(raw_v: str) -> tuple[int, int, int] | None:
+            m = _semver_re.match((raw_v or "").strip())
+            return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None
+
+        # Canonical ID map and spec index from validation_report so stacked deltas targeting
+        # either entity IDs or spec paths normalize identically and re-check non-version expects.
+        canon_id_map: dict[str, str] = {}
+        specs_by_id: dict[str, tuple[Path, str, dict[str, Any]]] = {}
+        pref_low_v = eidos_rel_prefix.lower().strip("/")
+        for vdoc in validation_report.documents:
+            vid = str(vdoc.doc_id or "").strip()
+            if not vid:
+                continue
+            vid_up = vid.upper()
+            canon_id_map[vid_up] = vid
+            specs_by_id[vid] = (vdoc.file_path, str(vdoc.doc_type or ""), dict(vdoc.frontmatter or {}))
+            vfp = vdoc.file_path
+            try:
+                vrel = vfp.resolve().relative_to(eval_root.resolve()).as_posix()
+            except ValueError:
+                vrel = _remap_snapshot_str(vfp.as_posix(), snap_root).replace("\\", "/")
+            vrel_low = normalize_rel_path(vrel).lower()
+            if vrel_low:
+                canon_id_map[vrel_low] = vid
+                if pref_low_v and vrel_low.startswith(f"{pref_low_v}/"):
+                    canon_id_map[vrel_low[len(pref_low_v) + 1 :]] = vid
+
+        def _canon_delta_target(raw_target: str) -> str:
+            t = str(raw_target or "").strip()
+            if not t:
+                return ""
+            if t.upper() in canon_id_map:
+                return canon_id_map[t.upper()]
+            norm_t = normalize_rel_path(t).lower()
+            if norm_t in canon_id_map:
+                return canon_id_map[norm_t]
+            if pref_low_v and f"{pref_low_v}/{norm_t}" in canon_id_map:
+                return canon_id_map[f"{pref_low_v}/{norm_t}"]
+            return t
+
+        def _load_delta_declared_mutations(df_rel_val: str, new_dc_val: str | None) -> list[dict[str, Any]]:
+            fm_d = None
+            if new_dc_val is not None:
+                fm_d, _, _ = extract_frontmatter(new_dc_val)
+            elif (eval_root / df_rel_val).is_file():
+                with contextlib.suppress(OSError):
+                    fm_d, _, _ = extract_frontmatter((eval_root / df_rel_val).read_text(encoding="utf-8"))
+            if isinstance(fm_d, dict) and isinstance(fm_d.get("mutations"), list):
+                return [m for m in fm_d["mutations"] if isinstance(m, dict)]
+            return []
+
+        applied_verifications: list[tuple[str, str, str | None, bool, str, Any, list[dict[str, Any]]]] = [
+            (
+                df_rel,
+                delta_id_str,
+                new_dc_val,
+                *_verify_delta_in_eval(df_rel, delta_id_str, new_dc_val),
+                _load_delta_declared_mutations(df_rel, new_dc_val),
+            )
+            for df_rel, delta_id_str, new_dc_val in newly_applied_deltas
+        ]
+        # Collect verified target versions per verified individual mutation across all newly applied deltas
+        # so multi-delta chains (D1 -> D2 -> D3) and mixed path/ID targets resolve cleanly.
+        verified_target_versions: dict[str, set[str]] = {}
+        if len(applied_verifications) > 1:
+            for _df_rel, _did, _new_dc_val, _ok_ver, _vmsg, ver_rep, decl_muts in applied_verifications:
+                if ver_rep is None:
+                    continue
+                for m_idx, vm in enumerate(ver_rep.mutations):
+                    if not vm.verified or m_idx >= len(decl_muts):
+                        continue
+                    m_decl = decl_muts[m_idx]
+                    exp_obj = m_decl.get("expect")
+                    exp_fm = exp_obj.get("frontmatter") if isinstance(exp_obj, dict) else None
+                    if isinstance(exp_fm, dict) and isinstance(exp_fm.get("version"), str):
+                        canon_t = _canon_delta_target(str(m_decl.get("target") or vm.target))
+                        if canon_t:
+                            verified_target_versions.setdefault(canon_t.upper(), set()).add(exp_fm["version"].strip())
+
         applied_delta_drift = False
-        for df_rel, delta_id_str, new_dc_val in newly_applied_deltas:
-            ok_ver, ver_msg, ver_rep = _verify_delta_in_eval(df_rel, delta_id_str, new_dc_val)
+        for df_rel, _delta_id_str, _new_dc_val, ok_ver, ver_msg, ver_rep, decl_muts in applied_verifications:
             if not ok_ver or (ver_rep is not None and not ver_rep.is_verified):
-                err_bucket = validation_report.schema_errors.setdefault(df_rel, [])
                 if ver_rep is not None:
-                    failed_muts = [m for m in ver_rep.mutations if not m.verified]
-                    if failed_muts:
-                        for fm_item in failed_muts:
-                            reason = fm_item.failure_reason or fm_item.details or fm_item.status
+                    failed_muts = [(idx_m, m) for idx_m, m in enumerate(ver_rep.mutations) if not m.verified]
+                    unresolved_reasons: list[tuple[Any, str]] = []
+                    for idx_m, fm_item in failed_muts:
+                        reason_raw = (fm_item.failure_reason or "").strip()
+                        m_vf = _ver_fail_re.match(reason_raw)
+                        waived = False
+                        recheck_err = ""
+                        if m_vf and verified_target_versions and idx_m < len(decl_muts):
+                            exp_v, act_v = m_vf.group(1).strip(), m_vf.group(2).strip()
+                            exp_t, act_t = _semver_key(exp_v), _semver_key(act_v)
+                            canon_t = _canon_delta_target(str(fm_item.target))
+                            if (
+                                exp_t is not None
+                                and act_t is not None
+                                and act_t > exp_t
+                                and act_v in verified_target_versions.get(canon_t.upper(), set())
+                            ):
+                                # Re-verify every remaining expect.frontmatter & expect.body key on this mutation
+                                # with only frontmatter.version updated to the verified superseding version.
+                                m_decl_copy = dict(decl_muts[idx_m])
+                                orig_exp = m_decl_copy.get("expect")
+                                if isinstance(orig_exp, dict):
+                                    exp_copy = dict(orig_exp)
+                                    orig_fm = exp_copy.get("frontmatter")
+                                    if isinstance(orig_fm, dict):
+                                        fm_copy = dict(orig_fm)
+                                        fm_copy["version"] = act_v
+                                        exp_copy["frontmatter"] = fm_copy
+                                    m_decl_copy["expect"] = exp_copy
+                                recheck_diags: list[str] = []
+                                t_file = specs_by_id[canon_t][0] if canon_t in specs_by_id else None
+                                recheck_ok = _evaluate_declarative_postcondition(
+                                    m_decl_copy,
+                                    canon_t,
+                                    specs_by_id,
+                                    {},
+                                    target_file=t_file,
+                                    diagnostics=recheck_diags,
+                                )
+                                if recheck_ok is True:
+                                    waived = True
+                                elif recheck_diags:
+                                    recheck_err = recheck_diags[0]
+                        if not waived:
+                            reason = recheck_err or fm_item.failure_reason or fm_item.details or fm_item.status
+                            unresolved_reasons.append((fm_item, reason))
+                    if failed_muts and not unresolved_reasons:
+                        continue
+                    err_bucket = validation_report.schema_errors.setdefault(df_rel, [])
+                    if unresolved_reasons:
+                        for fm_item, reason in unresolved_reasons:
                             err_bucket.append(
                                 f"Unfulfilled SpecDelta mutation [{fm_item.action} {fm_item.target}] in '{ver_rep.delta_id}': {_remap_snapshot_str(reason, snap_root)}"
                             )
                     else:
                         err_bucket.append(_remap_snapshot_str(ver_msg, snap_root))
                 else:
+                    err_bucket = validation_report.schema_errors.setdefault(df_rel, [])
                     err_bucket.append(_remap_snapshot_str(ver_msg, snap_root))
                 applied_delta_drift = True
 
@@ -976,17 +1270,42 @@ def detect_drift(
             all_changed_files=changed_files,
         )
 
-        # 6 & 7. Remediation suggestions and Markdown Summary (CMP-DRIFT-DETECTOR report module)
-        remediation, summary_markdown = build_drift_remediation_and_summary(
-            workflow_mode=workflow_mode,
-            is_clean=is_clean,
-            drift_detected=drift_detected,
+        # 5c. Advisory Diff-Affected Team Operational Memories (DLT-2026-182; strictly non-blocking)
+        mem_dir_prefix_low = f"{eidos_rel_prefix.lower().strip('/')}/memory/"
+        non_memory_changed_paths = [
+            p
+            for p in (
+                *classification.code_files,
+                *classification.test_files,
+                *classification.spec_files,
+                *classification.doc_files,
+                *classification.other_files,
+            )
+            if not (
+                normalize_rel_path(str(p)).lower().startswith(mem_dir_prefix_low)
+                or normalize_rel_path(str(p)).lower() == mem_dir_prefix_low.rstrip("/")
+            )
+        ]
+        doc_catalog_ids = {str(d.doc_id) for d in validation_report.documents if d.doc_id}
+        affected_memories = find_affected_memories(
+            eval_root=eval_root,
+            eval_eidos=eval_eidos,
+            changed_non_memory_paths=non_memory_changed_paths,
+            touched_components=touched_components,
+            idx=idx,
+            catalog_ids=doc_catalog_ids or None,
+            git_repo_root=root,
+            head_ref=head_ref,
+            eval_config=eval_config,
+            snap_root=snap_root,
+        )
+
+        # 6. Remediation suggestions (CMP-DRIFT-DETECTOR report module)
+        remediation = build_drift_remediation(
             base_direct_drift=base_direct_drift,
             unmapped_drift=unmapped_drift,
             design_drift=design_drift,
             uncovered_delta_drift=uncovered_delta_drift,
-            specs_changed=specs_changed,
-            has_deltas=has_deltas,
             classification=classification,
             structural_code_files=structural_code_files,
             body_only_code_files=body_only_code_files,
@@ -998,15 +1317,10 @@ def detect_drift(
             uncovered_design=uncovered_design,
             trivial_records=trivial_records,
             validation_report=validation_report,
-            invariants=invariants,
             uncovered_invariants=uncovered_invariants,
             orphan_invariants=orphan_invariants,
-            touched_components=touched_components,
             eidos_rel_prefix=eidos_rel_prefix,
             boundary_violations=boundary_violations,
-            ratchet_shrink_candidates=ratchet_shrink_candidates,
-            ready_to_apply_deltas=ready_to_apply_deltas,
-            untouched_consumers=untouched_consumers,
         )
 
         all_eval_cfg_errors = list(eval_config_errors)
@@ -1034,8 +1348,8 @@ def detect_drift(
             ratchet_shrink_candidates=ratchet_shrink_candidates,
             ready_to_apply_deltas=ready_to_apply_deltas,
             untouched_consumers=untouched_consumers,
+            affected_memories=affected_memories,
             remediation_suggestions=remediation,
-            summary_markdown=summary_markdown,
             eval_config=eval_config,
             eval_config_errors=all_eval_cfg_errors,
         )

@@ -1,0 +1,119 @@
+---
+type: delta/mutation
+id: DLT-2026-181-REMOVE-REDUNDANT-MARKDOWN-REPORT-C97C
+title: "Remove Redundant --markdown Report Flag and summary_markdown Renderer from eidos drift"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Remove the redundant --markdown/-m flag on eidos drift and the ~125-line Markdown table renderer (summary_markdown) because CI drift gates are consumed programmatically via --json by AI coding agents or via standard terminal output, eliminating maintenance overhead across a third drift renderer."
+mutations:
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Remove --markdown / -m from eidos drift and bump CTR-EIDOS-CLI to 2.0.0 (breaking CLI flag removal)."
+    expect:
+      frontmatter:
+        version: "2.0.0"
+      body:
+        not_contains:
+          - "--markdown"
+  - operation: modify
+    target: CMP-CLI-DRIFT-COMMANDS
+    details: "Remove markdown_out parameter, --markdown option, and build_drift_remediation_and_summary reference from CMP-CLI-DRIFT-COMMANDS."
+    expect:
+      body:
+        contains:
+          - "build_drift_remediation"
+        not_contains:
+          - "--markdown"
+          - "markdown_out"
+          - "build_drift_remediation_and_summary"
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    details: "Replace build_drift_remediation_and_summary with build_drift_remediation returning list[str] and remove CI Markdown summary rendering prose from CMP-DRIFT-DETECTOR."
+    expect:
+      body:
+        contains:
+          - "build_drift_remediation(...) -> list[str]"
+        not_contains:
+          - "build_drift_remediation_and_summary"
+          - "CI Markdown"
+          - "PR Markdown"
+  - operation: modify
+    target: CNT-EIDOS-VCS
+    details: "Record DEC-VCS-DROP-DRIFT-MARKDOWN-REPORT in CNT-EIDOS-VCS decisions and remove Markdown report references from container prose."
+    expect:
+      frontmatter:
+        decisions.id:
+          - "DEC-VCS-DROP-DRIFT-MARKDOWN-REPORT"
+      body:
+        not_contains:
+          - "PR Markdown"
+          - "Markdown verification reports"
+  - operation: modify
+    target: CAP-DRIFT-DETECTION
+    details: "Bump CAP-DRIFT-DETECTION to 1.18.0 and scope drift reporting invariants and prose to JSON and Rich terminal outputs."
+    expect:
+      frontmatter:
+        version: "1.18.0"
+      body:
+        not_contains:
+          - "PR Markdown"
+  - operation: modify
+    target: INV-DRIFT-READY-TO-APPLY-DELTAS
+    details: "Scope advisory ready_to_apply_deltas surfacing to JSON and Rich terminal outputs."
+    expect:
+      frontmatter:
+        rule: "JSON and Rich terminal outputs"
+        test_binding: "tests/test_drift.py::test_drift_ready_to_apply_deltas_and_fail_on_warnings"
+  - operation: modify
+    target: INV-DRIFT-UNTOUCHED-CONSUMERS
+    details: "Scope advisory untouched_consumers surfacing to JSON and Rich terminal outputs."
+    expect:
+      frontmatter:
+        rule: "JSON and Rich terminal outputs"
+        test_binding: "tests/test_drift.py::test_drift_untouched_consumers_advisory_and_barrels"
+  - operation: modify
+    target: CMP-REPO-INITIALIZER
+    details: "Remove $GITHUB_STEP_SUMMARY --markdown reference from turnkey GitHub CI workflow description in CMP-REPO-INITIALIZER."
+    expect:
+      body:
+        not_contains:
+          - "GITHUB_STEP_SUMMARY"
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+    details: "Remove unused summary_markdown optional field from SpecDriftStatus in frontend/src/types.ts to match /api/drift."
+    expect:
+      body:
+        contains:
+          - "SpecDriftStatus"
+vcs:
+  branch: main
+  base_commit: 218cfb91a839bfd736a15d531a151117d02d3f96
+---
+= SpecDelta: Remove Redundant --markdown Report Flag and summary_markdown Renderer from eidos drift
+:toc: left
+
+== Problem Statement
+`eidos drift` previously maintained three parallel output renderers: structured `--json`, Rich terminal diagnostics, and a standalone `--markdown FILE` summary table (`DriftCheckResult.summary_markdown` built in `src/eidos/vcs/report.py`). In practice, CI drift checks are invoked by AI coding agents or automated gates that consume `--json` or standard CLI logs—not a bespoke Markdown file—turning `summary_markdown` into ~125 lines of redundant presentation code duplicated across every new drift signal.
+
+== Proposed Specification Changes
+* **`CTR-EIDOS-CLI` (`2.0.0`)**: Remove `[--markdown FILE]` / `-m` from `eidos drift` (SemVer major bump for breaking CLI option removal).
+* **`CMP-CLI-DRIFT-COMMANDS`**: Remove `markdown_out` from `drift_cmd` and reference `build_drift_remediation`.
+* **`CMP-DRIFT-DETECTOR` & `CNT-EIDOS-VCS`**: Replace `build_drift_remediation_and_summary(...) -> tuple[list[str], str]` with `build_drift_remediation(...) -> list[str]`, drop `DriftCheckResult.summary_markdown`, and record `DEC-VCS-DROP-DRIFT-MARKDOWN-REPORT`.
+* **`CAP-DRIFT-DETECTION` (`1.18.0`), `INV-DRIFT-READY-TO-APPLY-DELTAS`, `INV-DRIFT-UNTOUCHED-CONSUMERS`**: Scope advisory reporting strictly to JSON and Rich terminal outputs.
+* **`CMP-REPO-INITIALIZER`**: Drop `--markdown "$GITHUB_STEP_SUMMARY"` from the scaffolded GitHub Actions CI template so it matches GitLab CI.
+
+== Implementation Plan
+1. **CLI & VCS Core**:
+   * Remove `markdown_out` (`--markdown`, `-m`) and file writing from `src/eidos/cli/drift_commands.py`.
+   * Replace `build_drift_remediation_and_summary` with `build_drift_remediation` in `src/eidos/vcs/report.py` (deleting the Markdown table builder) and remove `summary_markdown` from `DriftCheckResult` in `src/eidos/vcs/drift.py`.
+   * Remove `--markdown "$GITHUB_STEP_SUMMARY"` from `_GITHUB_CI_WORKFLOW_TEMPLATE` in `src/eidos/core/lifecycle/initializer.py`.
+   * Remove unused `"summary_markdown"` key from `/api/drift` in `src/eidos/portal/server.py` (body-only; no spec mutation) and `summary_markdown?: string;` from `SpecDriftStatus` in `src/eidos/portal/frontend/src/types.ts` (covered by `CMP-PORTAL-ASSETS`).
+2. **Living Specs & Docs**:
+   * Update `eidos/architecture/contracts/cli.adoc`, `eidos/architecture/components/cli-drift-commands.adoc`, `eidos/architecture/components/drift-detector.adoc`, `eidos/architecture/containers/vcs.adoc`, `eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc`, and `eidos/architecture/components/repo-initializer.adoc`.
+   * Remove `--markdown` usage and option bullets from `docs/guides/cli.md` (body-only; no spec mutation).
+3. **CLI Snapshot & Tests**:
+   * Regenerate `tests/fixtures/cli_command_tree.json` without `--markdown` / `-m`.
+   * Update `tests/test_cli_json.py`, `tests/test_drift.py`, `tests/test_validator.py`, and `tests/test_scaffolder.py` (including a negative assertion that `eidos drift --markdown` is rejected with exit code `2`), maintaining `> 90.0%` per-file coverage (`POL-STATEMENT-TEST-COVERAGE`) and `INV-DOCS-SYNCHRONIZATION`.
+4. **Verification & Review**:
+   * Run `eidos delta verify`, `eidos delta apply`, `pytest --cov=src/eidos`, `ruff`, `eidos drift --uncommitted --fail-on-warnings --json`, and a fresh-context adversarial `git diff` review.

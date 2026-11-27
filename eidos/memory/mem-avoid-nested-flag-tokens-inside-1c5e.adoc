@@ -1,0 +1,26 @@
+---
+type: agent/memory
+id: MEM-AVOID-NESTED-FLAG-TOKENS-INSIDE-1C5E
+title: Avoid nested flag tokens inside quoted bash examples in docs
+category: feedback
+status: active
+summary: Keep quoted eidos arguments in docs/**/*.md bash fences free of nested --flag tokens because test_docs_sync.py splits lines on whitespace.
+targets:
+  entities:
+    - CMP-DOCS-USER-GUIDES
+  paths:
+    - docs/guides/**
+    - tests/test_docs_sync.py
+verified_at: "2026-11-27"
+verified_commit: 218cfb91a839bfd736a15d531a151117d02d3f96
+---
+= Memory: Avoid nested flag tokens inside quoted bash examples in docs
+:toc: left
+
+== Guidance
+
+In docs/**/*.md bash code blocks containing eidos invocations, avoid embedding unrelated --flag tokens inside quoted string arguments because test_documented_cli_flags_match_live_command_tree splits lines on whitespace and checks every --token against the eidos subcommand.
+
+== Why
+
+test_docs_sync.py uses whitespace tokenization rather than shell quote parsing when scanning bash fences, causing false invalid-flag failures when a quoted argument contains a double-dash flag.

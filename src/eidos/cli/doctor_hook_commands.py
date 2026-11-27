@@ -1,6 +1,7 @@
 """Installation health diagnostics (`eidos doctor`) and CLI-native agent lifecycle hooks (`eidos hook ...`)."""
 
 import shutil
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -14,6 +15,7 @@ import eidos
 from eidos.cli._shared import PANEL_PLUGINS, PANEL_SETUP, console, has_eidos_markers, resolve_cli_eidos_dir
 from eidos.core.index.graph_index import get_architectural_index
 from eidos.core.lifecycle.delta_engine import is_delta_ready_to_apply, list_deltas
+from eidos.core.lifecycle.memory_engine import list_memories
 from eidos.core.spec.validator import SpecValidator
 from eidos.core.workspace.config import CONFIG_FILENAME, find_config_file, load_repo_config_with_errors
 from eidos.core.workspace.project import find_git_root, find_repo_root, resolve_spec_and_repo_roots
@@ -140,6 +142,86 @@ def _check_open_deltas(
     }
 
 
+def _check_team_memories(eidos_dir: Path, specs_exist: bool) -> dict[str, Any]:
+    """Report non-blocking advisory health summary of active team operational memories under eidos/memory/."""
+    mem_dir = eidos_dir / "memory"
+    if not specs_exist or not mem_dir.is_dir() or mem_dir.is_symlink():
+        return {
+            "ok": True,
+            "status": "empty",
+            "total_active": 0,
+            "fresh": 0,
+            "stale": 0,
+            "expired": 0,
+            "unverifiable": 0,
+            "detail": "No active team memories (capture gotchas via 'eidos memory add')",
+        }
+
+    try:
+        entries = list_memories(eidos_dir, status="active", include_archived=False, include_freshness=True)
+    except (OSError, RuntimeError, sqlite3.Error) as exc:
+        return {
+            "ok": True,
+            "status": "unavailable",
+            "total_active": 0,
+            "fresh": 0,
+            "stale": 0,
+            "expired": 0,
+            "unverifiable": 0,
+            "detail": f"Unable to inspect team memories ({exc})",
+        }
+    total_active = len(entries)
+    if total_active == 0:
+        return {
+            "ok": True,
+            "status": "empty",
+            "total_active": 0,
+            "fresh": 0,
+            "stale": 0,
+            "expired": 0,
+            "unverifiable": 0,
+            "detail": "No active team memories (capture gotchas via 'eidos memory add')",
+        }
+
+    fresh = sum(1 for e in entries if e.get("freshness") == "fresh")
+    stale = sum(1 for e in entries if e.get("freshness") == "stale")
+    expired = sum(1 for e in entries if e.get("freshness") == "expired")
+    unverifiable = sum(1 for e in entries if e.get("freshness") == "unverifiable")
+    needs_review = stale + expired + unverifiable
+
+    if needs_review > 0:
+        parts = [f"{fresh} fresh"]
+        if stale:
+            parts.append(f"{stale} stale")
+        if expired:
+            parts.append(f"{expired} expired")
+        if unverifiable:
+            parts.append(f"{unverifiable} unverifiable")
+        return {
+            "ok": True,
+            "status": "needs_review",
+            "total_active": total_active,
+            "fresh": fresh,
+            "stale": stale,
+            "expired": expired,
+            "unverifiable": unverifiable,
+            "detail": (
+                f"{total_active} active ({', '.join(parts)}) — run 'eidos memory audit' or 'eidos memory verify <ID>'"
+            ),
+        }
+
+    return {
+        "ok": True,
+        "status": "clean",
+        "total_active": total_active,
+        "fresh": fresh,
+        "stale": 0,
+        "expired": 0,
+        "unverifiable": 0,
+        "detail": f"{total_active} active ({fresh} fresh)",
+    }
+
+
 def doctor_cmd(
     path: Path | None = typer.Option(
         None,
@@ -245,6 +327,7 @@ def doctor_cmd(
     )
     agents_md_check = _check_onboarding_governance(plugin_root)
     open_deltas_check = _check_open_deltas(eidos_dir, specs_exist, schema_error_paths=schema_error_paths)
+    team_memories_check = _check_team_memories(eidos_dir, specs_exist)
     cli_update = (
         check_cli_update_status() if repo_cfg.plugin.updates_check else check_cli_update_status(allow_network=False)
     )
@@ -299,6 +382,7 @@ def doctor_cmd(
         },
         "agents_md": agents_md_check,
         "open_deltas": open_deltas_check,
+        "team_memories": team_memories_check,
     }
     overall_ok = (
         cli_ok
@@ -422,6 +506,21 @@ def doctor_cmd(
         "Open SpecDeltas",
         deltas_badge,
         str(open_deltas_check["detail"]),
+    )
+
+    mem_status = team_memories_check["status"]
+    if mem_status == "needs_review":
+        mem_badge = "[bold yellow]WARN[/bold yellow]"
+    elif mem_status == "empty":
+        mem_badge = "[dim]EMPTY[/dim]"
+    elif mem_status == "unavailable":
+        mem_badge = "[dim]UNAVAILABLE[/dim]"
+    else:
+        mem_badge = "[bold green]PASS[/bold green]"
+    table.add_row(
+        "Team Memories",
+        mem_badge,
+        str(team_memories_check["detail"]),
     )
 
     console.print(table)

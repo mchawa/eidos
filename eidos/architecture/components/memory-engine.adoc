@@ -5,15 +5,28 @@ title: MemoryEngine
 container: CNT-EIDOS-CORE
 status: active
 source_path: src/eidos/core/lifecycle/memory_engine.py
+decisions:
+  - id: DEC-MEMORY-CAPTURE-ERGONOMICS-AND-ADVISORY-SURFACING
+    title: "Low-Friction Auto-Anchored Memory Capture, Presentation-Tier --from-diff Isolation, and Strictly Non-Blocking Drift/Doctor Memory Advisories"
+    decision: "Make summary optional in add_memory (deterministically auto-derived from guidance or title within 220 chars), automatically infer owning CMP-*/CNT-* entities via infer_memory_entities_for_paths when auto_entities=True, provide update_memory for in-place active/draft editing with lossless raw section preservation and re-verification, keep --from-diff Git diff collection inside CMP-CLI-MEMORY-COMMANDS (presentation tier) rather than importing eidos.vcs inside CNT-EIDOS-CORE, surface clipped guidance in guardrails context slices behind Stage 0 memory-first pruning, and expose diff-scoped affected_memories in eidos drift and checks.team_memories in eidos doctor strictly outside blocking gates and --fail-on-warnings."
+    rationale: "Reduces capture friction from five mandatory flags to --title + --guidance/--from-diff, delivers actionable guidance on default guardrails context slices with 0% architectural eviction, preserves acyclic CNT-EIDOS-CORE -> CNT-EIDOS-VCS boundaries (ARCH-EIDOS.import_boundaries), and keeps team memory staleness strictly advisory across every CI gate."
+    rejected_alternatives:
+      - option: "Import eidos.vcs.diff directly inside CMP-MEMORY-ENGINE for --from-diff"
+        reason_rejected: "Couples CNT-EIDOS-CORE to CNT-EIDOS-VCS unnecessarily when CMP-CLI-MEMORY-COMMANDS already orchestrates presentation-tier CLI arguments."
+      - option: "Escalate stale or expired affected_memories under eidos drift --fail-on-warnings or fail eidos doctor"
+        reason_rejected: "Violates INV-AGENT-MEMORY-SCHEMA-ISOLATION and INV-DRIFT-MEMORY-FILE-ISOLATION; advisory operational notes must never block CI pipelines."
+      - option: "Re-extract guidance/why via whitespace-collapsing extract_memory_sections during update_memory"
+        reason_rejected: "Destroys multiline AsciiDoc code blocks and lists in untouched sections when updating only one field."
+    graduated_from: DLT-2026-182-IMPROVE-TEAM-MEMORY-ACTIVATION-9398
 ---
 = Component: MemoryEngine
 :toc: left
 
 == Responsibility
-Manages the Git-native team operational memory lifecycle (`type: agent/memory`, `MEM-*`) under `eidos/memory/` and `eidos/memory/archive/`: collision-resistant ID generation, zero-warning AsciiDoc sanitization, calibrated duplicate and formal-spec overlap detection, freshness verification, non-blocking auditing, archiving, and graduation into formal `DEC-*`, `INV-*`, or `POL-*` specifications (`DEC-CORE-MEMORY-ENGINE-SANITIZER-AND-OVERLAP`).
+Manages the Git-native team operational memory lifecycle (`type: agent/memory`, `MEM-*`) under `eidos/memory/` and `eidos/memory/archive/`: collision-resistant ID generation, optional summary auto-derivation, deterministic path-to-entity auto-anchoring (`infer_memory_entities_for_paths`), in-place editing (`update_memory`), zero-warning AsciiDoc sanitization, calibrated duplicate and formal-spec overlap detection, freshness verification, non-blocking auditing, archiving, and graduation into formal `DEC-*`, `INV-*`, or `POL-*` specifications (`DEC-CORE-MEMORY-ENGINE-SANITIZER-AND-OVERLAP`, `DEC-MEMORY-CAPTURE-ERGONOMICS-AND-ADVISORY-SURFACING`).
 
 == Key Responsibilities & Collaborators
-* **Collision-Resistant IDs & Zero-Warning AsciiDoc Sanitization (`INV-MEMORY-LIFECYCLE-AND-SANITIZER`, `INV-ASCIIDOC-ZERO-WARNING-HYGIENE`)**: Generates word-boundary-trimmed `MEM-<SLUG>-<4HEX>` identifiers with on-disk re-roll across active and archived directories (`generate_memory_id`), normalizes Markdown code fences, `include::` directives, `---` dividers, ATX/AsciiDoc headings, and nested bullets into zero-warning AsciiDoc (`sanitize_memory_asciidoc_body`), rejects personal `category: user` entries, and validates every write against `agent/memory.schema.yaml` via `SpecValidator` before touching disk.
+* **Collision-Resistant IDs, Auto-Anchoring, In-Place Updates & Zero-Warning AsciiDoc Sanitization (`INV-MEMORY-LIFECYCLE-AND-SANITIZER`, `INV-ASCIIDOC-ZERO-WARNING-HYGIENE`, `DEC-MEMORY-CAPTURE-ERGONOMICS-AND-ADVISORY-SURFACING`)**: Generates word-boundary-trimmed `MEM-<SLUG>-<4HEX>` identifiers with on-disk re-roll across active and archived directories (`generate_memory_id`), auto-derives concise single-line summaries (`<= 220` chars) from `guidance` or `title` when `summary` is omitted on `add_memory`, resolves owning `CMP-*`/`CNT-*` entities deterministically from paths/globs via synced `index.db` (`infer_memory_entities_for_paths`, enabled by default via `auto_entities=True`), supports lossless in-place editing and re-verification of active/draft entries via `update_memory` (rejecting archived/promoted entries and personal `category: user`), normalizes Markdown code fences, `include::` directives, `---` dividers, ATX/AsciiDoc headings, and nested bullets into zero-warning AsciiDoc (`sanitize_memory_asciidoc_body`), and validates every write against `agent/memory.schema.yaml` via `SpecValidator` before touching disk.
 * **Calibrated Overlap Detection & Promotion Resolution**: Detects potential duplicate memories and formal `POL-*`/`INV-*` spec overlaps (`detect_memory_overlaps`) using pre-computed `spec_embeddings` BLOBs (`DUP_MEMORY_SEMANTIC_THRESHOLD = 0.56`, `SPEC_OVERLAP_SEMANTIC_THRESHOLD = 0.59`, encoding at most 1 candidate query and never re-embedding the corpus on the fly) with instant FTS5 BM25 fallback (`DUP_MEMORY_BM25_THRESHOLD = 13.5`, `SPEC_OVERLAP_BM25_THRESHOLD = 26.0`), and resolves standalone (`POL-*`) and child (`INV-*`, embedded `DEC-*`) graduation targets (`resolve_promotion_target`, `promote_memory`).
 * **Freshness Verification, Archiving & Non-Blocking Audits**: Delegates deterministic freshness computation to `CMP-TIERED-CONTEXT-COMPRESSOR` (`evaluate_memory_freshness`, `resolve_memory_freshness_batch`), refreshes `verified_at` and `verified_commit` (`verify_memory`), transitions retired notes to `eidos/memory/archive/` (`archive_memory`), and compiles strictly non-blocking freshness, duplicate, and spec-overlap reports (`audit_memories`).
 
@@ -22,10 +35,11 @@ Manages the Git-native team operational memory lifecycle (`type: agent/memory`, 
 * `DUP_MEMORY_BM25_THRESHOLD`, `SPEC_OVERLAP_BM25_THRESHOLD`, `DUP_MEMORY_SEMANTIC_THRESHOLD`, `SPEC_OVERLAP_SEMANTIC_THRESHOLD`
 * `generate_memory_id(title: str, eidos_dir: Path | None = None, *, max_slug_len: int = 36) -> tuple[str, str]`
 * `sanitize_memory_asciidoc_body(raw_text: str) -> str`
+* `infer_memory_entities_for_paths(eidos_dir: Path, paths: Sequence[str]) -> list[str]`
 * `find_memory_by_id_or_path(eidos_dir: Path, target: str, *, include_archived: bool = True) -> Path`
 * `resolve_promotion_target(eidos_dir: Path, spec_id: str, *, kind: str | None = None) -> dict[str, Any]`
 * `detect_memory_overlaps(eidos_dir: Path, title: str, summary: str, *, exclude_id: str | None = None, use_semantic: bool = True) -> dict[str, list[dict[str, Any]]]`
-* `add_memory(...) -> dict[str, Any]`, `list_memories(...) -> list[dict[str, Any]]`, `search_memories(...) -> list[dict[str, Any]]`, `show_memory(...) -> dict[str, Any]`
+* `add_memory(...) -> dict[str, Any]`, `update_memory(...) -> dict[str, Any]`, `list_memories(...) -> list[dict[str, Any]]`, `search_memories(...) -> list[dict[str, Any]]`, `show_memory(...) -> dict[str, Any]`
 * `verify_memory(...) -> dict[str, Any]`, `archive_memory(...) -> dict[str, Any]`, `promote_memory(...) -> dict[str, Any]`, `audit_memories(...) -> dict[str, Any]`
 
 == Design Constraints & Operational Notes
