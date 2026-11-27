@@ -188,7 +188,7 @@ def test_cli_command_tree_unchanged():
 
 
 def test_cli_contract_json_and_create_flags(tmp_path):
-    """DLT-2026-077 & DLT-2026-092: verify CTR-EIDOS-CLI JSON output flags and minimal blueprint creation."""
+    """DLT-2026-077, DLT-2026-092 & INV-SPEC-CREATE-DESIGN-SYSTEM-FLAG: verify CTR-EIDOS-CLI JSON output flags and blueprint creation."""
     eidos_dir = tmp_path / "eidos"
 
     # 1. Create container, client, contract, and delta blueprints
@@ -213,6 +213,99 @@ def test_cli_contract_json_and_create_flags(tmp_path):
     )
     assert res_clt.exit_code == 0
     clt_content = (eidos_dir / "design" / "clients" / "mobile" / "client.adoc").read_text(encoding="utf-8")
+
+    # Optional --design-system (-d) targets a specific DS-* for ui-component and client (and rejects blank values)
+    ds_eidos = tmp_path / "ds_eidos"
+    res_ds_admin = runner.invoke(
+        app,
+        ["spec", "create", "design-system", "DS-ADMIN", "--title", "Admin Design System", "--path", str(ds_eidos)],
+    )
+    assert res_ds_admin.exit_code == 0, res_ds_admin.stdout
+
+    res_ds_store = runner.invoke(
+        app,
+        ["spec", "create", "design-system", "DS-STORE", "--title", "Store Design System", "--path", str(ds_eidos)],
+    )
+    assert res_ds_store.exit_code == 0, res_ds_store.stdout
+
+    res_uic = runner.invoke(
+        app,
+        [
+            "spec",
+            "create",
+            "ui-component",
+            "UIC-CART-DRAWER",
+            "--title",
+            "Cart Drawer",
+            "--design-system",
+            "DS-STORE",
+            "--path",
+            str(ds_eidos),
+        ],
+    )
+    assert res_uic.exit_code == 0, res_uic.stdout
+    uic_file = ds_eidos / "design" / "systems" / "store" / "components" / "cart-drawer.adoc"
+    assert uic_file.is_file()
+    assert "design_system: DS-STORE" in uic_file.read_text(encoding="utf-8")
+
+    res_clt_ds = runner.invoke(
+        app,
+        [
+            "spec",
+            "create",
+            "client",
+            "CLT-STOREFRONT",
+            "--title",
+            "Storefront Web",
+            "-d",
+            "DS-STORE",
+            "--path",
+            str(ds_eidos),
+        ],
+    )
+    assert res_clt_ds.exit_code == 0, res_clt_ds.stdout
+    clt_ds_file = ds_eidos / "design" / "clients" / "storefront" / "client.adoc"
+    assert "design_system: DS-STORE" in clt_ds_file.read_text(encoding="utf-8")
+
+    for invalid_ds in ("   ", "DS-", "../..", "../../system.adoc", "DS-FOO BAR"):
+        res_bad_ds = runner.invoke(
+            app,
+            [
+                "spec",
+                "create",
+                "ui-component",
+                "UIC-BAD-DS",
+                "--title",
+                "Bad DS",
+                "--design-system",
+                invalid_ds,
+                "--path",
+                str(ds_eidos),
+            ],
+        )
+        assert res_bad_ds.exit_code == 1, (invalid_ds, res_bad_ds.stdout)
+    # No traversal or orphan directories created on disk by invalid --design-system values
+    assert not (ds_eidos / "design" / "components").exists()
+    assert not (ds_eidos / "design" / "systems" / "components").exists()
+    assert not (ds_eidos / "design" / "systems" / "foo bar").exists()
+
+    # Blank --design-system is ignored on non-ui-component/non-client design types (consistent with --client)
+    res_flow_ign = runner.invoke(
+        app,
+        [
+            "spec",
+            "create",
+            "flow",
+            "FLOW-CHECKOUT",
+            "--title",
+            "Checkout Flow",
+            "--design-system",
+            "   ",
+            "--path",
+            str(ds_eidos),
+        ],
+    )
+    assert res_flow_ign.exit_code == 0, res_flow_ign.stdout
     assert "design_system: DS-API" in clt_content
 
     res_ctr = runner.invoke(

@@ -54,6 +54,23 @@ def _resolve_design_entity_ref(
     return resolved_id, clean_slug
 
 
+_DS_ID_RE = re.compile(r"^DS-[A-Z0-9_-]+$")
+
+
+def _resolve_and_validate_design_system(raw_ds: str, eidos_dir: Path) -> tuple[str, str]:
+    """Resolve and validate a design system ID, slug, or .adoc path, rejecting path traversal and empty/malformed slugs."""
+    cleaned = (raw_ds or "").strip()
+    if not cleaned:
+        raise ValueError("Invalid --design-system value: must be a non-empty DS-* ID, path, or slug.")
+    resolved_ds_id, raw_sys_slug = _resolve_design_entity_ref(cleaned, "DS-", "system.adoc", eidos_dir)
+    sys_slug = re.sub(r"[^a-z0-9_-]+", "-", raw_sys_slug.lower()).strip("-_")
+    if not sys_slug or not _DS_ID_RE.fullmatch(resolved_ds_id):
+        raise ValueError(
+            f"Invalid --design-system value '{raw_ds}': could not resolve a valid DS-* identifier and slug."
+        )
+    return resolved_ds_id, sys_slug
+
+
 def build_design_spec(
     canonical_key: str,
     *,
@@ -108,8 +125,7 @@ def build_design_spec(
 
     elif canonical_key == "ui-component":
         clean_comp = slug.removeprefix("uic-")
-        raw_ds = (design_system or "DS-CORE").strip()
-        resolved_ds_id, sys_slug = _resolve_design_entity_ref(raw_ds, "DS-", "system.adoc", eidos_dir)
+        resolved_ds_id, sys_slug = _resolve_and_validate_design_system(design_system, eidos_dir)
         dest_dir = eidos_dir / "design" / "systems" / sys_slug / "components"
         dest_file = dest_dir / f"{clean_comp}.adoc"
         fm = {
@@ -146,9 +162,7 @@ def build_design_spec(
 
     elif canonical_key == "client":
         client_slug = slug.removeprefix("clt-")
-        resolved_ds_id, _ = _resolve_design_entity_ref(
-            (design_system or "DS-CORE").strip(), "DS-", "system.adoc", eidos_dir
-        )
+        resolved_ds_id, _ = _resolve_and_validate_design_system(design_system, eidos_dir)
         dest_dir = eidos_dir / "design" / "clients" / client_slug
         dest_file = dest_dir / "client.adoc"
         fm = {

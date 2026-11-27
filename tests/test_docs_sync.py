@@ -301,10 +301,17 @@ def test_documented_cli_flags_match_live_command_tree():
                     continue
                 idx = 1
                 matched_prefix = ()
+                root_opts = cmd_tree.get((), set())
                 while idx < len(tokens):
                     tok = tokens[idx]
                     if tok.startswith("["):
                         break
+                    if not matched_prefix and tok in ("-p", "--path") and tok in root_opts and idx + 1 < len(tokens):
+                        idx += 2
+                        continue
+                    if not matched_prefix and tok.startswith("--path=") and "--path" in root_opts:
+                        idx += 1
+                        continue
                     cand = (*matched_prefix, tok)
                     if cand in cmd_tree:
                         matched_prefix = cand

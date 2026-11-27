@@ -4,6 +4,8 @@ Command implementations live in the sibling ``*_commands.py`` / ``*_command.py``
 component).
 """
 
+from pathlib import Path
+
 import typer
 from rich.panel import Panel
 from rich.table import Table
@@ -55,6 +57,7 @@ def version_callback(value: bool):
 
 @app.callback()
 def main(
+    ctx: typer.Context,
     version: bool | None = typer.Option(
         None,
         "--version",
@@ -63,9 +66,17 @@ def main(
         callback=version_callback,
         is_eager=True,
     ),
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Global path to target project or eidos specifications directory (overridden by subcommand --path).",
+    ),
 ):
     """Eidos: Git-Native, Agent-Agnostic Development AI Ecosystem & Lifecycle Orchestrator."""
-    pass
+    if not isinstance(ctx.obj, dict):
+        ctx.obj = {}
+    ctx.obj["global_path"] = path
 
 
 def info():

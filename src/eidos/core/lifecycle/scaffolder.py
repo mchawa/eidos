@@ -71,6 +71,7 @@ def create_spec(
     title: str,
     *,
     client: str | None = None,
+    design_system: str | None = None,
 ) -> Path:
     """Scaffold a minimal, schema-valid living specification blueprint across the 15 living specification types.
 
@@ -323,7 +324,12 @@ def create_spec(
         body = render_spec_template("product/exploration", heading=heading)
 
     elif canonical_key in DESIGN_SPEC_KEYS:
-        resolved_design_system = _first_of_type("design/system", f"DS-{project_stem}")
+        if canonical_key in ("ui-component", "client") and design_system is not None:
+            resolved_design_system = design_system.strip()
+            if not resolved_design_system:
+                raise ValueError("Invalid --design-system value: must be a non-empty DS-* ID, path, or slug.")
+        else:
+            resolved_design_system = _first_of_type("design/system", f"DS-{project_stem}")
         dest_dir, dest_file, fm, body = build_design_spec(
             canonical_key,
             eidos_dir=eidos_dir,

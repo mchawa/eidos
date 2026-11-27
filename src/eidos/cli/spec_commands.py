@@ -13,6 +13,7 @@ from eidos.cli._shared import (
     console,
     discover_workspace_eidos_dirs,
     format_rel_eidos_paths,
+    get_global_cli_path,
     is_explicit_cli_path,
     normalize_cli_spec_target,
     require_cli_eidos_dir,
@@ -481,6 +482,12 @@ def spec_create_cmd(
         "-c",
         help="Owning client ID (CLT-*), path, or slug (required when creating a 'screen' specification).",
     ),
+    design_system: str | None = typer.Option(
+        None,
+        "--design-system",
+        "-d",
+        help="Owning design system ID (DS-*), path, or slug (optional for 'ui-component' and 'client'; auto-resolves first DS-* when omitted).",
+    ),
     path: Path = typer.Option(
         Path("eidos"),
         "--path",
@@ -497,6 +504,7 @@ def spec_create_cmd(
             raw_id=doc_id,
             title=title,
             client=client,
+            design_system=design_system,
         )
         rel = dest_file.relative_to(eidos_dir) if dest_file.is_relative_to(eidos_dir) else dest_file
         parsed_doc = parse_spec_file(dest_file)
@@ -686,11 +694,12 @@ def spec_discover_cmd(
     ),
 ):
     """Deterministically scan a polyglot repository to propose CNT-* containers, CTR-* contracts, and unmapped source_path gaps."""
-    if path is None:
+    effective_path = path if path is not None else get_global_cli_path()
+    if effective_path is None:
         repo_root = find_repo_root(None)
         eidos_dir = repo_root / "eidos"
     else:
-        resolved = path.resolve()
+        resolved = effective_path.resolve()
         if resolved.name == "eidos" or (resolved / "system.adoc").is_file():
             eidos_dir = resolved
             repo_root = resolved.parent

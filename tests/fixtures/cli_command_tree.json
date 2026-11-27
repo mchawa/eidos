@@ -35,6 +35,21 @@
         "panel": null,
         "envvar": "None",
         "type": "BOOL"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Global path to target project or eidos specifications directory (overridden by subcommand --path).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
       }
     ]
   },
@@ -874,6 +889,21 @@
         "required": false,
         "default": "None",
         "help": "Owning client ID (CLT-*), path, or slug (required when creating a 'screen' specification).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "design_system",
+        "opts": [
+          "--design-system",
+          "-d"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Owning design system ID (DS-*), path, or slug (optional for 'ui-component' and 'client'; auto-resolves first DS-* when omitted).",
         "panel": null,
         "envvar": "None",
         "type": "STRING"

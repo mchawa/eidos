@@ -2700,15 +2700,29 @@ def _cli_parity_violations(text: str) -> list[str]:
         for match in re.finditer(r"(?<![\w/.-])eidos ([^`|\n]*)", line):
             tokens = match.group(1).split()
             cmd, path = root, []
-            for tok in tokens:
+            root_opts = {
+                opt
+                for p in getattr(root, "params", [])
+                for opt in list(getattr(p, "opts", [])) + list(getattr(p, "secondary_opts", []))
+            }
+            tok_idx = 0
+            while tok_idx < len(tokens):
+                tok = tokens[tok_idx]
+                if not path and tok in ("-p", "--path") and tok in root_opts and tok_idx + 1 < len(tokens):
+                    tok_idx += 2
+                    continue
+                if not path and tok.startswith("--path=") and "--path" in root_opts:
+                    tok_idx += 1
+                    continue
                 subs = getattr(cmd, "commands", None)
                 if subs is not None and tok in subs:
                     cmd, path = subs[tok], [*path, tok]
+                    tok_idx += 1
                 else:
                     break
             if not path:
                 continue  # prose such as "eidos living specs" or "eidos/"
-            rest = tokens[len(path) :]
+            rest = tokens[tok_idx:]
             if getattr(cmd, "commands", None) is not None:
                 if rest and re.fullmatch(r"[a-z][a-z0-9-]*", rest[0]):
                     violations.append(f"unknown subcommand: eidos {' '.join(path)} {rest[0]}")
@@ -2734,13 +2748,20 @@ def test_bundled_skill_cli_parity():
         assert _cli_parity_violations(text) == [], f"stale CLI references in {src}"
     assert checked > 100, "parity scan unexpectedly found almost no eidos invocations"
 
-    # Negative cases: removed flags and subcommands are caught; prose, placeholders, and other tools are ignored.
-    bad = "Run `eidos context -f x --no-such-flag` then `eidos index frobnicate`."
+    # Negative cases: removed flags and subcommands are caught (including after global -p); prose and other tools ignored.
+    bad = (
+        "Run `eidos context -f x --no-such-flag` then `eidos index frobnicate` "
+        "and `eidos -p packages/api/eidos context -f x --bogus-flag`."
+    )
     assert _cli_parity_violations(bad) == [
         "unknown option: eidos context --no-such-flag",
         "unknown subcommand: eidos index frobnicate",
+        "unknown option: eidos context --bogus-flag",
     ]
-    ok = "Use `uv run eidos drift --uncommitted --json`, `uv tool install --python 3.14 eidos-ai`, eidos living specs."
+    ok = (
+        "Use `uv run eidos drift --uncommitted --json`, `eidos -p packages/api/eidos index status --json`, "
+        "`uv tool install --python 3.14 eidos-ai`, eidos living specs."
+    )
     assert _cli_parity_violations(ok) == []
 
 

@@ -3,7 +3,7 @@ type: tech/contract
 id: CTR-EIDOS-CLI
 title: "Eidos Command-Line Interface Contract"
 status: active
-version: "2.2.0"
+version: "2.3.0"
 protocol: "cli_args"
 container: "CNT-EIDOS-CLI"
 specification_file: "src/eidos/cli/main.py"
@@ -22,9 +22,11 @@ When invoked from a Git monorepo root containing nested sub-project `eidos/` dir
 
 == Command Specifications
 
-=== `eidos --version`
-Displays current Eidos engine version (e.g. `eidos 0.23.0`).
-* **Options**: `--version`, `-V`
+=== `eidos --version` & `eidos --path`
+Displays current Eidos engine version (e.g. `eidos 0.32.0`) or sets a global target project / `eidos/` path before any subcommand.
+* **Options**:
+  - `--version`, `-V`: Show Eidos engine version and exit.
+  - `--path`, `-p`: Global path to target project or `eidos` specifications directory (propagated to every subcommand including `validate`, `drift`, `context`, `index`, `spec`, `delta`, `memory`, `config`, `portal`, `plugin`, `doctor`, `hook`, and `init`; overridden whenever the subcommand receives its own `--path`, `--project-dir`, or positional `PATH`).
 * **Exit Code**: 0
 
 === `eidos info`
@@ -117,7 +119,7 @@ Manages the living specification catalog (15 declarative specification & discove
 * **Sub-commands**:
   - `list [--path <path>] [--type <type>] [--status <status>] [--include-archived] [--json]`: Lists all living specifications across the 15 living specification types (excluding SpecDeltas and excluding `archive/` subdirectories by default unless `--include-archived` is passed) in tabular or JSON format. Rejects `--type delta` with an error directing the caller to `eidos delta list`.
   - `show <id_or_path> [--path <path>]`: Displays detailed frontmatter metadata and preview of a living specification document (rejecting `delta/mutation` targets and directing the caller to `eidos delta show`).
-  - `create <type> <id> --title <title> [--client <client>] [--path <path>]`: Scaffolds a minimal, schema-valid draft blueprint (`status: draft`, or `status: proposed` for `exploration`) across all 15 living specification types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`), requiring `--client` (`-c`) for `screen` blueprints (`eidos/design/clients/<client>/screens/<screen>.adoc`), auto-resolving parent references from existing catalog specs for other types (or omitting optional references), and rejecting `delta/mutation` (directing to `eidos delta create`) and `agent/memory` (directing to `eidos memory add`).
+  - `create <type> <id> --title <title> [--client <client>] [--design-system <ds>] [--path <path>]`: Scaffolds a minimal, schema-valid draft blueprint (`status: draft`, or `status: proposed` for `exploration`) across all 15 living specification types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`), requiring `--client` (`-c`) for `screen` blueprints (`eidos/design/clients/<client>/screens/<screen>.adoc`), accepting optional `--design-system` (`-d`) for `ui-component` and `client` blueprints (auto-resolving the first `DS-*` when omitted), auto-resolving parent references from existing catalog specs for other types (or omitting optional references), and rejecting `delta/mutation` (directing to `eidos delta create`) and `agent/memory` (directing to `eidos memory add`).
   - `delete <id_or_path> [--path <path>] [--force]`: Safely deletes a living specification document with cross-reference safety checks (rejecting `delta/mutation` targets and directing to `eidos delta delete`).
   - `schema [type] [--json]`: Dynamically loads and inspects bundled v1 YAML frontmatter schemas from `assets/schemas/v1/` across all 17 specification types, displaying required/optional keys, nested constraints, and schema-synthesized YAML frontmatter templates in Rich tabular or `--json` format.
   - `discover [--path <path>] [--json]`: Deterministically scans a polyglot repository's workspace manifests (`.csproj`/`.fsproj`, `pyproject.toml`, `package.json`, `go.mod`, `Cargo.toml`, `pom.xml`, `build.gradle`), schema-first interface schemas (OpenAPI, AsyncAPI, Protobuf, GraphQL, OpenRPC), code-first modern REST controller/router roots (`rest_http` with `route_count`, honoring `DEC-CORE-MODERN-REST-PARITY-ONLY`), and test directories to propose `CNT-*` containers, `CTR-*` contracts, `already_mapped` ownership status, and unmapped `source_path` gaps in Rich tabular or `--json` format.

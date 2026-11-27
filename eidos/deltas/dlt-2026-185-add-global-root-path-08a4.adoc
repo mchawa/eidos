@@ -1,0 +1,120 @@
+---
+type: delta/mutation
+id: DLT-2026-185-ADD-GLOBAL-ROOT-PATH-08A4
+title: "Add Global Root -p/--path Option and Optional --design-system Flag on spec create"
+status: applied
+intent:
+  kind: feature
+  motivation: "Allow users and AI agents in monorepos to pass '-p <subproject>/eidos' either globally before any subcommand (e.g. 'eidos -p packages/api/eidos validate') or after the subcommand without plugin split-brain, and allow 'eidos spec create' to target a specific DS-* design system safely via optional '--design-system' / '-d' in multi-design-system repositories."
+mutations:
+  - operation: modify
+    target: CMP-CLI-APP
+    details: "Add global root '--path' / '-p' option to main() in src/eidos/cli/main.py and expose get_global_cli_path() in src/eidos/cli/_shared.py with subcommand --path precedence."
+    expect:
+      body:
+        contains:
+          - "get_global_cli_path"
+          - "--path"
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+    details: "Add optional '--design-system' / '-d' option on spec_create_cmd and honor get_global_cli_path() in spec_discover_cmd in src/eidos/cli/spec_commands.py."
+    expect:
+      body:
+        contains:
+          - "--design-system"
+  - operation: modify
+    target: CMP-CLI-INIT-COMMAND
+    details: "Fall back to get_global_cli_path() when target_path is omitted in src/eidos/cli/init_command.py."
+    expect:
+      body:
+        contains:
+          - "get_global_cli_path"
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+    details: "Fall back to get_global_cli_path() when --path is omitted on eidos doctor and eidos hook in src/eidos/cli/doctor_hook_commands.py."
+    expect:
+      body:
+        contains:
+          - "get_global_cli_path"
+  - operation: modify
+    target: CMP-CLI-PLUGIN-COMMANDS
+    details: "Resolve effective project_dir consistently from subcommand --project-dir or global root -p/--path (normalizing trailing eidos/) across install, uninstall, version, and update in src/eidos/cli/plugin_commands.py."
+    expect:
+      body:
+        contains:
+          - "_resolve_plugin_project_dir"
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+    details: "Accept optional design_system: str | None = None in create_spec() in src/eidos/core/lifecycle/scaffolder.py so ui-component and client blueprints can target a specific DS-* design system."
+    expect:
+      body:
+        contains:
+          - "design_system: str | None = None"
+  - operation: modify
+    target: CMP-DESIGN-ENGINE
+    details: "Sanitize and validate design_system slugs and DS-* identifiers before directory creation in build_design_spec() in src/eidos/core/lifecycle/design_engine.py, rejecting traversal, empty, or malformed values without leaving orphan directories."
+    expect:
+      body:
+        contains:
+          - "_resolve_and_validate_design_system"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Document root global '--path' / '-p' option (including plugin) and optional '--design-system' / '-d' on 'eidos spec create' (version 2.3.0)."
+    expect:
+      frontmatter:
+        version: "2.3.0"
+      body:
+        contains:
+          - "--design-system"
+          - "eidos --path"
+  - operation: modify
+    target: INV-MONOREPO-ROOT-CLI-AND-HOOK-ROUTING
+    details: "Extend INV-MONOREPO-ROOT-CLI-AND-HOOK-ROUTING to require global root '-p' / '--path' propagation across all subcommands (including validate, drift, index, spec, delta, memory, plugin, doctor, hook, init) with subcommand --path override precedence."
+    expect:
+      frontmatter:
+        rule: "global root"
+        test_binding: "tests/test_monorepo_subprojects.py::test_monorepo_root_cli_routing_drift_validate_and_hooks"
+  - operation: modify
+    target: CAP-LIVING-SPEC-ENGINE
+    details: "Extend CAP-LIVING-SPEC-ENGINE with INV-SPEC-CREATE-DESIGN-SYSTEM-FLAG."
+    expect:
+      frontmatter:
+        technical.invariants.id:
+          - "INV-SPEC-CREATE-DESIGN-SYSTEM-FLAG"
+      body:
+        contains:
+          - "INV-SPEC-CREATE-DESIGN-SYSTEM-FLAG"
+  - operation: add
+    target: INV-SPEC-CREATE-DESIGN-SYSTEM-FLAG
+    details: "Bind INV-SPEC-CREATE-DESIGN-SYSTEM-FLAG to tests/test_cli_json.py::test_cli_contract_json_and_create_flags."
+    expect:
+      frontmatter:
+        rule: "--design-system"
+        test_binding: "tests/test_cli_json.py::test_cli_contract_json_and_create_flags"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Document global root '-p/--path' placement and optional '--design-system' on 'eidos spec create' in docs/guides/cli.md."
+    expect:
+      body:
+        contains:
+          - "--design-system"
+vcs:
+  branch: main
+  base_commit: 2213cbe0438a20b56d8a6cc54ab3a3f0334f4405
+---
+= SpecDelta: Add Global Root -p/--path Option and Optional --design-system Flag on spec create
+:toc: left
+
+== Problem Statement
+1. Coding agents operating in monorepos frequently pass `-p <subproject>/eidos` *before* subcommands (e.g. `eidos -p packages/api/eidos index status` or `eidos -p packages/api/eidos validate`), which previously failed because `-p` / `--path` was only registered per subcommand (and `validate` only accepted a positional argument).
+2. `eidos spec create ui-component` and `eidos spec create client` always auto-selected the first `DS-*` design system in the catalog without an optional `--design-system` / `-d` flag to target a specific design system when a repository defines multiple design systems.
+
+== Proposed Specification Changes
+* **Global Root `-p` / `--path` (`CMP-CLI-APP`, `CMP-CLI-INIT-COMMAND`, `CMP-CLI-DOCTOR-HOOKS`, `CMP-CLI-PLUGIN-COMMANDS`, `CTR-EIDOS-CLI` `2.3.0`, `INV-MONOREPO-ROOT-CLI-AND-HOOK-ROUTING`)**: Register `--path` / `-p` on the root Typer callback (`main()`), propagate it via `get_global_cli_path()` in `src/eidos/cli/_shared.py` to every subcommand (including `plugin` via `_resolve_plugin_project_dir`, normalizing trailing `eidos/` to avoid split-brain), preserve explicit subcommand `--path`/`--project-dir`/positional `PATH` precedence, and regenerate `tests/fixtures/cli_command_tree.json`.
+* **Optional `--design-system` / `-d` on `eidos spec create` (`CMP-CLI-SPEC-COMMANDS`, `CMP-LIFECYCLE-SCAFFOLDER`, `CMP-DESIGN-ENGINE`, `CAP-LIVING-SPEC-ENGINE`, `INV-SPEC-CREATE-DESIGN-SYSTEM-FLAG`, `CTR-EIDOS-CLI` `2.3.0`)**: Accept optional `--design-system` / `-d <DS-ID|path|slug>` on `eidos spec create`, sanitize and validate the slug and `DS-*` ID before directory creation in `build_design_spec` (preventing path traversal and orphan directories), and preserve automatic first-`DS-*` resolution when omitted.
+* **User Documentation (`CMP-DOCS-USER-GUIDES`)**: Document both options in `docs/guides/cli.md` (with `src/eidos/cli/context_command.py` subproject-relative glob preservation as a body-only fix; no spec mutation).
+
+== Implementation Plan
+1. Add global `--path`/`-p` to `src/eidos/cli/main.py` and `get_global_cli_path()` / subcommand precedence to `src/eidos/cli/_shared.py`, plus fallbacks in `src/eidos/cli/init_command.py`, `src/eidos/cli/doctor_hook_commands.py`, `src/eidos/cli/plugin_commands.py`, and `src/eidos/cli/spec_commands.py` (plus subproject-relative glob preservation in `src/eidos/cli/context_command.py` — body-only; no spec mutation).
+2. Add optional `--design-system` / `-d` to `src/eidos/cli/spec_commands.py`, `design_system: str | None = None` to `src/eidos/core/lifecycle/scaffolder.py`, and `_resolve_and_validate_design_system` to `src/eidos/core/lifecycle/design_engine.py`.
+3. Regenerate `tests/fixtures/cli_command_tree.json`, update `docs/guides/cli.md`, co-evolve all affected living specs, add tests in `tests/test_monorepo_subprojects.py`, `tests/test_cli_json.py`, `tests/test_plugin.py`, and `tests/test_docs_sync.py`, and verify via `pytest`, `ruff`, `eidos delta verify`, `eidos delta apply`, and `eidos drift`.

@@ -102,7 +102,7 @@ def resolve_cli_target_files_and_workspace(
                             clean_pat = glob_tail
                         elif resolved_head.is_relative_to(repo_root):
                             clean_pat = f"{resolved_head.relative_to(repo_root).as_posix()}/{glob_tail}"
-                        else:
+                        elif clean_pat.startswith("../"):
                             clean_pat = f"{resolved_head.as_posix()}/{glob_tail}"
                     elif cwd_resolved != repo_root and cwd_resolved.is_relative_to(repo_root):
                         raw_parent = clean_pat.rsplit("/", 1)[0] if "/" in clean_pat else ""

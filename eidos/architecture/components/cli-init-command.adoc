@@ -13,11 +13,11 @@ source_path: src/eidos/cli/init_command.py
 Exposes the `eidos init` CLI command for bootstrapping repositories with the living specification directory skeleton and baseline `system.adoc` descriptor.
 
 == Key Responsibilities & Collaborators
-* **Repository Onboarding CLI**: Parses `[PATH]`, `--title`, `--force`, and optional `--ci` (`github` | `gitlab`) flags, delegates skeleton generation, turnkey CI workflow scaffolding, and immediate schema validation to `CMP-REPO-INITIALIZER` (`init_repository`), and non-destructively refreshes any existing root `AGENTS.md` managed block's monorepo sub-project listing via `CMP-PLUGIN-INSTALLER` (`refresh_agents_md_subprojects`).
+* **Repository Onboarding CLI**: Parses `[PATH]` (falling back to `get_global_cli_path()` when omitted), `--title`, `--force`, and optional `--ci` (`github` | `gitlab`) flags, delegates skeleton generation, turnkey CI workflow scaffolding, and immediate schema validation to `CMP-REPO-INITIALIZER` (`init_repository`), and non-destructively refreshes any existing root `AGENTS.md` managed block's monorepo sub-project listing via `CMP-PLUGIN-INSTALLER` (`refresh_agents_md_subprojects`).
 
 == Public Surface
 * `register(app: typer.Typer) -> None`
-* `init_cmd(path: Path, title: str | None, force: bool, ci: str | None = None) -> None`
+* `init_cmd(target_path: Path | None, title: str | None, force: bool, ci: str | None = None) -> None`
 
 == Design Constraints & Operational Notes
 * **Safe Default Execution**: Exits with code `1` if `eidos/` is already populated and `--force` is not supplied, and normalizes a target path ending in `eidos` to its parent project directory so `eidos init eidos` never nests `eidos/eidos/`.

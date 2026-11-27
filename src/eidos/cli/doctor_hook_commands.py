@@ -12,7 +12,14 @@ import typer
 from rich.table import Table
 
 import eidos
-from eidos.cli._shared import PANEL_PLUGINS, PANEL_SETUP, console, has_eidos_markers, resolve_cli_eidos_dir
+from eidos.cli._shared import (
+    PANEL_PLUGINS,
+    PANEL_SETUP,
+    console,
+    get_global_cli_path,
+    has_eidos_markers,
+    resolve_cli_eidos_dir,
+)
 from eidos.core.index.graph_index import get_architectural_index
 from eidos.core.lifecycle.delta_engine import is_delta_ready_to_apply, list_deltas
 from eidos.core.lifecycle.memory_engine import list_memories
@@ -242,7 +249,7 @@ def doctor_cmd(
     elif eidos_dir.exists():
         _, repo_root = resolve_spec_and_repo_roots(eidos_dir)
     else:
-        repo_root = find_repo_root((path or Path.cwd()).resolve())
+        repo_root = find_repo_root((path or get_global_cli_path() or Path.cwd()).resolve())
 
     path_bin = shutil.which("eidos")
     venv_bin = Path(sys.executable).resolve().parent / ("eidos.exe" if sys.platform == "win32" else "eidos")
@@ -568,7 +575,7 @@ def hook_cmd(
     ),
 ):
     """Execute native Eidos stateless Stop lifecycle hook."""
-    code = execute_hook(repo_root=path)
+    code = execute_hook(repo_root=path if path is not None else get_global_cli_path())
     if code != 0:
         raise typer.Exit(code=code)
 

@@ -377,10 +377,78 @@ def test_monorepo_root_cli_routing_drift_validate_and_hooks(tmp_path: Path, monk
         assert err_payload["discovered_subprojects"] == ["packages/api/eidos", "packages/billing/eidos"]
     assert not (git_root / "eidos" / ".cache" / "index.db").exists()
 
-    # Explicit --path works cleanly from monorepo root
+    # Explicit --path works cleanly from monorepo root (both per-subcommand and global root `-p`)
     res_sym = runner.invoke(app, ["index", "find-symbol", "run_api", "-p", "packages/api/eidos", "--json"])
     assert res_sym.exit_code == 0, res_sym.stdout
     assert orjson.loads(res_sym.stdout)["count"] >= 1
+
+    res_global_sym = runner.invoke(app, ["-p", "packages/api/eidos", "index", "find-symbol", "run_api", "--json"])
+    assert res_global_sym.exit_code == 0, res_global_sym.stdout
+    assert orjson.loads(res_global_sym.stdout)["count"] >= 1
+
+    res_global_val = runner.invoke(app, ["-p", "packages/api/eidos", "validate", "--json"])
+    assert res_global_val.exit_code == 0, res_global_val.stdout
+    val_global_data = orjson.loads(res_global_val.stdout)
+    assert val_global_data["is_clean"] is True
+    assert "monorepo_projects" not in val_global_data
+
+    # Subcommand -p / positional PATH overrides global root -p
+    res_override = runner.invoke(
+        app,
+        ["-p", "packages/api/eidos", "spec", "list", "-p", "packages/billing/eidos", "--json"],
+    )
+    assert res_override.exit_code == 0, res_override.stdout
+    assert "CMP-BILLING-SERVICE" in res_override.stdout
+    assert "CMP-API-SERVICE" not in res_override.stdout
+
+    # Global -p also propagates to validate positional override, doctor, context subproject-relative globs,
+    # spec discover, hook, plugin install/version/update/uninstall (zero split-brain), and init
+    res_val_override = runner.invoke(
+        app,
+        ["-p", "packages/api/eidos", "validate", "packages/billing/eidos", "--json"],
+    )
+    assert res_val_override.exit_code == 0, res_val_override.stdout
+    assert orjson.loads(res_val_override.stdout)["is_clean"] is True
+
+    res_global_doc = runner.invoke(app, ["-p", "packages/api/eidos", "doctor", "--json"])
+    assert res_global_doc.exit_code == 0, res_global_doc.stdout
+    doc_data = orjson.loads(res_global_doc.stdout)
+    assert doc_data["checks"]["living_specs"]["eidos_dir"] == str(api_eidos.resolve())
+
+    res_global_ctx_glob = runner.invoke(
+        app,
+        ["-p", "packages/api/eidos", "context", "-f", "src/api/*.py", "--no-semantic", "--json"],
+    )
+    assert res_global_ctx_glob.exit_code == 0, res_global_ctx_glob.stdout
+    assert "CMP-API-SERVICE" in res_global_ctx_glob.stdout
+
+    res_global_disc = runner.invoke(app, ["-p", "packages/api", "spec", "discover", "--json"])
+    assert res_global_disc.exit_code == 0, res_global_disc.stdout
+    assert str(api_root.resolve()) in res_global_disc.stdout
+
+    res_global_hook = runner.invoke(app, ["-p", "packages/api/eidos", "hook"])
+    assert res_global_hook.exit_code == 0, res_global_hook.stdout
+
+    res_global_plug_inst = runner.invoke(app, ["-p", "packages/api/eidos", "plugin", "install", "antigravity"])
+    assert res_global_plug_inst.exit_code == 0, res_global_plug_inst.stdout
+    assert (git_root / ".agents" / "skills" / "eidos" / "SKILL.md").is_file()
+    assert not (api_eidos / ".agents").exists()
+    res_global_plug_ver = runner.invoke(app, ["-p", "packages/api/eidos", "plugin", "version"])
+    assert res_global_plug_ver.exit_code == 0, res_global_plug_ver.stdout
+    res_global_plug_upd = runner.invoke(app, ["-p", "packages/api/eidos", "plugin", "update", "antigravity"])
+    assert res_global_plug_upd.exit_code == 0, res_global_plug_upd.stdout
+    res_global_plug_uninst = runner.invoke(app, ["-p", "packages/api/eidos", "plugin", "uninstall", "antigravity"])
+    assert res_global_plug_uninst.exit_code == 0, res_global_plug_uninst.stdout
+    assert not (git_root / ".agents" / ".eidos-manifest.json").exists()
+
+    res_global_init = runner.invoke(
+        app, ["-p", str(git_root / "packages" / "global_init"), "init", "--title", "Global"]
+    )
+    assert res_global_init.exit_code == 0, res_global_init.stdout
+    assert (git_root / "packages" / "global_init" / "eidos" / "system.adoc").is_file()
+    import shutil
+
+    shutil.rmtree(git_root / "packages" / "global_init")
 
     # 2. Path-hint auto-routing for planned non-existent subdirs, blast-radius, spec show, and cross-subproject span guard
     res_planned = runner.invoke(

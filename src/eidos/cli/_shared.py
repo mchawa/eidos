@@ -189,14 +189,34 @@ def resolve_hint_eidos_dirs(hint_files: list[str] | None) -> list[Path]:
     return found
 
 
-def is_explicit_cli_path(target_path: Path | None, param_name: str = "path") -> bool:
-    """Return True when the caller explicitly passed a CLI path parameter (not default None / Path('eidos'))."""
+def get_global_cli_path() -> Path | None:
+    """Return the root-level global ``--path`` / ``-p`` option from the active Click/Typer context, if set."""
+    ctx = _get_current_cli_context()
+    if ctx is None:
+        return None
+    root_ctx = ctx.find_root()
+    if isinstance(root_ctx.obj, dict):
+        val = root_ctx.obj.get("global_path")
+        if isinstance(val, Path):
+            return val
+    return None
+
+
+def _is_subcommand_cli_path(target_path: Path | None, param_name: str = "path") -> bool:
+    """Return True when the active subcommand explicitly received its own path parameter on the CLI."""
     ctx = _get_current_cli_context()
     if ctx is not None:
-        source = ctx.get_parameter_source(param_name)
-        if source is not None:
-            return getattr(source, "name", None) == "COMMANDLINE"
+        for cand_name in dict.fromkeys((param_name, "target_path", "path")):
+            if cand_name in getattr(ctx, "params", {}):
+                source = ctx.get_parameter_source(cand_name)
+                if source is not None:
+                    return getattr(source, "name", None) == "COMMANDLINE"
     return target_path is not None and target_path != Path("eidos")
+
+
+def is_explicit_cli_path(target_path: Path | None, param_name: str = "path") -> bool:
+    """Return True when either the subcommand path parameter or the global root ``-p``/``--path`` was explicitly passed."""
+    return _is_subcommand_cli_path(target_path, param_name=param_name) or (get_global_cli_path() is not None)
 
 
 def discover_workspace_eidos_dirs(start_dir: Path | None = None) -> list[Path]:
@@ -429,7 +449,11 @@ def resolve_cli_eidos_dir(
     target_path: Path | None = None,
     hint_files: list[str] | None = None,
 ) -> Path:
-    """Resolve the active ``eidos/`` specification directory for CLI commands (supporting monorepo sub-projects)."""
+    """Resolve the active ``eidos/`` specification directory for CLI commands (supporting global -p and monorepo sub-projects)."""
+    if not _is_subcommand_cli_path(target_path):
+        global_path = get_global_cli_path()
+        if global_path is not None:
+            target_path = global_path
     if target_path is None or target_path == Path("eidos"):
         if hint_files:
             for raw_f in hint_files:

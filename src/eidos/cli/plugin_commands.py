@@ -7,7 +7,14 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from eidos.cli._shared import console, load_cli_repo_config, resolve_cli_eidos_dir, resolve_param_from_config
+from eidos.cli._shared import (
+    console,
+    get_global_cli_path,
+    has_eidos_markers,
+    load_cli_repo_config,
+    resolve_cli_eidos_dir,
+    resolve_param_from_config,
+)
 from eidos.core.workspace.config import EidosConfig
 from eidos.plugin.installer import (
     PluginInstallTarget,
@@ -27,6 +34,18 @@ plugin_app = typer.Typer(
     help="Manage, install, and validate Eidos Agent Skills and lifecycle hooks (agentskills.io).",
     add_completion=False,
 )
+
+
+def _resolve_plugin_project_dir(project_dir: Path | None) -> Path | None:
+    """Resolve effective project_dir from subcommand --project-dir or global root -p/--path (normalizing trailing eidos/)."""
+    if project_dir is not None:
+        return project_dir
+    global_path = get_global_cli_path()
+    if global_path is None:
+        return None
+    if global_path.name == "eidos" and (has_eidos_markers(global_path) or not (global_path / "eidos").exists()):
+        return global_path.parent if str(global_path.parent) != "" else Path(".")
+    return global_path
 
 
 def _load_plugin_repo_config(project_dir: Path | None) -> EidosConfig:
@@ -88,7 +107,8 @@ def plugin_install(
     ),
 ):
     """Install Eidos Agent Skills and optional Stop hooks in project scope."""
-    repo_cfg = _load_plugin_repo_config(project_dir)
+    eff_project_dir = _resolve_plugin_project_dir(project_dir)
+    repo_cfg = _load_plugin_repo_config(eff_project_dir)
     resolved_target, target_label = _resolve_plugin_targets(target, repo_cfg, "install")
     cli_launcher = launcher if isinstance(launcher, str) else "eidos"
     cli_hooks = hooks if isinstance(hooks, bool) else False
@@ -101,7 +121,7 @@ def plugin_install(
     try:
         results = install_plugin(
             target=resolved_target,
-            project_dir=project_dir,
+            project_dir=eff_project_dir,
             force=force,
             launcher=resolved_launcher,
             hooks=resolved_hooks,
@@ -139,13 +159,14 @@ def plugin_uninstall(
     ),
 ):
     """Uninstall / remove the Eidos agent plugin from project scope."""
+    eff_project_dir = _resolve_plugin_project_dir(project_dir)
     resolved_target = target
     console.print(
         f"[bold cyan]Uninstalling Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{resolved_target.value}[/bold green])...\n"
     )
 
     try:
-        results = uninstall_plugin(target=resolved_target, project_dir=project_dir)
+        results = uninstall_plugin(target=resolved_target, project_dir=eff_project_dir)
         for res in results:
             if res.removed:
                 console.print(f"[bold green]✓[/bold green] [bold]{res.target.upper()}:[/bold] {res.message}")
@@ -168,7 +189,8 @@ def plugin_version(
     ),
 ):
     """Display and compare bundled vs installed Agent Plugin version."""
-    status_info = check_plugin_version_status(project_dir=project_dir)
+    eff_project_dir = _resolve_plugin_project_dir(project_dir)
+    status_info = check_plugin_version_status(project_dir=eff_project_dir)
 
     table = Table(title="Eidos Agent Plugin Version Status", show_header=True)
     table.add_column("Property", style="bold cyan")
@@ -237,7 +259,8 @@ def plugin_update(
     ),
 ):
     """Update project-scoped Agent Plugin to the latest bundled version."""
-    repo_cfg = _load_plugin_repo_config(project_dir)
+    eff_project_dir = _resolve_plugin_project_dir(project_dir)
+    repo_cfg = _load_plugin_repo_config(eff_project_dir)
     resolved_target, target_label = _resolve_plugin_targets(target, repo_cfg, "update")
     cli_launcher = launcher if isinstance(launcher, str) else "eidos"
     resolved_launcher = str(resolve_param_from_config("launcher", cli_launcher, repo_cfg.plugin.launcher))
@@ -248,7 +271,7 @@ def plugin_update(
     try:
         prev_ver, current_ver, results = update_plugin(
             target=resolved_target,
-            project_dir=project_dir,
+            project_dir=eff_project_dir,
             launcher=resolved_launcher,
         )
         for res in results:

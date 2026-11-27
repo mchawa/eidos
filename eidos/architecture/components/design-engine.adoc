@@ -13,7 +13,7 @@ source_path: src/eidos/core/lifecycle/design_engine.py
 Scaffolds schema-valid draft blueprints (`build_design_spec`) and baseline W3C DTCG `tokens.json` manifests for Multi-Design Systems (`DS-*`), UI components (`UIC-*`), screens (`SCR-*`), clients (`CLT-*`), and user flows (`FLOW-*`).
 
 == Key Responsibilities & Collaborators
-* **Design Blueprint Generation**: Renders frontmatter and `.template.adoc` prose via `CMP-ASSET-LOCATOR` for all 5 `design/*` specification types under `eidos/design/`, requiring an explicit `client` (`CLT-*` ID, path, or slug) for `design/screen` blueprints so every screen is placed strictly under `eidos/design/clients/<client>/screens/<screen>.adoc`.
+* **Design Blueprint Generation**: Renders frontmatter and `.template.adoc` prose via `CMP-ASSET-LOCATOR` for all 5 `design/*` specification types under `eidos/design/`, requiring an explicit `client` (`CLT-*` ID, path, or slug) for `design/screen` blueprints so every screen is placed strictly under `eidos/design/clients/<client>/screens/<screen>.adoc`, and sanitizing and validating `design_system` (`DS-*` ID, path, or slug via `_resolve_and_validate_design_system`) before directory creation for `design/ui-component` and `design/client` blueprints so path traversal, empty, or malformed slugs are rejected without creating orphan directories.
 * **W3C DTCG Token Bootstrapping**: Initializes a baseline W3C Design Tokens Community Group (`tokens.json`) manifest via `orjson` when scaffolding a new `design/system` specification without overwriting pre-existing token files.
 
 == Public Surface

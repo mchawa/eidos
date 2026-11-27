@@ -4,6 +4,9 @@ The `eidos` command-line tool provides everything needed to scaffold, validate, 
 
 ```bash
 eidos [OPTIONS] COMMAND [ARGS]...
+# Global --path / -p works before any subcommand (overridden by a subcommand's own --path):
+eidos -p packages/api/eidos validate
+eidos -p packages/api/eidos index status --json
 ```
 
 Commands are semantically organized into six functional panels in CLI help output (`eidos --help`):
@@ -547,7 +550,7 @@ Sub-commands:
 * `list`: Lists all living specifications across the 15 blueprint types in tabular or JSON format, with optional `--type, -t`, `--status, -s`, `--include-archived`, `--path, -p`, and `--json` flags.
 * `show <id_or_path>`: Displays detailed frontmatter metadata and preview of a specification document.
 * `schema [type] [--json]`: Dynamically loads and inspects bundled v1 YAML frontmatter schemas from `assets/schemas/v1/` across all 16 specification types (omit `[type]` to list all 16 schemas, or pass a short alias like `capability` or canonical type like `product/capability`), displaying required/optional keys, nested object/array item constraints, and schema-synthesized YAML frontmatter templates.
-* `create <type> <id> --title <title> [--client <client>] [--path <path>]`: Scaffolds a minimal, schema-valid draft specification blueprint (`status: draft`) across all 15 living specification types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`). Pass `--client, -c <CLT-ID|path|slug>` when creating a `screen` (`design/screen`), placing it under `eidos/design/clients/<client>/screens/<screen>.adoc`.
+* `create <type> <id> --title <title> [--client <client>] [--design-system <ds>] [--path <path>]`: Scaffolds a minimal, schema-valid draft specification blueprint (`status: draft`) across all 15 living specification types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`). Pass `--client, -c <CLT-ID|path|slug>` when creating a `screen` (`design/screen`), placing it under `eidos/design/clients/<client>/screens/<screen>.adoc`, and optionally pass `--design-system, -d <DS-ID|path|slug>` when creating a `ui-component` (`design/ui-component`) or `client` (`design/client`) in multi-design-system repositories (auto-resolves the first `DS-*` when omitted).
 * `delete <id_or_path>`: Safely deletes a living specification document with cross-reference safety checks (`--force, -f` to override).
 * `discover [--path <path>] [--json]`: Deterministically scans polyglot build manifests, schema-first API/data schemas (OpenAPI, AsyncAPI, Protobuf, GraphQL, OpenRPC, WSDL `.wsdl`, Avro `.avsc`/`.avdl`, Prisma `.prisma`, and canonical schema `.sql` files such as `schema.sql`/`ddl.sql`/`*schema*.sql`), code-first modern REST controller/router roots (`rest_http` with `route_count` across ASP.NET Core, FastAPI, NestJS, Express, Spring Boot, and Go), and test roots to output proposed `CNT-*` containers, `CTR-*` contracts, and unmapped code roots in Rich table or `--json` format.
 
