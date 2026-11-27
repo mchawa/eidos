@@ -564,6 +564,71 @@ def test_inv_index_ai_repo_map_budget():
     assert compression >= 85.0  # Strict >= 85% compression requirement
     assert "# 🗺️ Structural Code Graph (Repo Map)" in repo_map
 
+    # Centrality + public-surface ranking keeps late-alphabetical hubs under tight token budgets
+    from eidos.core.index.ast_preprocess import CodeSymbol
+
+    synthetic_files: dict[str, list[CodeSymbol]] = {
+        f"src/a_leaf_{i:02d}.py": [
+            CodeSymbol(name=f"leaf_{i}", kind="function", file_path=f"src/a_leaf_{i:02d}.py", line_start=1, line_end=2)
+        ]
+        for i in range(12)
+    }
+    synthetic_files["src/z_core_hub.py"] = [
+        CodeSymbol(name="CoreHub", kind="class", file_path="src/z_core_hub.py", line_start=1, line_end=20),
+        CodeSymbol(
+            name="dispatch",
+            kind="method",
+            file_path="src/z_core_hub.py",
+            line_start=5,
+            line_end=15,
+            parent_symbol="CoreHub",
+        ),
+    ]
+    synthetic_files["src/a_private_only.py"] = [
+        CodeSymbol(name="_internal_only", kind="function", file_path="src/a_private_only.py", line_start=1, line_end=3)
+    ]
+    synthetic_files["src/a_orphan_method.go"] = [
+        CodeSymbol(
+            name="Handle",
+            kind="method",
+            file_path="src/a_orphan_method.go",
+            line_start=1,
+            line_end=5,
+            parent_symbol="ExternalServer",
+        )
+    ]
+    synthetic_files["src/a_empty.py"] = []
+    weighted_map = idx.generate_repo_map(
+        synthetic_files,
+        max_tokens=90,
+        file_weights={
+            "src/z_core_hub.py": 50.0,
+            "src/a_private_only.py": 999.0,
+            "src/a_orphan_method.go": 999.0,
+            "src/a_leaf_00.py": -10.0,
+            "src/a_leaf_01.py": float("nan"),
+            "src/a_leaf_02.py": float("inf"),
+        },
+    )
+    assert "src/z_core_hub.py" in weighted_map
+    assert "class CoreHub" in weighted_map
+    assert "... [remaining modules truncated to preserve context token budget]" in weighted_map
+    # Private-only, orphan-method, and empty files must NOT be inflated above real public-API hubs
+    assert "src/a_private_only.py" not in weighted_map
+    assert "src/a_orphan_method.go" not in weighted_map
+    assert "src/a_empty.py" not in weighted_map
+    # Non-finite NaN/inf weights must not corrupt total ordering regardless of dict insertion order
+    nan_order_a = idx.generate_repo_map(
+        {
+            "src/a.py": [CodeSymbol(name="fa", kind="function", file_path="src/a.py", line_start=1, line_end=2)],
+            "src/b.py": [CodeSymbol(name="fb", kind="function", file_path="src/b.py", line_start=1, line_end=2)],
+            "src/c.py": [CodeSymbol(name="fc", kind="function", file_path="src/c.py", line_start=1, line_end=2)],
+        },
+        max_tokens=500,
+        file_weights={"src/a.py": 1.0, "src/b.py": float("nan"), "src/c.py": 100.0},
+    )
+    assert nan_order_a.index("src/c.py") < nan_order_a.index("src/a.py") < nan_order_a.index("src/b.py")
+
 
 def test_architectural_index_find_symbol_and_repo_map():
     """Verify ArchitecturalIndex.find_symbol and get_repo_map integrations."""

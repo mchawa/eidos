@@ -116,11 +116,11 @@ STARTER_CONFIG_YAML = """# Optional project-scoped Eidos engine and workflow con
 version: 1
 
 # workspace:
-#   exclude:
+#   exclude:                       # completely ignored from indexing, source ownership, tests, and drift
 #     - "generated/**"
 #   tests:
-#     include: []
-#     exclude: []
+#     include: []                  # extra globs classified as automated tests
+#     exclude: []                  # reclassified from test -> production source (use workspace.exclude to ignore helper scripts)
 #   subprojects_exclude:
 #     - "examples/**"
 

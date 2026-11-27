@@ -2380,9 +2380,55 @@ def test_normalize_to_semver_and_bundled_version_sync(monkeypatch):
     monkeypatch.setattr(eidos, "__version__", "99.1.0")
     assert get_bundled_plugin_version() == "99.1.0"
 
-    # When eidos.__version__ is PEP 440 .devN, get_bundled_plugin_version normalizes it to SemVer 2.0.0
+    # PEP 440 post-tag .devN (e.g. hatch-vcs / git describe past v0.12.0) resolves back to base release 0.12.0
     monkeypatch.setattr(eidos, "__version__", "0.12.1.dev7")
-    assert get_bundled_plugin_version() == "0.12.1"
+    assert get_bundled_plugin_version() == "0.12.0"
+
+    # PEP 440 post-tag .devN with local build metadata (including underscores) also resolves to base release
+    monkeypatch.setattr(eidos, "__version__", "0.29.1.dev1+g1190a73")
+    assert get_bundled_plugin_version() == "0.29.0"
+
+    monkeypatch.setattr(eidos, "__version__", "v0.29.1.dev1")
+    assert get_bundled_plugin_version() == "0.29.0"
+
+    monkeypatch.setattr(eidos, "__version__", "0.29.1.dev1+g1234_dirty")
+    assert get_bundled_plugin_version() == "0.29.0"
+
+    # Pre-release tag (SemVer or PEP 440) + dev distance resolves back to the pre-release tag without fabricating final
+    monkeypatch.setattr(eidos, "__version__", "0.24.0-rc.1.dev2")
+    assert get_bundled_plugin_version() == "0.24.0-rc.1"
+
+    monkeypatch.setattr(eidos, "__version__", "0.29.0a1.dev2")
+    assert get_bundled_plugin_version() == "0.29.0-a.1"
+
+    monkeypatch.setattr(eidos, "__version__", "0.29.0rc1.dev2")
+    assert get_bundled_plugin_version() == "0.29.0-rc.1"
+
+    monkeypatch.setattr(eidos, "__version__", "0.29.0b2.dev1+gabc")
+    assert get_bundled_plugin_version() == "0.29.0-b.2"
+
+    # Bare PEP 440 prerelease and valid SemVer prerelease preserve prerelease tag
+    monkeypatch.setattr(eidos, "__version__", "0.29.0a1")
+    assert get_bundled_plugin_version() == "0.29.0-a.1"
+
+    monkeypatch.setattr(eidos, "__version__", "0.29.0-dev.1")
+    assert get_bundled_plugin_version() == "0.29.0-dev.1"
+
+    # Patch==0 .devN cannot decrement patch and preserves pre-release SemVer instead of fabricating final release
+    monkeypatch.setattr(eidos, "__version__", "0.12.0.dev3")
+    assert get_bundled_plugin_version() == "0.12.0-dev.3"
+
+    monkeypatch.setattr(eidos, "__version__", "0.12.0.dev3+gabc123")
+    assert get_bundled_plugin_version() == "0.12.0-dev.3"
+
+    # _to_comparable_semver preserves .devN even with +local build metadata
+    from eidos.plugin.version import _to_comparable_semver
+
+    assert _to_comparable_semver("0.29.1.dev1+g1234") == "0.29.1-dev.1"
+
+    # Post-release resolves cleanly to base release
+    monkeypatch.setattr(eidos, "__version__", "0.12.0.post1")
+    assert get_bundled_plugin_version() == "0.12.0"
 
     monkeypatch.setattr(eidos, "__version__", "not-a-version")
     assert get_bundled_plugin_version() == "0.2.0"
@@ -2978,10 +3024,13 @@ def test_eidos_plan_skill_blast_radius_reconciliation_rules():
     assert "covered via `CMP-WEBHOOK-VERIFIER`" in plan_section or "covered via CMP-WEBHOOK-VERIFIER" in plan_section
 
 
-def test_installer_truthful_version_comments_symlinks_and_uninstall(tmp_path):
+def test_installer_truthful_version_comments_symlinks_and_uninstall(tmp_path, monkeypatch):
     """Verify INV-PLUGIN-INSTALL-TRUTHFULNESS: non-force upgrades report 'modified' when SKILL.md files are skipped,
-    .aider.conf.yml preserves YAML comments, canonical .agents/skills symlinks work across 'install all' and 'update all'
+    .aider.conf.yml preserves YAML comments, .eidos-manifest.json ends with a POSIX trailing newline,
+    PEP 440 post-tag .devN checkouts resolve to base release SemVer without false 'outdated' failures,
+    all symlinked .agents/skills destinations are refused uniformly across 'install all' and 'update all'
     with per-target fault isolation, and uninstall prunes references cleanly."""
+    import eidos
     from eidos.core.lifecycle.initializer import init_repository
     from eidos.plugin.installer import (
         _compute_sha256,
@@ -2997,7 +3046,30 @@ def test_installer_truthful_version_comments_symlinks_and_uninstall(tmp_path):
     init_repository(ws, title="Truthful WS")
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=ws, check=True)
     install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=ws, force=True)
+    assert (ws / ".agents" / ".eidos-manifest.json").read_bytes().endswith(b"\n")
     assert check_plugin_version_status(project_dir=ws)["status"] == "up_to_date"
+
+    # 1b. Editable PEP 440 post-tag .devN checkout stays 'up_to_date' when skills match base release,
+    #     and still detects on-disk SKILL.md divergence as 'modified' (pinned explicitly to 0.29.0 -> 0.29.1.dev4)
+    dev_ws = tmp_path / "editable_dev_ws"
+    dev_ws.mkdir()
+    init_repository(dev_ws, title="Editable Dev WS")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=dev_ws, check=True)
+    with monkeypatch.context() as mp:
+        mp.setattr(eidos, "__version__", "0.29.0")
+        install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=dev_ws, force=True)
+        mp.setattr(eidos, "__version__", "0.29.1.dev4")
+        assert get_bundled_plugin_version() == "0.29.0"
+        dev_status = check_plugin_version_status(project_dir=dev_ws)
+        assert dev_status["status"] == "up_to_date"
+        assert dev_status["bundled_version"] == "0.29.0"
+        assert dev_status["installed_version"] == "0.29.0"
+
+        dev_skill = dev_ws / ".agents" / "skills" / "eidos" / "SKILL.md"
+        dev_skill.write_text(dev_skill.read_text(encoding="utf-8") + "\n# dev drift\n", encoding="utf-8")
+        dev_div = check_plugin_version_status(project_dir=dev_ws)
+        assert dev_div["status"] == "modified"
+        assert ".agents/skills/eidos/SKILL.md" in dev_div["skipped_files"]
 
     skill_md = ws / ".agents" / "skills" / "eidos" / "SKILL.md"
     skill_md.write_text(skill_md.read_text(encoding="utf-8") + "\n# Local developer customization\n", encoding="utf-8")
@@ -3199,22 +3271,37 @@ def test_installer_truthful_version_comments_symlinks_and_uninstall(tmp_path):
     ts_hook.unlink()
     assert check_target_hook_health(cline_full_ws, "cline", hooks_expected=True)["status"] == "missing"
 
-    # 3. Canonical self-hosted .agents/skills symlink succeeds in 'install all' and 'update all',
-    #    while external symlinks fail per-target without aborting sibling targets ('claude', 'aider').
+    # 3. All symlinked .agents/skills destinations (including symlinks pointing at the bundled reference skills
+    #    and external symlinks) are refused uniformly in 'install all' and 'update all',
+    #    failing per-target without aborting sibling targets ('claude', 'aider').
     self_ws = tmp_path / "self_hosted_ws"
     (self_ws / ".agents").mkdir(parents=True)
     bundle_skills = locate_plugin_bundle() / "skills"
     (self_ws / ".agents" / "skills").symlink_to(bundle_skills)
 
-    all_res = install_plugin(target=PluginInstallTarget.ALL, project_dir=self_ws, force=False, hooks=True)
-    assert len(all_res) == 9
+    # Without a manifest, a symlinked .agents/skills directory is not treated as an installed plugin or onboarding root
+    assert get_installed_plugin_version(project_dir=self_ws) is None
+    from eidos.cli.doctor_hook_commands import _check_onboarding_governance
+    from eidos.vcs.snapshot import _has_eidos_onboarding
+
+    assert _check_onboarding_governance(self_ws)["expected"] is False
+    assert _has_eidos_onboarding(self_ws) is False
+
+    with pytest.raises(FileExistsError, match="symlink"):
+        install_plugin(target=PluginInstallTarget.ALL, project_dir=self_ws, force=False, hooks=True)
     assert (self_ws / ".agents" / "skills").is_symlink()
-    assert "<!-- eidos:begin agents-md " in (self_ws / "AGENTS.md").read_text(encoding="utf-8")
+    # Zero partial-write hook leaks from refused .agents targets
+    assert not (self_ws / ".agents" / "hooks.json").exists()
+    assert not (self_ws / ".cursor" / "hooks.json").exists()
+    assert not (self_ws / ".clinerules" / "hooks" / "PreToolUse").exists()
+    assert not (self_ws / ".codex" / "hooks.json").exists()
+    assert not (self_ws / ".github" / "hooks" / "hooks.json").exists()
+    # Fault isolation: claude and aider still installed despite .agents/skills symlink refusal!
     assert (self_ws / ".claude" / "skills" / "eidos" / "SKILL.md").is_file()
     assert (self_ws / ".aider" / "skills" / "eidos" / "SKILL.md").is_file()
 
-    _prev_v, _curr_v, upd_res = update_plugin(target=PluginInstallTarget.ALL, project_dir=self_ws)
-    assert len(upd_res) == 9
+    with pytest.raises(FileExistsError, match="symlink"):
+        update_plugin(target=PluginInstallTarget.ALL, project_dir=self_ws)
     assert (self_ws / ".agents" / "skills").is_symlink()
 
     ext_ws = tmp_path / "external_symlink_ws"
@@ -3243,6 +3330,7 @@ def test_installer_truthful_version_comments_symlinks_and_uninstall(tmp_path):
     ):
         install_plugin(target=t, project_dir=prune_ws, force=True, hooks=True)
 
+    assert (prune_ws / ".agents" / ".eidos-manifest.json").read_bytes().endswith(b"\n")
     agents_before = (prune_ws / "AGENTS.md").read_text(encoding="utf-8")
     for t_key in ("antigravity", "claude", "aider", "cline"):
         assert f"{t_key}:" in agents_before
@@ -3260,6 +3348,8 @@ def test_installer_truthful_version_comments_symlinks_and_uninstall(tmp_path):
     assert not (prune_ws / ".clinerules" / "hooks" / "TaskStart").exists()
     assert "cline:" not in (prune_ws / "AGENTS.md").read_text(encoding="utf-8")
     assert "antigravity:.agents/skills" in (prune_ws / "AGENTS.md").read_text(encoding="utf-8")
+    # Partial shared-manifest uninstall preserves POSIX trailing newline
+    assert (prune_ws / ".agents" / ".eidos-manifest.json").read_bytes().endswith(b"\n")
 
     uninstall_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=prune_ws)
     assert not (prune_ws / "AGENTS.md").exists()

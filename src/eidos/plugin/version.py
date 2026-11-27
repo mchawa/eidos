@@ -101,6 +101,11 @@ _PEP440_PRERELEASE_PATTERN = re.compile(
     r"^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\.?((?:dev|a|alpha|b|beta|rc)\d+)$",
     re.IGNORECASE,
 )
+_PEP440_POST_TAG_DEV_PATTERN = re.compile(
+    r"^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.([1-9]\d*)\.dev\d+(?:\+[0-9a-zA-Z._-]+)?$",
+    re.IGNORECASE,
+)
+_PEP440_DEV_SUFFIX_PATTERN = re.compile(r"\.dev\d+(?:\+[0-9a-zA-Z._-]+)?$", re.IGNORECASE)
 
 
 def normalize_to_semver(version: str) -> str | None:
@@ -127,7 +132,8 @@ def _to_comparable_semver(version: str) -> str | None:
         return cleaned
     if cleaned.startswith(("v", "V")) and is_valid_semver(cleaned[1:]):
         return cleaned[1:]
-    m_pre = _PEP440_PRERELEASE_PATTERN.match(cleaned)
+    base_no_local = cleaned.split("+", 1)[0]
+    m_pre = _PEP440_PRERELEASE_PATTERN.match(base_no_local)
     if m_pre:
         tag = re.sub(r"([a-zA-Z]+)(\d+)", lambda m: f"{m.group(1).lower()}.{m.group(2)}", m_pre.group(4))
         cand = f"{m_pre.group(1)}.{m_pre.group(2)}.{m_pre.group(3)}-{tag}"
@@ -137,12 +143,37 @@ def _to_comparable_semver(version: str) -> str | None:
 
 
 def get_bundled_plugin_version() -> str:
-    """Return the bundled plugin version (synchronized with eidos engine package version)."""
+    """Return the bundled plugin SemVer synchronized with the Eidos engine release version.
+
+    PEP 440 post-tag development versions produced by Git describe / hatch-vcs
+    (e.g. ``0.29.1.dev1`` after tag ``v0.29.0``) resolve back to their base
+    release SemVer (``0.29.0``) so editable dev checkouts do not fabricate
+    unreleased final versions or trigger false ``outdated`` diagnostics while
+    still verifying exact on-disk ``SKILL.md`` SHA-256 parity.
+    """
     pkg_raw = getattr(eidos, "__version__", "0.2.0")
     if isinstance(pkg_raw, str):
         cleaned = pkg_raw.strip()
+        m_post_dev = _PEP440_POST_TAG_DEV_PATTERN.fullmatch(cleaned)
+        if m_post_dev:
+            return f"{m_post_dev.group(1)}.{m_post_dev.group(2)}.{int(m_post_dev.group(3)) - 1}"
+        if _PEP440_DEV_SUFFIX_PATTERN.search(cleaned):
+            stripped_dev = _PEP440_DEV_SUFFIX_PATTERN.sub("", cleaned).lstrip("vV")
+            if "-" in stripped_dev and is_valid_semver(stripped_dev):
+                return stripped_dev
+            if _PEP440_PRERELEASE_PATTERN.fullmatch(stripped_dev):
+                pre_semver = _to_comparable_semver(stripped_dev)
+                if pre_semver:
+                    return pre_semver
+            dev_semver = _to_comparable_semver(cleaned)
+            if dev_semver:
+                return dev_semver
         if is_valid_semver(cleaned):
             return cleaned
+        if _PEP440_PRERELEASE_PATTERN.fullmatch(cleaned.split("+", 1)[0]):
+            pre_semver = _to_comparable_semver(cleaned)
+            if pre_semver:
+                return pre_semver
         normalized_pkg = normalize_to_semver(cleaned)
         if normalized_pkg:
             return normalized_pkg
@@ -180,10 +211,8 @@ def _resolve_installed_plugin_manifest(
 
 def get_installed_plugin_version(project_dir: Path | None = None) -> str | None:
     """Retrieve installed plugin version from project scope."""
-    plugin_dir, manifest_path = _resolve_installed_plugin_manifest(project_dir=project_dir)
+    _plugin_dir, manifest_path = _resolve_installed_plugin_manifest(project_dir=project_dir)
     if manifest_path is None:
-        if (plugin_dir / "skills").is_symlink() and (plugin_dir / "skills" / "eidos" / "SKILL.md").is_file():
-            return get_bundled_plugin_version()
         return None
     try:
         data = orjson.loads(manifest_path.read_bytes())
@@ -223,7 +252,7 @@ def _collect_diverged_or_skipped_skills(root: Path, *, check_disk: bool = True) 
     for sub in subdirs:
         pdir = root / sub
         skills_dir = pdir / "skills"
-        has_install = (pdir / MANIFEST_FILENAME).is_file() or skills_dir.is_symlink()
+        has_install = (pdir / MANIFEST_FILENAME).is_file()
         if not has_install or not skills_dir.exists():
             continue
         for skill_name in ACTIVE_EIDOS_SKILLS:
@@ -294,7 +323,7 @@ def check_plugin_version_status(project_dir: Path | None = None) -> dict[str, An
             installed_targets[t_name] = bool(t_meta.get("hooks", False))
 
         if not installed_targets:
-            if (root / ".agents" / ".eidos-manifest.json").is_file() or (root / ".agents" / "skills").is_symlink():
+            if (root / ".agents" / ".eidos-manifest.json").is_file():
                 installed_targets["antigravity"] = (root / ".agents" / "hooks.json").is_file()
             if (root / ".claude" / ".eidos-manifest.json").is_file():
                 installed_targets["claude"] = (root / ".claude" / "settings.json").is_file()

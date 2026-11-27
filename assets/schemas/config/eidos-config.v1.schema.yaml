@@ -71,7 +71,7 @@ properties:
       exclude:
         $ref: "#/$defs/glob_list"
         default: []
-        description: "Repository-relative path or glob patterns excluded from file discovery, index sync, and drift analysis."
+        description: "Repository-relative path or glob patterns excluded completely from file discovery, index sync, source ownership, test classification, and drift analysis (use this to ignore generated code, fixtures, or standalone helper scripts)."
       tests:
         type: object
         additionalProperties: false
@@ -84,7 +84,7 @@ properties:
           exclude:
             $ref: "#/$defs/glob_list"
             default: []
-            description: "Repository-relative glob patterns excluded from automated test file classification."
+            description: "Repository-relative glob patterns removed from automated test classification so matched files are treated as governed production source code instead (to ignore a non-test helper script under tests/ completely without lowering source_ownership, use workspace.exclude)."
       subprojects_exclude:
         $ref: "#/$defs/glob_list"
         default: []

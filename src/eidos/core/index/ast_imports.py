@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import contextlib
+import math
 import re
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -403,14 +405,48 @@ class BaseAstIndexer(ABC):
             pass
         return namespaces
 
-    def generate_repo_map(self, symbols_by_file: dict[str, list[CodeSymbol]], max_tokens: int = 1500) -> str:
-        """Generate a token-budgeted structural repo map outline for AI coding agents."""
+    def generate_repo_map(
+        self,
+        symbols_by_file: dict[str, list[CodeSymbol]],
+        max_tokens: int = 1500,
+        file_weights: Mapping[str, float] | None = None,
+    ) -> str:
+        """Generate a token-budgeted structural repo map ranked by architectural centrality and public surface richness."""
         max_chars = max_tokens * 4  # Standard ~4 characters per token heuristic
         lines: list[str] = ["# 🗺️ Structural Code Graph (Repo Map)", ""]
 
         current_chars = sum(len(line) + 1 for line in lines)
 
-        for rel_path, symbols in sorted(symbols_by_file.items()):
+        def _surface_score(symbols: list[CodeSymbol]) -> int:
+            class_names = {sym.name for sym in symbols if sym.kind in ("class", "interface", "struct", "enum")}
+            classes = 0
+            pub_methods = 0
+            pub_funcs = 0
+            for sym in symbols:
+                if sym.kind in ("class", "interface", "struct", "enum"):
+                    classes += 1
+                elif (
+                    sym.kind == "method"
+                    and sym.parent_symbol in class_names
+                    and (not sym.name.startswith("_") or sym.name in ("__init__", "__call__"))
+                ):
+                    pub_methods += 1
+                elif (
+                    sym.kind == "function"
+                    and not sym.parent_symbol
+                    and (not sym.name.startswith("_") or sym.name.startswith("__"))
+                ):
+                    pub_funcs += 1
+            return classes * 3 + pub_funcs + pub_methods
+
+        def _rank_key(item: tuple[str, list[CodeSymbol]]) -> tuple[float, str]:
+            rel_path, symbols = item
+            surface = _surface_score(symbols)
+            raw_w = float(file_weights.get(rel_path, 0.0)) if (file_weights and surface > 0) else 0.0
+            centrality = raw_w if (math.isfinite(raw_w) and raw_w > 0.0) else 0.0
+            return (-(centrality + surface), rel_path)
+
+        for rel_path, symbols in sorted(symbols_by_file.items(), key=_rank_key):
             if not symbols:
                 continue
 

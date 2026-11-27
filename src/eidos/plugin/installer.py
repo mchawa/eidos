@@ -287,7 +287,7 @@ def _write_installation_manifest(
             continue
         manifest_data["files"][rel] = _compute_sha256(f)
 
-    manifest_file.write_bytes(orjson.dumps(manifest_data, option=orjson.OPT_INDENT_2))
+    manifest_file.write_bytes(orjson.dumps(manifest_data, option=orjson.OPT_INDENT_2) + b"\n")
 
     return manifest_file
 
@@ -306,16 +306,6 @@ def _prune_empty_dirs(root_dir: Path) -> None:
                 pass
 
 
-def _is_canonical_skills_symlink(source_skills: Path, target_skills_dir: Path) -> bool:
-    """Return True if `target_skills_dir` is a symlink resolving directly to `source_skills`."""
-    if not target_skills_dir.is_symlink() or not source_skills.exists():
-        return False
-    try:
-        return target_skills_dir.resolve() == source_skills.resolve()
-    except OSError:
-        return False
-
-
 def _copy_skills_flat(
     source_dir: Path,
     target_skills_dir: Path,
@@ -324,8 +314,6 @@ def _copy_skills_flat(
 ) -> list[Path]:
     """Copy individual skills from source bundle into target_skills_dir/<skill-name>/."""
     source_skills = source_dir / "skills" if (source_dir / "skills").exists() else source_dir
-    if _is_canonical_skills_symlink(source_skills, target_skills_dir):
-        return []
 
     _check_not_symlink(target_skills_dir)
 
@@ -587,7 +575,7 @@ def _uninstall_from_manifest(target_dir: Path, target_name: str | None = None) -
             if isinstance(files_entry, dict):
                 data["files"] = files_entry
             with contextlib.suppress(OSError):
-                manifest_file.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+                manifest_file.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2) + b"\n")
             return True
 
     rel_paths = (
@@ -808,6 +796,8 @@ class TargetAdapter:
 
         if plugin_dir is not None:
             _check_not_symlink(plugin_dir, root=root)
+        if self.skills_subdir is not None:
+            _check_not_symlink(root / self.skills_subdir, root=root)
 
         if self.post_install_hook is not None:
             created.extend(self.post_install_hook(root, source_dir, force, launcher))

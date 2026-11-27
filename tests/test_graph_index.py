@@ -5727,3 +5727,81 @@ source_path: "src/svc_{i:02d}"
         assert recovered.execute("SELECT COUNT(*) FROM spec_embeddings;").fetchone()[0] == 0
     finally:
         recovered.close()
+
+
+def test_repo_map_ranks_by_code_couplings_centrality_and_degrades_gracefully(tmp_path):
+    """Verify INV-INDEX-AI-REPO-MAP-BUDGET: generate_repo_map_from_db prioritizes high fan-in hub files over alphabetical path order."""
+    from eidos.core.index.fts_query import generate_repo_map_from_db
+    from eidos.core.lifecycle.initializer import init_repository
+
+    repo = tmp_path / "centrality_repo"
+    init_repository(repo, title="Centrality Repo")
+    pkg = repo / "src" / "app"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+
+    # Late-alphabetical shared hub imported by multiple early-alphabetical components
+    (pkg / "z_shared_hub.py").write_text(
+        "class SharedHub:\n    def execute(self):\n        return 1\n",
+        encoding="utf-8",
+    )
+    for i in range(1, 6):
+        (pkg / f"a_caller_{i:02d}.py").write_text(
+            f"from app.z_shared_hub import SharedHub\n\ndef run_caller_{i}():\n    return SharedHub().execute()\n",
+            encoding="utf-8",
+        )
+
+    cnt_dir = repo / "eidos" / "architecture" / "containers"
+    cmp_dir = repo / "eidos" / "architecture" / "components"
+    cnt_dir.mkdir(parents=True, exist_ok=True)
+    cmp_dir.mkdir(parents=True, exist_ok=True)
+    (cnt_dir / "app.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-APP\ntitle: App\nstatus: active\ncontainer_type: service\n"
+        "runtime: Python\nsource_path: src/app\n---\n= App\n",
+        encoding="utf-8",
+    )
+    (cmp_dir / "hub.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-HUB\ntitle: Hub\ncontainer: CNT-APP\nstatus: active\n"
+        "source_path: src/app/z_shared_hub.py\n---\n= Hub\n",
+        encoding="utf-8",
+    )
+    for i in range(1, 6):
+        (cmp_dir / f"caller-{i:02d}.adoc").write_text(
+            f"---\ntype: tech/component\nid: CMP-CALLER-{i:02d}\ntitle: Caller {i}\ncontainer: CNT-APP\n"
+            f"status: active\nsource_path: src/app/a_caller_{i:02d}.py\n---\n= Caller {i}\n",
+            encoding="utf-8",
+        )
+
+    idx = ArchitecturalIndex(db_path=repo / "eidos" / ".cache" / "index.db", repo_root=repo, eidos_dir=repo / "eidos")
+    try:
+        idx.sync(force=True, auto_semantic=False)
+        tight_map = idx.get_repo_map(max_tokens=70)
+        assert "src/app/z_shared_hub.py" in tight_map
+        assert "class SharedHub" in tight_map
+        assert "... [remaining modules truncated to preserve context token budget]" in tight_map
+
+        full_map = idx.get_repo_map(max_tokens=1500)
+        assert full_map.index("src/app/z_shared_hub.py") < full_map.index("src/app/a_caller_01.py")
+
+        # Go package-level target_ref (directory path) boosts .go files in that package
+        conn = idx._get_connection()
+        conn.execute(
+            "INSERT INTO code_symbols (file_path, symbol, kind, parent_symbol, line_start, line_end, signature, entity_id, is_primary, is_test) "
+            "VALUES ('pkg/z_hub/hub.go', 'GoHub', 'struct', '', 1, 5, 'type GoHub struct', 'CMP-HUB', 1, 0);"
+        )
+        conn.execute(
+            "INSERT INTO code_couplings (source_entity_id, target_entity_id, source_cnt_id, target_cnt_id, provenance, src_file, line_start, target_ref) "
+            "VALUES ('CMP-CALLER-01', 'CMP-HUB', 'CNT-APP', 'CNT-APP', 'ast_import', 'src/app/a_caller_01.py', 1, 'pkg/z_hub');"
+        )
+        conn.commit()
+        go_map = generate_repo_map_from_db(conn, max_tokens=1500)
+        assert "pkg/z_hub/hub.go" in go_map
+
+        # Graceful fallback when code_couplings table is absent in a legacy/minimal SQLite connection
+        conn.execute("DROP TABLE code_couplings;")
+        conn.commit()
+        fallback_map = generate_repo_map_from_db(conn, max_tokens=1500)
+        assert "src/app/z_shared_hub.py" in fallback_map
+        assert "class SharedHub" in fallback_map
+    finally:
+        idx.close()

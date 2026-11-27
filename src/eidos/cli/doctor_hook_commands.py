@@ -30,8 +30,10 @@ def _check_onboarding_governance(plugin_root: Path) -> dict[str, Any]:
     agents_path = plugin_root / "AGENTS.md"
     onboarding_expected = any(
         (plugin_root / sub / ".eidos-manifest.json").is_file()
-        or (plugin_root / sub / "skills" / "eidos" / "SKILL.md").is_file()
-        or (plugin_root / sub / "skills").is_symlink()
+        or (
+            not (plugin_root / sub / "skills").is_symlink()
+            and (plugin_root / sub / "skills" / "eidos" / "SKILL.md").is_file()
+        )
         for sub in (".agents", ".claude", ".aider")
     )
 

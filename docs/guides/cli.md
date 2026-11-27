@@ -112,10 +112,10 @@ Architectural and product truth always lives in `eidos/*.adoc`; `eidos/eidos.yam
 version: 1
 
 workspace:
-  exclude: ["generated/**"]
+  exclude: ["generated/**"]          # completely excluded from indexing, source ownership, tests, and drift
   tests:
     include: ["qa/specs/**"]
-    exclude: ["tests/fixtures/**"]
+    exclude: ["tests/fixtures/**"]   # reclassified from test -> governed production source (use workspace.exclude to ignore helper scripts)
   subprojects_exclude: ["examples/fixtures/**"]
 
 drift:
@@ -176,6 +176,12 @@ portal:
     out_dir: site                    # validated strictly inside repository root
     single_file: false
 ```
+
+> [!TIP]
+> **Choosing between `workspace.exclude`, `workspace.tests.exclude`, and `drift.ignore_paths`**:
+> * Use `workspace.exclude` to ignore generated code, fixtures, or standalone helper scripts (e.g., utility scripts under `tests/`) completely across discovery, indexing, `source_ownership`, and drift.
+> * Use `workspace.tests.exclude` only when a file under a test directory should be reclassified as **governed production code** (`code/source`) and owned by a C4 component.
+> * Use `drift.ignore_paths` to suppress `code_files` drift warnings on specific paths while keeping them indexed (never suppresses living specs, SpecDeltas, memories, tests, or onboarding files).
 
 #### Supported `EIDOS_*` Environment Variables
 Environment variables override `eidos/eidos.yaml` and are themselves overridden by explicit CLI flags (invalid non-empty values fail closed with exit code `1`; booleans accept `1/true/yes/on` vs `0/false/no/off`):

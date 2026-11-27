@@ -207,7 +207,7 @@ def _remap_validation_report(report: ValidationReport, snap_root: Path | None) -
 def _has_eidos_onboarding(eval_root: Path) -> bool:
     """Return True if Eidos Agent Skills or installation manifests exist in eval_root."""
     skills_dir = eval_root / ".agents" / "skills"
-    if skills_dir.exists() or skills_dir.is_symlink():
+    if not skills_dir.is_symlink() and skills_dir.is_dir():
         return True
     for marker_dir in (".agents", ".claude", ".cursor", ".github", ".windsurf", ".aider", ".clinerules"):
         if (eval_root / marker_dir / ".eidos-manifest.json").is_file():

@@ -86,8 +86,29 @@ plugin:
     baseline_ttl_seconds: 86400    # stale session baseline expiry in seconds
 ```
 
+* Scaffold a commented starter config with `eidos config init`, and inspect effective settings with `eidos config show`.
 * `eidos plugin uninstall <TARGET>` always keeps `<TARGET>` required for safety.
 * `eidos doctor` validates `eidos/eidos.yaml` under `checks.repo_config` (failing closed on invalid files) and surfaces non-blocking advisories (`missing_configured_targets`) when concrete targets listed in `plugin.targets` are not installed yet.
+
+### Version Control (`.gitignore`) Guidance
+
+Commit the installed skills directory and `.eidos-manifest.json` alongside root `AGENTS.md` so every teammate and CI runner gets the exact pinned skills and truthful `eidos doctor` checks without extra setup. If your repository ignores agent dot-directories by default, un-ignore the skills and manifest explicitly (and also un-ignore the hook config file whenever installed with `--hooks`, since `.eidos-manifest.json` records hook expectations checked by `eidos doctor`):
+
+```gitignore
+# Track Eidos Agent Skills and manifest; ignore unrelated local tool state
+.agents/*
+!.agents/skills/
+!.agents/.eidos-manifest.json
+# Uncomment if installed with `eidos plugin install antigravity --hooks`:
+# !.agents/hooks.json
+
+# For Claude Code teams using .claude/:
+# .claude/*
+# !.claude/skills/
+# !.claude/.eidos-manifest.json
+# Uncomment if installed with `eidos plugin install claude --hooks`:
+# !.claude/settings.json
+```
 
 ### Installation Targets
 
@@ -290,6 +311,7 @@ AI agents execute Eidos CLI commands directly from terminal / subshell tools. Al
 | `eidos drift` | `--uncommitted`, `--base <ref>`, `--json` | Inspects spec-to-code drift, boundary-aware spec anchoring, and polyglot `INV-*` test bindings. |
 | `eidos validate` | `[PATH]`, `--json` | Validates all living specifications against their bundled v1 JSON Schemas, `x-eidos-ref` links, and bidirectional contract parity. |
 | `eidos doctor` | `--path <path>`, `--json` | Runs workspace health diagnostics across optional `eidos/eidos.yaml` (`checks.repo_config`), CLI binary, root `AGENTS.md`, living specs, index, and agent plugin hooks (with non-blocking advisories for missing configured `plugin.targets`). |
+| `eidos config init` | `--force`, `--path <path>`, `--json` | Scaffolds a commented, schema-validated starter `eidos/eidos.yaml` file. |
 | `eidos config show` | `--path <path>`, `--json` | Inspects effective repository configuration (`eidos/eidos.yaml` + `EIDOS_*` env vars) with per-key source attribution. |
 | `eidos config schema` | `--json` | Inspects all valid `eidos/eidos.yaml` v1 schema keys, defaults, and `EIDOS_*` env vars offline. |
 | `eidos info` | | Returns current engine version, loaded v1 schemas, and supported platforms. |

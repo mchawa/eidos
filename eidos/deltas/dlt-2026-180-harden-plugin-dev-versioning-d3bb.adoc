@@ -1,0 +1,131 @@
+---
+type: delta/mutation
+id: DLT-2026-180-HARDEN-PLUGIN-DEV-VERSIONING-D3BB
+title: "Harden Plugin Dev Versioning, Uniform Symlink Safety, Config Clarity, and Centrality-Ranked Repo Map"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate false eidos doctor outdated failures on editable .devN checkouts, remove Eidos-only .agents/skills symlink special-casing for uniform symlink refusal, ensure POSIX trailing newlines in .eidos-manifest.json, clarify workspace.tests.exclude vs workspace.exclude and .gitignore guidance, and rank repo-map truncation by architectural centrality and public surface richness instead of alphabetical path cutoff."
+mutations:
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    details: "Remove Eidos-only canonical .agents/skills symlink special-casing for uniform symlink refusal, append trailing newlines to .eidos-manifest.json writes, and resolve PEP 440 post-tag .devN bundled versions to their base released SemVer so editable checkouts do not report false outdated status or stamp unreleased versions."
+    expect:
+      body:
+        contains:
+          - "refuses all symlinked skill destinations uniformly"
+          - "trailing newline"
+          - "base release SemVer"
+        not_contains:
+          - "canonical self-hosted symlink"
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Update CNT-EIDOS-PLUGIN internal structure to remove self-hosted canonical symlink tolerance and document uniform symlink refusal."
+    expect:
+      body:
+        contains:
+          - "uniformly refusing symlinked skill directories"
+        not_contains:
+          - "tolerating self-hosted canonical symlinks"
+  - operation: modify
+    target: CAP-AGENT-ADAPTER
+    details: "Update CAP-AGENT-ADAPTER (1.21.0) and INV-PLUGIN-INSTALL-TRUTHFULNESS to enforce uniform symlink refusal across install/update, editable .devN bundled version parity, and POSIX-clean .eidos-manifest.json formatting."
+    expect:
+      frontmatter:
+        version: "1.21.0"
+      body:
+        contains:
+          - "uniform symlink refusal"
+        not_contains:
+          - "self-hosted `.agents/skills` symlink tolerance"
+          - "self-hosted symlink tolerance"
+  - operation: modify
+    target: INV-PLUGIN-INSTALL-TRUTHFULNESS
+    details: "Replace self-hosted canonical symlink tolerance with uniform symlink refusal (preserving per-target fault isolation), editable .devN base-release bundled version parity, and POSIX trailing newlines on .eidos-manifest.json."
+    expect:
+      frontmatter:
+        rule: "refuse all symlinked .agents/skills destinations uniformly"
+        test_binding: "tests/test_plugin.py::test_installer_truthful_version_comments_symlinks_and_uninstall"
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+    details: "Extend BaseAstIndexer.generate_repo_map with optional file_weights and rank repo-map modules by architectural centrality plus public API surface richness before token-budget truncation."
+    expect:
+      body:
+        contains:
+          - "centrality"
+          - "generate_repo_map"
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+    details: "Compute file-level and entity-level incoming code_couplings fan-in weights in generate_repo_map_from_db so repo-map truncation preserves architectural hub modules ahead of alphabetical path cutoff, and align generate_repo_map_from_db return annotation (-> str)."
+    expect:
+      body:
+        contains:
+          - "code_couplings"
+          - "generate_repo_map_from_db(conn: sqlite3.Connection, max_tokens: int = 1500) -> str"
+  - operation: modify
+    target: CAP-AST-CODE-GRAPH
+    details: "Update CAP-AST-CODE-GRAPH (1.12.0) and INV-INDEX-AI-REPO-MAP-BUDGET to require centrality- and public-surface-ranked truncation when repo-map exceeds max_tokens."
+    expect:
+      frontmatter:
+        version: "1.12.0"
+      body:
+        contains:
+          - "centrality"
+  - operation: modify
+    target: INV-INDEX-AI-REPO-MAP-BUDGET
+    details: "Require repo-map truncation under tight token budgets to prioritize high-centrality and public-API-rich hub modules over alphabetical path cutoff."
+    expect:
+      frontmatter:
+        rule: "centrality"
+        test_binding: "tests/test_ast_indexer.py::test_inv_index_ai_repo_map_budget"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Document workspace.tests.exclude vs workspace.exclude semantics in docs/guides/cli.md, add eidos config init to the agent CLI table, and add .gitignore guidance for committed .agents/skills/ and .agents/.eidos-manifest.json in docs/guides/agent-plugin.md."
+    expect:
+      body:
+        contains:
+          - ".gitignore"
+          - "workspace.tests.exclude"
+vcs:
+  branch: main
+  base_commit: 1190a734a9ab429f224f5fb2141a58ae6ac14a4b
+---
+= SpecDelta: Harden Plugin Dev Versioning, Uniform Symlink Safety, Config Clarity, and Centrality-Ranked Repo Map
+:toc: left
+
+== Problem Statement
+Six operational rough edges surfaced during live dogfooding of `v0.29.0`:
+1. **Editable `.devN` Version Mismatch**: `_parse_git_describe_version()` resolves post-tag dev commits to `X.Y.(Z+1).devN` (e.g., `0.29.1.dev1`), and `get_bundled_plugin_version()` strips `.dev1` into an unreleased `"0.29.1"`, causing `eidos doctor` to falsely fail (`healthy: false`, `outdated`) on every dev commit and `eidos plugin update` to write unreleased versions into `.eidos-manifest.json`.
+2. **Eidos-Only Canonical Symlink Special-Case**: `_is_canonical_skills_symlink()` in `installer.py` and `skills.is_symlink()` fallbacks in `version.py` and `doctor_hook_commands.py` existed solely for Eidos's former self-hosted `.agents/skills` symlink (now replaced with real installed files) and broke when running globally installed wheel binaries.
+3. **Missing Trailing Newline on `.eidos-manifest.json`**: `installer.py` serialized `.eidos-manifest.json` without a trailing `\n`, creating `No newline at end of file` diff noise for repositories committing `.agents/.eidos-manifest.json`.
+4. **Ambiguous `workspace.tests.exclude` Documentation**: Users setting `workspace.tests.exclude` on non-test scripts under `tests/` were surprised when files reclassified to unowned `code/source`, reducing `source_ownership` instead of being excluded via `workspace.exclude`.
+5. **Missing Onboarding `.gitignore` & `eidos config init` Cross-References**: `docs/guides/agent-plugin.md` omitted `eidos config init` from its agent CLI table and lacked `.gitignore` guidance for tracking `.agents/skills/` and `.agents/.eidos-manifest.json`.
+6. **Alphabetical `repo-map` Truncation**: `BaseAstIndexer.generate_repo_map()` and `generate_repo_map_from_db()` truncated strictly in alphabetical path order, dropping core architectural hubs whenever earlier-alphabetical modules were added.
+
+== Proposed Specification Changes
+* **`CMP-PLUGIN-INSTALLER`, `CNT-EIDOS-PLUGIN`, `CAP-AGENT-ADAPTER` (`1.21.0`), `INV-PLUGIN-INSTALL-TRUTHFULNESS`**:
+  * Remove `_is_canonical_skills_symlink()` and all `skills.is_symlink()` detection fallbacks so every symlinked skill destination is refused uniformly while preserving per-target fault isolation across `install all` / `update all`.
+  * Resolve PEP 440 post-tag dev versions (`X.Y.Z.devN` with `Z > 0`) in `get_bundled_plugin_version()` to their base released SemVer `X.Y.(Z-1)` (and pre-release `.devN` tags like `0.29.0-rc.1.dev2` or `0.29.0.dev1` without fabricating an unreleased final version), so `eidos doctor` checks skill SHA-256 parity cleanly across editable dev commits.
+  * Append a trailing `\n` whenever `.eidos-manifest.json` is written.
+* **`CMP-AST-SYMBOL-INDEXER`, `CMP-FTS-QUERY-ENGINE`, `CAP-AST-CODE-GRAPH` (`1.12.0`), `INV-INDEX-AI-REPO-MAP-BUDGET`**:
+  * Extend `BaseAstIndexer.generate_repo_map(symbols_by_file, max_tokens=1500, file_weights=None)` to rank modules by architectural centrality (`file_weights`) plus public API surface richness (`classes * 3 + public_funcs + public_methods`, gating centrality weights on non-zero public surface) with deterministic alphabetical tie-breaking, keeping the canonical truncation marker.
+  * Compute incoming `code_couplings` file-level (`provenance = 'ast_import'`) and entity-level fan-in weights in `generate_repo_map_from_db()` (gracefully degrading when `code_couplings` is absent) and pass them as `file_weights` (`CNT-EIDOS-INDEX` covered via `CMP-AST-SYMBOL-INDEXER` and `CMP-FTS-QUERY-ENGINE`).
+* **`CMP-DOCS-USER-GUIDES`**:
+  * Clarify `workspace.tests.exclude` vs `workspace.exclude` in `docs/guides/cli.md` (`CNT-EIDOS-DOCS` covered via `CMP-DOCS-USER-GUIDES`), add `eidos config init` to the CLI table in `docs/guides/agent-plugin.md`, and document `.gitignore` best practices for committing `.agents/skills/` and `.agents/.eidos-manifest.json`.
+
+== Implementation Plan
+1. **Plugin Versioning, Uniform Symlink Refusal & Manifest Newline**:
+   * Update `src/eidos/plugin/version.py` (`get_bundled_plugin_version`, `get_installed_plugin_version`, `_collect_diverged_or_skipped_skills`, `check_plugin_version_status`) and `src/eidos/plugin/installer.py` (remove `_is_canonical_skills_symlink`, append `\n` to `.eidos-manifest.json` writes).
+   * Remove the legacy `(plugin_root / sub / "skills").is_symlink()` onboarding checks in `src/eidos/cli/doctor_hook_commands.py` and `src/eidos/vcs/snapshot.py` (body-only; no spec mutation).
+   * Refresh `.agents/.eidos-manifest.json` via `uv run eidos plugin install --force` so the committed manifest ends with `\n`.
+2. **Config Schema Clarity & User Guides**:
+   * Clarify `workspace.exclude` vs `workspace.tests.exclude` descriptions in `assets/schemas/config/eidos-config.v1.schema.yaml` and `STARTER_CONFIG_YAML` comments in `src/eidos/core/workspace/config.py` (body-only; no spec mutation).
+   * Update `docs/guides/cli.md` and `docs/guides/agent-plugin.md` (covering `workspace.tests.exclude` vs `workspace.exclude`, `eidos config init`, and `.gitignore` tracking guidance for `.agents/skills/` and `.agents/.eidos-manifest.json`).
+3. **Centrality-Ranked Repo Map**:
+   * Update `BaseAstIndexer.generate_repo_map` in `src/eidos/core/index/ast_imports.py` to accept optional `file_weights: Mapping[str, float] | None = None` and rank modules by centrality + public surface score with deterministic tie-breaking.
+   * Update `generate_repo_map_from_db` in `src/eidos/core/index/fts_query.py` to query `code_couplings` file-level and entity-level incoming fan-in and pass `file_weights`.
+4. **Living Specs & Automated Tests**:
+   * Update `eidos/architecture/components/plugin-installer.adoc`, `eidos/architecture/containers/plugin.adoc`, `eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc`, `eidos/architecture/components/ast-symbol-indexer.adoc`, `eidos/architecture/components/fts-query-engine.adoc`, `eidos/domains/agent-intelligence/capabilities/ast-code-graph.adoc`, and `eidos/architecture/components/docs-user-guides.adoc`.
+   * Update and expand tests in `tests/test_plugin.py` (`INV-PLUGIN-INSTALL-TRUTHFULNESS`, `test_normalize_to_semver_and_bundled_version_sync`), `tests/test_ast_indexer.py` (`INV-INDEX-AI-REPO-MAP-BUDGET`), `tests/test_graph_index.py`, and `tests/test_config.py`, maintaining `> 90.0%` per-file statement coverage (`POL-STATEMENT-TEST-COVERAGE`) and `INV-DOCS-SYNCHRONIZATION` parity.
+5. **Verification & Adversarial Review**:
+   * Run `eidos delta verify`, `eidos delta apply`, `pytest`, `ruff`, `eidos doctor --json`, `eidos drift --uncommitted --json`, and a fresh-context adversarial `git diff` review.

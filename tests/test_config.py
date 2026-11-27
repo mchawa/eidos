@@ -529,6 +529,10 @@ def test_repo_config_schema_precedence_and_subproject_isolation(
     assert schema_info["schema_version"] == 1
     assert len(schema_info["sections"]) == 7
     assert len(schema_info["env_vars"]) == 11
+    key_desc = {entry["key"]: entry["description"] for entry in schema_info["keys"]}
+    assert "source_ownership" in key_desc["workspace.tests.exclude"]
+    assert "workspace.exclude" in key_desc["workspace.tests.exclude"]
+    assert "helper scripts" in key_desc["workspace.exclude"]
 
     res_schema_rich = runner.invoke(app, ["config", "schema"])
     assert res_schema_rich.exit_code == 0

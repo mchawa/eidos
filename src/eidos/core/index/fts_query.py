@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import posixpath
 import re
 import sqlite3
 from pathlib import Path
@@ -520,12 +521,13 @@ def find_symbol_in_db(
 def generate_repo_map_from_db(conn: sqlite3.Connection, max_tokens: int = 1500) -> str:
     """Generate a token-budgeted structural repo map outline across all indexed components for AI coding agents.
 
-    Reconstructed entirely from the persisted ``code_symbols`` table; source files are never re-parsed.
+    Reconstructed entirely from the persisted ``code_symbols`` and ``code_couplings`` tables;
+    source files are never re-parsed.
     """
     indexer = get_ast_indexer()
     rows = conn.execute(
         """
-        SELECT file_path, symbol, kind, parent_symbol, line_start, line_end, signature
+        SELECT file_path, entity_id, symbol, kind, parent_symbol, line_start, line_end, signature
         FROM code_symbols
         WHERE is_primary = 1
           AND is_test = 0
@@ -535,12 +537,16 @@ def generate_repo_map_from_db(conn: sqlite3.Connection, max_tokens: int = 1500) 
     ).fetchall()
 
     symbols_by_file: dict[str, list[Any]] = {}
+    file_entities: dict[str, str] = {}
     for r in rows:
-        symbols_by_file.setdefault(r["file_path"], []).append(
+        fp = r["file_path"]
+        if fp not in file_entities and r["entity_id"]:
+            file_entities[fp] = r["entity_id"]
+        symbols_by_file.setdefault(fp, []).append(
             CodeSymbol(
                 name=r["symbol"],
                 kind=r["kind"],
-                file_path=r["file_path"],
+                file_path=fp,
                 line_start=r["line_start"],
                 line_end=r["line_end"],
                 parent_symbol=r["parent_symbol"] or None,
@@ -548,4 +554,46 @@ def generate_repo_map_from_db(conn: sqlite3.Connection, max_tokens: int = 1500) 
             )
         )
 
-    return indexer.generate_repo_map(symbols_by_file, max_tokens=max_tokens)
+    file_weights: dict[str, float] = {}
+    if symbols_by_file:
+        file_fan_in: dict[str, int] = {}
+        entity_fan_in: dict[str, int] = {}
+        try:
+            for cr in conn.execute(
+                """
+                SELECT target_ref, COUNT(DISTINCT src_file) AS fan_in
+                FROM code_couplings
+                WHERE provenance = 'ast_import'
+                  AND target_ref != ''
+                  AND src_file != target_ref
+                GROUP BY target_ref;
+                """
+            ).fetchall():
+                file_fan_in[cr["target_ref"]] = int(cr["fan_in"])
+            for er in conn.execute(
+                """
+                SELECT target_entity_id, COUNT(DISTINCT src_file) AS fan_in
+                FROM code_couplings
+                WHERE source_entity_id != target_entity_id
+                GROUP BY target_entity_id;
+                """
+            ).fetchall():
+                entity_fan_in[er["target_entity_id"]] = int(er["fan_in"])
+        except sqlite3.OperationalError:
+            pass
+
+        for fp in symbols_by_file:
+            fp_norm = fp.replace("\\", "/")
+            f_in = file_fan_in.get(fp_norm, 0)
+            if not f_in and fp_norm.endswith(".go"):
+                f_in = file_fan_in.get(posixpath.dirname(fp_norm), 0)
+            e_in = entity_fan_in.get(file_entities.get(fp, ""), 0)
+            weight = f_in * 10.0 + e_in * 2.0
+            if weight > 0.0:
+                file_weights[fp] = weight
+
+    return indexer.generate_repo_map(
+        symbols_by_file,
+        max_tokens=max_tokens,
+        file_weights=file_weights or None,
+    )
