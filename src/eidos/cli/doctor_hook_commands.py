@@ -290,13 +290,39 @@ def doctor_cmd(
     specs_valid = False
     total_specs = 0
     valid_specs = 0
+    invalid_specs = 0
+    schema_error_count = 0
+    broken_reference_count = 0
+    warning_count = 0
     schema_error_paths: tuple[str, ...] | None = None
     if specs_exist:
         val_report = SpecValidator().validate_directory(eidos_dir)
         specs_valid = val_report.is_clean
         total_specs = val_report.total_docs
         valid_specs = val_report.valid_docs
+        invalid_specs = val_report.invalid_docs
+        schema_error_count = sum(len(errs) for errs in val_report.schema_errors.values())
+        broken_reference_count = len(val_report.broken_references)
+        warning_count = len(val_report.warnings)
         schema_error_paths = tuple(val_report.schema_errors.keys())
+
+    if not specs_exist:
+        living_specs_detail = "Run 'eidos init' to initialize"
+    elif specs_valid:
+        living_specs_detail = f"{valid_specs}/{total_specs} valid specs in {eidos_dir}"
+        if warning_count > 0:
+            living_specs_detail += f" ({warning_count} warning(s))"
+    else:
+        failure_parts: list[str] = []
+        if schema_error_count > 0:
+            failure_parts.append(f"{schema_error_count} schema error(s)")
+        if broken_reference_count > 0:
+            failure_parts.append(f"{broken_reference_count} broken reference(s)")
+        fallback = f"{invalid_specs} invalid spec(s)" if invalid_specs > 0 else "validation failed"
+        summary = ", ".join(failure_parts) or fallback
+        living_specs_detail = (
+            f"{valid_specs}/{total_specs} valid specs in {eidos_dir} — {summary}; run 'eidos validate'"
+        )
 
     db_path = eidos_dir / ".cache" / "index.db"
     index_ok = False
@@ -358,7 +384,12 @@ def doctor_cmd(
             "valid": specs_valid,
             "valid_docs": valid_specs,
             "total_docs": total_specs,
+            "invalid_docs": invalid_specs,
+            "schema_error_count": schema_error_count,
+            "broken_reference_count": broken_reference_count,
+            "warning_count": warning_count,
             "eidos_dir": str(eidos_dir),
+            "detail": living_specs_detail,
         },
         "knowledge_graph_index": {
             "ok": index_ok,
@@ -440,7 +471,7 @@ def doctor_cmd(
         "[bold green]PASS[/bold green]"
         if (specs_exist and specs_valid)
         else ("[bold yellow]UNINITIALIZED[/bold yellow]" if not specs_exist else "[bold red]FAIL[/bold red]"),
-        f"{valid_specs}/{total_specs} valid specs in {eidos_dir}" if specs_exist else "Run 'eidos init' to initialize",
+        living_specs_detail,
     )
     table.add_row(
         "SQLite Knowledge Graph",

@@ -1162,6 +1162,163 @@ archetypes:
     assert custom_data["healthy"] is True
     assert Path(custom_data["checks"]["living_specs"]["eidos_dir"]).resolve() == custom_specs.resolve()
     assert custom_data["checks"]["living_specs"]["valid_docs"] == 1
+    assert custom_data["checks"]["living_specs"]["invalid_docs"] == 0
+    assert custom_data["checks"]["living_specs"]["schema_error_count"] == 0
+    assert custom_data["checks"]["living_specs"]["broken_reference_count"] == 0
+    assert custom_data["checks"]["living_specs"]["warning_count"] == 0
+    assert "1/1 valid specs" in custom_data["checks"]["living_specs"]["detail"]
+
+
+def test_cli_doctor_living_specs_failure_and_warning_details(tmp_path, monkeypatch):
+    """Verify 'eidos doctor' surfaces broken-reference, schema-error, and warning counts in Living Specifications."""
+    import re
+
+    from eidos.core.lifecycle.initializer import init_repository
+
+    # 1. All docs schema-valid (valid_docs == total_docs) but with a broken reference
+    ws = tmp_path / "doctor_broken_ref_ws"
+    ws.mkdir(parents=True)
+    init_repository(ws, title="Doctor Broken Ref WS")
+    subprocess.run(["git", "init"], cwd=ws, capture_output=True, check=True)
+    monkeypatch.chdir(ws)
+    monkeypatch.setattr(
+        "eidos.cli.doctor_hook_commands.check_cli_update_status",
+        lambda **_kw: {"status": "up_to_date", "update_available": False, "status_text": "Up to date"},
+    )
+
+    comp_dir = ws / "eidos" / "architecture" / "components"
+    comp_dir.mkdir(parents=True, exist_ok=True)
+    comp_path = comp_dir / "broken-ref.adoc"
+    comp_path.write_text(
+        """---
+type: tech/component
+id: CMP-BROKEN-REF
+title: Broken Ref Component
+container: CNT-NONEXISTENT
+status: active
+source_path: src/does_not_exist.py
+---
+= Component: Broken Ref
+""",
+        encoding="utf-8",
+    )
+
+    res_json = runner.invoke(app, ["doctor", "--json"])
+    assert res_json.exit_code == 1
+    data = orjson.loads(res_json.stdout)
+    assert data["healthy"] is False
+    ls = data["checks"]["living_specs"]
+    assert ls["ok"] is False
+    assert ls["valid"] is False
+    assert ls["valid_docs"] == ls["total_docs"]
+    assert ls["invalid_docs"] == 0
+    assert ls["schema_error_count"] == 0
+    assert ls["broken_reference_count"] >= 1
+    assert "broken reference(s)" in ls["detail"]
+    assert "eidos validate" in ls["detail"]
+    assert "schema error(s)" not in ls["detail"]
+
+    res_table = runner.invoke(app, ["doctor"])
+    assert res_table.exit_code == 1
+    normalized_table = re.sub(r"[│\s]+", " ", res_table.stdout)
+    assert "FAIL" in normalized_table
+    assert "broken reference(s)" in normalized_table
+    assert "eidos validate" in normalized_table
+
+    # 2. Both schema errors and broken references reported together
+    bad_schema_path = comp_dir / "bad-schema.adoc"
+    bad_schema_path.write_text(
+        """---
+type: tech/component
+id: CMP-BAD-SCHEMA
+title: Bad Schema Component
+container: CNT-NONEXISTENT
+status: invalid_status_value
+---
+= Component: Bad Schema
+""",
+        encoding="utf-8",
+    )
+    res_both = runner.invoke(app, ["doctor", "--json"])
+    assert res_both.exit_code == 1
+    both_ls = orjson.loads(res_both.stdout)["checks"]["living_specs"]
+    assert both_ls["invalid_docs"] == 1
+    assert both_ls["schema_error_count"] >= 1
+    assert both_ls["broken_reference_count"] >= 1
+    assert "schema error(s)" in both_ls["detail"]
+    assert "broken reference(s)" in both_ls["detail"]
+    assert "eidos validate" in both_ls["detail"]
+
+    # 3. Clean specs with non-blocking advisory warning still PASS and report warning count
+    bad_schema_path.unlink()
+    comp_path.unlink()
+    (ws / "src").mkdir(parents=True, exist_ok=True)
+    (ws / "src" / "app.py").write_text("x = 1\n", encoding="utf-8")
+    cnt_dir = ws / "eidos" / "architecture" / "containers"
+    cnt_dir.mkdir(parents=True, exist_ok=True)
+    (cnt_dir / "app.adoc").write_text(
+        """---
+type: tech/container
+id: CNT-APP
+title: App Container
+container_type: cli_app
+runtime: Python 3.12
+source_path: src/app.py
+status: active
+---
+= Container: App
+""",
+        encoding="utf-8",
+    )
+    dep_domain = ws / "eidos" / "domains" / "legacy" / "domain.adoc"
+    dep_domain.parent.mkdir(parents=True, exist_ok=True)
+    dep_domain.write_text(
+        """---
+type: product/domain
+id: DOM-LEGACY
+title: Legacy Domain
+status: deprecated
+classification: supporting
+---
+= Legacy Domain
+""",
+        encoding="utf-8",
+    )
+    active_comp = comp_dir / "legacy-ref.adoc"
+    active_comp.write_text(
+        """---
+type: tech/component
+id: CMP-LEGACY-REF
+title: Active Component Referencing Deprecated Domain
+container: CNT-APP
+domain: DOM-LEGACY
+status: active
+---
+= Component: Legacy Ref
+""",
+        encoding="utf-8",
+    )
+    res_warn = runner.invoke(app, ["doctor", "--json"])
+    assert res_warn.exit_code == 0
+    warn_data = orjson.loads(res_warn.stdout)
+    assert warn_data["healthy"] is True
+    warn_ls = warn_data["checks"]["living_specs"]
+    assert warn_ls["ok"] is True
+    assert warn_ls["warning_count"] >= 1
+    assert "warning(s)" in warn_ls["detail"]
+
+    # 4. Uninitialized workspace reports zero counts and init hint
+    empty_ws = tmp_path / "doctor_uninit_ws"
+    empty_ws.mkdir(parents=True)
+    subprocess.run(["git", "init"], cwd=empty_ws, capture_output=True, check=True)
+    res_uninit = runner.invoke(app, ["doctor", "--path", str(empty_ws), "--json"])
+    assert res_uninit.exit_code == 0
+    uninit_ls = orjson.loads(res_uninit.stdout)["checks"]["living_specs"]
+    assert uninit_ls["exists"] is False
+    assert uninit_ls["schema_error_count"] == 0
+    assert uninit_ls["broken_reference_count"] == 0
+    assert uninit_ls["warning_count"] == 0
+    assert "eidos init" in uninit_ls["detail"]
 
 
 def test_cli_doctor_update_check(tmp_path, monkeypatch):
