@@ -496,7 +496,7 @@ Output:
 ```text
 ╭──────────────────────── Eidos Agent Skills Package ─────────────────────────╮
 │ Package Identifier:  eidos-agent-skills                                     │
-│            Version:  0.29.2                                                 │
+│            Version:  0.30.0                                                 │
 │      Specification:  agentskills.io                                         │
 │             Skills:  eidos, eidos-memory, eidos-ops, eidos-plan, eidos-spec │
 │    Lifecycle Hooks:  eidos-drift-gate                                       │
@@ -535,7 +535,7 @@ Output:
 ┃ Property          ┃ Value                                                  ┃
 ┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
 │ Package Name      │ eidos-agent-skills                                     │
-│ Package Version   │ 0.29.2                                                 │
+│ Package Version   │ 0.30.0                                                 │
 │ Overall Status    │ CONFORMANT                                             │
 │ Discovered Skills │ eidos, eidos-memory, eidos-ops, eidos-plan, eidos-spec │
 │ Lifecycle Hooks   │ eidos-drift-gate                                       │
