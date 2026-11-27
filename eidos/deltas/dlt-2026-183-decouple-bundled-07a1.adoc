@@ -1,0 +1,88 @@
+---
+type: delta/mutation
+id: DLT-2026-183-DECOUPLE-BUNDLED-07A1
+title: Decouple Bundled Agent Plugin Version from CLI Engine Releases
+status: applied
+intent:
+  kind: enabler
+  motivation: Eliminate forced per-release .eidos-manifest.json bumps and false 'outdated' eidos doctor failures in downstream repositories after CLI-only releases by giving assets/plugin_reference/ its own independent SemVer 2.0.0 file (VERSION, starting at 1.0.0) while keeping uvx hook pinning bound to the PyPI eidos-ai CLI release version.
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: Record DEC-PLUGIN-DECOUPLED-VERSION on CNT-EIDOS-PLUGIN and document assets/plugin_reference/VERSION as the independent SemVer 2.0.0 source of truth for the bundled Agent Skills package.
+    expect:
+      frontmatter:
+        decisions.id:
+          - DEC-PLUGIN-DECOUPLED-VERSION
+      body:
+        contains:
+          - DEC-PLUGIN-DECOUPLED-VERSION
+          - assets/plugin_reference/VERSION
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    details: Update CMP-PLUGIN-INSTALLER to read the decoupled bundled plugin version from assets/plugin_reference/VERSION via get_bundled_plugin_version (PLUGIN_VERSION_FILENAME) while exposing get_cli_release_semver for PEP 440 to SemVer CLI version resolution.
+    expect:
+      body:
+        contains:
+          - assets/plugin_reference/VERSION
+          - get_cli_release_semver
+          - PLUGIN_VERSION_FILENAME
+  - operation: modify
+    target: CMP-PLUGIN-VALIDATOR
+    details: Update CMP-PLUGIN-VALIDATOR so validate_plugin_package reads and validates <plugin_dir>/VERSION directly when present before falling back to get_bundled_plugin_version.
+    expect:
+      body:
+        contains:
+          - VERSION
+          - validate_plugin_package
+  - operation: modify
+    target: CMP-HOOK-MANAGER
+    details: Update CMP-HOOK-MANAGER so uvx hook command pinning resolves the PyPI eidos-ai CLI release SemVer via get_cli_release_semver instead of the decoupled plugin version.
+    expect:
+      body:
+        contains:
+          - get_cli_release_semver
+  - operation: modify
+    target: CAP-AGENT-ADAPTER
+    details: Bump CAP-AGENT-ADAPTER to 1.23.0 and update INV-PLUGIN-INSTALL-TRUTHFULNESS for decoupled plugin versioning via assets/plugin_reference/VERSION.
+    expect:
+      frontmatter:
+        version: "1.23.0"
+        technical.invariants.id:
+          - INV-PLUGIN-INSTALL-TRUTHFULNESS
+      body:
+        contains:
+          - assets/plugin_reference/VERSION
+  - operation: modify
+    target: INV-PLUGIN-INSTALL-TRUTHFULNESS
+    details: Extend INV-PLUGIN-INSTALL-TRUTHFULNESS to assert decoupled bundled plugin version resolution from assets/plugin_reference/VERSION (staying up_to_date across CLI-only releases while detecting SKILL.md hash drift and pinning uvx hooks via get_cli_release_semver).
+    expect:
+      frontmatter:
+        rule: assets/plugin_reference/VERSION
+        test_binding: tests/test_plugin.py::test_installer_truthful_version_comments_symlinks_and_uninstall
+vcs:
+  branch: main
+  base_commit: e4f4d44c58b4a350d7d98416cceedbe0d78feadb
+---
+= SpecDelta: Decouple Bundled Agent Plugin Version from CLI Engine Releases
+:toc: left
+
+== Problem Statement
+Previously, `get_bundled_plugin_version()` derived the bundled Agent Skills plugin version directly from `eidos.__version__`. Every CLI-only release (such as `v0.30.1`) therefore incremented `bundled_version` even when nothing under `assets/plugin_reference/` changed, forcing a manual `.agents/.eidos-manifest.json` release-bump commit in this repository and triggering blocking `OUTDATED` failures in `eidos doctor` across every downstream repository after `uv tool upgrade eidos-ai`.
+
+== Proposed Specification Changes
+* Introduce `assets/plugin_reference/VERSION` (plain-text SemVer 2.0.0 starting at `1.0.0`, respecting `DEC-PLUGIN-SKILLS-ONLY-ALL-TARGETS` without introducing a plugin bundle manifest) as the single source of truth for the bundled Agent Skills version.
+* Record `DEC-PLUGIN-DECOUPLED-VERSION` on `CNT-EIDOS-PLUGIN`.
+* Split version resolution in `CMP-PLUGIN-INSTALLER` (`src/eidos/plugin/version.py`):
+  - `get_bundled_plugin_version(bundle_dir: Path | None = None) -> str` reads `assets/plugin_reference/VERSION` (`PLUGIN_VERSION_FILENAME`), falling back safely to `get_cli_release_semver()` only when `VERSION` is absent or unreadable.
+  - `get_cli_release_semver() -> str` retains the PEP 440 / post-tag `.devN` -> base release SemVer resolution for `eidos.__version__`.
+* Update `CMP-HOOK-MANAGER` (`src/eidos/plugin/hook_adapters.py`) so `uvx` hook pinning (`uvx --from eidos-ai==<ver> eidos hook`) calls `get_cli_release_semver()` rather than `get_bundled_plugin_version()`.
+* Update `CMP-PLUGIN-VALIDATOR` (`src/eidos/plugin/validator.py`) so `validate_plugin_package()` reads and validates `<plugin_dir>/VERSION` directly when present (catching invalid SemVer in `VERSION` during `eidos plugin validate`).
+* Bump `CAP-AGENT-ADAPTER` to `1.23.0` and extend `INV-PLUGIN-INSTALL-TRUTHFULNESS`.
+
+== Implementation Plan
+1. **Bundled Version Asset**: Create `assets/plugin_reference/VERSION` containing `1.0.0` (owned by `CNT-EIDOS-PLUGIN`).
+2. **Decoupled Version Resolution**: Split `get_cli_release_semver()` and `get_bundled_plugin_version()` in `src/eidos/plugin/version.py` (`CMP-PLUGIN-INSTALLER`), update `_resolve_hook_command()` in `src/eidos/plugin/hook_adapters.py` (`CMP-HOOK-MANAGER`), and validate `<plugin_dir>/VERSION` in `src/eidos/plugin/validator.py` (`CMP-PLUGIN-VALIDATOR`).
+3. **CLI Label & Docs**: Update the `Bundled Version` label in `src/eidos/cli/plugin_commands.py` (body-only; no spec mutation) and refresh sample outputs in `docs/guides/agent-plugin.md` (body-only; no spec mutation).
+4. **Tests & Invariant Binding**: Update `tests/test_plugin.py` (`test_normalize_to_semver_and_bundled_version_sync`, `test_installer_truthful_version_comments_symlinks_and_uninstall`, and `uvx` hook pinning tests) to cover `INV-PLUGIN-INSTALL-TRUTHFULNESS` and `>90%` per-file / diff-line coverage (`POL-STATEMENT-TEST-COVERAGE`).
+5. **Living Spec Co-Evolution & Plugin Sync**: Update `CNT-EIDOS-PLUGIN`, `CMP-PLUGIN-INSTALLER`, `CMP-PLUGIN-VALIDATOR`, `CMP-HOOK-MANAGER`, `CAP-AGENT-ADAPTER`, and `MEM-RUN-EIDOS-PLUGIN-UPDATE-AFTER-6E84`, run `uv run eidos plugin update antigravity` to stamp `.agents/.eidos-manifest.json` to `1.0.0`, and verify via `eidos delta verify`, `eidos delta apply`, and `eidos drift --uncommitted --json`.

@@ -20,7 +20,7 @@ def _resolve_hook_command(launcher: str, bundled_version: str | None = None) -> 
     if not raw_ver:
         import importlib
 
-        raw_ver = importlib.import_module("eidos.plugin.version").get_bundled_plugin_version()
+        raw_ver = importlib.import_module("eidos.plugin.version").get_cli_release_semver()
     m = re.match(r"^(\d+\.\d+\.\d+)", str(raw_ver or "0.0.0").strip())
     ver = m.group(1) if m else "0.0.0"
     return f"uvx --from eidos-ai=={ver} eidos hook"

@@ -174,7 +174,7 @@ def plugin_version(
     table.add_column("Property", style="bold cyan")
     table.add_column("Value", style="white")
 
-    table.add_row("Bundled Version", f"[bold green]{status_info['bundled_version']}[/bold green] (eidos engine)")
+    table.add_row("Bundled Version", f"[bold green]{status_info['bundled_version']}[/bold green] (bundled plugin)")
 
     inst_ver = status_info["installed_version"]
     if inst_ver:

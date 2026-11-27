@@ -4,21 +4,21 @@ id: MEM-RUN-EIDOS-PLUGIN-UPDATE-AFTER-6E84
 title: Sync installed Agent Skills via plugin update after template edits
 category: feedback
 status: active
-summary: "Invoke 'eidos plugin update antigravity' whenever skill or block templates change so .agents/skills/ and AGENTS.md refresh."
+summary: "Bump assets/plugin_reference/VERSION and run 'eidos plugin update antigravity' whenever skill, hook, or block templates change (CLI-only releases do not bump plugin version)."
 targets:
   entities:
     - CNT-EIDOS-PLUGIN
   paths:
     - assets/plugin_reference/**
 verified_at: "2026-11-27"
-verified_commit: 218cfb91a839bfd736a15d531a151117d02d3f96
+verified_commit: e4f4d44c58b4a350d7d98416cceedbe0d78feadb
 ---
 = Memory: Sync installed Agent Skills via plugin update after template edits
 :toc: left
 
 == Guidance
 
-After modifying assets/plugin_reference/skills/*/SKILL.md or assets/plugin_reference/agents-md/block.md, run uv run eidos plugin update antigravity to refresh .agents/skills/, .agents/.eidos-manifest.json, and root AGENTS.md, then run uv run pytest tests/test_plugin.py -k test_bundled_skill_size_ceilings.
+After modifying assets/plugin_reference/skills/*/SKILL.md, assets/plugin_reference/hooks.json, or assets/plugin_reference/agents-md/block.md, bump assets/plugin_reference/VERSION (SemVer 2.0.0) and run uv run eidos plugin update antigravity to refresh .agents/skills/, .agents/.eidos-manifest.json, and root AGENTS.md, then run uv run pytest tests/test_plugin.py -k test_bundled_skill_size_ceilings. CLI-only releases do not require bumping assets/plugin_reference/VERSION or .agents/.eidos-manifest.json.
 
 == Why
 

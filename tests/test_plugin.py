@@ -221,11 +221,13 @@ def test_plugin_install_to_claude_plugin(tmp_path):
     assert stop_hooks[0] == {"hooks": [{"type": "command", "command": "eidos hook", "timeout": 30}]}
 
     # Re-installing with launcher="uvx" and hooks=True updates the Stop hook in-place without duplicating entries
+    from eidos.plugin.version import get_cli_release_semver
+
     install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=tmp_path, force=True, launcher="uvx", hooks=True)
     settings_uvx = orjson.loads(settings_file.read_bytes())
     stop_hooks_uvx = settings_uvx.get("hooks", {}).get("Stop", [])
     assert len(stop_hooks_uvx) == 1
-    assert stop_hooks_uvx[0]["hooks"][0]["command"] == f"uvx --from eidos-ai=={get_bundled_plugin_version()} eidos hook"
+    assert stop_hooks_uvx[0]["hooks"][0]["command"] == f"uvx --from eidos-ai=={get_cli_release_semver()} eidos hook"
 
     # Verify get_installed_plugin_version detects Claude installation via .claude/.eidos-manifest.json
     installed_ver = get_installed_plugin_version(project_dir=tmp_path)
@@ -329,13 +331,15 @@ def test_plugin_install_and_uninstall_cursor(tmp_path):
     }
 
     # Coexistence with user hook in .cursor/hooks.json and uvx launcher upgrade
+    from eidos.plugin.version import get_cli_release_semver
+
     cursor_hooks["hooks"]["stop"].append({"command": "echo custom-cursor", "loop_limit": 2})
     cursor_hooks_file.write_bytes(orjson.dumps(cursor_hooks))
     install_plugin(target=PluginInstallTarget.CURSOR, project_dir=tmp_path, force=True, launcher="uvx", hooks=True)
     cursor_uvx = orjson.loads(cursor_hooks_file.read_bytes())
     assert len(cursor_uvx["hooks"]["stop"]) == 2
     assert cursor_uvx["hooks"]["stop"][0] == {
-        "command": f"uvx --from eidos-ai=={get_bundled_plugin_version()} eidos hook",
+        "command": f"uvx --from eidos-ai=={get_cli_release_semver()} eidos hook",
         "loop_limit": 1,
     }
     assert cursor_uvx["hooks"]["stop"][1] == {"command": "echo custom-cursor", "loop_limit": 2}
@@ -1812,10 +1816,11 @@ def test_plugin_install_refuses_symlink_destination(tmp_path):
 
 
 def test_plugin_uvx_hook_command_version_pinning(tmp_path):
-    """Verify uvx hook command writing pins eidos-ai package version and upgrades older pinned versions (DLT-2026-046, DLT-2026-130)."""
+    """Verify uvx hook command writing pins eidos-ai CLI package version and upgrades older pinned versions (DLT-2026-046, DLT-2026-130, DLT-2026-183)."""
     from eidos.plugin.installer import _update_project_antigravity_hooks
+    from eidos.plugin.version import get_cli_release_semver
 
-    bundled_ver = get_bundled_plugin_version()
+    cli_ver = get_cli_release_semver()
 
     # 1. Direct function update (replaces older pinned uvx while preserving user hooks)
     hooks_file = tmp_path / "hooks.json"
@@ -1836,7 +1841,7 @@ def test_plugin_uvx_hook_command_version_pinning(tmp_path):
     success = _update_project_antigravity_hooks(hooks_file, launcher="uvx")
     assert success
     rewritten = hooks_file.read_text(encoding="utf-8")
-    assert f'"command": "uvx --from eidos-ai=={bundled_ver} eidos hook"' in rewritten
+    assert f'"command": "uvx --from eidos-ai=={cli_ver} eidos hook"' in rewritten
     assert "eidos-ai==0.1.0" not in rewritten
     assert "user-custom-hook" in rewritten
 
@@ -1847,7 +1852,7 @@ def test_plugin_uvx_hook_command_version_pinning(tmp_path):
     installed_hooks = dest / ".agents" / "hooks.json"
     assert installed_hooks.exists()
     installed_text = installed_hooks.read_text(encoding="utf-8")
-    assert f"uvx --from eidos-ai=={bundled_ver} eidos hook" in installed_text
+    assert f"uvx --from eidos-ai=={cli_ver} eidos hook" in installed_text
     assert "uvx --from eidos-ai eidos hook" not in installed_text
 
 
@@ -2520,10 +2525,10 @@ def test_group_d1_d2_d3_regressions(tmp_path, monkeypatch):  # eidos:fixture
     assert find_workspace_root({"cwd": str(repo_ws)}) == repo_ws.resolve()
 
 
-def test_normalize_to_semver_and_bundled_version_sync(monkeypatch):
-    """Verify normalize_to_semver handles PEP 440 / v-prefixed strings and get_bundled_plugin_version stays in sync."""
+def test_normalize_to_semver_and_bundled_version_sync(tmp_path, monkeypatch):
+    """Verify normalize_to_semver / get_cli_release_semver handle PEP 440 strings and get_bundled_plugin_version reads assets/plugin_reference/VERSION."""
     import eidos
-    from eidos.plugin.version import normalize_to_semver
+    from eidos.plugin.version import _to_comparable_semver, get_cli_release_semver, normalize_to_semver
 
     assert normalize_to_semver("0.12.0") == "0.12.0"
     assert normalize_to_semver("v0.12.0") == "0.12.0"
@@ -2533,62 +2538,82 @@ def test_normalize_to_semver_and_bundled_version_sync(monkeypatch):
     assert normalize_to_semver("invalid") is None
     assert normalize_to_semver(None) is None  # type: ignore[arg-type]
 
-    # When eidos.__version__ is a clean SemVer release, get_bundled_plugin_version returns it
+    # When eidos.__version__ is a clean SemVer release, get_cli_release_semver returns it
     monkeypatch.setattr(eidos, "__version__", "99.1.0")
-    assert get_bundled_plugin_version() == "99.1.0"
+    assert get_cli_release_semver() == "99.1.0"
+    # Bundled plugin version stays decoupled from eidos.__version__ and reads assets/plugin_reference/VERSION
+    assert get_bundled_plugin_version() == "1.0.0"
 
     # PEP 440 post-tag .devN (e.g. hatch-vcs / git describe past v0.12.0) resolves back to base release 0.12.0
     monkeypatch.setattr(eidos, "__version__", "0.12.1.dev7")
-    assert get_bundled_plugin_version() == "0.12.0"
+    assert get_cli_release_semver() == "0.12.0"
 
     # PEP 440 post-tag .devN with local build metadata (including underscores) also resolves to base release
     monkeypatch.setattr(eidos, "__version__", "0.29.1.dev1+g1190a73")
-    assert get_bundled_plugin_version() == "0.29.0"
+    assert get_cli_release_semver() == "0.29.0"
 
     monkeypatch.setattr(eidos, "__version__", "v0.29.1.dev1")
-    assert get_bundled_plugin_version() == "0.29.0"
+    assert get_cli_release_semver() == "0.29.0"
 
     monkeypatch.setattr(eidos, "__version__", "0.29.1.dev1+g1234_dirty")
-    assert get_bundled_plugin_version() == "0.29.0"
+    assert get_cli_release_semver() == "0.29.0"
 
     # Pre-release tag (SemVer or PEP 440) + dev distance resolves back to the pre-release tag without fabricating final
     monkeypatch.setattr(eidos, "__version__", "0.24.0-rc.1.dev2")
-    assert get_bundled_plugin_version() == "0.24.0-rc.1"
+    assert get_cli_release_semver() == "0.24.0-rc.1"
 
     monkeypatch.setattr(eidos, "__version__", "0.29.0a1.dev2")
-    assert get_bundled_plugin_version() == "0.29.0-a.1"
+    assert get_cli_release_semver() == "0.29.0-a.1"
 
     monkeypatch.setattr(eidos, "__version__", "0.29.0rc1.dev2")
-    assert get_bundled_plugin_version() == "0.29.0-rc.1"
+    assert get_cli_release_semver() == "0.29.0-rc.1"
 
     monkeypatch.setattr(eidos, "__version__", "0.29.0b2.dev1+gabc")
-    assert get_bundled_plugin_version() == "0.29.0-b.2"
+    assert get_cli_release_semver() == "0.29.0-b.2"
 
     # Bare PEP 440 prerelease and valid SemVer prerelease preserve prerelease tag
     monkeypatch.setattr(eidos, "__version__", "0.29.0a1")
-    assert get_bundled_plugin_version() == "0.29.0-a.1"
+    assert get_cli_release_semver() == "0.29.0-a.1"
 
     monkeypatch.setattr(eidos, "__version__", "0.29.0-dev.1")
-    assert get_bundled_plugin_version() == "0.29.0-dev.1"
+    assert get_cli_release_semver() == "0.29.0-dev.1"
 
     # Patch==0 .devN cannot decrement patch and preserves pre-release SemVer instead of fabricating final release
     monkeypatch.setattr(eidos, "__version__", "0.12.0.dev3")
-    assert get_bundled_plugin_version() == "0.12.0-dev.3"
+    assert get_cli_release_semver() == "0.12.0-dev.3"
 
     monkeypatch.setattr(eidos, "__version__", "0.12.0.dev3+gabc123")
-    assert get_bundled_plugin_version() == "0.12.0-dev.3"
+    assert get_cli_release_semver() == "0.12.0-dev.3"
 
     # _to_comparable_semver preserves .devN even with +local build metadata
-    from eidos.plugin.version import _to_comparable_semver
-
     assert _to_comparable_semver("0.29.1.dev1+g1234") == "0.29.1-dev.1"
 
     # Post-release resolves cleanly to base release
     monkeypatch.setattr(eidos, "__version__", "0.12.0.post1")
-    assert get_bundled_plugin_version() == "0.12.0"
+    assert get_cli_release_semver() == "0.12.0"
 
     monkeypatch.setattr(eidos, "__version__", "not-a-version")
-    assert get_bundled_plugin_version() == "0.2.0"
+    assert get_cli_release_semver() == "0.2.0"
+
+    # Custom bundle_dir with valid VERSION, invalid VERSION, and missing VERSION / FileNotFoundError fallback
+    custom_bundle = tmp_path / "custom_bundle"
+    custom_bundle.mkdir()
+    (custom_bundle / "VERSION").write_text("2.3.4\n", encoding="utf-8")
+    assert get_bundled_plugin_version(bundle_dir=custom_bundle) == "2.3.4"
+
+    monkeypatch.setattr(eidos, "__version__", "0.31.0")
+    (custom_bundle / "VERSION").write_text("not-semver\n", encoding="utf-8")
+    assert get_bundled_plugin_version(bundle_dir=custom_bundle) == "0.31.0"
+
+    (custom_bundle / "VERSION").unlink()
+    assert get_bundled_plugin_version(bundle_dir=custom_bundle) == "0.31.0"
+
+    import eidos.core.workspace.assets as ws_assets
+
+    monkeypatch.setattr(
+        ws_assets, "get_assets_path", lambda _sub="": (_ for _ in ()).throw(FileNotFoundError("missing"))
+    )
+    assert get_bundled_plugin_version() == "0.31.0"
 
 
 def test_sdist_and_multi_root_plugin_reference_resolution(tmp_path, monkeypatch):
@@ -3206,27 +3231,54 @@ def test_installer_truthful_version_comments_symlinks_and_uninstall(tmp_path, mo
     assert (ws / ".agents" / ".eidos-manifest.json").read_bytes().endswith(b"\n")
     assert check_plugin_version_status(project_dir=ws)["status"] == "up_to_date"
 
-    # 1b. Editable PEP 440 post-tag .devN checkout stays 'up_to_date' when skills match base release,
-    #     and still detects on-disk SKILL.md divergence as 'modified' (pinned explicitly to 0.29.0 -> 0.29.1.dev4)
+    # 1b. Decoupled bundled plugin version (assets/plugin_reference/VERSION) stays 'up_to_date' across CLI-only
+    #     releases and editable .devN checkouts, still detects on-disk SKILL.md divergence as 'modified',
+    #     flags legacy 0.30.x manifests as 'outdated', and validates <plugin_dir>/VERSION strictly.
     dev_ws = tmp_path / "editable_dev_ws"
     dev_ws.mkdir()
     init_repository(dev_ws, title="Editable Dev WS")
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=dev_ws, check=True)
     with monkeypatch.context() as mp:
-        mp.setattr(eidos, "__version__", "0.29.0")
+        mp.setattr(eidos, "__version__", "0.30.1")
         install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=dev_ws, force=True)
-        mp.setattr(eidos, "__version__", "0.29.1.dev4")
-        assert get_bundled_plugin_version() == "0.29.0"
+        mp.setattr(eidos, "__version__", "0.31.0")
+        assert get_bundled_plugin_version() == "1.0.0"
         dev_status = check_plugin_version_status(project_dir=dev_ws)
         assert dev_status["status"] == "up_to_date"
-        assert dev_status["bundled_version"] == "0.29.0"
-        assert dev_status["installed_version"] == "0.29.0"
+        assert dev_status["bundled_version"] == "1.0.0"
+        assert dev_status["installed_version"] == "1.0.0"
+
+        mp.setattr(eidos, "__version__", "0.31.1.dev4")
+        dev_status_dev = check_plugin_version_status(project_dir=dev_ws)
+        assert dev_status_dev["status"] == "up_to_date"
 
         dev_skill = dev_ws / ".agents" / "skills" / "eidos" / "SKILL.md"
         dev_skill.write_text(dev_skill.read_text(encoding="utf-8") + "\n# dev drift\n", encoding="utf-8")
         dev_div = check_plugin_version_status(project_dir=dev_ws)
         assert dev_div["status"] == "modified"
         assert ".agents/skills/eidos/SKILL.md" in dev_div["skipped_files"]
+
+    # validate_plugin_package reads and validates <plugin_dir>/VERSION directly when present
+    bad_ver_bundle = tmp_path / "bad_ver_bundle"
+    (bad_ver_bundle / "skills" / "demo").mkdir(parents=True)
+    (bad_ver_bundle / "skills" / "demo" / "SKILL.md").write_text(
+        "---\nname: demo\ndescription: Demo skill.\n---\nBody\n",
+        encoding="utf-8",
+    )
+    (bad_ver_bundle / "VERSION").write_text("not-semver\n", encoding="utf-8")
+    bad_ver_report = validate_plugin_package(bad_ver_bundle)
+    assert not bad_ver_report.is_valid
+    assert bad_ver_report.plugin_version == "not-semver"
+    assert any("Semantic Version" in e for e in bad_ver_report.errors)
+
+    override_report = validate_plugin_package(bad_ver_bundle, version="2.0.0")
+    assert override_report.is_valid
+    assert override_report.plugin_version == "2.0.0"
+
+    (bad_ver_bundle / "VERSION").write_bytes(b"\xff\xfe\x00")
+    utf8_err_report = validate_plugin_package(bad_ver_bundle)
+    assert not utf8_err_report.is_valid
+    assert any("Error reading plugin version file" in e for e in utf8_err_report.errors)
 
     skill_md = ws / ".agents" / "skills" / "eidos" / "SKILL.md"
     skill_md.write_text(skill_md.read_text(encoding="utf-8") + "\n# Local developer customization\n", encoding="utf-8")

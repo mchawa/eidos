@@ -496,7 +496,7 @@ Output:
 ```text
 ╭──────────────────────── Eidos Agent Skills Package ─────────────────────────╮
 │ Package Identifier:  eidos-agent-skills                                     │
-│            Version:  0.30.1                                                 │
+│            Version:  1.0.0                                                  │
 │      Specification:  agentskills.io                                         │
 │             Skills:  eidos, eidos-memory, eidos-ops, eidos-plan, eidos-spec │
 │    Lifecycle Hooks:  eidos-drift-gate                                       │
@@ -505,7 +505,7 @@ Output:
 
 ### Inspect Version Status
 
-Compare the currently installed skills against the version bundled with the Eidos engine:
+Compare the currently installed skills against the decoupled Agent Skills bundle version (`assets/plugin_reference/VERSION`, which only increments when bundled skills, hooks, or the `AGENTS.md` template change — independent of CLI-only releases):
 
 ```bash
 eidos plugin version
@@ -513,7 +513,7 @@ eidos plugin version
 
 ### Upgrade Installed Skills
 
-When upgrading `eidos-ai`, update the project's installed skills and hooks in-place:
+When the bundled plugin version advances, update the project's installed skills and hooks in-place:
 
 ```bash
 eidos plugin update all
@@ -535,7 +535,7 @@ Output:
 ┃ Property          ┃ Value                                                  ┃
 ┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
 │ Package Name      │ eidos-agent-skills                                     │
-│ Package Version   │ 0.30.1                                                 │
+│ Package Version   │ 1.0.0                                                  │
 │ Overall Status    │ CONFORMANT                                             │
 │ Discovered Skills │ eidos, eidos-memory, eidos-ops, eidos-plan, eidos-spec │
 │ Lifecycle Hooks   │ eidos-drift-gate                                       │

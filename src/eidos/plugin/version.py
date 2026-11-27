@@ -13,6 +13,7 @@ import eidos
 from eidos import resolve_runtime_version as resolve_runtime_version
 
 PYPI_PACKAGE_JSON_URL = "https://pypi.org/pypi/eidos-ai/json"
+PLUGIN_VERSION_FILENAME = "VERSION"
 _DEFAULT_URLOPEN = urllib.request.urlopen
 
 # Official SemVer 2.0.0 Regular Expression (RFC 3986 / semver.org)
@@ -142,14 +143,13 @@ def _to_comparable_semver(version: str) -> str | None:
     return normalize_to_semver(cleaned)
 
 
-def get_bundled_plugin_version() -> str:
-    """Return the bundled plugin SemVer synchronized with the Eidos engine release version.
+def get_cli_release_semver() -> str:
+    """Return the normalized SemVer 2.0.0 string for the running Eidos CLI engine.
 
     PEP 440 post-tag development versions produced by Git describe / hatch-vcs
     (e.g. ``0.29.1.dev1`` after tag ``v0.29.0``) resolve back to their base
     release SemVer (``0.29.0``) so editable dev checkouts do not fabricate
-    unreleased final versions or trigger false ``outdated`` diagnostics while
-    still verifying exact on-disk ``SKILL.md`` SHA-256 parity.
+    unreleased final versions when pinning ``uvx --from eidos-ai==<ver>``.
     """
     pkg_raw = getattr(eidos, "__version__", "0.2.0")
     if isinstance(pkg_raw, str):
@@ -178,6 +178,28 @@ def get_bundled_plugin_version() -> str:
         if normalized_pkg:
             return normalized_pkg
     return "0.2.0"
+
+
+def get_bundled_plugin_version(bundle_dir: Path | None = None) -> str:
+    """Return the decoupled bundled Agent Plugin SemVer from ``assets/plugin_reference/VERSION``.
+
+    The Agent Skills bundle is versioned independently of ``eidos.__version__``
+    so CLI-only releases do not force unnecessary ``.eidos-manifest.json``
+    updates across repositories. Falls back to ``get_cli_release_semver()``
+    only when ``VERSION`` is absent or unreadable.
+    """
+    from eidos.core.workspace.assets import get_assets_path
+
+    try:
+        root = bundle_dir if bundle_dir is not None else get_assets_path("plugin_reference")
+        version_file = root / PLUGIN_VERSION_FILENAME
+        if version_file.is_file():
+            raw = version_file.read_text(encoding="utf-8").strip()
+            if is_valid_semver(raw):
+                return raw
+    except (FileNotFoundError, OSError, UnicodeDecodeError):
+        pass
+    return get_cli_release_semver()
 
 
 def _resolve_installed_plugin_manifest(

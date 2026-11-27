@@ -8,7 +8,7 @@ from typing import Any
 import orjson
 
 from eidos.core.spec.parser import safe_load_yaml
-from eidos.plugin.version import get_bundled_plugin_version, is_valid_semver
+from eidos.plugin.version import PLUGIN_VERSION_FILENAME, get_bundled_plugin_version, is_valid_semver
 
 PLUGIN_NAME_PATTERN = re.compile(r"^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")
 
@@ -49,7 +49,17 @@ def validate_plugin_package(plugin_dir: Path, version: str | None = None) -> Plu
         return report
 
     report.plugin_name = "eidos-agent-skills"
-    resolved_version = version if version is not None else get_bundled_plugin_version()
+    version_file = plugin_dir / PLUGIN_VERSION_FILENAME
+    if version is not None:
+        resolved_version = version
+    elif version_file.is_file():
+        try:
+            resolved_version = version_file.read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeDecodeError) as exc:
+            report.add_error(f"Error reading plugin version file '{version_file}': {exc}")
+            return report
+    else:
+        resolved_version = get_bundled_plugin_version()
     report.plugin_version = resolved_version
     if not is_valid_semver(resolved_version):
         report.add_error(

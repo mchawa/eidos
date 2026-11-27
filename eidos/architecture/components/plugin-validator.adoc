@@ -13,7 +13,7 @@ source_path: src/eidos/plugin/validator.py
 Validates Eidos Agent Skills packages (`skills/*/SKILL.md` and `hooks.json`) against the `agentskills.io` specification and SemVer 2.0.0 versioning rules (`INV-PLUGIN-SCHEMA-CONFORMANCE`).
 
 == Key Responsibilities & Collaborators
-* **Skill Frontmatter & Naming Parity Validation**: Extracts line-anchored YAML frontmatter from `SKILL.md` files (`safe_load_yaml`), verifies required `name` and `description` attributes, validates identifier format (`PLUGIN_NAME_PATTERN`), and enforces skill directory naming parity.
+* **Skill Frontmatter, Bundle `VERSION`, & Naming Parity Validation**: Extracts line-anchored YAML frontmatter from `SKILL.md` files (`safe_load_yaml`), verifies required `name` and `description` attributes, validates identifier format (`PLUGIN_NAME_PATTERN`), enforces skill directory naming parity, and validates `<plugin_dir>/VERSION` directly in `validate_plugin_package` when present (falling back to `get_bundled_plugin_version()` when absent).
 
 == Public Surface
 * `validate_plugin_package(plugin_dir: Path, version: str | None = None) -> PluginValidationReport`
