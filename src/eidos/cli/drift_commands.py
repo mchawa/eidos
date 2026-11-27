@@ -1,16 +1,298 @@
 """Spec-to-code drift detection command (`eidos drift`)."""
 
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.markup import escape
 from rich.table import Table
 
-from eidos.cli._shared import PANEL_GOVERNANCE, console, resolve_cli_eidos_dir, resolve_param_from_config
+from eidos.cli._shared import (
+    PANEL_GOVERNANCE,
+    console,
+    discover_workspace_eidos_dirs,
+    format_rel_eidos_paths,
+    has_eidos_markers,
+    is_explicit_cli_path,
+    resolve_cli_eidos_dir,
+    resolve_git_diff_workspace_eidos_dirs,
+    resolve_param_from_config,
+)
 from eidos.core.workspace.config import load_repo_config_with_errors
 from eidos.core.workspace.project import find_git_root, find_repo_root, resolve_spec_and_repo_roots
 from eidos.vcs import GitResolutionError, detect_drift
 from eidos.vcs.snapshot import _load_head_commit_config
+
+
+def _build_drift_json_payload(result: Any) -> dict[str, Any]:
+    """Build the canonical JSON dictionary for a single project's drift report."""
+    return {
+        "is_clean": result.is_clean,
+        "drift_detected": result.drift_detected,
+        "workflow_mode": result.workflow_mode,
+        "code_files": result.classification.code_files,
+        "structural_code_files": result.structural_code_files,
+        "body_only_code_files": result.body_only_code_files,
+        "spec_files": result.classification.spec_files,
+        "delta_files": result.classification.delta_files,
+        "test_files": result.classification.test_files,
+        "touched_components": result.touched_components,
+        "unmapped_code_files": result.unmapped_code_files,
+        "valid_specs": result.validation_report.valid_docs,
+        "total_specs": result.validation_report.total_docs,
+        "validation_errors": result.validation_errors,
+        "validation_warnings": result.validation_warnings,
+        "uncovered_invariants": [inv.invariant_id for inv in result.uncovered_invariants],
+        "orphan_invariants": [{"invariant_id": oid, "location": loc} for oid, loc in result.orphan_invariants],
+        "remediation_suggestions": result.remediation_suggestions,
+        "trivially_covered_files": result.trivially_covered_files,
+        "boundary_violations": result.boundary_violations,
+        "ratchet_shrink_candidates": result.ratchet_shrink_candidates,
+        "ready_to_apply_deltas": result.ready_to_apply_deltas,
+        "untouched_consumers": result.untouched_consumers,
+        "affected_memories": result.affected_memories,
+    }
+
+
+def _evaluate_project_drift(
+    eidos_dir: Path,
+    *,
+    base: str | None,
+    head: str,
+    uncommitted: bool,
+    warn_only: bool,
+    fail_on_warnings: bool,
+    strict: bool,
+) -> tuple[Any, bool, bool, Path, Path]:
+    """Evaluate drift for one eidos_dir and return (result, eff_warn_only, eff_fail_on_warnings, repo_root, resolved_eidos)."""
+    resolved_eidos = eidos_dir.resolve()
+    if resolved_eidos.name == "eidos":
+        repo_root = resolved_eidos.parent
+    elif resolved_eidos.exists():
+        _, repo_root = resolve_spec_and_repo_roots(resolved_eidos)
+    else:
+        repo_root = find_repo_root(resolved_eidos.parent if resolved_eidos.parent.exists() else None)
+
+    git_root = find_git_root(repo_root)
+    eval_cfg_errors: list[str] = []
+    if uncommitted or git_root is None:
+        eval_cfg, eval_cfg_errors = load_repo_config_with_errors(eidos_dir=resolved_eidos, repo_root=repo_root)
+    else:
+        try:
+            eidos_rel_prefix = (
+                str(resolved_eidos.relative_to(repo_root.resolve())).replace("\\", "/").strip("/") or "eidos"
+            )
+        except ValueError:
+            eidos_rel_prefix = resolved_eidos.name or "eidos"
+        eval_cfg = _load_head_commit_config(git_root, repo_root.resolve(), eidos_rel_prefix, head)
+
+    cli_strict = resolve_param_from_config("strict", strict, None)
+    cfg_warn_only = False if eval_cfg_errors else eval_cfg.drift.warn_only
+    eff_warn_only = bool(resolve_param_from_config("warn_only", warn_only, cfg_warn_only))
+    eff_fail_on_warnings = bool(
+        resolve_param_from_config("fail_on_warnings", fail_on_warnings, eval_cfg.drift.fail_on_warnings)
+    )
+
+    result = detect_drift(
+        repo_root=repo_root,
+        base_ref=base,
+        head_ref=head,
+        eidos_dir=eidos_dir,
+        uncommitted=uncommitted,
+        strict=cli_strict,
+    )
+
+    # Re-resolve warn_only / fail_on_warnings against the final evaluated config (handles fallback to uncommitted mode
+    # and forces fail-closed exit code 1 whenever <eidos_dir>/eidos.yaml itself failed validation on eval_root).
+    final_cfg = result.eval_config if result.eval_config is not None else eval_cfg
+    has_final_cfg_errors = bool(result.eval_config_errors) or any(
+        k == "eidos.yaml" or k.endswith("/eidos.yaml") for k in result.validation_report.schema_errors
+    )
+    final_cfg_warn_only = False if has_final_cfg_errors else final_cfg.drift.warn_only
+    eff_warn_only = bool(resolve_param_from_config("warn_only", warn_only, final_cfg_warn_only))
+    eff_fail_on_warnings = bool(
+        resolve_param_from_config("fail_on_warnings", fail_on_warnings, final_cfg.drift.fail_on_warnings)
+    )
+    return result, eff_warn_only, eff_fail_on_warnings, repo_root, resolved_eidos
+
+
+def _render_rich_drift_report(result: Any, eff_fail_on_warnings: bool) -> None:
+    """Render Rich terminal summary for a single project's drift report."""
+    mode_badge = (
+        "[bold cyan]Planned Mode (SpecDelta)[/bold cyan]"
+        if result.workflow_mode == "planned"
+        else "[bold green]Direct Mode (Co-Evolution)[/bold green]"
+    )
+    console.print(f"[bold cyan]Eidos Spec-to-Code Drift Detection[/bold cyan] ({mode_badge})\n")
+
+    table = Table(title="Spec-Code Synchronization Summary", show_header=True)
+    table.add_column("Metric", style="bold cyan")
+    table.add_column("Count", justify="right")
+    table.add_column("Status", justify="center")
+
+    code_count = len(result.classification.code_files)
+    struct_count = len(result.structural_code_files)
+    body_count = len(result.body_only_code_files)
+    spec_count = len(result.classification.spec_files)
+    delta_count = len(result.classification.delta_files)
+
+    code_status = (
+        "[bold yellow]Needs Spec[/bold yellow]"
+        if (result.drift_detected and code_count > 0)
+        else "[bold green]Synced[/bold green]"
+    )
+    spec_status = "[bold green]Updated[/bold green]" if spec_count else "[dim]Unchanged[/dim]"
+    delta_status = "[bold cyan]Active[/bold cyan]" if delta_count else "[dim]None (Direct)[/dim]"
+
+    code_count_str = f"{code_count} ({struct_count} structural, {body_count} body-only)" if code_count > 0 else "0"
+    table.add_row("Modified Code Files", code_count_str, code_status)
+    table.add_row("Modified Living Specs", str(spec_count), spec_status)
+    table.add_row("Modified SpecDeltas", str(delta_count), delta_status)
+    table.add_row(
+        "Modified Test Files",
+        str(len(result.classification.test_files)),
+        "[bold green]✓[/bold green]" if result.classification.test_files else "[dim]—[/dim]",
+    )
+
+    val_status = (
+        "[bold green]100% Pass[/bold green]" if result.validation_report.is_clean else "[bold red]FAIL[/bold red]"
+    )
+    table.add_row(
+        "Living Specs Validated",
+        f"{result.validation_report.valid_docs}/{result.validation_report.total_docs}",
+        val_status,
+    )
+
+    console.print(table)
+
+    if result.touched_components:
+        console.print(f"\n[bold blue]Impacted Components:[/bold blue] {', '.join(result.touched_components)}")
+
+    has_non_code_drift = bool(result.uncovered_invariants or result.orphan_invariants)
+    if result.drift_detected or has_non_code_drift:
+        if result.drift_detected and code_count > 0:
+            console.print("\n[bold yellow]⚠️  SPEC-TO-CODE DRIFT DETECTED:[/bold yellow]")
+        elif result.drift_detected:
+            console.print("\n[bold yellow]⚠️  NON-CODE SPECIFICATION DRIFT DETECTED:[/bold yellow]")
+        else:
+            console.print("\n[bold red]✗ INVARIANT TRACEABILITY DRIFT DETECTED:[/bold red]")
+        for rem in result.remediation_suggestions:
+            console.print(f"  [yellow]•[/yellow] {rem}")
+        console.print(
+            "\n[dim]Tip: Update the impacted living specifications in eidos/ or create a SpecDelta via [bold green]eidos delta create[/bold green].[/dim]"
+        )
+
+    if not result.validation_report.is_clean:
+        if result.validation_report.schema_errors:
+            console.print("\n[bold red]✗ Specification Schema Errors:[/bold red]")
+            for p, errs in result.validation_report.schema_errors.items():
+                console.print(f"  [red]• {p}:[/red] {'; '.join(errs)}")
+        if result.validation_report.broken_references:
+            console.print("\n[bold red]✗ Broken Cross-References:[/bold red]")
+            for ref in result.validation_report.broken_references:
+                console.print(f"  [red]•[/red] {ref}")
+
+    if result.boundary_violations:
+        console.print("\n[bold red]✗ Architectural Import Boundary Violations:[/bold red]")
+        for bv in result.boundary_violations:
+            ev_str = f" [{'; '.join(bv.get('evidence', [])[:3])}]" if bv.get("evidence") else ""
+            console.print(
+                f"  [red]• {bv['source']} -> {bv['target']}[/red] ({bv['rule']}): "
+                f"observed {bv['observed_imports']} coupling(s), max allowed {bv['max_imports']}{ev_str}"
+            )
+
+    if result.ratchet_shrink_candidates:
+        console.print("\n[bold cyan]→ Ratchet Tightening Opportunities (Advisory):[/bold cyan]")
+        for sc in result.ratchet_shrink_candidates:
+            console.print(
+                f"  [cyan]• {sc['source']} -> {sc['target']}[/cyan] ({sc.get('spec_path', '')}): "
+                f"observed {sc['observed_imports']} < max_imports {sc['max_imports']} ({sc['action']})"
+            )
+
+    if result.validation_warnings:
+        console.print("\n[bold yellow]⚠ Advisory Validation Warnings:[/bold yellow]")
+        for warn in result.validation_warnings:
+            console.print(f"  [yellow]•[/yellow] {warn}")
+
+    if result.ready_to_apply_deltas:
+        console.print("\n[bold yellow]⚠ Open SpecDeltas Ready to Apply (Advisory):[/bold yellow]")
+        for rtd in result.ready_to_apply_deltas:
+            console.print(
+                f"  [yellow]• {rtd['id']}[/yellow] ({rtd['path']}, status={rtd['status']}): "
+                f"{rtd['verified_mutations']}/{rtd['total_mutations']} mutations verified — "
+                f"run [bold green]eidos delta apply {rtd['id']}[/bold green]"
+            )
+
+    if result.untouched_consumers:
+        console.print("\n[bold cyan]→ Untouched Sibling Consumers to Review (Advisory):[/bold cyan]")
+        for uc in result.untouched_consumers[:15]:
+            owner_part = f" ({escape(uc['owner'])})" if uc.get("owner") else ""
+            via_part = f" via {escape(uc['via'])}" if uc.get("via") else ""
+            syms = uc.get("symbols") or []
+            if syms:
+                sym_preview = ", ".join(syms[:5]) + (f" (+{len(syms) - 5})" if len(syms) > 5 else "")
+                sym_part = f" — {escape(sym_preview)}"
+            else:
+                sym_part = ""
+            kinds_badge = escape(f"[{', '.join(uc.get('change_kinds') or [])}]")
+            console.print(
+                f"  [cyan]• {escape(uc['file'])}:{uc['line']}[/cyan]{owner_part} -> "
+                f"{escape(uc['target_file'])}{via_part} {kinds_badge}{sym_part}"
+            )
+        if len(result.untouched_consumers) > 15:
+            console.print(
+                f"  [dim]... and {len(result.untouched_consumers) - 15} more (use --json for full list)[/dim]"
+            )
+
+    if result.affected_memories:
+        console.print("\n[bold cyan]→ Team Operational Memories Affected by Diff (Advisory):[/bold cyan]")
+        for mem in result.affected_memories[:10]:
+            mfresh = str(mem.get("freshness") or "fresh")
+            if mfresh in ("stale", "expired"):
+                fresh_badge = f"[yellow]{escape(mfresh)}[/yellow]"
+            elif mfresh == "unverifiable":
+                fresh_badge = f"[dim]{escape(mfresh)}[/dim]"
+            else:
+                fresh_badge = f"[green]{escape(mfresh)}[/green]"
+            mid = escape(str(mem.get("id") or ""))
+            msum = escape(str(mem.get("summary") or mem.get("title") or ""))
+            console.print(f"  [cyan]• {mid}[/cyan] ({fresh_badge}): {msum}")
+            if mfresh != "fresh":
+                mreason = str(mem.get("freshness_reason") or "").strip()
+                reason_prefix = f"{escape(mreason)} — " if mreason else ""
+                console.print(
+                    f"    [dim]{reason_prefix}verify via [bold]eidos memory verify {mid}[/bold] "
+                    f"or retire via [bold]eidos memory archive {mid}[/bold][/dim]"
+                )
+        if len(result.affected_memories) > 10:
+            console.print(f"  [dim]... and {len(result.affected_memories) - 10} more (use --json for full list)[/dim]")
+
+    has_advisory_warnings = bool(result.validation_warnings or result.ready_to_apply_deltas)
+    if result.is_clean and eff_fail_on_warnings and has_advisory_warnings:
+        parts: list[str] = []
+        if result.validation_warnings:
+            parts.append(f"{len(result.validation_warnings)} advisory validation warning(s)")
+        if result.ready_to_apply_deltas:
+            parts.append(f"{len(result.ready_to_apply_deltas)} ready-to-apply open SpecDelta(s)")
+        console.print(
+            f"\n[bold red]✗ Verification Failed (--fail-on-warnings):[/bold red] {' and '.join(parts)} detected."
+        )
+    elif result.is_clean:
+        console.print(
+            "\n[bold green]✓ Verification Passed![/bold green] Living specifications and code are synchronized."
+        )
+
+
+def _prefix_project_item(proj_rel: str, item: str) -> str:
+    if proj_rel in ("", "."):
+        return item
+    return f"[{proj_rel}] {item}"
+
+
+def _prefix_project_path(proj_rel: str, rel_path: str) -> str:
+    if proj_rel in ("", "."):
+        return rel_path
+    return f"{proj_rel}/{rel_path}"
 
 
 def drift_cmd(
@@ -59,45 +341,172 @@ def drift_cmd(
     ),
 ):
     """Detect spec-to-code drift, schema validity, and invariant test coverage."""
-    eidos_dir = resolve_cli_eidos_dir(path)
-    resolved_eidos = eidos_dir.resolve()
-    if resolved_eidos.name == "eidos":
-        repo_root = resolved_eidos.parent
-    elif resolved_eidos.exists():
-        _, repo_root = resolve_spec_and_repo_roots(resolved_eidos)
-    else:
-        repo_root = find_repo_root(resolved_eidos.parent if resolved_eidos.parent.exists() else None)
+    cwd_res = Path.cwd().resolve()
+    target_eidos_dirs: list[Path] | None = None
+    if not is_explicit_cli_path(path):
+        all_projects = discover_workspace_eidos_dirs(cwd_res)
+        root_eidos = (cwd_res / "eidos").resolve()
+        has_root = has_eidos_markers(root_eidos)
+        nested_projects = [p for p in all_projects if p != root_eidos]
+        if nested_projects:
+            try:
+                dirty_projects = resolve_git_diff_workspace_eidos_dirs(
+                    cwd_res,
+                    base_ref=base,
+                    head_ref=head,
+                    uncommitted=uncommitted,
+                    eidos_dirs=all_projects,
+                )
+            except GitResolutionError as err:
+                eff_warn_only = bool(resolve_param_from_config("warn_only", warn_only, False))
+                if json_output:
+                    console.print_json(data={"error": str(err), "is_clean": False})
+                else:
+                    console.print(f"[bold red]Git Resolution Error:[/bold red] {err}")
+                if not eff_warn_only:
+                    raise typer.Exit(code=1) from err
+                return
+            if dirty_projects:
+                target_eidos_dirs = dirty_projects
+            elif has_root:
+                target_eidos_dirs = [root_eidos]
+            else:
+                target_eidos_dirs = all_projects
 
-    git_root = find_git_root(repo_root)
-    eval_cfg_errors: list[str] = []
-    if uncommitted or git_root is None:
-        eval_cfg, eval_cfg_errors = load_repo_config_with_errors(eidos_dir=resolved_eidos, repo_root=repo_root)
-    else:
-        try:
-            eidos_rel_prefix = (
-                str(resolved_eidos.relative_to(repo_root.resolve())).replace("\\", "/").strip("/") or "eidos"
-            )
-        except ValueError:
-            eidos_rel_prefix = resolved_eidos.name or "eidos"
-        eval_cfg = _load_head_commit_config(git_root, repo_root.resolve(), eidos_rel_prefix, head)
+    if target_eidos_dirs is not None and len(target_eidos_dirs) > 1:
+        project_entries: list[dict[str, Any]] = []
+        any_should_fail = False
+        for ed in target_eidos_dirs:
+            rel_ed = format_rel_eidos_paths([ed], cwd_res)[0]
+            try:
+                res, eff_warn, eff_fail_warn, proj_root, resolved_ed = _evaluate_project_drift(
+                    ed,
+                    base=base,
+                    head=head,
+                    uncommitted=uncommitted,
+                    warn_only=warn_only,
+                    fail_on_warnings=fail_on_warnings,
+                    strict=strict,
+                )
+            except GitResolutionError as err:
+                eff_warn = bool(resolve_param_from_config("warn_only", warn_only, False))
+                if not eff_warn:
+                    any_should_fail = True
+                proj_rel = format_rel_eidos_paths([ed.parent], cwd_res)[0]
+                project_entries.append(
+                    {
+                        "project_root": proj_rel,
+                        "eidos_dir": rel_ed,
+                        "is_clean": False,
+                        "drift_detected": False,
+                        "error": str(err),
+                    }
+                )
+                if not json_output:
+                    console.print(
+                        f"\n[bold magenta]=== Project: {escape(proj_rel)} ({escape(rel_ed)}) ===[/bold magenta]"
+                    )
+                    console.print(f"[bold red]Git Resolution Error:[/bold red] {err}")
+                continue
 
-    cli_strict = resolve_param_from_config("strict", strict, None)
-    cfg_warn_only = False if eval_cfg_errors else eval_cfg.drift.warn_only
-    eff_warn_only = bool(resolve_param_from_config("warn_only", warn_only, cfg_warn_only))
-    eff_fail_on_warnings = bool(
-        resolve_param_from_config("fail_on_warnings", fail_on_warnings, eval_cfg.drift.fail_on_warnings)
-    )
+            try:
+                proj_rel = proj_root.resolve().relative_to(cwd_res).as_posix()
+            except ValueError:
+                proj_rel = str(proj_root.resolve())
+            payload = _build_drift_json_payload(res)
+            payload["project_root"] = proj_rel
+            payload["eidos_dir"] = format_rel_eidos_paths([resolved_ed], cwd_res)[0]
+            project_entries.append(payload)
 
+            has_escalatable = bool(res.validation_warnings or res.ready_to_apply_deltas)
+            if (not res.is_clean or (eff_fail_warn and has_escalatable)) and not eff_warn:
+                any_should_fail = True
+
+            if not json_output:
+                console.print(
+                    f"\n[bold magenta]=== Project: {escape(proj_rel)} ({escape(payload['eidos_dir'])}) ===[/bold magenta]"
+                )
+                _render_rich_drift_report(res, eff_fail_warn)
+
+        if json_output:
+            agg_data = {
+                "is_clean": all(bool(p.get("is_clean")) for p in project_entries),
+                "drift_detected": any(bool(p.get("drift_detected")) for p in project_entries),
+                "monorepo_projects": project_entries,
+                "code_files": [
+                    _prefix_project_path(p["project_root"], f) for p in project_entries for f in p.get("code_files", [])
+                ],
+                "structural_code_files": [
+                    _prefix_project_path(p["project_root"], f)
+                    for p in project_entries
+                    for f in p.get("structural_code_files", [])
+                ],
+                "body_only_code_files": [
+                    _prefix_project_path(p["project_root"], f)
+                    for p in project_entries
+                    for f in p.get("body_only_code_files", [])
+                ],
+                "spec_files": [
+                    _prefix_project_path(p["project_root"], f) for p in project_entries for f in p.get("spec_files", [])
+                ],
+                "delta_files": [
+                    _prefix_project_path(p["project_root"], f)
+                    for p in project_entries
+                    for f in p.get("delta_files", [])
+                ],
+                "test_files": [
+                    _prefix_project_path(p["project_root"], f) for p in project_entries for f in p.get("test_files", [])
+                ],
+                "touched_components": list(
+                    dict.fromkeys(c for p in project_entries for c in p.get("touched_components", []))
+                ),
+                "validation_errors": [
+                    _prefix_project_item(p["project_root"], e)
+                    for p in project_entries
+                    for e in p.get("validation_errors", [])
+                ],
+                "validation_warnings": [
+                    _prefix_project_item(p["project_root"], w)
+                    for p in project_entries
+                    for w in p.get("validation_warnings", [])
+                ],
+                "uncovered_invariants": [inv for p in project_entries for inv in p.get("uncovered_invariants", [])],
+                "orphan_invariants": [
+                    {**oi, "project_root": p["project_root"]}
+                    for p in project_entries
+                    for oi in p.get("orphan_invariants", [])
+                ],
+                "boundary_violations": [
+                    {**bv, "project_root": p["project_root"]}
+                    for p in project_entries
+                    for bv in p.get("boundary_violations", [])
+                ],
+                "remediation_suggestions": [
+                    _prefix_project_item(p["project_root"], r)
+                    for p in project_entries
+                    for r in p.get("remediation_suggestions", [])
+                ],
+            }
+            console.print_json(data=agg_data)
+
+        if any_should_fail:
+            raise typer.Exit(code=1)
+        return
+
+    eidos_dir = target_eidos_dirs[0] if target_eidos_dirs else resolve_cli_eidos_dir(path)
+    routed_subproject = bool(target_eidos_dirs and target_eidos_dirs[0] != (cwd_res / "eidos").resolve())
     try:
-        result = detect_drift(
-            repo_root=repo_root,
-            base_ref=base,
-            head_ref=head,
-            eidos_dir=eidos_dir,
+        result, eff_warn_only, eff_fail_on_warnings, repo_root, resolved_eidos = _evaluate_project_drift(
+            eidos_dir,
+            base=base,
+            head=head,
             uncommitted=uncommitted,
-            strict=cli_strict,
+            warn_only=warn_only,
+            fail_on_warnings=fail_on_warnings,
+            strict=strict,
         )
     except GitResolutionError as err:
+        eff_warn_only = bool(resolve_param_from_config("warn_only", warn_only, False))
         if json_output:
             console.print_json(data={"error": str(err), "is_clean": False})
         else:
@@ -106,213 +515,20 @@ def drift_cmd(
             raise typer.Exit(code=1) from err
         return
 
-    # Re-resolve warn_only / fail_on_warnings against the final evaluated config (handles fallback to uncommitted mode
-    # and forces fail-closed exit code 1 whenever <eidos_dir>/eidos.yaml itself failed validation on eval_root).
-    final_cfg = result.eval_config if result.eval_config is not None else eval_cfg
-    has_final_cfg_errors = bool(result.eval_config_errors) or any(
-        k == "eidos.yaml" or k.endswith("/eidos.yaml") for k in result.validation_report.schema_errors
-    )
-    final_cfg_warn_only = False if has_final_cfg_errors else final_cfg.drift.warn_only
-    eff_warn_only = bool(resolve_param_from_config("warn_only", warn_only, final_cfg_warn_only))
-    eff_fail_on_warnings = bool(
-        resolve_param_from_config("fail_on_warnings", fail_on_warnings, final_cfg.drift.fail_on_warnings)
-    )
-
     if json_output:
-        data = {
-            "is_clean": result.is_clean,
-            "drift_detected": result.drift_detected,
-            "workflow_mode": result.workflow_mode,
-            "code_files": result.classification.code_files,
-            "structural_code_files": result.structural_code_files,
-            "body_only_code_files": result.body_only_code_files,
-            "spec_files": result.classification.spec_files,
-            "delta_files": result.classification.delta_files,
-            "test_files": result.classification.test_files,
-            "touched_components": result.touched_components,
-            "unmapped_code_files": result.unmapped_code_files,
-            "valid_specs": result.validation_report.valid_docs,
-            "total_specs": result.validation_report.total_docs,
-            "validation_errors": result.validation_errors,
-            "validation_warnings": result.validation_warnings,
-            "uncovered_invariants": [inv.invariant_id for inv in result.uncovered_invariants],
-            "orphan_invariants": [{"invariant_id": oid, "location": loc} for oid, loc in result.orphan_invariants],
-            "remediation_suggestions": result.remediation_suggestions,
-            "trivially_covered_files": result.trivially_covered_files,
-            "boundary_violations": result.boundary_violations,
-            "ratchet_shrink_candidates": result.ratchet_shrink_candidates,
-            "ready_to_apply_deltas": result.ready_to_apply_deltas,
-            "untouched_consumers": result.untouched_consumers,
-            "affected_memories": result.affected_memories,
-        }
+        data = _build_drift_json_payload(result)
+        if routed_subproject:
+            try:
+                data["project_root"] = repo_root.resolve().relative_to(cwd_res).as_posix()
+            except ValueError:
+                data["project_root"] = str(repo_root.resolve())
+            data["eidos_dir"] = format_rel_eidos_paths([resolved_eidos], cwd_res)[0]
         console.print_json(data=data)
     else:
-        # Rich Terminal Output
-        mode_badge = (
-            "[bold cyan]Planned Mode (SpecDelta)[/bold cyan]"
-            if result.workflow_mode == "planned"
-            else "[bold green]Direct Mode (Co-Evolution)[/bold green]"
-        )
-        console.print(f"[bold cyan]Eidos Spec-to-Code Drift Detection[/bold cyan] ({mode_badge})\n")
-
-        table = Table(title="Spec-Code Synchronization Summary", show_header=True)
-        table.add_column("Metric", style="bold cyan")
-        table.add_column("Count", justify="right")
-        table.add_column("Status", justify="center")
-
-        code_count = len(result.classification.code_files)
-        struct_count = len(result.structural_code_files)
-        body_count = len(result.body_only_code_files)
-        spec_count = len(result.classification.spec_files)
-        delta_count = len(result.classification.delta_files)
-
-        code_status = (
-            "[bold yellow]Needs Spec[/bold yellow]"
-            if (result.drift_detected and code_count > 0)
-            else "[bold green]Synced[/bold green]"
-        )
-        spec_status = "[bold green]Updated[/bold green]" if spec_count else "[dim]Unchanged[/dim]"
-        delta_status = "[bold cyan]Active[/bold cyan]" if delta_count else "[dim]None (Direct)[/dim]"
-
-        code_count_str = f"{code_count} ({struct_count} structural, {body_count} body-only)" if code_count > 0 else "0"
-        table.add_row("Modified Code Files", code_count_str, code_status)
-        table.add_row("Modified Living Specs", str(spec_count), spec_status)
-        table.add_row("Modified SpecDeltas", str(delta_count), delta_status)
-        table.add_row(
-            "Modified Test Files",
-            str(len(result.classification.test_files)),
-            "[bold green]✓[/bold green]" if result.classification.test_files else "[dim]—[/dim]",
-        )
-
-        val_status = (
-            "[bold green]100% Pass[/bold green]" if result.validation_report.is_clean else "[bold red]FAIL[/bold red]"
-        )
-        table.add_row(
-            "Living Specs Validated",
-            f"{result.validation_report.valid_docs}/{result.validation_report.total_docs}",
-            val_status,
-        )
-
-        console.print(table)
-
-        if result.touched_components:
-            console.print(f"\n[bold blue]Impacted Components:[/bold blue] {', '.join(result.touched_components)}")
-
-        has_non_code_drift = bool(result.uncovered_invariants or result.orphan_invariants)
-        if result.drift_detected or has_non_code_drift:
-            if result.drift_detected and code_count > 0:
-                console.print("\n[bold yellow]⚠️  SPEC-TO-CODE DRIFT DETECTED:[/bold yellow]")
-            elif result.drift_detected:
-                console.print("\n[bold yellow]⚠️  NON-CODE SPECIFICATION DRIFT DETECTED:[/bold yellow]")
-            else:
-                console.print("\n[bold red]✗ INVARIANT TRACEABILITY DRIFT DETECTED:[/bold red]")
-            for rem in result.remediation_suggestions:
-                console.print(f"  [yellow]•[/yellow] {rem}")
-            console.print(
-                "\n[dim]Tip: Update the impacted living specifications in eidos/ or create a SpecDelta via [bold green]eidos delta create[/bold green].[/dim]"
-            )
-
-        if not result.validation_report.is_clean:
-            if result.validation_report.schema_errors:
-                console.print("\n[bold red]✗ Specification Schema Errors:[/bold red]")
-                for p, errs in result.validation_report.schema_errors.items():
-                    console.print(f"  [red]• {p}:[/red] {'; '.join(errs)}")
-            if result.validation_report.broken_references:
-                console.print("\n[bold red]✗ Broken Cross-References:[/bold red]")
-                for ref in result.validation_report.broken_references:
-                    console.print(f"  [red]•[/red] {ref}")
-
-        if result.boundary_violations:
-            console.print("\n[bold red]✗ Architectural Import Boundary Violations:[/bold red]")
-            for bv in result.boundary_violations:
-                ev_str = f" [{'; '.join(bv.get('evidence', [])[:3])}]" if bv.get("evidence") else ""
-                console.print(
-                    f"  [red]• {bv['source']} -> {bv['target']}[/red] ({bv['rule']}): "
-                    f"observed {bv['observed_imports']} coupling(s), max allowed {bv['max_imports']}{ev_str}"
-                )
-
-        if result.ratchet_shrink_candidates:
-            console.print("\n[bold cyan]→ Ratchet Tightening Opportunities (Advisory):[/bold cyan]")
-            for sc in result.ratchet_shrink_candidates:
-                console.print(
-                    f"  [cyan]• {sc['source']} -> {sc['target']}[/cyan] ({sc.get('spec_path', '')}): "
-                    f"observed {sc['observed_imports']} < max_imports {sc['max_imports']} ({sc['action']})"
-                )
-
-        if result.validation_warnings:
-            console.print("\n[bold yellow]⚠ Advisory Validation Warnings:[/bold yellow]")
-            for warn in result.validation_warnings:
-                console.print(f"  [yellow]•[/yellow] {warn}")
-
-        if result.ready_to_apply_deltas:
-            console.print("\n[bold yellow]⚠ Open SpecDeltas Ready to Apply (Advisory):[/bold yellow]")
-            for rtd in result.ready_to_apply_deltas:
-                console.print(
-                    f"  [yellow]• {rtd['id']}[/yellow] ({rtd['path']}, status={rtd['status']}): "
-                    f"{rtd['verified_mutations']}/{rtd['total_mutations']} mutations verified — "
-                    f"run [bold green]eidos delta apply {rtd['id']}[/bold green]"
-                )
-
-        if result.untouched_consumers:
-            console.print("\n[bold cyan]→ Untouched Sibling Consumers to Review (Advisory):[/bold cyan]")
-            for uc in result.untouched_consumers[:15]:
-                owner_part = f" ({escape(uc['owner'])})" if uc.get("owner") else ""
-                via_part = f" via {escape(uc['via'])}" if uc.get("via") else ""
-                syms = uc.get("symbols") or []
-                if syms:
-                    sym_preview = ", ".join(syms[:5]) + (f" (+{len(syms) - 5})" if len(syms) > 5 else "")
-                    sym_part = f" — {escape(sym_preview)}"
-                else:
-                    sym_part = ""
-                kinds_badge = escape(f"[{', '.join(uc.get('change_kinds') or [])}]")
-                console.print(
-                    f"  [cyan]• {escape(uc['file'])}:{uc['line']}[/cyan]{owner_part} -> "
-                    f"{escape(uc['target_file'])}{via_part} {kinds_badge}{sym_part}"
-                )
-            if len(result.untouched_consumers) > 15:
-                console.print(
-                    f"  [dim]... and {len(result.untouched_consumers) - 15} more (use --json for full list)[/dim]"
-                )
-
-        if result.affected_memories:
-            console.print("\n[bold cyan]→ Team Operational Memories Affected by Diff (Advisory):[/bold cyan]")
-            for mem in result.affected_memories[:10]:
-                mfresh = str(mem.get("freshness") or "fresh")
-                if mfresh in ("stale", "expired"):
-                    fresh_badge = f"[yellow]{escape(mfresh)}[/yellow]"
-                elif mfresh == "unverifiable":
-                    fresh_badge = f"[dim]{escape(mfresh)}[/dim]"
-                else:
-                    fresh_badge = f"[green]{escape(mfresh)}[/green]"
-                mid = escape(str(mem.get("id") or ""))
-                msum = escape(str(mem.get("summary") or mem.get("title") or ""))
-                console.print(f"  [cyan]• {mid}[/cyan] ({fresh_badge}): {msum}")
-                if mfresh != "fresh":
-                    mreason = str(mem.get("freshness_reason") or "").strip()
-                    reason_prefix = f"{escape(mreason)} — " if mreason else ""
-                    console.print(
-                        f"    [dim]{reason_prefix}verify via [bold]eidos memory verify {mid}[/bold] "
-                        f"or retire via [bold]eidos memory archive {mid}[/bold][/dim]"
-                    )
-            if len(result.affected_memories) > 10:
-                console.print(
-                    f"  [dim]... and {len(result.affected_memories) - 10} more (use --json for full list)[/dim]"
-                )
-
-        has_advisory_warnings = bool(result.validation_warnings or result.ready_to_apply_deltas)
-        if result.is_clean and eff_fail_on_warnings and has_advisory_warnings:
-            parts: list[str] = []
-            if result.validation_warnings:
-                parts.append(f"{len(result.validation_warnings)} advisory validation warning(s)")
-            if result.ready_to_apply_deltas:
-                parts.append(f"{len(result.ready_to_apply_deltas)} ready-to-apply open SpecDelta(s)")
-            console.print(
-                f"\n[bold red]✗ Verification Failed (--fail-on-warnings):[/bold red] {' and '.join(parts)} detected."
-            )
-        elif result.is_clean:
-            console.print(
-                "\n[bold green]✓ Verification Passed![/bold green] Living specifications and code are synchronized."
-            )
+        if routed_subproject:
+            rel_ed = format_rel_eidos_paths([resolved_eidos], cwd_res)[0]
+            console.print(f"[dim]Auto-routed to monorepo sub-project: {escape(rel_ed)}[/dim]\n")
+        _render_rich_drift_report(result, eff_fail_on_warnings)
 
     has_escalatable_advisories = bool(result.validation_warnings or result.ready_to_apply_deltas)
     if (not result.is_clean or (eff_fail_on_warnings and has_escalatable_advisories)) and not eff_warn_only:

@@ -15,7 +15,12 @@ from typing import Any
 import orjson
 
 from eidos.core.workspace.config import CONFIG_FILENAME, EidosConfig, load_repo_config_with_errors
-from eidos.core.workspace.project import find_git_root, find_repo_root
+from eidos.core.workspace.project import (
+    _has_eidos_markers,
+    discover_nested_subproject_roots,
+    find_git_root,
+    find_repo_root,
+)
 from eidos.vcs.diff import classify_changed_files
 from eidos.vcs.drift import detect_drift
 
@@ -253,42 +258,71 @@ def _resolve_eidos_roots(workspace_root: Path) -> tuple[Path, Path] | None:
     """Resolve `(repo_root, eidos_dir)` if `workspace_root` belongs to an Eidos workspace, else None."""
     resolved_root = workspace_root.resolve()
     eidos_dir = resolved_root / "eidos"
-    if not eidos_dir.exists() and resolved_root.exists():
+    if not _has_eidos_markers(eidos_dir) and resolved_root.exists():
         cand_root = find_repo_root(resolved_root)
-        if (cand_root / "eidos").exists():
+        if _has_eidos_markers(cand_root / "eidos"):
             resolved_root = cand_root
             eidos_dir = cand_root / "eidos"
-    if not eidos_dir.is_dir():
+    if not _has_eidos_markers(eidos_dir):
         return None
     return resolved_root, eidos_dir
 
 
+def _resolve_all_eidos_roots(workspace_root: Path) -> list[tuple[Path, Path]]:
+    """Resolve all governing `(repo_root, eidos_dir)` pairs for single-project and monorepo workspaces."""
+    resolved_ws = workspace_root.resolve()
+    roots: list[tuple[Path, Path]] = []
+    seen: set[Path] = set()
+
+    if _has_eidos_markers(resolved_ws / "eidos"):
+        roots.append((resolved_ws, (resolved_ws / "eidos").resolve()))
+        seen.add(resolved_ws)
+
+    if resolved_ws.is_dir():
+        for sub_root in discover_nested_subproject_roots(resolved_ws):
+            sub_res = sub_root.resolve()
+            sub_eidos = (sub_res / "eidos").resolve()
+            if sub_res not in seen and _has_eidos_markers(sub_eidos):
+                roots.append((sub_res, sub_eidos))
+                seen.add(sub_res)
+
+    if roots:
+        return roots
+
+    single = _resolve_eidos_roots(resolved_ws)
+    return [single] if single is not None else []
+
+
 def capture_session_baseline(payload: dict[str, Any], workspace_root: Path) -> dict[str, Any]:
-    """Record a session working-tree dirty-file baseline in `eidos/.cache/hook_baselines/`."""
+    """Record a session working-tree dirty-file baseline in each active project's `eidos/.cache/hook_baselines/`."""
     client = _detect_hook_client(payload)
-    roots = _resolve_eidos_roots(workspace_root)
-    if roots is None:
-        return _allow_response(client)
-    resolved_root, eidos_dir = roots
-    cfg, _ = load_repo_config_with_errors(eidos_dir=eidos_dir, repo_root=resolved_root)
-    if not cfg.plugin.hooks.enabled:
+    all_roots = _resolve_all_eidos_roots(workspace_root)
+    if not all_roots:
         return _allow_response(client)
 
-    dirty_map = _snapshot_dirty_worktree(resolved_root)
+    dirty_map = _snapshot_dirty_worktree(all_roots[0][0])
     if dirty_map is None:
         return _allow_response(client)
 
-    baseline_dir = eidos_dir / ".cache" / "hook_baselines"
-    with contextlib.suppress(OSError):
-        baseline_dir.mkdir(parents=True, exist_ok=True)
-        _prune_stale_baselines(baseline_dir, max_age_seconds=cfg.plugin.hooks.baseline_ttl_seconds)
-        baseline_file = baseline_dir / _session_baseline_filename(payload)
-        data = {
-            "timestamp": time.time(),
-            "session_key": _resolve_session_key(payload),
-            "files": dirty_map,
-        }
-        baseline_file.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+    session_key = _resolve_session_key(payload)
+    baseline_name = _session_baseline_filename(payload)
+    now = time.time()
+    data = {
+        "timestamp": now,
+        "session_key": session_key,
+        "files": dirty_map,
+    }
+    encoded = orjson.dumps(data, option=orjson.OPT_INDENT_2)
+
+    for resolved_root, eidos_dir in all_roots:
+        cfg, _ = load_repo_config_with_errors(eidos_dir=eidos_dir, repo_root=resolved_root)
+        if not cfg.plugin.hooks.enabled:
+            continue
+        baseline_dir = eidos_dir / ".cache" / "hook_baselines"
+        with contextlib.suppress(OSError):
+            baseline_dir.mkdir(parents=True, exist_ok=True)
+            _prune_stale_baselines(baseline_dir, max_age_seconds=cfg.plugin.hooks.baseline_ttl_seconds)
+            (baseline_dir / baseline_name).write_bytes(encoded)
     return _allow_response(client)
 
 
@@ -364,6 +398,10 @@ def _scope_paths_to_subproject(
     changed_paths: list[str],
     resolved_root: Path,
     git_root: Path | None,
+    *,
+    excluded_sub_prefixes: tuple[str, ...] = (),
+    allow_local_relative: bool = True,
+    include_root_onboarding: bool = True,
 ) -> list[str]:
     """Normalize changed paths to ``resolved_root``-relative POSIX paths for monorepo sub-project Stop hooks."""
     root_res = resolved_root.resolve()
@@ -376,7 +414,11 @@ def _scope_paths_to_subproject(
     seen: set[str] = set()
 
     def _add(rel_p: str) -> None:
-        if rel_p and rel_p not in seen:
+        if not rel_p:
+            return
+        if excluded_sub_prefixes and rel_p.startswith(excluded_sub_prefixes):
+            return
+        if rel_p not in seen:
             seen.add(rel_p)
             scoped.append(rel_p)
 
@@ -393,7 +435,7 @@ def _scope_paths_to_subproject(
                 if cand_abs.is_relative_to(root_res):
                     _add(cand_abs.relative_to(root_res).as_posix())
                     continue
-                if git_res is not None and cand_abs.is_relative_to(git_res):
+                if include_root_onboarding and git_res is not None and cand_abs.is_relative_to(git_res):
                     g_rel = cand_abs.relative_to(git_res).as_posix()
                     g_low = g_rel.lower()
                     if g_low in _ROOT_ONBOARDING_FILES or g_low.startswith(_ROOT_ONBOARDING_PREFIXES):
@@ -404,13 +446,14 @@ def _scope_paths_to_subproject(
                 _add(norm[len(sub_prefix) :])
                 continue
             low = norm.lower()
-            if low in _ROOT_ONBOARDING_FILES or low.startswith(_ROOT_ONBOARDING_PREFIXES):
+            if include_root_onboarding and (low in _ROOT_ONBOARDING_FILES or low.startswith(_ROOT_ONBOARDING_PREFIXES)):
                 _add(norm)
                 continue
-            # Preserve paths already passed relative to resolved_root (e.g. explicit hook payloads)
-            local_cand = root_res / norm
-            if local_cand.exists() or local_cand.is_symlink():
-                _add(norm)
+            # Preserve paths already passed relative to resolved_root strictly for explicit hook payloads
+            if allow_local_relative:
+                local_cand = root_res / norm
+                if local_cand.exists() or local_cand.is_symlink():
+                    _add(norm)
             continue
         _add(norm)
     return scoped
@@ -424,6 +467,8 @@ def _zero_governed_changes_since_baseline(
     *,
     repo_config: EidosConfig | None = None,
     config_errors: list[str] | None = None,
+    excluded_sub_prefixes: tuple[str, ...] = (),
+    include_root_onboarding: bool = True,
 ) -> bool:
     """Return True if explicit payload metadata or an active session baseline proves zero governed files changed."""
     if repo_config is None or config_errors is None:
@@ -445,7 +490,14 @@ def _zero_governed_changes_since_baseline(
                 return True
             if _config_file_changed_and_invalid(str_paths, resolved_root, eidos_dir, cfg_errs):
                 return False
-            scoped_exp = _scope_paths_to_subproject(str_paths, resolved_root, git_root)
+            scoped_exp = _scope_paths_to_subproject(
+                str_paths,
+                resolved_root,
+                git_root,
+                excluded_sub_prefixes=excluded_sub_prefixes,
+                allow_local_relative=True,
+                include_root_onboarding=include_root_onboarding,
+            )
             if not scoped_exp:
                 return True
             cls_exp = classify_changed_files(scoped_exp, repo_root=resolved_root, eidos_dir=eidos_dir, repo_config=cfg)
@@ -485,7 +537,14 @@ def _zero_governed_changes_since_baseline(
         return True
     if _config_file_changed_and_invalid(changed_paths, resolved_root, eidos_dir, cfg_errs):
         return False
-    scoped_changed = _scope_paths_to_subproject(changed_paths, resolved_root, git_root)
+    scoped_changed = _scope_paths_to_subproject(
+        changed_paths,
+        resolved_root,
+        git_root,
+        excluded_sub_prefixes=excluded_sub_prefixes,
+        allow_local_relative=False,
+        include_root_onboarding=include_root_onboarding,
+    )
     if not scoped_changed:
         return True
     cls = classify_changed_files(scoped_changed, repo_root=resolved_root, eidos_dir=eidos_dir, repo_config=cfg)
@@ -522,32 +581,22 @@ def handle_stop_hook(payload: dict[str, Any], workspace_root: Path, event: str |
     if _is_retry_or_non_normal_stop(payload, client):
         return _allow_response(client)
 
-    roots = _resolve_eidos_roots(workspace_root)
-    if roots is None:
-        return _allow_response(client)
-    resolved_root, eidos_dir = roots
-
-    cfg, cfg_errors = load_repo_config_with_errors(eidos_dir=eidos_dir, repo_root=resolved_root)
-    if not cfg.plugin.hooks.enabled:
+    all_roots = _resolve_all_eidos_roots(workspace_root)
+    if not all_roots:
         return _allow_response(client)
 
-    current_dirty = _snapshot_dirty_worktree(resolved_root)
-    if _zero_governed_changes_since_baseline(
-        payload,
-        resolved_root,
-        eidos_dir,
-        current_dirty,
-        repo_config=cfg,
-        config_errors=cfg_errors,
-    ):
-        return _allow_response(client)
+    ws_res = workspace_root.resolve()
+    multi_project = len(all_roots) > 1
+    current_dirty = _snapshot_dirty_worktree(all_roots[0][0])
 
+    # Single workspace-level Cline retry guard prevents multi-subproject alternating ping-pong loops.
     cline_marker_path: Path | None = None
     cline_state_digest: str | None = None
     if client == "cline":
-        baseline_dir = eidos_dir / ".cache" / "hook_baselines"
-        cline_marker_path = baseline_dir / _cline_retry_filename(payload, resolved_root)
-        cline_state_digest = _compute_state_digest(resolved_root, eidos_dir, current_dirty)
+        primary_root, primary_eidos = all_roots[0]
+        baseline_dir = primary_eidos / ".cache" / "hook_baselines"
+        cline_marker_path = baseline_dir / _cline_retry_filename(payload, ws_res if multi_project else primary_root)
+        cline_state_digest = _compute_state_digest(primary_root, primary_eidos, current_dirty)
         if cline_marker_path.is_file():
             try:
                 marker = orjson.loads(cline_marker_path.read_bytes())
@@ -561,76 +610,109 @@ def handle_stop_hook(payload: dict[str, Any], workspace_root: Path, event: str |
                 with contextlib.suppress(OSError):
                     cline_marker_path.unlink()
 
-    try:
-        eff_strict = cfg.effective_hook_strict()
-        eff_fail_on_warnings = cfg.effective_hook_fail_on_warnings()
-        drift_res = detect_drift(
-            repo_root=resolved_root,
-            eidos_dir=eidos_dir,
-            uncommitted=True,
-            strict=eff_strict,
-        )
-        has_warning_failure = eff_fail_on_warnings and (
-            bool(drift_res.validation_warnings) or bool(drift_res.ready_to_apply_deltas)
-        )
-        has_non_code_failure = (
-            not drift_res.validation_passed
-            or bool(drift_res.uncovered_invariants)
-            or bool(drift_res.orphan_invariants)
-            or has_warning_failure
-        )
-        if drift_res.drift_detected or has_non_code_failure:
-            cause_parts: list[str] = []
-            if drift_res.classification.code_files and drift_res.drift_detected:
-                code_files_str = "\n".join(f"  - {cf}" for cf in drift_res.classification.code_files[:8])
-                if len(drift_res.classification.code_files) > 8:
-                    code_files_str += f"\n  ... and {len(drift_res.classification.code_files) - 8} more files"
-                cause_parts.append(
-                    f"{len(drift_res.classification.code_files)} code file(s) were modified without corresponding living specification updates in 'eidos/':\n"
-                    f"{code_files_str}"
-                )
-            if not drift_res.validation_passed:
-                err_lines = "\n".join(f"  - {ve}" for ve in drift_res.validation_errors[:5])
-                cause_parts.append(
-                    f"Specification validation failed ({len(drift_res.validation_errors)} error(s)):\n{err_lines}"
-                )
-            if has_warning_failure:
-                warn_items = list(drift_res.validation_warnings[:5])
-                if drift_res.ready_to_apply_deltas and len(warn_items) < 5:
-                    for item in drift_res.ready_to_apply_deltas[: 5 - len(warn_items)]:
-                        warn_items.append(
-                            f"SpecDelta '{item.get('id')}' is ready to apply (run `eidos delta apply {item.get('id')}`)."
-                        )
-                warn_lines = "\n".join(f"  - {w}" for w in warn_items)
-                cause_parts.append(
-                    f"Advisory validation warnings promoted to blocking (fail_on_warnings=true):\n{warn_lines}"
-                )
-            if drift_res.uncovered_invariants or drift_res.orphan_invariants:
-                cause_parts.append(
-                    f"Invariant test binding verification failed ({len(drift_res.uncovered_invariants)} uncovered invariant(s), "
-                    f"{len(drift_res.orphan_invariants)} orphan test reference(s))."
-                )
-            if not cause_parts:
-                cause_parts.append("Specification or SpecDelta synchronization issue detected in 'eidos/'.")
+    failure_blocks: list[str] = []
 
-            cause_block = "\n".join(cause_parts)
-            remediation_lines = "\n".join(f"  {rem}" for rem in drift_res.remediation_suggestions)
-            msg = (
-                f"⚠️ [Eidos Stop Hook] Spec-to-code drift or validation issues detected:\n"
-                f"{cause_block}\n\n"
-                f"Recommended Actions:\n"
-                f"{remediation_lines}"
+    for idx, (resolved_root, eidos_dir) in enumerate(all_roots):
+        cfg, cfg_errors = load_repo_config_with_errors(eidos_dir=eidos_dir, repo_root=resolved_root)
+        if not cfg.plugin.hooks.enabled:
+            continue
+
+        child_prefixes = tuple(
+            f"{other_root.relative_to(resolved_root).as_posix().strip('/')}/"
+            for other_root, _ in all_roots
+            if other_root != resolved_root and other_root.is_relative_to(resolved_root)
+        )
+        if _zero_governed_changes_since_baseline(
+            payload,
+            resolved_root,
+            eidos_dir,
+            current_dirty,
+            repo_config=cfg,
+            config_errors=cfg_errors,
+            excluded_sub_prefixes=child_prefixes,
+            include_root_onboarding=(idx == 0),
+        ):
+            continue
+
+        try:
+            eff_strict = cfg.effective_hook_strict()
+            eff_fail_on_warnings = cfg.effective_hook_fail_on_warnings()
+            drift_res = detect_drift(
+                repo_root=resolved_root,
+                eidos_dir=eidos_dir,
+                uncommitted=True,
+                strict=eff_strict,
             )
-            if cline_marker_path is not None and cline_state_digest is not None:
-                with contextlib.suppress(OSError):
-                    cline_marker_path.parent.mkdir(parents=True, exist_ok=True)
-                    cline_marker_path.write_bytes(
-                        orjson.dumps({"timestamp": time.time(), "state_digest": cline_state_digest})
+            has_warning_failure = eff_fail_on_warnings and (
+                bool(drift_res.validation_warnings) or bool(drift_res.ready_to_apply_deltas)
+            )
+            has_non_code_failure = (
+                not drift_res.validation_passed
+                or bool(drift_res.uncovered_invariants)
+                or bool(drift_res.orphan_invariants)
+                or has_warning_failure
+            )
+            if drift_res.drift_detected or has_non_code_failure:
+                cause_parts: list[str] = []
+                if drift_res.classification.code_files and drift_res.drift_detected:
+                    code_files_str = "\n".join(f"  - {cf}" for cf in drift_res.classification.code_files[:8])
+                    if len(drift_res.classification.code_files) > 8:
+                        code_files_str += f"\n  ... and {len(drift_res.classification.code_files) - 8} more files"
+                    cause_parts.append(
+                        f"{len(drift_res.classification.code_files)} code file(s) were modified without corresponding living specification updates in 'eidos/':\n"
+                        f"{code_files_str}"
                     )
-            return _continuation_response(client, msg)
-    except Exception as exc:
-        print(f"[Eidos Stop Hook Error] {exc}", file=sys.stderr)
-        return _allow_response(client)
+                if not drift_res.validation_passed:
+                    err_lines = "\n".join(f"  - {ve}" for ve in drift_res.validation_errors[:5])
+                    cause_parts.append(
+                        f"Specification validation failed ({len(drift_res.validation_errors)} error(s)):\n{err_lines}"
+                    )
+                if has_warning_failure:
+                    warn_items = list(drift_res.validation_warnings[:5])
+                    if drift_res.ready_to_apply_deltas and len(warn_items) < 5:
+                        for item in drift_res.ready_to_apply_deltas[: 5 - len(warn_items)]:
+                            warn_items.append(
+                                f"SpecDelta '{item.get('id')}' is ready to apply (run `eidos delta apply {item.get('id')}`)."
+                            )
+                    warn_lines = "\n".join(f"  - {w}" for w in warn_items)
+                    cause_parts.append(
+                        f"Advisory validation warnings promoted to blocking (fail_on_warnings=true):\n{warn_lines}"
+                    )
+                if drift_res.uncovered_invariants or drift_res.orphan_invariants:
+                    cause_parts.append(
+                        f"Invariant test binding verification failed ({len(drift_res.uncovered_invariants)} uncovered invariant(s), "
+                        f"{len(drift_res.orphan_invariants)} orphan test reference(s))."
+                    )
+                if not cause_parts:
+                    cause_parts.append("Specification or SpecDelta synchronization issue detected in 'eidos/'.")
+
+                cause_block = "\n".join(cause_parts)
+                remediation_lines = "\n".join(f"  {rem}" for rem in drift_res.remediation_suggestions)
+                if multi_project or resolved_root != ws_res:
+                    try:
+                        rel_eidos = eidos_dir.relative_to(ws_res).as_posix()
+                    except ValueError:
+                        rel_eidos = str(eidos_dir)
+                    header = f"Sub-project `{rel_eidos}`:\n"
+                    footer = f"\n  Re-run check: `eidos drift --uncommitted -p {rel_eidos} --json`"
+                else:
+                    header = ""
+                    footer = ""
+                failure_blocks.append(f"{header}{cause_block}\n\nRecommended Actions:\n{remediation_lines}{footer}")
+        except Exception as exc:
+            print(f"[Eidos Stop Hook Error] {exc}", file=sys.stderr)
+            continue
+
+    if failure_blocks:
+        if cline_marker_path is not None and cline_state_digest is not None:
+            with contextlib.suppress(OSError):
+                cline_marker_path.parent.mkdir(parents=True, exist_ok=True)
+                cline_marker_path.write_bytes(
+                    orjson.dumps({"timestamp": time.time(), "state_digest": cline_state_digest})
+                )
+        joined = "\n\n".join(failure_blocks)
+        msg = f"⚠️ [Eidos Stop Hook] Spec-to-code drift or validation issues detected:\n{joined}"
+        return _continuation_response(client, msg)
 
     return _allow_response(client)
 

@@ -640,14 +640,38 @@ def _load_agents_md_template(source_dir: Path) -> str | None:
         return None
 
 
-def render_agents_md_block(template: str, targets: dict[str, str]) -> str:
-    """Render the AGENTS.md block body, listing each unique recorded skill location (in sorted target order)."""
+def discover_monorepo_subproject_eidos_paths(root: Path) -> list[str]:
+    """Return sorted root-relative POSIX `eidos/` paths when ``root`` is a monorepo with nested sub-projects, else []."""
+    from eidos.core.workspace.project import _has_eidos_markers, discover_nested_subproject_roots
+
+    root_res = root.resolve()
+    nested = discover_nested_subproject_roots(root_res)
+    if not nested:
+        return []
+    paths: list[str] = []
+    if _has_eidos_markers(root_res / "eidos"):
+        paths.append("eidos")
+    for sub_root in nested:
+        with contextlib.suppress(ValueError):
+            rel = sub_root.resolve().relative_to(root_res).as_posix().strip("/")
+            if rel:
+                paths.append(f"{rel}/eidos")
+    return paths
+
+
+def render_agents_md_block(
+    template: str,
+    targets: dict[str, str],
+    subprojects: list[str] | None = None,
+) -> str:
+    """Render the AGENTS.md block body, listing each unique recorded skill location and any monorepo sub-projects."""
     if targets:
         unique_dirs = dict.fromkeys(skills_dir for _t, skills_dir in sorted(targets.items()))
         locations = "\n".join(f"- `{skills_dir}/<skill>/SKILL.md`" for skills_dir in unique_dirs)
     else:
         locations = "- (no skill locations recorded)"
-    return template.replace("{{skill_locations}}", locations)
+    sub_note = f" Sub-projects: {', '.join(f'`{p}`' for p in subprojects)}." if subprojects else ""
+    return template.replace("{{skill_locations}}", locations).replace("{{subprojects_note}}", sub_note)
 
 
 def _is_target_still_installed(root: Path, target_name: str, skills_dir: str) -> bool:
@@ -669,11 +693,12 @@ def project_agents_md_block(
     if template is None:
         return None
     agents_md = root / AGENTS_MD_FILENAME
+    subprojects = discover_monorepo_subproject_eidos_paths(root)
     try:
         return upsert_managed_block(
             agents_md,
             AGENTS_MD_BLOCK,
-            lambda targets: render_agents_md_block(template, dict(targets)),
+            lambda targets: render_agents_md_block(template, dict(targets), subprojects=subprojects),
             target=target_name,
             skills_dir=skills_dir,
             keep_target=lambda t, d: _is_target_still_installed(root, t, d),
@@ -684,6 +709,43 @@ def project_agents_md_block(
         return BlockResult(BlockStatus.SKIPPED, agents_md, detail=str(exc))
 
 
+def refresh_agents_md_subprojects(project_dir: Path) -> BlockResult | None:
+    """Refresh an existing root AGENTS.md managed block's monorepo sub-project listing (non-destructive, force=False)."""
+    from eidos.core.workspace.project import find_git_root
+
+    root = find_git_root(project_dir.resolve())
+    if root is None:
+        return None
+    agents_md = root / AGENTS_MD_FILENAME
+    if not agents_md.is_file() or agents_md.is_symlink():
+        return None
+    try:
+        existing = read_managed_block(agents_md, AGENTS_MD_BLOCK)
+    except ValueError:
+        return None
+    if existing is None or not existing.targets:
+        return None
+    try:
+        source_dir = locate_plugin_bundle()
+    except FileNotFoundError:
+        return None
+    template = _load_agents_md_template(source_dir)
+    if template is None:
+        return None
+    subprojects = discover_monorepo_subproject_eidos_paths(root)
+    try:
+        return upsert_managed_block(
+            agents_md,
+            AGENTS_MD_BLOCK,
+            lambda targets: render_agents_md_block(template, dict(targets), subprojects=subprojects),
+            keep_target=lambda t, d: _is_target_still_installed(root, t, d),
+            force=False,
+            root=root,
+        )
+    except FileExistsError:
+        return None
+
+
 def prune_agents_md_block(root: Path, target_name: str) -> BlockResult | None:
     """Prune `target_name` from the root AGENTS.md block, removing the block (and empty AGENTS.md) when zero targets remain."""
     agents_md = root / AGENTS_MD_FILENAME
@@ -692,7 +754,12 @@ def prune_agents_md_block(root: Path, target_name: str) -> BlockResult | None:
     template: str | None = None
     with contextlib.suppress(FileNotFoundError):
         template = _load_agents_md_template(locate_plugin_bundle())
-    renderer = (lambda targets: render_agents_md_block(template, dict(targets))) if template is not None else None
+    subprojects = discover_monorepo_subproject_eidos_paths(root)
+    renderer = (
+        (lambda targets: render_agents_md_block(template, dict(targets), subprojects=subprojects))
+        if template is not None
+        else None
+    )
     try:
         return remove_managed_block(
             agents_md,

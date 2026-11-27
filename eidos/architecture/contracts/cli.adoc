@@ -3,7 +3,7 @@ type: tech/contract
 id: CTR-EIDOS-CLI
 title: "Eidos Command-Line Interface Contract"
 status: active
-version: "2.1.0"
+version: "2.2.0"
 protocol: "cli_args"
 container: "CNT-EIDOS-CLI"
 specification_file: "src/eidos/cli/main.py"
@@ -13,6 +13,12 @@ specification_file: "src/eidos/cli/main.py"
 
 == Optional Repository Configuration (`eidos/eidos.yaml`) & Precedence
 All configurable commands optionally read `<eidos_dir>/eidos.yaml` (`eidos/eidos.yaml` or `<subproject>/eidos/eidos.yaml`) and documented `EIDOS_*` environment variables under strict deterministic precedence: `CLI flags > EIDOS_* env vars > eidos/eidos.yaml > built-in defaults`. Explicit CLI options (including boolean negation flags) always win over environment variables and `eidos/eidos.yaml`; invalid config files or invalid `EIDOS_*` values fail closed with exit code `1`.
+
+== Monorepo Root Auto-Routing & Multi-Subproject Governance
+When invoked from a Git monorepo root containing nested sub-project `eidos/` directories (both sub-projects-only layouts and root + sub-projects layouts) without an explicit `--path`:
+* **Path-Hint & Diff Auto-Routing**: `eidos context -f <path>` (including planned non-existent subdirectories), `eidos index blast-radius <path>`, `eidos memory add -f <path>`, and path-shaped `eidos spec` / `eidos delta` / `eidos memory` targets auto-route to the owning sub-project with sub-project-relative path normalization (failing closed with `discovered_subprojects` when `--file` spans multiple sub-projects). `eidos context --uncommitted/--base` and `eidos memory add --from-diff` auto-route when exactly one project has changes and fail closed listing `discovered_subprojects` when multiple projects are dirty.
+* **Fail-Closed Ambiguity Guards & Root Hints**: Commands requiring a single `eidos/` catalog (`eidos index`, `eidos spec`, `eidos delta`, `eidos memory`) fail closed with exit code `1` and `discovered_subprojects` hints at rootless monorepos (preventing empty `<git_root>/eidos/.cache/index.db` creation), and root `eidos index search`/`find-symbol`/`repo-map` queries in hybrid monorepos surface `nested_subprojects`.
+* **Multi-Subproject `drift`, `validate`, and `hook`**: `eidos drift` auto-routes to the dirty sub-project or aggregates all dirty (or rootless) projects under `monorepo_projects` (preventing false-green root runs), `eidos validate` aggregates discovered projects under `monorepo_projects`, and `eidos hook` baselines and evaluates all modified root and nested sub-projects (ignoring cache-only `eidos/` directories).
 
 == Command Specifications
 

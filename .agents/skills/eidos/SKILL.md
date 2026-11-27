@@ -23,7 +23,7 @@ This repository uses **Eidos** to keep living specifications (`eidos/`), source 
 
 ## 2. Step 1: Discovery-First Context & Code Graph Intelligence (`eidos context` & `eidos index`)
 
-**STOP before running blind `grep`, `find`, or reading random files.** Eidos maintains an embedded SQLite + AST knowledge graph (`eidos/.cache/index.db`) that resolves files, symbols, specs, and dependencies in milliseconds.
+**STOP before running blind `grep`, `find`, or reading random files.** Eidos maintains an embedded SQLite + AST knowledge graph (`eidos/.cache/index.db`) resolving files, symbols, specs, and dependencies in milliseconds. In **monorepos with multiple `eidos/` directories** (`packages/<pkg>/eidos/`), pass `-p <subproject>/eidos` (or run inside `<subproject>`) for `eidos index`, `eidos spec`, `eidos delta`, `eidos memory`, and `eidos drift` (`eidos context -f <path>`, `eidos index blast-radius <path>`, and `eidos drift --uncommitted` auto-route from the root).
 
 ### 2.1 Mandatory Tool Replacement Matrix
 

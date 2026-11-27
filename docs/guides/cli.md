@@ -14,6 +14,8 @@ Commands are semantically organized into six functional panels in CLI help outpu
 5. **Living Web Portal**: Local interactive web portal preview server and static site compilation.
 6. **Agent Ecosystem & Plugins**: Multi-agent skills installation, verification, updates, and lifecycle hooks conforming to `agentskills.io`.
 
+> **Monorepo Multi-`eidos/` Auto-Routing**: When invoked from a Git monorepo root containing nested sub-project `eidos/` directories (both sub-project-only layouts and root + sub-project layouts), path-taking commands (`eidos context -f <path>`, `eidos index blast-radius <path>`, `eidos memory add -f <path>`, and path-shaped `spec`/`delta`/`memory` targets) auto-route to the owning sub-project, `eidos drift` and `eidos validate` automatically evaluate dirty or discovered sub-projects (preventing false-green root checks), `eidos hook` evaluates all modified sub-projects, and rootless monorepo commands without `--path` fail closed with `discovered_subprojects` hints instructing `-p <subproject>/eidos`.
+
 ---
 
 ## 1. Setup & Workspace

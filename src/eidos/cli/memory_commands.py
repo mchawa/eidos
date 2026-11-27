@@ -10,7 +10,17 @@ from rich.markup import escape as rich_escape
 from rich.panel import Panel
 from rich.table import Table
 
-from eidos.cli._shared import console, resolve_cli_eidos_dir
+from eidos.cli._shared import (
+    _looks_like_path_hint,
+    console,
+    discover_workspace_eidos_dirs,
+    format_rel_eidos_paths,
+    is_explicit_cli_path,
+    normalize_cli_spec_target,
+    require_cli_eidos_dir,
+    resolve_hint_eidos_dirs,
+    resolve_uncommitted_workspace_eidos_dirs,
+)
 from eidos.core.lifecycle.memory_engine import (
     add_memory,
     archive_memory,
@@ -22,6 +32,7 @@ from eidos.core.lifecycle.memory_engine import (
     update_memory,
     verify_memory,
 )
+from eidos.core.workspace.project import find_repo_root, resolve_spec_and_repo_roots
 
 memory_app = typer.Typer(
     name="memory",
@@ -32,6 +43,50 @@ memory_app = typer.Typer(
 
 def _echo_json(payload: dict | list) -> None:
     typer.echo(orjson.dumps(payload, option=orjson.OPT_INDENT_2).decode("utf-8"))
+
+
+def _normalize_memory_file_paths(raw_files: list[str], eidos_dir: Path) -> list[str]:
+    """Normalize memory --file paths/globs relative to the resolved sub-project repo_root."""
+    if not raw_files:
+        return []
+    resolved_eidos = eidos_dir.resolve()
+    repo_root = (
+        resolved_eidos.parent
+        if resolved_eidos.name == "eidos"
+        else (resolve_spec_and_repo_roots(resolved_eidos)[1] if resolved_eidos.exists() else find_repo_root())
+    ).resolve()
+    cwd_res = Path.cwd().resolve()
+    root_prefix = f"{repo_root.as_posix().rstrip('/')}/"
+    out: list[str] = []
+    for raw_f in raw_files:
+        norm = raw_f.strip().replace("\\", "/")
+        if not norm:
+            continue
+        if any(ch in norm for ch in "*?[{"):
+            if norm.startswith(root_prefix):
+                norm = norm[len(root_prefix) :]
+            while norm.startswith("./"):
+                norm = norm[2:]
+            if not norm.startswith("/"):
+                segs = [s for s in norm.split("/") if s]
+                first_glob = next((i for i, s in enumerate(segs) if any(ch in s for ch in "*?[{")), len(segs))
+                static_head = "/".join(segs[:first_glob])
+                glob_tail = "/".join(segs[first_glob:])
+                if norm.startswith("../") or (cwd_res != repo_root and repo_root.is_relative_to(cwd_res)):
+                    resolved_head = (cwd_res / static_head).resolve() if static_head else cwd_res
+                    if resolved_head == repo_root:
+                        norm = glob_tail
+                    elif resolved_head.is_relative_to(repo_root):
+                        norm = f"{resolved_head.relative_to(repo_root).as_posix()}/{glob_tail}"
+            out.append(norm)
+            continue
+        p_f = Path(norm)
+        abs_cand = p_f.resolve() if p_f.is_absolute() else (cwd_res / p_f).resolve()
+        if abs_cand.is_relative_to(repo_root) and (abs_cand.exists() or not (repo_root / p_f).exists()):
+            out.append(abs_cand.relative_to(repo_root).as_posix())
+        else:
+            out.append(norm)
+    return out
 
 
 def _fail(message: str, *, json_output: bool) -> None:
@@ -100,7 +155,43 @@ def memory_add_cmd(
 
     from eidos.cli._shared import load_cli_repo_config, resolve_param_from_config
 
-    eidos_dir = resolve_cli_eidos_dir(path)
+    explicit_path = is_explicit_cli_path(path)
+    effective_path: Path | None = path
+    hint_files: list[str] | None = None
+    if not explicit_path and file:
+        spanned = resolve_hint_eidos_dirs(list(file))
+        if len(spanned) > 1:
+            rel_spanned = format_rel_eidos_paths(spanned)
+            msg = (
+                f"Target --file paths span multiple independent Eidos sub-projects: {', '.join(rel_spanned)}. "
+                f"Run 'eidos memory add' separately per sub-project with '--path <subproject>/eidos'."
+            )
+            if json_output:
+                _echo_json({"error": msg, "discovered_subprojects": rel_spanned})
+            else:
+                console.print(f"[bold red]Error:[/bold red] {rich_escape(msg)}")
+            raise typer.Exit(code=1)
+        hint_files = list(file)
+    elif not explicit_path and from_diff:
+        all_projects = discover_workspace_eidos_dirs()
+        root_eidos = (Path.cwd().resolve() / "eidos").resolve()
+        if any(p != root_eidos for p in all_projects):
+            dirty = resolve_uncommitted_workspace_eidos_dirs(eidos_dirs=all_projects)
+            if len(dirty) == 1:
+                effective_path = dirty[0]
+            elif len(dirty) > 1:
+                rel_dirty = format_rel_eidos_paths(dirty)
+                msg = (
+                    f"Uncommitted files span multiple independent Eidos sub-projects: {', '.join(rel_dirty)}. "
+                    f"Re-run with '--path <subproject>/eidos'."
+                )
+                if json_output:
+                    _echo_json({"error": msg, "discovered_subprojects": rel_dirty})
+                else:
+                    console.print(f"[bold red]Error:[/bold red] {rich_escape(msg)}")
+                raise typer.Exit(code=1)
+
+    eidos_dir = require_cli_eidos_dir(effective_path, hint_files=hint_files, json_output=json_output)
     repo_cfg = load_cli_repo_config(eidos_dir, json_output=json_output)
     eff_semantic = bool(resolve_param_from_config("semantic", semantic, repo_cfg.context.semantic.enabled))
     if expires is not None:
@@ -110,7 +201,7 @@ def memory_add_cmd(
     else:
         eff_expires = None
 
-    eff_paths = list(file)
+    eff_paths = _normalize_memory_file_paths(list(file), eidos_dir)
     if from_diff:
         from eidos.core.workspace.project import find_git_root, find_repo_root, resolve_spec_and_repo_roots
         from eidos.vcs.diff import GitResolutionError, classify_changed_files, get_git_diff_files
@@ -255,10 +346,32 @@ def memory_update_cmd(
     """Update an active or draft team operational memory in place and re-stamp verification."""
     from eidos.cli._shared import load_cli_repo_config, resolve_param_from_config
 
-    eidos_dir = resolve_cli_eidos_dir(path)
+    explicit_path = is_explicit_cli_path(path)
+    path_hints: list[str] = []
+    if not explicit_path:
+        if _looks_like_path_hint(id_or_path):
+            path_hints.append(id_or_path)
+        if file:
+            path_hints.extend(list(file))
+        if path_hints:
+            spanned = resolve_hint_eidos_dirs(path_hints)
+            if len(spanned) > 1:
+                rel_spanned = format_rel_eidos_paths(spanned)
+                msg = (
+                    f"Target memory and --file paths span multiple independent Eidos sub-projects: {', '.join(rel_spanned)}. "
+                    f"Keep memory targets within a single sub-project (or pass '--path <subproject>/eidos')."
+                )
+                if json_output:
+                    _echo_json({"error": msg, "discovered_subprojects": rel_spanned})
+                else:
+                    console.print(f"[bold red]Error:[/bold red] {rich_escape(msg)}")
+                raise typer.Exit(code=1)
+    eidos_dir = require_cli_eidos_dir(path, hint_files=path_hints or None, json_output=json_output)
+    id_or_path = normalize_cli_spec_target(id_or_path, eidos_dir)
     repo_cfg = load_cli_repo_config(eidos_dir, json_output=json_output)
     eff_semantic = bool(resolve_param_from_config("semantic", semantic, repo_cfg.context.semantic.enabled))
 
+    eff_update_paths = _normalize_memory_file_paths(list(file), eidos_dir) if file is not None else None
     try:
         res = update_memory(
             eidos_dir,
@@ -269,7 +382,7 @@ def memory_update_cmd(
             guidance=guidance,
             why=why,
             entities=entity,
-            paths=file,
+            paths=eff_update_paths,
             replace_targets=replace_targets,
             auto_entities=auto_entities,
             expires_at=expires,
@@ -323,7 +436,7 @@ def memory_list_cmd(
     """List team operational memories with computed freshness status."""
     from eidos.cli._shared import load_cli_repo_config
 
-    eidos_dir = resolve_cli_eidos_dir(path)
+    eidos_dir = require_cli_eidos_dir(path, json_output=json_output)
     load_cli_repo_config(eidos_dir, json_output=json_output)
     try:
         items = list_memories(
@@ -378,7 +491,7 @@ def memory_search_cmd(
     """Search active team memories via BM25 and optional Harrier Hybrid RRF."""
     from eidos.cli._shared import load_cli_repo_config, resolve_param_from_config
 
-    eidos_dir = resolve_cli_eidos_dir(path)
+    eidos_dir = require_cli_eidos_dir(path, json_output=json_output)
     repo_cfg = load_cli_repo_config(eidos_dir, json_output=json_output)
     eff_semantic = bool(resolve_param_from_config("semantic", semantic, repo_cfg.context.semantic.enabled))
     results = search_memories(eidos_dir, query, limit=limit, use_semantic=eff_semantic)
@@ -416,7 +529,9 @@ def memory_show_cmd(
     """Display frontmatter metadata, freshness diagnostics, and body of a team memory."""
     from eidos.cli._shared import load_cli_repo_config
 
-    eidos_dir = resolve_cli_eidos_dir(path)
+    path_hints = [id_or_path] if (_looks_like_path_hint(id_or_path) and not is_explicit_cli_path(path)) else None
+    eidos_dir = require_cli_eidos_dir(path, hint_files=path_hints, json_output=json_output)
+    id_or_path = normalize_cli_spec_target(id_or_path, eidos_dir)
     load_cli_repo_config(eidos_dir, json_output=json_output)
     try:
         detail = show_memory(eidos_dir, id_or_path)
@@ -456,7 +571,9 @@ def memory_verify_cmd(
     """Re-stamp verified_at and verified_commit on a memory after checking live code."""
     from eidos.cli._shared import load_cli_repo_config
 
-    eidos_dir = resolve_cli_eidos_dir(path)
+    path_hints = [id_or_path] if (_looks_like_path_hint(id_or_path) and not is_explicit_cli_path(path)) else None
+    eidos_dir = require_cli_eidos_dir(path, hint_files=path_hints, json_output=json_output)
+    id_or_path = normalize_cli_spec_target(id_or_path, eidos_dir)
     load_cli_repo_config(eidos_dir, json_output=json_output)
     try:
         res = verify_memory(eidos_dir, id_or_path, expires_at=expires, clear_expires=clear_expires)
@@ -483,7 +600,9 @@ def memory_archive_cmd(
     """Retire a team memory (status: archived) and move it under eidos/memory/archive/."""
     from eidos.cli._shared import load_cli_repo_config
 
-    eidos_dir = resolve_cli_eidos_dir(path)
+    path_hints = [id_or_path] if (_looks_like_path_hint(id_or_path) and not is_explicit_cli_path(path)) else None
+    eidos_dir = require_cli_eidos_dir(path, hint_files=path_hints, json_output=json_output)
+    id_or_path = normalize_cli_spec_target(id_or_path, eidos_dir)
     load_cli_repo_config(eidos_dir, json_output=json_output)
     try:
         res = archive_memory(eidos_dir, id_or_path, reason=reason)
@@ -517,7 +636,7 @@ def memory_audit_cmd(
     """Audit team memories for staleness, expiry, duplicates, and spec overlap (strictly non-blocking, exit 0)."""
     from eidos.cli._shared import load_cli_repo_config, resolve_param_from_config
 
-    eidos_dir = resolve_cli_eidos_dir(path)
+    eidos_dir = require_cli_eidos_dir(path, json_output=json_output)
     repo_cfg = load_cli_repo_config(eidos_dir, json_output=json_output)
     eff_semantic = bool(resolve_param_from_config("semantic", semantic, semantic and repo_cfg.context.semantic.enabled))
     report = audit_memories(eidos_dir, check_overlaps=check_overlaps, use_semantic=eff_semantic)
@@ -584,7 +703,9 @@ def memory_promote_cmd(
     """Graduate a team memory into a verified formal DEC-*, INV-*, or POL-* specification."""
     from eidos.cli._shared import load_cli_repo_config
 
-    eidos_dir = resolve_cli_eidos_dir(path)
+    path_hints = [id_or_path] if (_looks_like_path_hint(id_or_path) and not is_explicit_cli_path(path)) else None
+    eidos_dir = require_cli_eidos_dir(path, hint_files=path_hints, json_output=json_output)
+    id_or_path = normalize_cli_spec_target(id_or_path, eidos_dir)
     load_cli_repo_config(eidos_dir, json_output=json_output)
     try:
         res = promote_memory(eidos_dir, id_or_path, to_kind=to, spec_id=spec_id, archive=archive)

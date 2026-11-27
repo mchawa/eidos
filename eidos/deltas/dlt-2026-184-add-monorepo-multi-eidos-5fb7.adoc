@@ -1,0 +1,159 @@
+---
+type: delta/mutation
+id: DLT-2026-184-ADD-MONOREPO-MULTI-EIDOS-5FB7
+title: "Add Monorepo Multi-Eidos CLI Auto-Routing, Multi-Subproject Drift/Hook Evaluation, and Agent Guidance"
+status: applied
+intent:
+  kind: feature
+  motivation: "Prevent AI agents working from a monorepo root from accidentally targeting a missing or root-only eidos/ directory instead of the active sub-project eidos/, by combining monorepo guidance in AGENTS.md and bundled skills with deterministic CLI path/diff auto-routing, fail-closed sub-project discovery hints, and multi-subproject drift, validate, and Stop hook evaluation across both subproject-only and root+subproject layouts."
+mutations:
+  - operation: modify
+    target: CMP-CLI-APP
+    details: "Add discover_workspace_eidos_dirs, resolve_uncommitted_workspace_eidos_dirs, and require_cli_eidos_dir in src/eidos/cli/_shared.py, and upgrade resolve_cli_eidos_dir hint_files resolution to walk up existing ancestors for planned paths and strip glob suffixes."
+    expect:
+      body:
+        contains:
+          - "discover_workspace_eidos_dirs"
+          - "require_cli_eidos_dir"
+  - operation: modify
+    target: CMP-CLI-CONTEXT-COMMAND
+    details: "Support monorepo --uncommitted/--base dirty-subproject auto-routing and fail-closed cross-subproject -f span diagnostics in src/eidos/cli/context_command.py."
+    expect:
+      body:
+        contains:
+          - "monorepo"
+  - operation: modify
+    target: CMP-CLI-INDEX-COMMANDS
+    details: "Route path-shaped blast-radius arguments to their owning sub-project with repo-relative normalization, prevent bogus root eidos/.cache/index.db creation via require_cli_eidos_dir, and surface nested_subprojects hints from monorepo roots in src/eidos/cli/index_commands.py."
+    expect:
+      body:
+        contains:
+          - "require_cli_eidos_dir"
+          - "nested_subprojects"
+  - operation: modify
+    target: CMP-CLI-DRIFT-COMMANDS
+    details: "Auto-route and aggregate eidos drift across dirty root and nested sub-project eidos/ directories when invoked from a monorepo root without an explicit --path, eliminating false-green root runs in src/eidos/cli/drift_commands.py."
+    expect:
+      body:
+        contains:
+          - "monorepo"
+          - "monorepo_projects"
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+    details: "Aggregate eidos validate across discovered monorepo eidos/ directories when invoked from a monorepo root without explicit target_path, auto-route path-shaped spec show/delete targets, and guard spec list/create/discover with require_cli_eidos_dir in src/eidos/cli/spec_commands.py."
+    expect:
+      body:
+        contains:
+          - "require_cli_eidos_dir"
+          - "monorepo"
+  - operation: modify
+    target: CMP-CLI-DELTA-COMMANDS
+    details: "Auto-route path-shaped delta show/verify/apply/audit/delete targets and guard delta commands with require_cli_eidos_dir in src/eidos/cli/delta_commands.py."
+    expect:
+      body:
+        contains:
+          - "require_cli_eidos_dir"
+  - operation: modify
+    target: CMP-CLI-MEMORY-COMMANDS
+    details: "Auto-route eidos memory add --file/--from-diff and path-shaped memory commands to the owning sub-project with repo-relative path normalization and guard missing-root monorepo invocations with require_cli_eidos_dir in src/eidos/cli/memory_commands.py."
+    expect:
+      body:
+        contains:
+          - "require_cli_eidos_dir"
+  - operation: modify
+    target: CMP-HOOK-RUNNER
+    details: "Evaluate root and nested sub-project eidos/ directories in src/eidos/plugin/hooks.py (ignoring cache-only eidos/ directories, excluding child sub-project paths from root baseline scoping, and aggregating per-subproject drift findings into a single 1-turn continuation payload)."
+    expect:
+      body:
+        contains:
+          - "nested sub-project"
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Add concise monorepo multi-eidos/ scoping guidance to assets/plugin_reference/agents-md/block.md and bundled skills (eidos, eidos-plan, eidos-memory) within INV-PLUGIN-SKILL-SIZE-CEILING, bump assets/plugin_reference/VERSION to 1.1.0, and record DEC-PLUGIN-MONOREPO-ROOT-ROUTING."
+    expect:
+      frontmatter:
+        decisions.id:
+          - "DEC-PLUGIN-MONOREPO-ROOT-ROUTING"
+      body:
+        contains:
+          - "DEC-PLUGIN-MONOREPO-ROOT-ROUTING"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Document monorepo root auto-routing, fail-closed sub-project discovery hints, and multi-subproject drift/validate/hook semantics (version 2.2.0)."
+    expect:
+      frontmatter:
+        version: "2.2.0"
+      body:
+        contains:
+          - "Monorepo Root Auto-Routing"
+  - operation: modify
+    target: CAP-AGENT-ADAPTER
+    details: "Extend CAP-AGENT-ADAPTER (1.24.0) with INV-MONOREPO-ROOT-CLI-AND-HOOK-ROUTING."
+    expect:
+      frontmatter:
+        version: "1.24.0"
+        technical.invariants.id:
+          - "INV-MONOREPO-ROOT-CLI-AND-HOOK-ROUTING"
+      body:
+        contains:
+          - "INV-MONOREPO-ROOT-CLI-AND-HOOK-ROUTING"
+  - operation: add
+    target: INV-MONOREPO-ROOT-CLI-AND-HOOK-ROUTING
+    details: "Bind INV-MONOREPO-ROOT-CLI-AND-HOOK-ROUTING to tests/test_monorepo_subprojects.py::test_monorepo_root_cli_routing_drift_validate_and_hooks."
+    expect:
+      frontmatter:
+        rule: "monorepo"
+        test_binding: "tests/test_monorepo_subprojects.py::test_monorepo_root_cli_routing_drift_validate_and_hooks"
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    details: "Auto-list discovered monorepo sub-project eidos/ paths in root AGENTS.md managed blocks via discover_monorepo_subproject_eidos_paths and expose non-destructive refresh_agents_md_subprojects in src/eidos/plugin/installer.py."
+    expect:
+      body:
+        contains:
+          - "discover_monorepo_subproject_eidos_paths"
+          - "refresh_agents_md_subprojects"
+  - operation: modify
+    target: CMP-CLI-INIT-COMMAND
+    details: "Automatically refresh an existing root AGENTS.md managed block's monorepo sub-project list after eidos init succeeds in src/eidos/cli/init_command.py."
+    expect:
+      body:
+        contains:
+          - "refresh_agents_md_subprojects"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Document monorepo root CLI auto-routing, multi-subproject drift/validate/hook behavior, and -p <subproject>/eidos scoping in docs/guides/cli.md."
+    expect:
+      body:
+        contains:
+          - "monorepo"
+vcs:
+  branch: main
+  base_commit: 33b1d6793beb80fabc412d1b78cbc2d712ab10e7
+---
+= SpecDelta: Add Monorepo Multi-Eidos CLI Auto-Routing, Multi-Subproject Drift/Hook Evaluation, and Agent Guidance
+:toc: left
+
+== Problem Statement
+In Git monorepos containing multiple independent `eidos/` directories (both sub-projects-only layouts such as `packages/api/eidos` + `packages/billing/eidos` and hybrid layouts with a root `eidos/` alongside sub-projects), `eidos plugin install` intentionally installs a single shared `AGENTS.md` and `.agents/skills/` at `<git_root>` (`DEC-CORE-MONOREPO-ISOLATED-SUBPROJECTS`). Consequently, coding agents execute CLI commands from `<git_root>`, triggering four failure modes:
+
+1. Neither `assets/plugin_reference/agents-md/block.md` nor the bundled `SKILL.md` files mention monorepo sub-project scoping (`-p <subproject>/eidos` or running from `<subproject>`).
+2. Only `eidos context -f` passes `hint_files` to `resolve_cli_eidos_dir()`; all other CLI commands default to `./eidos` at the top root (even creating a bogus empty `<git_root>/eidos/.cache/index.db` on `eidos index` queries when no root `eidos/` exists).
+3. When a root `eidos/` exists alongside nested sub-projects, running `eidos drift --uncommitted` from the monorepo root ignores nested sub-project changes and emits a false-green `is_clean: true` result.
+4. `eidos hook` (`CMP-HOOK-RUNNER`) only inspects `<workspace_root>/eidos` (and treats cache-only `<git_root>/eidos/` as initialized), silently skipping drift checks for modified nested sub-projects.
+
+== Proposed Specification Changes
+* **Shared Monorepo Workspace Resolution (`CMP-CLI-APP`)**: Add `discover_workspace_eidos_dirs`, `resolve_uncommitted_workspace_eidos_dirs`, and `require_cli_eidos_dir` to `src/eidos/cli/_shared.py`, and upgrade `resolve_cli_eidos_dir` hint resolution to strip glob suffixes and walk up to the nearest existing ancestor for planned paths.
+* **Path-Hint & Diff-Aware CLI Commands (`CMP-CLI-CONTEXT-COMMAND`, `CMP-CLI-INDEX-COMMANDS`, `CMP-CLI-SPEC-COMMANDS`, `CMP-CLI-DELTA-COMMANDS`, `CMP-CLI-MEMORY-COMMANDS`, `CTR-EIDOS-CLI` `2.2.0`)**:
+  - Auto-route path-shaped inputs (`eidos index blast-radius <path>`, `eidos memory add -f <path>`, `eidos spec show/delete <path>`, `eidos delta show/verify/apply/audit/delete <path>`, `eidos memory show/update/verify/archive/promote <path>`) to their owning sub-project with repo-relative normalization.
+  - Auto-route `--uncommitted` / `--from-diff` to the single dirty sub-project (or fail closed listing all dirty sub-projects when ambiguous) and guard multi-subproject `-f` spans in `eidos context`.
+  - Fail closed with `discovered_subprojects` hints via `require_cli_eidos_dir` when invoked at a monorepo root with no root `eidos/` (preventing empty `<git_root>/eidos/.cache/index.db` creation) and attach `nested_subprojects` hints on root `eidos index` queries when nested sub-projects exist.
+* **Multi-Subproject `drift` & `validate` (`CMP-CLI-DRIFT-COMMANDS`, `CMP-CLI-SPEC-COMMANDS`)**: When invoked from a monorepo root without an explicit `--path` / `target_path`, discover root + nested `eidos/` directories, route `eidos drift` to the dirty project(s) (aggregating `monorepo_projects` when multiple projects have changes or when no root `eidos/` exists), and aggregate `eidos validate` across discovered `eidos/` projects.
+* **Multi-Subproject Stop Hook (`CMP-HOOK-RUNNER`)**: Resolve root (only when `has_eidos_markers` is true) plus all nested sub-project `eidos/` roots in `src/eidos/plugin/hooks.py`, exclude nested sub-project paths from root baseline scoping, and aggregate drift failures across all modified sub-projects into a single 1-turn continuation response.
+* **Agent Guidance & Plugin Bundle (`CNT-EIDOS-PLUGIN`, `CAP-AGENT-ADAPTER` `1.24.0`, `INV-MONOREPO-ROOT-CLI-AND-HOOK-ROUTING`, `CMP-DOCS-USER-GUIDES`)**: Add concise monorepo scoping guidance to `assets/plugin_reference/agents-md/block.md`, `eidos/SKILL.md`, `eidos-plan/SKILL.md`, and `eidos-memory/SKILL.md` (preserving `INV-PLUGIN-SKILL-SIZE-CEILING` and `INV-PLUGIN-SKILL-CLI-PARITY`), bump `assets/plugin_reference/VERSION` to `1.1.0`, update `.agents/skills/` and root `AGENTS.md`, and document monorepo root routing in `docs/guides/cli.md`.
+
+== Implementation Plan
+1. **Shared CLI Monorepo Primitives**: Update `src/eidos/cli/_shared.py` with ancestor-walking glob-safe `hint_files` resolution, `discover_workspace_eidos_dirs`, `resolve_uncommitted_workspace_eidos_dirs`, `resolve_git_diff_workspace_eidos_dirs`, and `require_cli_eidos_dir` (`CNT-EIDOS-CLI` covered via `CMP-CLI-APP`).
+2. **CLI Command Auto-Routing & Multi-Subproject Aggregation**: Update `src/eidos/cli/context_command.py`, `src/eidos/cli/index_commands.py`, `src/eidos/cli/drift_commands.py`, `src/eidos/cli/spec_commands.py`, `src/eidos/cli/delta_commands.py`, and `src/eidos/cli/memory_commands.py` to adopt `require_cli_eidos_dir`, path/diff hint routing, and multi-subproject `drift`/`validate` evaluation (zero new CLI flags, keeping `tests/fixtures/cli_command_tree.json` unchanged).
+3. **Multi-Subproject Stop Hook**: Update `src/eidos/plugin/hooks.py` to discover all valid `eidos/` roots (`has_eidos_markers` + `discover_nested_subproject_roots`), share a single worktree snapshot, isolate root baseline scoping from nested sub-projects, and aggregate per-subproject drift reports.
+4. **Plugin Guidance & Documentation**: Update `assets/plugin_reference/agents-md/block.md`, `assets/plugin_reference/skills/eidos/SKILL.md`, `assets/plugin_reference/skills/eidos-plan/SKILL.md`, `assets/plugin_reference/skills/eidos-memory/SKILL.md`, bump `assets/plugin_reference/VERSION` to `1.1.0`, run `uv run eidos plugin update antigravity`, and update `docs/guides/cli.md`.
+5. **Comprehensive Monorepo Tests & Living Spec Co-Evolution**: Add `tests/test_monorepo_subprojects.py::test_monorepo_root_cli_routing_drift_validate_and_hooks` covering both sub-projects-only and root+sub-projects layouts (paired with `INV-MONOREPO-ROOT-CLI-AND-HOOK-ROUTING`), co-evolve all mutated living specs, and verify via `pytest`, `eidos delta verify`, `eidos delta apply`, and `eidos drift --uncommitted --json`.

@@ -13,7 +13,7 @@ source_path: src/eidos/cli/init_command.py
 Exposes the `eidos init` CLI command for bootstrapping repositories with the living specification directory skeleton and baseline `system.adoc` descriptor.
 
 == Key Responsibilities & Collaborators
-* **Repository Onboarding CLI**: Parses `[PATH]`, `--title`, `--force`, and optional `--ci` (`github` | `gitlab`) flags and delegates skeleton generation, turnkey CI workflow scaffolding, and immediate schema validation to `CMP-REPO-INITIALIZER` (`init_repository`).
+* **Repository Onboarding CLI**: Parses `[PATH]`, `--title`, `--force`, and optional `--ci` (`github` | `gitlab`) flags, delegates skeleton generation, turnkey CI workflow scaffolding, and immediate schema validation to `CMP-REPO-INITIALIZER` (`init_repository`), and non-destructively refreshes any existing root `AGENTS.md` managed block's monorepo sub-project listing via `CMP-PLUGIN-INSTALLER` (`refresh_agents_md_subprojects`).
 
 == Public Surface
 * `register(app: typer.Typer) -> None`

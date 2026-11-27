@@ -4,7 +4,7 @@ description: "Git-native team operational memory (eidos/memory/mem-*.adoc). Load
 ---
 # Eidos Team Auto-Memory (`eidos-memory`)
 
-`eidos/memory/` stores **shared, Git-tracked team operational memory** (`type: agent/memory`, one `mem-*.adoc` file per entry) across all coding agents. Personal developer preferences never belong here.
+`eidos/memory/` stores **shared, Git-tracked team operational memory** (`type: agent/memory`, one `mem-*.adoc` file per entry) across all coding agents (in monorepos, pass `-p <subproject>/eidos` or rely on `--file` / `--from-diff` auto-routing). Personal developer preferences never belong here.
 
 ## 1. When to Save Automatically (and Disclose)
 

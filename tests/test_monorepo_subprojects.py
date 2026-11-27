@@ -334,3 +334,643 @@ def test_cli_and_hook_discovery_in_monorepo_subproject(tmp_path: Path, monkeypat
     res_ctx = runner.invoke(app, ["context", "-f", "packages/api/src/api/service.py", "--no-semantic", "--json"])
     assert res_ctx.exit_code == 0
     assert "CMP-API-SERVICE" in res_ctx.stdout
+
+
+def test_monorepo_root_cli_routing_drift_validate_and_hooks(tmp_path: Path, monkeypatch) -> None:
+    """Verifies INV-MONOREPO-ROOT-CLI-AND-HOOK-ROUTING across both subproject-only and root+subproject monorepos."""
+    import orjson
+
+    from eidos.plugin.hooks import capture_session_baseline
+
+    git_root = tmp_path / "monorepo_routing"
+    _init_git_monorepo(git_root)
+
+    api_root = git_root / "packages" / "api"
+    billing_root = git_root / "packages" / "billing"
+    api_eidos = _scaffold_subproject(api_root, "api", "API")
+    billing_eidos = _scaffold_subproject(billing_root, "billing", "BILLING")
+
+    # Simulate a shared gitignored semantic model cache directory at <git_root>/eidos/.cache (NOT an initialized root eidos/)
+    (git_root / "eidos" / ".cache" / "models").mkdir(parents=True, exist_ok=True)
+    _ensure_eidos_gitignore(git_root / "eidos")
+    (git_root / "eidos" / ".cache" / ".gitignore").write_text("*\n", encoding="utf-8")
+
+    _git(git_root, "add", ".")
+    _git(git_root, "commit", "-m", "Initial monorepo with api and billing sub-projects")
+
+    monkeypatch.chdir(git_root)
+
+    # === LAYOUT 1: Sub-projects only (no initialized root eidos/) ===
+
+    # 1. Ambiguous root commands fail closed with discovered_subprojects hints and NEVER create root index.db
+    for cmd_args in (
+        ["index", "find-symbol", "run_api", "--json"],
+        ["index", "search", "billing", "--no-semantic", "--json"],
+        ["index", "repo-map", "--json"],
+        ["spec", "list", "--json"],
+        ["delta", "list", "--json"],
+        ["memory", "list", "--json"],
+    ):
+        res = runner.invoke(app, cmd_args)
+        assert res.exit_code == 1, (cmd_args, res.stdout)
+        err_payload = orjson.loads(res.stdout)
+        assert err_payload["discovered_subprojects"] == ["packages/api/eidos", "packages/billing/eidos"]
+    assert not (git_root / "eidos" / ".cache" / "index.db").exists()
+
+    # Explicit --path works cleanly from monorepo root
+    res_sym = runner.invoke(app, ["index", "find-symbol", "run_api", "-p", "packages/api/eidos", "--json"])
+    assert res_sym.exit_code == 0, res_sym.stdout
+    assert orjson.loads(res_sym.stdout)["count"] >= 1
+
+    # 2. Path-hint auto-routing for planned non-existent subdirs, blast-radius, spec show, and cross-subproject span guard
+    res_planned = runner.invoke(
+        app,
+        ["context", "-f", "packages/api/src/api/new_subdir/planned.py", "--no-semantic", "--json"],
+    )
+    assert res_planned.exit_code == 0, res_planned.stdout
+    assert "CMP-API-SERVICE" in res_planned.stdout or "CNT-API" in res_planned.stdout
+
+    res_span = runner.invoke(
+        app,
+        [
+            "context",
+            "-f",
+            "packages/api/src/api/service.py,packages/billing/src/billing/service.py",
+            "--no-semantic",
+            "--json",
+        ],
+    )
+    assert res_span.exit_code == 1
+    assert orjson.loads(res_span.stdout)["discovered_subprojects"] == ["packages/api/eidos", "packages/billing/eidos"]
+
+    res_br = runner.invoke(app, ["index", "blast-radius", "packages/api/src/api/service.py", "--json"])
+    assert res_br.exit_code == 0, res_br.stdout
+    br_data = orjson.loads(res_br.stdout)
+    assert "CMP-API-SERVICE" in br_data["resolved_entities"]
+
+    res_spec_show = runner.invoke(
+        app,
+        ["spec", "show", "packages/api/eidos/architecture/components/api-service.adoc"],
+    )
+    assert res_spec_show.exit_code == 0, res_spec_show.stdout
+    assert "CMP-API-SERVICE" in res_spec_show.stdout
+
+    # 3. Multi-subproject `eidos validate` and clean `eidos drift` from root
+    res_val = runner.invoke(app, ["validate", "--json"])
+    assert res_val.exit_code == 0, res_val.stdout
+    val_data = orjson.loads(res_val.stdout)
+    assert val_data["is_clean"] is True
+    assert len(val_data["monorepo_projects"]) == 2
+
+    res_clean_drift = runner.invoke(app, ["drift", "--uncommitted", "--json"])
+    assert res_clean_drift.exit_code == 0, res_clean_drift.stdout
+    clean_drift_data = orjson.loads(res_clean_drift.stdout)
+    assert clean_drift_data["is_clean"] is True
+    assert len(clean_drift_data["monorepo_projects"]) == 2
+
+    # 4. Stop hook baseline + single dirty sub-project auto-routing (context, drift, memory, hook)
+    capture_session_baseline({"session_id": "mono-s1", "hook_event_name": "SessionStart"}, git_root)
+    assert handle_stop_hook({"session_id": "mono-s1"}, git_root) == {}
+
+    (billing_root / "src" / "billing" / "service.py").write_text(
+        'def run_billing(value: int) -> int:\n    """Run billing logic."""\n    return value + 1\n\n\n'
+        "def charge_billing(amount: int) -> int:\n    return amount\n",
+        encoding="utf-8",
+    )
+
+    res_ctx_u = runner.invoke(app, ["context", "--uncommitted", "--no-semantic", "--json"])
+    assert res_ctx_u.exit_code == 0, res_ctx_u.stdout
+    assert "CMP-BILLING-SERVICE" in res_ctx_u.stdout
+
+    res_drift_one = runner.invoke(app, ["drift", "--uncommitted", "--json"])
+    assert res_drift_one.exit_code == 1, res_drift_one.stdout
+    drift_one_data = orjson.loads(res_drift_one.stdout)
+    assert drift_one_data["drift_detected"] is True
+    assert drift_one_data["eidos_dir"] == "packages/billing/eidos"
+    assert "CMP-BILLING-SERVICE" in drift_one_data["touched_components"]
+
+    # Rich output auto-routing banner also works cleanly
+    res_drift_one_rich = runner.invoke(app, ["drift", "--uncommitted"])
+    assert res_drift_one_rich.exit_code == 1
+    assert "packages/billing/eidos" in res_drift_one_rich.stdout
+
+    # Stop hook detects sub-project drift even from monorepo root with cache-only <git_root>/eidos/
+    stop_l1 = handle_stop_hook({"session_id": "mono-s1"}, git_root)
+    assert stop_l1["decision"] == "block"
+    assert "packages/billing/eidos" in stop_l1["reason"]
+
+    # Memory add with --file and --from-diff auto-routes to billing and normalizes paths relative to billing_root
+    res_mem = runner.invoke(
+        app,
+        [
+            "memory",
+            "add",
+            "--title",
+            "Billing rounding invariant",
+            "--guidance",
+            "Always round billing amounts in cents.",
+            "--file",
+            "packages/billing/src/billing/service.py",
+            "--no-semantic",
+            "--json",
+        ],
+    )
+    assert res_mem.exit_code == 0, res_mem.stdout
+    mem_data = orjson.loads(res_mem.stdout)
+    mem_file = Path(mem_data["path"])
+    assert mem_file.is_relative_to(billing_eidos.resolve())
+    assert "src/billing/service.py" in mem_file.read_text(encoding="utf-8")
+    assert "packages/billing/src/billing/service.py" not in mem_file.read_text(encoding="utf-8")
+
+    # Path-hint routing on `eidos memory show` and `eidos memory update`
+    mem_rel = str(mem_file.relative_to(git_root.resolve()))
+    res_mem_show = runner.invoke(app, ["memory", "show", mem_rel, "--json"])
+    assert res_mem_show.exit_code == 0, res_mem_show.stdout
+    assert orjson.loads(res_mem_show.stdout)["id"] == mem_data["id"]
+
+    res_mem_upd = runner.invoke(
+        app,
+        [
+            "memory",
+            "update",
+            mem_rel,
+            "--file",
+            "packages/billing/src/billing/service.py",
+            "--no-semantic",
+            "--json",
+        ],
+    )
+    assert res_mem_upd.exit_code == 0, res_mem_upd.stdout
+    assert "packages/billing/src/billing/service.py" not in mem_file.read_text(encoding="utf-8")
+    mem_file.unlink()
+
+    # Memory add --from-diff auto-routes when a single sub-project is dirty
+    res_mem_diff = runner.invoke(
+        app,
+        [
+            "memory",
+            "add",
+            "--title",
+            "Billing diff note",
+            "--guidance",
+            "Captured via --from-diff from monorepo root.",
+            "--from-diff",
+            "--no-semantic",
+            "--json",
+        ],
+    )
+    assert res_mem_diff.exit_code == 0, res_mem_diff.stdout
+    mem_diff_file = Path(orjson.loads(res_mem_diff.stdout)["path"])
+    assert mem_diff_file.is_relative_to(billing_eidos.resolve())
+    mem_diff_file.unlink()
+
+    # Path-hint routing on `eidos delta show` from monorepo root
+    delta_file = create_delta(api_eidos, "DLT-2026-901", "API Health Endpoint", kind="feature")
+    delta_rel = str(delta_file.relative_to(git_root.resolve()))
+    res_dlt_show = runner.invoke(app, ["delta", "show", delta_rel, "--json"])
+    assert res_dlt_show.exit_code == 0, res_dlt_show.stdout
+    assert orjson.loads(res_dlt_show.stdout)["id"].startswith("DLT-2026-901")
+    delta_file.unlink()
+
+    # 5. Modify BOTH api and billing -> multi-subproject drift aggregation + ambiguous context/memory guard
+    (api_root / "src" / "api" / "service.py").write_text(
+        'def run_api(value: int) -> int:\n    """Run api logic."""\n    return value + 1\n\n\n'
+        "def health_api() -> str:\n    return 'ok'\n",
+        encoding="utf-8",
+    )
+
+    res_drift_two = runner.invoke(app, ["drift", "--uncommitted", "--json"])
+    assert res_drift_two.exit_code == 1, res_drift_two.stdout
+    drift_two_data = orjson.loads(res_drift_two.stdout)
+    assert drift_two_data["is_clean"] is False
+    assert drift_two_data["drift_detected"] is True
+    assert [p["eidos_dir"] for p in drift_two_data["monorepo_projects"]] == [
+        "packages/api/eidos",
+        "packages/billing/eidos",
+    ]
+    res_drift_two_rich = runner.invoke(app, ["drift", "--uncommitted"])
+    assert res_drift_two_rich.exit_code == 1
+    assert "packages/api/eidos" in res_drift_two_rich.stdout
+    assert "packages/billing/eidos" in res_drift_two_rich.stdout
+
+    res_ctx_ambig = runner.invoke(app, ["context", "--uncommitted", "--no-semantic", "--json"])
+    assert res_ctx_ambig.exit_code == 1
+    assert orjson.loads(res_ctx_ambig.stdout)["discovered_subprojects"] == [
+        "packages/api/eidos",
+        "packages/billing/eidos",
+    ]
+
+    res_mem_ambig = runner.invoke(
+        app,
+        [
+            "memory",
+            "add",
+            "--title",
+            "Ambiguous diff note",
+            "--guidance",
+            "Spans two sub-projects.",
+            "--from-diff",
+            "--no-semantic",
+            "--json",
+        ],
+    )
+    assert res_mem_ambig.exit_code == 1
+    assert orjson.loads(res_mem_ambig.stdout)["discovered_subprojects"] == [
+        "packages/api/eidos",
+        "packages/billing/eidos",
+    ]
+
+    # Reset working tree before testing Layout 2
+    _git(git_root, "checkout", "--", ".")
+
+    # === LAYOUT 2: Root eidos/ + nested sub-projects ===
+    root_ok, root_msg, _ = init_repository(git_root, title="Monorepo Root")
+    assert root_ok, root_msg
+    _git(git_root, "add", ".")
+    _git(git_root, "commit", "-m", "Add root eidos project alongside sub-projects")
+
+    # Root index queries succeed AND advertise nested_subprojects (JSON & Rich)
+    res_root_sym = runner.invoke(app, ["index", "find-symbol", "nonexistent_root_sym", "--json"])
+    assert res_root_sym.exit_code == 0, res_root_sym.stdout
+    assert orjson.loads(res_root_sym.stdout)["nested_subprojects"] == [
+        "packages/api/eidos",
+        "packages/billing/eidos",
+    ]
+    res_root_sym_rich = runner.invoke(app, ["index", "find-symbol", "nonexistent_root_sym"])
+    assert res_root_sym_rich.exit_code == 0
+    assert "packages/api/eidos" in res_root_sym_rich.stdout
+
+    res_root_search = runner.invoke(app, ["index", "search", "billing", "--no-semantic", "--json"])
+    assert res_root_search.exit_code == 0, res_root_search.stdout
+    assert orjson.loads(res_root_search.stdout)["nested_subprojects"] == [
+        "packages/api/eidos",
+        "packages/billing/eidos",
+    ]
+    res_root_map = runner.invoke(app, ["index", "repo-map", "--json"])
+    assert res_root_map.exit_code == 0, res_root_map.stdout
+    assert orjson.loads(res_root_map.stdout)["nested_subprojects"] == [
+        "packages/api/eidos",
+        "packages/billing/eidos",
+    ]
+
+    # Root validate checks root + both sub-projects (JSON & Rich)
+    res_val_l2 = runner.invoke(app, ["validate", "--json"])
+    assert res_val_l2.exit_code == 0, res_val_l2.stdout
+    val_l2 = orjson.loads(res_val_l2.stdout)
+    assert val_l2["is_clean"] is True
+    assert [p["eidos_dir"] for p in val_l2["monorepo_projects"]] == [
+        "eidos",
+        "packages/api/eidos",
+        "packages/billing/eidos",
+    ]
+    res_val_l2_rich = runner.invoke(app, ["validate"])
+    assert res_val_l2_rich.exit_code == 0
+    assert "3 monorepo projects" in res_val_l2_rich.stdout
+
+    # Capture session baseline for Layout 2 (Antigravity client payload)
+    capture_session_baseline({"conversation_id": "mono-s2", "event": "SessionStart"}, git_root)
+    assert handle_stop_hook({"conversation_id": "mono-s2"}, git_root) == {"decision": "allow"}
+
+    # Modify ONLY packages/api/src/api/service.py -> NO false-green from root eidos/!
+    (api_root / "src" / "api" / "service.py").write_text(
+        'def run_api(value: int) -> int:\n    """Run api logic."""\n    return value + 1\n\n\n'
+        "def ping_api() -> str:\n    return 'pong'\n",
+        encoding="utf-8",
+    )
+
+    res_drift_l2 = runner.invoke(app, ["drift", "--uncommitted", "--json"])
+    assert res_drift_l2.exit_code == 1, res_drift_l2.stdout
+    drift_l2 = orjson.loads(res_drift_l2.stdout)
+    assert drift_l2["is_clean"] is False
+    assert drift_l2["drift_detected"] is True
+    assert drift_l2["eidos_dir"] == "packages/api/eidos"
+
+    stop_l2 = handle_stop_hook({"conversation_id": "mono-s2"}, git_root)
+    assert stop_l2["decision"] == "continue"
+    assert "packages/api/eidos" in stop_l2["reason"]
+    assert "Sub-project `eidos`:" not in stop_l2["reason"]
+
+    # Co-evolve packages/api component spec -> both drift and Stop hook become clean!
+    (api_eidos / "architecture" / "components" / "api-service.adoc").write_text(
+        "---\ntype: tech/component\nid: CMP-API-SERVICE\ntitle: ApiService\n"
+        "container: CNT-API\nstatus: active\nsource_path: src/api/service.py\n---\n"
+        "= Component: ApiService\n\n== Responsibility\nImplements `run_api` and `ping_api`.\n\n"
+        "== Public Surface\n* `run_api(value: int) -> int`\n* `ping_api() -> str`\n",
+        encoding="utf-8",
+    )
+    res_drift_l2_clean = runner.invoke(app, ["drift", "--uncommitted", "--json"])
+    assert res_drift_l2_clean.exit_code == 0, res_drift_l2_clean.stdout
+    assert orjson.loads(res_drift_l2_clean.stdout)["is_clean"] is True
+    assert handle_stop_hook({"conversation_id": "mono-s2"}, git_root) == {"decision": "allow"}
+
+    # Verify bundled AGENTS.md block and master eidos skill carry monorepo sub-project scoping guidance
+    repo_root = Path(__file__).resolve().parent.parent
+    assert "-p <subproject>/eidos" in (repo_root / "assets/plugin_reference/agents-md/block.md").read_text(
+        encoding="utf-8"
+    )
+    assert "-p <subproject>/eidos" in (repo_root / "assets/plugin_reference/skills/eidos/SKILL.md").read_text(
+        encoding="utf-8"
+    )
+
+    # === Regression checks from adversarial review ===
+    # 1. `eidos index blast-radius` with explicit `-p` from monorepo root strips sub-project prefix,
+    #    and from a sub-project subdirectory preserves repo-relative paths.
+    res_br_explicit = runner.invoke(
+        app, ["index", "blast-radius", "packages/api/src/api/service.py", "-p", "packages/api/eidos", "--json"]
+    )
+    assert res_br_explicit.exit_code == 0, res_br_explicit.stdout
+    assert "CMP-API-SERVICE" in orjson.loads(res_br_explicit.stdout)["resolved_entities"]
+
+    monkeypatch.chdir(api_root / "tests")
+    res_br_subdir = runner.invoke(app, ["index", "blast-radius", "src/api/service.py", "--json"])
+    assert res_br_subdir.exit_code == 0, res_br_subdir.stdout
+    assert "CMP-API-SERVICE" in orjson.loads(res_br_subdir.stdout)["resolved_entities"]
+    monkeypatch.chdir(git_root)
+
+    # 2. Path-routed `spec show` without `.adoc` suffix resolves cleanly
+    res_spec_no_ext = runner.invoke(app, ["spec", "show", "packages/api/eidos/architecture/components/api-service"])
+    assert res_spec_no_ext.exit_code == 0, res_spec_no_ext.stdout
+    assert "CMP-API-SERVICE" in res_spec_no_ext.stdout
+
+    # 3. Cline 1-turn retry guard with 2 dirty sub-projects does NOT ping-pong
+    _git(git_root, "add", ".")
+    _git(git_root, "commit", "-m", "Commit reconciled api changes before Cline retry check")
+    cline_start = {"clineVersion": "3.0", "hookName": "TaskStart", "taskId": "cline-t1"}
+    capture_session_baseline(cline_start, git_root)
+    (api_root / "src" / "api" / "service.py").write_text(
+        (api_root / "src" / "api" / "service.py").read_text(encoding="utf-8")
+        + "\ndef extra_api() -> int:\n    return 1\n",
+        encoding="utf-8",
+    )
+    (billing_root / "src" / "billing" / "service.py").write_text(
+        (billing_root / "src" / "billing" / "service.py").read_text(encoding="utf-8")
+        + "\ndef extra_billing() -> int:\n    return 2\n",
+        encoding="utf-8",
+    )
+    cline_stop = {
+        "clineVersion": "3.0",
+        "hookName": "PreToolUse",
+        "taskId": "cline-t1",
+        "preToolUse": {"toolName": "attempt_completion"},
+    }
+    first_cline = handle_stop_hook(cline_stop, git_root)
+    assert first_cline["cancel"] is True
+    assert "packages/api/eidos" in first_cline["errorMessage"]
+    assert "packages/billing/eidos" in first_cline["errorMessage"]
+    # Immediate unchanged retry MUST allow (never ping-pong between api and billing)
+    second_cline = handle_stop_hook(cline_stop, git_root)
+    assert second_cline == {"cancel": False}
+
+    # 4. Root-file edit (eidos/system.adoc) does NOT defeat nested sub-project session baseline
+    #    (packages/api has pre-existing dirty drift captured in baseline; editing root eidos/system.adoc must not trigger packages/api)
+    capture_session_baseline({"conversation_id": "mono-s3", "event": "SessionStart"}, git_root)
+    root_sys = git_root / "eidos" / "system.adoc"
+    root_sys.write_text(root_sys.read_text(encoding="utf-8") + "\nUpdated root note.\n", encoding="utf-8")
+    stop_root_only = handle_stop_hook({"conversation_id": "mono-s3"}, git_root)
+    assert stop_root_only == {"decision": "allow"}
+
+    # 5. Zero-config AGENTS.md sub-project auto-listing on plugin install + auto-refresh on `eidos init <subproject>`
+    _git(git_root, "checkout", "--", ".")
+    install_plugin(PluginInstallTarget.ANTIGRAVITY, project_dir=git_root, force=True)
+    agents_md_text = (git_root / "AGENTS.md").read_text(encoding="utf-8")
+    assert "Sub-projects:" in agents_md_text
+    assert "`eidos`" in agents_md_text
+    assert "`packages/api/eidos`" in agents_md_text
+    assert "`packages/billing/eidos`" in agents_md_text
+
+    res_init_sub = runner.invoke(app, ["init", "packages/payments", "--title", "Payments Service"])
+    assert res_init_sub.exit_code == 0, res_init_sub.stdout
+    assert "Refreshed monorepo sub-project list in root AGENTS.md" in res_init_sub.stdout
+    agents_md_after = (git_root / "AGENTS.md").read_text(encoding="utf-8")
+    assert "`packages/payments/eidos`" in agents_md_after
+
+
+def test_monorepo_cli_branch_coverage_and_edge_cases(tmp_path: Path, monkeypatch) -> None:
+    """Exercise branch-diff routing, glob/symlink normalization, Rich error paths, and AGENTS.md refresh safety."""
+    import orjson
+
+    from eidos.cli._shared import (
+        _looks_like_path_hint,
+        _resolve_hint_file_eidos_dir,
+        _strip_glob_prefix,
+        format_rel_eidos_paths,
+        resolve_git_diff_workspace_eidos_dirs,
+        resolve_uncommitted_workspace_eidos_dirs,
+    )
+    from eidos.plugin.installer import refresh_agents_md_subprojects
+
+    # Pure helper edge cases in _shared.py
+    assert _strip_glob_prefix("packages/api/src/**/*.py") == "packages/api/src"
+    assert _strip_glob_prefix("*.py") == ""
+    assert _strip_glob_prefix("//server/share/pkg/*.py") == "//server/share/pkg"
+    assert _strip_glob_prefix("C:\\*.py") == "C:/"
+    assert _looks_like_path_hint("GET /users") is False
+    assert _looks_like_path_hint("") is False
+    assert _resolve_hint_file_eidos_dir("") is None
+
+    # Non-git directory returns empty uncommitted/diff lists and refresh_agents_md_subprojects returns None
+    non_git = tmp_path / "non_git"
+    non_git.mkdir()
+    assert resolve_uncommitted_workspace_eidos_dirs(non_git) == []
+    assert resolve_git_diff_workspace_eidos_dirs(non_git, uncommitted=False) == []
+    assert refresh_agents_md_subprojects(non_git) is None
+
+    git_root = tmp_path / "mono_edges"
+    _init_git_monorepo(git_root)
+    api_root = git_root / "packages" / "api"
+    billing_root = git_root / "packages" / "billing"
+    api_eidos = _scaffold_subproject(api_root, "api", "API")
+    _scaffold_subproject(billing_root, "billing", "BILLING")
+    _git(git_root, "add", ".")
+    _git(git_root, "commit", "-m", "Initial rootless monorepo")
+
+    monkeypatch.chdir(git_root)
+
+    # Clean rootless monorepo: context --uncommitted returns empty slice (JSON and Rich), Rich rootless errors work
+    res_ctx_empty_json = runner.invoke(app, ["context", "--uncommitted", "--no-semantic", "--json"])
+    assert res_ctx_empty_json.exit_code == 0, res_ctx_empty_json.stdout
+    res_ctx_empty_rich = runner.invoke(app, ["context", "--uncommitted", "--no-semantic"])
+    assert res_ctx_empty_rich.exit_code == 0
+    assert "No changed files detected" in res_ctx_empty_rich.stdout
+
+    res_rich_rootless = runner.invoke(app, ["index", "find-symbol", "run_api"])
+    assert res_rich_rootless.exit_code == 1
+    assert "packages/api/eidos" in res_rich_rootless.stdout
+
+    res_ctx_span_rich = runner.invoke(
+        app,
+        ["context", "-f", "packages/api/src/api/service.py,packages/billing/src/billing/service.py", "--no-semantic"],
+    )
+    assert res_ctx_span_rich.exit_code == 1
+    assert "multiple independent Eidos sub-projects" in res_ctx_span_rich.stdout
+
+    # Invalid --base ref errors on context and drift (JSON, Rich, and --warn-only)
+    for bad_args in (
+        ["context", "--base", "refs/heads/no-such-branch", "--no-semantic", "--json"],
+        ["context", "--base", "refs/heads/no-such-branch", "--no-semantic"],
+        ["drift", "--base", "refs/heads/no-such-branch", "--json"],
+        ["drift", "--base", "refs/heads/no-such-branch"],
+    ):
+        r = runner.invoke(app, bad_args)
+        assert r.exit_code == 1, (bad_args, r.stdout)
+
+    r_warn_only = runner.invoke(app, ["drift", "--base", "refs/heads/no-such-branch", "--warn-only", "--json"])
+    assert r_warn_only.exit_code == 0
+
+    # Branch-diff mode (`--base main`) auto-routing across 1 dirty sub-project and 2 dirty sub-projects
+    _git(git_root, "checkout", "-b", "feat/mono-branch")
+    (api_root / "src" / "api" / "service.py").write_text(
+        'def run_api(value: int) -> int:\n    """Run api logic."""\n    return value + 1\n\n\n'
+        "def branch_api() -> int:\n    return 42\n",
+        encoding="utf-8",
+    )
+    _git(git_root, "add", ".")
+    _git(git_root, "commit", "-m", "Add branch_api in api sub-project")
+
+    res_ctx_base = runner.invoke(app, ["context", "--base", "main", "--no-semantic", "--json"])
+    assert res_ctx_base.exit_code == 0, res_ctx_base.stdout
+    assert "CMP-API-SERVICE" in res_ctx_base.stdout
+
+    res_drift_base = runner.invoke(app, ["drift", "--base", "main", "--json"])
+    assert res_drift_base.exit_code == 1, res_drift_base.stdout
+    assert orjson.loads(res_drift_base.stdout)["eidos_dir"] == "packages/api/eidos"
+
+    # Second commit touches billing too -> branch-diff drift aggregates both & context --base fails closed (Rich)
+    (billing_root / "src" / "billing" / "service.py").write_text(
+        'def run_billing(value: int) -> int:\n    """Run billing logic."""\n    return value + 1\n\n\n'
+        "def branch_billing() -> int:\n    return 99\n",
+        encoding="utf-8",
+    )
+    _git(git_root, "add", ".")
+    _git(git_root, "commit", "-m", "Add branch_billing in billing sub-project")
+
+    res_drift_base_two = runner.invoke(app, ["drift", "--base", "main", "--json"])
+    assert res_drift_base_two.exit_code == 1
+    assert len(orjson.loads(res_drift_base_two.stdout)["monorepo_projects"]) == 2
+
+    res_ctx_base_ambig = runner.invoke(app, ["context", "--base", "main", "--no-semantic"])
+    assert res_ctx_base_ambig.exit_code == 1
+    assert "multiple independent Eidos sub-projects" in res_ctx_base_ambig.stdout
+
+    # Memory glob normalization (./ prefix, absolute glob, cross-subproject guards on add & update in JSON & Rich)
+    res_mem_glob = runner.invoke(
+        app,
+        [
+            "memory",
+            "add",
+            "--title",
+            "Billing glob note",
+            "--guidance",
+            "Normalize globs relative to billing.",
+            "--file",
+            "./packages/billing/src/**/*.py",
+            "--file",
+            f"{billing_root.resolve().as_posix()}/tests/*.py",
+            "--no-semantic",
+            "--json",
+        ],
+    )
+    assert res_mem_glob.exit_code == 0, res_mem_glob.stdout
+    mem_glob_data = orjson.loads(res_mem_glob.stdout)
+    mem_glob_file = Path(mem_glob_data["path"])
+    mem_glob_text = mem_glob_file.read_text(encoding="utf-8")
+    assert "src/**/*.py" in mem_glob_text
+    assert "tests/*.py" in mem_glob_text
+    assert "packages/billing/" not in mem_glob_text
+
+    # Bare MEM-* ID routed via --file on memory update
+    res_mem_upd_bare = runner.invoke(
+        app,
+        [
+            "memory",
+            "update",
+            mem_glob_data["id"],
+            "--file",
+            "packages/billing/src/billing/service.py",
+            "--no-semantic",
+            "--json",
+        ],
+    )
+    assert res_mem_upd_bare.exit_code == 0, res_mem_upd_bare.stdout
+
+    # Cross-subproject --file guards on memory add & memory update (JSON and Rich)
+    for bad_mem_args in (
+        [
+            "memory",
+            "add",
+            "--title",
+            "Cross",
+            "--guidance",
+            "Bad",
+            "--file",
+            "packages/api/src/api/service.py",
+            "--file",
+            "packages/billing/src/billing/service.py",
+            "--no-semantic",
+            "--json",
+        ],
+        [
+            "memory",
+            "add",
+            "--title",
+            "Cross Rich",
+            "--guidance",
+            "Bad",
+            "--file",
+            "packages/api/src/api/service.py",
+            "--file",
+            "packages/billing/src/billing/service.py",
+            "--no-semantic",
+        ],
+        [
+            "memory",
+            "update",
+            str(mem_glob_file.relative_to(git_root.resolve())),
+            "--file",
+            "packages/api/src/api/service.py",
+            "--no-semantic",
+            "--json",
+        ],
+        [
+            "memory",
+            "update",
+            str(mem_glob_file.relative_to(git_root.resolve())),
+            "--file",
+            "packages/api/src/api/service.py",
+            "--no-semantic",
+        ],
+    ):
+        rm = runner.invoke(app, bad_mem_args)
+        assert rm.exit_code == 1, (bad_mem_args, rm.stdout)
+
+    # Ambiguous --from-diff Rich error on memory add
+    (api_root / "src" / "api" / "service.py").write_text(
+        (api_root / "src" / "api" / "service.py").read_text(encoding="utf-8") + "\n# dirty\n",
+        encoding="utf-8",
+    )
+    (billing_root / "src" / "billing" / "service.py").write_text(
+        (billing_root / "src" / "billing" / "service.py").read_text(encoding="utf-8") + "\n# dirty\n",
+        encoding="utf-8",
+    )
+    res_mem_diff_rich = runner.invoke(
+        app,
+        ["memory", "add", "--title", "Ambig Rich", "--guidance", "Two dirty", "--from-diff", "--no-semantic"],
+    )
+    assert res_mem_diff_rich.exit_code == 1
+    assert "multiple independent Eidos sub-projects" in res_mem_diff_rich.stdout
+
+    # Symlink hint resolution stays attributed to its containing sub-project & format_rel_eidos_paths handles outside paths
+    sym_link = api_root / "src" / "api" / "linked_billing.py"
+    sym_link.symlink_to(billing_root / "src" / "billing" / "service.py")
+    assert _resolve_hint_file_eidos_dir("packages/api/src/api/linked_billing.py") == api_eidos.resolve()
+    assert format_rel_eidos_paths([tmp_path / "outside" / "eidos"], git_root)[0].endswith("outside/eidos")
+
+    # Hand-edited AGENTS.md managed block is NOT clobbered by refresh_agents_md_subprojects (force=False)
+    install_plugin(PluginInstallTarget.ANTIGRAVITY, project_dir=git_root, force=True)
+    agents_md = git_root / "AGENTS.md"
+    agents_md.write_text(
+        agents_md.read_text(encoding="utf-8").replace("Living specs", "Custom user edit"), encoding="utf-8"
+    )
+    res_hand_edit = refresh_agents_md_subprojects(billing_root)
+    assert res_hand_edit is not None
+    assert "Custom user edit" in agents_md.read_text(encoding="utf-8")

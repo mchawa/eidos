@@ -7,9 +7,27 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from eidos.cli._shared import console, load_cli_repo_config, resolve_cli_eidos_dir, resolve_param_from_config
+from eidos.cli._shared import (
+    _looks_like_path_hint,
+    console,
+    format_rel_eidos_paths,
+    is_explicit_cli_path,
+    load_cli_repo_config,
+    require_cli_eidos_dir,
+    resolve_param_from_config,
+)
 from eidos.core.index.graph_index import get_architectural_index
 from eidos.core.index.storage import normalize_confidence_level, provenance_to_confidence
+from eidos.core.workspace.project import discover_nested_subproject_roots, find_repo_root
+
+
+def _nested_subproject_hints(path: Path | None) -> list[str]:
+    """Return formatted nested sub-project eidos/ paths when invoked from a monorepo root without --path."""
+    if is_explicit_cli_path(path):
+        return []
+    nested = [sub / "eidos" for sub in discover_nested_subproject_roots(Path.cwd())]
+    return format_rel_eidos_paths(nested) if nested else []
+
 
 index_app = typer.Typer(
     name="index",
@@ -33,7 +51,7 @@ def index_status_cmd(
     ),
 ):
     """Display health, schema version, cache size, AST telemetry, and statistics of the architectural index."""
-    eidos_dir = resolve_cli_eidos_dir(path)
+    eidos_dir = require_cli_eidos_dir(path, json_output=json_output)
     load_cli_repo_config(eidos_dir, json_output=json_output)
     idx = get_architectural_index(eidos_dir=eidos_dir)
     status = idx.get_index_status()
@@ -132,7 +150,7 @@ def index_sync_cmd(
     ),
 ):
     """Synchronize the architectural index with specifications on disk."""
-    eidos_dir = resolve_cli_eidos_dir(path)
+    eidos_dir = require_cli_eidos_dir(path, json_output=json_output)
     repo_cfg = load_cli_repo_config(eidos_dir, json_output=json_output)
     eff_semantic = bool(resolve_param_from_config("semantic", semantic, repo_cfg.context.semantic.enabled))
     idx = get_architectural_index(eidos_dir=eidos_dir)
@@ -224,22 +242,27 @@ def index_search_cmd(
     ),
 ):
     """Execute BM25 ranked full-text search (FTS5) with optional Harrier Hybrid RRF across specifications, capabilities, and invariants."""
-    eidos_dir = resolve_cli_eidos_dir(path)
+    eidos_dir = require_cli_eidos_dir(path, json_output=json_output)
     repo_cfg = load_cli_repo_config(eidos_dir, json_output=json_output)
     eff_semantic = bool(resolve_param_from_config("semantic", semantic, repo_cfg.context.semantic.enabled))
     idx = get_architectural_index(eidos_dir=eidos_dir)
     results = idx.query_fts(query, limit=limit, use_semantic=eff_semantic)
+    nested_hints = _nested_subproject_hints(path)
 
     if json_output:
-        typer.echo(
-            orjson.dumps(
-                {"query": query, "count": len(results), "results": results}, option=orjson.OPT_INDENT_2
-            ).decode("utf-8")
-        )
+        payload: dict[str, object] = {"query": query, "count": len(results), "results": results}
+        if nested_hints:
+            payload["nested_subprojects"] = nested_hints
+        typer.echo(orjson.dumps(payload, option=orjson.OPT_INDENT_2).decode("utf-8"))
         return
 
     if not results:
         console.print(f"[yellow]No architectural specifications matched query: '{query}'[/yellow]")
+        if nested_hints:
+            console.print(
+                f"[dim]Tip: Nested monorepo sub-projects also exist ({', '.join(nested_hints)}) — "
+                f"query them with '--path <subproject>/eidos'.[/dim]"
+            )
         return
 
     table = Table(title=f"Architectural Search Results for '{query}' ({len(results)} matches)", show_header=True)
@@ -299,10 +322,22 @@ def index_blast_radius_cmd(
             console.print(f"[bold red]Error:[/bold red] {exc}")
         raise typer.Exit(code=1) from exc
 
-    eidos_dir = resolve_cli_eidos_dir(path)
+    is_path_target = _looks_like_path_hint(symbol_or_path)
+    path_hints = [symbol_or_path] if (is_path_target and not is_explicit_cli_path(path)) else None
+    eidos_dir = require_cli_eidos_dir(path, hint_files=path_hints, json_output=json_output)
     load_cli_repo_config(eidos_dir, json_output=json_output)
     idx = get_architectural_index(eidos_dir=eidos_dir)
-    resolved_ids = idx.resolve_blast_radius_targets(symbol_or_path)
+    effective_target = symbol_or_path
+    if is_path_target:
+        resolved_eidos = eidos_dir.resolve()
+        repo_root = (
+            resolved_eidos.parent if resolved_eidos.name == "eidos" else find_repo_root(resolved_eidos)
+        ).resolve()
+        raw_p = Path(symbol_or_path)
+        abs_p = raw_p.resolve() if raw_p.is_absolute() else (Path.cwd().resolve() / raw_p).resolve()
+        if abs_p.is_relative_to(repo_root) and (abs_p.exists() or not (repo_root / raw_p).exists()):
+            effective_target = abs_p.relative_to(repo_root).as_posix()
+    resolved_ids = idx.resolve_blast_radius_targets(effective_target)
     neighbors = (
         idx.get_k_hop_neighborhood(resolved_ids, max_depth=depth, min_confidence=norm_confidence)
         if resolved_ids
@@ -375,18 +410,29 @@ def index_repo_map_cmd(
     ),
 ):
     """Generate a token-budgeted structural repo map outline for AI coding agents."""
-    eidos_dir = resolve_cli_eidos_dir(path)
+    eidos_dir = require_cli_eidos_dir(path, json_output=json_output)
     repo_cfg = load_cli_repo_config(eidos_dir, json_output=json_output)
     eff_max_tokens = int(resolve_param_from_config("max_tokens", max_tokens, repo_cfg.context.repo_map_max_tokens))
     idx = get_architectural_index(eidos_dir=eidos_dir)
     repo_map = idx.get_repo_map(max_tokens=eff_max_tokens)
+    nested_hints = _nested_subproject_hints(path)
 
     if json_output:
-        console.print_json(
-            data={"repo_map": repo_map, "max_tokens": eff_max_tokens, "estimated_tokens": len(repo_map) // 4}
-        )
+        payload: dict[str, object] = {
+            "repo_map": repo_map,
+            "max_tokens": eff_max_tokens,
+            "estimated_tokens": len(repo_map) // 4,
+        }
+        if nested_hints:
+            payload["nested_subprojects"] = nested_hints
+        console.print_json(data=payload)
     else:
         console.print(repo_map)
+        if nested_hints:
+            console.print(
+                f"\n[dim]Tip: Nested monorepo sub-projects also exist ({', '.join(nested_hints)}) — "
+                f"run 'eidos index repo-map --path <subproject>/eidos' to inspect each.[/dim]"
+            )
 
 
 @index_app.command("find-symbol")
@@ -414,17 +460,26 @@ def index_find_symbol_cmd(
     ),
 ):
     """Locate symbol matches and their associated living component specifications."""
-    eidos_dir = resolve_cli_eidos_dir(path)
+    eidos_dir = require_cli_eidos_dir(path, json_output=json_output)
     load_cli_repo_config(eidos_dir, json_output=json_output)
     idx = get_architectural_index(eidos_dir=eidos_dir)
     matches = idx.find_symbol(query=query, limit=limit)
+    nested_hints = _nested_subproject_hints(path)
 
     if json_output:
-        console.print_json(data={"query": query, "count": len(matches), "matches": matches})
+        payload: dict[str, object] = {"query": query, "count": len(matches), "matches": matches}
+        if nested_hints:
+            payload["nested_subprojects"] = nested_hints
+        console.print_json(data=payload)
         return
 
     if not matches:
         console.print(f"[yellow]No symbols found matching '{query}'.[/yellow]")
+        if nested_hints:
+            console.print(
+                f"[dim]Tip: Nested monorepo sub-projects also exist ({', '.join(nested_hints)}) — "
+                f"query them with '--path <subproject>/eidos'.[/dim]"
+            )
         return
 
     table = Table(title=f"Code Symbols matching '{query}' ({len(matches)} matches)", show_header=True)
@@ -477,7 +532,7 @@ def index_semantic_cmd(
     ),
 ):
     """Manage and inspect the optional Harrier-OSS-v1-0.6B ONNX semantic embedding index (status, setup, sync)."""
-    eidos_dir = resolve_cli_eidos_dir(path)
+    eidos_dir = require_cli_eidos_dir(path, json_output=json_output)
     repo_cfg = load_cli_repo_config(eidos_dir, json_output=json_output)
     eff_model = str(resolve_param_from_config("model", model, repo_cfg.context.semantic.variant))
     idx = get_architectural_index(eidos_dir=eidos_dir)
@@ -582,7 +637,7 @@ def index_health_cmd(
     """Display an architecture governance health scorecard across source ownership, Public Surface, contracts, invariants, warnings, and ratchet debt."""
     from eidos.cli._shared import load_cli_repo_config
 
-    eidos_dir = resolve_cli_eidos_dir(path)
+    eidos_dir = require_cli_eidos_dir(path, json_output=json_output)
     load_cli_repo_config(eidos_dir, json_output=json_output)
     idx = get_architectural_index(eidos_dir=eidos_dir)
     health = idx.get_governance_health()

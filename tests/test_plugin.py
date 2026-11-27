@@ -2542,7 +2542,10 @@ def test_normalize_to_semver_and_bundled_version_sync(tmp_path, monkeypatch):
     monkeypatch.setattr(eidos, "__version__", "99.1.0")
     assert get_cli_release_semver() == "99.1.0"
     # Bundled plugin version stays decoupled from eidos.__version__ and reads assets/plugin_reference/VERSION
-    assert get_bundled_plugin_version() == "1.0.0"
+    from eidos.plugin.installer import locate_plugin_bundle
+
+    expected_bundled_ver = (locate_plugin_bundle() / "VERSION").read_text(encoding="utf-8").strip()
+    assert get_bundled_plugin_version() == expected_bundled_ver
 
     # PEP 440 post-tag .devN (e.g. hatch-vcs / git describe past v0.12.0) resolves back to base release 0.12.0
     monkeypatch.setattr(eidos, "__version__", "0.12.1.dev7")
@@ -3242,11 +3245,12 @@ def test_installer_truthful_version_comments_symlinks_and_uninstall(tmp_path, mo
         mp.setattr(eidos, "__version__", "0.30.1")
         install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=dev_ws, force=True)
         mp.setattr(eidos, "__version__", "0.31.0")
-        assert get_bundled_plugin_version() == "1.0.0"
+        expected_bundled_ver = (locate_plugin_bundle() / "VERSION").read_text(encoding="utf-8").strip()
+        assert get_bundled_plugin_version() == expected_bundled_ver
         dev_status = check_plugin_version_status(project_dir=dev_ws)
         assert dev_status["status"] == "up_to_date"
-        assert dev_status["bundled_version"] == "1.0.0"
-        assert dev_status["installed_version"] == "1.0.0"
+        assert dev_status["bundled_version"] == expected_bundled_ver
+        assert dev_status["installed_version"] == expected_bundled_ver
 
         mp.setattr(eidos, "__version__", "0.31.1.dev4")
         dev_status_dev = check_plugin_version_status(project_dir=dev_ws)

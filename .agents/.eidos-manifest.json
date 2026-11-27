@@ -1,10 +1,10 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "files": {
-    "skills/eidos/SKILL.md": "a53692fb881ec8616b92e2b87cfa22e5bddfdb49b907c32d1b535c33521484f8",
-    "skills/eidos-memory/SKILL.md": "ebf01e05e969396d9021bc93c523b664efa43150a1acb628d65e5e1b850dea24",
+    "skills/eidos/SKILL.md": "0870a275fe2ccec1d6cc1ffa1fc80a1cf886607e8fb5038a02b73f3d0d8d3c89",
+    "skills/eidos-memory/SKILL.md": "83204d6010f6a1b76b328d2ed68f6474b91b9df1877544b86710bbb630e70d28",
     "skills/eidos-ops/SKILL.md": "536dc399638b08663c5929bfab2b4335d3b15918cd4d04d810ad70dff9933791",
-    "skills/eidos-plan/SKILL.md": "fd26169f17406a5947404ccdfb317a69d02031ad351516ae5518c8067367c0b6",
+    "skills/eidos-plan/SKILL.md": "1d1258a9a1cef589cb55ed484f65747a24af33aa1f1ab683e9a1b309b4f8eed0",
     "skills/eidos-spec/SKILL.md": "d1d82b5fe607a6575af5dba20738ea97fd6c72c4db1f2ef4b0515c5eff966a45"
   },
   "skipped_files": [],

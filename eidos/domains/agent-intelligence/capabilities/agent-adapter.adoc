@@ -4,7 +4,7 @@ id: CAP-AGENT-ADAPTER
 title: "Universal Agent Adapter & Context Slicing Engine"
 domain: DOM-AGENT-INTELLIGENCE
 status: active
-version: "1.23.0"
+version: "1.24.0"
 
 business:
   personas:
@@ -97,6 +97,9 @@ technical:
     - id: INV-CONTEXT-AND-HOOK-CONFIG-OVERRIDES
       rule: "Optional eidos/eidos.yaml configuration must deterministically override context (default_tier, budgets, repo_map_max_tokens, semantic.enabled/variant/model_mirror_url with unconditional HARRIER_ARTIFACT_MANIFEST SHA-256 verification), memory (commit_drift_threshold, tier_caps, default_expiry_days with --expires none opt-out), lifecycle.archive (keep_recent, include_explorations), plugin (targets optional [TARGET] install/update, launcher, updates_check, hooks.install/enabled/strict/fail_on_warnings/baseline_ttl_seconds with invalid eidos/eidos.yaml non-short-circuit guard), doctor (checks.repo_config and non-blocking missing_configured_targets), and portal (serve/build defaults with --open/--no-open and --single-file/--no-single-file) while explicit CLI flags override config and eidos context never applies drift.base_ref."
       test_binding: "tests/test_config.py::test_context_memory_hook_plugin_and_portal_config_overrides"
+    - id: INV-MONOREPO-ROOT-CLI-AND-HOOK-ROUTING
+      rule: "When invoked from a Git monorepo root containing nested sub-project eidos/ directories (both subproject-only layouts and root+subproject layouts) without an explicit --path, CLI commands must auto-route path-shaped and single-dirty-subproject inputs (eidos context -f/--uncommitted, eidos index blast-radius <path>, eidos memory add --file/--from-diff with sub-project-relative path normalization, and path-shaped spec/delta/memory targets), fail closed with discovered_subprojects hints without creating bogus root eidos/.cache/index.db caches on ambiguous rootless queries, surface nested_subprojects hints on root index queries, aggregate multi-subproject eidos drift and eidos validate without false-green root passes, evaluate all modified sub-projects in eidos hook (ignoring cache-only eidos/ directories and isolating root baselines from child sub-projects), and document -p <subproject>/eidos scoping in root AGENTS.md and bundled skills within INV-PLUGIN-SKILL-SIZE-CEILING."
+      test_binding: "tests/test_monorepo_subprojects.py::test_monorepo_root_cli_routing_drift_validate_and_hooks"
 ---
 = Capability: Universal Agent Adapter & Context Slicing Layer
 :toc: left
@@ -110,7 +113,7 @@ Avoids vendor lock-in and eliminates context window bloat. External AI coding as
 In strict adherence to *POL-ZERO-AI-CALL-DEPENDENCY*, Eidos never initiates AI/LLM calls itself. Instead, it provides the authoritative, noise-free substrate (C4 topology, interface contracts, governing policies, and test-bound invariants) that grounds external agents and prevents architectural drift.
 
 == Key Responsibilities
-* **Deterministic Substrate for Coding Agents**: Exposing machine-readable JSON envelopes across CLI inspection commands (`eidos context`, `eidos index`, `eidos drift`).
+* **Deterministic Substrate & Monorepo Root Auto-Routing (`INV-MONOREPO-ROOT-CLI-AND-HOOK-ROUTING`)**: Exposing machine-readable JSON envelopes across CLI inspection commands (`eidos context`, `eidos index`, `eidos drift`) with monorepo root auto-routing, fail-closed `discovered_subprojects` / `nested_subprojects` hints, multi-subproject `drift`/`validate`/`hook` evaluation across both sub-project-only and hybrid root+sub-project layouts, and `-p <subproject>/eidos` scoping guidance in root `AGENTS.md` and bundled skills.
 * **Tiered Context Slicing & Repository Config Overrides (`CMP-TIERED-CONTEXT-COMPRESSOR`, `CMP-CLI-CONTEXT-COMMAND`, `INV-AGENT-CONTEXT-SLICING`, `INV-CONTEXT-GIT-DIFF-SLICING`, `INV-CONTEXT-TEAM-MEMORY-ATTACHMENT`, `INV-CONTEXT-AND-HOOK-CONFIG-OVERRIDES`)**: Extracting token-efficient architectural subgraphs across exact file paths, comma-separated file lists, quoted `--file` glob patterns (including `{a,b}` brace globs and planned non-existent files under existing or indexed parent directories), working-tree or branch changes (`--uncommitted`, `--base`, `--head`), entity IDs, and task prompts, attaching optional secondary budgeted team operational memories (`MEM-*`) with computed freshness and Stage 0 memory-first pruning, and honoring optional `eidos/eidos.yaml` overrides for context budgets/tiers/semantic mirror, memory drift thresholds/caps/default expiry, archive retention, plugin targets/hooks/update checks, and portal defaults with explicit CLI flag override precedence.
 * **Hybrid Lexical-Relational Retrieval**: Combining FTS5 BM25 search with graph-neighborhood traversals to resolve engineering prompts to architectural entities.
 * **Architectural Blast-Radius Analysis**: Confidence-filtered recursive CTE impact mapping (`eidos index blast-radius --min-confidence <inferred|derived|observed>`) allowing agents to distinguish directly observed spec facts and derived AST/HTTP couplings from inferred hits before proposing code changes.

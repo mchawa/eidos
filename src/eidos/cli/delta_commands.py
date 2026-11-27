@@ -7,7 +7,13 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from eidos.cli._shared import console, resolve_cli_eidos_dir
+from eidos.cli._shared import (
+    _looks_like_path_hint,
+    console,
+    is_explicit_cli_path,
+    normalize_cli_spec_target,
+    require_cli_eidos_dir,
+)
 from eidos.core.lifecycle.audit import AuditEngine
 from eidos.core.lifecycle.catalog import find_spec_by_id_or_path
 from eidos.core.lifecycle.changelog import ChangelogGenerator
@@ -57,7 +63,7 @@ def delta_list_cmd(
     ),
 ):
     """List SpecDeltas in active/ and applied/ states."""
-    eidos_dir = resolve_cli_eidos_dir(path)
+    eidos_dir = require_cli_eidos_dir(path, json_output=json_output)
     deltas = list_deltas(eidos_dir, status_filter=status_filter, include_archived=include_archived)
     if json_output:
         serializable = [
@@ -131,7 +137,9 @@ def delta_show_cmd(
     """Display frontmatter metadata, composable mutations, and AsciiDoc body of an active or archived SpecDelta."""
     from eidos.core.workspace.project import find_repo_root
 
-    eidos_dir = resolve_cli_eidos_dir(path)
+    path_hints = [delta_id] if (_looks_like_path_hint(delta_id) and not is_explicit_cli_path(path)) else None
+    eidos_dir = require_cli_eidos_dir(path, hint_files=path_hints, json_output=json_output)
+    delta_id = normalize_cli_spec_target(delta_id, eidos_dir)
     try:
         file_path = find_spec_by_id_or_path(eidos_dir / "deltas", delta_id, include_archived=True) or (
             find_spec_by_id_or_path(eidos_dir, delta_id, include_archived=True)
@@ -270,7 +278,7 @@ def delta_create_cmd(
     ),
 ):
     """Create a new SpecDelta blueprint in flat storage (eidos/deltas/<id>.adoc)."""
-    eidos_dir = resolve_cli_eidos_dir(path)
+    eidos_dir = require_cli_eidos_dir(path)
     try:
         dest_file = create_delta(
             eidos_dir=eidos_dir,
@@ -308,7 +316,9 @@ def delta_verify_cmd(
     ),
 ):
     """Verify that all semantic mutations declared in a SpecDelta exist in the living specifications."""
-    eidos_dir = resolve_cli_eidos_dir(path)
+    path_hints = [target] if (_looks_like_path_hint(target) and not is_explicit_cli_path(path)) else None
+    eidos_dir = require_cli_eidos_dir(path, hint_files=path_hints, json_output=json_output)
+    target = normalize_cli_spec_target(target, eidos_dir)
     is_verified, msg, report = verify_delta_mutations(eidos_dir, target)
     if json_output:
         if report:
@@ -385,7 +395,9 @@ def delta_audit_cmd(
     """Audit entities removed or deprecated by a SpecDelta for dangling references and active leaks."""
     from eidos.cli._shared import load_cli_repo_config
 
-    eidos_dir = resolve_cli_eidos_dir(path)
+    path_hints = [target] if (_looks_like_path_hint(target) and not is_explicit_cli_path(path)) else None
+    eidos_dir = require_cli_eidos_dir(path, hint_files=path_hints, json_output=json_output)
+    target = normalize_cli_spec_target(target, eidos_dir)
     load_cli_repo_config(eidos_dir, json_output=json_output)
     engine = AuditEngine(eidos_dir=eidos_dir)
     result = engine.audit_delta(target)
@@ -513,7 +525,9 @@ def delta_apply_cmd(
     ),
 ):
     """Reconcile a SpecDelta in-place, updating status to 'applied'."""
-    eidos_dir = resolve_cli_eidos_dir(path)
+    path_hints = [target] if (_looks_like_path_hint(target) and not is_explicit_cli_path(path)) else None
+    eidos_dir = require_cli_eidos_dir(path, hint_files=path_hints, json_output=json_output)
+    target = normalize_cli_spec_target(target, eidos_dir)
     success, msg, applied_file = apply_delta(eidos_dir, target, verify=verify)
     if json_output:
         payload = {
@@ -560,7 +574,12 @@ def delta_status_cmd(
     ),
 ):
     """Display a status summary of all SpecDeltas or transition a specific SpecDelta's lifecycle status."""
-    eidos_dir = resolve_cli_eidos_dir(path)
+    path_hints = (
+        [delta_id] if (delta_id and _looks_like_path_hint(delta_id) and not is_explicit_cli_path(path)) else None
+    )
+    eidos_dir = require_cli_eidos_dir(path, hint_files=path_hints, json_output=json_output)
+    if delta_id:
+        delta_id = normalize_cli_spec_target(delta_id, eidos_dir)
     if delta_id and new_status:
         ok, msg, file_path, old_status = set_delta_status(eidos_dir, delta_id, new_status)
         if json_output:
@@ -722,7 +741,7 @@ def delta_conflicts_cmd(
     """Detect direct mutation target collisions and 1-hop blast-radius overlaps across open SpecDeltas."""
     from eidos.cli._shared import load_cli_repo_config
 
-    eidos_dir = resolve_cli_eidos_dir(path)
+    eidos_dir = require_cli_eidos_dir(path, json_output=json_output)
     load_cli_repo_config(eidos_dir, json_output=json_output)
     result = detect_delta_conflicts(eidos_dir, include_blast_radius=blast_radius)
 
@@ -787,7 +806,9 @@ def delta_delete_cmd(
     ),
 ):
     """Delete a SpecDelta file."""
-    eidos_dir = resolve_cli_eidos_dir(path)
+    path_hints = [target] if (_looks_like_path_hint(target) and not is_explicit_cli_path(path)) else None
+    eidos_dir = require_cli_eidos_dir(path, hint_files=path_hints)
+    target = normalize_cli_spec_target(target, eidos_dir)
     success, msg, _ = delete_delta(eidos_dir, target, force=force)
     if not success:
         console.print(f"[bold red]✗ Failed to delete SpecDelta:[/bold red] {msg}")
@@ -828,7 +849,7 @@ def delta_changelog_cmd(
     """Generate an auditable, SpecDelta-backed changelog partitioned by Git release tags."""
     from eidos.core.workspace.project import find_repo_root
 
-    eidos_dir = resolve_cli_eidos_dir(path)
+    eidos_dir = require_cli_eidos_dir(path)
     resolved_eidos = eidos_dir.resolve()
     repo_root = resolved_eidos.parent if resolved_eidos.name == "eidos" else find_repo_root(resolved_eidos)
     gen = ChangelogGenerator(repo_root=repo_root, eidos_dir=eidos_dir)
@@ -884,7 +905,7 @@ def delta_archive_cmd(
     """Partition and slim older terminal SpecDeltas and Explorations into archive/ subdirectories."""
     from eidos.cli._shared import load_cli_repo_config, resolve_param_from_config
 
-    eidos_dir = resolve_cli_eidos_dir(path)
+    eidos_dir = require_cli_eidos_dir(path, json_output=json_output)
     repo_cfg = load_cli_repo_config(eidos_dir, json_output=json_output)
     eff_keep_recent = int(resolve_param_from_config("keep_recent", keep_recent, repo_cfg.lifecycle.archive.keep_recent))
     eff_explorations = bool(

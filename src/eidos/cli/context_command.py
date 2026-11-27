@@ -5,7 +5,17 @@ from pathlib import Path
 import orjson
 import typer
 
-from eidos.cli._shared import PANEL_KNOWLEDGE, console, resolve_cli_eidos_dir
+from eidos.cli._shared import (
+    PANEL_KNOWLEDGE,
+    console,
+    discover_workspace_eidos_dirs,
+    format_rel_eidos_paths,
+    has_eidos_markers,
+    is_explicit_cli_path,
+    require_cli_eidos_dir,
+    resolve_git_diff_workspace_eidos_dirs,
+    resolve_hint_eidos_dirs,
+)
 from eidos.core.index.context import _has_glob_magic, expand_brace_globs, split_brace_aware_csv
 from eidos.core.index.graph_index import get_architectural_index
 from eidos.core.workspace.project import find_repo_root
@@ -39,7 +49,25 @@ def resolve_cli_target_files_and_workspace(
         if prefix_segs:
             hint_candidates.append(f"{lead_slash}{'/'.join(prefix_segs)}")
 
-    eidos_dir = resolve_cli_eidos_dir(path, hint_files=hint_candidates or None)
+    if not is_explicit_cli_path(path) and hint_candidates:
+        spanned = resolve_hint_eidos_dirs(hint_candidates)
+        if len(spanned) > 1:
+            rel_spanned = format_rel_eidos_paths(spanned)
+            msg = (
+                f"Target files span multiple independent Eidos sub-projects: {', '.join(rel_spanned)}. "
+                f"Run 'eidos context' separately per sub-project (or pass '--path <subproject>/eidos')."
+            )
+            if json_output:
+                typer.echo(
+                    orjson.dumps(
+                        {"error": msg, "discovered_subprojects": rel_spanned}, option=orjson.OPT_INDENT_2
+                    ).decode("utf-8")
+                )
+            else:
+                console.print(f"[bold red]Error:[/bold red] {msg}", soft_wrap=True)
+            raise typer.Exit(code=1)
+
+    eidos_dir = require_cli_eidos_dir(path, hint_files=hint_candidates or None, json_output=json_output)
     if not eidos_dir.exists():
         if json_output:
             typer.echo(orjson.dumps({"error": f"Directory '{eidos_dir}' not found."}).decode("utf-8"))
@@ -172,9 +200,58 @@ def context_cmd(
     ),
 ):
     """Extract a compact architectural subgraph slice (C4 components, contracts, capabilities, invariants, policies)."""
+    effective_path = path
+    if (uncommitted or base is not None) and not files and not is_explicit_cli_path(path):
+        workspace_projects = discover_workspace_eidos_dirs()
+        has_root_eidos = has_eidos_markers(Path("eidos"))
+        if len(workspace_projects) > 1 or (workspace_projects and not has_root_eidos):
+            from eidos.core.index.context_models import TieredContextSlice
+            from eidos.vcs.diff import GitResolutionError
+
+            diff_label = "--uncommitted" if uncommitted else f"{base}...{head}"
+            try:
+                dirty_projects = resolve_git_diff_workspace_eidos_dirs(
+                    base_ref=base,
+                    head_ref=head,
+                    uncommitted=uncommitted,
+                    eidos_dirs=workspace_projects,
+                )
+            except GitResolutionError as exc:
+                if json_output:
+                    typer.echo(orjson.dumps({"error": str(exc)}).decode("utf-8"))
+                else:
+                    console.print(f"[bold red]Error:[/bold red] {exc}", soft_wrap=True)
+                raise typer.Exit(code=1) from None
+
+            if len(dirty_projects) == 1:
+                effective_path = dirty_projects[0]
+            elif len(dirty_projects) > 1:
+                rel_dirty = format_rel_eidos_paths(dirty_projects)
+                msg = (
+                    f"Modified files span multiple independent Eidos sub-projects ({diff_label}): "
+                    f"{', '.join(rel_dirty)}. Re-run with '--path <subproject>/eidos' for each target sub-project."
+                )
+                if json_output:
+                    typer.echo(
+                        orjson.dumps(
+                            {"error": msg, "discovered_subprojects": rel_dirty},
+                            option=orjson.OPT_INDENT_2,
+                        ).decode("utf-8")
+                    )
+                else:
+                    console.print(f"[bold red]Error:[/bold red] {msg}", soft_wrap=True)
+                raise typer.Exit(code=1)
+            elif not has_root_eidos and not component and not task:
+                if json_output:
+                    empty_slice = TieredContextSlice(tier=tier, query=diff_label)
+                    typer.echo(empty_slice.to_json())
+                else:
+                    typer.echo(f"No changed files detected ({diff_label}).")
+                return
+
     eidos_dir, repo_root, normalized_files = resolve_cli_target_files_and_workspace(
         files,
-        path,
+        effective_path,
         json_output=json_output,
     )
     from eidos.cli._shared import load_cli_repo_config, resolve_param_from_config

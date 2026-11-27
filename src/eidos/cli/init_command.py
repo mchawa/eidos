@@ -53,6 +53,11 @@ def init_cmd(
         console.print(f"[bold red]✗ Initialization Failed:[/bold red] {msg}")
         raise typer.Exit(code=1)
 
+    from eidos.plugin.installer import refresh_agents_md_subprojects
+    from eidos.plugin.managed_block import BlockStatus
+
+    refresh_res = refresh_agents_md_subprojects(project_dir)
+
     table = Table(title="Scaffolded Eidos Skeleton", show_header=True)
     table.add_column("Skeleton File", style="bold cyan")
     table.add_column("Path", style="dim")
@@ -63,6 +68,8 @@ def init_cmd(
 
     console.print(table)
     console.print(f"\n[bold green]✓[/bold green] {msg}")
+    if refresh_res is not None and refresh_res.status == BlockStatus.UPDATED:
+        console.print("[dim]Refreshed monorepo sub-project list in root AGENTS.md.[/dim]")
     console.print("[dim]Next steps:[/dim]")
     console.print("  • Author your system vision in [cyan]eidos/system.adoc[/cyan].")
     console.print(

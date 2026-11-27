@@ -7,7 +7,18 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from eidos.cli._shared import PANEL_GOVERNANCE, console, resolve_cli_eidos_dir, resolve_param_from_config
+from eidos.cli._shared import (
+    PANEL_GOVERNANCE,
+    _looks_like_path_hint,
+    console,
+    discover_workspace_eidos_dirs,
+    format_rel_eidos_paths,
+    is_explicit_cli_path,
+    normalize_cli_spec_target,
+    require_cli_eidos_dir,
+    resolve_cli_eidos_dir,
+    resolve_param_from_config,
+)
 from eidos.core.lifecycle.catalog import find_spec_by_id_or_path
 from eidos.core.lifecycle.scaffolder import (
     create_spec,
@@ -45,7 +56,151 @@ def validate(
     ),
 ):
     """Validate all specification documents against their schemas and verify cross-references."""
-    target_path = resolve_cli_eidos_dir(target_path)
+    cwd_res = Path.cwd().resolve()
+    if not is_explicit_cli_path(target_path, param_name="target_path"):
+        all_projects = discover_workspace_eidos_dirs(cwd_res)
+        root_eidos = (cwd_res / "eidos").resolve()
+        nested_projects = [p for p in all_projects if p != root_eidos]
+        if nested_projects:
+            if len(all_projects) > 1:
+                validator = SpecValidator()
+                project_payloads: list[dict[str, object]] = []
+                any_failed = False
+                for proj_eidos in all_projects:
+                    spec_root, repo_root = resolve_spec_and_repo_roots(proj_eidos)
+                    repo_cfg, _ = load_repo_config_with_errors(eidos_dir=spec_root, repo_root=repo_root)
+                    eff_fail_warn = bool(
+                        resolve_param_from_config("fail_on_warnings", fail_on_warnings, repo_cfg.drift.fail_on_warnings)
+                    )
+                    report = validator.validate_directory(proj_eidos)
+                    rel_ed = format_rel_eidos_paths([proj_eidos], cwd_res)[0]
+                    try:
+                        proj_rel = repo_root.resolve().relative_to(cwd_res).as_posix()
+                    except ValueError:
+                        proj_rel = str(repo_root.resolve())
+                    if not report.is_clean or (eff_fail_warn and report.warnings):
+                        any_failed = True
+                    project_payloads.append(
+                        {
+                            "project_root": proj_rel,
+                            "eidos_dir": rel_ed,
+                            "is_clean": report.is_clean,
+                            "total_docs": report.total_docs,
+                            "valid_docs": report.valid_docs,
+                            "broken_references": report.broken_references,
+                            "warnings": report.warnings,
+                            "warning_count": len(report.warnings),
+                            "schema_errors": {str(k): v for k, v in report.schema_errors.items()},
+                            "documents": [
+                                {
+                                    "id": doc.doc_id,
+                                    "type": doc.doc_type,
+                                    "is_valid": doc.is_valid,
+                                    "path": (
+                                        str(doc.file_path.relative_to(cwd_res))
+                                        if doc.file_path.is_relative_to(cwd_res)
+                                        else str(doc.file_path)
+                                    ),
+                                }
+                                for doc in report.documents
+                                if not doc.is_valid
+                            ],
+                        }
+                    )
+                    if not json_output:
+                        console.print(f"[bold magenta]=== Project: {proj_rel} ({rel_ed}) ===[/bold magenta]")
+                        console.print(f"[bold cyan]Validating specifications in:[/bold cyan] {proj_eidos.resolve()}\n")
+                        table = Table(
+                            title="Eidos Specification Validation", show_header=True, header_style="bold magenta"
+                        )
+                        table.add_column("Document ID", style="bold cyan")
+                        table.add_column("Type", style="yellow")
+                        table.add_column("Status", justify="center")
+                        table.add_column("Path", style="dim")
+                        for doc in report.documents:
+                            status_label = (
+                                "[bold green]PASS[/bold green]" if doc.is_valid else "[bold red]FAIL[/bold red]"
+                            )
+                            rel_p = (
+                                str(doc.file_path.relative_to(cwd_res))
+                                if doc.file_path.is_relative_to(cwd_res)
+                                else str(doc.file_path)
+                            )
+                            table.add_row(doc.doc_id, doc.doc_type, status_label, rel_p)
+                        console.print(table)
+                        if report.warnings:
+                            console.print("\n[bold yellow]Advisory Validation Warnings:[/bold yellow]")
+                            for warn in report.warnings:
+                                console.print(f"  [yellow]⚠[/yellow] {warn}")
+                        if not report.is_clean:
+                            console.print("\n[bold red]Validation Failures Detected:[/bold red]")
+                            for fp, errs in report.schema_errors.items():
+                                console.print(f"\n[bold yellow]{fp}:[/bold yellow]")
+                                for err in errs:
+                                    console.print(f"  [red]✗[/red] {err}")
+                            if report.broken_references:
+                                console.print("\n[bold red]Broken Cross-References:[/bold red]")
+                                for ref in report.broken_references:
+                                    console.print(f"  [red]✗[/red] {ref}")
+                            console.print(
+                                f"\n[bold red]Summary:[/bold red] {report.valid_docs}/{report.total_docs} valid documents."
+                            )
+                        elif eff_fail_warn and report.warnings:
+                            console.print(
+                                f"\n[bold red]Failure (--fail-on-warnings):[/bold red] {len(report.warnings)} advisory validation warning(s) detected."
+                            )
+                if json_output:
+                    agg_payload = {
+                        "is_clean": all(bool(p["is_clean"]) for p in project_payloads),
+                        "total_docs": sum(int(p["total_docs"]) for p in project_payloads),
+                        "valid_docs": sum(int(p["valid_docs"]) for p in project_payloads),
+                        "broken_references": [
+                            f"[{p['project_root']}] {ref}" if p["project_root"] not in ("", ".") else ref
+                            for p in project_payloads
+                            for ref in p["broken_references"]  # type: ignore[union-attr]
+                        ],
+                        "warnings": [
+                            f"[{p['project_root']}] {w}" if p["project_root"] not in ("", ".") else w
+                            for p in project_payloads
+                            for w in p["warnings"]  # type: ignore[union-attr]
+                        ],
+                        "warning_count": sum(int(p["warning_count"]) for p in project_payloads),
+                        "schema_errors": {
+                            f"{p['project_root']}/{k}" if p["project_root"] not in ("", ".") else k: v
+                            for p in project_payloads
+                            for k, v in p["schema_errors"].items()  # type: ignore[union-attr]
+                        },
+                        "documents": [
+                            doc
+                            for p in project_payloads
+                            for doc in p["documents"]  # type: ignore[union-attr]
+                        ],
+                        "monorepo_projects": project_payloads,
+                    }
+                    typer.echo(orjson.dumps(agg_payload, option=orjson.OPT_INDENT_2).decode("utf-8"))
+                elif any_failed:
+                    failed_projects = [str(p["eidos_dir"]) for p in project_payloads if not p["is_clean"]]
+                    if failed_projects:
+                        console.print(
+                            f"\n[bold red]Validation Failed[/bold red] in monorepo project(s): {', '.join(failed_projects)}."
+                        )
+                    else:
+                        console.print(
+                            "\n[bold red]Validation Failed (--fail-on-warnings)[/bold red] across monorepo projects."
+                        )
+                else:
+                    total_all = sum(int(p["total_docs"]) for p in project_payloads)
+                    console.print(
+                        f"\n[bold green]Success![/bold green] All {total_all} specification documents across {len(project_payloads)} monorepo projects are valid."
+                    )
+                if any_failed:
+                    raise typer.Exit(code=1)
+                return
+            target_path = all_projects[0]
+        else:
+            target_path = resolve_cli_eidos_dir(target_path)
+    else:
+        target_path = resolve_cli_eidos_dir(target_path)
 
     if not target_path.exists():
         if json_output:
@@ -178,7 +333,7 @@ def spec_list_cmd(
     ),
 ):
     """List living specifications in the repository (excludes SpecDeltas; use `eidos delta list`)."""
-    eidos_dir = resolve_cli_eidos_dir(path)
+    eidos_dir = require_cli_eidos_dir(path, json_output=json_output)
     try:
         specs = list_specs(
             eidos_dir,
@@ -249,7 +404,9 @@ def spec_show_cmd(
     ),
 ):
     """Display frontmatter metadata and preview of a living specification document."""
-    eidos_dir = resolve_cli_eidos_dir(path)
+    path_hints = [target] if (_looks_like_path_hint(target) and not is_explicit_cli_path(path)) else None
+    eidos_dir = require_cli_eidos_dir(path, hint_files=path_hints)
+    target = normalize_cli_spec_target(target, eidos_dir)
     target_clean = target.strip()
     if target_clean.upper().startswith("DLT-"):
         try:
@@ -332,7 +489,7 @@ def spec_create_cmd(
     ),
 ):
     """Scaffold a minimal, schema-valid draft blueprint (`status: draft`) for any living specification type."""
-    eidos_dir = resolve_cli_eidos_dir(path)
+    eidos_dir = require_cli_eidos_dir(path)
     try:
         dest_file = create_spec(
             eidos_dir=eidos_dir,
@@ -373,7 +530,9 @@ def spec_delete_cmd(
     ),
 ):
     """Safely delete a living specification with reference checks."""
-    eidos_dir = resolve_cli_eidos_dir(path)
+    path_hints = [target] if (_looks_like_path_hint(target) and not is_explicit_cli_path(path)) else None
+    eidos_dir = require_cli_eidos_dir(path, hint_files=path_hints)
+    target = normalize_cli_spec_target(target, eidos_dir)
     success, msg, refs = delete_spec(eidos_dir, target, force=force)
     if not success:
         console.print(f"[bold red]✗ Deletion Blocked:[/bold red] {msg}")

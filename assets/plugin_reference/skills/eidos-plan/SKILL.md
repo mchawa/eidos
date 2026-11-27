@@ -61,7 +61,7 @@ decision:
 
 ## 2. SpecDelta Mutation Lifecycle (`DLT-*`)
 
-In **Planned Mode**, adding/removing `CNT-*`/`CMP-*`, altering `CTR-*`, adding/extending `CAP-*`, or modifying `POL-*` is governed by a **SpecDelta** (`eidos/deltas/dlt-*.adoc`).
+In **Planned Mode**, adding/removing `CNT-*`/`CMP-*`, altering `CTR-*`, adding/extending `CAP-*`, or modifying `POL-*` is governed by a **SpecDelta** (`eidos/deltas/dlt-*.adoc`; in monorepos, pass `-p <subproject>/eidos` or run inside `<subproject>`).
 
 ### 2.1 End-to-End SpecDelta Workflow
 
